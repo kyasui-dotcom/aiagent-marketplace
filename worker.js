@@ -253,6 +253,17 @@ function canonicalBrowserRedirect(request, env) {
   });
 }
 
+function legacyLegalNoticeRedirect(request) {
+  if (!['GET', 'HEAD'].includes(String(request.method || '').toUpperCase())) return null;
+  const url = new URL(request.url);
+  if (url.pathname !== '/tokushoho' && url.pathname !== '/tokushoho.html') return null;
+  url.pathname = '/legal-notice.html';
+  return new Response(null, {
+    status: 301,
+    headers: securityHeaders({ location: `${url.pathname}${url.search}${url.hash}` })
+  });
+}
+
 function base64urlEncode(value) {
   return Buffer.from(value).toString('base64url');
 }
@@ -5314,82 +5325,86 @@ async function prepareWorkOrderRequest(_storage, request, env = {}) {
         statusCode: authorization.statusCode || 503
       };
     }
-    const state = await _storage.getState();
-    const settings = appSettingsMap(state);
-    const uiLabels = orderUiLabelsFromAppSettings(settings);
-    const contextMarkdown = buildOpenChatRuntimeContextMarkdown(state, authorization.current || {}, {
-      prompt,
-      user_language: openChatIntentLanguage(prompt, body?.user_language || body?.userLanguage),
-      input_counts: body?.input_counts || body?.inputCounts || {}
-    }, uiLabels);
-    const intentResult = await classifyOpenChatIntent({
-      prompt,
-      fallback_intent: '',
-      prepared_brief: '',
-      conversation_context: body?.conversation_context || body?.conversationContext || [],
-      desired_output: 'Classify the user intent before any CAIt order draft. If enough context exists, return a structured order brief. If not, ask concise clarification questions.',
-      user_language: openChatIntentLanguage(prompt, body?.user_language || body?.userLanguage),
-      input_counts: body?.input_counts || body?.inputCounts || {}
-    }, env, {
-      allowOpenAiApiKeyFallback: authorization.allowOpenAiApiKeyFallback,
-      allowPlatformOpenAiApiKeyFallback: authorization.allowPlatformOpenAiApiKeyFallback,
-      contextMarkdown,
-      uiLabels
-    });
-    if (!intentResult?.ok) {
-      return {
-        ok: false,
-        code: 'openai_intent_failed',
-        error: intentResult?.error || 'OpenAI intent classification failed.',
-        source: intentResult?.source || 'openai',
-        statusCode: 503
-      };
-    }
-    const action = String(intentResult.action || '').trim();
-    prepared = prepareOrderSeedFromOpenChatIntent(intentResult, prompt, requestedStrategy);
-    if (action === 'answer_in_chat') {
-      return {
-        ok: true,
-        kind: 'chat',
-        status: 'chat_answer',
+    if (!authorization.config?.enabled) {
+      prepared = prepareWorkOrderSeed(prompt, requestedStrategy);
+    } else {
+      const state = await _storage.getState();
+      const settings = appSettingsMap(state);
+      const uiLabels = orderUiLabelsFromAppSettings(settings);
+      const contextMarkdown = buildOpenChatRuntimeContextMarkdown(state, authorization.current || {}, {
         prompt,
-        source: intentResult.source || 'openai',
-        message: intentResult.chat_answer || intentResult.summary || 'OpenAI classified this as chat, not an order.'
-      };
-    }
-    if (action === 'ask_clarifying_question') {
-      const taskType = prepared?.taskType || openChatIntentTaskTypeForPrepare(intentResult, prompt) || 'research';
-      const dynamicQuestions = [
-        ...(Array.isArray(intentResult.intake_questions) ? intentResult.intake_questions : []),
-        intentResult.narrowing_question || ''
-      ].map((question) => String(question || '').trim()).filter(Boolean);
-      const clarification = buildIntakeClarification({
+        user_language: openChatIntentLanguage(prompt, body?.user_language || body?.userLanguage),
+        input_counts: body?.input_counts || body?.inputCounts || {}
+      }, uiLabels);
+      const intentResult = await classifyOpenChatIntent({
         prompt,
-        task_type: taskType
-      }, { taskType, dynamicIntakeQuestions: dynamicQuestions });
-      return {
-        ok: true,
-        prompt,
-        ...(prepared || prepareWorkOrderSeed(prompt, requestedStrategy, { taskType })),
-        ...(clarification || {
-          status: 'needs_input',
-          needs_input: true,
-          reason: 'openai_clarification_required',
-          inferred_task_type: taskType,
-          questions: dynamicQuestions.slice(0, 4),
-          message: intentResult.summary || intentResult.narrowing_question || 'OpenAI needs one more clarification before preparing this order.'
-        }),
-        source: intentResult.source || 'openai'
-      };
-    }
-    if (!prepared) {
-      return {
-        ok: false,
-        code: 'openai_intent_missing_task',
-        error: 'OpenAI intent classification did not return a usable order task.',
-        source: intentResult.source || 'openai',
-        statusCode: 503
-      };
+        fallback_intent: '',
+        prepared_brief: '',
+        conversation_context: body?.conversation_context || body?.conversationContext || [],
+        desired_output: 'Classify the user intent before any CAIt order draft. If enough context exists, return a structured order brief. If not, ask concise clarification questions.',
+        user_language: openChatIntentLanguage(prompt, body?.user_language || body?.userLanguage),
+        input_counts: body?.input_counts || body?.inputCounts || {}
+      }, env, {
+        allowOpenAiApiKeyFallback: authorization.allowOpenAiApiKeyFallback,
+        allowPlatformOpenAiApiKeyFallback: authorization.allowPlatformOpenAiApiKeyFallback,
+        contextMarkdown,
+        uiLabels
+      });
+      if (!intentResult?.ok) {
+        return {
+          ok: false,
+          code: 'openai_intent_failed',
+          error: intentResult?.error || 'OpenAI intent classification failed.',
+          source: intentResult?.source || 'openai',
+          statusCode: 503
+        };
+      }
+      const action = String(intentResult.action || '').trim();
+      prepared = prepareOrderSeedFromOpenChatIntent(intentResult, prompt, requestedStrategy);
+      if (action === 'answer_in_chat') {
+        return {
+          ok: true,
+          kind: 'chat',
+          status: 'chat_answer',
+          prompt,
+          source: intentResult.source || 'openai',
+          message: intentResult.chat_answer || intentResult.summary || 'OpenAI classified this as chat, not an order.'
+        };
+      }
+      if (action === 'ask_clarifying_question') {
+        const taskType = prepared?.taskType || openChatIntentTaskTypeForPrepare(intentResult, prompt) || 'research';
+        const dynamicQuestions = [
+          ...(Array.isArray(intentResult.intake_questions) ? intentResult.intake_questions : []),
+          intentResult.narrowing_question || ''
+        ].map((question) => String(question || '').trim()).filter(Boolean);
+        const clarification = buildIntakeClarification({
+          prompt,
+          task_type: taskType
+        }, { taskType, dynamicIntakeQuestions: dynamicQuestions });
+        return {
+          ok: true,
+          prompt,
+          ...(prepared || prepareWorkOrderSeed(prompt, requestedStrategy, { taskType })),
+          ...(clarification || {
+            status: 'needs_input',
+            needs_input: true,
+            reason: 'openai_clarification_required',
+            inferred_task_type: taskType,
+            questions: dynamicQuestions.slice(0, 4),
+            message: intentResult.summary || intentResult.narrowing_question || 'OpenAI needs one more clarification before preparing this order.'
+          }),
+          source: intentResult.source || 'openai'
+        };
+      }
+      if (!prepared) {
+        return {
+          ok: false,
+          code: 'openai_intent_missing_task',
+          error: 'OpenAI intent classification did not return a usable order task.',
+          source: intentResult.source || 'openai',
+          statusCode: 503
+        };
+      }
     }
   } else {
     prepared = prepareWorkOrderSeed(prompt, requestedStrategy, {
@@ -18497,6 +18512,8 @@ export default {
 
     const canonicalRedirect = canonicalBrowserRedirect(request, env);
     if (canonicalRedirect) return canonicalRedirect;
+    const legalNoticeRedirect = legacyLegalNoticeRedirect(request);
+    if (legalNoticeRedirect) return legalNoticeRedirect;
 
     const rateLimited = rateLimitResponseForRequest(request);
     if (rateLimited) return rateLimited;
