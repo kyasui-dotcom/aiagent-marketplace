@@ -1293,7 +1293,7 @@ function siteMapHtml(agents, terms) {
     { href: '/contribute.html', label: 'Contribute', description: 'field-note and issue contribution path' },
     { href: '/terms.html', label: 'Terms', description: 'terms of service' },
     { href: '/privacy.html', label: 'Privacy', description: 'privacy policy' },
-    { href: '/tokushoho.html', label: 'Specified Commercial Transaction Act', description: 'Japanese commercial disclosure' }
+    { href: '/legal-notice.html', label: 'Legal Notice (SCTA)', description: 'Japanese and English commercial disclosure' }
   ];
   const guidePages = seoLandingPages.map((landingPage) => ({
     href: `/${landingPage.slug}.html`,

@@ -1,5 +1,6 @@
 import { createPrivateKey, timingSafeEqual } from 'node:crypto';
 import { createD1LikeStorage } from './lib/storage.js';
+import { API_ROUTES, apiRouteMatches } from './lib/api-routes.js';
 import { BUILT_IN_KINDS, builtInAgentHealthPayload, runBuiltInAgent, sampleAgentPayload } from './lib/builtin-agents.js';
 import {
   CMO_WORKFLOW_ACTION_LAYER_TASKS,
@@ -24,6 +25,7 @@ import { MANIFEST_CANDIDATE_PATHS, assessAgentRegistrationSafety, buildDraftMani
 import { createAppFromInput, createAppFromManifest, normalizeAppManifest, sanitizeAppForPublic, validateAppManifest } from './lib/apps.js';
 import { appContextIsExpired, createAppContextRecord, publicAppContext } from './lib/app-context.js';
 import { buildMcpDiscovery, handleMcpJsonRpc } from './lib/mcp.js';
+import { sanitizeExactMatchActionPatch, sanitizeExactMatchActionsForClient } from './lib/exact-actions.js';
 import { agentReviewRouteBlockReason, applyAgentReviewToAgentRecord, isAgentReviewApproved, manualAgentReviewFromBody, runAgentAutoReview } from './lib/agent-review.js';
 import { runAgentOnboardingCheck } from './lib/onboarding.js';
 import { isBuiltInSampleAgent, sampleKindFromAgent, verifyAgentByHealthcheck } from './lib/verify.js';
@@ -33,7 +35,7 @@ import { agentPatternFitScore, applyGuestTrialSignupDebitInState, buildAgentTeam
 import { listCreatorUsageEstimateForOrder } from './lib/shared.js';
 import { orderBodyWithCommonQualityRules } from './lib/shared.js';
 import { amountFromMinorUnits, createConnectedAccount, createConnectedAccountTransfer, createConnectOnboardingLink, createOffSessionMonthlyInvoicePaymentIntent, createOffSessionProviderMonthlyPaymentIntent, createSetupCheckoutSession, createSubscriptionCheckoutSession, ensureStripeCustomer, resolveSubscriptionPlanFromPriceId, retrieveConnectedAccount, retrievePaymentIntent, retrieveSetupIntent, retrieveSubscription, stripeConfigFromEnv, stripeConfigured, stripePublicConfig, updateCustomerDefaultPaymentMethod, verifyStripeWebhookSignature } from './lib/stripe.js';
-import { buildXAuthorizeUrl, buildXPkcePair, exchangeXOAuthCode, fetchXProfile, postXTweet, publicXConnectorStatus, validateXPostText, xConnectorFromOAuthToken, xOAuthConfigured, xTokenEncryptionConfigured } from './lib/x-connector.js';
+import { buildXAuthorizeUrl, buildXPkcePair, exchangeXOAuthCode, fetchXProfile, postXTweet, publicXConnectorStatus, validateXPostExecutionApproval, validateXPostText, xConnectorFromOAuthToken, xOAuthConfigured, xTokenEncryptionConfigured } from './lib/x-connector.js';
 import { connectorTokenEncryptionConfigured, decryptConnectorSecret, githubConnectorFromOAuthToken, googleConnectorFromOAuthToken } from './lib/connector-secrets.js';
 import {
   deliveryExecutionConfirmationRequirement,
@@ -47,7 +49,6 @@ import {
 } from './public/delivery-action-contract.js';
 import {
   APP_SETTING_DEFAULTS,
-  EXACT_MATCH_ALLOWED_WORK_ACTIONS,
   WORK_ORDER_UI_LABELS,
   isDeveloperExecutionIntentText,
   resolveStaticWorkAction
@@ -4011,10 +4012,6 @@ function canViewAdminDashboard(current, env) {
   const admins = platformAdminLogins(env);
   return identityLoginsForCurrent(current).some((login) => admins.includes(login));
 }
-function normalizeExactActionPhrase(value = '') {
-  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
 function appSettingsMap(state = {}) {
   const output = { ...APP_SETTING_DEFAULTS };
   for (const item of Array.isArray(state?.appSettings) ? state.appSettings : []) {
@@ -4048,42 +4045,6 @@ function sanitizeAppSettingPatch(body = {}) {
     value,
     source: 'admin',
     updatedAt: nowIso()
-  };
-}
-const EXACT_MATCH_ALLOWED_ACTIONS = new Set(EXACT_MATCH_ALLOWED_WORK_ACTIONS);
-function sanitizeExactMatchActionsForClient(actions = []) {
-  return (Array.isArray(actions) ? actions : [])
-    .map((action) => ({
-      id: String(action?.id || '').trim(),
-      phrase: String(action?.phrase || '').trim(),
-      normalizedPhrase: normalizeExactActionPhrase(action?.normalizedPhrase || action?.phrase || ''),
-      action: String(action?.action || '').trim(),
-      enabled: action?.enabled !== false,
-      source: String(action?.source || '').trim(),
-      notes: String(action?.notes || '').trim()
-    }))
-    .filter((action) => action.id && action.phrase && action.action && action.enabled);
-}
-function sanitizeExactMatchActionPatch(body = {}) {
-  const phrase = String(body?.phrase || '').trim().replace(/\s+/g, ' ');
-  const action = String(body?.action || '').trim();
-  const normalizedPhrase = normalizeExactActionPhrase(body?.normalizedPhrase || phrase);
-  const source = String(body?.source || 'manual').trim().slice(0, 40) || 'manual';
-  const notes = String(body?.notes || '').trim().slice(0, 500);
-  const requestedId = String(body?.id || '').trim();
-  if (!phrase) return { error: 'Phrase is required.' };
-  if (phrase.length > 120) return { error: 'Phrase must be 120 characters or fewer.' };
-  if (!action) return { error: 'Action is required.' };
-  if (!EXACT_MATCH_ALLOWED_ACTIONS.has(action)) return { error: 'Action is not allowed.' };
-  const safeStem = normalizedPhrase.replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]+/gi, '_').replace(/^_+|_+$/g, '') || 'rule';
-  return {
-    id: requestedId || `exact_${safeStem}`,
-    phrase,
-    normalizedPhrase,
-    action,
-    enabled: body?.enabled !== false,
-    source,
-    notes
   };
 }
 function canUsePlatformResend(current, env) {
@@ -9052,98 +9013,6 @@ function xAuthSuccessRedirectPath(request, env, cookieState = null) {
   } catch {
     return '/?connect=x_connected';
   }
-}
-
-function normalizeXApprovalUsername(value = '') {
-  return String(value || '').trim().replace(/^@+/, '').toLowerCase();
-}
-
-function normalizeXApprovalText(value = '') {
-  return String(value || '').replace(/\r\n/g, '\n').trim();
-}
-
-function xConnectorApprovalIdentity(connector = null) {
-  const source = connector && typeof connector === 'object' ? connector : {};
-  const username = String(source.username || '').trim().replace(/^@+/, '');
-  const userId = String(source.xUserId || source.providerUserId || '').trim();
-  const displayName = String(source.displayName || '').trim();
-  return {
-    username,
-    handle: username ? `@${username}` : '',
-    userId,
-    displayName,
-    label: username ? `@${username}` : (displayName || userId || 'connected X account')
-  };
-}
-
-function xPostApprovalInput(source = {}) {
-  const input = source && typeof source === 'object' ? source : {};
-  return {
-    approvedUsername: String(input.approvedXUsername || input.approved_x_username || input.targetXUsername || input.target_x_username || '').trim(),
-    approvedUserId: String(input.approvedXUserId || input.approved_x_user_id || input.targetXUserId || input.target_x_user_id || '').trim(),
-    approvedText: normalizeXApprovalText(input.approvedText || input.approved_text || input.confirmedText || input.confirmed_text || '')
-  };
-}
-
-function validateXPostExecutionApproval(connector = null, action = {}) {
-  const identity = xConnectorApprovalIdentity(connector);
-  const approval = xPostApprovalInput(action);
-  const approvedUsername = normalizeXApprovalUsername(approval.approvedUsername);
-  const connectedUsername = normalizeXApprovalUsername(identity.username);
-  const approvedUserId = String(approval.approvedUserId || '').trim();
-  const connectedUserId = String(identity.userId || '').trim();
-  const postText = normalizeXApprovalText(action.text || action.postText || action.post_text || action.tweet || '');
-  if (!approvedUsername && !approvedUserId) {
-    return {
-      ok: false,
-      statusCode: 428,
-      code: 'confirmation_required',
-      error: 'Connected X account approval is required before posting.',
-      required: `Show the connected X account (${identity.label}) and set approved_x_username to that exact account before posting.`,
-      account: identity
-    };
-  }
-  if (approvedUsername && connectedUsername && approvedUsername !== connectedUsername) {
-    return {
-      ok: false,
-      statusCode: 409,
-      code: 'confirmation_required',
-      error: `Approved X account @${approvedUsername} does not match the connected account ${identity.label}.`,
-      required: `Reconnect X or approve posting to ${identity.label}.`,
-      account: identity
-    };
-  }
-  if (approvedUserId && connectedUserId && approvedUserId !== connectedUserId) {
-    return {
-      ok: false,
-      statusCode: 409,
-      code: 'confirmation_required',
-      error: 'Approved X account ID does not match the connected account.',
-      required: `Reconnect X or approve posting to ${identity.label}.`,
-      account: identity
-    };
-  }
-  if (!approval.approvedText) {
-    return {
-      ok: false,
-      statusCode: 428,
-      code: 'confirmation_required',
-      error: 'Exact X post text approval is required before posting.',
-      required: 'Set approved_text to the exact post text after showing it to the user.',
-      account: identity
-    };
-  }
-  if (approval.approvedText !== postText) {
-    return {
-      ok: false,
-      statusCode: 409,
-      code: 'confirmation_required',
-      error: 'Approved X post text does not match the text being posted.',
-      required: 'Show the final text again and approve that exact text before posting.',
-      account: identity
-    };
-  }
-  return { ok: true, account: identity };
 }
 
 async function handleXAuthStart(request, env) {
@@ -18775,7 +18644,7 @@ export default {
     if (url.pathname === '/auth/logout' && request.method === 'POST') {
       return handleLogout(env);
     }
-    if (url.pathname === '/api/connectors/x/status' && request.method === 'GET') {
+    if (apiRouteMatches(url.pathname, request.method, 'CONNECTORS_X_STATUS', 'GET')) {
       return handleXConnectorStatus(request, env);
     }
     if (url.pathname === '/api/connectors/google/assets' && request.method === 'GET') {
@@ -18796,7 +18665,7 @@ export default {
     if (url.pathname === '/api/internal/test-welcome-email' && request.method === 'POST') {
       return handleTestWelcomeEmail(request, env);
     }
-    if (url.pathname === '/api/connectors/x/post' && request.method === 'POST') {
+    if (apiRouteMatches(url.pathname, request.method, 'CONNECTORS_X_POST', 'POST')) {
       return handleXConnectorPost(request, env);
     }
     if (url.pathname === '/api/github/repos' && request.method === 'GET') {
@@ -18970,12 +18839,12 @@ export default {
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
       return json(result);
     }
-    if (url.pathname === '/api/deliveries/execute' && request.method === 'POST') {
+    if (apiRouteMatches(url.pathname, request.method, 'DELIVERIES_EXECUTE', 'POST')) {
       const result = await executeDeliveryActionRequest(storage, request, env);
       if (result.error) return json(normalizeDeliveryExecuteFailureResponse(result), result.statusCode || 400);
       return json(result, result.statusCode || 200);
     }
-    if (url.pathname === '/api/deliveries/schedule' && request.method === 'POST') {
+    if (apiRouteMatches(url.pathname, request.method, 'DELIVERIES_SCHEDULE', 'POST')) {
       const result = await scheduleDeliveryActionRequest(storage, request, env);
       if (result.error) return json(normalizeDeliveryScheduleFailureResponse(result), result.statusCode || 400);
       return json(result, result.statusCode || 200);
@@ -19006,10 +18875,10 @@ export default {
     if (/^\/api\/apps\/[^/]+\/handoff$/.test(url.pathname) && request.method === 'POST') {
       return handleAppHandoff(storage, request, env, decodeURIComponent(url.pathname.split('/')[3] || ''));
     }
-    if (url.pathname === '/api/app-contexts' && request.method === 'GET') {
+    if (apiRouteMatches(url.pathname, request.method, 'APP_CONTEXTS', 'GET')) {
       return handleListAppContexts(storage, request, env);
     }
-    if (url.pathname === '/api/app-contexts' && request.method === 'POST') {
+    if (apiRouteMatches(url.pathname, request.method, 'APP_CONTEXTS', 'POST')) {
       return handleCreateAppContext(storage, request, env);
     }
     if (/^\/api\/app-contexts\/[^/]+$/.test(url.pathname) && request.method === 'GET') {
@@ -19158,7 +19027,7 @@ export default {
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
       return json({ ok: true, api_key: result.apiKey, account: result.account }, 201);
     }
-    if (url.pathname === '/api/admin/api-keys' && request.method === 'POST') {
+    if (apiRouteMatches(url.pathname, request.method, 'ADMIN_API_KEYS', 'POST')) {
       const result = await createAdminOrderApiKey(storage, request, env);
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
       return json({ ok: true, api_key: result.apiKey, account: result.account, issued_by: result.issuedBy, auth_mode: result.authMode }, 201);
@@ -19183,12 +19052,12 @@ export default {
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
       return json({ ok: true, account: result.account, monthly_summary: result.monthlySummary, section: 'executorPreferences' });
     }
-    if (url.pathname === '/api/settings/exact-actions' && request.method === 'GET') {
+    if (apiRouteMatches(url.pathname, request.method, 'SETTINGS_EXACT_ACTIONS', 'GET')) {
       const result = await getExactMatchActions(storage, request, env);
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
       return json(result);
     }
-    if (url.pathname === '/api/settings/exact-actions' && request.method === 'POST') {
+    if (apiRouteMatches(url.pathname, request.method, 'SETTINGS_EXACT_ACTIONS', 'POST')) {
       const result = await saveExactMatchAction(storage, request, env);
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
       return json(result);

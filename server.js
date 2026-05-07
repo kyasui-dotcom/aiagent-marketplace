@@ -4,6 +4,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createD1LikeStorage } from './lib/storage.js';
+import { API_ROUTES, apiRouteMatches } from './lib/api-routes.js';
 import { BUILT_IN_KINDS, builtInAgentHealthPayload, runBuiltInAgent } from './lib/builtin-agents.js';
 import { GITHUB_ADAPTER_MARKER, adapterNextStepText, buildGithubAdapterPlan, createGithubBranch, createGithubPullRequest, fetchGithubBranchSha, fetchGithubRepoTree, fetchGithubTextFile, findKnownBrokerPath, upsertGithubTextFile } from './lib/github-adapter.js';
 import { BILLING_DISPLAY_CURRENCY, WELCOME_CREDITS_GRANT_AMOUNT, accountIdForLogin, accountIdentityForProvider, accountSettingsForIdentity, accountSettingsForLogin, agentLinksFromRecord, agentTagsFromRecord, aliasLoginsForAccount, applyStripeRefundToAccount, applySubscriptionRefillToAccount, authenticateOrderApiKey, billingAuditsForJobIds, billingModeFromJob, billingPeriodId, billingProfileForAccount, buildAdminDashboard, buildAgentId, buildConversionAnalytics, buildFollowupConversationContext, buildIntakeClarification, buildMonthlyAccountSummary, chatSessionIdForJob, chatTrainingExamplesForClient, chatTranscriptsForClient, computeScore, connectorActionLabel, connectorOAuthActionInstruction, createChatTranscript, createConversionEventPayload, createFeedbackReport, createOrderApiKeyInState, createRecurringOrderInState, defaultLoginForAuthUser, deleteRecurringOrderInState, displayCurrencyToLedgerAmount, dueRecurringOrders, estimateBilling, estimateRunWindow, feedbackReportsForClient, formatFeedbackReportEmail, hideChatMemoryTranscriptForLoginInState, inferAgentTagsFromSignals, inferTaskSequence, inferTaskType, isAgentOwnedByLogin, isBillableJob, isJobVisibleToLogin, isPrivateNetworkHostname, jobsVisibleToLogin, ledgerAmountToDisplayCurrency, linkIdentityToAccountInState, makeEvent, markRecurringOrderRunInState, maybeGrantWelcomeCreditsForSignupInState, maybeGrantWelcomeCreditsForVerifiedAgentInState, mergeAccountsInState, mergeProtectedPromptSourceIntoInput, normalizeTaskTypes, nowIso, optimizeOrderPromptForBroker, promptInjectionGuardForPrompt, providerMonthlyBillingLedgerForLogin, providerPayoutLedgerForLogin, publicEventView, recordProviderMonthlyChargeInAccount, recurringOrderToJobPayload, recurringOrdersVisibleToLogin, recordStripeTopupInAccount, recoverMissingAccountsInState, releaseBillingReservationInState, requesterContextFromUser, reserveBillingEstimateInState, revokeOrderApiKeyInState, sanitizeAccountSettingsForClient, sanitizeBillingSettingsPatch, sanitizeExecutorPreferencesPatch, sanitizeFeedbackReportForClient, sanitizePayoutSettingsPatch, settleBillingForJobInState, touchOrderApiKeyUsageInState, updateChatTranscriptReviewInState, updateFeedbackReportInState, updateRecurringOrderInState, upsertAccountSettingsForIdentityInState, upsertAccountSettingsInState } from './lib/shared.js';
@@ -16,10 +17,11 @@ import { MANIFEST_CANDIDATE_PATHS, assessAgentRegistrationSafety, buildDraftMani
 import { createAppFromInput, createAppFromManifest, normalizeAppManifest, sanitizeAppForPublic, validateAppManifest } from './lib/apps.js';
 import { appContextIsExpired, createAppContextRecord, publicAppContext } from './lib/app-context.js';
 import { buildMcpDiscovery, handleMcpJsonRpc } from './lib/mcp.js';
+import { sanitizeExactMatchActionPatch, sanitizeExactMatchActionsForClient } from './lib/exact-actions.js';
 import { agentReviewRouteBlockReason, applyAgentReviewToAgentRecord, isAgentReviewApproved, manualAgentReviewFromBody, runAgentAutoReview } from './lib/agent-review.js';
 import { runAgentOnboardingCheck } from './lib/onboarding.js';
 import { isBuiltInSampleAgent, sampleKindFromAgent, verifyAgentByHealthcheck } from './lib/verify.js';
-import { buildXAuthorizeUrl, buildXPkcePair, exchangeXOAuthCode, fetchXProfile, postXTweet, publicXConnectorStatus, validateXPostText, xConnectorFromOAuthToken, xOAuthConfigured, xTokenEncryptionConfigured } from './lib/x-connector.js';
+import { buildXAuthorizeUrl, buildXPkcePair, exchangeXOAuthCode, fetchXProfile, postXTweet, publicXConnectorStatus, validateXPostExecutionApproval, validateXPostText, xConnectorFromOAuthToken, xOAuthConfigured, xTokenEncryptionConfigured } from './lib/x-connector.js';
 import { connectorTokenEncryptionConfigured, decryptConnectorSecret, githubConnectorFromOAuthToken, googleConnectorFromOAuthToken } from './lib/connector-secrets.js';
 import {
   deliveryExecutionConfirmationRequirement,
@@ -792,7 +794,6 @@ function sanitizeAppSettingPatch(body = {}) {
     updatedAt: nowIso()
   };
 }
-
 function openChatIntentSystemPrompt(userLanguage = 'English', uiLabels = WORK_ORDER_UI_LABELS) {
   return [
     'You classify rough user goals for CAIt, an AI agent marketplace/work-order chat.',
@@ -5426,6 +5427,37 @@ function secretEquals(left = '', right = '') {
   if (a.byteLength !== b.byteLength) return false;
   return timingSafeEqual(a, b);
 }
+function configuredCaitAdminApiTokens() {
+  return [...new Set(String(process.env.CAIT_ADMIN_API_TOKENS || process.env.CAIT_ADMIN_API_TOKEN || process.env.CAIT_OPERATOR_TOKEN || '')
+    .split(',')
+    .map((value) => String(value || '').trim())
+    .filter(Boolean))];
+}
+function extractCaitAdminApiToken(req) {
+  const direct = String(req.headers['x-cait-admin-token'] || req.headers['x-admin-token'] || '').trim();
+  if (direct) return direct;
+  const authHeader = String(req.headers.authorization || '').trim();
+  if (authHeader.toLowerCase().startsWith('bearer ')) return authHeader.slice(7).trim();
+  return '';
+}
+function authorizeCaitAdminApiKeyIssuer(req) {
+  const providedToken = extractCaitAdminApiToken(req);
+  const configuredTokens = configuredCaitAdminApiTokens();
+  if (providedToken) {
+    if (configuredTokens.some((token) => secretEquals(providedToken, token))) {
+      return { ok: true, authMode: 'operator-token', actor: 'operator-token' };
+    }
+    return { error: 'Invalid admin API token', statusCode: 401 };
+  }
+  const current = currentUserContext(req);
+  if (canViewAdminDashboard(current)) {
+    return { ok: true, authMode: 'admin-session', actor: current.login || 'admin-session', current };
+  }
+  return {
+    error: configuredTokens.length ? 'Admin API token or platform admin login required' : 'Admin API key issuance is disabled',
+    statusCode: configuredTokens.length ? 401 : 404
+  };
+}
 function extractAgentToken(req) {
   const headerToken = String(req.headers['x-agent-token'] || '').trim();
   if (headerToken) return headerToken;
@@ -6418,6 +6450,64 @@ async function saveSettingsSection(req, url, section) {
   return { account: sanitizeAccountSettingsForClient(account), monthlySummary };
 }
 
+async function getExactMatchActions(req) {
+  const current = currentUserContext(req);
+  if (!canViewAdminDashboard(current)) return { error: 'Admin access required', statusCode: 403 };
+  const state = await storage.getState();
+  return { actions: sanitizeExactMatchActionsForClient(state.exactMatchActions || []) };
+}
+
+async function saveExactMatchAction(req) {
+  const current = currentUserContext(req);
+  if (!canViewAdminDashboard(current)) return { error: 'Admin access required', statusCode: 403 };
+  let body;
+  try {
+    body = await parseBody(req);
+  } catch (error) {
+    return { error: error.message, statusCode: 400 };
+  }
+  const patch = sanitizeExactMatchActionPatch(body || {});
+  if (patch.error) return { error: patch.error, statusCode: 400 };
+  await storage.mutate(async (draft) => {
+    const existing = Array.isArray(draft.exactMatchActions) ? draft.exactMatchActions : [];
+    const next = [...existing];
+    const matchIndex = next.findIndex((item) => String(item?.id || '').trim() === patch.id);
+    const merged = {
+      ...(matchIndex >= 0 ? next[matchIndex] : {}),
+      ...patch,
+      createdAt: matchIndex >= 0 ? (next[matchIndex]?.createdAt || nowIso()) : nowIso(),
+      updatedAt: nowIso()
+    };
+    if (matchIndex >= 0) next[matchIndex] = merged;
+    else next.push(merged);
+    draft.exactMatchActions = next;
+  });
+  const state = await storage.getState();
+  return { actions: sanitizeExactMatchActionsForClient(state.exactMatchActions || []) };
+}
+
+async function deleteExactMatchAction(req, actionId) {
+  const current = currentUserContext(req);
+  if (!canViewAdminDashboard(current)) return { error: 'Admin access required', statusCode: 403 };
+  const targetId = String(actionId || '').trim();
+  if (!targetId) return { error: 'Action id is required', statusCode: 400 };
+  await storage.mutate(async (draft) => {
+    const actions = Array.isArray(draft.exactMatchActions) ? draft.exactMatchActions : [];
+    const index = actions.findIndex((item) => String(item?.id || '').trim() === targetId);
+    if (index >= 0) {
+      actions[index] = {
+        ...actions[index],
+        enabled: false,
+        disabledAt: actions[index].disabledAt || nowIso(),
+        updatedAt: nowIso()
+      };
+    }
+    draft.exactMatchActions = actions;
+  });
+  const state = await storage.getState();
+  return { ok: true, actions: sanitizeExactMatchActionsForClient(state.exactMatchActions || []) };
+}
+
 async function getAppSettings(req) {
   const current = currentUserContext(req);
   if (!canViewAdminDashboard(current)) return { error: 'Admin access required', statusCode: 403 };
@@ -6785,6 +6875,68 @@ async function createOrderApiKey(req) {
     ok: true,
     apiKey: created.apiKey,
     account: sanitizeAccountSettingsForClient(created.account)
+  };
+}
+
+function sanitizeAdminApiKeyLogin(body = {}) {
+  const login = String(body?.login || body?.account_login || body?.accountLogin || body?.email || '').trim().toLowerCase();
+  if (!login) return { error: 'login is required' };
+  if (login.length > 160) return { error: 'login is too long' };
+  if (!/^[a-z0-9._%+\-@]+$/i.test(login)) return { error: 'login contains unsupported characters' };
+  return { login };
+}
+
+async function createAdminOrderApiKey(req) {
+  const authorization = authorizeCaitAdminApiKeyIssuer(req);
+  if (authorization.error) return authorization;
+  let body;
+  try {
+    body = await parseBody(req);
+  } catch (error) {
+    return { error: error.message, statusCode: 400 };
+  }
+  const target = sanitizeAdminApiKeyLogin(body || {});
+  if (target.error) return { error: target.error, statusCode: 400 };
+  if (runtimePolicy(req).releaseStage === 'public' && String(body?.mode || 'live').toLowerCase() === 'test') {
+    return { error: 'Test API keys are disabled on the public deployment.', statusCode: 403 };
+  }
+  let created = null;
+  try {
+    await storage.mutate(async (draft) => {
+      const existing = (Array.isArray(draft.accounts) ? draft.accounts : [])
+        .find((account) => String(account?.login || '').trim().toLowerCase() === target.login);
+      const existingUser = accountUserFromSettings(existing);
+      const user = existingUser || {
+        login: target.login,
+        name: String(body?.name || target.login).trim() || target.login,
+        email: String(body?.email || (target.login.includes('@') ? target.login : '')).trim(),
+        accountId: accountIdForLogin(target.login)
+      };
+      const authProvider = existing?.authProvider || 'operator-cli';
+      created = createOrderApiKeyInState(draft, target.login, user, authProvider, {
+        label: body?.label || '',
+        mode: body?.mode || 'live'
+      });
+    });
+  } catch (error) {
+    if (/^API key title /.test(String(error?.message || ''))) {
+      return { error: error.message, statusCode: 400 };
+    }
+    throw error;
+  }
+  await touchEvent('API_KEY', `${authorization.actor} issued ${created.apiKey.mode} CAIt API key ${created.apiKey.label} for ${target.login}`, {
+    source: 'admin_api_key_cli',
+    actor: authorization.actor,
+    authMode: authorization.authMode,
+    targetLogin: target.login,
+    keyId: created.apiKey.id
+  });
+  return {
+    ok: true,
+    apiKey: created.apiKey,
+    account: sanitizeAccountSettingsForClient(created.account),
+    issuedBy: authorization.actor,
+    authMode: authorization.authMode
   };
 }
 
@@ -8110,7 +8262,24 @@ async function handleXConnectorPost(req, res) {
   if (!connector?.connected || !connector?.accessTokenEnc) {
     return json(res, 409, {
       error: 'X connection required before posting.',
+      code: 'connector_required',
+      needs_connector: true,
+      missing_connectors: ['x'],
+      missing_connector_capabilities: ['x.post'],
       action: connectorOAuthActionInstruction('connect_x')
+    });
+  }
+  const approval = validateXPostExecutionApproval(connector, {
+    ...body,
+    text: validation.text
+  });
+  if (!approval.ok) {
+    return json(res, approval.statusCode || 428, {
+      error: approval.error,
+      code: approval.code,
+      needs_confirmation: true,
+      required: approval.required,
+      account: approval.account
     });
   }
   try {
@@ -8812,6 +8981,13 @@ async function executeScheduledExactConnectorAction(order = {}, current = {}) {
     if (!connector?.connected || !connector?.accessTokenEnc) {
       return recurringConnectorError('X connection required before the scheduled post can run.');
     }
+    const approval = validateXPostExecutionApproval(connector, {
+      ...action,
+      text: validation.text
+    });
+    if (!approval.ok) {
+      return recurringConnectorError(approval.error, approval.code || 'confirmation_required', approval.statusCode || 428);
+    }
     try {
       const posted = await postXTweet(process.env, connector, {
         text: validation.text,
@@ -8839,7 +9015,9 @@ async function executeScheduledExactConnectorAction(order = {}, current = {}) {
         status: 'posted',
         connector_action: 'x_post',
         connector_action_id: String(posted.tweetId || ''),
-        url: posted.url || ''
+        url: posted.url || '',
+        account_handle: approval.account?.handle || '',
+        account_id: approval.account?.userId || ''
       };
     } catch (error) {
       return recurringConnectorError(error.message || 'Scheduled X post failed', 'connector_required', Number(error?.statusCode || 502));
@@ -9668,7 +9846,7 @@ const server = http.createServer(async (req, res) => {
     if (id) sessions.delete(id);
     return json(res, 200, { ok: true, redirect_to: '/' }, { 'Set-Cookie': clearSessionCookie(req) });
   }
-  if (req.method === 'GET' && url.pathname === '/api/connectors/x/status') {
+  if (apiRouteMatches(url.pathname, req.method, 'CONNECTORS_X_STATUS', 'GET')) {
     return handleXConnectorStatus(req, res);
   }
   if (req.method === 'GET' && url.pathname === '/api/connectors/google/assets') {
@@ -9686,7 +9864,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/connectors/resend/send-email') {
     return handleResendSendEmail(req, res);
   }
-  if (req.method === 'POST' && url.pathname === '/api/connectors/x/post') {
+  if (apiRouteMatches(url.pathname, req.method, 'CONNECTORS_X_POST', 'POST')) {
     return handleXConnectorPost(req, res);
   }
   if (req.method === 'GET' && url.pathname === '/api/github/repos') {
@@ -10177,12 +10355,12 @@ const server = http.createServer(async (req, res) => {
     if (result.error) return json(res, result.statusCode || 400, { error: result.error });
     return json(res, 200, result);
   }
-  if (req.method === 'POST' && url.pathname === '/api/deliveries/execute') {
+  if (apiRouteMatches(url.pathname, req.method, 'DELIVERIES_EXECUTE', 'POST')) {
     const result = await executeDeliveryActionRequest(req);
     if (result.error) return json(res, result.statusCode || 400, normalizeDeliveryExecuteFailureResponse(result));
     return json(res, result.statusCode || 200, result);
   }
-  if (req.method === 'POST' && url.pathname === '/api/deliveries/schedule') {
+  if (apiRouteMatches(url.pathname, req.method, 'DELIVERIES_SCHEDULE', 'POST')) {
     const result = await scheduleDeliveryActionRequest(req);
     if (result.error) return json(res, result.statusCode || 400, normalizeDeliveryScheduleFailureResponse(result));
     return json(res, result.statusCode || 200, result);
@@ -10214,12 +10392,12 @@ const server = http.createServer(async (req, res) => {
     if (result.error) return json(res, result.statusCode || 400, result);
     return json(res, result.statusCode || 200, result);
   }
-  if (req.method === 'GET' && url.pathname === '/api/app-contexts') {
+  if (apiRouteMatches(url.pathname, req.method, 'APP_CONTEXTS', 'GET')) {
     const result = await handleListAppContexts(req);
     if (result.error) return json(res, result.statusCode || 400, { error: result.error });
     return json(res, result.statusCode || 200, result);
   }
-  if (req.method === 'POST' && url.pathname === '/api/app-contexts') {
+  if (apiRouteMatches(url.pathname, req.method, 'APP_CONTEXTS', 'POST')) {
     const result = await handleCreateAppContext(req);
     if (result.error) return json(res, result.statusCode || 400, { error: result.error });
     return json(res, result.statusCode || 201, result);
@@ -10311,6 +10489,11 @@ const server = http.createServer(async (req, res) => {
     if (result.error) return json(res, result.statusCode || 400, { error: result.error });
     return json(res, 201, { ok: true, api_key: result.apiKey, account: result.account });
   }
+  if (apiRouteMatches(url.pathname, req.method, 'ADMIN_API_KEYS', 'POST')) {
+    const result = await createAdminOrderApiKey(req);
+    if (result.error) return json(res, result.statusCode || 400, { error: result.error });
+    return json(res, 201, { ok: true, api_key: result.apiKey, account: result.account, issued_by: result.issuedBy, auth_mode: result.authMode });
+  }
   if (req.method === 'DELETE' && /^\/api\/settings\/api-keys\/[^/]+$/.test(url.pathname)) {
     const result = await revokeOrderApiKey(req, url.pathname.split('/')[4] || '');
     if (result.error) return json(res, result.statusCode || 400, { error: result.error });
@@ -10330,6 +10513,21 @@ const server = http.createServer(async (req, res) => {
     const result = await saveSettingsSection(req, url, 'executorPreferences');
     if (result.error) return json(res, result.statusCode || 400, { error: result.error });
     return json(res, 200, { ok: true, account: result.account, monthly_summary: result.monthlySummary, section: 'executorPreferences' });
+  }
+  if (apiRouteMatches(url.pathname, req.method, 'SETTINGS_EXACT_ACTIONS', 'GET')) {
+    const result = await getExactMatchActions(req);
+    if (result.error) return json(res, result.statusCode || 400, { error: result.error });
+    return json(res, 200, result);
+  }
+  if (apiRouteMatches(url.pathname, req.method, 'SETTINGS_EXACT_ACTIONS', 'POST')) {
+    const result = await saveExactMatchAction(req);
+    if (result.error) return json(res, result.statusCode || 400, { error: result.error });
+    return json(res, 200, result);
+  }
+  if (req.method === 'DELETE' && /^\/api\/settings\/exact-actions\/[^/]+$/.test(url.pathname)) {
+    const result = await deleteExactMatchAction(req, decodeURIComponent(url.pathname.split('/')[4] || ''));
+    if (result.error) return json(res, result.statusCode || 400, { error: result.error });
+    return json(res, 200, result);
   }
   if (req.method === 'GET' && url.pathname === '/api/settings/app-settings') {
     const result = await getAppSettings(req);

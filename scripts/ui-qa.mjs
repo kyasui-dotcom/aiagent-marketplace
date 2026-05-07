@@ -13,7 +13,9 @@ const analyticsHtmlPath = new URL('../public/analytics-console.html', import.met
 const publisherHtmlPath = new URL('../public/publisher-approval.html', import.meta.url);
 const leadOpsHtmlPath = new URL('../public/lead-ops.html', import.meta.url);
 const deliveryManagerHtmlPath = new URL('../public/delivery-manager.html', import.meta.url);
-const tokushohoHtmlPath = new URL('../public/tokushoho.html', import.meta.url);
+const legalNoticeHtmlPath = new URL('../public/legal-notice.html', import.meta.url);
+const tokushohoRedirectHtmlPath = new URL('../public/tokushoho.html', import.meta.url);
+const siteMapHtmlPath = new URL('../public/site-map.html', import.meta.url);
 const homeCssPath = new URL('../public/home.css', import.meta.url);
 const appConsoleCssPath = new URL('../public/app-console.css', import.meta.url);
 const adminCssPath = new URL('../public/admin.css', import.meta.url);
@@ -62,7 +64,9 @@ const analyticsHtml = readFileSync(analyticsHtmlPath, 'utf8');
 const publisherHtml = readFileSync(publisherHtmlPath, 'utf8');
 const leadOpsHtml = readFileSync(leadOpsHtmlPath, 'utf8');
 const deliveryManagerHtml = readFileSync(deliveryManagerHtmlPath, 'utf8');
-const tokushohoHtml = readFileSync(tokushohoHtmlPath, 'utf8');
+const legalNoticeHtml = readFileSync(legalNoticeHtmlPath, 'utf8');
+const tokushohoRedirectHtml = readFileSync(tokushohoRedirectHtmlPath, 'utf8');
+const siteMapHtml = readFileSync(siteMapHtmlPath, 'utf8');
 const homeCss = readFileSync(homeCssPath, 'utf8');
 const appConsoleCss = readFileSync(appConsoleCssPath, 'utf8');
 const adminCss = readFileSync(adminCssPath, 'utf8');
@@ -113,14 +117,19 @@ assert.ok(!html.includes('href="/chat.html"'), 'Root should not link directly to
 assert.ok(html.includes('<nav class="home-links" aria-label="CAIt pages">'), 'Root should expose the common public navigation in the landing header.');
 assert.ok(html.includes('href="/login?next=%2Fchat&amp;source=nav"'), 'Root header Chat link should route through login.');
 assert.ok(html.includes('href="/apps.html"'), 'Root should expose the new CAIt app hub.');
-assert.ok(html.includes('href="/tokushoho.html"'), 'Root footer should link to the Specified Commercial Transaction Act disclosure.');
+assert.ok(html.includes('href="/legal-notice.html"'), 'Root footer should link to the legal notice disclosure.');
 assert.ok(html.includes('Legal Notice (SCTA)'), 'Root footer should use a concise global legal notice label.');
-assert.ok(tokushohoHtml.includes('株式会社ビジネスラボ'), 'Specified Commercial Transaction Act disclosure should show the legal seller name.');
-assert.ok(tokushohoHtml.includes('6120901008074'), 'Specified Commercial Transaction Act disclosure should show the corporate number.');
-assert.ok(tokushohoHtml.includes('東京都中央区銀座1丁目12番4号'), 'Specified Commercial Transaction Act disclosure should show the registered address.');
-assert.ok(tokushohoHtml.includes('Act on Specified Commercial Transactions'), 'Specified Commercial Transaction Act disclosure should include the official English act name.');
-assert.ok(tokushohoHtml.includes('Business Labo Co., Ltd.'), 'Specified Commercial Transaction Act disclosure should include English seller context.');
-assert.ok(tokushohoHtml.includes('Cancellation and Refunds'), 'Specified Commercial Transaction Act disclosure should include English field labels.');
+assert.ok(!html.includes('href="/tokushoho.html"'), 'Root footer should not use the Japanese romanized legal notice URL.');
+assert.ok(legalNoticeHtml.includes('株式会社ビジネスラボ'), 'Legal notice disclosure should show the legal seller name.');
+assert.ok(legalNoticeHtml.includes('6120901008074'), 'Legal notice disclosure should show the corporate number.');
+assert.ok(legalNoticeHtml.includes('東京都中央区銀座1丁目12番4号'), 'Legal notice disclosure should show the registered address.');
+assert.ok(legalNoticeHtml.includes('Act on Specified Commercial Transactions'), 'Legal notice disclosure should include the official English act name.');
+assert.ok(legalNoticeHtml.includes('Business Labo Co., Ltd.'), 'Legal notice disclosure should include English seller context.');
+assert.ok(legalNoticeHtml.includes('Cancellation and Refunds'), 'Legal notice disclosure should include English field labels.');
+assert.ok(legalNoticeHtml.includes('https://aiagent-marketplace.net/legal-notice.html'), 'Legal notice should canonicalize to the English URL.');
+assert.ok(tokushohoRedirectHtml.includes('/legal-notice.html'), 'Old tokushoho URL should redirect to the English legal notice URL.');
+assert.ok(siteMapHtml.includes('https://aiagent-marketplace.net/legal-notice.html'), 'Site map structured data should use the English legal notice URL.');
+assert.ok(siteMapHtml.includes('href="/legal-notice.html"'), 'Site map HTML should use the English legal notice URL.');
 assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat composer.');
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
@@ -654,7 +663,10 @@ assert.ok(server.includes('async function handleMcpRequest'), 'Local server shou
 assert.ok(server.includes('async function handleAppHandoff'), 'Local server should proxy generic app handoff requests.');
 assert.ok(server.includes('/api\\/apps\\/[^/]+\\/handoff'), 'Local server should expose /api/apps/:id/handoff.');
 assert.ok(server.includes('async function handleCreateAppContext'), 'Local server should accept generic app context payloads.');
-assert.ok(server.includes('/api/app-contexts') || server.includes('API_ROUTES.APP_CONTEXTS'), 'Local server should expose /api/app-contexts.');
+assert.ok(
+  server.includes('/api/app-contexts') || server.includes('API_ROUTES.APP_CONTEXTS') || server.includes("apiRouteMatches(url.pathname, req.method, 'APP_CONTEXTS'"),
+  'Local server should expose /api/app-contexts.'
+);
 assert.ok(server.includes('/api/connectors/google/analytics-report'), 'Local server should expose the Google analytics report endpoint.');
 assert.ok(server.includes('analyticsdata.googleapis.com/v1beta'), 'Local server should call the GA4 Data API for report rows.');
 assert.ok(server.includes('Promise.allSettled(['), 'Local GA4 detail rows should not make the whole GA4 report fail when one breakdown fails.');
@@ -702,7 +714,10 @@ assert.ok(worker.includes('async function handleMcpRequest'), 'Worker should exp
 assert.ok(worker.includes('async function handleAppHandoff'), 'Worker should proxy generic app handoff requests.');
 assert.ok(worker.includes('/api\\/apps\\/[^/]+\\/handoff'), 'Worker should expose /api/apps/:id/handoff.');
 assert.ok(worker.includes('async function handleCreateAppContext'), 'Worker should accept generic app context payloads.');
-assert.ok(worker.includes('/api/app-contexts') || worker.includes('API_ROUTES.APP_CONTEXTS'), 'Worker should expose /api/app-contexts.');
+assert.ok(
+  worker.includes('/api/app-contexts') || worker.includes('API_ROUTES.APP_CONTEXTS') || worker.includes("apiRouteMatches(url.pathname, request.method, 'APP_CONTEXTS'"),
+  'Worker should expose /api/app-contexts.'
+);
 assert.ok(worker.includes('/api/connectors/google/analytics-report'), 'Worker should expose the Google analytics report endpoint.');
 assert.ok(worker.includes('analyticsdata.googleapis.com/v1beta'), 'Worker should call the GA4 Data API for report rows.');
 assert.ok(worker.includes('Promise.allSettled(['), 'Worker GA4 detail rows should not make the whole GA4 report fail when one breakdown fails.');
