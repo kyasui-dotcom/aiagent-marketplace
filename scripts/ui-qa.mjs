@@ -660,6 +660,7 @@ assert.ok(server.includes('return json(res, 200, await agentsCatalogPayload(req)
 assert.ok(server.includes('return json(res, 200, await appsCatalogPayload(req));'), 'Local /api/apps should use the paged catalog endpoint.');
 assert.ok(server.includes('/.well-known/mcp.json'), 'Local server should expose MCP discovery metadata.');
 assert.ok(server.includes('async function handleMcpRequest'), 'Local server should expose a public MCP endpoint.');
+assert.ok(server.includes("url.pathname === '/tokushoho'") && server.includes("'/legal-notice.html'"), 'Local server should redirect the old tokushoho URL to the English legal notice URL.');
 assert.ok(server.includes('async function handleAppHandoff'), 'Local server should proxy generic app handoff requests.');
 assert.ok(server.includes('/api\\/apps\\/[^/]+\\/handoff'), 'Local server should expose /api/apps/:id/handoff.');
 assert.ok(server.includes('async function handleCreateAppContext'), 'Local server should accept generic app context payloads.');
@@ -679,6 +680,7 @@ assert.ok(worker.includes('/api/chat-memory'), 'Worker should expose a lightweig
 assert.ok(worker.includes('auth: await chatMemoryAuthStatus'), 'Worker chat memory endpoint should return lightweight auth for faster chat first paint.');
 assert.ok(worker.includes('async function handleChatPageRequest'), 'Worker should gate chat HTML behind login.');
 assert.ok(worker.includes('async function handleAdminPageRequest'), 'Worker should serve the admin shell.');
+assert.ok(worker.includes('function legacyLegalNoticeRedirect') && worker.includes("url.pathname !== '/tokushoho'"), 'Worker should redirect the old tokushoho URL to the English legal notice URL before assets extension handling.');
 assert.ok(worker.includes("return fetchStaticAssetPath(request, env, '/admin'"), 'Worker admin route should request the extensionless asset and let the API enforce admin data access.');
 assert.ok(!worker.includes('return redirect(adminLoginRedirectPath(request, env)'), 'Worker admin route should not create a server-side login redirect loop.');
 assert.ok(worker.includes("loginUrl.searchParams.set('source', 'gate_chat')"), 'Worker chat gate should send users to the login screen with a gate source.');

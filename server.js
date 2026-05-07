@@ -399,6 +399,11 @@ function redirect(res, location, headers = {}) {
   res.writeHead(302, securityHeaders({ Location: location, ...headers }));
   res.end();
 }
+
+function permanentRedirect(res, location, headers = {}) {
+  res.writeHead(301, securityHeaders({ Location: location, ...headers }));
+  res.end();
+}
 function hasSessionCookie(req) {
   return Boolean(parseCookies(req).aiagent2_session);
 }
@@ -9205,6 +9210,10 @@ async function handleInstagramConnectorPost(req, res) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  if (req.method === 'GET' && (url.pathname === '/tokushoho' || url.pathname === '/tokushoho.html')) {
+    url.pathname = '/legal-notice.html';
+    return permanentRedirect(res, `${url.pathname}${url.search}${url.hash}`);
+  }
   if (enforceRateLimit(req, res, url.pathname)) return;
   if (enforceBrowserWriteProtection(req, res, url.pathname)) return;
   if (req.method === 'GET' && (
