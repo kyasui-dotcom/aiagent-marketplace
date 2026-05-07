@@ -2,6 +2,7 @@ import { createPrivateKey, timingSafeEqual } from 'node:crypto';
 import { createD1LikeStorage } from './lib/storage.js';
 import { BUILT_IN_KINDS, builtInAgentHealthPayload, runBuiltInAgent, sampleAgentPayload } from './lib/builtin-agents.js';
 import {
+  CMO_WORKFLOW_ACTION_LAYER_TASKS,
   CMO_WORKFLOW_DEFAULT_EXECUTION_TASKS,
   CMO_WORKFLOW_PLANNING_LAYER_TASKS,
   CMO_WORKFLOW_PREPARATION_LAYER_TASKS,
@@ -10908,6 +10909,19 @@ function workflowHumanActionIntentText(value = '') {
     .join('\n');
 }
 
+function defaultCmoActionTaskFromText(text = '') {
+  const safe = String(text || '').trim();
+  if (/(acquisition automation|獲得自動化|集客自動化|自動化|automation)/i.test(safe)) return 'acquisition_automation';
+  if (/(cold\s*email|outbound|sales email|営業メール|アウトバウンド|新規開拓|リード獲得)/i.test(safe)) return 'cold_email';
+  if (/(email|mail|メール|メルマガ|newsletter|ニュースレター)/i.test(safe)) return 'email_ops';
+  if (/(instagram|インスタ|ig)/i.test(safe)) return 'instagram';
+  if (/(reddit|subreddit|レディット|community|コミュニティ)/i.test(safe)) return 'reddit';
+  if (/(indie\s*hackers|indiehackers|インディーハッカー|インディーハッカーズ)/i.test(safe)) return 'indie_hackers';
+  if (/(sns|social|ソーシャル|x\.com|(?:^|[^a-z0-9])x(?:\s+post|\s+posts|\s+thread)?(?=$|[^a-z0-9])|twitter|tweet|x投稿|ツイッター)/i.test(safe)) return 'x_post';
+  if (/(directory|listing|citation|掲載|媒体|ディレクトリ|サイテーション|自然検索|seo|search console|サチコ|検索流入|オーガニック)/i.test(safe)) return 'directory_submission';
+  return 'x_post';
+}
+
 function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', prompt = '', options = {}) {
   const tasks = normalizeTaskTypes(plannedTasks);
   const primary = String(tasks[0] || primaryTask || '').trim().toLowerCase();
@@ -10942,6 +10956,7 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     CMO_WORKFLOW_PLANNING_LAYER_TASKS.forEach(push);
     CMO_WORKFLOW_PREPARATION_LAYER_TASKS.forEach(push);
     CMO_WORKFLOW_DEFAULT_EXECUTION_TASKS.forEach(push);
+    CMO_WORKFLOW_ACTION_LAYER_TASKS.forEach(push);
   }
   const text = workflowHumanActionIntentText(prompt).toLowerCase();
   const requestedExternalExecution = WORKFLOW_EXTERNAL_ACTION_REQUEST_PATTERN.test(text);
@@ -11009,6 +11024,18 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
   fillLayer(3, primary === 'cmo_leader' || primary === 'free_web_growth_leader' ? ['seo_gap', 'landing', 'writing', 'writer', 'list_creator'] : []);
   for (const task of requestedActions) pushLayerTask(task, { force: true });
   const actionTasks = ordered.filter((task) => (leaderTaskLayer(primary, task) || 1) >= leaderActionLayerStart(primary));
+  if (
+    !requestedActions.length
+    && ['cmo_leader', 'free_web_growth_leader'].includes(primary)
+    && !selected.some((task) => (leaderTaskLayer(primary, task) || 1) >= leaderActionLayerStart(primary))
+  ) {
+    const defaultActionTask = defaultCmoActionTaskFromText(text);
+    if (actionTasks.includes(defaultActionTask)) {
+      pushLayerTask(defaultActionTask, { force: true });
+    } else if (actionTasks.length) {
+      pushLayerTask(actionTasks[0], { force: true });
+    }
+  }
   if (!requestedActions.length && requestedExternalExecution && actionTasks.length) pushLayerTask(actionTasks[0], { force: true });
   for (const task of ordered) {
     const layer = leaderTaskLayer(primary, task) || 1;

@@ -314,6 +314,38 @@ for (const testCase of cases) {
   }
 }
 
+const implicitCmoActionCreated = await request('/api/jobs', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    parent_agent_id: 'qa-runner',
+    task_type: 'cmo_leader',
+    prompt: [
+      'caitの集客がしたい',
+      '対象サービス: https://aiagent-marketplace.net',
+      'Analytics data: GA4 + Search Console connector context attached.',
+      '主な目的: 登録・トライアルを増やす',
+      '優先チャネル: SNS・ソーシャル',
+      '優先チャネル: 自然検索・SEO'
+    ].join('\n'),
+    order_strategy: 'multi',
+    skip_intake: true,
+    budget_cap: 500
+  })
+});
+assert.equal(implicitCmoActionCreated.status, 201, 'cmo_leader acquisition workflow should create successfully without explicit post/send wording');
+const implicitCmoRuns = Array.isArray(implicitCmoActionCreated.body?.child_runs) ? implicitCmoActionCreated.body.child_runs : [];
+const implicitCmoActionRuns = implicitCmoRuns.filter((run) => String(run?.sequence_phase || run?.sequencePhase || '').trim().toLowerCase() === 'action');
+assert.ok(implicitCmoActionRuns.length >= 1, 'cmo_leader should select one action-layer specialist even when the user asks broadly for acquisition');
+assert.ok(
+  implicitCmoActionRuns.some((run) => ['x_post', 'directory_submission', 'acquisition_automation'].includes(String(run?.task_type || run?.taskType || '').trim().toLowerCase())),
+  'cmo_leader broad acquisition action layer should choose an execution-capable specialist'
+);
+assert.ok(
+  implicitCmoActionRuns.some((run) => String(run?.task_type || run?.taskType || '').trim().toLowerCase() === 'x_post'),
+  'cmo_leader social acquisition context should choose X post as the default action layer'
+);
+
 globalThis.fetch = originalLeaderWorkflowQaFetch;
 
 console.log('leader workflows qa passed');
