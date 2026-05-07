@@ -3583,11 +3583,13 @@ async function repairSessionAccountIfNeeded(storage, state = {}, session = null,
   };
 }
 
-async function currentUserContext(request, env) {
-  const session = await getSession(request, env);
+async function currentUserContext(request, env, options = {}) {
+  const session = Object.prototype.hasOwnProperty.call(options, 'session')
+    ? options.session
+    : await getSession(request, env);
   if (!session?.user?.login && !session?.accountLogin) return { session: null, user: null, login: '', authProvider: 'guest' };
   const storage = runtimeStorage(env);
-  let state = await storage.getState();
+  let state = options.state && typeof options.state === 'object' ? options.state : await storage.getState();
   let account = session?.accountLogin
     ? accountSettingsForLogin(state, session.accountLogin)
     : sessionHasGithubOauth(session)
@@ -5097,7 +5099,7 @@ function githubAppRecommendedSettings(request, env) {
 async function authStatus(request, env) {
   const session = await getSession(request, env);
   const policy = runtimePolicy(env);
-  const current = await currentUserContext(request, env);
+  const current = await currentUserContext(request, env, { session });
   const loggedIn = Boolean(current?.user);
   const githubLinked = Boolean(current?.githubLinked);
   const googleLinked = Boolean(current?.googleLinked);
@@ -5161,6 +5163,44 @@ async function authStatus(request, env) {
     githubIdentity: current?.githubIdentity || null,
     googleIdentity: current?.googleIdentity || null,
     identityLogins
+  };
+}
+
+async function chatMemoryAuthStatus(request, env, current = null) {
+  const session = current?.session || null;
+  const policy = runtimePolicy(env);
+  const loggedIn = Boolean(current?.user);
+  return {
+    loggedIn,
+    authProvider: current?.authProvider || 'guest',
+    authBaseUrl: baseUrl(request, env),
+    currentOrigin: requestOrigin(request),
+    emailConfigured: resendConfigured(env),
+    githubConfigured: Boolean(githubClientId(env) && githubClientSecret(env)),
+    googleConfigured: googleConfigured(env),
+    xConfigured: xOAuthConfigured(env),
+    xTokenEncryptionConfigured: xTokenEncryptionConfigured(env),
+    githubLinked: Boolean(current?.githubLinked),
+    googleLinked: Boolean(current?.googleLinked),
+    xLinked: Boolean(current?.xLinked),
+    githubAuthorized: Boolean(current?.githubAuthorized),
+    googleAuthorized: Boolean(current?.googleAuthorized),
+    xAuthorized: Boolean(current?.xAuthorized),
+    canOrder: loggedIn,
+    canManagePayments: loggedIn,
+    canRegisterAgents: Boolean(current?.githubLinked),
+    canUseGithubAgentFlow: Boolean(current?.githubAuthorized),
+    releaseStage: policy.releaseStage,
+    isPlatformAdmin: canViewAdminDashboard(current, env),
+    canReviewFeedbackReports: canReviewFeedbackReports(current, env),
+    canReviewAgents: canReviewAgents(current, env),
+    csrfToken: loggedIn ? await csrfTokenForRequest(request, env, session) : '',
+    user: current?.user || null,
+    login: current?.login || '',
+    accountLogin: current?.login || '',
+    githubIdentity: current?.githubIdentity || null,
+    googleIdentity: current?.googleIdentity || null,
+    identityLogins: identityLoginsForCurrent(current)
   };
 }
 
@@ -5628,15 +5668,19 @@ async function snapshot(storage, request, env) {
   return payload;
 }
 
-async function chatMemoryPayload(storage, request, env) {
+async function chatMemoryPayload(storage, request, env, options = {}) {
   const url = new URL(request.url);
   const state = await storage.getState();
-  const current = await currentUserContext(request, env);
+  const session = Object.prototype.hasOwnProperty.call(options, 'session')
+    ? options.session
+    : await getSession(request, env);
+  const current = await currentUserContext(request, env, { session, state });
   const requestedLimit = Number(url.searchParams.get('limit') || 20);
   const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(40, requestedLimit)) : 20;
   return {
     ok: true,
     chatMemory: current?.login ? ownChatMemoryForClient(state, current.login, limit) : [],
+    auth: await chatMemoryAuthStatus(request, env, current),
     limit
   };
 }
@@ -18814,8 +18858,8 @@ export default {
       return refreshedCookie ? jsonWithCookies(payload, 200, [refreshedCookie]) : json(payload);
     }
     if (url.pathname === '/api/chat-memory' && request.method === 'GET') {
-      const payload = await chatMemoryPayload(storage, request, env);
       const session = await getSession(request, env);
+      const payload = await chatMemoryPayload(storage, request, env, { session });
       const refreshedCookie = await maybeRefreshSessionCookie(session, env);
       return refreshedCookie ? jsonWithCookies(payload, 200, [refreshedCookie]) : json(payload);
     }

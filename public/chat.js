@@ -520,12 +520,35 @@ function chatSessionHistoryApiPath() {
   return '/api/chat-memory';
 }
 
+function applyAuthState(auth = {}, options = {}) {
+  state.auth = auth || {};
+  const loggedIn = Boolean(auth?.loggedIn || auth?.login || auth?.user);
+  if (!loggedIn && options.redirectIfGuest) {
+    const loginUrl = new URL('/login', window.location.origin);
+    const nextPath = `${window.location.pathname === '/chat.html' ? CHATUX_RETURN_PATH : window.location.pathname}${window.location.search}${window.location.hash}`;
+    loginUrl.searchParams.set('next', nextPath || CHATUX_RETURN_PATH);
+    loginUrl.searchParams.set('source', 'gate_chat');
+    window.location.replace(`${loginUrl.pathname}${loginUrl.search}`);
+    return false;
+  }
+  const login = auth?.login || auth?.user?.login || 'account';
+  if (els.adminNavLink) els.adminNavLink.hidden = !(auth?.isPlatformAdmin || auth?.admin);
+  if (els.authStatus) {
+    els.authStatus.innerHTML = loggedIn
+      ? `<span>Signed in as ${escapeHtml(login)}</span><button class="status-logout-btn" type="button" data-chat-logout>Sign out</button>`
+      : `<a href="${escapeHtml(loginHref('google'))}">Google sign in</a> or <a href="${escapeHtml(loginHref('github'))}">GitHub sign in</a> to order`;
+  }
+  renderChatSessionSidebar();
+  return true;
+}
+
 async function refreshChatSessionHistory(options = {}) {
   const force = options.force === true;
   if (!force && state.chatSessionHistoryFetchedAt && Date.now() - state.chatSessionHistoryFetchedAt < 60_000) return state.chatSessions;
   if (state.chatSessionHistoryRequest) return state.chatSessionHistoryRequest;
   state.chatSessionHistoryRequest = api(chatSessionHistoryApiPath(), { method: 'GET' })
     .then((result) => {
+      if (result?.auth && typeof result.auth === 'object') applyAuthState(result.auth);
       const serverSessions = (Array.isArray(result?.chatMemory) ? result.chatMemory : [])
         .map(chatSessionFromMemory)
         .filter(Boolean);
@@ -3400,7 +3423,10 @@ function startIntake(response = {}, originalPrompt = '') {
     chatText('Nothing has been dispatched yet.', 'まだ実行も課金も発生していません。', originalPrompt)
   ].filter(Boolean).join('\n'), { tone: 'ok', label });
   const choiceHtml = intakeChoiceCardsHtml(state.pendingIntake, originalPrompt);
-  if (choiceHtml) appendMessage('assistant', choiceHtml, { tone: 'ok', label: chatText('Choices', '選択肢', originalPrompt) });
+  if (choiceHtml) {
+    appendMessage('assistant', choiceHtml, { tone: 'ok', label: chatText('Choices', '選択肢', originalPrompt) });
+    seedIntakeInitialChoices(state.pendingIntake, originalPrompt);
+  }
 }
 
 function growthLeaderNeedsDataHint(taskType = '', sample = '') {
@@ -3438,6 +3464,90 @@ function analyticsIntakeChoiceHtml(sample = '') {
   }, sample);
 }
 
+function intakeSourceText(intake = {}, sample = '') {
+  return [
+    sample,
+    intake.originalPrompt,
+    ...(Array.isArray(intake.questions) ? intake.questions : [])
+  ].join('\n');
+}
+
+function compactIntakeText(value = '', maxLength = 140) {
+  const text = String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s:：、。,.]+|[\s、。,.]+$/g, '')
+    .trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trim()}…`;
+}
+
+function intakeInitialAnswerSuggestions(intake = {}, sample = '') {
+  const text = intakeSourceText(intake, sample);
+  const pick = (en, ja) => chatText(en, ja, sample || intake.originalPrompt || text);
+  const result = {};
+  const add = (id, value) => {
+    const safeValue = compactIntakeText(value);
+    if (!id || !safeValue) return;
+    result[id] ||= [];
+    if (!result[id].some((item) => item === safeValue)) result[id].push(safeValue);
+  };
+  const urls = [...new Set((text.match(/(?:https?:\/\/|www\.)[^\s<>"'）)]+|[a-z0-9-]+\.[a-z]{2,}(?:\/[^\s<>"'）)]*)?/gi) || [])
+    .map((url) => url.replace(/[、。,.]+$/g, '')))]
+    .filter((url) => !/^(?:ga4|seo)$/i.test(url));
+  urls.slice(0, 2).forEach((url) => add('service', url));
+
+  const serviceMatch = text.match(/(?:商材|サービス|商品|対象サービス|対象サイト|URL|LP|landing page|product|service|website|site)\s*(?:は|:|：|-)?\s*([^\n。]{3,140})/i);
+  if (!urls.length && serviceMatch?.[1]) add('service', serviceMatch[1]);
+
+  if (/(ga4|google analytics|アナリティクス|サーチコンソール|search console).{0,24}(ある|あります|有|使う|使いたい|use|yes|available|持って)/i.test(text)
+    || /(ある|あります|有|使う|use|yes|available|持って).{0,24}(ga4|google analytics|アナリティクス|サーチコンソール|search console)/i.test(text)) {
+    add('analytics', pick('Use GA4/Search Console', 'GA4/Search Consoleを使う'));
+  }
+  if (/(アナリティクス|ga4|search console|サーチコンソール).{0,20}(スキップ|不要|なし|使わない|skip|without|no)/i.test(text)) {
+    add('analytics', pick('Skip analytics', 'アナリティクスをスキップ'));
+  }
+
+  if (/(問い合わせ|問合せ|リード|lead|inquir|contact)/i.test(text)) add('goal', pick('Increase leads/inquiries', '問い合わせ・リード獲得を増やす'));
+  if (/(売上|購入|受注|sales|revenue|purchase|order)/i.test(text)) add('goal', pick('Increase sales/revenue', '売上・購入を増やす'));
+  if (/(登録|トライアル|signup|sign up|trial|registration)/i.test(text)) add('goal', pick('Increase signups/trials', '登録・トライアルを増やす'));
+  if (/(流入|認知|traffic|awareness|brand)/i.test(text)) add('goal', pick('Increase traffic/awareness', '流入・認知を増やす'));
+
+  if (/(経営者|事業責任者|founder|operator|owner|executive)/i.test(text)) add('audience', pick('Founders/operators', '経営者・事業責任者'));
+  if (/(マーケ|グロース|marketing|growth)/i.test(text)) add('audience', pick('Marketing/growth teams', 'マーケ・グロース担当'));
+  if (/(開発者|技術|developer|engineer|technical)/i.test(text)) add('audience', pick('Developers/technical users', '開発者・技術ユーザー'));
+  if (/(一般消費者|consumer|b2c|individual)/i.test(text)) add('audience', pick('General consumers', '一般消費者'));
+  const audienceMatch = text.match(/(?:ターゲット|対象ユーザー|誰向け|audience|target)\s*(?:は|:|：|-)?\s*([^\n。]{3,120})/i);
+  if (!result.audience?.length && audienceMatch?.[1]) add('audience', audienceMatch[1]);
+
+  if (/(自然検索|seo|organic)/i.test(text)) add('channel', pick('Organic search / SEO', '自然検索・SEO'));
+  if (/(リファラル|参照元|referral|referrer)/i.test(text)) add('channel', pick('Referral sites', 'リファラル・参照元サイト'));
+  if (/(sns|social|x\/twitter|twitter|ソーシャル)/i.test(text)) add('channel', pick('SNS / social', 'SNS・ソーシャル'));
+  if (/(広告|paid|ads|ppc)/i.test(text)) add('channel', pick('Paid ads', '広告'));
+
+  if (/(広告なし|広告無し|オーガニックのみ|no paid ads|organic only|without ads)/i.test(text)) add('constraints', pick('No paid ads / organic only', '広告なし・オーガニックのみ'));
+  if (/(低予算|予算少|low budget|cheap|cost)/i.test(text)) add('constraints', pick('Low budget first', '低予算優先'));
+  if (/(早く|最短|急ぎ|fast|quick|asap)/i.test(text)) add('constraints', pick('Fast first draft', 'まず早く叩き台'));
+  if (/(品質|深さ|quality|deep|depth)/i.test(text)) add('constraints', pick('Depth and quality first', '深さ・品質優先'));
+
+  if (/(レポート|report|分析資料)/i.test(text)) add('deliverable', pick('Strategy report', '分析レポート'));
+  if (/(チェックリスト|checklist|todo)/i.test(text)) add('deliverable', pick('Execution checklist', '実行チェックリスト'));
+  if (/(原稿|素材|copy|asset|creative)/i.test(text)) add('deliverable', pick('Copy/assets draft', '原稿・素材案'));
+  if (/(引き継ぎ|handoff|実装|運用)/i.test(text)) add('deliverable', pick('Implementation handoff', '実装・運用への引き継ぎ'));
+
+  Object.keys(result).forEach((key) => {
+    result[key] = result[key].slice(0, 3);
+  });
+  return result;
+}
+
+function seedIntakeInitialChoices(intake = {}, sample = '') {
+  intakeChoiceGroups(intake, sample).forEach((group) => {
+    (group.initialChoices || []).forEach((choice) => {
+      appendIntakeChoiceToComposer(group.title, choice);
+    });
+  });
+}
+
 function intakeChoiceGroups(intake = {}, sample = '') {
   const text = [
     sample,
@@ -3464,7 +3574,8 @@ function intakeChoiceGroups(intake = {}, sample = '') {
       inputPlaceholder: config.inputPlaceholderEn || config.inputPlaceholderJa
         ? pick(config.inputPlaceholderEn || 'Other: type your own answer', config.inputPlaceholderJa || 'その他: 自由に入力')
         : '',
-      options: normalizedOptions
+      options: normalizedOptions,
+      initialChoices: []
     });
   };
 
@@ -3593,12 +3704,26 @@ function intakeChoiceGroups(intake = {}, sample = '') {
     );
   }
 
+  const initialChoices = intakeInitialAnswerSuggestions(intake, sample);
+  groups.forEach((group) => {
+    group.initialChoices = (initialChoices[group.id] || [])
+      .filter(Boolean)
+      .slice(0, 3);
+    if (group.id === 'analytics') {
+      group.options.forEach((option) => {
+        if (group.initialChoices.includes(option.label)) {
+          option.selected = true;
+        }
+      });
+    }
+  });
   return groups.slice(0, 6);
 }
 
 function intakeChoiceCardsHtml(intake = {}, sample = '') {
   const groups = intakeChoiceGroups(intake, sample);
   if (!groups.length) return '';
+  const initialSourceLabel = chatText('From initial request', '初回文面から', sample);
   const groupHtml = groups.map((group) => [
     '<div class="intake-choice-group">',
     `<div class="intake-choice-title">${escapeHtml(group.title)}</div>`,
@@ -3606,14 +3731,17 @@ function intakeChoiceCardsHtml(intake = {}, sample = '') {
     group.options.length ? '<div class="inline-actions intake-choice-actions">' : '',
     ...group.options.map((option) => {
       const action = option.action ? ` data-chat-action="${escapeHtml(option.action)}"` : '';
-      return `<button class="ghost-btn inline-btn intake-choice-btn" type="button" aria-pressed="false" data-intake-choice="${escapeHtml(option.id)}" data-choice-group="${escapeHtml(group.title)}" data-choice-label="${escapeHtml(option.label)}"${action}>${escapeHtml(option.label)}</button>`;
+      const selectedClass = option.selected ? ' selected' : '';
+      return `<button class="ghost-btn inline-btn intake-choice-btn${selectedClass}" type="button" aria-pressed="${option.selected ? 'true' : 'false'}" data-intake-choice="${escapeHtml(option.id)}" data-choice-group="${escapeHtml(group.title)}" data-choice-label="${escapeHtml(option.label)}"${action}>${escapeHtml(option.label)}</button>`;
     }),
     group.options.length ? '</div>' : '',
     '<div class="intake-other-row">',
     `<input class="intake-other-input" type="text" data-intake-other-input="${escapeHtml(group.id)}" data-choice-group="${escapeHtml(group.title)}" placeholder="${escapeHtml(group.inputPlaceholder || chatText('Other: type your own answer', 'その他: 自由に入力', sample))}" aria-label="${escapeHtml(chatText(`Other answer for ${group.title}`, `${group.title} のその他回答`, sample))}" />`,
     `<button class="ghost-btn inline-btn intake-other-add" type="button" data-intake-other-add="${escapeHtml(group.id)}" data-choice-group="${escapeHtml(group.title)}">${escapeHtml(chatText('Add', '追加', sample))}</button>`,
     '</div>',
-    `<div class="intake-confirmed-list" data-intake-confirmed-list="${escapeHtml(group.id)}" data-choice-group="${escapeHtml(group.title)}" hidden></div>`,
+    `<div class="intake-confirmed-list" data-intake-confirmed-list="${escapeHtml(group.id)}" data-choice-group="${escapeHtml(group.title)}"${group.initialChoices?.length ? '' : ' hidden'}>`,
+    ...(group.initialChoices || []).map((choice) => intakeConfirmedChoiceHtml(group.title, choice, initialSourceLabel, sample)),
+    '</div>',
     '</div>'
   ].filter(Boolean).join('\n')).join('\n');
   return [
@@ -3665,6 +3793,22 @@ function removeIntakeChoiceFromComposer(group = '', choice = '') {
   updateComposerMode();
 }
 
+function intakeConfirmedChoiceHtml(group = '', choice = '', label = '', sample = '') {
+  const safeGroup = String(group || '').trim();
+  const safeChoice = String(choice || '').trim();
+  const sourceLabel = label || chatText('Added', '追加済み', sample || state.pendingIntake?.originalPrompt || '');
+  return [
+    `<div class="intake-confirmed-item" data-confirmed-choice="${escapeHtml(safeChoice)}">`,
+    `<span class="intake-confirmed-label">${escapeHtml(sourceLabel)}</span>`,
+    `<strong>${escapeHtml(safeChoice)}</strong>`,
+    '<div class="intake-confirmed-actions">',
+    `<button class="ghost-btn inline-btn intake-confirmed-edit" type="button" data-intake-confirmed-edit data-choice-group="${escapeHtml(safeGroup)}">${escapeHtml(chatText('Edit', '編集', sample || state.pendingIntake?.originalPrompt || ''))}</button>`,
+    `<button class="ghost-btn inline-btn intake-confirmed-remove" type="button" data-intake-confirmed-remove data-choice-group="${escapeHtml(safeGroup)}">${escapeHtml(chatText('Remove', '削除', sample || state.pendingIntake?.originalPrompt || ''))}</button>`,
+    '</div>',
+    '</div>'
+  ].join('\n');
+}
+
 function setIntakeConfirmedChoice(groupElement = null, group = '', choice = '') {
   const safeGroup = String(group || '').trim();
   const safeChoice = String(choice || '').trim();
@@ -3676,16 +3820,7 @@ function setIntakeConfirmedChoice(groupElement = null, group = '', choice = '') 
     return;
   }
   list.hidden = false;
-  list.insertAdjacentHTML('beforeend', [
-    `<div class="intake-confirmed-item" data-confirmed-choice="${escapeHtml(safeChoice)}">`,
-    `<span class="intake-confirmed-label">${escapeHtml(chatText('Added', '追加済み', state.pendingIntake?.originalPrompt || ''))}</span>`,
-    `<strong>${escapeHtml(safeChoice)}</strong>`,
-    '<div class="intake-confirmed-actions">',
-    `<button class="ghost-btn inline-btn intake-confirmed-edit" type="button" data-intake-confirmed-edit data-choice-group="${escapeHtml(safeGroup)}">${escapeHtml(chatText('Edit', '編集', state.pendingIntake?.originalPrompt || ''))}</button>`,
-    `<button class="ghost-btn inline-btn intake-confirmed-remove" type="button" data-intake-confirmed-remove data-choice-group="${escapeHtml(safeGroup)}">${escapeHtml(chatText('Remove', '削除', state.pendingIntake?.originalPrompt || ''))}</button>`,
-    '</div>',
-    '</div>'
-  ].join('\n'));
+  list.insertAdjacentHTML('beforeend', intakeConfirmedChoiceHtml(safeGroup, safeChoice, '', state.pendingIntake?.originalPrompt || ''));
 }
 
 function pendingIntakeHasAttachedAppContext(intake = {}) {
@@ -4483,24 +4618,9 @@ async function signOut() {
 async function refreshAuth() {
   try {
     const auth = await api('/auth/status', { method: 'GET' });
-    state.auth = auth || {};
-    const loggedIn = Boolean(auth.loggedIn || auth.login || auth.user);
-    if (!loggedIn) {
-      const loginUrl = new URL('/login', window.location.origin);
-      const nextPath = `${window.location.pathname === '/chat.html' ? CHATUX_RETURN_PATH : window.location.pathname}${window.location.search}${window.location.hash}`;
-      loginUrl.searchParams.set('next', nextPath || CHATUX_RETURN_PATH);
-      loginUrl.searchParams.set('source', 'gate_chat');
-      window.location.replace(`${loginUrl.pathname}${loginUrl.search}`);
-      return;
-    }
-    const login = auth.login || auth.user?.login || 'account';
-    if (els.adminNavLink) els.adminNavLink.hidden = !(auth.isPlatformAdmin || auth.admin);
-    els.authStatus.innerHTML = loggedIn
-      ? `<span>Signed in as ${escapeHtml(login)}</span><button class="status-logout-btn" type="button" data-chat-logout>Sign out</button>`
-      : `<a href="${escapeHtml(loginHref('google'))}">Google sign in</a> or <a href="${escapeHtml(loginHref('github'))}">GitHub sign in</a> to order`;
+    if (!applyAuthState(auth || {}, { redirectIfGuest: true })) return;
     warmUtilityCatalogs();
-    renderChatSessionSidebar();
-    void refreshChatSessionHistory({ force: true });
+    if (!state.chatSessionHistoryFetchedAt && !state.chatSessionHistoryRequest) void refreshChatSessionHistory({ force: true });
   } catch {
     els.authStatus.textContent = 'Session status unavailable.';
   } finally {
@@ -5130,4 +5250,5 @@ renderActiveLeaderStatus();
 updateComposerMode();
 renderChatSessionSidebar();
 void hydrateAppContextFromUrl();
+void refreshChatSessionHistory({ force: true });
 void refreshAuth();

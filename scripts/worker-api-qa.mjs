@@ -21,7 +21,7 @@ assert.ok(workerSource.includes("from './lib/orchestration.js'"), 'workflow rout
 assert.ok(workerSource.includes('leaderTaskLayer(primary, task)'), 'leader layer routing should not be hardcoded inside worker.js');
 assert.ok(workerSource.includes('WORKFLOW HANDOFF CONTEXT'), 'workflow handoff must remain available as prompt context');
 assert.ok(workerSource.includes('WORKFLOW ADDITIONAL PROMPT'), 'workflow handoff should be separated into additional_prompt context');
-assert.ok(workerSource.includes('function validateXPostExecutionApproval'), 'X posting must validate OAuth account and exact text approval server-side');
+assert.ok(workerSource.includes('validateXPostExecutionApproval'), 'X posting must validate OAuth account and exact text approval server-side');
 assert.ok(workerSource.includes('approved_x_username'), 'X posting requests must carry the approved OAuth account handle');
 assert.ok(workerSource.includes('approved_text'), 'X posting requests must carry the exact approved post text');
 assert.ok(workerSource.includes('additional_prompt: additionalPrompt'), 'dispatch payload should send workflow context as additional_prompt');
@@ -3233,6 +3233,9 @@ try {
   const mergedMemory = Array.isArray(mergedSnapshot.body.chatMemory) ? mergedSnapshot.body.chatMemory : [];
   const mergedChatMemoryResponse = await request('/api/chat-memory', {}, { sessionCookie: aliceSession });
   assert.equal(mergedChatMemoryResponse.status, 200);
+  assert.equal(mergedChatMemoryResponse.body.auth?.loggedIn, true, 'lightweight chat memory endpoint should include auth state for first paint');
+  assert.equal(String(mergedChatMemoryResponse.body.auth?.login || ''), 'alice', 'lightweight chat memory auth should identify the signed-in account');
+  assert.ok(String(mergedChatMemoryResponse.body.auth?.csrfToken || '').length > 10, 'lightweight chat memory auth should include CSRF for immediate chat actions');
   assert.deepEqual(
     (mergedChatMemoryResponse.body.chatMemory || []).map((item) => item.id),
     mergedMemory.map((item) => item.id),

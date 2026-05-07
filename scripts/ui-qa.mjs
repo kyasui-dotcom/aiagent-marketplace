@@ -13,6 +13,7 @@ const analyticsHtmlPath = new URL('../public/analytics-console.html', import.met
 const publisherHtmlPath = new URL('../public/publisher-approval.html', import.meta.url);
 const leadOpsHtmlPath = new URL('../public/lead-ops.html', import.meta.url);
 const deliveryManagerHtmlPath = new URL('../public/delivery-manager.html', import.meta.url);
+const tokushohoHtmlPath = new URL('../public/tokushoho.html', import.meta.url);
 const homeCssPath = new URL('../public/home.css', import.meta.url);
 const appConsoleCssPath = new URL('../public/app-console.css', import.meta.url);
 const adminCssPath = new URL('../public/admin.css', import.meta.url);
@@ -61,6 +62,7 @@ const analyticsHtml = readFileSync(analyticsHtmlPath, 'utf8');
 const publisherHtml = readFileSync(publisherHtmlPath, 'utf8');
 const leadOpsHtml = readFileSync(leadOpsHtmlPath, 'utf8');
 const deliveryManagerHtml = readFileSync(deliveryManagerHtmlPath, 'utf8');
+const tokushohoHtml = readFileSync(tokushohoHtmlPath, 'utf8');
 const homeCss = readFileSync(homeCssPath, 'utf8');
 const appConsoleCss = readFileSync(appConsoleCssPath, 'utf8');
 const adminCss = readFileSync(adminCssPath, 'utf8');
@@ -111,11 +113,19 @@ assert.ok(!html.includes('href="/chat.html"'), 'Root should not link directly to
 assert.ok(html.includes('<nav class="home-links" aria-label="CAIt pages">'), 'Root should expose the common public navigation in the landing header.');
 assert.ok(html.includes('href="/login?next=%2Fchat&amp;source=nav"'), 'Root header Chat link should route through login.');
 assert.ok(html.includes('href="/apps.html"'), 'Root should expose the new CAIt app hub.');
+assert.ok(html.includes('href="/tokushoho.html"'), 'Root footer should link to the Specified Commercial Transaction Act disclosure.');
+assert.ok(html.includes('Legal Notice (SCTA)'), 'Root footer should use a concise global legal notice label.');
+assert.ok(tokushohoHtml.includes('株式会社ビジネスラボ'), 'Specified Commercial Transaction Act disclosure should show the legal seller name.');
+assert.ok(tokushohoHtml.includes('6120901008074'), 'Specified Commercial Transaction Act disclosure should show the corporate number.');
+assert.ok(tokushohoHtml.includes('東京都中央区銀座1丁目12番4号'), 'Specified Commercial Transaction Act disclosure should show the registered address.');
+assert.ok(tokushohoHtml.includes('Act on Specified Commercial Transactions'), 'Specified Commercial Transaction Act disclosure should include the official English act name.');
+assert.ok(tokushohoHtml.includes('Business Labo Co., Ltd.'), 'Specified Commercial Transaction Act disclosure should include English seller context.');
+assert.ok(tokushohoHtml.includes('Cancellation and Refunds'), 'Specified Commercial Transaction Act disclosure should include English field labels.');
 assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat composer.');
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/chat.css?v=20260507c'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260507h"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260507j"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -171,6 +181,8 @@ assert.ok(chatJs.includes('requestSubmit()'), 'Chat should submit with Ctrl+Ente
 assert.ok(chatJs.includes('chat_required: false'), 'Scheduled chat work should be marked as background work that does not require the chat to stay open.');
 assert.ok(chatJs.includes('renderChatSessionSidebar'), 'Chat should render a ChatGPT-style session sidebar.');
 assert.ok(chatJs.includes('refreshChatSessionHistory'), 'Chat should restore signed-in chat history from the server.');
+assert.ok(chatJs.includes('function applyAuthState'), 'Chat memory should hydrate lightweight auth without waiting for /auth/status.');
+assert.ok(chatJs.indexOf('void refreshChatSessionHistory({ force: true });') < chatJs.indexOf('void refreshAuth();'), 'Chat should start loading the session list before the full auth status request.');
 assert.ok(chatJs.includes("return '/api/chat-memory'"), 'Chat session history should use the lightweight chat-memory API instead of the full snapshot.');
 assert.ok(!chatJs.includes("return '/api/snapshot'"), 'Chat session history should not fetch the full snapshot for the sidebar.');
 assert.ok(chatJs.includes('Promise.allSettled(ids.map((id) => fetchVisibleJob(id)))'), 'Restored order context should fetch related orders in parallel.');
@@ -495,7 +507,14 @@ assert.ok(chatJs.includes("adminNavLink: $('adminNavLink')"), 'Chat should wire 
 assert.ok(chatJs.includes('activeLeader: null'), 'Chat should track whether CAIt or a leader owns the current conversation.');
 assert.ok(chatJs.includes('function setConversationOwnerFromPrepared'), 'Chat should switch the visible conversation owner from prepare-order responses.');
 assert.ok(chatJs.includes('CAIt specialist router'), 'Chat drafts should make direct specialist routing explicit.');
-assert.ok(chatJs.includes("els.adminNavLink.hidden = !(auth.isPlatformAdmin || auth.admin)"), 'Chat should reveal admin only for platform admins.');
+assert.ok(chatJs.includes('function intakeInitialAnswerSuggestions'), 'Intake choices should extract usable answers from the initial chat prompt.');
+assert.ok(chatJs.includes('function seedIntakeInitialChoices'), 'Initial prompt-derived intake answers should be added to the editable composer.');
+assert.ok(chatJs.includes('From initial request'), 'Initial prompt-derived intake answers should be visibly marked as confirmed candidates.');
+assert.ok(
+  chatJs.includes("els.adminNavLink.hidden = !(auth.isPlatformAdmin || auth.admin)")
+    || chatJs.includes("els.adminNavLink.hidden = !(auth?.isPlatformAdmin || auth?.admin)"),
+  'Chat should reveal admin only for platform admins.'
+);
 assert.ok(chatJs.includes('href="/admin">Admin</a>'), 'Info panel should include an admin shortcut for platform admins.');
 assert.ok(chatJs.includes('function signOut'), 'Chat should expose sign out.');
 assert.ok(chatJs.includes("await api('/auth/logout'"), 'Chat sign out should call the logout API.');
@@ -613,6 +632,7 @@ assert.ok(server.includes("form-action 'self' https://aiagent-marketplace.net"),
 assert.ok(publicHeaders.includes("form-action 'self' https://aiagent-marketplace.net"), 'Static asset CSP headers should allow the Analytics Console OAuth form to submit to the official CAIt auth origin.');
 assert.ok(server.includes("'/chat.html'"));
 assert.ok(server.includes('/api/chat-memory'), 'Local server should expose a lightweight chat memory endpoint.');
+assert.ok(server.includes('auth: chatMemoryAuthStatus'), 'Local chat memory endpoint should return lightweight auth for faster chat first paint.');
 assert.ok(server.includes("'/home.css'"));
 assert.ok(server.includes("'/chat.css'"));
 assert.ok(server.includes("'/chat.js'"));
@@ -634,7 +654,7 @@ assert.ok(server.includes('async function handleMcpRequest'), 'Local server shou
 assert.ok(server.includes('async function handleAppHandoff'), 'Local server should proxy generic app handoff requests.');
 assert.ok(server.includes('/api\\/apps\\/[^/]+\\/handoff'), 'Local server should expose /api/apps/:id/handoff.');
 assert.ok(server.includes('async function handleCreateAppContext'), 'Local server should accept generic app context payloads.');
-assert.ok(server.includes('/api/app-contexts'), 'Local server should expose /api/app-contexts.');
+assert.ok(server.includes('/api/app-contexts') || server.includes('API_ROUTES.APP_CONTEXTS'), 'Local server should expose /api/app-contexts.');
 assert.ok(server.includes('/api/connectors/google/analytics-report'), 'Local server should expose the Google analytics report endpoint.');
 assert.ok(server.includes('analyticsdata.googleapis.com/v1beta'), 'Local server should call the GA4 Data API for report rows.');
 assert.ok(server.includes('Promise.allSettled(['), 'Local GA4 detail rows should not make the whole GA4 report fail when one breakdown fails.');
@@ -644,6 +664,7 @@ assert.ok(server.includes('/searchAnalytics/query'), 'Local server should call t
 assert.ok(server.includes("repo_path: String(body.repo_path || body.repoPath || draft.repoPath"), 'Local server should pass Publisher PR handoff paths into GitHub executor PR creation.');
 assert.ok(worker.includes("'/chat.css'"));
 assert.ok(worker.includes('/api/chat-memory'), 'Worker should expose a lightweight chat memory endpoint.');
+assert.ok(worker.includes('auth: await chatMemoryAuthStatus'), 'Worker chat memory endpoint should return lightweight auth for faster chat first paint.');
 assert.ok(worker.includes('async function handleChatPageRequest'), 'Worker should gate chat HTML behind login.');
 assert.ok(worker.includes('async function handleAdminPageRequest'), 'Worker should serve the admin shell.');
 assert.ok(worker.includes("return fetchStaticAssetPath(request, env, '/admin'"), 'Worker admin route should request the extensionless asset and let the API enforce admin data access.');
@@ -681,7 +702,7 @@ assert.ok(worker.includes('async function handleMcpRequest'), 'Worker should exp
 assert.ok(worker.includes('async function handleAppHandoff'), 'Worker should proxy generic app handoff requests.');
 assert.ok(worker.includes('/api\\/apps\\/[^/]+\\/handoff'), 'Worker should expose /api/apps/:id/handoff.');
 assert.ok(worker.includes('async function handleCreateAppContext'), 'Worker should accept generic app context payloads.');
-assert.ok(worker.includes('/api/app-contexts'), 'Worker should expose /api/app-contexts.');
+assert.ok(worker.includes('/api/app-contexts') || worker.includes('API_ROUTES.APP_CONTEXTS'), 'Worker should expose /api/app-contexts.');
 assert.ok(worker.includes('/api/connectors/google/analytics-report'), 'Worker should expose the Google analytics report endpoint.');
 assert.ok(worker.includes('analyticsdata.googleapis.com/v1beta'), 'Worker should call the GA4 Data API for report rows.');
 assert.ok(worker.includes('Promise.allSettled(['), 'Worker GA4 detail rows should not make the whole GA4 report fail when one breakdown fails.');

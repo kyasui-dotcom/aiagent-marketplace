@@ -5437,7 +5437,7 @@ function authStatus(req) {
   const session = getSession(req);
   const policy = runtimePolicy(req);
   const current = session?.user?.login || session?.accountLogin
-    ? currentUserContext(req)
+    ? currentUserContext(req, { session })
     : { session: null, user: null, login: '', authProvider: 'guest' };
   const loggedIn = Boolean(current?.user);
   const githubLinked = Boolean(current?.githubLinked);
@@ -5504,10 +5504,49 @@ function authStatus(req) {
     identityLogins
   };
 }
-function currentUserContext(req) {
-  const session = getSession(req);
+function chatMemoryAuthStatus(req, current = null) {
+  const session = current?.session || null;
+  const policy = runtimePolicy(req);
+  const loggedIn = Boolean(current?.user);
+  return {
+    loggedIn,
+    authProvider: current?.authProvider || 'guest',
+    authBaseUrl: baseUrl(req),
+    currentOrigin: requestOrigin(req),
+    emailConfigured: resendConfigured(),
+    githubConfigured: Boolean(githubClientId && githubClientSecret),
+    googleConfigured: googleConfigured(),
+    xConfigured: xOAuthConfigured(process.env),
+    xTokenEncryptionConfigured: xTokenEncryptionConfigured(process.env),
+    githubLinked: Boolean(current?.githubLinked),
+    googleLinked: Boolean(current?.googleLinked),
+    xLinked: Boolean(current?.xLinked),
+    githubAuthorized: Boolean(current?.githubAuthorized),
+    googleAuthorized: Boolean(current?.googleAuthorized),
+    xAuthorized: Boolean(current?.xAuthorized),
+    canOrder: loggedIn,
+    canManagePayments: loggedIn,
+    canRegisterAgents: Boolean(current?.githubLinked),
+    canUseGithubAgentFlow: Boolean(current?.githubAuthorized),
+    releaseStage: policy.releaseStage,
+    isPlatformAdmin: canViewAdminDashboard(current),
+    canReviewFeedbackReports: canReviewFeedbackReports(current, req),
+    canReviewAgents: canReviewAgents(current, req),
+    csrfToken: loggedIn ? csrfTokenForRequest(req, session) : '',
+    user: current?.user || null,
+    login: current?.login || '',
+    accountLogin: current?.login || '',
+    githubIdentity: current?.githubIdentity || null,
+    googleIdentity: current?.googleIdentity || null,
+    identityLogins: identityLoginsForCurrent(current)
+  };
+}
+function currentUserContext(req, options = {}) {
+  const session = Object.prototype.hasOwnProperty.call(options, 'session')
+    ? options.session
+    : getSession(req);
   if (!session?.user?.login && !session?.accountLogin) return { session: null, user: null, login: '', authProvider: 'guest', account: null, githubIdentity: null, googleIdentity: null };
-  const state = storage.getState();
+  const state = options.state && typeof options.state === 'object' ? options.state : storage.getState();
   const account = session.accountLogin
     ? accountSettingsForLogin(state, session.accountLogin)
     : sessionHasGithubOauth(session)
@@ -6269,15 +6308,19 @@ async function snapshot(req) {
   return payload;
 }
 
-async function chatMemoryPayload(req) {
+async function chatMemoryPayload(req, options = {}) {
   const url = new URL(req.url, 'http://localhost');
   const state = await storage.getState();
-  const current = currentUserContext(req);
+  const session = Object.prototype.hasOwnProperty.call(options, 'session')
+    ? options.session
+    : getSession(req);
+  const current = currentUserContext(req, { session, state });
   const requestedLimit = Number(url.searchParams.get('limit') || 20);
   const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(40, requestedLimit)) : 20;
   return {
     ok: true,
     chatMemory: current?.login ? ownChatMemoryForClient(state, current.login, limit) : [],
+    auth: chatMemoryAuthStatus(req, current),
     limit
   };
 }
@@ -10024,7 +10067,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname === '/api/chat-memory') {
     const session = getSession(req);
-    const payload = await chatMemoryPayload(req);
+    const payload = await chatMemoryPayload(req, { session });
     const refreshedCookie = maybeRefreshSessionCookie(req, session);
     return json(res, 200, payload, refreshedCookie ? { 'Set-Cookie': refreshedCookie } : {});
   }
