@@ -482,6 +482,7 @@ function rateLimitSpecForPath(pathname = '', method = 'GET') {
   if (pathname === '/api/connectors/google/analytics-report' && verb === 'GET') return { name: 'google-analytics-report', limit: 20, windowMs: 60_000 };
   if (pathname === '/api/connectors/google/send-gmail' && verb === 'POST') return { name: 'google-send-gmail', limit: 20, windowMs: 10 * 60_000 };
   if (pathname === '/api/connectors/resend/send-email' && verb === 'POST') return { name: 'resend-send-email', limit: 20, windowMs: 10 * 60_000 };
+  if (pathname === '/api/chat-memory' && verb === 'GET') return { name: 'chat-memory', limit: 240, windowMs: 60_000 };
   if (/^\/api\/settings\/chat-memory\/[^/]+$/.test(pathname) && verb === 'DELETE') return { name: 'hide-chat-memory', limit: 120, windowMs: 60_000 };
   if (pathname === '/api/settings/api-keys' && verb === 'POST') return { name: 'issue-cait-key', limit: 12, windowMs: 10 * 60_000 };
   if (pathname === '/api/jobs' && verb === 'POST') return { name: 'create-job', limit: 120, windowMs: 60_000 };
@@ -6268,6 +6269,19 @@ async function snapshot(req) {
   return payload;
 }
 
+async function chatMemoryPayload(req) {
+  const url = new URL(req.url, 'http://localhost');
+  const state = await storage.getState();
+  const current = currentUserContext(req);
+  const requestedLimit = Number(url.searchParams.get('limit') || 20);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(40, requestedLimit)) : 20;
+  return {
+    ok: true,
+    chatMemory: current?.login ? ownChatMemoryForClient(state, current.login, limit) : [],
+    limit
+  };
+}
+
 function catalogPagination(url, defaultLimit = 10, maxLimit = 100) {
   const requestedLimit = Number(url.searchParams.get('limit') || defaultLimit);
   const requestedOffset = Number(url.searchParams.get('offset') || 0);
@@ -10005,6 +10019,12 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && url.pathname === '/api/snapshot') {
     const session = getSession(req);
     const payload = await snapshot(req);
+    const refreshedCookie = maybeRefreshSessionCookie(req, session);
+    return json(res, 200, payload, refreshedCookie ? { 'Set-Cookie': refreshedCookie } : {});
+  }
+  if (req.method === 'GET' && url.pathname === '/api/chat-memory') {
+    const session = getSession(req);
+    const payload = await chatMemoryPayload(req);
     const refreshedCookie = maybeRefreshSessionCookie(req, session);
     return json(res, 200, payload, refreshedCookie ? { 'Set-Cookie': refreshedCookie } : {});
   }

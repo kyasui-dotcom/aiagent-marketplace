@@ -170,7 +170,10 @@ assert.ok(chatJs.includes('createScheduleFromForm'), 'Chat should schedule a sel
 assert.ok(chatJs.includes('requestSubmit()'), 'Chat should submit with Ctrl+Enter/Cmd+Enter from the composer.');
 assert.ok(chatJs.includes('chat_required: false'), 'Scheduled chat work should be marked as background work that does not require the chat to stay open.');
 assert.ok(chatJs.includes('renderChatSessionSidebar'), 'Chat should render a ChatGPT-style session sidebar.');
-assert.ok(chatJs.includes('refreshChatSessionHistory'), 'Chat should restore signed-in chat history from the server snapshot.');
+assert.ok(chatJs.includes('refreshChatSessionHistory'), 'Chat should restore signed-in chat history from the server.');
+assert.ok(chatJs.includes("return '/api/chat-memory'"), 'Chat session history should use the lightweight chat-memory API instead of the full snapshot.');
+assert.ok(!chatJs.includes("return '/api/snapshot'"), 'Chat session history should not fetch the full snapshot for the sidebar.');
+assert.ok(chatJs.includes('Promise.allSettled(ids.map((id) => fetchVisibleJob(id)))'), 'Restored order context should fetch related orders in parallel.');
 assert.ok(chatJs.includes('/api/analytics/chat-transcripts'), 'Chat should persist chat turns to the server transcript API.');
 assert.ok(chatJs.includes('/api/settings/chat-memory/'), 'Chat sidebar delete should hide server chat memory, not just remove DOM rows.');
 assert.ok(chatJs.includes('session_id: chatSessionId'), 'Orders dispatched from chat should carry the active chat session id.');
@@ -605,6 +608,7 @@ assert.ok(server.includes("returnUrl.searchParams.set('auth_error', safeCode)"),
 assert.ok(server.includes("form-action 'self' https://aiagent-marketplace.net"), 'Local CSP should allow the Analytics Console OAuth form to submit to the official CAIt auth origin.');
 assert.ok(publicHeaders.includes("form-action 'self' https://aiagent-marketplace.net"), 'Static asset CSP headers should allow the Analytics Console OAuth form to submit to the official CAIt auth origin.');
 assert.ok(server.includes("'/chat.html'"));
+assert.ok(server.includes('/api/chat-memory'), 'Local server should expose a lightweight chat memory endpoint.');
 assert.ok(server.includes("'/home.css'"));
 assert.ok(server.includes("'/chat.css'"));
 assert.ok(server.includes("'/chat.js'"));
@@ -635,6 +639,7 @@ assert.ok(server.includes("'sessionDefaultChannelGroup', 'sessionSourceMedium'")
 assert.ok(server.includes('/searchAnalytics/query'), 'Local server should call the Search Console Search Analytics API.');
 assert.ok(server.includes("repo_path: String(body.repo_path || body.repoPath || draft.repoPath"), 'Local server should pass Publisher PR handoff paths into GitHub executor PR creation.');
 assert.ok(worker.includes("'/chat.css'"));
+assert.ok(worker.includes('/api/chat-memory'), 'Worker should expose a lightweight chat memory endpoint.');
 assert.ok(worker.includes('async function handleChatPageRequest'), 'Worker should gate chat HTML behind login.');
 assert.ok(worker.includes('async function handleAdminPageRequest'), 'Worker should serve the admin shell.');
 assert.ok(worker.includes("return fetchStaticAssetPath(request, env, '/admin'"), 'Worker admin route should request the extensionless asset and let the API enforce admin data access.');

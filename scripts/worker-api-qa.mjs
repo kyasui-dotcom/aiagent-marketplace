@@ -3231,6 +3231,15 @@ try {
   const mergedSnapshot = await request('/api/snapshot', {}, { sessionCookie: aliceSession });
   assert.equal(mergedSnapshot.status, 200);
   const mergedMemory = Array.isArray(mergedSnapshot.body.chatMemory) ? mergedSnapshot.body.chatMemory : [];
+  const mergedChatMemoryResponse = await request('/api/chat-memory', {}, { sessionCookie: aliceSession });
+  assert.equal(mergedChatMemoryResponse.status, 200);
+  assert.deepEqual(
+    (mergedChatMemoryResponse.body.chatMemory || []).map((item) => item.id),
+    mergedMemory.map((item) => item.id),
+    'lightweight chat memory endpoint should return the same session rows without requiring the full snapshot payload'
+  );
+  assert.equal(mergedChatMemoryResponse.body.stats, undefined, 'lightweight chat memory endpoint should not include full snapshot stats');
+  assert.equal(mergedChatMemoryResponse.body.jobs, undefined, 'lightweight chat memory endpoint should not include full job history');
   const mergedMatches = mergedMemory.filter((item) => item.prompt === mergedPrompt);
   assert.equal(mergedMatches.length, 1, 'active work should not create a second chat-history row when it matches the transcript prompt');
   assert.equal(mergedMatches[0].sessionId, mergedSessionId);

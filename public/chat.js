@@ -517,7 +517,7 @@ function deleteChatSession(sessionId = '') {
 }
 
 function chatSessionHistoryApiPath() {
-  return '/api/snapshot';
+  return '/api/chat-memory';
 }
 
 async function refreshChatSessionHistory(options = {}) {
@@ -525,8 +525,8 @@ async function refreshChatSessionHistory(options = {}) {
   if (!force && state.chatSessionHistoryFetchedAt && Date.now() - state.chatSessionHistoryFetchedAt < 60_000) return state.chatSessions;
   if (state.chatSessionHistoryRequest) return state.chatSessionHistoryRequest;
   state.chatSessionHistoryRequest = api(chatSessionHistoryApiPath(), { method: 'GET' })
-    .then((snapshot) => {
-      const serverSessions = (Array.isArray(snapshot?.chatMemory) ? snapshot.chatMemory : [])
+    .then((result) => {
+      const serverSessions = (Array.isArray(result?.chatMemory) ? result.chatMemory : [])
         .map(chatSessionFromMemory)
         .filter(Boolean);
       for (const session of serverSessions) upsertChatSession(session);
@@ -2430,16 +2430,13 @@ async function renderRestoredSessionOrderContext(session = {}) {
   const ids = chatSessionOrderIds(session);
   if (!ids.length) return;
   for (const id of ids) rememberTrackedOrder(id);
-  const jobs = [];
-  const failures = [];
-  for (const id of ids) {
-    try {
-      const job = await fetchVisibleJob(id);
-      if (job?.id) jobs.push(job);
-    } catch (error) {
-      failures.push(`${id.slice(0, 8)}: ${orderErrorMessage(error)}`);
-    }
-  }
+  const settled = await Promise.allSettled(ids.map((id) => fetchVisibleJob(id)));
+  const jobs = settled
+    .map((item) => item.status === 'fulfilled' ? item.value : null)
+    .filter((job) => job?.id);
+  const failures = settled
+    .map((item, index) => item.status === 'rejected' ? `${ids[index].slice(0, 8)}: ${orderErrorMessage(item.reason)}` : '')
+    .filter(Boolean);
   if (!jobs.length && !failures.length) return;
   const body = [
     '<strong>Restored order context</strong>',
