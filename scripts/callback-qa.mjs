@@ -45,7 +45,7 @@ async function main() {
       ALLOW_IN_MEMORY_STORAGE: '1',
       PORT: String(PORT)
     },
-    stdio: 'ignore'
+    stdio: ['ignore', 'pipe', 'pipe']
   });
 
   let output = '';
@@ -97,7 +97,7 @@ async function main() {
 
     const jobGet = await request(`/api/jobs/${jobId}`);
     assert.equal(jobGet.status, 200);
-    const callbackToken = jobGet.body.callbackToken;
+    const callbackToken = (jobGet.body.job || jobGet.body).callbackToken;
     assert.ok(callbackToken, 'callback token should be present');
 
     const callbackOk = await request('/api/agent-callbacks/jobs', {
@@ -141,7 +141,7 @@ async function main() {
     });
     const jobId2 = jobRes2.body.job_id;
     const jobGet2 = await request(`/api/jobs/${jobId2}`);
-    const callbackToken2 = jobGet2.body.callbackToken;
+    const callbackToken2 = (jobGet2.body.job || jobGet2.body).callbackToken;
 
     const failCb = await request('/api/agent-callbacks/jobs', {
       method: 'POST',

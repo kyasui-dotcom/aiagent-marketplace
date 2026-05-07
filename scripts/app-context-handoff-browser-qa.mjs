@@ -63,7 +63,7 @@ try {
 
   await page.goto(`${base}/publisher-approval.html`);
   await page.waitForSelector('#contentList');
-  if (!(await page.textContent('#contentList')).includes('No approval packet loaded')) throw new Error('publisher empty state was not rendered');
+  if (!(await page.textContent('#contentList')).includes('No items match this destination view')) throw new Error('publisher empty state was not rendered');
 
   await page.goto(`${base}/lead-ops.html`);
   await page.waitForSelector('#leadTable');

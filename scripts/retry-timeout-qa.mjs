@@ -22,6 +22,10 @@ async function request(path, options = {}) {
   return { status: res.status, body };
 }
 
+function jobPayload(response) {
+  return response?.body?.job || response?.body || {};
+}
+
 async function waitForServer(timeoutMs = 8000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -76,8 +80,9 @@ async function main() {
     assert.equal(badJob.body.status, 'failed');
 
     const badJobState = await request(`/api/jobs/${badJob.body.job_id}`);
-    assert.equal(badJobState.body.failureCategory, 'dispatch_http_4xx');
-    assert.equal(badJobState.body.dispatch.retryable, false);
+    const badJobPayload = jobPayload(badJobState);
+    assert.equal(badJobPayload.failureCategory, 'dispatch_http_4xx');
+    assert.equal(badJobPayload.dispatch.retryable, false);
 
     const badRetry = await request('/api/dev/dispatch-retry', {
       method: 'POST',
@@ -113,13 +118,14 @@ async function main() {
     const sweep = await request('/api/dev/timeout-sweep', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ max_age_sec: 1 })
+      body: JSON.stringify({ stale_ms: 1 })
     });
     assert.equal(sweep.status, 200);
     assert.equal(sweep.body.ok, true);
     assert.equal(sweep.body.count, 1);
-    assert.ok(Array.isArray(sweep.body.timedOut));
-    const swept = sweep.body.timedOut.find(item => item.id === acceptedJob.body.job_id);
+    const sweptJobs = sweep.body.timedOut || sweep.body.swept || [];
+    assert.ok(Array.isArray(sweptJobs));
+    const swept = sweptJobs.find(item => item.id === acceptedJob.body.job_id);
     assert.ok(swept, 'accepted job should be timed out');
     assert.equal(swept.retryable, true);
     assert.equal(typeof swept.maxRetries, 'number');
@@ -136,10 +142,11 @@ async function main() {
     assert.match(timeoutEvent.message, new RegExp(`retry ${swept.attempts + 1}/${swept.maxRetries} available`));
 
     const timedOutState = await request(`/api/jobs/${acceptedJob.body.job_id}`);
-    assert.equal(timedOutState.body.status, 'timed_out');
-    assert.equal(timedOutState.body.failureCategory, 'deadline_timeout');
-    assert.equal(timedOutState.body.dispatch.retryable, true);
-    assert.equal(timedOutState.body.dispatch.maxRetries, swept.maxRetries);
+    const timedOutPayload = jobPayload(timedOutState);
+    assert.equal(timedOutPayload.status, 'timed_out');
+    assert.equal(timedOutPayload.failureCategory, 'deadline_timeout');
+    assert.equal(timedOutPayload.dispatch.retryable, true);
+    assert.equal(timedOutPayload.dispatch.maxRetries, swept.maxRetries);
 
     const retryTimedOut = await request('/api/dev/dispatch-retry', {
       method: 'POST',
@@ -150,9 +157,10 @@ async function main() {
     assert.equal(retryTimedOut.body.mode, 'dispatched');
 
     const retriedState = await request(`/api/jobs/${acceptedJob.body.job_id}`);
-    assert.equal(retriedState.body.status, 'dispatched');
-    assert.equal(retriedState.body.dispatch.retryable, false);
-    assert.equal(retriedState.body.dispatch.nextRetryAt, null);
+    const retriedPayload = jobPayload(retriedState);
+    assert.equal(retriedPayload.status, 'dispatched');
+    assert.equal(retriedPayload.dispatch.retryable, false);
+    assert.equal(retriedPayload.dispatch.nextRetryAt, null);
 
     console.log('retry timeout qa passed');
   } finally {

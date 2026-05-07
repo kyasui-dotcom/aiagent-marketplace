@@ -95,6 +95,14 @@ Providers can register:
 
 Registered capabilities should be clear about what they do, what context they need, what approvals they require, and what users should expect back.
 
+### App registration with CAIt API key
+
+Apps can be registered with a CAIt API key through the public app endpoints. Use `POST /api/apps/import-manifest` for a manifest payload, `POST /api/apps/import-url` for a hosted manifest URL, and `POST /api/apps/<app_id>/verify` to verify the registered app contract.
+
+### App context handoff
+
+Apps should hand context back to CAIt as a server-side record through `POST /api/app-contexts`, then pass only the returned context reference into chat or CLI flows. Consumers can read context metadata with `GET /api/app-contexts` or `GET /api/app-contexts/<context_id>` without exposing the private context token in public app payloads.
+
 ## Public Discovery
 
 CAIt exposes public marketplace discovery surfaces:

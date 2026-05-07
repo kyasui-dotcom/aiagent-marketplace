@@ -26,6 +26,8 @@ const CHATUX_BACKFILL_INTERVAL_MS = 10000;
 const CHATUX_CATALOG_PAGE_SIZE = 10;
 const CHATUX_CATALOG_CACHE_TTL_MS = 60000;
 const CHATUX_PROGRESS_MAX_POLLS = 300;
+const CHATUX_OAUTH_RETURN_STATE_KEY = 'cait.chat.oauthReturnState.v1';
+const CHATUX_OAUTH_RETURN_MAX_AGE_MS = 30 * 60 * 1000;
 const CHATUX_WELCOME_TEXT = 'What do you want done?';
 const X_CLIENT_OPS_URL = 'https://x.niche-s.com/';
 
@@ -351,12 +353,20 @@ function currentChatSessionPayload() {
   if (!sessionId || !state.chatMessages.length) return null;
   const existing = state.chatSessions.find((session) => session.id === sessionId || session.sessionId === sessionId) || {};
   const now = isoNow();
+  const linkedOrderId = String(existing.linkedOrderId || state.orderId || '').trim();
+  const activeJobIds = [...new Set([
+    ...(Array.isArray(existing.activeJobIds) ? existing.activeJobIds : []),
+    linkedOrderId
+  ].map((item) => String(item || '').trim()).filter(Boolean))].slice(0, 20);
   return normalizeChatSession({
     ...existing,
     id: sessionId,
     sessionId,
     title: chatSessionTitle(state.chatMessages),
     messages: state.chatMessages.slice(-80),
+    linkedOrderId,
+    activeJobIds,
+    activeWork: Boolean(existing.activeWork || linkedOrderId || activeJobIds.length),
     createdAt: existing.createdAt || state.chatMessages[0]?.ts || now,
     updatedAt: now
   });
@@ -368,6 +378,239 @@ function persistRuntimeChatSession() {
   upsertChatSession(session);
   renderChatSessionSidebar();
   return session;
+}
+
+function safeSessionStorageSet(key = '', value = '') {
+  try {
+    window.sessionStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function safeSessionStorageGet(key = '') {
+  try {
+    return window.sessionStorage.getItem(key) || '';
+  } catch {
+    return '';
+  }
+}
+
+function safeSessionStorageRemove(key = '') {
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {}
+}
+
+function safeJsonClone(value = null, fallbackOptions = {}) {
+  if (value == null) return null;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return compactTransferObject(value, fallbackOptions);
+  }
+}
+
+function chatRestoreRequestFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    return {
+      requested: url.searchParams.get('cait_restore_chat') === '1'
+        || url.searchParams.has('cait_chat_session_id')
+        || url.searchParams.has('cait_order_id'),
+      sessionId: String(url.searchParams.get('cait_chat_session_id') || '').trim(),
+      orderId: String(url.searchParams.get('cait_order_id') || '').trim()
+    };
+  } catch {
+    return { requested: false, sessionId: '', orderId: '' };
+  }
+}
+
+function clearChatRestoreParamsFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    for (const key of ['cait_restore_chat', 'cait_chat_session_id', 'cait_order_id']) {
+      url.searchParams.delete(key);
+    }
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  } catch {}
+}
+
+function chatRuntimeStateSnapshot(reason = '') {
+  const hasRuntimeState = Boolean(state.chatMessages.length || state.orderId || state.pendingIntake || state.draft);
+  const sessionId = ensureChatSessionId({ force: hasRuntimeState });
+  let session = currentChatSessionPayload();
+  if (!session && sessionId && state.chatMessages.length) {
+    session = normalizeChatSession({
+      id: sessionId,
+      sessionId,
+      title: chatSessionTitle(state.chatMessages),
+      messages: state.chatMessages.slice(-80),
+      linkedOrderId: state.orderId,
+      activeJobIds: state.orderId ? [state.orderId] : [],
+      activeWork: Boolean(state.orderId),
+      createdAt: state.chatMessages[0]?.ts || isoNow(),
+      updatedAt: isoNow()
+    });
+  }
+  if (session && state.orderId) {
+    session = normalizeChatSession({
+      ...session,
+      linkedOrderId: session.linkedOrderId || state.orderId,
+      activeJobIds: [...new Set([
+        ...(Array.isArray(session.activeJobIds) ? session.activeJobIds : []),
+        state.orderId
+      ].filter(Boolean))],
+      activeWork: true,
+      updatedAt: isoNow()
+    });
+  }
+  return {
+    version: 1,
+    savedAt: isoNow(),
+    reason: String(reason || '').slice(0, 80),
+    returnPath: currentChatReturnPath({ includeRestoreParams: false }),
+    currentChatSessionId: sessionId,
+    session,
+    orderId: String(state.orderId || session?.linkedOrderId || '').trim(),
+    trackedOrderIds: [...state.trackedOrderIds].slice(-20),
+    pendingIntake: safeJsonClone(state.pendingIntake, { depth: 6, maxText: 2000, maxArray: 24 }),
+    draft: safeJsonClone(state.draft, { depth: 7, maxText: 2600, maxArray: 24 }),
+    pendingAppContext: safeJsonClone(state.pendingAppContext, { depth: 5, maxText: 1600, maxArray: 16 }),
+    activeLeader: safeJsonClone(state.activeLeader, { depth: 4, maxText: 900, maxArray: 12 }),
+    conversationLanguage: String(state.conversationLanguage || '').trim(),
+    promptValue: String(els.promptInput?.value || '').slice(0, 8000)
+  };
+}
+
+function saveChatOAuthReturnState(reason = 'oauth') {
+  const snapshot = chatRuntimeStateSnapshot(reason);
+  let serialized = '';
+  try {
+    serialized = JSON.stringify(snapshot);
+  } catch {
+    return false;
+  }
+  if (serialized.length > 700_000) {
+    try {
+      serialized = JSON.stringify({
+        ...snapshot,
+        pendingIntake: compactTransferObject(snapshot.pendingIntake, { depth: 5, maxText: 1400, maxArray: 16 }),
+        draft: compactTransferObject(snapshot.draft, { depth: 5, maxText: 1400, maxArray: 16 }),
+        pendingAppContext: compactTransferObject(snapshot.pendingAppContext, { depth: 4, maxText: 900, maxArray: 12 })
+      });
+    } catch {
+      return false;
+    }
+  }
+  return safeSessionStorageSet(CHATUX_OAUTH_RETURN_STATE_KEY, serialized);
+}
+
+function restoreChatMessagesFromSession(session = null) {
+  const messages = Array.isArray(session?.messages) ? session.messages : [];
+  els.chatThread.innerHTML = '';
+  if (messages.length) {
+    for (const message of messages) {
+      appendTextMessage(message.role || 'assistant', message.body || '', {
+        tone: message.tone || '',
+        label: message.label || '',
+        record: false
+      });
+    }
+  } else {
+    appendTextMessage('assistant', CHATUX_WELCOME_TEXT, { record: false });
+  }
+}
+
+function applyRestoredChatSnapshot(snapshot = {}, request = {}) {
+  const session = normalizeChatSession(snapshot.session || {});
+  if (!session && !snapshot.orderId && !snapshot.pendingIntake && !snapshot.draft) return false;
+  if (state.polling) window.clearInterval(state.polling);
+  state.polling = null;
+  state.currentChatSessionId = session?.id || String(snapshot.currentChatSessionId || request.sessionId || '').trim();
+  state.chatMessages = (Array.isArray(session?.messages) ? session.messages : []).slice(-80);
+  state.lastTranscriptPrompt = '';
+  state.lastTranscriptId = '';
+  state.orderId = String(snapshot.orderId || session?.linkedOrderId || request.orderId || '').trim();
+  state.pendingIntake = snapshot.pendingIntake && typeof snapshot.pendingIntake === 'object' ? snapshot.pendingIntake : null;
+  state.draft = snapshot.draft && typeof snapshot.draft === 'object' ? snapshot.draft : null;
+  state.pendingAppContext = snapshot.pendingAppContext && typeof snapshot.pendingAppContext === 'object' ? snapshot.pendingAppContext : null;
+  state.activeLeader = snapshot.activeLeader && typeof snapshot.activeLeader === 'object' ? snapshot.activeLeader : null;
+  state.conversationLanguage = String(snapshot.conversationLanguage || '').trim();
+  state.draftRevision += 1;
+  state.authorityNoticeKeys.clear();
+  deliveryFileStore.clear();
+  appTransferStore.clear();
+  if (Array.isArray(snapshot.trackedOrderIds)) {
+    for (const id of snapshot.trackedOrderIds) rememberTrackedOrder(id);
+  }
+  if (state.orderId) rememberTrackedOrder(state.orderId);
+  if (session) upsertChatSession(session);
+  restoreChatMessagesFromSession(session);
+  if (state.draft && !els.chatThread.querySelector('[data-chat-action="send-order"]')) {
+    appendMessage('assistant', orderConfirmationHtml(), { tone: 'ok', label: activeActorLabel('Order check'), record: false });
+  }
+  if (els.promptInput && snapshot.promptValue) els.promptInput.value = String(snapshot.promptValue || '');
+  renderActiveLeaderStatus();
+  updateComposerMode();
+  renderChatSessionSidebar();
+  appendTextMessage('system', chatText(
+    'Returned from Google connection. This chat and its active order were restored.',
+    'Google接続から戻りました。このチャットと進行中のオーダーを復元しました。',
+    state.chatMessages[0]?.body || state.conversationLanguage
+  ), { label: 'Chat restored', record: false });
+  if (session) void renderRestoredSessionOrderContext(session);
+  if (state.orderId) startPolling(state.orderId);
+  startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
+  return true;
+}
+
+function restoreChatOAuthReturnStateFromUrl() {
+  const request = chatRestoreRequestFromUrl();
+  if (!request.requested) return false;
+  const raw = safeSessionStorageGet(CHATUX_OAUTH_RETURN_STATE_KEY);
+  if (!raw) return false;
+  let snapshot = null;
+  try {
+    snapshot = JSON.parse(raw);
+  } catch {
+    safeSessionStorageRemove(CHATUX_OAUTH_RETURN_STATE_KEY);
+    return false;
+  }
+  const savedMs = Date.parse(snapshot?.savedAt || '');
+  if (!Number.isFinite(savedMs) || Date.now() - savedMs > CHATUX_OAUTH_RETURN_MAX_AGE_MS) {
+    safeSessionStorageRemove(CHATUX_OAUTH_RETURN_STATE_KEY);
+    return false;
+  }
+  const savedSessionId = String(snapshot?.session?.id || snapshot?.session?.sessionId || snapshot?.currentChatSessionId || '').trim();
+  if (request.sessionId && savedSessionId && request.sessionId !== savedSessionId) return false;
+  const restored = applyRestoredChatSnapshot(snapshot, request);
+  if (restored) {
+    safeSessionStorageRemove(CHATUX_OAUTH_RETURN_STATE_KEY);
+    clearChatRestoreParamsFromUrl();
+  }
+  return restored;
+}
+
+function restoreRequestedChatSessionFromHistory() {
+  const request = chatRestoreRequestFromUrl();
+  if (!request.requested || !request.sessionId) return false;
+  const session = state.chatSessions.find((item) => item.id === request.sessionId || item.sessionId === request.sessionId);
+  if (!session) return false;
+  loadChatSession(session.id || session.sessionId);
+  if (request.orderId && !state.orderId) {
+    state.orderId = request.orderId;
+    rememberTrackedOrder(request.orderId);
+    startPolling(request.orderId);
+  }
+  appendTextMessage('system', chatText(
+    'Returned from Google connection. I restored this chat from saved history.',
+    'Google接続から戻りました。保存済み履歴からこのチャットを復元しました。',
+    session.messages?.[0]?.body || ''
+  ), { label: 'Chat restored', record: false });
+  clearChatRestoreParamsFromUrl();
+  return true;
 }
 
 function chatSessionTimeLabel(value = '') {
@@ -1665,6 +1908,7 @@ function authorityNeedsApproval(request = null) {
 
 function googleAuthHrefForAuthority(request = null, group = '') {
   const kind = String(group || '').trim().toLowerCase() === 'gsc' ? 'gsc' : 'ga4';
+  saveChatOAuthReturnState(`google_${kind}_approval`);
   const url = new URL('/auth/google', window.location.origin);
   url.searchParams.set('action', 'analytics_connect');
   url.searchParams.set('return_to', currentChatReturnPath());
@@ -1896,10 +2140,29 @@ function appAgentContextOpenUrl(appId = '', appContextResult = {}, payload = {})
   return url.toString();
 }
 
-function currentChatReturnPath() {
+function currentChatReturnPath(options = {}) {
   const path = window.location.pathname === '/chat.html' ? CHATUX_RETURN_PATH : (window.location.pathname || CHATUX_RETURN_PATH);
   const safePath = /^\/chat(?:\.html)?$/.test(path) ? path : CHATUX_RETURN_PATH;
-  return `${safePath}${window.location.search || ''}${window.location.hash || ''}`;
+  const url = new URL(safePath, window.location.origin);
+  try {
+    const current = new URL(window.location.href);
+    for (const [key, value] of current.searchParams.entries()) {
+      if (['auth_error'].includes(key)) continue;
+      if (options.includeRestoreParams === false && ['cait_restore_chat', 'cait_chat_session_id', 'cait_order_id'].includes(key)) continue;
+      url.searchParams.append(key, value);
+    }
+    url.hash = current.hash || '';
+  } catch {
+    // Return the canonical chat page if the current browser URL cannot be parsed.
+  }
+  if (options.includeRestoreParams !== false) {
+    const sessionId = String(state.currentChatSessionId || currentChatSessionPayload()?.id || '').trim();
+    const orderId = String(state.orderId || '').trim();
+    if (sessionId || orderId) url.searchParams.set('cait_restore_chat', '1');
+    if (sessionId) url.searchParams.set('cait_chat_session_id', sessionId);
+    if (orderId) url.searchParams.set('cait_order_id', orderId);
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 function makeChatHandoffId(prefix = 'chat-handoff') {
@@ -3205,12 +3468,27 @@ function renderFileCards(files = []) {
   return [bundleActions, cards].filter(Boolean).join('');
 }
 
+function deliveryOrderActionsHtml(job = {}) {
+  const orderId = String(job.id || '').trim();
+  if (!orderId || !isTerminalStatus(job.status)) return '';
+  const status = String(job.status || '').trim().toLowerCase();
+  const failed = ['failed', 'timed_out', 'blocked'].includes(status);
+  const completed = status === 'completed';
+  const actions = [
+    `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(orderId)}">Check status</button>`,
+    failed ? `<button class="primary-btn inline-btn file-action" type="button" data-chat-order-retry="${escapeHtml(orderId)}">Prepare retry</button>` : '',
+    completed ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-schedule="${escapeHtml(orderId)}">Schedule</button>` : ''
+  ].filter(Boolean).join('');
+  return actions ? `<div class="inline-actions">${actions}</div>` : '';
+}
+
 function renderDelivery(job = {}) {
   rememberAiAgentsFromJob(job);
   const files = deliveryFiles(job);
   const text = deliveryText(job) || `Order ${job.id || ''} is ${statusDisplayLabel(job.status || 'updated')}.`;
   const body = [
     renderAuthorityRequest(job),
+    deliveryOrderActionsHtml(job),
     renderXPostTool(job),
     renderAppHandoffTools(job),
     `<strong>Delivery update</strong>\n${escapeHtml(text)}`,
@@ -4588,7 +4866,7 @@ function startPolling(orderId) {
 
 function loginHref(provider) {
   const url = new URL(`/auth/${provider}`, window.location.origin);
-  url.searchParams.set('return_to', CHATUX_RETURN_PATH);
+  url.searchParams.set('return_to', currentChatReturnPath());
   url.searchParams.set('login_source', 'chatux');
   url.searchParams.set('visitor_id', state.visitorId);
   return `${url.pathname}${url.search}`;
@@ -4596,7 +4874,7 @@ function loginHref(provider) {
 
 function xAuthHref() {
   const url = new URL('/auth/x', window.location.origin);
-  url.searchParams.set('return_to', CHATUX_RETURN_PATH);
+  url.searchParams.set('return_to', currentChatReturnPath());
   url.searchParams.set('login_source', 'chatux');
   url.searchParams.set('visitor_id', state.visitorId);
   return `${url.pathname}${url.search}`;
@@ -4725,6 +5003,12 @@ window.addEventListener('message', (event) => {
     appContextToken: data.app_context_token || ''
   });
 });
+
+document.addEventListener('click', (event) => {
+  const oauthLink = event.target?.closest?.('a[href^="/auth/google"], a[href^="/auth/github"], a[href^="/auth/x"]');
+  if (!oauthLink) return;
+  saveChatOAuthReturnState('oauth_link_click');
+}, { capture: true });
 
 els.authStatus?.addEventListener('click', (event) => {
   if (event.target.closest('[data-chat-logout]')) void signOut();
@@ -5249,6 +5533,9 @@ els.resetBtn.addEventListener('click', resetChat);
 renderActiveLeaderStatus();
 updateComposerMode();
 renderChatSessionSidebar();
+restoreChatOAuthReturnStateFromUrl();
 void hydrateAppContextFromUrl();
-void refreshChatSessionHistory({ force: true });
+void refreshChatSessionHistory({ force: true }).then(() => {
+  restoreRequestedChatSessionFromHistory();
+});
 void refreshAuth();

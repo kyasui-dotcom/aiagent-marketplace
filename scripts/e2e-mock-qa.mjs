@@ -12,6 +12,9 @@ async function request(path, options = {}) {
   if (text) { try { body = JSON.parse(text); } catch { body = { raw: text }; } }
   return { status: res.status, body };
 }
+function jobPayload(response) {
+  return response?.body?.job || response?.body || {};
+}
 async function waitForServer(timeoutMs = 8000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -19,6 +22,16 @@ async function waitForServer(timeoutMs = 8000) {
     await sleep(200);
   }
   throw new Error('Server did not become ready in time');
+}
+async function waitForJob(jobId, predicate, timeoutMs = 6000) {
+  const start = Date.now();
+  let latest = null;
+  while (Date.now() - start < timeoutMs) {
+    latest = await request(`/api/jobs/${jobId}`);
+    if (latest.status === 200 && predicate(jobPayload(latest))) return latest;
+    await sleep(200);
+  }
+  return latest;
 }
 
 async function main() {
@@ -28,6 +41,7 @@ async function main() {
       ...process.env,
       NODE_ENV: 'test',
       ALLOW_IN_MEMORY_STORAGE: '1',
+      BUILTIN_AGENT_SAMPLE_FALLBACK: '1',
       PORT: String(PORT)
     },
     stdio: 'ignore'
@@ -148,9 +162,10 @@ async function main() {
     assert.equal(followupJob.body.status, 'completed');
     const followupState = await request(`/api/jobs/${followupJob.body.job_id}`);
     assert.equal(followupState.status, 200);
-    assert.equal(followupState.body.input._broker.conversation.followupToJobId, syncJob.body.job_id);
-    assert.equal(followupState.body.input._broker.conversation.turn, 2);
-    assert.ok(followupState.body.input._broker.conversation.previousJob.summaryText.includes('Summary:'));
+    const followupJobState = jobPayload(followupState);
+    assert.equal(followupJobState.input._broker.conversation.followupToJobId, syncJob.body.job_id);
+    assert.equal(followupJobState.input._broker.conversation.turn, 2);
+    assert.ok(followupJobState.input._broker.conversation.previousJob.summaryText.includes('Summary:'));
 
     const asyncJob = await request('/api/jobs', {
       method: 'POST', headers: { 'content-type': 'application/json' },
@@ -160,7 +175,7 @@ async function main() {
     assert.equal(asyncJob.body.status, 'dispatched');
 
     const asyncJobState = await request(`/api/jobs/${asyncJob.body.job_id}`);
-    const token = asyncJobState.body.callbackToken;
+    const token = jobPayload(asyncJobState).callbackToken;
     const callback = await request('/api/agent-callbacks/jobs', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
@@ -194,11 +209,12 @@ async function main() {
     assert.ok(workflowJob.body.child_runs.length >= 2);
     assert.ok(workflowJob.body.planned_task_types.includes('seo'));
 
-    const workflowState = await request(`/api/jobs/${workflowJob.body.workflow_job_id}`);
+    const workflowState = await waitForJob(workflowJob.body.workflow_job_id, (job) => job.status === 'completed');
     assert.equal(workflowState.status, 200);
-    assert.equal(workflowState.body.jobKind, 'workflow');
-    assert.equal(workflowState.body.status, 'completed');
-    assert.ok((workflowState.body.workflow?.childRuns || []).length >= 2);
+    const workflowStateJob = jobPayload(workflowState);
+    assert.equal(workflowStateJob.jobKind, 'workflow');
+    assert.equal(workflowStateJob.status, 'completed');
+    assert.ok((workflowStateJob.workflow?.childRuns || []).length >= 2);
 
     const autoSingleJob = await request('/api/jobs', {
       method: 'POST',

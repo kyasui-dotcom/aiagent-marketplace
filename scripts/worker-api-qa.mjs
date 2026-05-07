@@ -6,6 +6,7 @@ import { createD1LikeStorage } from '../lib/storage.js';
 import { buildAgentTeamDeliveryOutput, nowIso } from '../lib/shared.js';
 
 const workerSource = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
+const deliveryActionContractSource = readFileSync(new URL('../public/delivery-action-contract.js', import.meta.url), 'utf8');
 assert.ok(workerSource.includes('function builtInWorkflowKindForJob'), 'workflow built-in jobs should resolve kind from the child workflow task');
 assert.ok(workerSource.includes("if (!agentKind) return '';"), 'external workflow agents must not be rerouted through built-in sample execution');
 assert.ok(workerSource.includes('BUILT_IN_KINDS.includes(taskKind)'), 'workflow child task kind must be allowed to override the assigned leader sample kind');
@@ -22,8 +23,8 @@ assert.ok(workerSource.includes('leaderTaskLayer(primary, task)'), 'leader layer
 assert.ok(workerSource.includes('WORKFLOW HANDOFF CONTEXT'), 'workflow handoff must remain available as prompt context');
 assert.ok(workerSource.includes('WORKFLOW ADDITIONAL PROMPT'), 'workflow handoff should be separated into additional_prompt context');
 assert.ok(workerSource.includes('validateXPostExecutionApproval'), 'X posting must validate OAuth account and exact text approval server-side');
-assert.ok(workerSource.includes('approved_x_username'), 'X posting requests must carry the approved OAuth account handle');
-assert.ok(workerSource.includes('approved_text'), 'X posting requests must carry the exact approved post text');
+assert.ok(deliveryActionContractSource.includes('approved_x_username'), 'Delivery execution requests must carry the approved OAuth account handle');
+assert.ok(deliveryActionContractSource.includes('approved_text'), 'Delivery execution requests must carry the exact approved post text');
 assert.ok(workerSource.includes('additional_prompt: additionalPrompt'), 'dispatch payload should send workflow context as additional_prompt');
 assert.ok(workerSource.includes('full_prompt: fullPrompt'), 'dispatch payload should include a compatibility full_prompt for agent runners');
 assert.ok(workerSource.includes('orderBodyWithCommonQualityRules(body)'), 'all order creation paths should attach common quality rules before persistence');

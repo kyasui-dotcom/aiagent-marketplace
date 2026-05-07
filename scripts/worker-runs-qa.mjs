@@ -308,11 +308,14 @@ await storage.mutate(async (draft) => {
   job.createdAt = job.startedAt;
 });
 
+const cronWaitUntil = [];
 await worker.scheduled({ cron: '* * * * *' }, env, {
   waitUntil(promise) {
+    cronWaitUntil.push(Promise.resolve(promise));
     return promise;
   }
 });
+await Promise.allSettled(cronWaitUntil);
 
 const cronTimedOut = await request(`/api/jobs/${cronTimeoutCandidate.body.job_id}`);
 assert.equal(cronTimedOut.status, 200);

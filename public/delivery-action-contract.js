@@ -269,6 +269,217 @@ export function deliveryScheduleConfirmationRequirement(actionKind = '') {
     : '';
 }
 
+export function hasDeliveryExecutionConfirmation(body = {}) {
+  return body?.confirm_execute === true || body?.confirmExecute === true;
+}
+
+export function hasDeliveryScheduleConfirmation(body = {}) {
+  return body?.confirm_schedule === true || body?.confirmSchedule === true;
+}
+
+export function deliveryExecutorActionPayload(body = {}) {
+  const actionKind = String(body?.action_kind || body?.actionKind || '').trim();
+  const draft = body?.draft && typeof body.draft === 'object' ? body.draft : {};
+  if (actionKind === 'x_post') {
+    return {
+      kind: 'x_post',
+      text: String(draft.postText || '').trim(),
+      approvedXUsername: String(body.approved_x_username || body.approvedXUsername || draft.approvedXUsername || draft.approved_x_username || '').trim(),
+      approvedXUserId: String(body.approved_x_user_id || body.approvedXUserId || draft.approvedXUserId || draft.approved_x_user_id || '').trim(),
+      approvedText: String(body.approved_text || body.approvedText || draft.approvedText || draft.approved_text || '').trim()
+    };
+  }
+  if (actionKind === 'instagram_post') {
+    return {
+      kind: 'instagram_post',
+      caption: String(draft.postText || '').trim(),
+      accessToken: String(draft.instagramAccessToken || '').trim(),
+      instagramUserId: String(draft.instagramUserId || '').trim(),
+      mediaUrl: String(draft.instagramMediaUrl || '').trim()
+    };
+  }
+  if (actionKind === 'gmail_send') {
+    return {
+      kind: 'gmail_send',
+      to: String(draft.recipientEmail || '').trim(),
+      subject: String(draft.emailSubject || '').trim(),
+      text: String(draft.emailBody || '').trim()
+    };
+  }
+  if (actionKind === 'resend_send') {
+    return {
+      kind: 'resend_send',
+      to: String(draft.recipientEmail || '').trim(),
+      from: String(draft.senderEmail || '').trim(),
+      replyTo: String(draft.replyToEmail || '').trim(),
+      subject: String(draft.emailSubject || '').trim(),
+      text: String(draft.emailBody || '').trim()
+    };
+  }
+  return null;
+}
+
+export function buildReportNextOrderBody(job = null, deliverable = null, draft = {}) {
+  const nextStep = String(draft.nextStep || 'action_plan').trim();
+  const sourceLines = [];
+  if (String(draft.googleSearchConsoleSite || '').trim()) sourceLines.push(`Use Search Console site: ${String(draft.googleSearchConsoleSite || '').trim()}`);
+  if (String(draft.googleGa4Property || '').trim()) sourceLines.push(`Use GA4 property: ${String(draft.googleGa4Property || '').trim()}`);
+  if (String(draft.googleDriveFileId || '').trim()) sourceLines.push(`Use Google Drive file: ${String(draft.googleDriveFileId || '').trim()}`);
+  if (String(draft.googleCalendarId || '').trim()) sourceLines.push(`Use Google Calendar: ${String(draft.googleCalendarId || '').trim()}`);
+  if (String(draft.googleGmailLabelId || '').trim()) sourceLines.push(`Use Gmail label: ${String(draft.googleGmailLabelId || '').trim()}`);
+  const taskType = nextStep === 'publish_followup'
+    ? 'writing'
+    : (nextStep === 'execution_order' ? (job?.taskType || 'research') : 'research');
+  return {
+    parent_agent_id: String(job?.parentAgentId || 'cloudcode-main'),
+    order_strategy: nextStep !== 'execution_order' ? 'auto' : 'single',
+    task_type: taskType,
+    prompt: [
+      `Continue from the report delivered in previous order ${job?.id || ''}.`,
+      '',
+      `Detected delivery: ${String(deliverable?.title || '')}`,
+      `Next step: ${nextStep}`,
+      ...sourceLines,
+      nextStep === 'publish_followup'
+        ? 'Convert the report into a publishable follow-up order and ask only for the minimum publishing metadata.'
+        : nextStep === 'execution_order'
+          ? 'Convert the report into the next executable work order directly.'
+          : 'Turn the report into a concise action plan with the next best recommended step.',
+      'If another clarification is required, ask only one blocking question.'
+    ].filter(Boolean).join('\n'),
+    budget_cap: Number(job?.budgetCap || 300) || 300,
+    deadline_sec: Number(job?.deadlineSec || 120) || 120,
+    followup_to_job_id: String(job?.id || ''),
+    async_dispatch: true,
+    input: {}
+  };
+}
+
+export function normalizeDeliveryExecuteResponse(result = {}, actionKind = '') {
+  const kind = String(actionKind || '').trim();
+  if (kind === 'github_pr') {
+    return {
+      ok: true,
+      action_kind: kind,
+      outcome_kind: 'github_pr',
+      message: 'GitHub PR handoff created.',
+      entity: {
+        repo: result.repo?.fullName || '',
+        branch: result.branch || '',
+        pull_request_url: result.pull_request?.html_url || result.pull_request?.htmlUrl || '',
+        pull_request_number: result.pull_request?.number || null,
+        files: Array.isArray(result.files) ? result.files : []
+      },
+      raw: result
+    };
+  }
+  if (kind === 'report_next') {
+    return {
+      ok: true,
+      action_kind: kind,
+      outcome_kind: 'job',
+      message: 'Follow-up order started.',
+      entity: {
+        job_id: result.job_id || '',
+        status: result.status || '',
+        workflow_parent_id: result.workflow_parent_id || null,
+        matched_agent_id: result.matched_agent_id || null
+      },
+      raw: result
+    };
+  }
+  return {
+    ok: true,
+    action_kind: kind,
+    outcome_kind: 'connector_action',
+    message: result.status === 'sent' ? 'Connector send completed.' : 'Connector action completed.',
+    entity: {
+      connector_action: result.connector_action || kind,
+      connector_action_id: result.connector_action_id || '',
+      url: result.url || '',
+      account_handle: result.account_handle || '',
+      account_id: result.account_id || '',
+      to: result.to || '',
+      subject: result.subject || '',
+      thread_id: result.thread_id || ''
+    },
+    raw: result
+  };
+}
+
+export function normalizeDeliveryScheduleResponse(result = {}, actionKind = '') {
+  return {
+    ok: true,
+    action_kind: String(actionKind || '').trim(),
+    outcome_kind: 'scheduled',
+    message: 'Scheduled action created.',
+    entity: {
+      recurring_order_id: result.recurring_order?.id || '',
+      next_run_at: result.recurring_order?.nextRunAt || '',
+      status: result.recurring_order?.status || '',
+      task_type: result.recurring_order?.taskType || ''
+    },
+    raw: result
+  };
+}
+
+export function normalizeDeliveryExecuteFailureResponse(result = {}, actionKind = '') {
+  const payload = result && typeof result === 'object' ? result : {};
+  const message = String(payload.error || 'Execution failed').trim();
+  const missingConnectors = Array.isArray(payload.missingConnectors || payload.missing_connectors) ? (payload.missingConnectors || payload.missing_connectors) : [];
+  const missingConnectorCapabilities = Array.isArray(payload.missingConnectorCapabilities || payload.missing_connector_capabilities)
+    ? (payload.missingConnectorCapabilities || payload.missing_connector_capabilities)
+    : [];
+  const statusCode = Number(payload.statusCode || 0) || 400;
+  const errorKind = payload.code === 'confirmation_required' || payload.needs_confirmation
+    ? 'confirmation_required'
+    : payload.code === 'connector_required' || payload.needs_connector || missingConnectors.length || missingConnectorCapabilities.length
+    ? 'authority_required'
+    : (statusCode >= 500 ? 'server_error' : 'validation_error');
+  return {
+    ok: false,
+    action_kind: String(actionKind || payload.action_kind || '').trim(),
+    outcome_kind: 'error',
+    error_kind: errorKind,
+    code: String(payload.code || '').trim(),
+    required: String(payload.required || '').trim(),
+    message,
+    entity: {
+      missing_connectors: missingConnectors,
+      missing_connector_capabilities: missingConnectorCapabilities,
+      use: String(payload.use || '').trim(),
+      next_step: String(payload.next_step || '').trim(),
+      required: String(payload.required || '').trim(),
+      action: String(payload.action || '').trim(),
+      path: String(payload.path || '').trim(),
+      source: String(payload.source || '').trim(),
+      status_code: statusCode
+    },
+    raw: payload
+  };
+}
+
+export function normalizeDeliveryScheduleFailureResponse(result = {}, actionKind = '') {
+  const payload = result && typeof result === 'object' ? result : {};
+  const statusCode = Number(payload.statusCode || 0) || 400;
+  return {
+    ok: false,
+    action_kind: String(actionKind || payload.action_kind || '').trim(),
+    outcome_kind: 'error',
+    error_kind: statusCode >= 500 ? 'server_error' : 'validation_error',
+    code: String(payload.code || '').trim(),
+    required: String(payload.required || '').trim(),
+    message: String(payload.error || 'Scheduling failed').trim(),
+    entity: {
+      use: String(payload.use || '').trim(),
+      next_step: String(payload.next_step || '').trim(),
+      required: String(payload.required || '').trim(),
+      status_code: statusCode
+    },
+    raw: payload
+  };
+}
+
 export function deliveryActionContractForType(type = '') {
   const key = String(type || '').trim();
   const contract = DELIVERY_ACTION_CONTRACTS[key];
@@ -1267,6 +1478,114 @@ export function prepareDeliveryPublishContractPayload(draft = {}, options = {}) 
     suggested_primary_action: String(draft?.target || '').trim() === 'github_repo' && !options.githubReady
       ? 'connect_github'
       : 'prepare_publish_order'
+  };
+}
+
+function firstNonEmptyLine(value = '') {
+  return String(value || '').trim().split(/\n/).map((line) => line.trim()).find(Boolean) || '';
+}
+
+export function buildDeliveryExecutionDraftDefaults(type = '', body = {}, options = {}) {
+  const current = options.current || {};
+  const connectors = options.connectors || {};
+  const executorPreferences = options.executorPreferences || {};
+  const xPrefs = executorPreferences.x || {};
+  const googlePrefs = executorPreferences.google || {};
+  const githubPrefs = executorPreferences.github || {};
+  const githubConnected = Boolean(current?.githubLinked || connectors?.github?.connected);
+  const draftDefaults = deliveryDraftDefaultsForType(type, {
+    preferredChannel: xPrefs.channel,
+    preferredActionMode: xPrefs.actionMode,
+    xConnected: Boolean(connectors?.x?.connected),
+    suggestedPostText: firstNonEmptyLine(body.content || ''),
+    defaultScheduledAt: '',
+    isPlatformAdmin: Boolean(current?.isPlatformAdmin),
+    defaultEmailTarget: current?.isPlatformAdmin ? 'cait_resend' : 'gmail',
+    defaultEmailSubject: String(body.title || '').trim() || 'Email draft',
+    defaultEmailBody: String(body.content || '').trim(),
+    githubConnected,
+    defaultCodeTarget: githubConnected ? 'github_repo' : 'local_terminal',
+    preferredRepoFullName: String(githubPrefs.repoFullName || '').trim()
+  });
+  draftDefaults.googleSearchConsoleSite = String(googlePrefs.searchConsoleSite || '').trim();
+  draftDefaults.googleGa4Property = String(googlePrefs.ga4Property || '').trim();
+  draftDefaults.googleDriveFileId = String(googlePrefs.driveFileId || '').trim();
+  draftDefaults.googleCalendarId = String(googlePrefs.calendarId || '').trim();
+  draftDefaults.googleGmailLabelId = String(googlePrefs.gmailLabelId || '').trim();
+  return draftDefaults;
+}
+
+export function prepareDeliveryExecutionResponsePayload(type = '', body = {}, options = {}) {
+  const draftDefaults = buildDeliveryExecutionDraftDefaults(type, body, options);
+  const prepared = prepareDeliveryExecutionContractPayload(type, draftDefaults, {
+    authorityReadyToResume: Boolean(options.authorityReadyToResume),
+    reportNeedsGoogleLoad: Boolean(options.reportNeedsGoogleLoad)
+  });
+  return {
+    ok: true,
+    content_type: String(type || '').trim(),
+    draft_defaults: draftDefaults,
+    ...prepared
+  };
+}
+
+export function buildDeliveryPublishDraftDefaults(body = {}, options = {}) {
+  const githubReady = Boolean(options.githubReady);
+  return {
+    target: githubReady ? 'github_repo' : 'local_terminal',
+    pathPrefix: String(body.path_prefix || body.pathPrefix || '/blog').trim() || '/blog',
+    slug: String(body.suggested_slug || body.suggestedSlug || '').trim(),
+    publishMode: 'draft_pr'
+  };
+}
+
+export function prepareDeliveryPublishResponsePayload(body = {}, options = {}) {
+  const githubReady = Boolean(options.githubReady);
+  const draftDefaults = buildDeliveryPublishDraftDefaults(body, { githubReady });
+  const prepared = prepareDeliveryPublishContractPayload(draftDefaults, {
+    githubReady,
+    article: {
+      suggestedSlug: draftDefaults.slug
+    }
+  });
+  return {
+    ok: true,
+    draft_defaults: draftDefaults,
+    github_ready: githubReady,
+    ...prepared
+  };
+}
+
+export function buildDeliveryPublishOrderBody(job = null, body = {}) {
+  const draft = body?.draft && typeof body.draft === 'object' ? body.draft : {};
+  const articleTitle = String(body?.title || '').trim();
+  const target = String(draft.target || 'github_repo').trim() || 'github_repo';
+  const pathPrefix = String(draft.pathPrefix || '/blog').trim() || '/blog';
+  const slug = String(draft.slug || '').trim();
+  const publishMode = String(draft.publishMode || 'draft_pr').trim() || 'draft_pr';
+  const normalizedPrefix = `/${pathPrefix.replace(/^\/+|\/+$/g, '')}`.replace(/\/{2,}/g, '/');
+  const normalizedSlug = slug.replace(/^\/+|\/+$/g, '');
+  const urlPath = normalizedSlug ? `${normalizedPrefix}/${normalizedSlug}`.replace(/\/{2,}/g, '/') : normalizedPrefix;
+  const taskType = target === 'github_repo' || target === 'local_terminal' ? 'code' : (job?.taskType || 'writing');
+  const prompt = [
+    `Publish the article draft from previous order ${job?.id || ''}.`,
+    '',
+    `Article title: ${articleTitle}`,
+    `Requested URL path: ${urlPath}`,
+    `Publish target: ${target}`,
+    `Publish mode: ${publishMode}`,
+    '',
+    deliveryPublishTargetInstruction(target),
+    'Use the previous delivery as the source article. Do not restart discovery or rewrite the article unless missing publishing metadata blocks the task.',
+    'If authority or repository details are missing, ask only for the minimum missing publish detail.'
+  ].filter(Boolean).join('\n');
+  return {
+    ok: true,
+    followup_to_job_id: String(job?.id || ''),
+    task_type: taskType,
+    order_strategy: target === 'github_repo' || target === 'local_terminal' ? 'single' : 'auto',
+    prompt,
+    path_preview: urlPath
   };
 }
 

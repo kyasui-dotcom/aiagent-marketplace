@@ -22,6 +22,7 @@ const env = {
   STRIPE_DEFAULT_CURRENCY: 'USD',
   BASE_URL: BASE,
   BRAVE_SEARCH_API_KEY: 'brave-login-leader-qa',
+  BUILTIN_AGENT_SAMPLE_FALLBACK: '1',
   MY_BINDING: null,
   ASSETS: {
     async fetch(request) {

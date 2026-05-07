@@ -26,6 +26,8 @@ import { createAppFromInput, createAppFromManifest, normalizeAppManifest, saniti
 import { appContextIsExpired, createAppContextRecord, publicAppContext } from './lib/app-context.js';
 import { buildMcpDiscovery, handleMcpJsonRpc } from './lib/mcp.js';
 import { sanitizeExactMatchActionPatch, sanitizeExactMatchActionsForClient } from './lib/exact-actions.js';
+import { hasAdapterPrConfirmation, hasPostConfirmation, hasRepoWriteConfirmation, hasSendConfirmation } from './lib/external-write-confirmation.js';
+import { csrfExemptPath, isUnsafeMethod, rateLimitSpecForPath } from './lib/http-policy.js';
 import { agentReviewRouteBlockReason, applyAgentReviewToAgentRecord, isAgentReviewApproved, manualAgentReviewFromBody, runAgentAutoReview } from './lib/agent-review.js';
 import { runAgentOnboardingCheck } from './lib/onboarding.js';
 import { isBuiltInSampleAgent, sampleKindFromAgent, verifyAgentByHealthcheck } from './lib/verify.js';
@@ -39,13 +41,20 @@ import { buildXAuthorizeUrl, buildXPkcePair, exchangeXOAuthCode, fetchXProfile, 
 import { connectorTokenEncryptionConfigured, decryptConnectorSecret, githubConnectorFromOAuthToken, googleConnectorFromOAuthToken } from './lib/connector-secrets.js';
 import {
   deliveryExecutionConfirmationRequirement,
-  deliveryDraftDefaultsForType,
+  deliveryExecutorActionPayload,
   deliveryScheduleConfirmationRequirement,
+  buildReportNextOrderBody,
+  hasDeliveryExecutionConfirmation,
+  hasDeliveryScheduleConfirmation,
   isDeliveryExecutionActionSupported,
   isDeliveryScheduleActionSupported,
-  deliveryPublishTargetInstruction,
-  prepareDeliveryExecutionContractPayload,
-  prepareDeliveryPublishContractPayload
+  normalizeDeliveryExecuteFailureResponse,
+  normalizeDeliveryExecuteResponse,
+  normalizeDeliveryScheduleFailureResponse,
+  normalizeDeliveryScheduleResponse,
+  buildDeliveryPublishOrderBody,
+  prepareDeliveryExecutionResponsePayload,
+  prepareDeliveryPublishResponsePayload
 } from './public/delivery-action-contract.js';
 import {
   APP_SETTING_DEFAULTS,
@@ -543,7 +552,8 @@ function openChatIntentLlmConfig(source = {}, options = {}) {
   const apiKey = openChatIntentEnvValue(source, 'OPEN_CHAT_OPENAI_API_KEY')
     || ((options.allowOpenAiApiKeyFallback || options.allowPlatformOpenAiApiKeyFallback) ? openChatIntentEnvValue(source, 'OPENAI_API_KEY') : '');
   const configured = openChatIntentEnvValue(source, 'OPEN_CHAT_INTENT_LLM').toLowerCase();
-  let provider = configured || (apiKey ? 'openai' : 'off');
+  const platformFallbackConfigured = openChatPlatformOpenAiFallbackEnabled(source);
+  let provider = configured || (apiKey || platformFallbackConfigured ? 'openai' : 'off');
   if (['0', 'false', 'none', 'disabled'].includes(provider)) provider = 'off';
   if (!['openai', 'off'].includes(provider)) provider = 'off';
   return {
@@ -951,38 +961,11 @@ async function prepareDeliveryExecutionRequest(storage, request, env) {
   const account = current?.login ? accountSettingsForLogin(state, current.login, current.user, current.authProvider) : null;
   const connectors = account?.connectors || {};
   const executorPreferences = account?.executorPreferences || {};
-  const xPrefs = executorPreferences.x || {};
-  const googlePrefs = executorPreferences.google || {};
-  const githubPrefs = executorPreferences.github || {};
-  const draftDefaults = deliveryDraftDefaultsForType(type, {
-    preferredChannel: xPrefs.channel,
-    preferredActionMode: xPrefs.actionMode,
-    xConnected: Boolean(connectors?.x?.connected),
-    suggestedPostText: String(body.content || '').trim().split(/\n/).map((line) => line.trim()).find(Boolean) || '',
-    defaultScheduledAt: '',
-    isPlatformAdmin: Boolean(current?.isPlatformAdmin),
-    defaultEmailTarget: current?.isPlatformAdmin ? 'cait_resend' : 'gmail',
-    defaultEmailSubject: String(body.title || '').trim() || 'Email draft',
-    defaultEmailBody: String(body.content || '').trim(),
-    githubConnected: Boolean(current?.githubLinked || connectors?.github?.connected),
-    defaultCodeTarget: (current?.githubLinked || connectors?.github?.connected) ? 'github_repo' : 'local_terminal',
-    preferredRepoFullName: String(githubPrefs.repoFullName || '').trim()
+  return prepareDeliveryExecutionResponsePayload(type, body, {
+    current,
+    connectors,
+    executorPreferences
   });
-  draftDefaults.googleSearchConsoleSite = String(googlePrefs.searchConsoleSite || '').trim();
-  draftDefaults.googleGa4Property = String(googlePrefs.ga4Property || '').trim();
-  draftDefaults.googleDriveFileId = String(googlePrefs.driveFileId || '').trim();
-  draftDefaults.googleCalendarId = String(googlePrefs.calendarId || '').trim();
-  draftDefaults.googleGmailLabelId = String(googlePrefs.gmailLabelId || '').trim();
-  const prepared = prepareDeliveryExecutionContractPayload(type, draftDefaults, {
-    authorityReadyToResume: false,
-    reportNeedsGoogleLoad: false
-  });
-  return {
-    ok: true,
-    content_type: type,
-    draft_defaults: draftDefaults,
-    ...prepared
-  };
 }
 
 async function prepareDeliveryPublishRequest(storage, request, env) {
@@ -1001,24 +984,7 @@ async function prepareDeliveryPublishRequest(storage, request, env) {
   const account = current?.login ? accountSettingsForLogin(state, current.login, current.user, current.authProvider) : null;
   const connectors = account?.connectors || {};
   const githubReady = Boolean(current?.githubLinked || connectors?.github?.connected);
-  const draftDefaults = {
-    target: githubReady ? 'github_repo' : 'local_terminal',
-    pathPrefix: String(body.path_prefix || body.pathPrefix || '/blog').trim() || '/blog',
-    slug: String(body.suggested_slug || body.suggestedSlug || '').trim(),
-    publishMode: 'draft_pr'
-  };
-  const prepared = prepareDeliveryPublishContractPayload(draftDefaults, {
-    githubReady,
-    article: {
-      suggestedSlug: draftDefaults.slug
-    }
-  });
-  return {
-    ok: true,
-    draft_defaults: draftDefaults,
-    github_ready: githubReady,
-    ...prepared
-  };
+  return prepareDeliveryPublishResponsePayload(body, { githubReady });
 }
 
 async function prepareDeliveryPublishOrderRequest(storage, request, env) {
@@ -1037,246 +1003,7 @@ async function prepareDeliveryPublishOrderRequest(storage, request, env) {
   const articleTitle = String(body.title || '').trim();
   const articleContent = String(body.content || '').trim();
   if (!articleContent) return { error: 'content required', statusCode: 400 };
-  const draft = body.draft && typeof body.draft === 'object' ? body.draft : {};
-  const target = String(draft.target || 'github_repo').trim() || 'github_repo';
-  const pathPrefix = String(draft.pathPrefix || '/blog').trim() || '/blog';
-  const slug = String(draft.slug || '').trim();
-  const publishMode = String(draft.publishMode || 'draft_pr').trim() || 'draft_pr';
-  const normalizedPrefix = `/${pathPrefix.replace(/^\/+|\/+$/g, '')}`.replace(/\/{2,}/g, '/');
-  const normalizedSlug = slug.replace(/^\/+|\/+$/g, '');
-  const urlPath = normalizedSlug ? `${normalizedPrefix}/${normalizedSlug}`.replace(/\/{2,}/g, '/') : normalizedPrefix;
-  const taskType = target === 'github_repo' || target === 'local_terminal' ? 'code' : (job.taskType || 'writing');
-  const prompt = [
-    `Publish the article draft from previous order ${job.id}.`,
-    '',
-    `Article title: ${articleTitle}`,
-    `Requested URL path: ${urlPath}`,
-    `Publish target: ${target}`,
-    `Publish mode: ${publishMode}`,
-    '',
-    deliveryPublishTargetInstruction(target),
-    'Use the previous delivery as the source article. Do not restart discovery or rewrite the article unless missing publishing metadata blocks the task.',
-    'If authority or repository details are missing, ask only for the minimum missing publish detail.'
-  ].filter(Boolean).join('\n');
-  return {
-    ok: true,
-    followup_to_job_id: job.id,
-    task_type: taskType,
-    order_strategy: target === 'github_repo' || target === 'local_terminal' ? 'single' : 'auto',
-    prompt,
-    path_preview: urlPath
-  };
-}
-
-function deliveryExecutorActionPayload(body = {}) {
-  const actionKind = String(body.action_kind || body.actionKind || '').trim();
-  const draft = body.draft && typeof body.draft === 'object' ? body.draft : {};
-  if (actionKind === 'x_post') {
-    return {
-      kind: 'x_post',
-      text: String(draft.postText || '').trim(),
-      approvedXUsername: String(body.approved_x_username || body.approvedXUsername || draft.approvedXUsername || draft.approved_x_username || '').trim(),
-      approvedXUserId: String(body.approved_x_user_id || body.approvedXUserId || draft.approvedXUserId || draft.approved_x_user_id || '').trim(),
-      approvedText: String(body.approved_text || body.approvedText || draft.approvedText || draft.approved_text || '').trim()
-    };
-  }
-  if (actionKind === 'instagram_post') {
-    return {
-      kind: 'instagram_post',
-      caption: String(draft.postText || '').trim(),
-      accessToken: String(draft.instagramAccessToken || '').trim(),
-      instagramUserId: String(draft.instagramUserId || '').trim(),
-      mediaUrl: String(draft.instagramMediaUrl || '').trim()
-    };
-  }
-  if (actionKind === 'gmail_send') {
-    return {
-      kind: 'gmail_send',
-      to: String(draft.recipientEmail || '').trim(),
-      subject: String(draft.emailSubject || '').trim(),
-      text: String(draft.emailBody || '').trim()
-    };
-  }
-  if (actionKind === 'resend_send') {
-    return {
-      kind: 'resend_send',
-      to: String(draft.recipientEmail || '').trim(),
-      from: String(draft.senderEmail || '').trim(),
-      replyTo: String(draft.replyToEmail || '').trim(),
-      subject: String(draft.emailSubject || '').trim(),
-      text: String(draft.emailBody || '').trim()
-    };
-  }
-  return null;
-}
-
-function hasDeliveryExecutionConfirmation(body = {}) {
-  return body?.confirm_execute === true || body?.confirmExecute === true;
-}
-
-function hasDeliveryScheduleConfirmation(body = {}) {
-  return body?.confirm_schedule === true || body?.confirmSchedule === true;
-}
-
-function buildReportNextOrderBody(job = null, deliverable = null, draft = {}) {
-  const nextStep = String(draft.nextStep || 'action_plan').trim();
-  const sourceLines = [];
-  if (String(draft.googleSearchConsoleSite || '').trim()) sourceLines.push(`Use Search Console site: ${String(draft.googleSearchConsoleSite || '').trim()}`);
-  if (String(draft.googleGa4Property || '').trim()) sourceLines.push(`Use GA4 property: ${String(draft.googleGa4Property || '').trim()}`);
-  if (String(draft.googleDriveFileId || '').trim()) sourceLines.push(`Use Google Drive file: ${String(draft.googleDriveFileId || '').trim()}`);
-  if (String(draft.googleCalendarId || '').trim()) sourceLines.push(`Use Google Calendar: ${String(draft.googleCalendarId || '').trim()}`);
-  if (String(draft.googleGmailLabelId || '').trim()) sourceLines.push(`Use Gmail label: ${String(draft.googleGmailLabelId || '').trim()}`);
-  const taskType = nextStep === 'publish_followup'
-    ? 'writing'
-    : (nextStep === 'execution_order' ? (job?.taskType || 'research') : 'research');
-  return {
-    parent_agent_id: String(job?.parentAgentId || 'cloudcode-main'),
-    order_strategy: nextStep !== 'execution_order' ? 'auto' : 'single',
-    task_type: taskType,
-    prompt: [
-      `Continue from the report delivered in previous order ${job?.id || ''}.`,
-      '',
-      `Detected delivery: ${String(deliverable?.title || '')}`,
-      `Next step: ${nextStep}`,
-      ...sourceLines,
-      nextStep === 'publish_followup'
-        ? 'Convert the report into a publishable follow-up order and ask only for the minimum publishing metadata.'
-        : nextStep === 'execution_order'
-          ? 'Convert the report into the next executable work order directly.'
-          : 'Turn the report into a concise action plan with the next best recommended step.',
-      'If another clarification is required, ask only one blocking question.'
-    ].filter(Boolean).join('\n'),
-    budget_cap: Number(job?.budgetCap || 300) || 300,
-    deadline_sec: Number(job?.deadlineSec || 120) || 120,
-    followup_to_job_id: String(job?.id || ''),
-    async_dispatch: true,
-    input: {}
-  };
-}
-
-function normalizeDeliveryExecuteResponse(result = {}, actionKind = '') {
-  const kind = String(actionKind || '').trim();
-  if (kind === 'github_pr') {
-    return {
-      ok: true,
-      action_kind: kind,
-      outcome_kind: 'github_pr',
-      message: 'GitHub PR handoff created.',
-      entity: {
-        repo: result.repo?.fullName || '',
-        branch: result.branch || '',
-        pull_request_url: result.pull_request?.html_url || result.pull_request?.htmlUrl || '',
-        pull_request_number: result.pull_request?.number || null,
-        files: Array.isArray(result.files) ? result.files : []
-      },
-      raw: result
-    };
-  }
-  if (kind === 'report_next') {
-    return {
-      ok: true,
-      action_kind: kind,
-      outcome_kind: 'job',
-      message: 'Follow-up order started.',
-      entity: {
-        job_id: result.job_id || '',
-        status: result.status || '',
-        workflow_parent_id: result.workflow_parent_id || null,
-        matched_agent_id: result.matched_agent_id || null
-      },
-      raw: result
-    };
-  }
-  return {
-    ok: true,
-    action_kind: kind,
-    outcome_kind: 'connector_action',
-    message: result.status === 'sent' ? 'Connector send completed.' : 'Connector action completed.',
-    entity: {
-      connector_action: result.connector_action || kind,
-      connector_action_id: result.connector_action_id || '',
-      url: result.url || '',
-      account_handle: result.account_handle || '',
-      account_id: result.account_id || '',
-      to: result.to || '',
-      subject: result.subject || '',
-      thread_id: result.thread_id || ''
-    },
-    raw: result
-  };
-}
-
-function normalizeDeliveryScheduleResponse(result = {}, actionKind = '') {
-  return {
-    ok: true,
-    action_kind: String(actionKind || '').trim(),
-    outcome_kind: 'scheduled',
-    message: 'Scheduled action created.',
-    entity: {
-      recurring_order_id: result.recurring_order?.id || '',
-      next_run_at: result.recurring_order?.nextRunAt || '',
-      status: result.recurring_order?.status || '',
-      task_type: result.recurring_order?.taskType || ''
-    },
-    raw: result
-  };
-}
-
-function normalizeDeliveryExecuteFailureResponse(result = {}, actionKind = '') {
-  const payload = result && typeof result === 'object' ? result : {};
-  const message = String(payload.error || 'Execution failed').trim();
-  const missingConnectors = Array.isArray(payload.missingConnectors || payload.missing_connectors) ? (payload.missingConnectors || payload.missing_connectors) : [];
-  const missingConnectorCapabilities = Array.isArray(payload.missingConnectorCapabilities || payload.missing_connector_capabilities)
-    ? (payload.missingConnectorCapabilities || payload.missing_connector_capabilities)
-    : [];
-  const statusCode = Number(payload.statusCode || 0) || 400;
-  const errorKind = payload.code === 'confirmation_required' || payload.needs_confirmation
-    ? 'confirmation_required'
-    : payload.code === 'connector_required' || payload.needs_connector || missingConnectors.length || missingConnectorCapabilities.length
-    ? 'authority_required'
-    : (statusCode >= 500 ? 'server_error' : 'validation_error');
-  return {
-    ok: false,
-    action_kind: String(actionKind || payload.action_kind || '').trim(),
-    outcome_kind: 'error',
-    error_kind: errorKind,
-    code: String(payload.code || '').trim(),
-    required: String(payload.required || '').trim(),
-    message,
-    entity: {
-      missing_connectors: missingConnectors,
-      missing_connector_capabilities: missingConnectorCapabilities,
-      use: String(payload.use || '').trim(),
-      next_step: String(payload.next_step || '').trim(),
-      required: String(payload.required || '').trim(),
-      action: String(payload.action || '').trim(),
-      path: String(payload.path || '').trim(),
-      source: String(payload.source || '').trim(),
-      status_code: statusCode
-    },
-    raw: payload
-  };
-}
-
-function normalizeDeliveryScheduleFailureResponse(result = {}, actionKind = '') {
-  const payload = result && typeof result === 'object' ? result : {};
-  const statusCode = Number(payload.statusCode || 0) || 400;
-  return {
-    ok: false,
-    action_kind: String(actionKind || payload.action_kind || '').trim(),
-    outcome_kind: 'error',
-    error_kind: statusCode >= 500 ? 'server_error' : 'validation_error',
-    code: String(payload.code || '').trim(),
-    required: String(payload.required || '').trim(),
-    message: String(payload.error || 'Scheduling failed').trim(),
-    entity: {
-      use: String(payload.use || '').trim(),
-      next_step: String(payload.next_step || '').trim(),
-      required: String(payload.required || '').trim(),
-      status_code: statusCode
-    },
-    raw: payload
-  };
+  return buildDeliveryPublishOrderBody(job, { ...body, title: articleTitle });
 }
 
 async function executeGithubExecutorPullRequest(storage, current, body, env, request = null) {
@@ -1291,7 +1018,7 @@ async function executeGithubExecutorPullRequest(storage, current, body, env, req
   }
   if (!body.owner || !body.repo) return { error: 'owner and repo required', statusCode: 400 };
   if (!String(body.content || '').trim()) return { error: 'content required', statusCode: 400 };
-  if (current.apiKeyStatus === 'valid' && body.confirm_repo_write !== true) {
+  if (current.apiKeyStatus === 'valid' && !hasRepoWriteConfirmation(body)) {
     return {
       error: 'Repository write confirmation required for CAIT_API_KEY executor PR creation.',
       required: 'Set confirm_repo_write=true after showing the target repository, branch, files, and PR action to the user.',
@@ -3705,14 +3432,6 @@ function extractOrderApiKey(request) {
 function hasSessionCookie(request) {
   return Boolean(parseCookies(request)[SESSION_COOKIE]);
 }
-function isUnsafeMethod(method = '') {
-  return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(method || '').toUpperCase());
-}
-function csrfExemptPath(pathname = '') {
-  return pathname === '/api/stripe/webhook'
-    || pathname === '/api/agent-callbacks/jobs'
-    || pathname === '/mock/accepted/jobs';
-}
 function trustedOrigins(request, env) {
   const origins = new Set();
   try {
@@ -4089,45 +3808,6 @@ function rateLimitClientKey(request) {
   if (cfIp) return cfIp;
   const forwarded = String(request.headers.get('x-forwarded-for') || '').split(',')[0].trim();
   return forwarded || 'unknown';
-}
-function rateLimitSpecForPath(pathname = '', method = 'GET') {
-  const verb = String(method || 'GET').toUpperCase();
-  if (verb === 'OPTIONS') return null;
-  if (pathname.startsWith('/auth/')) return { name: 'auth', limit: 80, windowMs: 60_000 };
-  if (pathname === '/api/analytics/events' && verb === 'POST') return { name: 'analytics-event', limit: 120, windowMs: 60_000 };
-  if (pathname === '/api/analytics/chat-transcripts' && verb === 'POST') return { name: 'chat-transcript', limit: 120, windowMs: 60_000 };
-  if (pathname === '/api/open-chat/intent' && verb === 'POST') return { name: 'open-chat-intent', limit: 20, windowMs: 60_000 };
-  if (pathname === '/api/work/resolve-action' && verb === 'POST') return { name: 'work-resolve-action', limit: 60, windowMs: 60_000 };
-  if (pathname === '/api/work/resolve-intent' && verb === 'POST') return { name: 'work-resolve-intent', limit: 60, windowMs: 60_000 };
-  if (pathname === '/api/work/prepare-order' && verb === 'POST') return { name: 'work-prepare-order', limit: 60, windowMs: 60_000 };
-  if (pathname === '/api/work/preflight-order' && verb === 'POST') return { name: 'work-preflight-order', limit: 60, windowMs: 60_000 };
-  if (/^\/api\/jobs\/[^/]+\/executor-state$/.test(pathname) && verb === 'PATCH') return { name: 'job-executor-state', limit: 120, windowMs: 60_000 };
-  if (pathname === '/api/deliveries/classify' && verb === 'POST') return { name: 'delivery-classify', limit: 30, windowMs: 60_000 };
-  if (pathname === '/api/deliveries/prepare-publish' && verb === 'POST') return { name: 'delivery-prepare-publish', limit: 60, windowMs: 60_000 };
-  if (pathname === '/api/deliveries/prepare-publish-order' && verb === 'POST') return { name: 'delivery-prepare-publish-order', limit: 60, windowMs: 60_000 };
-  if (pathname === '/api/deliveries/prepare-execution' && verb === 'POST') return { name: 'delivery-prepare-execution', limit: 60, windowMs: 60_000 };
-  if (pathname === '/api/deliveries/execute' && verb === 'POST') return { name: 'delivery-execute', limit: 30, windowMs: 60_000 };
-  if (pathname === '/api/deliveries/schedule' && verb === 'POST') return { name: 'delivery-schedule', limit: 30, windowMs: 60_000 };
-  if (pathname === '/mcp' && verb === 'POST') return { name: 'mcp', limit: 120, windowMs: 60_000 };
-  if (pathname === '/api/connectors/x/post' && verb === 'POST') return { name: 'x-post', limit: 20, windowMs: 10 * 60_000 };
-  if (pathname === '/api/connectors/instagram/post' && verb === 'POST') return { name: 'instagram-post', limit: 20, windowMs: 10 * 60_000 };
-  if (pathname === '/api/connectors/google/assets' && verb === 'GET') return { name: 'google-assets', limit: 30, windowMs: 60_000 };
-  if (pathname === '/api/connectors/google/analytics-report' && verb === 'GET') return { name: 'google-analytics-report', limit: 20, windowMs: 60_000 };
-  if (pathname === '/api/connectors/google/send-gmail' && verb === 'POST') return { name: 'google-send-gmail', limit: 20, windowMs: 10 * 60_000 };
-  if (pathname === '/api/connectors/resend/send-email' && verb === 'POST') return { name: 'resend-send-email', limit: 20, windowMs: 10 * 60_000 };
-  if (pathname === '/api/github/create-executor-pr' && verb === 'POST') return { name: 'github-executor-pr', limit: 20, windowMs: 10 * 60_000 };
-  if (pathname === '/api/chat-memory' && verb === 'GET') return { name: 'chat-memory', limit: 240, windowMs: 60_000 };
-  if (/^\/api\/settings\/chat-memory\/[^/]+$/.test(pathname) && verb === 'DELETE') return { name: 'hide-chat-memory', limit: 120, windowMs: 60_000 };
-  if (pathname === '/api/settings/api-keys' && verb === 'POST') return { name: 'issue-cait-key', limit: 12, windowMs: 10 * 60_000 };
-  if (pathname === '/api/jobs' && verb === 'POST') return { name: 'create-job', limit: 120, windowMs: 60_000 };
-  if (pathname === '/api/recurring-orders' && verb === 'POST') return { name: 'create-recurring-order', limit: 60, windowMs: 60_000 };
-  if (pathname === '/api/feedback' && verb === 'POST') return { name: 'feedback', limit: 20, windowMs: 60_000 };
-  if (pathname.startsWith('/api/stripe/') && verb === 'POST') return { name: 'stripe-action', limit: 60, windowMs: 60_000 };
-  if (pathname === '/api/agent-callbacks/jobs' && verb === 'POST') return { name: 'agent-callback', limit: 300, windowMs: 60_000 };
-  if (/^\/mock\/[^/]+\/jobs$/.test(pathname) && verb === 'POST') return { name: 'built-in-direct', limit: 20, windowMs: 60_000 };
-  if (isUnsafeMethod(verb)) return { name: 'write', limit: 240, windowMs: 60_000 };
-  if (pathname === '/api/snapshot') return { name: 'snapshot', limit: 240, windowMs: 60_000 };
-  return null;
 }
 function rateLimitResponseForRequest(request) {
   const url = new URL(request.url);
@@ -8220,7 +7900,7 @@ async function handleGithubCreateExecutorPr(storage, request, env) {
   }
   if (!body.owner || !body.repo) return json({ error: 'owner and repo required' }, 400);
   if (!String(body.content || '').trim()) return json({ error: 'content required' }, 400);
-  if (current.apiKeyStatus === 'valid' && body.confirm_repo_write !== true) {
+  if (current.apiKeyStatus === 'valid' && !hasRepoWriteConfirmation(body)) {
     return json({
       error: 'Repository write confirmation required for CAIT_API_KEY executor PR creation.',
       required: 'Set confirm_repo_write=true after showing the target repository, branch, files, and PR action to the user.',
@@ -8313,7 +7993,7 @@ async function handleGithubCreateAdapterPr(storage, request, env) {
     return json({ error: error.message }, 400);
   }
   if (!body.owner || !body.repo) return json({ error: 'owner and repo required' }, 400);
-  if (current.apiKeyStatus === 'valid' && body.confirm_adapter_pr !== true && body.confirm_repo_write !== true) {
+  if (current.apiKeyStatus === 'valid' && !hasAdapterPrConfirmation(body) && !hasRepoWriteConfirmation(body)) {
     return json({
       error: 'Repository write confirmation required for CAIT_API_KEY adapter PR creation.',
       required: 'Set confirm_adapter_pr=true after showing the target repository, branch, files, and PR action to the user.',
@@ -9132,7 +8812,7 @@ async function handleXConnectorPost(request, env) {
   const storage = runtimeStorage(env);
   const body = await parseBody(request).catch((error) => ({ __error: error.message }));
   if (body.__error) return json({ error: body.__error }, 400);
-  if (!(body.confirm_post === true || body.confirmPost === true)) {
+  if (!hasPostConfirmation(body)) {
     return json({
       error: 'Explicit confirmation required before posting to X.',
       required: 'confirm_post=true'
@@ -9633,7 +9313,7 @@ async function handleGoogleSendGmail(request, env) {
   const storage = runtimeStorage(env);
   const body = await parseBody(request).catch((error) => ({ __error: error.message }));
   if (body.__error) return json({ error: body.__error }, 400);
-  if (!(body.confirm_send === true || body.confirmSend === true)) {
+  if (!hasSendConfirmation(body)) {
     return json({ error: 'Explicit confirmation required before sending email.', required: 'confirm_send=true' }, 428);
   }
   const to = String(body.to || '').trim();
@@ -9694,7 +9374,7 @@ async function handleResendSendEmail(request, env) {
   const storage = runtimeStorage(env);
   const body = await parseBody(request).catch((error) => ({ __error: error.message }));
   if (body.__error) return json({ error: body.__error }, 400);
-  if (!(body.confirm_send === true || body.confirmSend === true)) {
+  if (!hasSendConfirmation(body)) {
     return json({ error: 'Explicit confirmation required before sending email.', required: 'confirm_send=true' }, 428);
   }
   const to = String(body.to || '').trim();
@@ -10074,7 +9754,7 @@ async function handleInstagramConnectorPost(request, env) {
   const storage = runtimeStorage(env);
   const body = await parseBody(request).catch((error) => ({ __error: error.message }));
   if (body.__error) return json({ error: body.__error }, 400);
-  if (!(body.confirm_post === true || body.confirmPost === true)) {
+  if (!hasPostConfirmation(body)) {
     return json({
       error: 'Explicit confirmation required before posting to Instagram.',
       required: 'confirm_post=true'
@@ -10854,6 +10534,8 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
   const tasks = normalizeTaskTypes(plannedTasks);
   const primary = String(tasks[0] || primaryTask || '').trim().toLowerCase();
   if (!isWorkflowLeaderTask(primary)) return tasks;
+  const cmoWorkflow = ['cmo_leader', 'free_web_growth_leader'].includes(primary);
+  const configuredResearchBucketLimit = Number(options.maxExternalResearchTasks || 0);
   const summaryTasks = new Set(['summary']);
   const dataCollectionTasks = new Set(['data_analysis']);
   const ordered = [];
@@ -10873,8 +10555,18 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     || sourceCollectionTasks[0]
     || 'research';
   push(primary);
+  let initialExternalResearchCount = 0;
   for (const task of tasks) {
-    if (task !== 'free_web_growth_leader') push(task);
+    if (task === 'free_web_growth_leader') continue;
+    if (
+      cmoWorkflow
+      && configuredResearchBucketLimit > 0
+      && ['research', 'teardown', 'validation'].includes(task)
+    ) {
+      if (initialExternalResearchCount >= configuredResearchBucketLimit) continue;
+      initialExternalResearchCount += 1;
+    }
+    push(task);
   }
   if (sourceCollectionTasks.length && !ordered.some((task) => leaderTaskRequiresSourceCollection(primary, task))) {
     push(preferredSourceTask);
@@ -10908,7 +10600,7 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
   };
   pushSelected(primary);
   const layerLimits = new Map([
-    [2, 1],
+    [2, cmoWorkflow ? 2 : 1],
     [3, 1]
   ]);
   const layerCounts = new Map();
@@ -10925,7 +10617,10 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     if (layer === 1 && leaderTaskRequiresSourceCollection(primary, safe)) {
       const bucket = sourceBucketForTask(safe);
       const currentBucket = Number(sourceBucketCounts.get(bucket) || 0);
-      if (!options.force && currentBucket >= 1) return;
+      const bucketLimit = cmoWorkflow && bucket === 'research'
+        ? (configuredResearchBucketLimit > 0 ? configuredResearchBucketLimit : 2)
+        : 1;
+      if (!options.force && currentBucket >= bucketLimit) return;
       pushSelected(safe);
       sourceBucketCounts.set(bucket, currentBucket + 1);
       layerCounts.set(layer, Number(layerCounts.get(layer) || 0) + 1);
@@ -10948,8 +10643,8 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     }
   };
   fillLayer(1, ['data_analysis', 'teardown', 'research', 'validation']);
-  fillLayer(2, primary === 'cmo_leader' || primary === 'free_web_growth_leader' ? ['growth', 'media_planner'] : []);
-  fillLayer(3, primary === 'cmo_leader' || primary === 'free_web_growth_leader' ? ['seo_gap', 'landing', 'writing', 'writer', 'list_creator'] : []);
+  fillLayer(2, cmoWorkflow ? ['growth', 'media_planner'] : []);
+  fillLayer(3, cmoWorkflow ? ['seo_gap', 'landing', 'writing', 'writer', 'list_creator'] : []);
   for (const task of requestedActions) pushLayerTask(task, { force: true });
   const actionTasks = ordered.filter((task) => (leaderTaskLayer(primary, task) || 1) >= leaderActionLayerStart(primary));
   if (
@@ -10988,7 +10683,10 @@ function planWorkflowSelections(agents, taskType, prompt, options = {}) {
         maxTasks: defaultMaxTasks,
         expand: options.expand !== false
       });
-  plannedTasks = ensureLeaderWorkflowActionTasks(plannedTasks, primaryTask, prompt, { maxTasks: defaultMaxTasks });
+  plannedTasks = ensureLeaderWorkflowActionTasks(plannedTasks, primaryTask, prompt, {
+    maxTasks: defaultMaxTasks,
+    maxExternalResearchTasks: options.maxExternalResearchTasks
+  });
   const tagHintsByTask = options.tagHintsByTask && typeof options.tagHintsByTask === 'object' ? options.tagHintsByTask : {};
   const selections = [];
   const usedAgentIds = new Set();
@@ -11264,17 +10962,28 @@ async function maybeRefineWorkflowPlanWithLeaderLlm(agents = [], body = {}, reso
   const primaryTask = String(resolved.plan.plannedTasks[0] || '').trim().toLowerCase();
   if (!isWorkflowLeaderTask(primaryTask)) return resolved;
   if (options.recurring && String(env?.LEADER_PLANNER_RECURRING_LLM || '').trim().toLowerCase() !== 'true') return resolved;
-  const refined = await planLeaderWorkflowWithOpenAi(agents, body, resolved.plan, env);
-  if (!refined?.plannedTasks?.length) return resolved;
-  const plan = planWorkflowSelections(agents, body.task_type, body.prompt, {
+  const maxExternalResearchTasks = primaryTask === 'cmo_leader' && String(env?.OPENAI_API_KEY || env?.BUILTIN_OPENAI_API_KEY || '').trim()
+    ? 1
+    : 0;
+  const rebuildPlan = (plannedTasks = [], tagHintsByTask = {}, leaderPlanning = null) => planWorkflowSelections(agents, body.task_type, body.prompt, {
     budgetCap: body.budget_cap || 0,
-    plannedTasks: refined.plannedTasks,
-    tagHintsByTask: refined.tagHintsByTask,
-    leaderPlanning: refined.leaderPlanning,
+    plannedTasks,
+    tagHintsByTask,
+    leaderPlanning,
     selectedAgentId: selectedAgentIdFromOrderBody(body),
     selectedAgentTaskType: selectedAgentTaskTypeFromOrderBody(body),
-    expand: true
+    expand: true,
+    maxExternalResearchTasks
   });
+  const refined = await planLeaderWorkflowWithOpenAi(agents, body, resolved.plan, env);
+  if (!refined?.plannedTasks?.length) {
+    if (!maxExternalResearchTasks) return resolved;
+    const cappedPlan = rebuildPlan(resolved.plan.plannedTasks, resolved.plan.tagHintsByTask, resolved.plan.leaderPlanning || null);
+    return cappedPlan.selections.length >= 2
+      ? { ...resolved, plan: cappedPlan, reason: `${resolved.reason} Leader planner kept deterministic task ordering with capped research fan-out.` }
+      : resolved;
+  }
+  const plan = rebuildPlan(refined.plannedTasks, refined.tagHintsByTask, refined.leaderPlanning);
   if (plan.selections.length < 2) return resolved;
   return {
     ...resolved,
@@ -16449,10 +16158,19 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
   const workflowInputForTask = (task, options = {}) => {
     const safeTask = String(task || '').trim().toLowerCase();
     const layer = workflowDispatchLayer(workflowPseudoParent, { workflowTask: safeTask, taskType: safeTask });
-    const phase = String(options.sequencePhase || '').trim().toLowerCase()
+    let phase = String(options.sequencePhase || '').trim().toLowerCase()
       || workflowSequencePhaseForTask(workflowPrimary, safeTask, layer);
+    if (
+      workflowPrimary === 'cmo_leader'
+      && safeTask === 'growth'
+      && Array.isArray(plan?.plannedTasks)
+      && plan.plannedTasks.includes('media_planner')
+    ) {
+      phase = 'execution';
+    }
     const requiresSourceCollection = leaderTaskRequiresSourceCollection(workflowPrimary, safeTask);
-    const requiresResearchSearch = requiresSourceCollection && leaderTaskUsesWebSearch(workflowPrimary, safeTask);
+    const requiresResearchSearch = requiresSourceCollection
+      && leaderTaskUsesWebSearch(workflowPrimary, safeTask);
     const childInputBase = body.input && typeof body.input === 'object' ? body.input : {};
     const childBrokerBase = childInputBase._broker && typeof childInputBase._broker === 'object'
       ? childInputBase._broker
@@ -18349,6 +18067,7 @@ function timeoutFloorMsForJob(job = {}, agent = null) {
     return Math.max(floorMs, estimateMs);
   }
   if (agent && sampleKindFromAgent(agent)) {
+    if (Number(job?.deadlineSec || 0) > 0) return null;
     return Math.max(BUILT_IN_JOB_TIMEOUT_FLOOR_MS, estimateMs);
   }
   return null;
@@ -18359,6 +18078,9 @@ function effectiveTimeoutDeadlineMs(job = {}, agent = null) {
   const floorMs = timeoutFloorMsForJob(job, agent);
   const scheduledDispatch = String(job?.dispatch?.completionStatus || '').trim().toLowerCase() === 'dispatch_scheduled';
   if (scheduledDispatch) {
+    if (job?.jobKind === 'workflow_child' || job?.workflowParentId) {
+      return Math.max(...[explicitMs, floorMs, DISPATCH_SCHEDULE_STALE_MS].filter((value) => value != null));
+    }
     const baseMs = explicitMs == null && floorMs == null ? DISPATCH_SCHEDULE_TIMEOUT_MS : Math.min(...[explicitMs, floorMs, DISPATCH_SCHEDULE_TIMEOUT_MS].filter((value) => value != null));
     return Math.max(DISPATCH_SCHEDULE_STALE_MS, baseMs);
   }
@@ -18389,6 +18111,8 @@ async function sweepTimedOutJobs(storage, options = {}) {
     const swept = [];
     for (const job of state.jobs) {
       if (!['queued', 'claimed', 'running', 'dispatched'].includes(job.status)) continue;
+      const completionStatus = String(job?.dispatch?.completionStatus || '').trim().toLowerCase();
+      if (completionStatus === 'completion_queued') continue;
       if (workflowParentHasLiveChildren(state, job)) continue;
       const agent = job.assignedAgentId ? state.agents.find((item) => item.id === job.assignedAgentId) || null : null;
       const deadlineMs = effectiveTimeoutDeadlineMs(job, agent);
@@ -18670,13 +18394,13 @@ export default {
     if (url.pathname === '/api/connectors/google/analytics-report' && request.method === 'GET') {
       return handleGoogleAnalyticsReport(request, env);
     }
-    if (url.pathname === '/api/connectors/instagram/post' && request.method === 'POST') {
+    if (apiRouteMatches(url.pathname, request.method, 'CONNECTORS_INSTAGRAM_POST', 'POST')) {
       return handleInstagramConnectorPost(request, env);
     }
-    if (url.pathname === '/api/connectors/google/send-gmail' && request.method === 'POST') {
+    if (apiRouteMatches(url.pathname, request.method, 'CONNECTORS_GOOGLE_SEND_GMAIL', 'POST')) {
       return handleGoogleSendGmail(request, env);
     }
-    if (url.pathname === '/api/connectors/resend/send-email' && request.method === 'POST') {
+    if (apiRouteMatches(url.pathname, request.method, 'CONNECTORS_RESEND_SEND_EMAIL', 'POST')) {
       return handleResendSendEmail(request, env);
     }
     if (url.pathname === '/api/internal/test-welcome-email' && request.method === 'POST') {
@@ -18700,10 +18424,10 @@ export default {
     if (url.pathname === '/api/github/generate-manifest' && request.method === 'POST') {
       return handleGithubGenerateManifest(request, env);
     }
-    if (url.pathname === '/api/github/create-adapter-pr' && request.method === 'POST') {
+    if (apiRouteMatches(url.pathname, request.method, 'GITHUB_CREATE_ADAPTER_PR', 'POST')) {
       return handleGithubCreateAdapterPr(storage, request, env);
     }
-    if (url.pathname === '/api/github/create-executor-pr' && request.method === 'POST') {
+    if (apiRouteMatches(url.pathname, request.method, 'GITHUB_CREATE_EXECUTOR_PR', 'POST')) {
       return handleGithubCreateExecutorPr(storage, request, env);
     }
     if (url.pathname === '/api/github/import-repo' && request.method === 'POST') {
@@ -18898,7 +18622,7 @@ export default {
     if (apiRouteMatches(url.pathname, request.method, 'APP_CONTEXTS', 'POST')) {
       return handleCreateAppContext(storage, request, env);
     }
-    if (/^\/api\/app-contexts\/[^/]+$/.test(url.pathname) && request.method === 'GET') {
+    if (apiRouteMatches(url.pathname, request.method, 'APP_CONTEXT_DETAIL', 'GET')) {
       return handleGetAppContext(storage, request, env, decodeURIComponent(url.pathname.split('/')[3] || ''));
     }
     if (/^\/api\/apps\/[^/]+\/verify$/.test(url.pathname) && request.method === 'POST') {
@@ -19283,6 +19007,9 @@ export default {
       const scheduledTime = Number(controller?.scheduledTime || Date.now()) || Date.now();
       ctx.waitUntil((async () => {
         await runMinuteWorkflowCompletionSweep(storage, env, cron, scheduledTime);
+        await sweepTimedOutJobs(storage, {
+          eventSource: 'cron'
+        });
         await runWorkflowOrchestrationWatchdog(storage, env, {
           source: 'minute-cron',
           cron,

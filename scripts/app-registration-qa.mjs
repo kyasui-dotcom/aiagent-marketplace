@@ -10,6 +10,7 @@ import {
   validateAppManifest
 } from '../lib/apps.js';
 import { createAppContextRecord, publicAppContext } from '../lib/app-context.js';
+import { API_ROUTES } from '../lib/api-routes.js';
 
 const filesToCheck = [
   '../lib/apps.js',
@@ -116,20 +117,39 @@ const cli = readFileSync(new URL('../scripts/external-chat.mjs', import.meta.url
 const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 const cliHelp = readFileSync(new URL('../public/cli-help.html', import.meta.url), 'utf8');
 
-for (const source of [server, worker]) {
-  assert.ok(source.includes('/api/apps'), 'server runtimes should expose /api/apps');
-  assert.ok(source.includes('/api/apps/import-manifest'), 'server runtimes should expose app manifest import');
-  assert.ok(source.includes('/api/apps/import-url'), 'server runtimes should expose app URL import');
-  assert.ok(source.includes('/api/app-contexts'), 'server runtimes should expose generic app context API');
-  assert.ok(source.includes('/.well-known/mcp.json'), 'server runtimes should expose MCP discovery metadata');
-  assert.ok(source.includes('/mcp'), 'server runtimes should expose an MCP JSON-RPC endpoint');
-  assert.ok(source.includes('handleMcpRequest'), 'server runtimes should handle MCP JSON-RPC requests');
-  assert.ok(source.includes('/api/apps\\/[^/]+\\/handoff') || source.includes('/api\\/apps\\/[^/]+\\/handoff'), 'server runtimes should expose app handoff proxy');
-  assert.ok(source.includes('handleRegisterApp'), 'server runtimes should register apps');
-  assert.ok(source.includes('handleAppHandoff'), 'server runtimes should proxy app handoff payloads');
-  assert.ok(source.includes('handleCreateAppContext'), 'server runtimes should accept app context payloads');
-  assert.ok(source.includes('handleVerifyApp'), 'server runtimes should verify apps');
-  assert.ok(source.includes('apps:'), 'server runtimes should include apps in snapshots');
+const sourceExposesApiRoute = (source, routeKey) => {
+  const route = API_ROUTES[routeKey];
+  return Boolean(
+    route
+    && (
+      source.includes(route)
+      || source.includes(`API_ROUTES.${routeKey}`)
+      || source.includes(`'${routeKey}'`)
+      || source.includes(`"${routeKey}"`)
+    )
+  );
+};
+
+assert.ok(server.includes("import worker from './worker.js'"), 'Node server should delegate app APIs to the Worker implementation');
+assert.ok(server.includes('worker.fetch('), 'Node server should route app API requests through worker.fetch');
+assert.ok(!server.includes('handleRegisterApp'), 'Node server should not duplicate app registration handlers');
+assert.ok(!server.includes('handleAppHandoff'), 'Node server should not duplicate app handoff handlers');
+assert.ok(!server.includes('handleCreateAppContext'), 'Node server should not duplicate app context handlers');
+
+for (const source of [worker]) {
+  assert.ok(source.includes('/api/apps'), 'Worker should expose /api/apps');
+  assert.ok(source.includes('/api/apps/import-manifest'), 'Worker should expose app manifest import');
+  assert.ok(source.includes('/api/apps/import-url'), 'Worker should expose app URL import');
+  assert.ok(sourceExposesApiRoute(source, 'APP_CONTEXTS'), 'Worker should expose generic app context API');
+  assert.ok(source.includes('/.well-known/mcp.json'), 'Worker should expose MCP discovery metadata');
+  assert.ok(source.includes('/mcp'), 'Worker should expose an MCP JSON-RPC endpoint');
+  assert.ok(source.includes('handleMcpRequest'), 'Worker should handle MCP JSON-RPC requests');
+  assert.ok(source.includes('/api/apps\\/[^/]+\\/handoff') || source.includes('/api\\/apps\\/[^/]+\\/handoff'), 'Worker should expose app handoff proxy');
+  assert.ok(source.includes('handleRegisterApp'), 'Worker should register apps');
+  assert.ok(source.includes('handleAppHandoff'), 'Worker should proxy app handoff payloads');
+  assert.ok(source.includes('handleCreateAppContext'), 'Worker should accept app context payloads');
+  assert.ok(source.includes('handleVerifyApp'), 'Worker should verify apps');
+  assert.ok(source.includes('apps:'), 'Worker should include apps in snapshots');
 }
 
 assert.ok(chat.includes('registeredApps: []'), 'chat state should include registered apps');

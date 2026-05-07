@@ -53,14 +53,17 @@
 - Worker parity command: `npm run dev`
 - Playwright config: `playwright.config.js`
 
-注意点として、`worker.js` と `server.js` には重複実装が多くあります。API や認証、job flow を修正するときは、Worker 側だけでなくローカル/E2E 側の挙動も確認してください。
+`server.js` は API / auth / connector / job flow を持たず、HTTP を Fetch API `Request` に変換して `worker.fetch()` に委譲する薄い互換アダプタです。E2E も本番 Worker と同じ route handler を通ります。
 
 ## 4. ディレクトリ構成
 
 | パス | 役割 |
 | --- | --- |
 | `worker.js` | Cloudflare Workers の本番 entry。API routing、auth、job orchestration、connector、billing などを持つ。 |
-| `server.js` | Node.js ローカル server。E2E と開発確認用。Worker と重複する処理が多い。 |
+| `server.js` | Node.js ローカル server。E2E と開発確認用。`worker.fetch()` へ委譲し、static asset binding、local queue binding、test bootstrap、SSE bridge だけを持つ。 |
+| `lib/api-routes.js` | Worker API route manifest と method-aware matcher。route 追加時はここも更新する。 |
+| `lib/http-policy.js` | rate limit、CSRF exempt、unsafe method 判定の共有 policy。Worker 側で一元的に適用する。 |
+| `lib/external-write-confirmation.js` | `confirm_post`、`confirm_send`、`confirm_repo_write` など外部 write confirmation の共有判定。 |
 | `lib/storage.js` | D1 / in-memory storage の抽象化、schema、seed、state migration 相当の処理。 |
 | `lib/shared.js` | agent routing、billing、account、recurring order、prompt inference などの共有ドメインロジック。 |
 | `lib/builtin-agents.js` | built-in agent の実行ランタイム。OpenAI 呼び出し、mock/sample output、agent 別ポリシーを含む。 |
@@ -220,15 +223,21 @@ npm run qa:ui
 
 ### Worker と Node server の二重実装
 
-多くの API route、auth、connector、job flow が `worker.js` と `server.js` に存在します。改善対象が本番だけなら Worker が主ですが、E2E が Node server を通るため、テストが通っても本番 Worker とズレる可能性があります。
+API route、auth、connector、job flow の二重実装は削除済みです。`server.js` は `worker.fetch()` へ委譲する互換アダプタであり、Node 側に business route handler を追加してはいけません。
+
+API route は `worker.js` と `lib/api-routes.js`、rate limit / CSRF exempt は `lib/http-policy.js` に寄せます。route を追加、削除、method 変更する場合は、Worker handler、manifest、`npm run qa:architecture` を更新してください。ローカル E2E のために `server.js` に route を再実装しないでください。
 
 ### 巨大ファイル化
 
-`worker.js`、`server.js`、`lib/shared.js`、`lib/builtin-agents.js` は非常に大きいです。改善時は関数単位で影響範囲を絞り、既存の helper を優先してください。
+`worker.js`、`lib/shared.js`、`lib/builtin-agents.js` は非常に大きいです。改善時は関数単位で影響範囲を絞り、既存の helper を優先してください。`server.js` は小さい adapter のまま維持してください。
 
 ### External write の安全性
 
 投稿、送信、PR 作成、repository write などは approval gate が必要です。UI、API、scheduled execution のどこから来ても同じ制約が守られるかを確認してください。
+
+外部 write 系 route は method-aware route matcher、共有 rate limit、明示 confirmation、connector/account/text の一致確認をセットで扱います。X 投稿は `lib/x-connector.js`、exact action 設定は `lib/exact-actions.js` を優先し、Worker や Node adapter に同じ sanitizer や approval 判定を再実装しないでください。
+
+`confirm_post`、`confirm_send`、`confirm_repo_write`、`confirm_adapter_pr` の boolean 判定は `lib/external-write-confirmation.js` にあります。Delivery execute / schedule の `confirm_execute`、`confirm_schedule`、prepare payload、executor payload mapping、follow-up order body、response normalization は `public/delivery-action-contract.js` にあります。
 
 ### Storage schema の同期
 
@@ -256,8 +265,9 @@ Job 作成、billing reservation、job failure、retry、timeout、completion �
 
 ## 14. 代表的な改善テーマ
 
-- `worker.js` / `server.js` の重複削減
+- `worker.js` の巨大 route / workflow handler の段階的切り出し
 - API route table 化
+- HTTP policy の共有化
 - D1 migration と `lib/storage.js` schema の同期改善
 - job state machine の明確化
 - leader workflow の可観測性向上
@@ -269,7 +279,9 @@ Job 作成、billing reservation、job failure、retry、timeout、completion �
 
 ## 15. 変更時の推奨チェックリスト
 
-- 変更対象が Worker / Node server の片方だけでよいか確認した
+- Node adapter に business route handler を追加していない
+- API route / rate limit / CSRF exempt の変更なら `lib/api-routes.js` と `lib/http-policy.js` を確認した
+- external write confirmation の変更なら `lib/external-write-confirmation.js` と `public/delivery-action-contract.js` を確認した
 - storage schema や public sanitizer への影響を確認した
 - external write に approval gate が必要か確認した
 - billing、retry、timeout、recurring order への影響を確認した

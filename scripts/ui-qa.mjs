@@ -36,6 +36,7 @@ const deliveryActionContractPath = new URL('../public/delivery-action-contract.j
 const workerPath = new URL('../worker.js', import.meta.url);
 const serverPath = new URL('../server.js', import.meta.url);
 const mcpPath = new URL('../lib/mcp.js', import.meta.url);
+const httpPolicyPath = new URL('../lib/http-policy.js', import.meta.url);
 const wranglerPath = new URL('../wrangler.jsonc', import.meta.url);
 const publicHeadersPath = new URL('../public/_headers', import.meta.url);
 
@@ -53,6 +54,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(caitAppBridgePath)], { 
 execFileSync(process.execPath, ['--check', fileURLToPath(chatEnginePath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(deliveryActionContractPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(mcpPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(httpPolicyPath)], { stdio: 'pipe' });
 
 const html = readFileSync(htmlPath, 'utf8');
 const chatHtml = readFileSync(chatHtmlPath, 'utf8');
@@ -86,6 +88,7 @@ const stylesCss = readFileSync(stylesCssPath, 'utf8');
 const worker = readFileSync(workerPath, 'utf8');
 const server = readFileSync(serverPath, 'utf8');
 const mcp = readFileSync(mcpPath, 'utf8');
+const httpPolicy = readFileSync(httpPolicyPath, 'utf8');
 const wrangler = readFileSync(wranglerPath, 'utf8');
 const publicHeaders = readFileSync(publicHeadersPath, 'utf8');
 const appSurfaceSources = [
@@ -134,7 +137,7 @@ assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat c
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/chat.css?v=20260507c'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260507j"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260507k"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -209,7 +212,13 @@ assert.ok(wrangler.includes('"QUEUED_DISPATCH_SWEEP_LIMIT": "12"'), 'Queued disp
 assert.ok(wrangler.includes('"WORKFLOW_ORCHESTRATION_STALE_MS": "60000"'), 'Workflow watchdog should retry stale queued workflows quickly.');
 assert.ok(wrangler.includes('"WORKFLOW_ORCHESTRATION_BLOCKED_MS": "600000"'), 'Workflow watchdog should surface a visible blocker instead of leaving queued forever.');
 assert.ok(worker.includes('const layerLimits = new Map'), 'CMO leader task selection should cap upstream work per layer instead of using one global task limit.');
-assert.ok(worker.includes('[2, 1]') && worker.includes('[3, 1]') && worker.includes('sourceBucketForTask'), 'Leader upstream layers should keep one planning task, one preparation task, and separate data/research source buckets.');
+assert.ok(
+  worker.includes('[2, cmoWorkflow ? 2 : 1]')
+  && worker.includes('[3, 1]')
+  && worker.includes('sourceBucketForTask')
+  && worker.includes('maxExternalResearchTasks'),
+  'Leader upstream layers should cap preparation, separate data/research source buckets, and allow CMO fallback/planner research fan-out limits.'
+);
 assert.ok(worker.includes('DISPATCH_SCHEDULE_TIMEOUT_MS'), 'Scheduled dispatch attempts should have a timeout instead of refreshing forever.');
 assert.ok(worker.includes('firstDispatchRequestedAt'), 'Dispatch scheduling should preserve the first requested timestamp for stalled-run diagnosis.');
 assert.ok(worker.includes('scheduleAttempts'), 'Dispatch scheduling should count scheduling retries separately from agent dispatch attempts.');
@@ -491,7 +500,14 @@ assert.ok(chatJs.includes('publisher-approval-studio'), 'Chat app catalog should
 assert.ok(chatJs.includes('lead-ops-console'), 'Chat app catalog should include Lead Ops Console.');
 assert.ok(chatJs.includes('delivery-manager'), 'Chat app catalog should include Delivery Manager.');
 assert.ok(chatJs.includes("const CHATUX_RETURN_PATH = '/chat'"), 'OAuth and delivery return path should use the canonical chat route, not /chatux or /chat.html.');
-assert.ok(chatJs.includes("url.searchParams.set('return_to', CHATUX_RETURN_PATH);"), 'X OAuth links should carry the root chat return path.');
+assert.ok(chatJs.includes('CHATUX_OAUTH_RETURN_STATE_KEY'), 'Chat should keep a short-lived OAuth return snapshot for in-progress order recovery.');
+assert.ok(chatJs.includes("url.searchParams.set('return_to', currentChatReturnPath());"), 'OAuth links should carry the active chat return path with restore identifiers.');
+assert.ok(chatJs.includes("url.searchParams.set('cait_restore_chat', '1')"), 'Chat OAuth return paths should request active chat restoration.');
+assert.ok(chatJs.includes("url.searchParams.set('cait_chat_session_id', sessionId)"), 'Chat OAuth return paths should include the active chat session id.');
+assert.ok(chatJs.includes("url.searchParams.set('cait_order_id', orderId)"), 'Chat OAuth return paths should include the active order id.');
+assert.ok(chatJs.includes('restoreChatOAuthReturnStateFromUrl'), 'Chat should restore the active thread immediately after Google OAuth returns.');
+assert.ok(chatJs.includes('restoreRequestedChatSessionFromHistory'), 'Chat should fall back to server chat memory when the OAuth snapshot is unavailable.');
+assert.ok(chatJs.includes("saveChatOAuthReturnState('oauth_link_click')"), 'Chat should save the latest runtime state immediately before OAuth navigation.');
 assert.ok(chatJs.includes('function xAuthHref'), 'X OAuth links should be built centrally.');
 assert.ok(!chatJs.includes('href="/auth/x">Connect X'), 'Chat should not use bare X OAuth links.');
 assert.ok(chatJs.includes('maybeRenderAuthorityNotice(job'), 'Chat should render approval or connector requests while an order is still running.');
@@ -566,6 +582,7 @@ assert.ok(chatJs.includes('navigator.clipboard'));
 assert.ok(chatJs.includes('state.trackedOrderIds:') || chatJs.includes('trackedOrderIds: new Set()'), 'Tracked orders should be in-memory only for the active chat session.');
 assert.ok(chatJs.includes('renderRestoredSessionOrderContext'), 'Restored chat sessions should render related order status/results inside the chat.');
 assert.ok(chatJs.includes('data-chat-order-retry'), 'Restored order cards should offer an explicit retry confirmation path.');
+assert.ok(chatJs.includes('deliveryOrderActionsHtml'), 'Blocked delivery updates should keep status/retry actions visible after connector returns.');
 assert.ok(chatJs.includes('restored-order-progress'), 'Restored order cards should keep progress details visible.');
 assert.ok(chatCss.includes('.restored-order-card'), 'Chat CSS should style restored order history cards.');
 assert.ok(chatJs.includes('recentJobsApiPath'), 'Recent chat/order history should come from the server job API.');
@@ -619,62 +636,23 @@ assert.ok(chatEngine.includes('selected_agent_id: selectedAgentId'), 'Prepare-or
 assert.ok(chatEngine.includes('skip_intake:'), 'Prepared chat dispatch should not be blocked by a duplicate intake pass.');
 assert.ok(chatEngine.includes("source: 'chat_send_order'"), 'Chat dispatch should confirm the user approved running the selected worker.');
 
-assert.ok(server.includes("if (pathname === '/') return '/index.html';"));
-assert.ok(server.includes('function handleChatPageRequest'), 'Local server should gate chat HTML behind login.');
-assert.ok(server.includes('function handleAdminPageRequest'), 'Local server should serve the admin shell.');
-assert.ok(server.includes("return serveStatic(res, '/admin.html');"), 'Local admin route should serve the shell and let the API enforce admin data access.');
-assert.ok(!server.includes('redirect(res, adminLoginRedirectPath(req)'), 'Local admin route should not create a server-side login redirect loop.');
-assert.ok(server.includes("'/admin.html'"));
-assert.ok(server.includes("'/admin.css'"));
-assert.ok(server.includes("'/admin.js'"));
-assert.ok(server.includes("loginUrl.searchParams.set('source', 'gate_chat')"), 'Chat gate should send users to the login screen with a gate source.');
-assert.ok(server.includes('authBaseUrl: baseUrl(req)'), 'Local auth status should expose the canonical auth base URL.');
-assert.ok(server.includes('GOOGLE_OAUTH_SCOPE_GROUPS'), 'Local Google OAuth should use explicit scope groups.');
-assert.ok(server.includes('googleOAuthScopeGroupsFromUrl'), 'Local Google OAuth should derive scopes from requested capabilities.');
-assert.ok(server.includes('googleScopedOAuthScope'), 'Local Google connector links should build the smallest requested scope set.');
-assert.ok(server.includes("githubOAuthScope(action = 'login', capabilities = [])"), 'Local GitHub OAuth should only request repo scope when a repo capability is requested.');
-assert.ok(/url\.pathname === '\/auth\/google'[\s\S]{0,600}existingSession\?\.user && action === 'login'/.test(server), 'Local Google analytics connect should still start OAuth when an existing chat session needs connector scopes.');
-assert.ok(server.includes("['link', 'connect'].includes(action)"), 'Local Google connector callback should link both link and connect OAuth actions.');
-assert.ok(server.includes("error?.code === 'connector_reauth_required' && sessionHasGoogleOauth(session)"), 'Local Google connector reads should fall back to a fresh Google session token when a stored connector lacks a refresh token.');
-assert.ok(server.includes("returnUrl.searchParams.set('auth_error', safeCode)"), 'Local Google OAuth failures should return to the app with an auth_error instead of dumping users at the home page.');
-assert.ok(server.includes("form-action 'self' https://aiagent-marketplace.net"), 'Local CSP should allow the Analytics Console OAuth form to submit to the official CAIt auth origin.');
+assert.ok(server.includes("import worker from './worker.js'"), 'Local server should import the Worker as the single API implementation.');
+assert.ok(server.includes('worker.fetch('), 'Local server should delegate HTTP handling to worker.fetch.');
+assert.ok(server.includes('createStaticAssetsBinding'), 'Local server should provide a Cloudflare Assets-compatible binding.');
+assert.ok(server.includes('assetPathCandidates'), 'Local assets should support extensionless Worker asset requests.');
+assert.ok(server.includes('BOOTSTRAP_STATE_JSON'), 'Local server should keep E2E bootstrap support.');
+assert.ok(server.includes('WORKFLOW_DISPATCH_QUEUE'), 'Local server should provide a local queue binding for Worker workflow dispatch.');
+assert.ok(server.includes('handleLocalEvents'), 'Local server may keep only the SSE development bridge outside Worker routes.');
+assert.ok(!server.includes('function handleChatPageRequest'), 'Local server should not duplicate chat route gating; Worker owns it.');
+assert.ok(!server.includes('function handleAdminPageRequest'), 'Local server should not duplicate admin route handling; Worker owns it.');
+assert.ok(!server.includes('async function handleCreateWorkflowJob'), 'Local server should not duplicate job creation flow; Worker owns it.');
+assert.ok(!server.includes('async function handleGoogleAuthStart'), 'Local server should not duplicate auth flow; Worker owns it.');
+assert.ok(!server.includes('async function handleXConnectorPost'), 'Local server should not duplicate connector write routes; Worker owns them.');
+assert.ok(!server.includes('async function handleStripeWebhook'), 'Local server should not duplicate billing/webhook flow; Worker owns it.');
 assert.ok(publicHeaders.includes("form-action 'self' https://aiagent-marketplace.net"), 'Static asset CSP headers should allow the Analytics Console OAuth form to submit to the official CAIt auth origin.');
-assert.ok(server.includes("'/chat.html'"));
-assert.ok(server.includes('/api/chat-memory'), 'Local server should expose a lightweight chat memory endpoint.');
-assert.ok(server.includes('auth: chatMemoryAuthStatus'), 'Local chat memory endpoint should return lightweight auth for faster chat first paint.');
-assert.ok(server.includes("'/home.css'"));
-assert.ok(server.includes("'/chat.css'"));
-assert.ok(server.includes("'/chat.js'"));
-assert.ok(server.includes("'/apps.html'"));
-assert.ok(server.includes("'/analytics-console.html'"));
-assert.ok(server.includes("'/publisher-approval.html'"));
-assert.ok(server.includes("'/lead-ops.html'"));
-assert.ok(server.includes("'/delivery-manager.html'"));
-assert.ok(server.includes("'/cait-app-bridge.js'"));
 assert.ok(!server.includes("'/chatux'"));
 assert.ok(!server.includes('/chatux/index.html'));
 assert.ok(!server.includes('/chatux/chatux.css'));
-assert.ok(server.includes('async function agentsCatalogPayload'), 'Local server should serve paged agent catalog payloads without building the full snapshot.');
-assert.ok(server.includes('async function appsCatalogPayload'), 'Local server should serve paged app catalog payloads without building the full snapshot.');
-assert.ok(server.includes('return json(res, 200, await agentsCatalogPayload(req));'), 'Local /api/agents should use the paged catalog endpoint.');
-assert.ok(server.includes('return json(res, 200, await appsCatalogPayload(req));'), 'Local /api/apps should use the paged catalog endpoint.');
-assert.ok(server.includes('/.well-known/mcp.json'), 'Local server should expose MCP discovery metadata.');
-assert.ok(server.includes('async function handleMcpRequest'), 'Local server should expose a public MCP endpoint.');
-assert.ok(server.includes("url.pathname === '/tokushoho'") && server.includes("'/legal-notice.html'"), 'Local server should redirect the old tokushoho URL to the English legal notice URL.');
-assert.ok(server.includes('async function handleAppHandoff'), 'Local server should proxy generic app handoff requests.');
-assert.ok(server.includes('/api\\/apps\\/[^/]+\\/handoff'), 'Local server should expose /api/apps/:id/handoff.');
-assert.ok(server.includes('async function handleCreateAppContext'), 'Local server should accept generic app context payloads.');
-assert.ok(
-  server.includes('/api/app-contexts') || server.includes('API_ROUTES.APP_CONTEXTS') || server.includes("apiRouteMatches(url.pathname, req.method, 'APP_CONTEXTS'"),
-  'Local server should expose /api/app-contexts.'
-);
-assert.ok(server.includes('/api/connectors/google/analytics-report'), 'Local server should expose the Google analytics report endpoint.');
-assert.ok(server.includes('analyticsdata.googleapis.com/v1beta'), 'Local server should call the GA4 Data API for report rows.');
-assert.ok(server.includes('Promise.allSettled(['), 'Local GA4 detail rows should not make the whole GA4 report fail when one breakdown fails.');
-assert.ok(server.includes('function normalizeGoogleGa4PropertyName'), 'Local server should accept numeric GA4 property IDs and normalize them.');
-assert.ok(server.includes("'sessionDefaultChannelGroup', 'sessionSourceMedium'"), 'Local server should fetch channel source/referral detail from GA4.');
-assert.ok(server.includes('/searchAnalytics/query'), 'Local server should call the Search Console Search Analytics API.');
-assert.ok(server.includes("repo_path: String(body.repo_path || body.repoPath || draft.repoPath"), 'Local server should pass Publisher PR handoff paths into GitHub executor PR creation.');
 assert.ok(worker.includes("'/chat.css'"));
 assert.ok(worker.includes('/api/chat-memory'), 'Worker should expose a lightweight chat memory endpoint.');
 assert.ok(worker.includes('auth: await chatMemoryAuthStatus'), 'Worker chat memory endpoint should return lightweight auth for faster chat first paint.');
@@ -735,8 +713,9 @@ assert.ok(mcp.includes('resources/read'), 'MCP helper should support resource re
 assert.ok(mcp.includes('resources/templates/list'), 'MCP helper should support resource template discovery.');
 assert.ok(mcp.includes('prompts/get'), 'MCP helper should expose prompt templates.');
 assert.ok(mcp.includes('structuredContent'), 'MCP tool calls should return structured content for capable clients.');
-assert.ok(server.includes("pathname === '/mcp' && verb === 'POST'"), 'Local server should rate-limit MCP POST traffic explicitly.');
-assert.ok(worker.includes("pathname === '/mcp' && verb === 'POST'"), 'Worker should rate-limit MCP POST traffic explicitly.');
+assert.ok(!server.includes("from './lib/http-policy.js'"), 'Local server should not duplicate HTTP policy imports; Worker owns policy enforcement.');
+assert.ok(worker.includes("from './lib/http-policy.js'"), 'Worker should use shared HTTP policy helpers.');
+assert.ok(httpPolicy.includes("pathname === '/mcp' && verb === 'POST'"), 'Shared HTTP policy should rate-limit MCP POST traffic explicitly.');
 assert.ok(worker.includes('await mutateAccountByLogin(storage, login'), 'OAuth account persistence should avoid full-state D1 rewrites during login.');
 assert.ok(!worker.includes("'/chatux'"));
 assert.ok(!worker.includes('/chatux/index.html'));
