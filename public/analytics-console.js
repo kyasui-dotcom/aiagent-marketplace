@@ -784,6 +784,10 @@ function buildContext() {
       googleSearchConsoleSite: state.gscSite,
       googleGa4Property: state.ga4Property,
       googleReportLoaded: state.googleReportLoaded,
+      googleReportSources: {
+        ga4: Boolean(state.googleReportSources.ga4),
+        gsc: Boolean(state.googleReportSources.gsc)
+      },
       googleReportDateRange: state.googleReportDateRange,
       analyticsSelectedChannel: state.selectedChannel,
       googleWarnings: state.googleWarnings,

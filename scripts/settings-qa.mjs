@@ -1,7 +1,37 @@
 import assert from 'node:assert/strict';
-import { accountIdForLogin, buildAdminDashboard, buildConversionAnalytics, buildMonthlyAccountSummary, chatTrainingExamplesForClient, chatTranscriptsForClient, createChatTranscript, createConversionEventPayload, hideChatMemoryTranscriptForLoginInState, ownChatMemoryForClient, promptInjectionGuardForPrompt, requesterContextFromUser, updateChatTranscriptReviewInState, upsertAccountSettingsInState } from '../lib/shared.js';
+import { accountIdForLogin, buildAdminDashboard, buildConversionAnalytics, buildMonthlyAccountSummary, chatTrainingExamplesForClient, chatTranscriptsForClient, createChatTranscript, createConversionEventPayload, hideChatMemoryTranscriptForLoginInState, orderPreflightForAgent, ownChatMemoryForClient, promptInjectionGuardForPrompt, requesterContextFromUser, updateChatTranscriptReviewInState, upsertAccountSettingsInState } from '../lib/shared.js';
 
 const requester = requesterContextFromUser({ login: 'alice', name: 'Alice Example' }, 'github-app');
+const analyticsContext = {
+  source_app: 'analytics_console',
+  title: 'Acquisition analytics summary',
+  artifacts: [
+    { type: 'google_sources', rows: [{ source: 'ga4', value: 'properties/123' }] },
+    { type: 'google_report_status', rows: [{ loaded: true, range: '2026-04-09 to 2026-05-06' }] }
+  ],
+  raw_context: {
+    connector_provider: 'google',
+    googleGa4Property: 'properties/123',
+    googleReportLoaded: true,
+    googleReportSources: { ga4: true, gsc: false }
+  }
+};
+const analyticsPreflight = orderPreflightForAgent(
+  { id: 'ga4-reader', name: 'GA4 Reader', kind: 'data_analysis', metadata: { requiredConnectorCapabilities: ['google.read_ga4'] } },
+  {},
+  null,
+  { input: { _broker: { appContexts: [analyticsContext], connectorContexts: [analyticsContext] } } }
+);
+assert.equal(analyticsPreflight.ok, true, 'loaded Analytics Console context should satisfy downstream GA4 read requirements for the same order.');
+assert.deepEqual(analyticsPreflight.context_granted_connector_capabilities, ['google.read_ga4']);
+const searchConsolePreflight = orderPreflightForAgent(
+  { id: 'gsc-reader', name: 'GSC Reader', kind: 'data_analysis', metadata: { requiredConnectorCapabilities: ['google.read_gsc'] } },
+  {},
+  null,
+  { input: { _broker: { appContexts: [analyticsContext] } } }
+);
+assert.equal(searchConsolePreflight.ok, false, 'GA4-only attached context should not satisfy Search Console read requirements.');
+assert.deepEqual(searchConsolePreflight.missing_connector_capabilities, ['google.read_gsc']);
 const state = {
   agents: [
     { id: 'agent_alice_01', name: 'ALICE_AGENT', owner: 'alice' },

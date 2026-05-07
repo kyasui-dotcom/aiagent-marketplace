@@ -10897,13 +10897,23 @@ function normalizeOrderStrategy(value = '') {
   return 'auto';
 }
 
+const WORKFLOW_EXTERNAL_ACTION_REQUEST_PATTERN = /(external connector|external execution|connector handoff|connector execution|oauth|publish(?:ing)?|post(?:ing)?|send(?:ing)?|schedule(?:ing)?|execute(?: the)? action|run through action|through to action|through execution|complete through execution|action handoff|action packet|plan\s*(?:and|&)\s*do|plan\s+then\s+execute|not\s+just\s+plan|execute\s+too|実行反映|実行まで|反映まで|アクションまで|actionまで|投稿まで|公開まで|送信まで|配信まで|掲載まで|計画して実行|実行も|やるところまで|実際に.*(?:投稿|公開|送信|配信|掲載|反映|実行)|(?:x|twitter|ツイッター).*(?:投稿|ポスト|スレッド)|(?:メール|gmail).*(?:送信|配信|スケジュール)|(?:github|ギットハブ).*(?:pr|pull request|プルリク|反映))/i;
+
+function workflowHumanActionIntentText(value = '') {
+  return String(value || '')
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line)
+    .filter((line) => !/^(Task|Conversation lead|Work split|Inputs|Constraints|Deliver|Output language|Acceptance|Attached connector context|Use this attached connector data|Use these clarification details|State any remaining assumptions|Recommended next actions):/i.test(line))
+    .join('\n');
+}
+
 function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', prompt = '', options = {}) {
   const tasks = normalizeTaskTypes(plannedTasks);
   const primary = String(tasks[0] || primaryTask || '').trim().toLowerCase();
   if (!isWorkflowLeaderTask(primary)) return tasks;
   const summaryTasks = new Set(['summary']);
   const dataCollectionTasks = new Set(['data_analysis']);
-  const actionRequestPattern = /(external connector|external execution|connector handoff|connector execution|oauth|publish(?:ing)?|post(?:ing)?|send(?:ing)?|schedule(?:ing)?|execute(?: the)? action|run through action|through to action|through execution|complete through execution|action handoff|action packet|completion through delivery|complete through delivery|deliver through execution|plan\s*(?:and|&)\s*do|plan\s+then\s+execute|not\s+just\s+plan|execute\s+too|do\s+it|実行反映|実行まで|反映まで|アクションまで|actionまで|投稿まで|公開まで|送信まで|配信まで|掲載まで|納品まで|完走|最後まで|計画して実行|実行も|やって|やるところまで|実際に.*(?:投稿|公開|送信|配信|掲載|反映)|(?:x|twitter|ツイッター).*(?:投稿|ポスト|スレッド)|(?:メール|gmail).*(?:送信|配信|スケジュール)|(?:github|ギットハブ).*(?:pr|pull request|プルリク|反映))/i;
   const ordered = [];
   const push = (task) => {
     const safe = String(task || '').trim().toLowerCase();
@@ -10933,7 +10943,8 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     CMO_WORKFLOW_PREPARATION_LAYER_TASKS.forEach(push);
     CMO_WORKFLOW_DEFAULT_EXECUTION_TASKS.forEach(push);
   }
-  const text = String(prompt || '').toLowerCase();
+  const text = workflowHumanActionIntentText(prompt).toLowerCase();
+  const requestedExternalExecution = WORKFLOW_EXTERNAL_ACTION_REQUEST_PATTERN.test(text);
   const requestedActions = [];
   const pushRequestedAction = (task) => {
     const safe = String(task || '').trim().toLowerCase();
@@ -10945,10 +10956,7 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
   if (/(reddit|subreddit|レディット|community|コミュニティ)/i.test(text)) pushRequestedAction('reddit');
   if (/(indie\s*hackers|indiehackers|インディーハッカー|インディーハッカーズ)/i.test(text)) pushRequestedAction('indie_hackers');
   if (/(directory submission|directory listing|掲載媒体|媒体掲載|無料掲載|ディレクトリ掲載)/i.test(text)) pushRequestedAction('directory_submission');
-  if (actionRequestPattern.test(text)) {
-    pushRequestedAction('directory_submission');
-    pushRequestedAction('acquisition_automation');
-  }
+  if (/acquisition automation|獲得自動化|集客自動化/i.test(text)) pushRequestedAction('acquisition_automation');
   const selected = [];
   const pushSelected = (task) => {
     const safe = String(task || '').trim().toLowerCase();
@@ -11001,7 +11009,7 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
   fillLayer(3, primary === 'cmo_leader' || primary === 'free_web_growth_leader' ? ['seo_gap', 'landing', 'writing', 'writer', 'list_creator'] : []);
   for (const task of requestedActions) pushLayerTask(task, { force: true });
   const actionTasks = ordered.filter((task) => (leaderTaskLayer(primary, task) || 1) >= leaderActionLayerStart(primary));
-  if (!requestedActions.length && actionRequestPattern.test(text) && actionTasks.length) pushLayerTask(actionTasks[0], { force: true });
+  if (!requestedActions.length && requestedExternalExecution && actionTasks.length) pushLayerTask(actionTasks[0], { force: true });
   for (const task of ordered) {
     const layer = leaderTaskLayer(primary, task) || 1;
     if (layer >= leaderActionLayerStart(primary)) continue;
@@ -11493,6 +11501,30 @@ function workflowChildSnapshot(children = []) {
   }));
 }
 
+function workflowChildIsInternalLeaderSequenceRun(child = {}) {
+  const phase = String(child?.sequencePhase || workflowSequencePhaseForJob(child) || child?.sequence_phase || '').trim().toLowerCase();
+  const task = String(child?.workflowTask || child?.taskType || child?.task_type || '').trim().toLowerCase();
+  return ['checkpoint', 'final_summary'].includes(phase) && isWorkflowLeaderTask(task);
+}
+
+function workflowAgentRunChildren(children = []) {
+  return (Array.isArray(children) ? children : []).filter((child) => !workflowChildIsInternalLeaderSequenceRun(child));
+}
+
+function workflowStatusCounts(children = [], planned = null) {
+  const list = Array.isArray(children) ? children : [];
+  const plannedCount = planned == null ? list.length : Number(planned || 0);
+  return {
+    total: list.length,
+    planned: Math.max(list.length, Number.isFinite(plannedCount) ? plannedCount : list.length),
+    completed: list.filter((item) => item.status === 'completed').length,
+    failed: list.filter((item) => ['failed', 'timed_out'].includes(String(item.status || '').toLowerCase())).length,
+    blocked: list.filter((item) => item.status === 'blocked').length,
+    queued: list.filter((item) => item.status === 'queued').length,
+    running: list.filter((item) => ['claimed', 'running', 'dispatched'].includes(String(item.status || '').trim().toLowerCase())).length
+  };
+}
+
 function blockWorkflowPendingChildren(children = [], reason = 'blocked_by_workflow_failure') {
   const blockedAt = nowIso();
   let blocked = 0;
@@ -11664,7 +11696,7 @@ function workflowParentRequestedExternalExecution(parent = {}) {
     parent.originalPrompt,
     parent.workflow?.objective
   ].map((item) => String(item || '').trim()).filter(Boolean).join(' ');
-  return /(external connector|external execution|connector handoff|connector execution|oauth|publish(?:ing)?|post(?:ing)?|send(?:ing)?|schedule(?:ing)?|execute(?: the)? action|run through action|through to action|through execution|complete through execution|action handoff|action packet|completion through delivery|complete through delivery|deliver through execution|plan\s*(?:and|&)\s*do|plan\s+then\s+execute|not\s+just\s+plan|execute\s+too|do\s+it|実行反映|実行まで|反映まで|アクションまで|actionまで|投稿まで|公開まで|送信まで|配信まで|掲載まで|納品まで|完走|最後まで|計画して実行|実行も|やって|やるところまで|実際に.*(?:投稿|公開|送信|配信|掲載|反映|実行)|(?:x|twitter|ツイッター).*(?:投稿|ポスト|スレッド)|(?:メール|gmail).*(?:送信|配信|スケジュール)|(?:github|ギットハブ).*(?:pr|pull request|プルリク|反映))/i.test(text);
+  return WORKFLOW_EXTERNAL_ACTION_REQUEST_PATTERN.test(workflowHumanActionIntentText(text));
 }
 
 async function reconcileWorkflowParent(storage, parentJobId) {
@@ -11707,6 +11739,8 @@ async function reconcileWorkflowParent(storage, parentJobId) {
     }
     expectedTotal = children.length;
     const childRuns = workflowChildSnapshot(children);
+    const agentChildren = workflowAgentRunChildren(children);
+    const internalChildren = children.filter((child) => workflowChildIsInternalLeaderSequenceRun(child));
     const completed = children.filter((item) => item.status === 'completed');
     const failed = children.filter((item) => item.status === 'failed' || item.status === 'timed_out');
     const queued = children.filter((item) => item.status === 'queued');
@@ -11718,15 +11752,11 @@ async function reconcileWorkflowParent(storage, parentJobId) {
       childJobIds: children.map((item) => item.id),
       childRuns,
       plannedChildRunCount: expectedTotal,
-      statusCounts: {
-        total: expectedTotal,
-        planned: plannedRunCount,
-        completed: completed.length,
-        failed: failed.length,
-        blocked: blocked.length,
-        queued: queued.length,
-        running: running.length
-      }
+      plannedAgentRunCount: agentChildren.length,
+      internalCheckpointRunCount: internalChildren.length,
+      agentStatusCounts: workflowStatusCounts(agentChildren),
+      internalStatusCounts: workflowStatusCounts(internalChildren),
+      statusCounts: workflowStatusCounts(children, plannedRunCount)
     };
     const leaderSequence = workflowLeaderSequence(parent);
     if (leaderSequence?.enabled) {
@@ -12644,19 +12674,17 @@ function markWorkflowParentBlockedIfNeeded(state = {}, childJob = {}) {
   const blockingChildren = children.filter(workflowChildIsBlockingProgress);
   const blockedStatus = workflowBlockedParentStatus(parent, children, blockingChildren);
   if (blockedStatus !== 'blocked') return false;
+  const agentChildren = workflowAgentRunChildren(children);
+  const internalChildren = children.filter((child) => workflowChildIsInternalLeaderSequenceRun(child));
   parent.workflow = {
     ...(parent.workflow || {}),
     childJobIds: children.map((item) => item.id),
     childRuns: workflowChildSnapshot(children),
-    statusCounts: {
-      total: children.length,
-      planned: Array.isArray(parent.workflow?.childRuns) ? parent.workflow.childRuns.length : children.length,
-      completed: children.filter((item) => item.status === 'completed').length,
-      failed: children.filter((item) => ['failed', 'timed_out'].includes(String(item.status || '').toLowerCase())).length,
-      blocked: children.filter((item) => item.status === 'blocked').length,
-      queued: children.filter((item) => item.status === 'queued').length,
-      running: children.filter((item) => ['claimed', 'running', 'dispatched'].includes(String(item.status || '').toLowerCase())).length
-    }
+    plannedAgentRunCount: agentChildren.length,
+    internalCheckpointRunCount: internalChildren.length,
+    agentStatusCounts: workflowStatusCounts(agentChildren),
+    internalStatusCounts: workflowStatusCounts(internalChildren),
+    statusCounts: workflowStatusCounts(children, Array.isArray(parent.workflow?.childRuns) ? parent.workflow.childRuns.length : children.length)
   };
   parent.status = blockedStatus;
   parent.completedAt = null;
@@ -16526,7 +16554,6 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
       scheduled: Boolean(childInputRaw?._broker?.recurring)
     });
     const authorityBlockedDraft = !childPreflight.ok
-      && Boolean(sampleKindFromAgent(selection.agent))
       && ['connector_required', 'confirmation_required'].includes(String(childPreflight.code || '').trim());
     const listCreatorEstimate = listCreatorUsageEstimateForOrder({
       ...childBody,
@@ -16805,6 +16832,8 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
     };
   }
   const refreshParentWorkflowSnapshot = () => {
+    const agentChildJobs = workflowAgentRunChildren(childJobs);
+    const internalChildJobs = childJobs.filter((job) => workflowChildIsInternalLeaderSequenceRun(job));
     parentJob.workflow = {
       ...(parentJob.workflow || {}),
       childJobIds: childJobs.map((job) => job.id),
@@ -16819,15 +16848,11 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
         failureReason: item.failure_reason || null
       })),
       plannedChildRunCount: childJobs.length,
-      statusCounts: {
-        total: childJobs.length,
-        planned: childJobs.length,
-        completed: childJobs.filter((job) => job.status === 'completed').length,
-        failed: childJobs.filter((job) => job.status === 'failed').length,
-        blocked: childJobs.filter((job) => job.status === 'blocked').length,
-        queued: childJobs.filter((job) => job.status === 'queued').length,
-        running: childJobs.filter((job) => ['claimed', 'running', 'dispatched'].includes(String(job.status || '').trim().toLowerCase())).length
-      }
+      plannedAgentRunCount: agentChildJobs.length,
+      internalCheckpointRunCount: internalChildJobs.length,
+      agentStatusCounts: workflowStatusCounts(agentChildJobs),
+      internalStatusCounts: workflowStatusCounts(internalChildJobs),
+      statusCounts: workflowStatusCounts(childJobs)
     };
   };
   const billingDraft = { accounts: account ? [structuredClone(account)] : [] };
@@ -16892,6 +16917,11 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
       parentDraft.completedAt = null;
       parentDraft.failedAt = failedAt;
       parentDraft.failureReason = `No agent runs created: ${String(firstFailure || '').slice(0, 280)}`;
+      const failedAgentRuns = childRuns.filter((item) => !workflowChildIsInternalLeaderSequenceRun({
+        workflowTask: item.task_type,
+        taskType: item.task_type,
+        input: { _broker: { workflow: { sequencePhase: item.sequence_phase } } }
+      }));
       parentDraft.workflow = {
         ...(parentDraft.workflow || {}),
         childRuns: childRuns.map((item) => ({
@@ -16908,7 +16938,18 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
           failed: childRuns.length,
           queued: 0,
           running: 0
-        }
+        },
+        agentStatusCounts: {
+          total: failedAgentRuns.length,
+          planned: failedAgentRuns.length,
+          completed: 0,
+          failed: failedAgentRuns.length,
+          blocked: 0,
+          queued: 0,
+          running: 0
+        },
+        plannedAgentRunCount: failedAgentRuns.length,
+        internalCheckpointRunCount: childRuns.length - failedAgentRuns.length
       };
       parentDraft.logs = [
         ...(parentDraft.logs || []),

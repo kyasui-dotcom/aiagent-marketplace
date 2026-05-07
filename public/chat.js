@@ -1144,15 +1144,25 @@ function statusLabel(job = {}) {
   const status = String(job.status || '').trim() || 'created';
   const visibleStatus = statusDisplayLabel(status);
   if (job.jobKind === 'workflow' || job.workflow) {
-    const counts = job.workflow?.statusCounts || {};
-    const total = Number(counts.total || job.workflow?.plannedChildRunCount || 0) || 0;
+    const counts = job.workflow?.agentStatusCounts || job.workflow?.statusCounts || {};
+    const total = Number(counts.total || job.workflow?.plannedAgentRunCount || job.workflow?.plannedChildRunCount || 0) || 0;
     const completed = Number(counts.completed || 0) || 0;
     const blocked = Number(counts.blocked || 0) || 0;
     const failed = Number(counts.failed || 0) || 0;
-    const suffix = total ? `, ${completed}/${total} runs complete${blocked ? `, ${blocked} waiting` : ''}${failed ? `, ${failed} failed` : ''}` : '';
+    const suffix = total ? `, ${completed}/${total} agent runs complete${blocked ? `, ${blocked} waiting` : ''}${failed ? `, ${failed} failed` : ''}` : '';
     return `${visibleStatus}${suffix}`;
   }
   return visibleStatus;
+}
+
+function workflowChildIsInternalLeaderSequenceRun(child = {}) {
+  const phase = String(child.sequencePhase || child.sequence_phase || '').trim().toLowerCase();
+  const task = String(child.taskType || child.workflowTask || child.dispatchTaskType || '').trim().toLowerCase();
+  return ['checkpoint', 'final_summary'].includes(phase) && task.endsWith('_leader');
+}
+
+function visibleWorkflowChildRuns(childRuns = []) {
+  return (Array.isArray(childRuns) ? childRuns : []).filter((child) => !workflowChildIsInternalLeaderSequenceRun(child));
 }
 
 function statusDisplayLabel(status = '') {
@@ -1243,7 +1253,7 @@ function rememberAiAgentsFromJob(job = {}) {
       summary: statusLabel(job)
     }, { increment: false });
   }
-  const childRuns = Array.isArray(job.workflow?.childRuns) ? job.workflow.childRuns : [];
+  const childRuns = visibleWorkflowChildRuns(job.workflow?.childRuns);
   for (const child of childRuns) {
     const taskType = String(child.taskType || child.dispatchTaskType || '').trim().toLowerCase();
     if (!taskType) continue;
@@ -1273,7 +1283,7 @@ function appAgentSourceAgentsFromJob(job = {}) {
       orderId: String(job.id || '').trim()
     });
   }
-  const childRuns = Array.isArray(job.workflow?.childRuns) ? job.workflow.childRuns : [];
+  const childRuns = visibleWorkflowChildRuns(job.workflow?.childRuns);
   for (const child of childRuns) {
     const taskType = String(child.taskType || child.dispatchTaskType || '').trim().toLowerCase();
     if (!taskType) continue;
@@ -2367,7 +2377,7 @@ function restoredSessionOrderCardHtml(job = {}) {
     orderId ? `#${orderId.slice(0, 8)}` : ''
   ].filter(Boolean).join(' ');
   const summary = deliveryText(job) || job.failureReason || job.prompt || '';
-  const childRuns = Array.isArray(job.workflow?.childRuns) ? job.workflow.childRuns : [];
+  const childRuns = visibleWorkflowChildRuns(job.workflow?.childRuns);
   const childProgress = childRuns.length
     ? [
         '<details class="restored-order-progress" open>',

@@ -942,14 +942,25 @@ function orderProgressSteps(status = '', options = {}) {
     : ['Order accepted', 'Connecting agent', 'Watching progress'];
 }
 
+function workflowChildIsInternalLeaderSequenceRun(child = {}) {
+  const phase = String(child?.sequencePhase || child?.sequence_phase || '').trim().toLowerCase();
+  const task = String(child?.taskType || child?.workflowTask || child?.dispatchTaskType || child?.task_type || '').trim().toLowerCase();
+  return ['checkpoint', 'final_summary'].includes(phase) && task.endsWith('_leader');
+}
+
+function visibleWorkflowChildRuns(childRuns = []) {
+  return (Array.isArray(childRuns) ? childRuns : []).filter((child) => !workflowChildIsInternalLeaderSequenceRun(child));
+}
+
 function orderProgressCounts(jobOrCreated = {}) {
   const workflow = jobOrCreated?.workflow && typeof jobOrCreated.workflow === 'object' ? jobOrCreated.workflow : null;
-  const counts = workflow?.statusCounts || {};
-  const childRuns = Array.isArray(jobOrCreated?.child_runs)
+  const rawChildRuns = Array.isArray(jobOrCreated?.child_runs)
     ? jobOrCreated.child_runs
     : (Array.isArray(jobOrCreated?.childRuns)
       ? jobOrCreated.childRuns
       : (Array.isArray(workflow?.childRuns) ? workflow.childRuns : []));
+  const childRuns = visibleWorkflowChildRuns(rawChildRuns);
+  const counts = workflow?.agentStatusCounts || {};
   const total = Number(counts.total || childRuns.length || 0);
   const completed = Number(counts.completed || childRuns.filter((run) => String(run?.status || '').toLowerCase() === 'completed').length || 0);
   const failed = Number(counts.failed || childRuns.filter((run) => ['failed', 'timed_out'].includes(String(run?.status || '').toLowerCase())).length || 0);
@@ -1416,9 +1427,10 @@ function orderProgressSummaryFromJob(job = {}) {
 
 function workflowChildRunsFromJob(job = {}) {
   const report = job?.output?.report && typeof job.output.report === 'object' ? job.output.report : {};
-  return Array.isArray(report.childRuns)
+  const runs = Array.isArray(report.childRuns)
     ? report.childRuns
     : (Array.isArray(job?.workflow?.childRuns) ? job.workflow.childRuns : []);
+  return visibleWorkflowChildRuns(runs);
 }
 
 function workflowPhaseRank(phase = '') {

@@ -226,7 +226,7 @@ assert.ok(appsHtml.includes('cait-app-context/v1'), 'Apps hub should explain the
 assert.ok(analyticsHtml.includes('Analytics Console'), 'Analytics Console should be a first-class app page.');
 assert.ok(analyticsHtml.includes('href="/apps.html"'), 'Analytics Console should link back to the apps hub.');
 assert.ok(analyticsHtml.includes('id="sendContextBtn"'), 'Analytics Console should send context to CAIt.');
-assert.ok(analyticsHtml.includes('/analytics-console.js?v=20260507c'), 'Analytics Console should load the app-context receiving controller.');
+assert.ok(analyticsHtml.includes('/analytics-console.js?v=20260507d'), 'Analytics Console should load the app-context receiving controller.');
 assert.ok(analyticsHtml.includes('/app-console.css?v=20260507a'), 'Analytics Console should load the current shared app console CSS.');
 assert.ok(analyticsHtml.includes('id="analyticsStepSources"'), 'Analytics Console should show a compact workflow state strip.');
 assert.ok(analyticsHtml.includes('id="connectGoogleBtn"'), 'Analytics Console should expose a Google OAuth connection button.');
@@ -389,6 +389,7 @@ assert.ok(analyticsJs.includes('applyInboundContext'), 'Analytics Console should
 assert.ok(analyticsJs.includes('/api/connectors/google/assets?include=gsc,ga4'), 'Analytics Console should fetch connected GA4 and Search Console assets.');
 assert.ok(analyticsJs.includes('/api/connectors/google/analytics-report'), 'Analytics Console should fetch GA4 and Search Console reports after source selection.');
 assert.ok(analyticsJs.includes('googleReportSources'), 'Analytics Console should track whether GA4 and Search Console loaded separately.');
+assert.ok(analyticsJs.includes('googleReportSources: {'), 'Analytics Console context should carry loaded GA4/Search Console source flags.');
 assert.ok(analyticsJs.includes('Report loaded with warnings'), 'Analytics Console should surface partial Google report failures.');
 assert.ok(analyticsJs.includes('GA4 not loaded'), 'Analytics Console should not label missing GA4 data as loaded.');
 assert.ok(analyticsJs.includes('function normalizeGa4Property'), 'Analytics Console should normalize manual GA4 property IDs.');
