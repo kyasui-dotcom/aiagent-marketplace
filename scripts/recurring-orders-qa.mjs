@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import worker from '../worker.js';
-import { DEFAULT_AGENT_SEEDS, createOrderApiKeyInState, upsertAccountSettingsInState } from '../lib/shared.js';
+import { DEFAULT_AGENT_SEEDS, createOrderApiKeyInState, recurringOrderToJobPayload, upsertAccountSettingsInState } from '../lib/shared.js';
 import { createD1LikeStorage } from '../lib/storage.js';
 
 const env = {
@@ -85,6 +85,29 @@ async function request(path, init = {}) {
 }
 
 await resetState();
+
+const preservedRecurringPayload = recurringOrderToJobPayload({
+  id: 'recurring_preserve_source',
+  nextRunAt: '2026-04-18T00:00:00.000Z',
+  schedule: { interval: 'daily', time: '09:00', timezone: 'Asia/Tokyo' },
+  taskType: 'research',
+  prompt: 'Rerun the completed source order.',
+  input: {
+    _broker: {
+      recurring: {
+        sourceJobId: 'completed_source_job',
+        chat_required: false
+      },
+      exactConnectorAction: {
+        kind: 'x_post'
+      }
+    }
+  }
+});
+assert.equal(preservedRecurringPayload.input._broker.recurring.sourceJobId, 'completed_source_job');
+assert.equal(preservedRecurringPayload.input._broker.recurring.chat_required, false);
+assert.equal(preservedRecurringPayload.input._broker.recurring.recurringOrderId, 'recurring_preserve_source');
+assert.equal(preservedRecurringPayload.input._broker.exactConnectorAction.kind, 'x_post');
 
 const created = await request('/api/recurring-orders', {
   method: 'POST',

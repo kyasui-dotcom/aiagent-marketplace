@@ -6,7 +6,7 @@ import {
   chatEngineBuildPrepareOrderPayload,
   chatEngineDraftBrief,
   chatEngineIsNeedsInputResponse
-} from './chat-engine.js?v=20260504a';
+} from './chat-engine.js?v=20260507a';
 import {
   deliveryExecutionPromptPresentation,
   extractSocialPostTextFromDeliveryContent
@@ -15,7 +15,7 @@ import {
   caitAppContextChatPrompt,
   caitAppContextThreadHtml,
   consumeCaitAppContextForChat
-} from './cait-app-bridge.js?v=20260505b';
+} from './cait-app-bridge.js?v=20260507a';
 import {
   isLeaderCatalogQuestionIntentText,
   isNonOrderConversationIntentText
@@ -26,11 +26,11 @@ const CHATUX_BACKFILL_INTERVAL_MS = 10000;
 const CHATUX_CATALOG_PAGE_SIZE = 10;
 const CHATUX_CATALOG_CACHE_TTL_MS = 60000;
 const CHATUX_PROGRESS_MAX_POLLS = 300;
-const CHATUX_WELCOME_TEXT = '何がしたいですか？';
+const CHATUX_WELCOME_TEXT = 'What do you want done?';
 const X_CLIENT_OPS_URL = 'https://x.niche-s.com/';
 
 function leaderCatalogChatAnswer(prompt = '') {
-  const ja = looksJapanese(prompt);
+  const ja = chatLanguage(prompt) === 'ja';
   return ja
     ? [
         '利用できる主なリーダーは以下です。これは案内回答なので、まだ注文も課金も発生していません。',
@@ -176,11 +176,15 @@ const state = {
   deliveryBackfill: null,
   trackedOrderIds: new Set(),
   deliveredOrderIds: new Set(),
+  authorityNoticeKeys: new Set(),
   appAgentHistory: [],
   aiAgentHistory: [],
   recentJobs: [],
   recentJobsFetchedAt: 0,
   recentJobsRequest: null,
+  recurringOrders: [],
+  recurringOrdersFetchedAt: 0,
+  recurringOrdersRequest: null,
   registeredApps: [],
   registeredAppsFetchedAt: 0,
   registeredAppsRequest: null,
@@ -189,6 +193,7 @@ const state = {
   appContexts: [],
   appContextsFetchedAt: 0,
   appContextsRequest: null,
+  pendingAppContext: null,
   workerAgents: [],
   workerAgentsFetchedAt: 0,
   workerAgentsRequest: null,
@@ -196,11 +201,21 @@ const state = {
   workerAgentsHasMore: false,
   pendingRecoveryPayloads: [],
   busy: false,
+  conversationLanguage: '',
+  chatSessions: [],
+  chatMessages: [],
+  currentChatSessionId: '',
+  chatSidebarOpen: false,
+  lastTranscriptPrompt: '',
+  lastTranscriptId: '',
+  chatSessionHistoryFetchedAt: 0,
+  chatSessionHistoryRequest: null,
   visitorId: makeVisitorId()
 };
 
 const deliveryFileStore = new Map();
 const appTransferStore = new Map();
+const processedAppContextIds = new Set();
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -210,7 +225,13 @@ const els = {
   promptInput: $('promptInput'),
   sendMessageBtn: $('sendMessageBtn'),
   resetBtn: $('resetBtn'),
+  chatSessionSidebar: $('chatSessionSidebar'),
+  chatSessionList: $('chatSessionList'),
+  chatSessionStatus: $('chatSessionStatus'),
+  newChatBtn: $('newChatBtn'),
   openChatListBtn: $('openChatListBtn'),
+  openScheduleBtn: $('openScheduleBtn'),
+  openScheduleComposerBtn: $('openScheduleComposerBtn'),
   openWorkerListBtn: $('openWorkerListBtn'),
   openAppListBtn: $('openAppListBtn'),
   openInfoBtn: $('openInfoBtn'),
@@ -222,9 +243,20 @@ const els = {
   utilityModalCloseBtn: $('utilityModalCloseBtn')
 };
 
-const DEFAULT_PROMPT_PLACEHOLDER = '例: サイトの集客を増やしたい';
-const PENDING_ORDER_PLACEHOLDER = 'Add an adjustment, or type SEND ORDER to dispatch...';
-const INTAKE_PLACEHOLDER = 'Answer the questions above before CAIt prepares the order...';
+const PROMPT_PLACEHOLDERS = {
+  default: {
+    en: 'Example: I want to improve website acquisition',
+    ja: '例: サイトの集客を増やしたい'
+  },
+  pending: {
+    en: 'Add an adjustment, or type SEND ORDER to dispatch...',
+    ja: '追加調整を書くか、SEND ORDER と入力して実行してください...'
+  },
+  intake: {
+    en: 'Answer the questions above before CAIt prepares the order...',
+    ja: '発注準備の前に、上の質問へ回答してください...'
+  }
+};
 
 function escapeHtml(value = '') {
   return String(value || '')
@@ -238,6 +270,342 @@ function escapeHtml(value = '') {
 function compact(value = '', max = 280) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   return text.length <= max ? text : `${text.slice(0, max - 1).trim()}...`;
+}
+
+function compactChatTitle(value = '') {
+  return compact(value || 'New chat', 72) || 'New chat';
+}
+
+function htmlToPlainText(html = '') {
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = String(html || '');
+  return String(wrapper.textContent || '').replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function makeChatSessionId() {
+  return `chatux_session_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function ensureChatSessionId(options = {}) {
+  if (!state.currentChatSessionId && options.force) state.currentChatSessionId = makeChatSessionId();
+  return state.currentChatSessionId || '';
+}
+
+function makeChatTranscriptId(sessionId = '') {
+  const safeSessionId = String(sessionId || ensureChatSessionId({ force: true }) || makeChatSessionId())
+    .replace(/[^a-zA-Z0-9:_-]+/g, '_')
+    .slice(0, 120);
+  return `${safeSessionId}_turn_${Date.now().toString(36)}_${Math.max(1, state.chatMessages.length)}`;
+}
+
+function chatSessionTitle(messages = []) {
+  const userMessage = (Array.isArray(messages) ? messages : []).find((message) => message.role === 'user' && message.body);
+  const firstMessage = userMessage || (Array.isArray(messages) ? messages : []).find((message) => message.body);
+  return compactChatTitle(firstMessage?.body || 'New chat');
+}
+
+function normalizeChatSession(session = {}) {
+  const id = String(session.id || session.sessionId || '').trim();
+  if (!id) return null;
+  const messages = (Array.isArray(session.messages) ? session.messages : [])
+    .map((message) => ({
+      role: ['user', 'assistant', 'system'].includes(String(message?.role || '').trim()) ? String(message.role).trim() : 'assistant',
+      body: compact(String(message?.body || '').trim(), 4000),
+      tone: String(message?.tone || '').trim(),
+      label: String(message?.label || '').trim(),
+      ts: String(message?.ts || session.updatedAt || session.createdAt || isoNow()).trim()
+    }))
+    .filter((message) => message.body)
+    .slice(-80);
+  const updatedAt = String(session.updatedAt || session.createdAt || isoNow()).trim();
+  const activeJobIds = [...new Set((Array.isArray(session.activeJobIds) ? session.activeJobIds : [])
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .slice(0, 20))];
+  return {
+    ...session,
+    id,
+    sessionId: String(session.sessionId || id).trim(),
+    title: compactChatTitle(session.title || chatSessionTitle(messages)),
+    messages,
+    activeWork: Boolean(session.activeWork || activeJobIds.length),
+    linkedOrderId: String(session.linkedOrderId || '').trim(),
+    activeJobIds,
+    createdAt: String(session.createdAt || updatedAt).trim(),
+    updatedAt
+  };
+}
+
+function upsertChatSession(session = {}) {
+  const normalized = normalizeChatSession(session);
+  if (!normalized) return null;
+  const others = state.chatSessions.filter((item) => item.id !== normalized.id && item.sessionId !== normalized.sessionId);
+  state.chatSessions = [normalized, ...others]
+    .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
+    .slice(0, 40);
+  return normalized;
+}
+
+function currentChatSessionPayload() {
+  const sessionId = ensureChatSessionId({ force: state.chatMessages.length > 0 });
+  if (!sessionId || !state.chatMessages.length) return null;
+  const existing = state.chatSessions.find((session) => session.id === sessionId || session.sessionId === sessionId) || {};
+  const now = isoNow();
+  return normalizeChatSession({
+    ...existing,
+    id: sessionId,
+    sessionId,
+    title: chatSessionTitle(state.chatMessages),
+    messages: state.chatMessages.slice(-80),
+    createdAt: existing.createdAt || state.chatMessages[0]?.ts || now,
+    updatedAt: now
+  });
+}
+
+function persistRuntimeChatSession() {
+  const session = currentChatSessionPayload();
+  if (!session) return null;
+  upsertChatSession(session);
+  renderChatSessionSidebar();
+  return session;
+}
+
+function chatSessionTimeLabel(value = '') {
+  if (!Number.isFinite(Date.parse(value))) return 'saved';
+  return new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function chatSessionFromMemory(item = {}) {
+  const prompt = String(item.prompt || '').trim();
+  const answer = String(item.answer || '').trim();
+  const sessionId = String(item.sessionId || item.id || '').trim();
+  const messages = Array.isArray(item.messages) ? item.messages : [];
+  if (!sessionId || (!prompt && !answer && !messages.length)) return null;
+  const createdAt = String(item.createdAt || item.updatedAt || isoNow()).trim();
+  return normalizeChatSession({
+    id: sessionId,
+    sessionId,
+    title: prompt || answer || 'Saved chat',
+    activeWork: Boolean(item.activeWork),
+    linkedOrderId: String(item.linkedOrderId || '').trim(),
+    activeJobIds: Array.isArray(item.activeJobIds) ? item.activeJobIds : [],
+    createdAt,
+    updatedAt: String(item.updatedAt || createdAt).trim(),
+    messages: messages.length ? messages : [
+      ...(prompt ? [{ role: 'user', body: prompt, ts: createdAt }] : []),
+      ...(answer ? [{ role: 'assistant', body: answer, tone: item.status === 'blocked' ? 'warn' : 'info', ts: item.updatedAt || createdAt }] : [])
+    ]
+  });
+}
+
+function renderChatSessionSidebar() {
+  if (!els.chatSessionList) return;
+  const current = currentChatSessionPayload();
+  const sessions = [
+    ...(current ? [current] : []),
+    ...state.chatSessions.filter((session) => !current || (session.id !== current.id && session.sessionId !== current.sessionId))
+  ]
+    .map(normalizeChatSession)
+    .filter(Boolean)
+    .sort((left, right) => {
+      if (left.id === state.currentChatSessionId) return -1;
+      if (right.id === state.currentChatSessionId) return 1;
+      return String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''));
+    })
+    .slice(0, 40);
+  if (els.chatSessionSidebar) {
+    els.chatSessionSidebar.classList.toggle('mobile-open', Boolean(state.chatSidebarOpen));
+  }
+  if (els.chatSessionStatus) {
+    if (sessions.length) {
+      const savedCount = Math.max(0, sessions.length - (current ? 1 : 0));
+      els.chatSessionStatus.textContent = savedCount ? `${savedCount} saved chat${savedCount === 1 ? '' : 's'}` : 'Current chat';
+    } else if (state.auth?.loggedIn || state.auth?.user || state.auth?.login) {
+      els.chatSessionStatus.textContent = 'No saved chats yet';
+    } else {
+      els.chatSessionStatus.textContent = 'Sign in to restore chats';
+    }
+  }
+  if (!sessions.length) {
+    els.chatSessionList.innerHTML = '<div class="empty-session-list">Start a chat and it will appear here. Signed-in chat memory is restored from your account.</div>';
+    return;
+  }
+  els.chatSessionList.innerHTML = sessions.map((session) => {
+    const active = session.id === state.currentChatSessionId || session.sessionId === state.currentChatSessionId;
+    const messageCount = Array.isArray(session.messages) ? session.messages.length : 0;
+    const activeWork = session.activeWork ? ' / active work' : '';
+    return [
+      `<div class="chat-session-row ${active ? 'active' : ''}">`,
+      `<button type="button" class="chat-session-item" data-chat-session-id="${escapeHtml(session.id)}" aria-current="${active ? 'true' : 'false'}">`,
+      `<span class="chat-session-title">${escapeHtml(session.title || 'New chat')}</span>`,
+      `<span class="chat-session-meta">${escapeHtml(`${chatSessionTimeLabel(session.updatedAt)} / ${messageCount} msg${activeWork}`)}</span>`,
+      '</button>',
+      `<button type="button" class="chat-session-delete" data-chat-session-delete="${escapeHtml(session.id)}" aria-label="Delete chat">x</button>`,
+      '</div>'
+    ].join('');
+  }).join('\n');
+}
+
+function startNewChatSession() {
+  state.currentChatSessionId = '';
+  state.chatMessages = [];
+  state.lastTranscriptPrompt = '';
+  state.lastTranscriptId = '';
+  state.draft = null;
+  state.pendingIntake = null;
+  state.activeLeader = null;
+  state.conversationLanguage = '';
+  state.draftRevision += 1;
+  state.orderId = '';
+  state.authorityNoticeKeys.clear();
+  deliveryFileStore.clear();
+  appTransferStore.clear();
+  els.chatThread.innerHTML = '';
+  renderActiveLeaderStatus();
+  appendTextMessage('assistant', CHATUX_WELCOME_TEXT, { record: false });
+  updateComposerMode();
+  renderChatSessionSidebar();
+}
+
+function loadChatSession(sessionId = '') {
+  const session = state.chatSessions.find((item) => item.id === sessionId || item.sessionId === sessionId);
+  if (!session) return;
+  if (state.polling) window.clearInterval(state.polling);
+  state.polling = null;
+  state.currentChatSessionId = session.id;
+  state.chatMessages = (Array.isArray(session.messages) ? session.messages : []).slice(-80);
+  state.lastTranscriptPrompt = '';
+  state.lastTranscriptId = '';
+  state.draft = null;
+  state.pendingIntake = null;
+  state.activeLeader = null;
+  state.draftRevision += 1;
+  state.orderId = session.linkedOrderId || '';
+  state.authorityNoticeKeys.clear();
+  deliveryFileStore.clear();
+  appTransferStore.clear();
+  els.chatThread.innerHTML = '';
+  if (state.chatMessages.length) {
+    for (const message of state.chatMessages) {
+      appendTextMessage(message.role || 'assistant', message.body || '', {
+        tone: message.tone || '',
+        label: message.label || '',
+        record: false
+      });
+    }
+  } else {
+    appendTextMessage('assistant', CHATUX_WELCOME_TEXT, { record: false });
+  }
+  renderActiveLeaderStatus();
+  updateComposerMode();
+  renderChatSessionSidebar();
+  state.chatSidebarOpen = false;
+  renderChatSessionSidebar();
+  void renderRestoredSessionOrderContext(session);
+  if (state.orderId) startPolling(state.orderId);
+}
+
+function deleteChatSession(sessionId = '') {
+  const safeId = String(sessionId || '').trim();
+  if (!safeId) return;
+  state.chatSessions = state.chatSessions.filter((session) => session.id !== safeId && session.sessionId !== safeId);
+  void api(`/api/settings/chat-memory/${encodeURIComponent(safeId)}`, { method: 'DELETE' })
+    .then(() => { state.chatSessionHistoryFetchedAt = 0; })
+    .catch(() => {});
+  if (state.currentChatSessionId === safeId) startNewChatSession();
+  renderChatSessionSidebar();
+}
+
+function chatSessionHistoryApiPath() {
+  return '/api/snapshot';
+}
+
+async function refreshChatSessionHistory(options = {}) {
+  const force = options.force === true;
+  if (!force && state.chatSessionHistoryFetchedAt && Date.now() - state.chatSessionHistoryFetchedAt < 60_000) return state.chatSessions;
+  if (state.chatSessionHistoryRequest) return state.chatSessionHistoryRequest;
+  state.chatSessionHistoryRequest = api(chatSessionHistoryApiPath(), { method: 'GET' })
+    .then((snapshot) => {
+      const serverSessions = (Array.isArray(snapshot?.chatMemory) ? snapshot.chatMemory : [])
+        .map(chatSessionFromMemory)
+        .filter(Boolean);
+      for (const session of serverSessions) upsertChatSession(session);
+      state.chatSessionHistoryFetchedAt = Date.now();
+      renderChatSessionSidebar();
+      return state.chatSessions;
+    })
+    .catch((error) => {
+      if (els.chatSessionStatus) els.chatSessionStatus.textContent = orderErrorMessage(error);
+      return state.chatSessions;
+    })
+    .finally(() => {
+      state.chatSessionHistoryRequest = null;
+    });
+  return state.chatSessionHistoryRequest;
+}
+
+function recordChatSessionMessage(role, body = '', options = {}) {
+  if (options.record === false) return;
+  const text = compact(String(options.plainText || body || '').trim(), 4000);
+  if (!text) return;
+  ensureChatSessionId({ force: true });
+  const message = {
+    role: ['user', 'assistant', 'system'].includes(role) ? role : 'assistant',
+    body: text,
+    tone: String(options.tone || '').trim(),
+    label: String(options.label || '').trim(),
+    ts: isoNow()
+  };
+  state.chatMessages.push(message);
+  state.chatMessages = state.chatMessages.slice(-80);
+  if (message.role === 'user') {
+    state.lastTranscriptPrompt = text;
+    state.lastTranscriptId = makeChatTranscriptId(state.currentChatSessionId);
+  } else if (state.lastTranscriptPrompt) {
+    void trackChatTranscript(state.lastTranscriptPrompt, text, {
+      transcriptId: makeChatTranscriptId(state.currentChatSessionId),
+      answerKind: message.tone || message.role,
+      status: message.tone || ''
+    });
+  }
+  persistRuntimeChatSession();
+}
+
+async function trackChatTranscript(prompt = '', answer = '', meta = {}) {
+  const cleanPrompt = String(prompt || '').trim();
+  const cleanAnswer = String(answer || '').trim();
+  if (!cleanPrompt && !cleanAnswer) return;
+  try {
+    const sessionId = ensureChatSessionId({ force: true });
+    const headers = new Headers({ 'content-type': 'application/json' });
+    if (state.auth?.csrfToken) headers.set('x-aiagent2-csrf', state.auth.csrfToken);
+    if (state.visitorId) headers.set('x-aiagent2-visitor-id', state.visitorId);
+    await fetch('/api/analytics/chat-transcripts', {
+      method: 'POST',
+      headers,
+      credentials: 'same-origin',
+      keepalive: true,
+      body: JSON.stringify({
+        id: String(meta.transcriptId || '').trim() || makeChatTranscriptId(sessionId),
+        prompt: cleanPrompt.slice(0, 8000),
+        answer: cleanAnswer.slice(0, 8000),
+        answer_kind: String(meta.answerKind || 'chat').slice(0, 40),
+        status: String(meta.status || '').slice(0, 80),
+        session_id: sessionId,
+        visitor_id: state.visitorId,
+        page_path: window.location.pathname || '/chat',
+        current_tab: 'chat',
+        source: 'chatux',
+        meta: {
+          source: 'chatux_session_sidebar',
+          visitorId: state.visitorId
+        }
+      })
+    });
+    state.chatSessionHistoryFetchedAt = 0;
+  } catch {
+    // Chat transcript persistence must not block chat, intake, or order dispatch.
+  }
 }
 
 function listValues(value) {
@@ -365,6 +733,22 @@ function appManifestById(id = '') {
   return appManifestSources().find((manifest) => normalizeUsageId(manifest.id) === safeId) || null;
 }
 
+function appAgentLaunchUrl(manifestOrEntry = {}, hrefOverride = '') {
+  const href = String(hrefOverride || manifestOrEntry.entryUrl || manifestOrEntry.baseUrl || '').trim();
+  if (!href) return '';
+  try {
+    const url = new URL(href, window.location.origin);
+    const id = normalizeUsageId(manifestOrEntry.id || '');
+    const builtInSameOrigin = APP_AGENT_MANIFESTS.some((item) => normalizeUsageId(item.id) === id && id !== 'x-client-ops');
+    if (builtInSameOrigin && /^(?:www\.)?aiagent-marketplace\.net$/i.test(url.hostname)) {
+      return new URL(`${url.pathname}${url.search}${url.hash}`, window.location.origin).toString();
+    }
+    return url.toString();
+  } catch {
+    return href;
+  }
+}
+
 function rememberAppAgentUsage(id = '', details = {}, options = {}) {
   const manifest = appManifestById(id);
   if (!manifest) return null;
@@ -405,6 +789,7 @@ function taskLabel(taskType = '') {
     cpo_leader: 'CPO Leader',
     cfo_leader: 'CFO Leader',
     legal_leader: 'Legal Leader',
+    secretary_leader: 'Secretary Leader',
     research: 'Research Agent',
     teardown: 'Competitor Teardown Agent',
     data_analysis: 'Data Analysis Agent',
@@ -658,13 +1043,25 @@ function looksJapanese(value = '') {
 }
 
 function chatLanguage(sample = '') {
-  if (looksJapanese(sample)) return 'ja';
+  if (state.conversationLanguage) return state.conversationLanguage;
   const pageLanguage = String(document.documentElement?.lang || '').toLowerCase();
-  return pageLanguage.startsWith('ja') ? 'ja' : 'en';
+  if (pageLanguage.startsWith('ja')) return 'ja';
+  return 'en';
 }
 
 function chatText(en, ja, sample = '') {
   return chatLanguage(sample) === 'ja' ? ja : en;
+}
+
+function detectedInputLanguage(sample = '') {
+  return looksJapanese(sample) ? 'ja' : 'en';
+}
+
+function rememberConversationLanguage(sample = '') {
+  if (!state.conversationLanguage && String(sample || '').trim()) {
+    state.conversationLanguage = detectedInputLanguage(sample);
+  }
+  return state.conversationLanguage || chatLanguage(sample);
 }
 
 async function api(path, options = {}) {
@@ -697,6 +1094,9 @@ function setBusy(next) {
   document.querySelectorAll('[data-chat-action="send-order"]').forEach((button) => {
     button.disabled = state.busy || !state.draft;
   });
+  document.querySelectorAll('[data-chat-action="analytics-use"], [data-chat-action="analytics-skip"], [data-intake-choice], [data-intake-other-add]').forEach((button) => {
+    button.disabled = state.busy || !state.pendingIntake;
+  });
   document.querySelectorAll('[data-x-post-submit]').forEach((button) => {
     button.disabled = state.busy;
   });
@@ -715,11 +1115,29 @@ function appendMessage(role, body, options = {}) {
   ].join('');
   els.chatThread.appendChild(article);
   scrollThread();
+  recordChatSessionMessage(role, options.plainText || htmlToPlainText(body), options);
   return article;
 }
 
 function appendTextMessage(role, text, options = {}) {
-  return appendMessage(role, escapeHtml(text), options);
+  return appendMessage(role, escapeHtml(text), { ...options, plainText: text });
+}
+
+function removeMessage(article) {
+  if (!article?.parentNode) return;
+  article.remove();
+  scrollThread();
+}
+
+function appendThinkingMessage(sample = '') {
+  const article = appendTextMessage('assistant', chatText('Thinking...', '考え中...', sample), {
+    tone: 'thinking',
+    label: 'CAIt',
+    record: false
+  });
+  article.dataset.transient = 'thinking';
+  article.setAttribute('aria-live', 'polite');
+  return article;
 }
 
 function statusLabel(job = {}) {
@@ -784,7 +1202,10 @@ function deliveryText(job = {}) {
     ...(Array.isArray(report.bullets) ? report.bullets : []),
     ...(Array.isArray(deliveryReport.bullets) ? deliveryReport.bullets : [])
   ].filter(Boolean).slice(0, 8);
+  const failed = ['failed', 'timed_out'].includes(String(job.status || '').trim().toLowerCase());
+  const failureReason = String(job.failureReason || job.failure_reason || report.failure_reason || report.error || output.error || '').trim();
   return [
+    failed && failureReason ? `Failure reason: ${failureReason}` : '',
     output.summary || report.summary || delivery.summary || deliveryReport.summary || job.failureReason || '',
     bullets.length ? bullets.map((item) => `- ${item}`).join('\n') : '',
     report.nextAction || report.next_action || deliveryReport.nextAction || deliveryReport.next_action || ''
@@ -919,7 +1340,7 @@ function appAgentBaseTransferPacket(appId = '', job = {}, options = {}) {
     destinationLink: strategy.url || '',
     serviceUrl: strategy.url || '',
     channel: strategy.channel || '',
-    outputLanguage: looksJapanese(objective) ? 'ja' : 'en',
+    outputLanguage: chatLanguage(objective),
     workspaceNotes: compactTransferText([
       strategy.strategy,
       objective ? `Original objective:\n${objective}` : '',
@@ -990,20 +1411,83 @@ function authorityRequestFromJob(job = {}) {
   return request && typeof request === 'object' ? request : null;
 }
 
+function googleIncludeGroupsFromAuthority(request = null) {
+  if (!request || typeof request !== 'object') return [];
+  const explicit = listValues(
+    request.required_google_sources
+      || request.requiredGoogleSources
+      || request.google_source_types
+      || request.googleSourceTypes
+      || request.googleIncludeGroups
+  ).map((item) => {
+    const normalized = String(item || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (['gsc', 'search_console', 'google_search_console', 'webmasters'].includes(normalized)) return 'gsc';
+    if (['ga4', 'analytics', 'google_analytics', 'google_analytics_4'].includes(normalized)) return 'ga4';
+    return '';
+  }).filter(Boolean);
+  if (explicit.length) return [...new Set(explicit)];
+  const capabilities = listValues(request.missing_connector_capabilities || request.missingConnectorCapabilities || request.capabilities);
+  const groups = [];
+  if (capabilities.some((item) => /^google\.read_ga4$/i.test(String(item || '')))) groups.push('ga4');
+  if (capabilities.some((item) => /^google\.read_gsc$/i.test(String(item || '')))) groups.push('gsc');
+  return [...new Set(groups)];
+}
+
 function authorityNeedsApproval(request = null) {
   if (!request || typeof request !== 'object') return false;
   const missingConnectors = listValues(request.missing_connectors || request.missingConnectors || request.connectors);
   const missingCapabilities = listValues(request.missing_connector_capabilities || request.missingConnectorCapabilities || request.capabilities);
   const googleSources = listValues(request.required_google_sources || request.requiredGoogleSources || request.google_source_types || request.googleSourceTypes);
   const reason = String(request.reason || request.message || request.summary || '').trim();
+  const source = String(request.source || request.reason_code || request.reasonCode || '').trim().toLowerCase();
+  const requiredChannelSelection = Boolean(request.required_channel_selection || request.requiredChannelSelection);
+  const channelCandidates = listValues(request.channel_candidates || request.channelCandidates || request.channels);
+  const writeCapabilities = missingCapabilities.filter((item) => (
+    /(post|publish|send|write|submit|create|update|delete|calendar|gmail|email|x\.post|github\.write)/i.test(String(item || ''))
+    && !/^google\.read_/i.test(String(item || ''))
+  ));
+  if (
+    source === 'leader_execution_approval'
+    && requiredChannelSelection
+    && !channelCandidates.length
+    && !writeCapabilities.length
+  ) {
+    return false;
+  }
   return Boolean(
     missingConnectors.length
     || missingCapabilities.length
     || googleSources.length
-    || request.required_channel_selection
-    || request.requiredChannelSelection
+    || requiredChannelSelection
     || /(approval|approve|connector|required|missing|connect|confirm|publish|send|post|承認|接続|未接続|確認|投稿|送信|必要)/i.test(reason)
   );
+}
+
+function googleAuthHrefForAuthority(request = null, group = '') {
+  const kind = String(group || '').trim().toLowerCase() === 'gsc' ? 'gsc' : 'ga4';
+  const url = new URL('/auth/google', window.location.origin);
+  url.searchParams.set('action', 'analytics_connect');
+  url.searchParams.set('return_to', currentChatReturnPath());
+  url.searchParams.set('login_source', `chatux_${kind}_approval`);
+  url.searchParams.set('visitor_id', state.visitorId);
+  url.searchParams.set('scope_group', kind);
+  url.searchParams.set('capabilities', kind === 'gsc' ? 'google.read_gsc' : 'google.read_ga4');
+  return `${url.pathname}${url.search}`;
+}
+
+function authorityNoticeKey(job = {}) {
+  const request = authorityRequestFromJob(job);
+  if (!authorityNeedsApproval(request)) return '';
+  const missingConnectors = listValues(request.missing_connectors || request.missingConnectors || request.connectors);
+  const missingCapabilities = listValues(request.missing_connector_capabilities || request.missingConnectorCapabilities || request.capabilities);
+  const googleSources = googleIncludeGroupsFromAuthority(request);
+  return [
+    String(job.id || '').trim(),
+    String(request.reason || request.message || request.summary || '').trim().slice(0, 180),
+    missingConnectors.join(','),
+    missingCapabilities.join(','),
+    googleSources.join(',')
+  ].join('|');
 }
 
 function fileLooksLikeSocialPostPack(file = {}) {
@@ -1201,7 +1685,7 @@ function appContextFromTransferPayload(appId = '', payload = {}) {
 
 function appAgentContextOpenUrl(appId = '', appContextResult = {}, payload = {}) {
   const manifest = appManifestById(appId) || {};
-  const href = String(manifest.entryUrl || manifest.baseUrl || '').trim();
+  const href = appAgentLaunchUrl(manifest);
   if (!href) return '';
   const url = new URL(href, window.location.origin);
   url.searchParams.set('cait_source', 'CAIt');
@@ -1210,6 +1694,22 @@ function appAgentContextOpenUrl(appId = '', appContextResult = {}, payload = {})
   if (appContextResult?.app_context_token) url.searchParams.set('cait_app_context_token', String(appContextResult.app_context_token));
   if (payload?.order?.id) url.searchParams.set('cait_job', String(payload.order.id).trim());
   return url.toString();
+}
+
+function currentChatReturnPath() {
+  const path = window.location.pathname === '/chat.html' ? CHATUX_RETURN_PATH : (window.location.pathname || CHATUX_RETURN_PATH);
+  const safePath = /^\/chat(?:\.html)?$/.test(path) ? path : CHATUX_RETURN_PATH;
+  return `${safePath}${window.location.search || ''}${window.location.hash || ''}`;
+}
+
+function makeChatHandoffId(prefix = 'chat-handoff') {
+  try {
+    const bytes = new Uint8Array(6);
+    window.crypto.getRandomValues(bytes);
+    return `${prefix}-${Array.from(bytes).map((item) => item.toString(16).padStart(2, '0')).join('')}`;
+  } catch {
+    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
+  }
 }
 
 async function createAppAgentContextOpenUrl(appId = '', payload = {}) {
@@ -1678,6 +2178,41 @@ async function refreshRecentJobs(options = {}) {
   return state.recentJobsRequest;
 }
 
+async function fetchVisibleJob(jobId = '') {
+  const safeId = String(jobId || '').trim();
+  if (!safeId) return null;
+  const cached = (Array.isArray(state.recentJobs) ? state.recentJobs : [])
+    .find((job) => String(job?.id || '').trim() === safeId);
+  if (cached) return cached;
+  const result = await api(`/api/jobs/${encodeURIComponent(safeId)}?visitor_id=${encodeURIComponent(state.visitorId)}`, { method: 'GET' });
+  const job = result?.job && typeof result.job === 'object' ? { ...result.job, id: result.job.id || safeId } : null;
+  if (job?.id) {
+    state.recentJobs = [
+      job,
+      ...(Array.isArray(state.recentJobs) ? state.recentJobs.filter((item) => String(item?.id || '') !== String(job.id)) : [])
+    ].slice(0, 50);
+    state.recentJobsFetchedAt = Date.now();
+    rememberAiAgentsFromJob(job);
+  }
+  return job;
+}
+
+async function refreshRecurringOrders(options = {}) {
+  const force = options.force === true;
+  if (!force && catalogCacheFresh(state.recurringOrdersFetchedAt)) return state.recurringOrders;
+  if (state.recurringOrdersRequest) return state.recurringOrdersRequest;
+  state.recurringOrdersRequest = api('/api/recurring-orders', { method: 'GET' })
+    .then((result) => {
+      state.recurringOrders = Array.isArray(result?.recurring_orders) ? result.recurring_orders : [];
+      state.recurringOrdersFetchedAt = Date.now();
+      return state.recurringOrders;
+    })
+    .finally(() => {
+      state.recurringOrdersRequest = null;
+    });
+  return state.recurringOrdersRequest;
+}
+
 async function refreshWorkerAgents(options = {}) {
   const force = options.force === true;
   const offset = Math.max(0, Number(options.offset || 0));
@@ -1705,6 +2240,7 @@ function warmUtilityCatalogs() {
   void refreshRegisteredApps().catch(() => {});
   void refreshAppContexts().catch(() => {});
   void refreshRecentJobs().catch(() => {});
+  void refreshRecurringOrders().catch(() => {});
 }
 
 async function appendUsageLibrary(scope = 'all') {
@@ -1792,6 +2328,134 @@ function jobUtilityRows(jobs = []) {
   return rows.length ? `<div class="utility-list">${rows.join('\n')}</div>` : utilityEmptyHtml('No chat orders are visible yet.');
 }
 
+function orderIdsFromText(value = '') {
+  const text = String(value || '');
+  const ids = [];
+  const patterns = [
+    /Order ID:\s*([0-9a-f]{8}-[0-9a-f-]{27,})/ig,
+    /Order accepted\.[\s\S]{0,140}?([0-9a-f]{8}-[0-9a-f-]{27,})/ig
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text))) {
+      const id = String(match[1] || '').trim();
+      if (id) ids.push(id);
+    }
+  }
+  return ids;
+}
+
+function chatSessionOrderIds(session = {}) {
+  const ids = [
+    session.linkedOrderId,
+    ...(Array.isArray(session.activeJobIds) ? session.activeJobIds : []),
+    ...(Array.isArray(session.messages) ? session.messages.flatMap((message) => orderIdsFromText(message.body || '')) : [])
+  ].map((item) => String(item || '').trim()).filter(Boolean);
+  return [...new Set(ids)].slice(0, 8);
+}
+
+function restoredSessionOrderCardHtml(job = {}) {
+  const orderId = String(job.id || '').trim();
+  const status = String(job.status || '').trim().toLowerCase();
+  const terminal = isTerminalStatus(status);
+  const failed = ['failed', 'timed_out'].includes(status);
+  const completed = status === 'completed';
+  const waiting = status === 'blocked';
+  const active = !terminal;
+  const title = [
+    taskLabel(job.taskType || job.workflowTask || 'work'),
+    orderId ? `#${orderId.slice(0, 8)}` : ''
+  ].filter(Boolean).join(' ');
+  const summary = deliveryText(job) || job.failureReason || job.prompt || '';
+  const childRuns = Array.isArray(job.workflow?.childRuns) ? job.workflow.childRuns : [];
+  const childProgress = childRuns.length
+    ? [
+        '<details class="restored-order-progress" open>',
+        '<summary>Progress</summary>',
+        '<div class="utility-list compact">',
+        ...childRuns.slice(0, 12).map((child) => {
+          const childTask = taskLabel(child.taskType || child.dispatchTaskType || child.workflowTask || 'work');
+          const childStatus = statusDisplayLabel(child.status || 'queued');
+          const childMeta = [
+            child.agentName || '',
+            child.sequencePhase ? `phase: ${child.sequencePhase}` : '',
+            child.failureReason || child.failure_reason || ''
+          ].filter(Boolean).join(' / ');
+          return [
+            '<div class="utility-row restored-progress-row">',
+            '<div class="utility-main">',
+            `<strong>${escapeHtml(childTask)}</strong>`,
+            `<span class="utility-meta">${escapeHtml(childStatus)}${childMeta ? ` / ${escapeHtml(childMeta)}` : ''}</span>`,
+            '</div>',
+            '</div>'
+          ].join('');
+        }),
+        childRuns.length > 12 ? `<div class="chat-hint">${escapeHtml(`${childRuns.length - 12} more progress entries are available in the result.`)}</div>` : '',
+        '</div>',
+        '</details>'
+      ].join('\n')
+    : '';
+  const meta = [
+    `Status: ${statusLabel(job)}`,
+    job.createdAt ? `Started: ${shortDateTime(job.createdAt)}` : '',
+    job.completedAt ? `Completed: ${shortDateTime(job.completedAt)}` : '',
+    job.failedAt ? `Failed: ${shortDateTime(job.failedAt)}` : '',
+    job.timedOutAt ? `Timed out: ${shortDateTime(job.timedOutAt)}` : ''
+  ].filter(Boolean).join(' / ');
+  const hint = active
+    ? 'This order is still in progress. CAIt will resume polling from this chat.'
+    : completed
+      ? 'This order has a result. Review it here before scheduling or retrying.'
+      : waiting
+        ? 'This order is waiting for an approval or connector action. Review the requested action before continuing.'
+        : 'This order ended without a successful delivery. Review the reason before preparing a retry.';
+  const actions = [
+    orderId ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(orderId)}">${escapeHtml(terminal ? 'Show result' : 'Check status')}</button>` : '',
+    orderId && terminal ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-retry="${escapeHtml(orderId)}">${escapeHtml(failed ? 'Prepare retry' : 'Run again')}</button>` : '',
+    orderId && completed ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-schedule="${escapeHtml(orderId)}">Schedule</button>` : ''
+  ].filter(Boolean).join('');
+  return [
+    '<div class="restored-order-card">',
+    `<strong>${escapeHtml(title || 'Related order')}</strong>`,
+    meta ? `<div class="utility-meta">${escapeHtml(meta)}</div>` : '',
+    summary ? `<div>${escapeHtml(compact(summary, 520))}</div>` : '<div>Order details are available. Open the result to inspect the delivery.</div>',
+    childProgress,
+    actions ? `<div class="inline-actions">${actions}</div>` : '',
+    `<span class="chat-hint">${escapeHtml(hint)}</span>`,
+    '</div>'
+  ].join('\n');
+}
+
+async function renderRestoredSessionOrderContext(session = {}) {
+  const ids = chatSessionOrderIds(session);
+  if (!ids.length) return;
+  for (const id of ids) rememberTrackedOrder(id);
+  const jobs = [];
+  const failures = [];
+  for (const id of ids) {
+    try {
+      const job = await fetchVisibleJob(id);
+      if (job?.id) jobs.push(job);
+    } catch (error) {
+      failures.push(`${id.slice(0, 8)}: ${orderErrorMessage(error)}`);
+    }
+  }
+  if (!jobs.length && !failures.length) return;
+  const body = [
+    '<strong>Restored order context</strong>',
+    '<span class="chat-hint">This chat session has related order history. No new order was created.</span>',
+    ...jobs.map(restoredSessionOrderCardHtml),
+    failures.length ? `<div class="chat-hint">${escapeHtml(`Could not load: ${failures.join(' / ')}`)}</div>` : ''
+  ].filter(Boolean).join('\n\n');
+  appendMessage('system', body, { label: 'Order history', tone: jobs.some((job) => !isTerminalStatus(job.status)) ? 'warn' : 'info', record: false });
+  const activeJob = jobs.find((job) => !isTerminalStatus(job.status));
+  const primary = activeJob || jobs[0] || null;
+  if (primary?.id) {
+    state.orderId = primary.id;
+    if (!isTerminalStatus(primary.status)) startPolling(primary.id);
+  }
+}
+
 async function showChatListPanel() {
   openUtilityModal('Chats', utilityEmptyHtml('Loading recent chats and orders...'));
   try {
@@ -1803,6 +2467,246 @@ async function showChatListPanel() {
   } catch (error) {
     openUtilityModal('Chats', utilityEmptyHtml(orderErrorMessage(error)));
   }
+}
+
+function localTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Tokyo';
+  } catch {
+    return 'Asia/Tokyo';
+  }
+}
+
+function scheduleableCompletedOrders() {
+  return (Array.isArray(state.recentJobs) ? state.recentJobs : [])
+    .filter((job) => job?.id && String(job.status || '').trim().toLowerCase() === 'completed' && String(job.prompt || '').trim())
+    .slice(0, 20);
+}
+
+function completedOrderById(id = '') {
+  const safeId = String(id || '').trim();
+  if (!safeId) return null;
+  return scheduleableCompletedOrders().find((job) => String(job.id || '') === safeId) || null;
+}
+
+function scheduleFormHtml() {
+  const completedOrders = scheduleableCompletedOrders();
+  const hasCompletedOrders = completedOrders.length > 0;
+  const orderOptions = completedOrders.map((job) => {
+    const label = [
+      taskLabel(job.taskType || job.workflowTask || 'work'),
+      shortDateTime(job.completedAt || job.updatedAt || job.createdAt),
+      compact(job.prompt || '', 88)
+    ].filter(Boolean).join(' / ');
+    return `<option value="${escapeHtml(job.id)}">${escapeHtml(label)}</option>`;
+  }).join('');
+  return [
+    '<form class="utility-form schedule-form" data-schedule-create>',
+    '<label class="utility-field"><span>Completed order to rerun</span>',
+    hasCompletedOrders
+      ? `<select name="source_job_id">${orderOptions}</select>`
+      : '<select name="source_job_id" disabled><option>Run an order to completion first</option></select>',
+    '</label>',
+    '<div class="utility-grid">',
+    '<label class="utility-field"><span>Repeat</span><select name="interval"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="hourly">Hourly</option></select></label>',
+    '<label class="utility-field"><span>Time</span><input name="time" type="time" value="09:00" /></label>',
+    '<label class="utility-field"><span>Weekday</span><select name="weekday"><option value="1">Mon</option><option value="2">Tue</option><option value="3">Wed</option><option value="4">Thu</option><option value="5">Fri</option><option value="6">Sat</option><option value="0">Sun</option></select></label>',
+    `<label class="utility-field"><span>Timezone</span><input name="timezone" value="${escapeHtml(localTimezone())}" /></label>`,
+    '<label class="utility-field"><span>Max runs</span><input name="max_runs" type="number" min="0" max="365" value="0" /></label>',
+    '</div>',
+    '<div class="utility-actions schedule-submit-row">',
+    `<button class="primary-btn file-action" type="submit"${hasCompletedOrders ? '' : ' disabled'}>Schedule completed order</button>`,
+    '</div>',
+    '<span class="chat-hint">Schedules rerun a completed order. This avoids turning an unclear request into recurring work before CAIt has asked questions, routed it, and delivered it once. The chat does not need to stay open.</span>',
+    '</form>'
+  ].join('\n');
+}
+
+function scheduleIntervalLabel(schedule = {}) {
+  const interval = String(schedule.interval || 'daily');
+  if (interval === 'hourly') return `Every ${Math.max(1, Number(schedule.every || 1))} hour(s)`;
+  if (interval === 'weekly') return `Weekly ${schedule.time || '09:00'} ${weekdayLabel(schedule.weekday)}`;
+  return `Daily ${schedule.time || '09:00'}`;
+}
+
+function weekdayLabel(value = 1) {
+  return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][Math.max(0, Math.min(6, Number(value || 0)))] || 'Mon';
+}
+
+function recurringOrderRows(orders = []) {
+  const rows = (Array.isArray(orders) ? orders : []).filter((order) => order?.id).slice(0, 40).map((order) => {
+    const status = String(order.status || 'active');
+    const schedule = order.schedule || {};
+    const meta = [
+      status,
+      scheduleIntervalLabel(schedule),
+      schedule.timezone || '',
+      order.nextRunAt ? `next ${shortDateTime(order.nextRunAt)}` : '',
+      order.lastStatus ? `last ${order.lastStatus}` : ''
+    ].filter(Boolean).join(' / ');
+    const canPause = status === 'active';
+    const canResume = status === 'paused' || status === 'needs_action';
+    return [
+      '<div class="utility-row">',
+      '<div class="utility-main">',
+      `<strong>${escapeHtml(taskLabel(order.taskType || 'work'))}</strong>`,
+      `<span class="utility-meta">${escapeHtml(meta)}</span>`,
+      `<span>${escapeHtml(compact(order.prompt || order.lastError || '', 190))}</span>`,
+      '</div>',
+      '<div class="utility-actions">',
+      order.lastJobId ? `<button class="ghost-btn file-action" type="button" data-utility-open-job="${escapeHtml(order.lastJobId)}">Last run</button>` : '',
+      canPause ? `<button class="ghost-btn file-action" type="button" data-recurring-status="${escapeHtml(order.id)}" data-status="paused">Pause</button>` : '',
+      canResume ? `<button class="ghost-btn file-action" type="button" data-recurring-status="${escapeHtml(order.id)}" data-status="active">Resume</button>` : '',
+      status !== 'cancelled' && status !== 'completed' ? `<button class="ghost-btn file-action" type="button" data-recurring-cancel="${escapeHtml(order.id)}">Cancel</button>` : '',
+      '</div>',
+      '</div>'
+    ].filter(Boolean).join('\n');
+  });
+  return rows.length ? `<div class="utility-list">${rows.join('\n')}</div>` : utilityEmptyHtml('No scheduled work is active yet.');
+}
+
+function schedulePanelHtml(status = '') {
+  return [
+    status ? `<div class="chat-hint">${escapeHtml(status)}</div>` : '',
+    scheduleFormHtml(),
+    '<h3 class="utility-section-title">Scheduled work</h3>',
+    recurringOrderRows(state.recurringOrders)
+  ].filter(Boolean).join('\n');
+}
+
+async function showSchedulePanel() {
+  openUtilityModal('Schedules', schedulePanelHtml('Loading scheduled work...'));
+  try {
+    await Promise.all([
+      refreshRecurringOrders({ force: true }),
+      refreshRecentJobs({ force: true, limit: 40 })
+    ]);
+    if (utilityModalIsOpen('Schedules')) openUtilityModal('Schedules', schedulePanelHtml());
+  } catch (error) {
+    if (utilityModalIsOpen('Schedules')) openUtilityModal('Schedules', schedulePanelHtml(orderErrorMessage(error)));
+  }
+}
+
+function scheduleFromForm(form) {
+  const data = new FormData(form);
+  const interval = String(data.get('interval') || 'daily').trim();
+  return {
+    schedule: {
+      interval,
+      time: String(data.get('time') || '09:00').trim() || '09:00',
+      weekday: Number(data.get('weekday') || 1),
+      timezone: String(data.get('timezone') || localTimezone()).trim() || 'Asia/Tokyo'
+    },
+    maxRuns: Math.max(0, Math.min(365, Number(data.get('max_runs') || 0) || 0)),
+    sourceJobId: String(data.get('source_job_id') || '').trim()
+  };
+}
+
+function buildScheduledJobPayloadFromCompletedOrder(job = {}) {
+  if (!job?.id || String(job.status || '').trim().toLowerCase() !== 'completed') {
+    throw new Error('Choose a completed order before scheduling recurring work.');
+  }
+  const taskType = String(job.taskType || job.task_type || job.workflowTask || 'research').trim() || 'research';
+  const previousInput = job.input && typeof job.input === 'object' ? job.input : {};
+  const previousBroker = previousInput._broker && typeof previousInput._broker === 'object' ? previousInput._broker : {};
+  const orderStrategy = String(job.orderStrategy || job.order_strategy || (job.workflow ? 'multi' : 'single') || 'single').trim() || 'single';
+  return {
+    parent_agent_id: 'chatux',
+    task_type: taskType,
+    selected_agent_id: String(job.selectedAgentId || job.selected_agent_id || job.assignedAgentId || '').trim(),
+    selected_agent_name: String(job.selectedAgentName || job.selected_agent_name || '').trim(),
+    prompt: String(job.prompt || '').trim(),
+    order_strategy: orderStrategy,
+    async_dispatch: true,
+    skip_intake: true,
+    visitor_id: state.visitorId,
+    budget_cap: Number(job.budgetCap ?? job.budget_cap ?? 500),
+    deadline_sec: Number(job.deadlineSec ?? job.deadline_sec ?? 300),
+    confirmation: {
+      accepted: true,
+      source: 'chat_schedule_completed_order',
+      accepted_at: new Date().toISOString(),
+      source_job_id: String(job.id || '')
+    },
+    input: {
+      ...previousInput,
+      source: 'chatux_completed_order_schedule',
+      original_prompt: previousInput.original_prompt || previousInput.originalPrompt || String(job.prompt || '').trim(),
+      _broker: {
+        ...previousBroker,
+        recurring: {
+          ...(previousBroker.recurring && typeof previousBroker.recurring === 'object' ? previousBroker.recurring : {}),
+          created_from: 'completed_order_schedule_panel',
+          sourceJobId: String(job.id || ''),
+          sourceJobStatus: 'completed',
+          chat_required: false
+        },
+        intake: {
+          ...(previousBroker.intake && typeof previousBroker.intake === 'object' ? previousBroker.intake : {}),
+          reused_completed_order: true,
+          source_job_id: String(job.id || ''),
+          checked_at: new Date().toISOString()
+        }
+      }
+    }
+  };
+}
+
+async function createScheduleFromForm(form) {
+  const config = scheduleFromForm(form);
+  const sourceJob = completedOrderById(config.sourceJobId);
+  if (!sourceJob) throw new Error('Run an order to completion first, then choose it here for scheduling.');
+  const payload = buildScheduledJobPayloadFromCompletedOrder(sourceJob);
+  const body = {
+    ...payload,
+    schedule: config.schedule,
+    max_runs: config.maxRuns,
+    status: 'active',
+    input: {
+      ...(payload.input || {}),
+      _broker: {
+        ...(payload.input?._broker || {}),
+        recurring: {
+          ...(payload.input?._broker?.recurring || {}),
+          schedule: config.schedule,
+          maxRuns: config.maxRuns,
+          sourceJobId: sourceJob.id
+        }
+      }
+    }
+  };
+  const result = await api('/api/recurring-orders', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+  state.recurringOrdersFetchedAt = 0;
+  await refreshRecurringOrders({ force: true });
+  openUtilityModal('Schedules', schedulePanelHtml('Scheduled from a completed order. CAIt will rerun it in the background even if this chat is closed.'));
+  appendTextMessage('system', [
+    'Scheduled completed order.',
+    `Schedule ID: ${result.recurring_order?.id || '-'}`,
+    `Source order: ${sourceJob.id.slice(0, 8)}`,
+    result.recurring_order?.nextRunAt ? `Next run: ${shortDateTime(result.recurring_order.nextRunAt)}` : ''
+  ].filter(Boolean).join('\n'), { label: 'Schedules' });
+}
+
+async function updateRecurringOrderStatus(id = '', status = 'paused') {
+  if (!id) return;
+  await api(`/api/recurring-orders/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status })
+  });
+  state.recurringOrdersFetchedAt = 0;
+  await refreshRecurringOrders({ force: true });
+  if (utilityModalIsOpen('Schedules')) openUtilityModal('Schedules', schedulePanelHtml(status === 'active' ? 'Schedule resumed.' : 'Schedule paused.'));
+}
+
+async function cancelRecurringOrder(id = '') {
+  if (!id) return;
+  await api(`/api/recurring-orders/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  state.recurringOrdersFetchedAt = 0;
+  await refreshRecurringOrders({ force: true });
+  if (utilityModalIsOpen('Schedules')) openUtilityModal('Schedules', schedulePanelHtml('Schedule cancelled.'));
 }
 
 function agentUtilityRows(agents = []) {
@@ -1956,7 +2860,7 @@ function openAppAgent(id = '', options = {}) {
     ), { tone: 'error', label: 'Library' });
     return false;
   }
-  const href = String(options.href || entry.lastHandoffUrl || entry.entryUrl || entry.baseUrl || '').trim();
+  const href = appAgentLaunchUrl(entry, options.href || entry.lastHandoffUrl || '');
   if (!href) {
     appendTextMessage('assistant', chatText(
       `${entry.name} does not have a launch URL yet.`,
@@ -2024,27 +2928,50 @@ function renderAuthorityRequest(job = {}) {
   if (!authorityNeedsApproval(authority)) return '';
   const missingConnectors = listValues(authority.missing_connectors || authority.missingConnectors || authority.connectors);
   const missingCapabilities = listValues(authority.missing_connector_capabilities || authority.missingConnectorCapabilities || authority.capabilities);
+  const googleSources = googleIncludeGroupsFromAuthority(authority);
   const required = [...missingCapabilities, ...missingConnectors].filter(Boolean);
   const reason = String(authority.reason || authority.message || authority.summary || job.failureReason || 'External action requires approval before execution.').trim();
   const xNeeded = required.some((item) => /(^x$|x\.post|twitter|tweet)/i.test(item));
-  const openWorkHref = `/${job.id ? `#${encodeURIComponent(job.id)}` : ''}`;
+  const googleNeeded = required.some((item) => /^google\.|^google$/i.test(item)) || googleSources.length > 0;
+  const approvalAnchor = job.id ? `approval-${String(job.id).replace(/[^a-z0-9_-]/gi, '')}` : 'chatThread';
+  const openWorkHref = `#${approvalAnchor}`;
   const actionLinks = [];
   if (xNeeded && !state.auth?.loggedIn) {
     actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in</a>`);
   } else if (xNeeded && !state.auth?.xLinked && !state.auth?.xAuthorized && state.auth?.xConfigured !== false && state.auth?.xTokenEncryptionConfigured !== false) {
     actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(xAuthHref())}">Connect X</a>`);
   }
+  if (googleNeeded && !state.auth?.loggedIn) {
+    actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in with Google</a>`);
+  } else if (googleNeeded) {
+    const nextGoogleGroup = googleSources.includes('ga4') ? 'ga4' : (googleSources.includes('gsc') ? 'gsc' : (missingCapabilities.includes('google.read_gsc') ? 'gsc' : 'ga4'));
+    actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(googleAuthHrefForAuthority(authority, nextGoogleGroup))}">${escapeHtml(nextGoogleGroup === 'gsc' ? 'Connect Search Console' : 'Connect GA4')}</a>`);
+  }
   actionLinks.push(`<a class="ghost-btn inline-btn file-action" href="${escapeHtml(openWorkHref)}">Open chat approval</a>`);
   return [
-    '<div class="approval-card">',
-    '<strong>承認が必要です / Action approval required</strong>',
+    `<div class="approval-card" id="${escapeHtml(approvalAnchor)}">`,
+    '<strong>Step 1: 承認が必要です / Action approval required</strong>',
     `<div>Reason: ${escapeHtml(reason)}</div>`,
     required.length ? `<div>Required: ${escapeHtml(required.join(', '))}</div>` : '',
+    googleSources.length ? `<div>Google sources: ${escapeHtml(googleSources.join(', '))}</div>` : '',
     '<div>Status: CAIt has not posted, sent, or published externally yet.</div>',
     actionLinks.length ? `<div class="inline-actions">${actionLinks.join('')}</div>` : '',
-    '<span class="chat-hint">Review the exact file content below before approving the external action.</span>',
+    '<span class="chat-hint">Connect or approve only the requested source. CAIt will keep the order in this chat and continue from the same order context.</span>',
     '</div>'
   ].filter(Boolean).join('\n');
+}
+
+function maybeRenderAuthorityNotice(job = {}, options = {}) {
+  const key = authorityNoticeKey(job);
+  if (!key || state.authorityNoticeKeys.has(key)) return false;
+  state.authorityNoticeKeys.add(key);
+  const body = renderAuthorityRequest(job);
+  if (!body) return false;
+  appendMessage('assistant', body, {
+    tone: 'warn',
+    label: options.label || 'Approval required'
+  });
+  return true;
 }
 
 function renderFileCards(files = []) {
@@ -2137,7 +3064,10 @@ async function backfillChatDeliveries(options = {}) {
       if (options.renderTerminalDeliveries === false && !matchesRecovery) continue;
       if (renderDeliveryOnce(job, { force: options.force === true })) delivered += 1;
     } else if (!state.polling && safeId === state.orderId) {
+      maybeRenderAuthorityNotice(job, { label: 'Approval required' });
       startPolling(safeId);
+    } else {
+      maybeRenderAuthorityNotice(job, { label: 'Approval required' });
     }
   }
   return delivered;
@@ -2167,8 +3097,9 @@ function draftBrief(prompt, prepared) {
 function updateComposerMode() {
   const pending = Boolean(state.draft);
   const intake = Boolean(state.pendingIntake);
+  const placeholder = intake ? PROMPT_PLACEHOLDERS.intake : (pending ? PROMPT_PLACEHOLDERS.pending : PROMPT_PLACEHOLDERS.default);
   els.promptInput.rows = intake ? 4 : (pending ? 2 : 3);
-  els.promptInput.placeholder = intake ? INTAKE_PLACEHOLDER : (pending ? PENDING_ORDER_PLACEHOLDER : DEFAULT_PROMPT_PLACEHOLDER);
+  els.promptInput.placeholder = chatText(placeholder.en, placeholder.ja);
 }
 
 function isNeedsInputResponse(response = {}) {
@@ -2269,7 +3200,7 @@ async function recoverAcceptedOrderAfterCreateError(payload = {}, error = null) 
 function startIntake(response = {}, originalPrompt = '') {
   state.pendingIntake = chatEngineBuildIntakeState(response, originalPrompt);
   setConversationOwnerFromPrepared(response, { sample: originalPrompt });
-  const questions = Array.isArray(state.pendingIntake.questions) ? state.pendingIntake.questions.filter(Boolean).slice(0, 8) : [];
+  const questions = Array.isArray(state.pendingIntake.questions) ? state.pendingIntake.questions.filter(Boolean).slice(0, 4) : [];
   const owner = state.pendingIntake.conversationOwner || conversationOwnerFromPrepared(response);
   const label = owner.type === 'leader' ? (owner.label || activeActorLabel('Intake')) : 'Intake';
   const leadLine = owner.type === 'leader'
@@ -2279,6 +3210,7 @@ function startIntake(response = {}, originalPrompt = '') {
         originalPrompt
       )
     : '';
+  const dataHint = growthLeaderNeedsDataHint(owner.taskType || state.pendingIntake.taskType, originalPrompt);
   state.draft = null;
   state.draftRevision += 1;
   updateComposerMode();
@@ -2286,25 +3218,416 @@ function startIntake(response = {}, originalPrompt = '') {
     response.message || 'I need a few more details before preparing or dispatching the order.',
     leadLine,
     state.pendingIntake.selectedAgentName ? `Selected worker: ${state.pendingIntake.selectedAgentName}` : '',
+    dataHint,
     '',
-    'Answer what you can:',
+    chatText('Answer what you can. CAIt will not keep asking after this round:', '分かる範囲で回答してください。この回答後は追加ヒアリングを繰り返さず発注確認へ進みます:', originalPrompt),
     ...questions.map((question, index) => `${index + 1}. ${question}`),
     '',
-    'Nothing has been dispatched yet.'
+    chatText('Nothing has been dispatched yet.', 'まだ実行も課金も発生していません。', originalPrompt)
   ].filter(Boolean).join('\n'), { tone: 'ok', label });
+  const choiceHtml = intakeChoiceCardsHtml(state.pendingIntake, originalPrompt);
+  if (choiceHtml) appendMessage('assistant', choiceHtml, { tone: 'ok', label: chatText('Choices', '選択肢', originalPrompt) });
 }
 
-async function answerPendingIntake(answer = '') {
+function growthLeaderNeedsDataHint(taskType = '', sample = '') {
+  const task = String(taskType || '').trim().toLowerCase();
+  if (!['cmo_leader', 'growth', 'marketing', 'customer_acquisition', 'seo_strategy', 'acquisition_automation'].includes(task)) return '';
+  return chatText(
+    'If you have GA4/Search Console, answer "yes, I have GA4" and I will open Analytics Console so you can choose the Google account, property, and site. If not, say "skip analytics" and CAIt will proceed with assumptions. For X/Twitter, paste the account URL.',
+    'GA4/Search Console を持っている場合は「GA4あります」と答えてください。Analytics Console を開き、Googleアカウント、プロパティ、サイトを選べるようにします。使わない場合は「アナリティクスをスキップ」と答えれば、仮説で進めます。X/Twitter はアカウントURLを貼ってください。',
+    sample
+  );
+}
+
+function orderNeedsAnalyticsContext(taskType = '', prompt = '') {
+  const task = String(taskType || '').trim().toLowerCase();
+  const text = String(prompt || '').toLowerCase();
+  return ['cmo_leader', 'growth', 'marketing', 'customer_acquisition', 'seo_strategy', 'seo_gap', 'acquisition_automation'].includes(task)
+    || /(ga4|google analytics|search console|サーチコンソール|アナリティクス|流入|集客|seo|cvr|conversion|コンバージョン)/i.test(text);
+}
+
+function analyticsPreOrderHintHtml(taskType = '', prompt = '') {
+  if (!orderNeedsAnalyticsContext(taskType, prompt)) return '';
+  return [
+    '<div class="preflight-card">',
+    `<strong>${escapeHtml(chatText('Analytics data skipped unless attached', 'アナリティクスは添付済みの場合だけ使用', prompt))}</strong>`,
+    `<span>${escapeHtml(chatText('No GA4/Search Console report is requested during Send order. If no Analytics Console context is already attached, this order will skip GA4/Search Console and continue with assumptions.', 'Send order の途中では GA4/Search Console レポートを要求しません。Analytics Console のコンテキストがすでに添付されていない場合、この発注では GA4/Search Console をスキップして仮説で進めます。', prompt))}</span>`,
+    '</div>'
+  ].join('\n');
+}
+
+function analyticsIntakeChoiceHtml(sample = '') {
+  return intakeChoiceCardsHtml({
+    originalPrompt: sample,
+    taskType: 'cmo_leader',
+    questions: [chatText('Do you want to use GA4/Search Console?', 'GA4/Search Consoleを使いますか？', sample)]
+  }, sample);
+}
+
+function intakeChoiceGroups(intake = {}, sample = '') {
+  const text = [
+    sample,
+    intake.originalPrompt,
+    intake.taskType,
+    intake.activeLeaderTaskType,
+    intake.conversationOwner?.taskType,
+    ...(Array.isArray(intake.questions) ? intake.questions : [])
+  ].join('\n');
+  const groups = [];
+  const seen = new Set();
+  const pick = (en, ja) => chatText(en, ja, sample || intake.originalPrompt || text);
+  const pushGroup = (id, titleEn, titleJa, hintEn, hintJa, options = [], config = {}) => {
+    if (seen.has(id)) return;
+    const normalizedOptions = options
+      .filter((option) => option?.id && option?.label)
+      .slice(0, 4);
+    if (!normalizedOptions.length && config.freeText !== true) return;
+    seen.add(id);
+    groups.push({
+      id,
+      title: pick(titleEn, titleJa),
+      hint: hintEn || hintJa ? pick(hintEn, hintJa) : '',
+      inputPlaceholder: config.inputPlaceholderEn || config.inputPlaceholderJa
+        ? pick(config.inputPlaceholderEn || 'Other: type your own answer', config.inputPlaceholderJa || 'その他: 自由に入力')
+        : '',
+      options: normalizedOptions
+    });
+  };
+
+  if (/(product|service|website|site|url|landing page|lp|pricing|商材|サービス|商品|サイト|URL|ＵＲＬ|LP|ランディング|価格|売りたい)/i.test(text)) {
+    pushGroup(
+      'service',
+      'Product/service',
+      '対象サービス',
+      'Enter the exact product, service, website, or LP CAIt should analyze.',
+      '分析対象の商材・サービス名、URL、LPを入力してください。',
+      [],
+      {
+        freeText: true,
+        inputPlaceholderEn: 'Service name, website/LP URL, or product notes',
+        inputPlaceholderJa: '商材・サービス名、URL、LP、補足'
+      }
+    );
+  }
+
+  if (intakeHasAnalyticsQuestion(intake)) {
+    pushGroup(
+      'analytics',
+      'Analytics data',
+      'アナリティクス',
+      'Use CAIt Analytics Console first, or skip and proceed with assumptions.',
+      '先にCAIt Analytics Consoleを使うか、仮説で進めるかを選んでください。',
+      [
+        { id: 'use', label: pick('Use GA4/Search Console', 'GA4/Search Consoleを使う'), action: 'analytics-use' },
+        { id: 'skip', label: pick('Skip analytics', 'アナリティクスをスキップ'), action: 'analytics-skip' }
+      ]
+    );
+  }
+
+  if (/(goal|objective|outcome|conversion|kpi|目的|成果|ゴール|コンバージョン|登録|問い合わせ|売上|認知|集客)/i.test(text)) {
+    pushGroup(
+      'goal',
+      'Main goal',
+      '主な目的',
+      'Choose the outcome CAIt should optimize for.',
+      'CAItが優先すべき成果を選んでください。',
+      [
+        { id: 'leads', label: pick('Increase leads/inquiries', '問い合わせ・リード獲得を増やす') },
+        { id: 'sales', label: pick('Increase sales/revenue', '売上・購入を増やす') },
+        { id: 'signup', label: pick('Increase signups/trials', '登録・トライアルを増やす') },
+        { id: 'awareness', label: pick('Increase traffic/awareness', '流入・認知を増やす') }
+      ]
+    );
+  }
+
+  if (/(audience|target|customer|persona|segment|ユーザー|顧客|ターゲット|誰|ペルソナ|業種|業界)/i.test(text)) {
+    pushGroup(
+      'audience',
+      'Target audience',
+      '対象ユーザー',
+      'Pick the closest audience. You can edit the text before sending.',
+      '近い対象を選んでください。送信前に入力欄で編集できます。',
+      [
+        { id: 'founders', label: pick('Founders/operators', '経営者・事業責任者') },
+        { id: 'marketers', label: pick('Marketing/growth teams', 'マーケ・グロース担当') },
+        { id: 'developers', label: pick('Developers/technical users', '開発者・技術ユーザー') },
+        { id: 'consumers', label: pick('General consumers', '一般消費者') }
+      ]
+    );
+  }
+
+  if (/(deliverable|format|output|report|plan|checklist|copy|asset|handoff|納品|形式|アウトプット|レポート|計画|チェックリスト|原稿|引き継ぎ)/i.test(text)) {
+    pushGroup(
+      'deliverable',
+      'Output format',
+      '納品形式',
+      'Choose what would be easiest to use next.',
+      '次に使いやすい納品形式を選んでください。',
+      [
+        { id: 'report', label: pick('Strategy report', '分析レポート') },
+        { id: 'checklist', label: pick('Execution checklist', '実行チェックリスト') },
+        { id: 'copy', label: pick('Copy/assets draft', '原稿・素材案') },
+        { id: 'handoff', label: pick('Implementation handoff', '実装・運用への引き継ぎ') }
+      ]
+    );
+  }
+
+  if (/(constraint|budget|deadline|scope|must|cannot|ads|制約|予算|期限|範囲|禁止|広告|スコープ)/i.test(text)) {
+    pushGroup(
+      'constraints',
+      'Constraints',
+      '制約',
+      'Choose the operating constraint that matters most.',
+      '最も重要な制約を選んでください。',
+      [
+        { id: 'organic-only', label: pick('No paid ads / organic only', '広告なし・オーガニックのみ') },
+        { id: 'low-budget', label: pick('Low budget first', '低予算優先') },
+        { id: 'fast', label: pick('Fast first draft', 'まず早く叩き台') },
+        { id: 'quality', label: pick('Depth and quality first', '深さ・品質優先') }
+      ]
+    );
+  }
+
+  if (/(channel|traffic|acquisition|seo|sns|ads|referral|流入|チャネル|広告|自然検索|SNS|リファラル|参照元)/i.test(text)) {
+    pushGroup(
+      'channel',
+      'Priority channel',
+      '優先チャネル',
+      'Select where the work should start.',
+      'どのチャネルから着手するか選んでください。',
+      [
+        { id: 'organic', label: pick('Organic search / SEO', '自然検索・SEO') },
+        { id: 'referral', label: pick('Referral sites', 'リファラル・参照元サイト') },
+        { id: 'social', label: pick('SNS / social', 'SNS・ソーシャル') },
+        { id: 'paid', label: pick('Paid ads', '広告') }
+      ]
+    );
+  }
+
+  if (!groups.length && Array.isArray(intake.questions) && intake.questions.length) {
+    pushGroup(
+      'direction',
+      'Direction',
+      '進め方',
+      'Choose a practical default if you do not know the exact answer yet.',
+      '正確な答えがまだない場合は、近い進め方を選んでください。',
+      [
+        { id: 'recommend', label: pick('Recommend the best option', '最適案を提案してほしい') },
+        { id: 'compare', label: pick('Compare a few options', '複数案を比較してほしい') },
+        { id: 'assume', label: pick('Proceed with assumptions', '仮説で進めてほしい') }
+      ]
+    );
+  }
+
+  return groups.slice(0, 6);
+}
+
+function intakeChoiceCardsHtml(intake = {}, sample = '') {
+  const groups = intakeChoiceGroups(intake, sample);
+  if (!groups.length) return '';
+  const groupHtml = groups.map((group) => [
+    '<div class="intake-choice-group">',
+    `<div class="intake-choice-title">${escapeHtml(group.title)}</div>`,
+    group.hint ? `<span>${escapeHtml(group.hint)}</span>` : '',
+    group.options.length ? '<div class="inline-actions intake-choice-actions">' : '',
+    ...group.options.map((option) => {
+      const action = option.action ? ` data-chat-action="${escapeHtml(option.action)}"` : '';
+      return `<button class="ghost-btn inline-btn intake-choice-btn" type="button" aria-pressed="false" data-intake-choice="${escapeHtml(option.id)}" data-choice-group="${escapeHtml(group.title)}" data-choice-label="${escapeHtml(option.label)}"${action}>${escapeHtml(option.label)}</button>`;
+    }),
+    group.options.length ? '</div>' : '',
+    '<div class="intake-other-row">',
+    `<input class="intake-other-input" type="text" data-intake-other-input="${escapeHtml(group.id)}" data-choice-group="${escapeHtml(group.title)}" placeholder="${escapeHtml(group.inputPlaceholder || chatText('Other: type your own answer', 'その他: 自由に入力', sample))}" aria-label="${escapeHtml(chatText(`Other answer for ${group.title}`, `${group.title} のその他回答`, sample))}" />`,
+    `<button class="ghost-btn inline-btn intake-other-add" type="button" data-intake-other-add="${escapeHtml(group.id)}" data-choice-group="${escapeHtml(group.title)}">${escapeHtml(chatText('Add', '追加', sample))}</button>`,
+    '</div>',
+    `<div class="intake-confirmed-list" data-intake-confirmed-list="${escapeHtml(group.id)}" data-choice-group="${escapeHtml(group.title)}" hidden></div>`,
+    '</div>'
+  ].filter(Boolean).join('\n')).join('\n');
+  return [
+    '<div class="preflight-card intake-choice-card">',
+    `<strong>${escapeHtml(chatText('Choose concrete answers', '具体的な選択肢から選んでください', sample))}</strong>`,
+    `<span>${escapeHtml(chatText('Click one or more choices to add them to the answer box. You can edit or remove text before sending.', 'ボタンは複数選べます。入力欄に追加されるだけなので、送信前に編集・削除できます。', sample))}</span>`,
+    groupHtml,
+    `<span class="chat-hint">${escapeHtml(chatText('Selected choices are added to the composer; nothing is dispatched until you send the answer and approve the order.', '選択内容は入力欄に入るだけです。回答送信と発注承認までは実行されません。', sample))}</span>`,
+    '</div>'
+  ].join('\n');
+}
+
+function appendIntakeChoiceToComposer(group = '', choice = '') {
+  const safeGroup = String(group || '').trim();
+  const safeChoice = String(choice || '').trim();
+  if (!safeGroup || !safeChoice || !els.promptInput) return;
+  const prefix = `- ${safeGroup}:`;
+  const nextLine = `${prefix} ${safeChoice}`;
+  const currentLines = String(els.promptInput.value || '')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim());
+  if (currentLines.some((line) => line.trim() === nextLine)) {
+    els.promptInput.focus();
+    return;
+  }
+  currentLines.push(nextLine);
+  els.promptInput.value = currentLines.join('\n');
+  els.promptInput.focus();
+  updateComposerMode();
+}
+
+function removeIntakeChoiceFromComposer(group = '', choice = '') {
+  const safeGroup = String(group || '').trim();
+  if (!safeGroup || !els.promptInput) return;
+  const prefix = `- ${safeGroup}:`;
+  const safeChoice = String(choice || '').trim();
+  const exactLine = safeChoice ? `${prefix} ${safeChoice}` : '';
+  els.promptInput.value = String(els.promptInput.value || '')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return false;
+      if (exactLine) return trimmed !== exactLine;
+      return !trimmed.startsWith(prefix);
+    })
+    .join('\n');
+  updateComposerMode();
+}
+
+function setIntakeConfirmedChoice(groupElement = null, group = '', choice = '') {
+  const safeGroup = String(group || '').trim();
+  const safeChoice = String(choice || '').trim();
+  const list = groupElement?.querySelector('[data-intake-confirmed-list]');
+  if (!safeGroup || !safeChoice || !list) return;
+  if ([...list.querySelectorAll('[data-confirmed-choice]')]
+    .some((item) => String(item.dataset.confirmedChoice || '').trim() === safeChoice)) {
+    list.hidden = false;
+    return;
+  }
+  list.hidden = false;
+  list.insertAdjacentHTML('beforeend', [
+    `<div class="intake-confirmed-item" data-confirmed-choice="${escapeHtml(safeChoice)}">`,
+    `<span class="intake-confirmed-label">${escapeHtml(chatText('Added', '追加済み', state.pendingIntake?.originalPrompt || ''))}</span>`,
+    `<strong>${escapeHtml(safeChoice)}</strong>`,
+    '<div class="intake-confirmed-actions">',
+    `<button class="ghost-btn inline-btn intake-confirmed-edit" type="button" data-intake-confirmed-edit data-choice-group="${escapeHtml(safeGroup)}">${escapeHtml(chatText('Edit', '編集', state.pendingIntake?.originalPrompt || ''))}</button>`,
+    `<button class="ghost-btn inline-btn intake-confirmed-remove" type="button" data-intake-confirmed-remove data-choice-group="${escapeHtml(safeGroup)}">${escapeHtml(chatText('Remove', '削除', state.pendingIntake?.originalPrompt || ''))}</button>`,
+    '</div>',
+    '</div>'
+  ].join('\n'));
+}
+
+function pendingIntakeHasAttachedAppContext(intake = {}) {
+  return Boolean(
+    intake?.appContextAttached
+    || intake?.analyticsContextAttached
+    || String(intake?.appContextPrompt || '').trim()
+  );
+}
+
+function caitAppContextAnswerLine(context = {}) {
+  const source = String(context?.source_app || '').toLowerCase();
+  const raw = context?.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
+  const connectorPrompt = caitAppContextChatPrompt(context);
+  if (source === 'analytics_console' || raw.googleGa4Property || raw.googleSearchConsoleSite) {
+    const services = [
+      raw.googleGa4Property ? 'GA4' : '',
+      raw.googleSearchConsoleSite ? 'Search Console' : ''
+    ].filter(Boolean).join(' + ') || 'Google Analytics/Search Console';
+    const range = raw.googleReportDateRange?.start_date && raw.googleReportDateRange?.end_date
+      ? ` (${raw.googleReportDateRange.start_date} to ${raw.googleReportDateRange.end_date})`
+      : '';
+    return `${services} connector context attached${range}.`;
+  }
+  return connectorPrompt.split('\n').map((line) => line.trim()).filter(Boolean)[0]
+    || `Attached context from ${context?.source_app_label || context?.source_app || 'app'}.`;
+}
+
+function intakeHasAnalyticsQuestion(intake = {}) {
+  const source = [
+    intake.originalPrompt,
+    intake.taskType,
+    intake.activeLeaderTaskType,
+    ...(Array.isArray(intake.questions) ? intake.questions : [])
+  ].join('\n');
+  return orderNeedsAnalyticsContext(intake.taskType || intake.activeLeaderTaskType || '', intake.originalPrompt || source)
+    || /(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics console)/i.test(source);
+}
+
+function answerSaysAnalyticsAvailable(answer = '') {
+  const text = String(answer || '').trim();
+  if (!text) return false;
+  const mentionsAnalytics = /(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics)/i.test(text);
+  const affirmative = /(持って(?:い)?る|あります|ある|使えます|使える|接続済み|見れます|見られます|はい|yes|yeah|yep|have|available|connected)/i.test(text);
+  const negative = /(持って(?:い)?ない|ありません|ないです|無し|なし|未接続|見れない|見られない|no|not|don't|do not|without|unavailable)/i.test(text);
+  return !negative && (mentionsAnalytics ? affirmative || /あり/i.test(text) : affirmative);
+}
+
+async function openAnalyticsConsoleForIntake(intake = {}, answer = '') {
+  const popup = window.open('about:blank', '_blank');
+  const handoffId = makeChatHandoffId('analytics-intake');
+  const chatReturnTo = currentChatReturnPath();
+  const payload = {
+    schema_version: 'cait-app-agent-transfer/v1',
+    transfer_id: `analytics-intake-${Date.now().toString(36)}`,
+    title: 'Analytics evidence requested from chat intake',
+    source: 'CAIt Chat intake',
+    summary: 'The user said GA4/Search Console data is available. Connect the right Google account, select the GA4 property and Search Console site, load the report, then send the analytics context back to CAIt before dispatching the order.',
+    action: {
+      kind: 'analytics_report_load',
+      title: 'Select the Google account/property/site and load GA4/Search Console before order dispatch',
+      text: String(answer || '').trim(),
+      source: 'CAIt Chat intake',
+      requiresApproval: false
+    },
+    context: {
+      original_prompt: intake.originalPrompt || '',
+      intake_answer: answer,
+      questions: Array.isArray(intake.questions) ? intake.questions : [],
+      task_type: intake.taskType || intake.activeLeaderTaskType || '',
+      leader: intake.conversationOwner || null,
+      chat_handoff_id: handoffId,
+      chat_return_to: chatReturnTo
+    },
+    settings: {
+      outputLanguage: chatLanguage(intake.originalPrompt || answer),
+      workspaceNotes: `Original prompt:\n${intake.originalPrompt || ''}\n\nIntake answer:\n${answer}`
+    }
+  };
+  try {
+    const href = await createAppAgentContextOpenUrl('analytics-console', payload);
+    const url = new URL(href, window.location.origin);
+    url.searchParams.set('chat_handoff_id', handoffId);
+    url.searchParams.set('chat_return_to', chatReturnTo);
+    if (popup) popup.location.href = url.toString();
+    else window.open(url.toString(), '_blank');
+    appendTextMessage('assistant', chatText(
+      'I opened Analytics Console. Connect the right Google account, choose the GA4 property and Search Console site, load the report, then press Send to CAIt. I will pause this order until analytics context comes back; if you want to skip analytics, type "skip analytics".',
+      'Analytics Console を開きました。正しいGoogleアカウント、GA4プロパティ、Search Consoleサイトを選び、レポートをLoadしてから Send to CAIt を押してください。この発注は分析コンテキストが戻るまで止めます。分析を使わない場合は「アナリティクスをスキップ」と入力してください。',
+      answer
+    ), { tone: 'ok', label: 'Analytics' });
+  } catch (error) {
+    const fallback = '/analytics-console.html';
+    if (popup) popup.location.href = fallback;
+    else window.open(fallback, '_blank', 'noopener,noreferrer');
+    appendTextMessage('assistant', `${chatText('I opened Analytics Console, but could not attach the intake context automatically.', 'Analytics Consoleを開きましたが、ヒアリング文脈の自動添付には失敗しました。', answer)} ${orderErrorMessage(error)}`, { tone: 'error', label: 'Analytics' });
+  }
+}
+
+async function answerPendingIntake(answer = '', options = {}) {
   const intake = state.pendingIntake;
   if (!intake) return false;
   const text = String(answer || '').trim();
   if (!text) {
-    appendTextMessage('assistant', looksJapanese(intake.originalPrompt)
+    appendTextMessage('assistant', chatLanguage(intake.originalPrompt) === 'ja'
       ? '分かる範囲で回答してください。まだ発注は開始していません。'
       : 'Answer what you can first. Nothing has been dispatched yet.', { tone: 'error', label: 'Intake' });
     return true;
   }
-  const combined = chatEngineBuildIntakeCombinedPrompt(intake, text);
+  if (options.skipAnalyticsRedirect !== true && !pendingIntakeHasAttachedAppContext(intake) && intakeHasAnalyticsQuestion(intake) && answerSaysAnalyticsAvailable(text)) {
+    await openAnalyticsConsoleForIntake(intake, text);
+    return true;
+  }
+  const combined = chatEngineBuildIntakeCombinedPrompt(intake, text, {
+    connectorContext: intake.appContextPrompt || ''
+  });
   state.pendingIntake = null;
   updateComposerMode();
   await prepareOrder(combined, {
@@ -2314,7 +3637,8 @@ async function answerPendingIntake(answer = '') {
     selectedAgentId: intake.selectedAgentId || intake.selected_agent_id || '',
     selectedAgentName: intake.selectedAgentName || intake.selected_agent_name || '',
     activeLeaderTaskType: intake.activeLeaderTaskType || intake.active_leader_task_type || intake.conversationOwner?.taskType || state.activeLeader?.taskType || '',
-    activeLeaderName: intake.activeLeaderName || intake.active_leader_name || intake.conversationOwner?.label || state.activeLeader?.label || ''
+    activeLeaderName: intake.activeLeaderName || intake.active_leader_name || intake.conversationOwner?.label || state.activeLeader?.label || '',
+    appContext: intake.appContext || null
   });
   return true;
 }
@@ -2338,6 +3662,7 @@ function orderConfirmationHtml(options = {}) {
     selectedAgent ? `Selected worker: ${escapeHtml(selectedAgent)}` : '',
     `Reason: ${escapeHtml(reason)}`,
     '',
+    analyticsPreOrderHintHtml(task, prompt),
     '<details class="file-card order-brief" open>',
     '<summary>Instruction that will be sent</summary>',
     `<pre>${escapeHtml(prompt)}</pre>`,
@@ -2440,6 +3765,7 @@ async function resolveChatIntentWithLlm(prompt = '') {
   const text = String(prompt || '').trim();
   if (!text || isStructuredOrderBriefText(text)) return null;
   if (promptInjectionGuard(text).blocked) return null;
+  const thinkingMessage = appendThinkingMessage(text);
   try {
     const result = await api('/api/open-chat/intent', {
       method: 'POST',
@@ -2447,13 +3773,15 @@ async function resolveChatIntentWithLlm(prompt = '') {
         prompt: text,
         conversation_context: chatIntentConversationContext(),
         desired_output: 'First decide whether this is normal chat or an order request. If it is normal chat, answer in chat. If it is executable work with enough context, return a CAIt order brief. If a Team Leader needs intake first, return adaptive intake_questions before any proposal.',
-        user_language: looksJapanese(text) ? 'Japanese' : 'English',
+        user_language: chatLanguage(text) === 'ja' ? 'Japanese' : 'English',
         input_counts: { url_count: 0, file_count: 0, file_chars: 0 }
       })
     });
     return result?.ok ? result : null;
   } catch {
     return null;
+  } finally {
+    removeMessage(thinkingMessage);
   }
 }
 
@@ -2469,7 +3797,7 @@ function normalizeLlmIntakeQuestions(value = []) {
       return true;
     })
     .filter((item) => !/(password|secret|api key|hidden prompt|system prompt|ignore previous|パスワード|秘密|システムプロンプト|隠しプロンプト)/i.test(item))
-    .slice(0, 6);
+    .slice(0, 4);
 }
 
 function leaderTaskTypeFromIntentResult(prompt = '', result = {}) {
@@ -2500,7 +3828,7 @@ async function handleChatIntentWithLlm(prompt = '') {
   if (action === 'ask_clarifying_question') {
     const intakeQuestions = normalizeLlmIntakeQuestions(result.intake_questions || result.intakeQuestions || []);
     const leaderTaskType = leaderTaskTypeFromIntentResult(prompt, result);
-    if (leaderTaskType && intakeQuestions.length >= 3) {
+    if (leaderTaskType && intakeQuestions.length >= 2) {
       startIntake({
         status: 'needs_input',
         needs_input: true,
@@ -2508,7 +3836,7 @@ async function handleChatIntentWithLlm(prompt = '') {
         inferred_task_type: leaderTaskType,
         prompt,
         questions: intakeQuestions,
-        message: looksJapanese(prompt)
+        message: chatLanguage(prompt) === 'ja'
           ? 'リーダーが提案前に確認したい内容です。まだ実行も課金もしていません。'
           : 'The leader needs this context before proposing. Nothing has run or been billed yet.',
         conversationOwner: {
@@ -2553,12 +3881,79 @@ async function handleChatIntentWithLlm(prompt = '') {
 function addChatAdjustmentToDraft(prompt = '') {
   const text = String(prompt || '').trim();
   if (!state.draft || !text) return false;
-  const label = looksJapanese(text) ? '追加調整' : 'User adjustment';
+  const label = chatLanguage(text) === 'ja' ? '追加調整' : 'User adjustment';
   state.draft.prompt = [state.draft.prompt, `${label}:\n${text}`].filter(Boolean).join('\n\n');
   state.draft.updatedAt = new Date().toISOString();
   state.draftRevision += 1;
   appendOrderConfirmation({ updated: true });
   return true;
+}
+
+function retryDraftFromJob(job = {}) {
+  const taskType = String(job.taskType || job.workflowTask || 'research').trim().toLowerCase() || 'research';
+  const route = String(job.input?.order_strategy || job.orderStrategy || (job.workflow ? 'auto' : 'single')).trim().toLowerCase() || 'auto';
+  const originalPrompt = String(job.input?.original_prompt || job.originalPrompt || job.workflow?.objective || job.prompt || '').trim();
+  const prompt = isStructuredOrderBriefText(job.prompt)
+    ? String(job.prompt || '').trim()
+    : draftBrief(originalPrompt || job.prompt || '', {
+        taskType,
+        resolvedOrderStrategy: route,
+        reason: `Retry prepared from order ${String(job.id || '').slice(0, 8)}.`
+      }, { ja: looksJapanese(originalPrompt || job.prompt || '') });
+  const broker = job.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
+  const owner = broker.conversationOwner || broker.activeLeader || {};
+  const ownerTaskType = String(owner.taskType || owner.task_type || '').trim().toLowerCase();
+  const ownerLabel = String(owner.label || owner.name || '').trim();
+  return {
+    taskType,
+    task_type: taskType,
+    resolvedOrderStrategy: route,
+    resolved_order_strategy: route,
+    reason: `Prepared after reviewing previous order ${String(job.id || '').slice(0, 8)}. It will not run until Send order is pressed.`,
+    prompt,
+    originalPrompt: originalPrompt || prompt,
+    intakeChecked: true,
+    intakeAnswered: true,
+    activeLeaderTaskType: ownerTaskType,
+    activeLeaderName: ownerLabel,
+    conversationOwner: ownerTaskType ? { type: 'leader', taskType: ownerTaskType, label: ownerLabel || taskLabel(ownerTaskType) } : undefined,
+    input: {
+      _broker: {
+        retryOfOrderId: String(job.id || '').trim(),
+        retryOfStatus: String(job.status || '').trim(),
+        retryPreparedAt: new Date().toISOString(),
+        ...(ownerTaskType ? {
+          conversationOwner: { type: 'leader', taskType: ownerTaskType, label: ownerLabel || taskLabel(ownerTaskType) },
+          activeLeader: { taskType: ownerTaskType, label: ownerLabel || taskLabel(ownerTaskType) }
+        } : {})
+      }
+    },
+    updatedAt: new Date().toISOString()
+  };
+}
+
+async function prepareRetryFromOrder(orderId = '') {
+  const safeId = String(orderId || '').trim();
+  if (!safeId) return;
+  setBusy(true);
+  try {
+    const job = await fetchVisibleJob(safeId);
+    if (!job?.id) throw new Error('Order was not found.');
+    renderDeliveryOnce(job, { force: true });
+    state.draft = retryDraftFromJob(job);
+    setConversationOwnerFromPrepared(state.draft, { sample: state.draft.originalPrompt || state.draft.prompt });
+    state.draftRevision += 1;
+    appendTextMessage('assistant', chatText(
+      'I prepared a retry draft from the previous order. Review the result above and press Send order only if you want to run it again.',
+      '過去オーダーの内容からリトライ用ドラフトを作りました。上の結果を確認し、再実行する場合だけ Send order を押してください。',
+      state.draft.originalPrompt || state.draft.prompt
+    ), { tone: 'warn', label: 'Retry confirmation' });
+    appendOrderConfirmation({ updated: true });
+  } catch (error) {
+    appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Retry' });
+  } finally {
+    setBusy(false);
+  }
 }
 
 function handleNonOrderConversation(prompt = '') {
@@ -2568,7 +3963,7 @@ function handleNonOrderConversation(prompt = '') {
     appendTextMessage('assistant', leaderCatalogChatAnswer(text), { tone: 'info', label: 'Chat' });
     return true;
   }
-  const ja = looksJapanese(text);
+  const ja = chatLanguage(text) === 'ja';
   const hasDraft = Boolean(state.draft);
   const hasIntake = Boolean(state.pendingIntake);
   const hasOrder = Boolean(state.orderId);
@@ -2610,11 +4005,33 @@ async function prepareOrder(prompt, options = {}) {
     }))
   });
   setConversationOwnerFromPrepared(prepared, { ...options, announce: true, sample: options.originalPrompt || prompt });
-  if (isNeedsInputResponse(prepared)) {
+  if (isNeedsInputResponse(prepared) && options.intakeAnswered !== true) {
     startIntake(prepared, prompt);
     return;
   }
   state.draft = chatEngineBuildOrderDraft(prompt, prepared, { ...options, intakeChecked: true });
+  const appContext = options.appContext || state.pendingAppContext || null;
+  if (appContext && typeof appContext === 'object') {
+    const broker = state.draft.input?._broker && typeof state.draft.input._broker === 'object' ? state.draft.input._broker : {};
+    state.draft.input = {
+      ...(state.draft.input || {}),
+      _broker: {
+        ...broker,
+        appContexts: [appContext],
+        connectorContexts: [
+          {
+            source_app: appContext.source_app || '',
+            source_app_label: appContext.source_app_label || '',
+            title: appContext.title || '',
+            summary: appContext.summary || '',
+            metrics: Array.isArray(appContext.metrics) ? appContext.metrics.slice(0, 12) : [],
+            artifacts: Array.isArray(appContext.artifacts) ? appContext.artifacts.slice(0, 12) : [],
+            raw_context: appContext.raw_context && typeof appContext.raw_context === 'object' ? appContext.raw_context : {}
+          }
+        ]
+      }
+    };
+  }
   state.pendingIntake = null;
   state.draftRevision += 1;
   appendOrderConfirmation();
@@ -2624,6 +4041,7 @@ async function sendOrder() {
   if (!state.draft) return;
   setBusy(true);
   try {
+    const chatSessionId = ensureChatSessionId({ force: true });
     const acceptedDraft = state.draft;
     const actorLabel = activeActorLabel('CAIt');
     const payload = chatEngineBuildJobPayload(state.draft, {
@@ -2638,6 +4056,7 @@ async function sendOrder() {
           return_path: CHATUX_RETURN_PATH,
           visitor_id: state.visitorId
         },
+        chatSessionId,
         intake: {
           prepared_in_chat: true,
           answered: acceptedDraft.intakeAnswered === true,
@@ -2645,6 +4064,11 @@ async function sendOrder() {
         }
       }
     });
+    payload.session_id = chatSessionId;
+    payload.input = {
+      ...(payload.input || {}),
+      session_id: chatSessionId
+    };
     rememberPendingRecoveryPayload(payload);
     startDeliveryBackfillLoop();
     appendTextMessage('system', 'Sending order. I will keep polling and post progress here.');
@@ -2668,6 +4092,17 @@ async function sendOrder() {
     if (state.orderId) {
       rememberTrackedOrder(state.orderId);
       clearPendingRecoveryPayload(payload);
+      const session = currentChatSessionPayload();
+      if (session) {
+        upsertChatSession({
+          ...session,
+          linkedOrderId: state.orderId,
+          activeJobIds: [...new Set([...(Array.isArray(session.activeJobIds) ? session.activeJobIds : []), state.orderId])],
+          activeWork: true,
+          updatedAt: isoNow()
+        });
+        renderChatSessionSidebar();
+      }
     }
     rememberAiAgentsFromDraft(acceptedDraft, created, payload);
     state.draft = null;
@@ -2682,6 +4117,7 @@ async function sendOrder() {
     ].filter(Boolean).join('\n'), { tone: 'ok', label: actorLabel });
     if (state.orderId) startPolling(state.orderId);
     else startDeliveryBackfillLoop({ maxRuns: 60 });
+    state.pendingAppContext = null;
   } catch (error) {
     appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Waiting' });
   } finally {
@@ -2803,6 +4239,7 @@ function startPolling(orderId) {
       const result = await api(`/api/jobs/${encodeURIComponent(orderId)}?visitor_id=${encodeURIComponent(state.visitorId)}`);
       const job = result.job && typeof result.job === 'object' ? { ...result.job, id: result.job.id || orderId } : { id: orderId };
       const key = `${job.status}|${job.completedAt || ''}|${job.failedAt || ''}|${job.failureReason || ''}|${JSON.stringify(job.workflow?.statusCounts || {})}`;
+      maybeRenderAuthorityNotice(job, { label: 'Approval required' });
       if (key !== lastKey) {
         lastKey = key;
         appendTextMessage('system', `Order ${orderId.slice(0, 8)}: ${statusLabel(job)}`);
@@ -2878,6 +4315,8 @@ async function refreshAuth() {
       ? `<span>Signed in as ${escapeHtml(login)}</span><button class="status-logout-btn" type="button" data-chat-logout>Sign out</button>`
       : `<a href="${escapeHtml(loginHref('google'))}">Google sign in</a> or <a href="${escapeHtml(loginHref('github'))}">GitHub sign in</a> to order`;
     warmUtilityCatalogs();
+    renderChatSessionSidebar();
+    void refreshChatSessionHistory({ force: true });
   } catch {
     els.authStatus.textContent = 'Session status unavailable.';
   } finally {
@@ -2890,34 +4329,56 @@ function resetChat() {
   if (state.deliveryBackfill) window.clearInterval(state.deliveryBackfill);
   state.polling = null;
   state.deliveryBackfill = null;
-  state.draft = null;
-  state.pendingIntake = null;
-  state.activeLeader = null;
-  deliveryFileStore.clear();
-  appTransferStore.clear();
-  state.draftRevision += 1;
-  state.orderId = '';
-  els.chatThread.innerHTML = '';
-  renderActiveLeaderStatus();
-  appendTextMessage('assistant', CHATUX_WELCOME_TEXT);
-  updateComposerMode();
+  state.pendingAppContext = null;
+  startNewChatSession();
   setBusy(false);
   startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
+}
+
+async function handleInboundAppContext(context = {}, options = {}) {
+  if (!context) return false;
+  const contextId = String(context.id || '').trim();
+  const dedupeKey = contextId || `${context.source_app || 'app'}:${context.created_at || Date.now()}`;
+  if (dedupeKey && processedAppContextIds.has(dedupeKey)) return true;
+  if (dedupeKey) processedAppContextIds.add(dedupeKey);
+  appendMessage('assistant', caitAppContextThreadHtml(context), { label: 'App context', tone: 'ok' });
+  if (state.pendingIntake) {
+    const prompt = caitAppContextChatPrompt(context);
+    const sourceLabel = String(context.source_app_label || context.source_app || 'app').trim();
+    state.pendingIntake.appContextAttached = true;
+    state.pendingIntake.analyticsContextAttached = /analytics/i.test(sourceLabel) || /analytics/i.test(String(context.source_app || ''));
+    state.pendingIntake.appContextPrompt = prompt;
+    state.pendingIntake.appContext = context;
+    appendIntakeChoiceToComposer(
+      chatText('Analytics data', 'アナリティクス', state.pendingIntake.originalPrompt || prompt),
+      caitAppContextAnswerLine(context)
+    );
+    updateComposerMode();
+    setBusy(false);
+    appendTextMessage('system', chatText(
+      'App context returned to the active intake. Continue filling any missing choices or send the current answer when ready; nothing has been dispatched yet.',
+      'アプリの情報を進行中のヒアリングに戻しました。未入力の選択肢を続けて入力するか、準備できたらこの回答を送信してください。まだ実行も課金も発生していません。',
+      state.pendingIntake.originalPrompt || prompt
+    ), { label: options.label || 'App context' });
+    return true;
+  }
+  state.pendingAppContext = context;
+  els.promptInput.value = caitAppContextChatPrompt(context);
+  els.promptInput.focus();
+  return true;
 }
 
 async function hydrateAppContextFromUrl() {
   const context = await consumeCaitAppContextForChat();
   if (!context) return false;
-  appendMessage('assistant', caitAppContextThreadHtml(context), { label: 'App context', tone: 'ok' });
-  els.promptInput.value = caitAppContextChatPrompt(context);
-  els.promptInput.focus();
-  return true;
+  return handleInboundAppContext(context, { label: 'App context' });
 }
 
 els.composer.addEventListener('submit', async (event) => {
   event.preventDefault();
   const prompt = String(els.promptInput.value || '').trim();
   if (!prompt) return;
+  rememberConversationLanguage(prompt);
   els.promptInput.value = '';
   appendTextMessage('user', prompt);
   setBusy(true);
@@ -2948,6 +4409,17 @@ els.composer.addEventListener('submit', async (event) => {
   } finally {
     setBusy(false);
   }
+});
+
+window.addEventListener('message', (event) => {
+  if (event.origin !== window.location.origin) return;
+  const data = event.data && typeof event.data === 'object' ? event.data : {};
+  if (data.type !== 'cait-app-context') return;
+  void handleInboundAppContext(data.context || {}, {
+    label: 'App context',
+    appContextId: data.app_context_id || '',
+    appContextToken: data.app_context_token || ''
+  });
 });
 
 els.authStatus?.addEventListener('click', (event) => {
@@ -3122,6 +4594,119 @@ els.chatThread.addEventListener('click', async (event) => {
     }
     return;
   }
+  const orderOpenButton = event.target.closest('[data-chat-order-open]');
+  if (orderOpenButton) {
+    const orderId = String(orderOpenButton.dataset.chatOrderOpen || '').trim();
+    if (!orderId) return;
+    setBusy(true);
+    try {
+      const job = await fetchVisibleJob(orderId);
+      if (!job?.id) throw new Error('Order was not found.');
+      rememberTrackedOrder(job.id);
+      maybeRenderAuthorityNotice(job, { label: 'Approval required' });
+      if (isTerminalStatus(job.status)) {
+        renderDeliveryOnce(job, { force: true });
+      } else {
+        appendTextMessage('system', `Order ${job.id.slice(0, 8)}: ${statusLabel(job)}\n\nProgress tracking resumed in this chat.`, { label: 'Progress' });
+        startPolling(job.id);
+      }
+    } catch (error) {
+      appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Order history' });
+    } finally {
+      setBusy(false);
+    }
+    return;
+  }
+  const orderRetryButton = event.target.closest('[data-chat-order-retry]');
+  if (orderRetryButton) {
+    await prepareRetryFromOrder(orderRetryButton.dataset.chatOrderRetry || '');
+    return;
+  }
+  const orderScheduleButton = event.target.closest('[data-chat-order-schedule]');
+  if (orderScheduleButton) {
+    const orderId = String(orderScheduleButton.dataset.chatOrderSchedule || '').trim();
+    if (orderId) {
+      try {
+        await fetchVisibleJob(orderId);
+      } catch {}
+    }
+    await showSchedulePanel();
+    return;
+  }
+  const intakeConfirmedEditButton = event.target.closest('[data-intake-confirmed-edit]');
+  if (intakeConfirmedEditButton) {
+    const groupElement = intakeConfirmedEditButton.closest('.intake-choice-group');
+    const item = intakeConfirmedEditButton.closest('.intake-confirmed-item');
+    const input = groupElement?.querySelector('[data-intake-other-input]');
+    const value = String(item?.dataset.confirmedChoice || item?.querySelector('strong')?.textContent || '').trim();
+    if (input && value) {
+      input.value = value;
+      input.focus();
+      input.select?.();
+    }
+    return;
+  }
+  const intakeConfirmedRemoveButton = event.target.closest('[data-intake-confirmed-remove]');
+  if (intakeConfirmedRemoveButton) {
+    const group = String(intakeConfirmedRemoveButton.dataset.choiceGroup || '').trim();
+    const groupElement = intakeConfirmedRemoveButton.closest('.intake-choice-group');
+    const item = intakeConfirmedRemoveButton.closest('.intake-confirmed-item');
+    const value = String(item?.dataset.confirmedChoice || item?.querySelector('strong')?.textContent || '').trim();
+    removeIntakeChoiceFromComposer(group, value);
+    groupElement?.querySelectorAll('[data-intake-choice].selected').forEach((button) => {
+      const label = String(button.dataset.choiceLabel || button.textContent || '').trim();
+      if (label !== value) return;
+      button.classList.remove('selected');
+      button.setAttribute('aria-pressed', 'false');
+    });
+    const list = groupElement?.querySelector('[data-intake-confirmed-list]');
+    item?.remove();
+    if (list && !list.querySelector('[data-confirmed-choice]')) {
+      list.hidden = true;
+    }
+    return;
+  }
+  const intakeOtherButton = event.target.closest('[data-intake-other-add]');
+  if (intakeOtherButton) {
+    if (!state.pendingIntake) {
+      appendTextMessage('assistant', 'There is no active intake to answer.', { tone: 'error', label: 'Intake' });
+      return;
+    }
+    const group = String(intakeOtherButton.dataset.choiceGroup || '').trim();
+    const row = intakeOtherButton.closest('.intake-other-row');
+    const input = row?.querySelector('[data-intake-other-input]');
+    const value = String(input?.value || '').trim();
+    if (!value) {
+      input?.focus();
+      return;
+    }
+    appendIntakeChoiceToComposer(group, value);
+    setIntakeConfirmedChoice(intakeOtherButton.closest('.intake-choice-group'), group, value);
+    input.value = '';
+    input.focus();
+    return;
+  }
+  const intakeChoiceButton = event.target.closest('[data-intake-choice]');
+  if (intakeChoiceButton) {
+    if (!state.pendingIntake) {
+      appendTextMessage('assistant', 'There is no active intake to answer.', { tone: 'error', label: 'Intake' });
+      return;
+    }
+    const action = String(intakeChoiceButton.dataset.chatAction || '').trim();
+    if (action === 'analytics-use') {
+      setBusy(true);
+      void openAnalyticsConsoleForIntake(state.pendingIntake, chatText('GA4/Search Console is available.', 'GA4/Search Consoleがあります。', state.pendingIntake.originalPrompt))
+        .finally(() => setBusy(false));
+      return;
+    }
+    const group = String(intakeChoiceButton.dataset.choiceGroup || '').trim();
+    const label = String(intakeChoiceButton.dataset.choiceLabel || intakeChoiceButton.textContent || '').trim();
+    intakeChoiceButton.classList.add('selected');
+    intakeChoiceButton.setAttribute('aria-pressed', 'true');
+    appendIntakeChoiceToComposer(group, label);
+    setIntakeConfirmedChoice(intakeChoiceButton.closest('.intake-choice-group'), group, label);
+    return;
+  }
   const button = event.target.closest('[data-chat-action]');
   if (!button) return;
   const action = String(button.dataset.chatAction || '').trim();
@@ -3129,7 +4714,38 @@ els.chatThread.addEventListener('click', async (event) => {
     void sendOrder();
   } else if (action === 'reset-chat') {
     resetChat();
+  } else if (action === 'analytics-use') {
+    if (!state.pendingIntake) {
+      appendTextMessage('assistant', 'There is no active intake to attach analytics to.', { tone: 'error', label: 'Analytics' });
+      return;
+    }
+    setBusy(true);
+    void openAnalyticsConsoleForIntake(state.pendingIntake, chatText('GA4/Search Console is available.', 'GA4/Search Consoleがあります。', state.pendingIntake.originalPrompt))
+      .finally(() => setBusy(false));
+  } else if (action === 'analytics-skip') {
+    if (!state.pendingIntake) {
+      appendTextMessage('assistant', 'There is no active intake to continue.', { tone: 'error', label: 'Analytics' });
+      return;
+    }
+    appendIntakeChoiceToComposer(
+      chatText('Analytics data', 'アナリティクス', state.pendingIntake.originalPrompt),
+      chatText('Skip analytics', 'アナリティクスをスキップ', state.pendingIntake.originalPrompt)
+    );
+    const analyticsGroup = [...els.chatThread.querySelectorAll('.intake-choice-group')]
+      .find((groupElement) => String(groupElement.querySelector('[data-intake-confirmed-list]')?.dataset.choiceGroup || '') === chatText('Analytics data', 'アナリティクス', state.pendingIntake.originalPrompt));
+    setIntakeConfirmedChoice(
+      analyticsGroup,
+      chatText('Analytics data', 'アナリティクス', state.pendingIntake.originalPrompt),
+      chatText('Skip analytics', 'アナリティクスをスキップ', state.pendingIntake.originalPrompt)
+    );
   }
+});
+
+els.chatThread.addEventListener('keydown', (event) => {
+  const input = event.target.closest('[data-intake-other-input]');
+  if (!input || event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+  event.preventDefault();
+  input.closest('.intake-other-row')?.querySelector('[data-intake-other-add]')?.click();
 });
 
 els.utilityModalBody?.addEventListener('click', async (event) => {
@@ -3152,6 +4768,30 @@ els.utilityModalBody?.addEventListener('click', async (event) => {
   const loadMoreButton = event.target.closest('[data-utility-load-more]');
   if (loadMoreButton) {
     await loadMoreUtilityCatalog(String(loadMoreButton.dataset.utilityLoadMore || '').trim());
+    return;
+  }
+  const recurringStatusButton = event.target.closest('[data-recurring-status]');
+  if (recurringStatusButton) {
+    setBusy(true);
+    try {
+      await updateRecurringOrderStatus(recurringStatusButton.dataset.recurringStatus || '', recurringStatusButton.dataset.status || 'paused');
+    } catch (error) {
+      appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Schedules' });
+    } finally {
+      setBusy(false);
+    }
+    return;
+  }
+  const recurringCancelButton = event.target.closest('[data-recurring-cancel]');
+  if (recurringCancelButton) {
+    setBusy(true);
+    try {
+      await cancelRecurringOrder(recurringCancelButton.dataset.recurringCancel || '');
+    } catch (error) {
+      appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Schedules' });
+    } finally {
+      setBusy(false);
+    }
     return;
   }
   const appContextLoadButton = event.target.closest('[data-app-context-load]');
@@ -3228,8 +4868,56 @@ els.utilityModalBody?.addEventListener('click', async (event) => {
   }
 });
 
+els.utilityModalBody?.addEventListener('submit', async (event) => {
+  const form = event.target.closest('[data-schedule-create]');
+  if (!form) return;
+  event.preventDefault();
+  setBusy(true);
+  try {
+    await createScheduleFromForm(form);
+  } catch (error) {
+    const message = orderErrorMessage(error);
+    appendTextMessage('assistant', message, { tone: 'error', label: 'Schedules' });
+    if (utilityModalIsOpen('Schedules')) openUtilityModal('Schedules', schedulePanelHtml(message));
+  } finally {
+    setBusy(false);
+  }
+});
+
 els.openChatListBtn?.addEventListener('click', () => {
-  void showChatListPanel();
+  state.chatSidebarOpen = !state.chatSidebarOpen;
+  renderChatSessionSidebar();
+  void refreshChatSessionHistory({ force: true });
+  if (els.chatSessionSidebar && window.matchMedia('(min-width: 721px)').matches) {
+    els.chatSessionSidebar.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+});
+
+els.newChatBtn?.addEventListener('click', () => {
+  if (state.polling) window.clearInterval(state.polling);
+  if (state.deliveryBackfill) window.clearInterval(state.deliveryBackfill);
+  state.polling = null;
+  state.deliveryBackfill = null;
+  startNewChatSession();
+  setBusy(false);
+});
+
+els.chatSessionList?.addEventListener('click', (event) => {
+  const deleteButton = event.target.closest('[data-chat-session-delete]');
+  if (deleteButton) {
+    deleteChatSession(deleteButton.dataset.chatSessionDelete || '');
+    return;
+  }
+  const sessionButton = event.target.closest('[data-chat-session-id]');
+  if (sessionButton) loadChatSession(sessionButton.dataset.chatSessionId || '');
+});
+
+els.openScheduleBtn?.addEventListener('click', () => {
+  void showSchedulePanel();
+});
+
+els.openScheduleComposerBtn?.addEventListener('click', () => {
+  void showSchedulePanel();
 });
 
 els.openWorkerListBtn?.addEventListener('click', () => {
@@ -3246,9 +4934,16 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && els.utilityModal && !els.utilityModal.hidden) closeUtilityModal();
 });
 
+els.promptInput?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' || (!event.ctrlKey && !event.metaKey) || event.isComposing) return;
+  event.preventDefault();
+  if (!state.busy) els.composer.requestSubmit();
+});
+
 els.resetBtn.addEventListener('click', resetChat);
 
 renderActiveLeaderStatus();
 updateComposerMode();
+renderChatSessionSidebar();
 void hydrateAppContextFromUrl();
 void refreshAuth();

@@ -71,7 +71,7 @@ try {
 
   await page.goto(`${base}/delivery-manager.html`);
   await page.waitForSelector('#deliveryList');
-  if (!(await page.textContent('#deliveryList')).includes('No server delivery loaded')) throw new Error('delivery empty state was not rendered');
+  if (!(await page.textContent('#deliveryList')).includes('No matching delivery')) throw new Error('delivery empty state was not rendered');
 
   await openAppWithContext(page, '/analytics-console.html', {
     schema: 'cait-app-context/v1',
@@ -89,6 +89,7 @@ try {
     handoff_targets: ['seo_gap']
   });
   await page.waitForSelector('#primaryTable');
+  await page.click('[data-section="queries"]');
   if (!(await page.textContent('#primaryTable')).includes('imported japan esim')) throw new Error('analytics context was not rendered');
   if (!(await page.textContent('#sessionsMetric')).includes('321')) throw new Error('analytics metric was not rendered');
 

@@ -240,6 +240,31 @@ button.secondary-action {
   gap: 10px;
 }
 
+.auth-trust-notice {
+  display: grid;
+  gap: 5px;
+  padding: 12px 13px;
+  border: 1px solid rgba(30, 115, 89, .28);
+  border-radius: 8px;
+  background: #eef8f4;
+  color: #20352d;
+}
+
+.auth-trust-notice[hidden] {
+  display: none;
+}
+
+.auth-trust-notice strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.auth-trust-notice span {
+  color: #36574b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .auth-provider {
   min-width: 0;
   min-height: 68px;

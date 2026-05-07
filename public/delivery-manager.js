@@ -1,4 +1,4 @@
-import { buildCaitAppContext, downloadContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260505b';
+import { buildCaitAppContext, downloadContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260506b';
 
 let deliveries = [];
 let selectedId = '';
@@ -7,6 +7,7 @@ let filter = 'all';
 let activeTab = 'overview';
 let searchText = '';
 let importedContext = null;
+const expandedWorkIds = new Set();
 
 const els = {
   filterButtons: [...document.querySelectorAll('[data-filter]')],
@@ -64,15 +65,21 @@ function deliverySearchBlob(delivery = {}) {
     delivery.status,
     delivery.summary,
     delivery.agentName,
+    delivery.workTitle,
+    delivery.taskType,
     delivery.nextAction,
     ...(delivery.files || []).map((file) => `${file.name} ${file.type}`)
   ].join('\n').toLowerCase();
 }
 
+function isWaitingStatus(value = '') {
+  return /queued|claimed|running|dispatched|blocked|failed|timed_out|waiting/i.test(String(value || ''));
+}
+
 function filteredDeliveries() {
   let list = deliveries;
   if (filter === 'completed') list = list.filter((item) => item.status === 'completed');
-  if (filter === 'blocked') list = list.filter((item) => /blocked|failed|timed_out|waiting/i.test(item.status));
+  if (filter === 'blocked') list = list.filter((item) => isWaitingStatus(item.status));
   if (filter === 'files') list = list.filter((item) => (item.files || []).length);
   if (filter === 'reusable') list = list.filter((item) => item.summary || (item.files || []).length);
   const query = searchText.trim().toLowerCase();
@@ -118,15 +125,87 @@ function normalizedDate(value = '') {
   }).format(new Date(timestamp));
 }
 
+function isLeaderDelivery(delivery = {}) {
+  return /_leader$/i.test(String(delivery.taskType || delivery.workflowTask || delivery.agentName || ''));
+}
+
+function deliverySortRank(delivery = {}) {
+  if (delivery.jobKind === 'workflow') return 0;
+  if (isLeaderDelivery(delivery)) return 1;
+  if (delivery.status === 'completed') return 3;
+  if (isWaitingStatus(delivery.status)) return 2;
+  return 4;
+}
+
+function workTitleForJob(job = {}) {
+  return String(
+    job.workflow?.objective
+    || job.input?._broker?.workflow?.objective
+    || job.input?.original_prompt
+    || job.originalPrompt
+    || job.prompt
+    || job.task
+    || `Work ${String(job.workflowParentId || job.id || '').slice(0, 8)}`
+  ).trim();
+}
+
+function deliveryChildBlockerType(child = {}) {
+  if (String(child?.status || '').trim().toLowerCase() !== 'blocked') return '';
+  const explicit = String(child?.blockerType || child?.blocker_type || '').trim().toLowerCase();
+  if (explicit) return explicit;
+  const text = [
+    child?.failureCategory,
+    child?.failure_category,
+    child?.failureReason,
+    child?.failure_reason,
+    child?.dispatchCompletionStatus,
+    child?.dispatch_completion_status,
+    child?.summary
+  ].map((item) => String(item || '').trim().toLowerCase()).join(' ');
+  if (/blocked_waiting_for_approval|approval_required|connector|required|oauth|x\.post|google\.|github\.|承認|接続/.test(text)) return 'approval_required';
+  if (/blocked_after_leader_failure|workflow_blocked|leader_failure|quality_gate_failed|failed/.test(text)) return 'stopped_after_failure';
+  if (/leader_checkpoint_blocked|leader_final_summary_blocked|blocked until|waiting for earlier|waiting for the earlier/.test(text)) return 'waiting_for_workflow_phase';
+  return 'waiting_on_internal_workflow';
+}
+
+function deliveryWorkflowSummary(job = {}, output = {}) {
+  const raw = String(output.summary || output.text || job.failureReason || `Order ${String(job.id || '').slice(0, 8)} is ${job.status || 'updated'}.`);
+  if (!/waiting for approval|承認待ち/i.test(raw)) return raw;
+  const report = output.report && typeof output.report === 'object' ? output.report : {};
+  const authority = report.authority_request || report.authorityRequest || null;
+  if (authority && typeof authority === 'object') return raw;
+  const childRuns = Array.isArray(report.childRuns) ? report.childRuns : (Array.isArray(job.workflow?.childRuns) ? job.workflow.childRuns : []);
+  const total = childRuns.length || Number(job.workflow?.statusCounts?.total || 0) || 0;
+  const completed = childRuns.filter((run) => String(run?.status || '').toLowerCase() === 'completed').length || Number(job.workflow?.statusCounts?.completed || 0) || 0;
+  const failed = childRuns.filter((run) => ['failed', 'timed_out'].includes(String(run?.status || '').toLowerCase())).length || Number(job.workflow?.statusCounts?.failed || 0) || 0;
+  const internalWaiting = childRuns.filter((run) => ['waiting_for_workflow_phase', 'waiting_on_internal_workflow'].includes(deliveryChildBlockerType(run))).length;
+  const stoppedAfterFailure = childRuns.filter((run) => deliveryChildBlockerType(run) === 'stopped_after_failure').length;
+  return [
+    `Integrated delivery: ${completed}/${total} internal work items completed`,
+    internalWaiting ? `${internalWaiting} internal wait` : '',
+    stoppedAfterFailure ? `${stoppedAfterFailure} stopped after failure` : '',
+    failed ? `${failed} failed` : ''
+  ].filter(Boolean).join(', ') + '.';
+}
+
 function normalizeJobDelivery(job = {}) {
   const output = job.output && typeof job.output === 'object' ? job.output : {};
   const files = Array.isArray(output.files) ? output.files : [];
   const createdAt = String(job.completedAt || job.updatedAt || job.createdAt || '');
+  const taskType = String(job.workflowTask || job.taskType || '');
+  const workId = String(job.workflowParentId || job.id || `job-${Date.now()}`);
   return {
     id: String(job.id || `job-${Date.now()}`),
+    workId,
+    workTitle: workTitleForJob(job),
+    jobKind: String(job.jobKind || ''),
+    taskType,
+    workflowTask: String(job.workflowTask || ''),
+    workflowParentId: String(job.workflowParentId || ''),
+    workflow: job.workflow && typeof job.workflow === 'object' ? job.workflow : null,
     title: String(output.title || output.summary || job.task || `Order ${String(job.id || '').slice(0, 8)}` || 'Delivery'),
     status: String(job.status || 'updated'),
-    summary: String(output.summary || output.text || job.failureReason || `Order ${String(job.id || '').slice(0, 8)} is ${job.status || 'updated'}.`),
+    summary: deliveryWorkflowSummary(job, output),
     files: files.map((file, index) => ({
       name: String(file.name || file.filename || `delivery-${index + 1}.md`),
       type: String(file.type || file.mime || 'text/plain'),
@@ -134,7 +213,7 @@ function normalizeJobDelivery(job = {}) {
       updatedAt: createdAt
     })),
     nextAction: String(output.next_action || output.nextAction || 'Use this delivery as context for follow-up work.'),
-    agentName: String(job.assignedAgentId || job.agentName || job.taskType || 'CAIt Agent'),
+    agentName: String(job.workflowAgentName || job.assignedAgentId || job.agentName || taskType || 'CAIt Agent'),
     updatedAt: createdAt,
     sourceLabel: 'Server job'
   };
@@ -153,6 +232,13 @@ function deliveryFromAppContext(context = {}) {
   ];
   return {
     id: String(context.id || `context-${Date.now()}`),
+    workId: String(context.id || `context-${Date.now()}`),
+    workTitle: String(context.title || 'Imported CAIt app context'),
+    jobKind: 'app_context',
+    taskType: String(context.source_app || 'app_context'),
+    workflowTask: '',
+    workflowParentId: '',
+    workflow: null,
     title: String(context.title || 'Imported CAIt app context'),
     status: 'reusable',
     summary: String(context.summary || ''),
@@ -288,11 +374,59 @@ function readinessItems(delivery = selectedDelivery()) {
 function renderCounts() {
   els.allCount.textContent = deliveries.length;
   els.completedCount.textContent = deliveries.filter((item) => item.status === 'completed').length;
-  els.blockedCount.textContent = deliveries.filter((item) => /blocked|failed|timed_out|waiting/i.test(item.status)).length;
+  els.blockedCount.textContent = deliveries.filter((item) => isWaitingStatus(item.status)).length;
   els.filesCount.textContent = deliveries.filter((item) => (item.files || []).length).length;
   els.reusableCount.textContent = deliveries.filter((item) => item.summary || (item.files || []).length).length;
   const visible = filteredDeliveries().length;
-  els.deliveryInboxMeta.textContent = `${visible} shown from ${deliveries.length} delivery package${deliveries.length === 1 ? '' : 's'}.`;
+  const workCount = groupedDeliveries(filteredDeliveries()).length;
+  els.deliveryInboxMeta.textContent = `${workCount} work item${workCount === 1 ? '' : 's'}, ${visible} run${visible === 1 ? '' : 's'} shown.`;
+}
+
+function groupedDeliveries(list = filteredDeliveries()) {
+  const byWork = new Map();
+  for (const delivery of list) {
+    const workId = String(delivery.workId || delivery.workflowParentId || delivery.id || '').trim();
+    if (!workId) continue;
+    if (!byWork.has(workId)) {
+      byWork.set(workId, {
+        id: workId,
+        title: delivery.workTitle || delivery.title || `Work ${workId.slice(0, 8)}`,
+        items: [],
+        updatedAt: delivery.updatedAt || ''
+      });
+    }
+    const group = byWork.get(workId);
+    group.items.push(delivery);
+    if (String(delivery.updatedAt || '').localeCompare(String(group.updatedAt || '')) > 0) group.updatedAt = delivery.updatedAt || group.updatedAt;
+    if (delivery.jobKind === 'workflow') group.title = delivery.workTitle || delivery.title || group.title;
+  }
+  return [...byWork.values()]
+    .map((group) => ({
+      ...group,
+      items: group.items.sort((left, right) => {
+        const rankDiff = deliverySortRank(left) - deliverySortRank(right);
+        if (rankDiff) return rankDiff;
+        return String(right.updatedAt || right.id || '').localeCompare(String(left.updatedAt || left.id || ''));
+      })
+    }))
+    .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
+}
+
+function groupStatus(group = {}) {
+  const statuses = (group.items || []).map((item) => String(item.status || '').toLowerCase());
+  if (statuses.some((status) => /running|claimed|dispatched/.test(status))) return 'running';
+  if (statuses.some((status) => /queued/.test(status))) return 'queued';
+  if (statuses.some((status) => /blocked|failed|timed_out|waiting/.test(status))) return 'waiting';
+  if (statuses.length && statuses.every((status) => status === 'completed')) return 'completed';
+  return statuses[0] || 'unknown';
+}
+
+function groupSummary(group = {}) {
+  const completed = (group.items || []).filter((item) => item.status === 'completed').length;
+  const waiting = (group.items || []).filter((item) => isWaitingStatus(item.status) && item.status !== 'completed').length;
+  const leader = (group.items || []).find(isLeaderDelivery);
+  const leaderLabel = leader ? `Leader: ${leader.agentName}` : 'Leader not in this page';
+  return `${leaderLabel} / ${completed} completed / ${waiting} waiting`;
 }
 
 function renderList() {
@@ -301,16 +435,35 @@ function renderList() {
     selectedId = list[0].id;
     selectedFileIndex = 0;
   }
-  els.deliveryList.innerHTML = list.length ? list.map((delivery) => [
-    `<button class="delivery-row ${delivery.id === selectedId ? 'active' : ''}" type="button" data-delivery="${escapeHtml(delivery.id)}">`,
-    '<span>',
-    `<strong>${escapeHtml(compact(delivery.title, 70))}</strong>`,
-    `<small>${escapeHtml(compact(delivery.agentName || delivery.id, 64))}</small>`,
-    '</span>',
-    `<span class="status-pill ${statusClass(delivery.status)}">${escapeHtml(statusLabel(delivery.status))}</span>`,
-    `<span class="delivery-file-count">${(delivery.files || []).length}</span>`,
-    '</button>'
-  ].join('')).join('') : [
+  const groups = groupedDeliveries(list);
+  els.deliveryList.innerHTML = groups.length ? groups.map((group) => {
+    const groupOpen = expandedWorkIds.has(group.id) || group.items.some((item) => item.id === selectedId);
+    const files = group.items.reduce((sum, item) => sum + (item.files || []).length, 0);
+    return [
+      `<details class="delivery-work-group" data-work="${escapeHtml(group.id)}" ${groupOpen ? 'open' : ''}>`,
+      '<summary class="delivery-work-summary">',
+      '<span>',
+      `<strong>${escapeHtml(compact(group.title, 72))}</strong>`,
+      `<small>${escapeHtml(groupSummary(group))}</small>`,
+      '</span>',
+      `<span class="status-pill ${statusClass(groupStatus(group))}">${escapeHtml(statusLabel(groupStatus(group)))}</span>`,
+      `<span class="delivery-file-count">${files}</span>`,
+      '</summary>',
+      '<div class="delivery-work-runs">',
+      ...group.items.map((delivery) => [
+        `<button class="delivery-row ${delivery.id === selectedId ? 'active' : ''} ${isLeaderDelivery(delivery) ? 'leader-run' : ''}" type="button" data-delivery="${escapeHtml(delivery.id)}">`,
+        '<span>',
+        `<strong>${escapeHtml(compact(delivery.title, 64))}</strong>`,
+        `<small>${isLeaderDelivery(delivery) ? 'Leader / ' : ''}${escapeHtml(compact(delivery.agentName || delivery.id, 64))}</small>`,
+        '</span>',
+        `<span class="status-pill ${statusClass(delivery.status)}">${escapeHtml(statusLabel(delivery.status))}</span>`,
+        `<span class="delivery-file-count">${(delivery.files || []).length}</span>`,
+        '</button>'
+      ].join('')),
+      '</div>',
+      '</details>'
+    ].join('');
+  }).join('') : [
     '<div class="delivery-empty">',
     '<strong>No matching delivery</strong>',
     '<span>Refresh jobs, clear search, or open this app from a CAIt context handoff.</span>',
@@ -472,6 +625,15 @@ els.deliveryList.addEventListener('click', (event) => {
   selectedFileIndex = 0;
   render();
 });
+
+els.deliveryList.addEventListener('toggle', (event) => {
+  const group = event.target.closest?.('[data-work]');
+  if (!group) return;
+  const workId = String(group.dataset.work || '').trim();
+  if (!workId) return;
+  if (group.open) expandedWorkIds.add(workId);
+  else expandedWorkIds.delete(workId);
+}, true);
 
 els.fileTable.addEventListener('click', (event) => {
   const target = event.target.closest('[data-file-index]');

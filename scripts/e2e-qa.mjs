@@ -24,7 +24,14 @@ const e2eDir = join(root, 'e2e');
 assert.ok(existsSync(e2eDir), 'e2e directory is required');
 const specs = readdirSync(e2eDir).filter((name) => name.endsWith('.spec.js'));
 assert.ok(specs.length >= 2, 'at least API and UI E2E specs are required');
-const specSource = specs.map((name) => readFileSync(join(e2eDir, name), 'utf8')).join('\n');
+const helperDir = join(e2eDir, 'helpers');
+const helperSources = existsSync(helperDir)
+  ? readdirSync(helperDir).filter((name) => name.endsWith('.js')).map((name) => readFileSync(join(helperDir, name), 'utf8'))
+  : [];
+const specSource = [
+  ...specs.map((name) => readFileSync(join(e2eDir, name), 'utf8')),
+  ...helperSources
+].join('\n');
 
 assert.ok(specSource.includes('/api/health'), 'E2E must cover health');
 assert.ok(specSource.includes('/api/ready'), 'E2E must cover readiness');
@@ -33,7 +40,7 @@ assert.ok(specSource.includes('/api/jobs'), 'E2E must cover order creation/readb
 assert.ok(specSource.includes('#chatThread'), 'E2E must cover Chat rendering');
 assert.ok(specSource.includes('#promptInput'), 'E2E must cover Chat input');
 assert.ok(/Send order|SEND ORDER/.test(specSource), 'E2E must assert the chat-to-order phase boundary');
-assert.ok(specSource.includes('/auth/email/verify'), 'Chat E2E must authenticate instead of relying on guest-only UI');
+assert.ok(specSource.includes('/auth/email/verify') || specSource.includes('/auth/e2e/verify'), 'Chat E2E must authenticate instead of relying on guest-only UI');
 assert.ok(specSource.includes('E2E_EMAIL_AUTH_SECRET'), 'external authenticated UI E2E must require an explicit auth secret');
 
 console.log('E2E QA passed');

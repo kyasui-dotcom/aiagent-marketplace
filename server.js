@@ -64,8 +64,8 @@ const generatedSessionSecret = `${randomBytes(32).toString('hex')}-${Date.now()}
 const sessionSecret = process.env.SESSION_SECRET || generatedSessionSecret;
 const githubClientId = process.env.GITHUB_CLIENT_ID || '';
 const githubClientSecret = process.env.GITHUB_CLIENT_SECRET || '';
-const googleClientId = process.env.GOOGLE_CLIENT_ID || '';
-const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
+const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID || '';
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 const deployTarget = process.env.DEPLOY_TARGET || 'cloudflare-worker';
 const SESSION_MAX_AGE_SEC = 30 * 24 * 60 * 60;
 const SESSION_REFRESH_WINDOW_SEC = 7 * 24 * 60 * 60;
@@ -84,7 +84,7 @@ const SECURITY_HEADERS = {
     "object-src 'none'",
     "base-uri 'self'",
     "frame-ancestors 'none'",
-    "form-action 'self' https://github.com https://accounts.google.com https://twitter.com https://x.com https://checkout.stripe.com https://connect.stripe.com",
+    "form-action 'self' https://aiagent-marketplace.net https://www.aiagent-marketplace.net https://github.com https://accounts.google.com https://twitter.com https://x.com https://checkout.stripe.com https://connect.stripe.com",
     'upgrade-insecure-requests'
   ].join('; '),
   'Referrer-Policy': 'strict-origin-when-cross-origin',
@@ -102,23 +102,7 @@ function googleConfigured() {
 }
 
 function googleOAuthScope() {
-  return String(
-    process.env.GOOGLE_OAUTH_SCOPE
-    || [
-      'openid',
-      'email',
-      'profile',
-      'https://www.googleapis.com/auth/analytics.readonly',
-      'https://www.googleapis.com/auth/webmasters.readonly',
-      'https://www.googleapis.com/auth/drive.readonly',
-      'https://www.googleapis.com/auth/documents.readonly',
-      'https://www.googleapis.com/auth/spreadsheets.readonly',
-      'https://www.googleapis.com/auth/presentations.readonly',
-      'https://www.googleapis.com/auth/calendar.readonly',
-      'https://www.googleapis.com/auth/gmail.readonly',
-      'https://www.googleapis.com/auth/gmail.send'
-    ].join(' ')
-  ).trim() || 'openid email profile';
+  return googleLoginScope();
 }
 
 function googleLoginScope() {
@@ -126,20 +110,159 @@ function googleLoginScope() {
   return configured || 'openid email profile';
 }
 
-function googleScopeForOAuthAction(action = 'login') {
-  return String(action || '').trim().toLowerCase() === 'link'
-    ? googleOAuthScope()
-    : googleLoginScope();
+function googleAnalyticsScope() {
+  const configured = String(process.env.GOOGLE_ANALYTICS_OAUTH_SCOPE || '').trim();
+  return configured || [
+    'openid',
+    'email',
+    'profile',
+    'https://www.googleapis.com/auth/analytics.readonly',
+    'https://www.googleapis.com/auth/webmasters.readonly'
+  ].join(' ');
+}
+
+const GOOGLE_OAUTH_SCOPE_GROUPS = Object.freeze({
+  gsc: ['https://www.googleapis.com/auth/webmasters.readonly'],
+  ga4: ['https://www.googleapis.com/auth/analytics.readonly'],
+  drive: ['https://www.googleapis.com/auth/drive.readonly'],
+  docs: ['https://www.googleapis.com/auth/documents.readonly'],
+  sheets: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+  presentations: ['https://www.googleapis.com/auth/presentations.readonly'],
+  calendar_read: ['https://www.googleapis.com/auth/calendar.readonly'],
+  calendar_write: ['https://www.googleapis.com/auth/calendar'],
+  gmail_read: ['https://www.googleapis.com/auth/gmail.readonly'],
+  gmail_send: ['https://www.googleapis.com/auth/gmail.send']
+});
+
+function googleScopeGroupsForCapability(value = '') {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (normalized === 'google.read_gsc' || normalized === 'read_gsc' || normalized === 'gsc') return ['gsc'];
+  if (normalized === 'google.read_ga4' || normalized === 'read_ga4' || normalized === 'ga4') return ['ga4'];
+  if (normalized === 'google.read_drive' || normalized === 'read_drive' || normalized === 'drive') return ['drive'];
+  if (normalized === 'google.read_docs' || normalized === 'read_docs' || normalized === 'docs') return ['docs'];
+  if (normalized === 'google.read_sheets' || normalized === 'read_sheets' || normalized === 'sheets') return ['sheets'];
+  if (normalized === 'google.read_presentations' || normalized === 'read_presentations' || normalized === 'presentations' || normalized === 'slides') return ['presentations'];
+  if (normalized === 'google.read_calendar' || normalized === 'read_calendar' || normalized === 'calendar') return ['calendar_read'];
+  if (normalized === 'google.write_calendar' || normalized === 'google.create_meet' || normalized === 'write_calendar' || normalized === 'create_meet') return ['calendar_write'];
+  if (normalized === 'google.read_gmail' || normalized === 'read_gmail' || normalized === 'gmail') return ['gmail_read'];
+  if (normalized === 'google.send_gmail' || normalized === 'send_gmail' || normalized === 'gmail_send') return ['gmail_send'];
+  if (normalized === 'analytics' || normalized === 'analytics_connect') return ['gsc', 'ga4'];
+  return [];
+}
+
+function googleScopeGroupLabel(group = '') {
+  const normalized = String(group || '').trim().toLowerCase();
+  if (normalized === 'gsc') return 'Search Console';
+  if (normalized === 'ga4') return 'GA4';
+  if (normalized === 'drive') return 'Google Drive';
+  if (normalized === 'docs') return 'Google Docs';
+  if (normalized === 'sheets') return 'Google Sheets';
+  if (normalized === 'presentations') return 'Google Slides';
+  if (normalized === 'calendar' || normalized === 'calendar_read') return 'Google Calendar';
+  if (normalized === 'calendar_write') return 'Google Calendar write';
+  if (normalized === 'gmail' || normalized === 'gmail_read') return 'Gmail';
+  if (normalized === 'gmail_send') return 'Gmail send';
+  return normalized || 'Google';
+}
+
+function googleOAuthScopeGroupsFromUrl(url = null) {
+  const groups = new Set();
+  if (!url) return groups;
+  const values = [
+    ...url.searchParams.getAll('include'),
+    ...url.searchParams.getAll('includes'),
+    ...url.searchParams.getAll('google_scope'),
+    ...url.searchParams.getAll('google_scopes'),
+    ...url.searchParams.getAll('scope_group'),
+    ...url.searchParams.getAll('scope_groups'),
+    ...url.searchParams.getAll('capability'),
+    ...url.searchParams.getAll('capabilities'),
+    ...url.searchParams.getAll('required_capability'),
+    ...url.searchParams.getAll('required_capabilities')
+  ];
+  for (const value of values) {
+    for (const part of String(value || '').split(/[,\s]+/)) {
+      for (const group of googleScopeGroupsForCapability(part)) groups.add(group);
+    }
+  }
+  return groups;
+}
+
+function googleOAuthCapabilitiesFromGroups(groups = []) {
+  const capabilities = [];
+  for (const group of groups) {
+    if (group === 'gsc') capabilities.push('google.read_gsc');
+    else if (group === 'ga4') capabilities.push('google.read_ga4');
+    else if (group === 'drive') capabilities.push('google.read_drive');
+    else if (group === 'docs') capabilities.push('google.read_docs');
+    else if (group === 'sheets') capabilities.push('google.read_sheets');
+    else if (group === 'presentations') capabilities.push('google.read_presentations');
+    else if (group === 'calendar_read') capabilities.push('google.read_calendar');
+    else if (group === 'calendar_write') capabilities.push('google.write_calendar');
+    else if (group === 'gmail_read') capabilities.push('google.read_gmail');
+    else if (group === 'gmail_send') capabilities.push('google.send_gmail');
+  }
+  return [...new Set(capabilities)];
+}
+
+function googleScopedOAuthScope(groups = []) {
+  const scopes = new Set(['openid', 'email', 'profile']);
+  for (const group of groups) {
+    for (const scope of GOOGLE_OAUTH_SCOPE_GROUPS[group] || []) scopes.add(scope);
+  }
+  return [...scopes].join(' ');
+}
+
+function googleConnectorScopeSet(connector = null) {
+  return new Set(String(connector?.scopes || '')
+    .split(/\s+/)
+    .map((scope) => String(scope || '').trim().toLowerCase())
+    .filter(Boolean));
+}
+
+function googleConnectorHasScopeGroup(connector = null, group = '') {
+  const normalized = String(group || '').trim().toLowerCase();
+  const required = GOOGLE_OAUTH_SCOPE_GROUPS[normalized] || [];
+  if (!required.length) return true;
+  const scopes = googleConnectorScopeSet(connector);
+  if (!scopes.size) return false;
+  return required.some((scope) => scopes.has(String(scope || '').toLowerCase()));
+}
+
+function missingGoogleScopeGroups(connector = null, groups = []) {
+  return [...new Set((groups || []).map((group) => String(group || '').trim().toLowerCase()).filter(Boolean))]
+    .filter((group) => !googleConnectorHasScopeGroup(connector, group));
+}
+
+function googleScopeGroupForAssetInclude(group = '') {
+  const normalized = String(group || '').trim().toLowerCase();
+  if (normalized === 'calendar') return 'calendar_read';
+  if (normalized === 'gmail') return 'gmail_read';
+  return normalized;
+}
+
+function googleScopeForOAuthAction(action = 'login', url = null) {
+  const normalized = String(action || '').trim().toLowerCase();
+  if (normalized === 'login') return googleLoginScope();
+  const groups = googleOAuthScopeGroupsFromUrl(url);
+  if (normalized === 'analytics_connect' && !groups.size) {
+    groups.add('ga4');
+  }
+  if (['link', 'connect'].includes(normalized) && !groups.size) {
+    groups.add('ga4');
+  }
+  return googleScopedOAuthScope(groups);
 }
 
 function googlePromptForOAuthAction(action = 'login') {
-  return String(action || '').trim().toLowerCase() === 'link'
+  const normalized = String(action || '').trim().toLowerCase();
+  return ['link', 'connect', 'analytics_connect'].includes(normalized)
     ? 'select_account consent'
     : 'select_account';
 }
 
 function xOAuthScopeLabel() {
-  return 'tweet.read tweet.write users.read offline.access';
+  return 'tweet.read users.read';
 }
 
 function json(res, status, body, headers = {}) {
@@ -420,7 +543,7 @@ const OPEN_CHAT_INTENT_SCHEMA = {
     intake_questions: {
       type: 'array',
       minItems: 0,
-      maxItems: 6,
+      maxItems: 4,
       items: { type: 'string' }
     },
     order_brief: { type: 'string' },
@@ -464,8 +587,8 @@ const LEADER_INTAKE_QUESTION_SCHEMA = {
     summary: { type: 'string' },
     questions: {
       type: 'array',
-      minItems: 3,
-      maxItems: 6,
+      minItems: 2,
+      maxItems: 4,
       items: { type: 'string' }
     }
   },
@@ -615,7 +738,7 @@ function normalizeOpenChatIntentResult(raw = {}, fallbackIntent = '', source = '
       ? (raw.intake_questions || raw.intakeQuestions)
         .map((question) => sanitizeOpenChatIntentText(question || '', 260, userLanguage))
         .filter(Boolean)
-        .slice(0, 6)
+        .slice(0, 4)
       : [],
     confidence: Math.max(0, Math.min(1, Number(raw.confidence || 0.5)))
   };
@@ -683,7 +806,7 @@ function openChatIntentSystemPrompt(userLanguage = 'English', uiLabels = WORK_OR
     'Examples that must be answer_in_chat: "pause?", "hold?", "status?", "what happened?", "これは発注？", "保留？", "今どこ？", "相談だけ".',
     'Bias toward execution only after the target, outcome, and enough context are known. The unit cost is low, but do not create vague work orders that hide missing business context.',
     'For growth/marketing/acquisition/team-leader requests such as "集客して", "売上を増やしたい", "grow users", or "marketing help", ask a clarifying question unless product/business URL, target customer, desired outcome, source materials or real-data status, and major constraints are available from conversation_context or prepared_brief.',
-    'When action is ask_clarifying_question for a Team Leader or growth request, fill intake_questions with 3-6 adaptive questions a good leader would ask before proposing. Prefer product/service URL, order-owner intent, source materials, real-data status, other data to read, constraints, and delivery format. If not a leader intake, intake_questions should be empty.',
+    'When action is ask_clarifying_question for a Team Leader or growth request, fill intake_questions with 2-4 adaptive questions a good leader would ask before proposing. Do not repeat intake after the user answers once; missing GA4/Search Console/SNS/source data should become connector or URL-sharing instructions and assumptions in the order brief. Prefer product/service URL, target customer, conversion outcome, available data/connectors, and delivery format. If not a leader intake, intake_questions should be empty.',
     'If the latest message is imperative/action-oriented ("do it", "please handle", "調べて", "作って", "発注したい"), set action to prepare_order unless safety or missing target/business context makes execution unreliable.',
     'If enough context exists to hand work to an agent, set action to prepare_order and return a polished CAIt order brief in order_brief.',
     'If the user wants to proceed with the previous prepared brief, set action to use_previous_brief and return a polished version of prepared_brief in order_brief.',
@@ -1546,7 +1669,7 @@ async function generateLeaderIntakeQuestionsWithOpenAi(body = {}, preliminary = 
             task_type: taskType,
             prompt,
             missing_fields: Array.isArray(preliminary?.missing_fields) ? preliminary.missing_fields.slice(0, 10) : [],
-            fallback_questions: Array.isArray(preliminary?.questions) ? preliminary.questions.slice(0, 6) : [],
+            fallback_questions: Array.isArray(preliminary?.questions) ? preliminary.questions.slice(0, 4) : [],
             selected_agent_name: String(body?.selected_agent_name || body?.selectedAgentName || '').slice(0, 120),
             input_counts: {
               url_count: Number(body?.url_count || body?.urlCount || 0),
@@ -1579,7 +1702,7 @@ async function buildIntakeClarificationWithAi(body = {}, options = {}, source = 
   const preliminary = buildIntakeClarification(body, options);
   if (!preliminary || preliminary.reason !== 'leader_context_required') return preliminary;
   const questions = await generateLeaderIntakeQuestionsWithOpenAi(body, preliminary, options.taskType || preliminary.inferred_task_type || body.task_type || body.taskType, source);
-  if (questions.length < 3) return preliminary;
+  if (questions.length < 2) return preliminary;
   return buildIntakeClarification(body, { ...options, dynamicIntakeQuestions: questions });
 }
 
@@ -2019,7 +2142,7 @@ async function googleAccessTokenForConnector(login = '', user = null, authProvid
   const mergedToken = {
     ...token,
     refresh_token: refreshToken,
-    scope: token.scope || connector.scopes || googleOAuthScope()
+    scope: token.scope || connector.scopes || googleScopeForOAuthAction('analytics_connect')
   };
   let updatedConnector = connector;
   await storage.mutate(async (draft) => {
@@ -2046,16 +2169,22 @@ async function googleAccessTokenForConnector(login = '', user = null, authProvid
 }
 
 async function googleAccessTokenForCurrent(current = {}, connector = null) {
-  if (connector?.connected && connector?.accessTokenEnc) {
-    return googleAccessTokenForConnector(current.login, current.user, current.authProvider, connector);
-  }
   const session = current?.session || null;
+  if (connector?.connected && connector?.accessTokenEnc) {
+    try {
+      return await googleAccessTokenForConnector(current.login, current.user, current.authProvider, connector);
+    } catch (error) {
+      if (!(error?.code === 'connector_reauth_required' && sessionHasGoogleOauth(session) && String(session?.googleAccessToken || '').trim())) {
+        throw error;
+      }
+    }
+  }
   if (sessionHasGoogleOauth(session) && String(session?.googleAccessToken || '').trim()) {
     return {
       accessToken: String(session.googleAccessToken || ''),
       connector: {
         connected: true,
-        scopes: googleOAuthScope(),
+        scopes: String(session?.googleScopes || connector?.scopes || googleScopeForOAuthAction('analytics_connect')),
         tokenExpiresAt: '',
         email: String(current?.googleIdentity?.email || session?.googleIdentity?.email || ''),
         providerUserId: String(current?.googleIdentity?.providerUserId || session?.googleIdentity?.providerUserId || '')
@@ -2360,10 +2489,23 @@ async function githubAppUserInstallationRepos(userToken, installationId) {
 function githubPrivateRepoImportEnabled() {
   return String(process.env.GITHUB_ALLOW_PRIVATE_REPO_IMPORT || '').trim() === '1';
 }
-function githubOAuthScope() {
+function githubOAuthScope(action = 'login', capabilities = []) {
   const configured = String(process.env.GITHUB_OAUTH_SCOPE || '').trim();
-  if (configured) return configured;
-  return githubPrivateRepoImportEnabled() ? 'read:user repo' : 'read:user';
+  const requested = Array.isArray(capabilities) ? capabilities : String(capabilities || '').split(/[,\s]+/);
+  const needsRepo = requested.some((item) => /github\.(?:write_repo|write_pr|read_private_repo)|\brepo\b/i.test(String(item || '')))
+    || ['repo', 'private_repo', 'write_repo'].includes(String(action || '').trim().toLowerCase());
+  if (needsRepo) return configured || 'read:user repo';
+  return 'read:user';
+}
+
+function oauthCapabilitiesFromUrl(url = null) {
+  if (!url) return [];
+  return [
+    ...url.searchParams.getAll('capability'),
+    ...url.searchParams.getAll('capabilities'),
+    ...url.searchParams.getAll('required_capability'),
+    ...url.searchParams.getAll('required_capabilities')
+  ].flatMap((value) => String(value || '').split(/[,\s]+/)).map((item) => String(item || '').trim()).filter(Boolean);
 }
 function githubGrantedScopes(session) {
   return Array.isArray(session?.githubScopes) ? session.githubScopes : [];
@@ -2456,6 +2598,7 @@ function linkedProvidersFromAccount(account = null) {
   return providers;
 }
 function mergeLinkedSession(baseSession = {}, patch = {}) {
+  const hasPatchField = (field) => Object.prototype.hasOwnProperty.call(patch, field);
   return {
     ...baseSession,
     ...patch,
@@ -2468,7 +2611,8 @@ function mergeLinkedSession(baseSession = {}, patch = {}) {
     githubAppUserAccessToken: patch.githubAppUserAccessToken || baseSession.githubAppUserAccessToken || '',
     githubApp: patch.githubApp || baseSession.githubApp || null,
     googleIdentity: patch.googleIdentity || baseSession.googleIdentity || null,
-    googleAccessToken: patch.googleAccessToken || baseSession.googleAccessToken || '',
+    googleAccessToken: hasPatchField('googleAccessToken') ? String(patch.googleAccessToken || '') : (baseSession.googleAccessToken || ''),
+    googleScopes: hasPatchField('googleScopes') ? String(patch.googleScopes || '') : String(baseSession.googleScopes || ''),
     linkedProviders: [...new Set([
       ...(Array.isArray(baseSession.linkedProviders) ? baseSession.linkedProviders : []),
       ...(Array.isArray(patch.linkedProviders) ? patch.linkedProviders : [])
@@ -2518,20 +2662,22 @@ function normalizeOAuthVisitorId(value = '') {
 }
 
 function oauthStartContext(req, url = new URL(req.url, baseUrl(req))) {
-  const explicitMode = String(url.searchParams.get('mode') || '').toLowerCase();
+  const explicitMode = String(url.searchParams.get('mode') || url.searchParams.get('action') || '').toLowerCase();
   const existingSession = getSession(req);
-  const action = explicitMode === 'link' ? 'link' : 'login';
+  const action = ['link', 'connect', 'analytics_connect'].includes(explicitMode) ? explicitMode : 'login';
   return {
     existingSession,
     action,
     returnTo: normalizeLocalRedirectPath(req, url.searchParams.get('return_to') || '', '/'),
     loginSource: normalizeOAuthLoginSource(url.searchParams.get('login_source') || ''),
-    visitorId: normalizeOAuthVisitorId(url.searchParams.get('visitor_id') || '')
+    visitorId: normalizeOAuthVisitorId(url.searchParams.get('visitor_id') || ''),
+    googleScopeGroups: [...googleOAuthScopeGroupsFromUrl(url)]
   };
 }
 
 function shouldLinkOAuthCallback(oauthState = null, existingSession = null) {
-  return oauthState?.action === 'link';
+  const action = String(oauthState?.action || '').trim().toLowerCase();
+  return ['link', 'connect'].includes(action) || (action === 'analytics_connect' && hasOAuthBaseSession(existingSession));
 }
 
 function authSuccessRedirectPath(req, oauthState = null) {
@@ -2613,6 +2759,11 @@ function handleLoginPageRequest(req, res) {
 
 function authFailureRedirectPath(req, code = 'auth_failed', oauthState = null) {
   const safeCode = String(code || 'auth_failed').trim() || 'auth_failed';
+  if (oauthState?.returnTo && ['link', 'connect', 'analytics_connect'].includes(String(oauthState?.action || '').trim().toLowerCase())) {
+    const returnUrl = new URL(authSuccessRedirectPath(req, oauthState), baseUrl(req));
+    returnUrl.searchParams.set('auth_error', safeCode);
+    return `${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`;
+  }
   if (oauthState?.action === 'login' && oauthState?.loginSource) {
     const loginUrl = new URL('/login', baseUrl(req));
     loginUrl.searchParams.set('auth_error', safeCode);
@@ -2667,6 +2818,52 @@ function parseEmailAuthToken(raw = '') {
     email,
     returnTo: String(payload.returnTo || '/chat').trim() || '/chat',
     loginSource: String(payload.loginSource || 'login_page').trim().toLowerCase() || 'login_page',
+    visitorId: String(payload.visitorId || '').trim()
+  };
+}
+
+const DEFAULT_E2E_AUTH_EMAIL = 'e2e@aiagent-marketplace.net';
+
+function e2eAuthSecret() {
+  return String(process.env.E2E_AUTH_SECRET || '').trim();
+}
+
+function e2eAuthAllowedEmails() {
+  const configured = String(process.env.E2E_AUTH_ALLOWED_EMAILS || DEFAULT_E2E_AUTH_EMAIL)
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => validateEmailAddress(item));
+  return new Set(configured.length ? configured : [DEFAULT_E2E_AUTH_EMAIL]);
+}
+
+function decodeSignedE2ePayload(raw = '') {
+  const [payloadPart = ''] = String(raw || '').split('.');
+  if (!payloadPart) return null;
+  try {
+    return JSON.parse(Buffer.from(payloadPart, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function parseE2eAuthToken(raw = '') {
+  const secret = e2eAuthSecret();
+  if (!secret) return null;
+  const token = String(raw || '').trim();
+  const [payloadPart = '', signaturePart = ''] = token.split('.');
+  if (!payloadPart || !signaturePart) return null;
+  const expected = createHmac('sha256', secret).update(payloadPart).digest('base64url');
+  if (!secretEquals(signaturePart, expected)) return null;
+  const payload = decodeSignedE2ePayload(token);
+  if (!payload || payload.kind !== 'e2e-auth') return null;
+  if (Number(payload.exp || 0) < Date.now()) return null;
+  const email = String(payload.email || '').trim().toLowerCase();
+  if (!validateEmailAddress(email)) return null;
+  if (!e2eAuthAllowedEmails().has(email)) return null;
+  return {
+    email,
+    returnTo: String(payload.returnTo || '/chat').trim() || '/chat',
+    loginSource: String(payload.loginSource || 'playwright_e2e').trim().toLowerCase() || 'playwright_e2e',
     visitorId: String(payload.visitorId || '').trim()
   };
 }
@@ -4735,18 +4932,26 @@ function normalizeDispatchResponse(responseBody = {}) {
   const body = responseBody && typeof responseBody === 'object' ? responseBody : {};
   const status = String(body.status || '').trim().toLowerCase();
   const blocked = isBlockedAgentResultStatus(status);
+  const failed = status === 'failed' || Boolean(body.error || body.failure_reason || body.failureReason);
+  const report = normalizeAgentReportPayload(body, body.report || body.output || { summary: body.summary || 'No report provided.' });
+  const failureReason = body.failure_reason
+    || body.failureReason
+    || body.error
+    || (failed ? (report.summary || body.summary || 'Agent failed without a detailed reason.') : null);
   const hasArtifacts = Boolean(body.report || body.output || body.summary || (Array.isArray(body.files) && body.files.length));
-  const accepted = body.accepted === true || blocked || status === 'accepted' || status === 'queued' || status === 'running' || status === 'dispatched';
-  const completed = !blocked && (status === 'completed' || ((!status || status === 'ok' || status === 'success') && hasArtifacts));
+  const accepted = !failed && (body.accepted === true || blocked || status === 'accepted' || status === 'queued' || status === 'running' || status === 'dispatched');
+  const completed = !failed && !blocked && (status === 'completed' || ((!status || status === 'ok' || status === 'success') && hasArtifacts));
   return {
     accepted,
+    failed,
     blocked,
     completed,
-    status: blocked ? 'blocked' : (completed ? 'completed' : (status || (accepted ? 'accepted' : 'unknown'))),
-    report: normalizeAgentReportPayload(body, body.report || body.output || { summary: body.summary || 'No report provided.' }),
+    status: failed ? 'failed' : (blocked ? 'blocked' : (completed ? 'completed' : (status || (accepted ? 'accepted' : 'unknown')))),
+    report,
     files: Array.isArray(body.files) ? body.files : [],
     returnTargets: body.return_targets || body.returnTargets || ['api'],
     usage: normalizeUsageForBilling(body.usage, 100),
+    failureReason,
     externalJobId: body.external_job_id || body.remote_job_id || body.job_id || null,
     raw: body
   };
@@ -4755,23 +4960,26 @@ function normalizeCallbackPayload(body = {}) {
   const payload = body && typeof body === 'object' ? body : {};
   const status = String(payload.status || (payload.failure_reason || payload.error ? 'failed' : 'completed')).trim().toLowerCase();
   const normalizedStatus = status === 'failed' ? 'failed' : (isBlockedAgentResultStatus(status) ? 'blocked' : 'completed');
+  const reportCandidate = payload.report || payload.output || {
+    summary: payload.summary || (
+      normalizedStatus === 'failed'
+        ? 'Agent reported failure'
+        : (normalizedStatus === 'blocked' ? 'Agent is blocked pending approval or connector setup' : 'No report provided.')
+    )
+  };
+  const report = normalizeAgentReportPayload(payload, reportCandidate);
+  const failureReason = payload.failure_reason
+    || payload.failureReason
+    || payload.error
+    || (normalizedStatus === 'failed' ? (report.summary || payload.summary || 'Agent reported failure without a detailed reason.') : null);
   return {
     status: normalizedStatus,
-    report: normalizeAgentReportPayload(
-      payload,
-      payload.report || payload.output || {
-        summary: payload.summary || (
-          normalizedStatus === 'failed'
-            ? 'Agent reported failure'
-            : (normalizedStatus === 'blocked' ? 'Agent is blocked pending approval or connector setup' : 'No report provided.')
-        )
-      }
-    ),
+    report,
     files: Array.isArray(payload.files) ? payload.files : [],
     usage: normalizeUsageForBilling(payload.usage, 100),
     returnTargets: payload.return_targets || payload.returnTargets || ['chat', 'api', 'webhook'],
     externalJobId: payload.external_job_id || payload.remote_job_id || null,
-    failureReason: payload.failure_reason || payload.error || null,
+    failureReason,
     raw: payload
   };
 }
@@ -4809,6 +5017,7 @@ function buildDispatchFailureMeta(job, statusCode, errorMessage = '') {
   };
 }
 async function failJob(jobId, reason, extraLogs = [], options = {}) {
+  const failureReason = String(reason || options.failureReason || 'Job failed without a detailed reason.').trim();
   const result = await storage.mutate(async (draft) => {
     const job = draft.jobs.find(j => j.id === jobId);
     if (!job) return null;
@@ -4819,7 +5028,7 @@ async function failJob(jobId, reason, extraLogs = [], options = {}) {
     if (failureStatus === 'timed_out') job.timedOutAt = failedAt;
     job.failedAt = failedAt;
     job.lastCallbackAt = options.source === 'callback' ? failedAt : (job.lastCallbackAt || null);
-    job.failureReason = reason;
+    job.failureReason = failureReason;
     job.failureCategory = options.failureCategory || job.failureCategory || 'agent_failed';
     if (job.billingReservation && !job.billingSettlement?.settledAt && !job.billingReservation?.releasedAt) {
       releaseBillingReservationInState(draft, job);
@@ -4836,7 +5045,7 @@ async function failJob(jobId, reason, extraLogs = [], options = {}) {
       attempts: options.attempts ?? job.dispatch?.attempts ?? 0
     };
     for (const line of extraLogs) job.logs.push(line);
-    job.logs.push(reason);
+    job.logs.push(failureReason);
     return { ...cloneJob(job), workflowParentId: job.workflowParentId || null };
   });
   if (result?.workflowParentId) await reconcileWorkflowParent(result.workflowParentId);
@@ -4982,6 +5191,9 @@ async function dispatchJobToAssignedAgent(job, agent) {
   if (sampleKind) {
     const body = await runBuiltInAgent(sampleKind, payload, process.env);
     const normalized = normalizeDispatchResponse(body);
+    if (normalized.failed) {
+      return { ok: false, endpoint, failureReason: normalized.failureReason || 'Built-in agent generation failed', statusCode: 502, responseBody: body };
+    }
     normalized.usage = usageWithObservedJobTokens(job, normalized.usage, normalized.report);
     return { ok: true, endpoint, normalized, statusCode: 200, responseBody: body };
   }
@@ -4992,6 +5204,9 @@ async function dispatchJobToAssignedAgent(job, agent) {
     return { ok: false, endpoint, failureReason: reason, statusCode: response.status, responseBody: body };
   }
   const normalized = normalizeDispatchResponse(body);
+  if (normalized.failed) {
+    return { ok: false, endpoint, failureReason: normalized.failureReason || 'Agent reported failure', statusCode: response.status, responseBody: body };
+  }
   normalized.usage = usageWithObservedJobTokens(job, normalized.usage, normalized.report);
   if (!normalized.accepted && !normalized.completed && !normalized.blocked) {
     return { ok: false, endpoint, failureReason: 'Dispatch response was malformed or did not acknowledge the job', statusCode: response.status, responseBody: body };
@@ -5234,6 +5449,8 @@ function authStatus(req) {
   return {
     loggedIn,
     authProvider: current?.authProvider || 'guest',
+    authBaseUrl: baseUrl(req),
+    currentOrigin: requestOrigin(req),
     emailConfigured: resendConfigured(),
     githubConfigured: Boolean(githubClientId && githubClientSecret),
     googleConfigured: googleConfigured(),
@@ -7733,6 +7950,11 @@ async function handleXAuthStart(req, res) {
   if (!xTokenEncryptionConfigured(process.env)) return json(res, 503, { error: 'X token encryption is not configured. Set X_TOKEN_ENCRYPTION_KEY to base64 32 bytes.' });
   const current = currentUserContext(req);
   if (!current?.login) return redirect(res, xAuthErrorRedirect('login_required_for_x'));
+  const url = new URL(req.url, baseUrl(req));
+  const capabilities = [
+    ...url.searchParams.getAll('capability'),
+    ...url.searchParams.getAll('capabilities')
+  ].flatMap((value) => String(value || '').split(/[,\s]+/)).filter(Boolean);
   const state = randomBytes(24).toString('base64url');
   const pkce = await buildXPkcePair();
   oauthStates.set(state, {
@@ -7745,7 +7967,8 @@ async function handleXAuthStart(req, res) {
   const authUrl = buildXAuthorizeUrl(process.env, {
     callbackUrl: xCallbackUrl(req),
     state,
-    codeChallenge: pkce.challenge
+    codeChallenge: pkce.challenge,
+    capabilities
   });
   return redirect(res, authUrl.toString());
 }
@@ -7898,6 +8121,14 @@ function googleDimensionValue(row = {}, index = 0) {
   return String(row?.dimensionValues?.[index]?.value || '');
 }
 
+function normalizeGoogleGa4PropertyName(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^properties\/[A-Za-z0-9_-]+$/.test(raw)) return raw;
+  const digits = raw.match(/\d{4,}/)?.[0] || '';
+  return digits ? `properties/${digits}` : raw;
+}
+
 async function fetchGoogleSearchConsoleReport(accessToken, siteUrl = '', range = {}) {
   const target = String(siteUrl || '').trim();
   if (!target) return { site_url: '', rows: [], totals: { clicks: 0, impressions: 0 }, skipped: true };
@@ -7938,7 +8169,7 @@ async function fetchGoogleSearchConsoleReport(accessToken, siteUrl = '', range =
 }
 
 async function fetchGoogleGa4RunReport(accessToken, property = '', body = {}) {
-  const target = String(property || '').trim();
+  const target = normalizeGoogleGa4PropertyName(property);
   if (!/^properties\/[A-Za-z0-9_-]+$/.test(target)) {
     const error = new Error('A valid GA4 property id such as properties/123456789 is required.');
     error.statusCode = 400;
@@ -7986,44 +8217,73 @@ function mapGoogleGa4Rows(report = {}, dimensions = []) {
 }
 
 async function fetchGoogleGa4Report(accessToken, property = '', range = {}) {
-  const target = String(property || '').trim();
+  const target = normalizeGoogleGa4PropertyName(property);
   if (!target) return {
     property: '',
     totals: { sessions: 0, conversions: 0 },
     landing_pages: [],
     channels: [],
+    channel_landing_pages: [],
+    channel_sources: [],
     countries: [],
+    warnings: [],
     skipped: true
   };
-  const [totalsResult, landingResult, channelsResult, countriesResult] = await Promise.all([
-    fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, [], 1),
+  const totalsResult = await fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, [], 1);
+  const [landingResult, channelsResult, channelPagesResult, channelSourcesResult, countriesResult] = await Promise.allSettled([
     fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, ['landingPagePlusQueryString'], 50),
     fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, ['sessionDefaultChannelGroup'], 25),
+    fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, ['sessionDefaultChannelGroup', 'landingPagePlusQueryString'], 100),
+    fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, ['sessionDefaultChannelGroup', 'sessionSourceMedium'], 100),
     fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, ['country'], 25)
   ]);
   const totalRow = mapGoogleGa4Rows(totalsResult.report, [])[0] || { sessions: 0, conversions: 0 };
+  const landingReport = landingResult.status === 'fulfilled' ? landingResult.value : null;
+  const channelsReport = channelsResult.status === 'fulfilled' ? channelsResult.value : null;
+  const channelPagesReport = channelPagesResult.status === 'fulfilled' ? channelPagesResult.value : null;
+  const channelSourcesReport = channelSourcesResult.status === 'fulfilled' ? channelSourcesResult.value : null;
+  const countriesReport = countriesResult.status === 'fulfilled' ? countriesResult.value : null;
+  const warnings = [];
+  if (landingResult.status === 'rejected') warnings.push(`GA4 landing pages: ${landingResult.reason?.message || landingResult.reason || 'request failed'}`);
+  if (channelsResult.status === 'rejected') warnings.push(`GA4 channels: ${channelsResult.reason?.message || channelsResult.reason || 'request failed'}`);
+  if (channelPagesResult.status === 'rejected') warnings.push(`GA4 channel landing pages: ${channelPagesResult.reason?.message || channelPagesResult.reason || 'request failed'}`);
+  if (channelSourcesResult.status === 'rejected') warnings.push(`GA4 channel sources: ${channelSourcesResult.reason?.message || channelSourcesResult.reason || 'request failed'}`);
+  if (countriesResult.status === 'rejected') warnings.push(`GA4 countries: ${countriesResult.reason?.message || countriesResult.reason || 'request failed'}`);
   return {
     property: target,
-    conversion_metric: totalsResult.conversionMetric || landingResult.conversionMetric || channelsResult.conversionMetric || countriesResult.conversionMetric || '',
+    conversion_metric: totalsResult.conversionMetric || landingReport?.conversionMetric || channelsReport?.conversionMetric || channelPagesReport?.conversionMetric || channelSourcesReport?.conversionMetric || countriesReport?.conversionMetric || '',
     totals: {
       sessions: Number(totalRow.sessions || 0),
       conversions: Number(totalRow.conversions || 0)
     },
-    landing_pages: mapGoogleGa4Rows(landingResult.report, ['landingPagePlusQueryString']).map((row) => ({
+    landing_pages: mapGoogleGa4Rows(landingReport?.report, ['landingPagePlusQueryString']).map((row) => ({
       page: row.dimensions[0] || '(not set)',
       sessions: row.sessions,
       conversions: row.conversions
     })),
-    channels: mapGoogleGa4Rows(channelsResult.report, ['sessionDefaultChannelGroup']).map((row) => ({
+    channels: mapGoogleGa4Rows(channelsReport?.report, ['sessionDefaultChannelGroup']).map((row) => ({
       channel: row.dimensions[0] || '(not set)',
       sessions: row.sessions,
       conversions: row.conversions
     })),
-    countries: mapGoogleGa4Rows(countriesResult.report, ['country']).map((row) => ({
+    channel_landing_pages: mapGoogleGa4Rows(channelPagesReport?.report, ['sessionDefaultChannelGroup', 'landingPagePlusQueryString']).map((row) => ({
+      channel: row.dimensions[0] || '(not set)',
+      page: row.dimensions[1] || '(not set)',
+      sessions: row.sessions,
+      conversions: row.conversions
+    })),
+    channel_sources: mapGoogleGa4Rows(channelSourcesReport?.report, ['sessionDefaultChannelGroup', 'sessionSourceMedium']).map((row) => ({
+      channel: row.dimensions[0] || '(not set)',
+      source_medium: row.dimensions[1] || '(not set)',
+      sessions: row.sessions,
+      conversions: row.conversions
+    })),
+    countries: mapGoogleGa4Rows(countriesReport?.report, ['country']).map((row) => ({
       country: row.dimensions[0] || '(not set)',
       sessions: row.sessions,
       conversions: row.conversions
-    }))
+    })),
+    warnings
   };
 }
 
@@ -8034,7 +8294,7 @@ async function handleGoogleAnalyticsReport(req, res) {
   if (!current?.user && current.apiKeyStatus !== 'valid') return json(res, 401, { error: 'Login or CAIt API key required' });
   const url = new URL(req.url, 'http://localhost');
   const gscSite = String(url.searchParams.get('gsc_site') || url.searchParams.get('search_console_site') || '').trim();
-  const ga4Property = String(url.searchParams.get('ga4_property') || url.searchParams.get('property') || '').trim();
+  const ga4Property = normalizeGoogleGa4PropertyName(url.searchParams.get('ga4_property') || url.searchParams.get('property') || '');
   if (!gscSite && !ga4Property) {
     return json(res, 400, { error: 'Select at least one Google source before loading a report.' });
   }
@@ -8052,6 +8312,21 @@ async function handleGoogleAnalyticsReport(req, res) {
   }
   try {
     const tokenInfo = await googleAccessTokenForCurrent(current, connector);
+    const requestedGroups = [
+      gscSite ? 'gsc' : '',
+      ga4Property ? 'ga4' : ''
+    ].filter(Boolean);
+    const missingGroups = missingGoogleScopeGroups(tokenInfo.connector, requestedGroups);
+    if (missingGroups.length) {
+      return json(res, 409, {
+        error: `Google OAuth scope required for ${missingGroups.map(googleScopeGroupLabel).join(' and ')}.`,
+        code: 'google_scope_required',
+        missing_connectors: ['google'],
+        missing_connector_capabilities: googleOAuthCapabilitiesFromGroups(missingGroups),
+        missing_google_scope_groups: missingGroups,
+        action: connectorActionLabel('connect_google')
+      });
+    }
     const [gscResult, ga4Result] = await Promise.allSettled([
       gscSite ? fetchGoogleSearchConsoleReport(tokenInfo.accessToken, gscSite, dateRange) : Promise.resolve(null),
       ga4Property ? fetchGoogleGa4Report(tokenInfo.accessToken, ga4Property, dateRange) : Promise.resolve(null)
@@ -8059,6 +8334,7 @@ async function handleGoogleAnalyticsReport(req, res) {
     const warnings = [];
     if (gscResult.status === 'rejected') warnings.push(`Search Console report: ${gscResult.reason?.message || gscResult.reason || 'request failed'}`);
     if (ga4Result.status === 'rejected') warnings.push(`GA4 report: ${ga4Result.reason?.message || ga4Result.reason || 'request failed'}`);
+    if (ga4Result.status === 'fulfilled' && Array.isArray(ga4Result.value?.warnings)) warnings.push(...ga4Result.value.warnings);
     if (current?.apiKey?.id) await recordOrderApiKeyUsage(current, req);
     return json(res, 200, {
       ok: true,
@@ -8120,23 +8396,26 @@ async function handleGoogleConnectorAssets(req, res) {
   }
   try {
     const tokenInfo = await googleAccessTokenForCurrent(current, connector);
+    const missingGroups = includeGroups.filter((group) => !googleConnectorHasScopeGroup(tokenInfo.connector, googleScopeGroupForAssetInclude(group)));
+    const missingCapabilityGroups = missingGroups.map(googleScopeGroupForAssetInclude);
+    const readableGroups = includeGroups.filter((group) => !missingGroups.includes(group));
     const [sitesResult, ga4Result, driveResult, calendarResult, gmailProfileResult, gmailLabelsResult] = await Promise.allSettled([
-      includeGroups.includes('gsc')
+      readableGroups.includes('gsc')
         ? fetchGoogleAuthorizedJson('https://www.googleapis.com/webmasters/v3/sites', tokenInfo.accessToken)
         : Promise.resolve(null),
-      includeGroups.includes('ga4')
+      readableGroups.includes('ga4')
         ? fetchGoogleAuthorizedJson('https://analyticsadmin.googleapis.com/v1alpha/accountSummaries?pageSize=200', tokenInfo.accessToken)
         : Promise.resolve(null),
-      includeGroups.includes('drive')
+      readableGroups.includes('drive')
         ? fetchGoogleAuthorizedJson('https://www.googleapis.com/drive/v3/files?pageSize=50&fields=files(id,name,mimeType,webViewLink,modifiedTime)', tokenInfo.accessToken)
         : Promise.resolve(null),
-      includeGroups.includes('calendar')
+      readableGroups.includes('calendar')
         ? fetchGoogleAuthorizedJson('https://www.googleapis.com/calendar/v3/users/me/calendarList', tokenInfo.accessToken)
         : Promise.resolve(null),
-      includeGroups.includes('gmail')
+      readableGroups.includes('gmail')
         ? fetchGoogleAuthorizedJson('https://gmail.googleapis.com/gmail/v1/users/me/profile', tokenInfo.accessToken)
         : Promise.resolve(null),
-      includeGroups.includes('gmail')
+      readableGroups.includes('gmail')
         ? fetchGoogleAuthorizedJson('https://gmail.googleapis.com/gmail/v1/users/me/labels', tokenInfo.accessToken)
         : Promise.resolve(null)
     ]);
@@ -8191,6 +8470,9 @@ async function handleGoogleConnectorAssets(req, res) {
         }))
       : [];
     const warnings = [];
+    for (const group of missingGroups) {
+      warnings.push(`${googleScopeGroupLabel(group)}: OAuth scope is not connected. Use the ${googleScopeGroupLabel(group)} connect button to authorize only this source.`);
+    }
     if (includeGroups.includes('gsc') && sitesResult.status === 'rejected') warnings.push(`Search Console: ${sitesResult.reason?.message || sitesResult.reason || 'request failed'}`);
     if (includeGroups.includes('ga4') && ga4Result.status === 'rejected') warnings.push(`GA4: ${ga4Result.reason?.message || ga4Result.reason || 'request failed'}`);
     if (includeGroups.includes('drive') && driveResult.status === 'rejected') warnings.push(`Drive: ${driveResult.reason?.message || driveResult.reason || 'request failed'}`);
@@ -8204,6 +8486,9 @@ async function handleGoogleConnectorAssets(req, res) {
       google: {
         connected: true,
         scopes: String(tokenInfo.connector?.scopes || ''),
+        available_scope_groups: readableGroups,
+        missing_scope_groups: missingGroups,
+        missing_capabilities: googleOAuthCapabilitiesFromGroups(missingCapabilityGroups),
         token_expires_at: String(tokenInfo.connector?.tokenExpiresAt || ''),
         refreshed: tokenInfo.refreshed
       },
@@ -8730,11 +9015,21 @@ const server = http.createServer(async (req, res) => {
       googleCallback,
       githubConfigured: Boolean(githubClientId && githubClientSecret),
       googleConfigured: googleConfigured(),
+      authBaseUrl: baseUrl(req),
+      currentOrigin: requestOrigin(req),
       xConfigured: xOAuthConfigured(process.env),
       xTokenEncryptionConfigured: xTokenEncryptionConfigured(process.env),
       githubAppConfigured: githubAppConfigured(),
       githubScope: githubOAuthScope(),
-      googleScope: googleOAuthScope(),
+      googleScope: googleScopeForOAuthAction('analytics_connect'),
+      googleScopeProfiles: {
+        login: googleLoginScope(),
+        analytics: googleScopeForOAuthAction('analytics_connect'),
+        drive: googleScopedOAuthScope(['drive']),
+        calendarRead: googleScopedOAuthScope(['calendar_read']),
+        gmailRead: googleScopedOAuthScope(['gmail_read']),
+        gmailSend: googleScopedOAuthScope(['gmail_send'])
+      },
       xScope: xOAuthScopeLabel(),
       privateRepoImportEnabled: githubPrivateRepoImportEnabled(),
       releaseStage: policy.releaseStage,
@@ -8890,11 +9185,12 @@ const server = http.createServer(async (req, res) => {
     }
     const { existingSession, action, returnTo, loginSource, visitorId } = oauthStartContext(req, url);
     if (existingSession?.user && action === 'link' && sessionHasGithubOauth(existingSession)) return redirect(res, returnTo || '/');
-    if (existingSession?.user && action !== 'link') return redirect(res, returnTo || '/');
+    if (existingSession?.user && action === 'login') return redirect(res, returnTo || '/');
     const state = randomBytes(16).toString('hex');
-    oauthStates.set(state, { createdAt: Date.now(), provider: 'github-oauth', action, returnTo, loginSource, visitorId });
+    const requestedCapabilities = oauthCapabilitiesFromUrl(url);
+    oauthStates.set(state, { createdAt: Date.now(), provider: 'github-oauth', action, returnTo, loginSource, visitorId, requestedCapabilities });
     const callback = `${baseUrl(req)}/auth/github/callback`;
-    const githubScope = githubOAuthScope();
+    const githubScope = githubOAuthScope(action, requestedCapabilities);
     const githubUrl = new URL('https://github.com/login/oauth/authorize');
     githubUrl.searchParams.set('client_id', githubClientId);
     githubUrl.searchParams.set('redirect_uri', callback);
@@ -8993,16 +9289,16 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname === '/auth/google') {
     if (!googleConfigured()) return json(res, 503, { error: 'Google OAuth is not configured yet. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.' });
-    const { existingSession, action, returnTo, loginSource, visitorId } = oauthStartContext(req, url);
-    if (existingSession?.user && action !== 'link') return redirect(res, returnTo || '/');
+    const { existingSession, action, returnTo, loginSource, visitorId, googleScopeGroups } = oauthStartContext(req, url);
+    if (existingSession?.user && action === 'login') return redirect(res, returnTo || '/');
     const state = randomBytes(16).toString('hex');
-    oauthStates.set(state, { createdAt: Date.now(), provider: 'google-oauth', action, returnTo, loginSource, visitorId });
+    oauthStates.set(state, { createdAt: Date.now(), provider: 'google-oauth', action, returnTo, loginSource, visitorId, googleScopeGroups });
     const callback = `${baseUrl(req)}/auth/google/callback`;
     const googleUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     googleUrl.searchParams.set('client_id', googleClientId);
     googleUrl.searchParams.set('redirect_uri', callback);
     googleUrl.searchParams.set('response_type', 'code');
-    googleUrl.searchParams.set('scope', googleScopeForOAuthAction(action));
+    googleUrl.searchParams.set('scope', googleScopeForOAuthAction(action, url));
     googleUrl.searchParams.set('state', state);
     googleUrl.searchParams.set('access_type', 'offline');
     googleUrl.searchParams.set('include_granted_scopes', 'true');
@@ -9044,7 +9340,8 @@ const server = http.createServer(async (req, res) => {
         if (!current?.login) return redirect(res, authFailureRedirectPath(req, 'login_required_for_link', oauthState));
         const linked = await linkSessionIdentityToAccount(current.login, googleIdentity, 'google-oauth');
         if (!linked?.ok) return redirect(res, authFailureRedirectPath(req, 'google_identity_already_linked', oauthState));
-        if (connectorTokenEncryptionConfigured(process.env)) {
+        const persistentGoogleConnector = connectorTokenEncryptionConfigured(process.env);
+        if (persistentGoogleConnector) {
           await storage.mutate(async (draft) => {
             const latest = accountSettingsForLogin(draft, linked.account.login, { ...googleIdentity, login: linked.account.login }, 'google-oauth');
             const google = await googleConnectorFromOAuthToken(process.env, googleIdentity, token, latest?.connectors?.google || {});
@@ -9060,13 +9357,15 @@ const server = http.createServer(async (req, res) => {
           accountLogin: linked.account.login,
           googleIdentity: accountIdentityForProvider(linked.account, 'google') || googleIdentity,
           githubIdentity: accountIdentityForProvider(linked.account, 'github') || existingSession?.githubIdentity || null,
-          googleAccessToken: token.access_token,
+          googleAccessToken: persistentGoogleConnector ? '' : token.access_token,
+          googleScopes: token.scope || googleScopeForOAuthAction(oauthState?.action || 'analytics_connect'),
           linkedProviders: linkedProvidersFromAccount(linked.account),
           expiresAt: Date.now() + SESSION_MAX_AGE_SEC * 1000
         });
       } else {
         let account = await persistAccountForIdentity(googleIdentity, 'google-oauth');
-        if (connectorTokenEncryptionConfigured(process.env)) {
+        const persistentGoogleConnector = connectorTokenEncryptionConfigured(process.env);
+        if (persistentGoogleConnector) {
           await storage.mutate(async (draft) => {
             const latest = accountSettingsForLogin(draft, account.login, googleIdentity, 'google-oauth');
             const google = await googleConnectorFromOAuthToken(process.env, googleIdentity, token, latest?.connectors?.google || {});
@@ -9085,7 +9384,8 @@ const server = http.createServer(async (req, res) => {
           accountLogin: account.login,
           googleIdentity: accountIdentityForProvider(account, 'google') || googleIdentity,
           githubIdentity: accountIdentityForProvider(account, 'github') || null,
-          googleAccessToken: token.access_token,
+          googleAccessToken: persistentGoogleConnector ? '' : token.access_token,
+          googleScopes: token.scope || googleScopeForOAuthAction(oauthState?.action || 'login'),
           linkedProviders: linkedProvidersFromAccount(account),
           createdAt: Date.now(),
           expiresAt: Date.now() + SESSION_MAX_AGE_SEC * 1000
@@ -9224,6 +9524,77 @@ const server = http.createServer(async (req, res) => {
         loginSource: emailState.loginSource,
         returnTo: emailState.returnTo,
         visitorId: emailState.visitorId
+      }));
+    }
+  }
+  if (req.method === 'GET' && url.pathname === '/auth/e2e/verify') {
+    if (!e2eAuthSecret()) return json(res, 404, { error: 'Not found' });
+    const token = String(url.searchParams.get('token') || '').trim();
+    const fallbackState = {
+      action: 'login',
+      loginSource: 'playwright_e2e',
+      returnTo: '/chat',
+      visitorId: ''
+    };
+    if (!token) {
+      await trackAuthLoginFailure('e2e', {
+        source: 'e2e_auth_verify',
+        status: 'missing_token'
+      });
+      return redirect(res, authFailureRedirectPath(req, 'e2e_link_invalid', fallbackState));
+    }
+    const e2eState = parseE2eAuthToken(token);
+    if (!e2eState) {
+      await trackAuthLoginFailure('e2e', {
+        source: 'e2e_auth_verify',
+        status: 'invalid_token'
+      });
+      return redirect(res, authFailureRedirectPath(req, 'e2e_link_invalid', fallbackState));
+    }
+    try {
+      const account = await persistAccountForIdentity({
+        providerUserId: e2eState.email,
+        login: e2eState.email,
+        email: e2eState.email,
+        name: e2eState.email.split('@')[0] || e2eState.email,
+        avatarUrl: '',
+        profileUrl: ''
+      }, 'e2e');
+      const session = mergeLinkedSession({}, {
+        authProvider: 'e2e',
+        sessionVersion: SESSION_VERSION,
+        user: {
+          login: account?.login || e2eState.email,
+          name: account?.profile?.displayName || e2eState.email,
+          avatarUrl: '',
+          profileUrl: '',
+          email: e2eState.email,
+          accountId: account?.id || ''
+        },
+        accountLogin: account?.login || e2eState.email,
+        linkedProviders: [...new Set([...linkedProvidersFromAccount(account), 'e2e'])],
+        createdAt: Date.now(),
+        expiresAt: Date.now() + SESSION_MAX_AGE_SEC * 1000
+      });
+      const sessionId = randomBytes(24).toString('hex');
+      sessions.set(sessionId, session);
+      return redirect(res, authSuccessRedirectPath(req, {
+        action: 'login',
+        loginSource: e2eState.loginSource,
+        returnTo: e2eState.returnTo,
+        visitorId: e2eState.visitorId
+      }), { 'Set-Cookie': makeSessionCookie(sessionId, req) });
+    } catch (error) {
+      await trackAuthLoginFailure('e2e', {
+        source: 'e2e_auth_verify',
+        status: 'verify_error',
+        login: e2eState.email
+      });
+      return redirect(res, authFailureRedirectPath(req, 'e2e_link_invalid', {
+        action: 'login',
+        loginSource: e2eState.loginSource,
+        returnTo: e2eState.returnTo,
+        visitorId: e2eState.visitorId
       }));
     }
   }
@@ -10028,6 +10399,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         status: failed.status,
+        failure_reason: failed.failureReason || callback.failureReason || 'Agent reported failure without a detailed reason.',
         job: failed,
         delivery: {
           report: null,

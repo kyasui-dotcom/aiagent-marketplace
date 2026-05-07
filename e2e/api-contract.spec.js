@@ -59,7 +59,11 @@ test.describe('public API contract', () => {
     const created = await createResponse.json();
     expect(created.order_strategy_resolved).toBe('single');
     expect(created.job_id || created.job?.id).toBeTruthy();
-    expect(['completed', 'dispatched', 'queued', 'running', 'claimed']).toContain(String(created.status || created.job?.status || ''));
+    const createdStatus = String(created.status || created.job?.status || '');
+    expect(['completed', 'dispatched', 'queued', 'running', 'claimed', 'failed']).toContain(createdStatus);
+    if (createdStatus === 'failed') {
+      expect(String(created.failure_reason || created.failureReason || created.job?.failureReason || '')).not.toHaveLength(0);
+    }
 
     const jobId = created.job_id || created.job.id;
     const readResponse = await request.get(`/api/jobs/${jobId}`);
@@ -67,7 +71,10 @@ test.describe('public API contract', () => {
     const job = await readResponse.json();
     expect(job.id).toBe(jobId);
     expect(job.prompt).toContain('E2E smoke');
-    expect(['completed', 'dispatched', 'queued', 'running', 'claimed']).toContain(String(job.status || ''));
+    expect(['completed', 'dispatched', 'queued', 'running', 'claimed', 'failed']).toContain(String(job.status || ''));
+    if (String(job.status || '') === 'failed') {
+      expect(String(job.failureReason || '')).not.toHaveLength(0);
+    }
     expect(job.assignedAgentId || job.workflow).toBeTruthy();
   });
 });

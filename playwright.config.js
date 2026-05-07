@@ -28,7 +28,7 @@ export default defineConfig({
   webServer: useManagedLocalServer ? {
     command: 'node server.js',
     url: configuredBaseUrl,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
     env: {
       ...process.env,
@@ -40,6 +40,7 @@ export default defineConfig({
       ALLOW_DEV_API: '1',
       EXPOSE_JOB_SECRETS: '1',
       SESSION_SECRET: process.env.SESSION_SECRET || 'playwright-e2e-session-secret',
+      E2E_AUTH_SECRET: process.env.E2E_AUTH_SECRET || 'playwright-e2e-auth-secret',
       STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || 'sk_test_playwright_e2e',
       STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || 'whsec_playwright_e2e',
       STRIPE_DEFAULT_CURRENCY: process.env.STRIPE_DEFAULT_CURRENCY || 'USD',
