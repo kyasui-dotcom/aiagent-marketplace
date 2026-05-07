@@ -699,6 +699,44 @@ assert.equal(asyncWorkflowTaskOrder.includes('teardown'), false, 'CMO workflow s
 assert.notEqual(asyncDataRun?.agentName, 'RESEARCH TEAM LEADER', 'data_analysis should use the data specialist instead of a research leader');
 assert.ok(asyncWorkflowFirstState.body.job.workflow.statusCounts.completed >= 2, 'leader handoff should release eligible built-in specialists after the leader completes');
 
+const ambiguousWorkflowWaits = [];
+const ambiguousWorkflowPrompt = 'CMOとして、https://aiagent-marketplace.net の集客を実行まで。対象はAIツールを使う開発者と小規模SaaS創業者。目標は30日でGitHubログインとエージェント登録を増やすこと。現状は流入が少なく、広告費なし。GA4やSearch Consoleはなし、営業資料なし。納品は媒体プラン、投稿/掲載コピー、承認パケット。最後の実行フェイズはできる限りの複数アクションをする。';
+const ambiguousWorkflow = await request('/api/jobs', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    parent_agent_id: 'qa-runner',
+    task_type: 'cmo_leader',
+    prompt: ambiguousWorkflowPrompt,
+    order_strategy: 'multi',
+    async_dispatch: true,
+    skip_intake: true,
+    budget_cap: 500
+  })
+}, { waitUntilPromises: ambiguousWorkflowWaits, env: qaSearchEnv });
+assert.equal(ambiguousWorkflow.status, 201);
+await Promise.allSettled(ambiguousWorkflowWaits);
+const ambiguousWorkflowState = await request(`/api/jobs/${ambiguousWorkflow.body.workflow_job_id}`, {}, { env: qaSearchEnv });
+assert.equal(ambiguousWorkflowState.status, 200);
+const ambiguousWorkflowRuns = ambiguousWorkflowState.body.job.workflow.childRuns;
+const ambiguousWorkflowTaskOrder = ambiguousWorkflowRuns.map((run) => run.taskType);
+const ambiguousWorkflowActionTasks = ['directory_submission', 'x_post', 'reddit', 'indie_hackers', 'acquisition_automation']
+  .filter((task) => ambiguousWorkflowTaskOrder.includes(task));
+assert.equal(ambiguousWorkflowTaskOrder.includes('data_analysis'), false, 'CMO workflow should skip data layer when GA4/Search Console are explicitly unavailable');
+assert.ok(ambiguousWorkflowTaskOrder.includes('research'), 'ambiguous CMO execution should still collect one research layer');
+assert.ok(ambiguousWorkflowTaskOrder.includes('media_planner'), 'ambiguous CMO execution should run Media Planner before action');
+assert.ok(ambiguousWorkflowTaskOrder.some((task) => ['writing', 'seo_gap', 'landing'].includes(task)), 'ambiguous CMO execution should prepare copy/assets before action');
+assert.ok(ambiguousWorkflowActionTasks.length >= 2, 'ambiguous CMO execution should include multiple approval-gated action candidates');
+assert.ok(
+  ambiguousWorkflowTaskOrder.indexOf('media_planner') < Math.min(...ambiguousWorkflowActionTasks.map((task) => ambiguousWorkflowTaskOrder.indexOf(task))),
+  'Media Planner should precede ambiguous action candidates'
+);
+assert.ok(
+  ambiguousWorkflowRuns.some((run) => run.sequencePhase === 'checkpoint')
+  && ambiguousWorkflowRuns.some((run) => run.sequencePhase === 'action'),
+  'ambiguous CMO execution should include a checkpoint before final action phase'
+);
+
 const qaStorage = createD1LikeStorage(env.MY_BINDING, { allowInMemory: true, stateCacheTtlMs: 0 });
 await qaStorage.mutate(async (draft) => {
   draft.jobs.push(

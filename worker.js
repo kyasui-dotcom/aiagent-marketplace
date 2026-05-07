@@ -895,6 +895,7 @@ function openChatIntentSystemPrompt(userLanguage = 'English', uiLabels = WORK_OR
     'Bias toward execution only after the target, outcome, and enough context are known. The unit cost is low, but do not create vague work orders that hide missing business context.',
     'For growth/marketing/acquisition/team-leader requests such as "集客して", "売上を増やしたい", "grow users", or "marketing help", ask a clarifying question unless product/business URL, target customer, desired outcome, source materials or real-data status, and major constraints are available from conversation_context or prepared_brief.',
     'When action is ask_clarifying_question for a Team Leader or growth request, fill intake_questions with 2-4 adaptive questions a good leader would ask before proposing. Do not repeat intake after the user answers once; missing GA4/Search Console/SNS/source data should become connector or URL-sharing instructions and assumptions in the order brief. Prefer product/service URL, target customer, conversion outcome, available data/connectors, and delivery format. If not a leader intake, intake_questions should be empty.',
+    'For CMO/growth requests that ask for external execution or as many actions as possible but do not name the channels, prepare an order that runs Media Planner and preparation work before real action; require channel, copy, account, connector, and stop-rule approval before any external write.',
     'If the latest message is imperative/action-oriented ("do it", "please handle", "調べて", "作って", "発注したい"), set action to prepare_order unless safety or missing target/business context makes execution unreliable.',
     'If enough context exists to hand work to an agent, set action to prepare_order and return a polished CAIt order brief in order_brief.',
     'If the user wants to proceed with the previous prepared brief, set action to use_previous_brief and return a polished version of prepared_brief in order_brief.',
@@ -10521,7 +10522,7 @@ function normalizeOrderStrategy(value = '') {
   return 'auto';
 }
 
-const WORKFLOW_EXTERNAL_ACTION_REQUEST_PATTERN = /(external connector|external execution|connector handoff|connector execution|oauth|publish(?:ing)?|post(?:ing)?|send(?:ing)?|schedule(?:ing)?|execute(?: the)? action|run through action|through to action|through execution|complete through execution|action handoff|action packet|plan\s*(?:and|&)\s*do|plan\s+then\s+execute|not\s+just\s+plan|execute\s+too|実行反映|実行まで|反映まで|アクションまで|actionまで|投稿まで|公開まで|送信まで|配信まで|掲載まで|計画して実行|実行も|やるところまで|実際に.*(?:投稿|公開|送信|配信|掲載|反映|実行)|(?:x|twitter|ツイッター).*(?:投稿|ポスト|スレッド)|(?:メール|gmail).*(?:送信|配信|スケジュール)|(?:github|ギットハブ).*(?:pr|pull request|プルリク|反映))/i;
+const WORKFLOW_EXTERNAL_ACTION_REQUEST_PATTERN = /(external connector|external execution|connector handoff|connector execution|oauth|publish(?:ing)?|post(?:ing)?|send(?:ing)?|schedule(?:ing)?|execute(?: the)? action|run through action|through to action|through execution|complete through execution|action handoff|action packet|plan\s*(?:and|&)\s*do|plan\s+then\s+execute|not\s+just\s+plan|execute\s+too|実行反映|実行まで|反映まで|アクションまで|actionまで|投稿まで|公開まで|送信まで|配信まで|掲載まで|納品まで|完走|最後まで|計画して実行|実行も|やるところまで|実際に.*(?:投稿|公開|送信|配信|掲載|反映|実行)|(?:x|twitter|ツイッター).*(?:投稿|ポスト|スレッド)|(?:メール|gmail).*(?:送信|配信|スケジュール)|(?:github|ギットハブ).*(?:pr|pull request|プルリク|反映))/i;
 
 function workflowHumanActionIntentText(value = '') {
   return String(value || '')
@@ -10545,15 +10546,45 @@ function defaultCmoActionTaskFromText(text = '') {
   return '';
 }
 
+function cmoExplicitActionChannelRequested(prompt = '') {
+  const text = String(prompt || '').trim();
+  return /(x\.com|(?:^|[^a-z0-9])x(?:\s+post|\s+posts|\s+thread)?(?=$|[^a-z0-9])|twitter|tweet|x投稿|ツイッター|instagram|insta|ig\b|インスタ|reddit|subreddit|レディット|indie\s*hackers|indiehackers|インディーハッカー|directory submission|directory listing|掲載媒体|媒体掲載|無料掲載|ディレクトリ掲載|gbp|google business profile|サイテーション|citation|meo|email ops|email campaign|newsletter|gmail|send email|cold\s*email|outbound|営業メール|メール配信|メルマガ|acquisition automation|獲得自動化|集客自動化)/i.test(text);
+}
+
 function cmoSourceLayerPreferencesFromText(text = '') {
   const safe = String(text || '').trim();
   const tasks = [];
   const push = (task) => {
     if (task && !tasks.includes(task)) tasks.push(task);
   };
-  if (/(ga4|gsc|search console|google analytics|analytics|kpi|dashboard|cohort|funnel|metrics|アクセス解析|データ分析|計測|指標|登録率|cv率|サチコ)/i.test(safe)) push('data_analysis');
+  const noDataSignal = /(?:ga4|gsc|search console|google analytics|analytics|crm|csv|data|metrics|データ|アクセス解析|計測|指標|サチコ|search console)[^\n。.!?]{0,40}(?:なし|ない|未接続|未導入|使えない|無し|no data|none|not connected|unavailable)|(?:なし|ない|未接続|未導入|no data|none|not connected|unavailable)[^\n。.!?]{0,40}(?:ga4|gsc|search console|google analytics|analytics|crm|csv|data|metrics|データ|アクセス解析|計測|指標|サチコ|search console)/i.test(safe);
+  if (!noDataSignal && /(ga4|gsc|search console|google analytics|analytics|kpi|dashboard|cohort|funnel analysis|funnel|metrics|アクセス解析|データ分析|計測|指標|登録率|cv率|サチコ)/i.test(safe)) push('data_analysis');
   push(/(competitor|teardown|benchmark|positioning|vs\.?|競合|比較|ベンチマーク|ポジショニング)/i.test(safe) ? 'teardown' : 'research');
   return tasks;
+}
+
+function cmoBroadMultiActionIntentFromText(text = '') {
+  return /(as much as possible|multiple actions?|all possible|all channels|cross[-\s]?channel|do as many|できる限り|可能な限り|複数アクション|複数.*実行|最大限|全部|まとめて|実行フェイズ|できるだけ.*(?:実行|アクション)|複数.*(?:媒体|チャネル|施策))/i.test(String(text || ''));
+}
+
+function cmoPlannerCandidateActionTasksFromText(taskType = '', text = '') {
+  const task = String(taskType || '').trim().toLowerCase();
+  if (!['cmo_leader', 'free_web_growth_leader', 'agent_team_launch'].includes(task)) return [];
+  const source = String(text || '').trim();
+  if (!source || cmoExplicitActionChannelRequested(source)) return [];
+  if (!WORKFLOW_EXTERNAL_ACTION_REQUEST_PATTERN.test(source) && !cmoBroadMultiActionIntentFromText(source)) return [];
+  const actions = [];
+  const push = (name) => {
+    if (name && !actions.includes(name)) actions.push(name);
+  };
+  push('acquisition_automation');
+  if (cmoBroadMultiActionIntentFromText(source) || task === 'agent_team_launch') {
+    push('directory_submission');
+    push('x_post');
+    push('reddit');
+    push('indie_hackers');
+  }
+  return actions;
 }
 
 function cmoPreparationTasksForActions(actions = [], text = '') {
@@ -10642,6 +10673,8 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
   if (/acquisition automation|獲得自動化|集客自動化/i.test(text)) pushRequestedAction('acquisition_automation');
   if (/(email ops|email campaign|newsletter|gmail|mailbox|send email|メール配信|メルマガ)/i.test(text)) pushRequestedAction('email_ops');
   if (/(cold\s*email|outbound|sales email|営業メール|アウトバウンド|新規開拓|リード獲得)/i.test(text)) pushRequestedAction('cold_email');
+  const plannerCandidateActions = cmoWorkflow ? cmoPlannerCandidateActionTasksFromText(primary, text) : [];
+  for (const task of plannerCandidateActions) pushRequestedAction(task);
   const selected = [];
   const pushSelected = (task) => {
     const safe = String(task || '').trim().toLowerCase();
@@ -10701,7 +10734,7 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     }
   };
   if (cmoWorkflow) {
-    const planningPreferences = requestedActions.some((task) => ['directory_submission', 'citation_ops'].includes(task))
+    const planningPreferences = requestedActions.some((task) => ['directory_submission', 'citation_ops'].includes(task)) || plannerCandidateActions.length
       ? ['media_planner', 'growth']
       : ['growth', 'media_planner'];
     if (preferredCmoSourceTasks.includes('data_analysis')) fillLayer(1, ['data_analysis']);

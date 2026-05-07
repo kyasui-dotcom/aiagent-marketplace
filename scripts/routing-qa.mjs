@@ -37,9 +37,30 @@ assert.equal(isLargeAgentTeamIntent('', '広告費なしでWeb周りの無料施
 const freeFlow = inferTaskSequence('', '広告費なしでWeb周りの無料施策を全部やってほしい', { maxTasks: 11 });
 assert.equal(freeFlow[0], 'cmo_leader');
 assert.ok(freeFlow.includes('research'));
-assert.ok(freeFlow.includes('growth'));
+assert.ok(freeFlow.includes('media_planner'));
 assert.ok(freeFlow.some((task) => ['list_creator', 'seo_gap', 'landing', 'writing', 'writer'].includes(task)));
-assert.equal(freeFlow.some((task) => ['x_post', 'instagram', 'reddit', 'indie_hackers', 'directory_submission'].includes(task)), false);
+assert.ok(freeFlow.some((task) => ['x_post', 'reddit', 'indie_hackers', 'directory_submission', 'acquisition_automation'].includes(task)));
+assert.equal(freeFlow.includes('data_analysis'), false);
+
+const ambiguousCmoActionPrompt = 'CMOとして、https://aiagent-marketplace.net の集客を実行まで。対象はAIツールを使う開発者と小規模SaaS創業者。目標は30日でGitHubログインとエージェント登録を増やすこと。現状は流入が少なく、広告費なし。GA4やSearch Consoleはなし、営業資料なし。納品は媒体プラン、投稿/掲載コピー、承認パケット。最後の実行フェイズはできる限りの複数アクションをする。';
+const ambiguousCmoActionIntake = buildIntakeClarification({
+  task_type: 'cmo_leader',
+  prompt: ambiguousCmoActionPrompt
+}, { taskType: 'cmo_leader' });
+assert.equal(ambiguousCmoActionIntake, null);
+const ambiguousCmoActionFlow = inferTaskSequence('cmo_leader', ambiguousCmoActionPrompt, { maxTasks: 14 });
+assert.equal(ambiguousCmoActionFlow[0], 'cmo_leader');
+assert.equal(ambiguousCmoActionFlow.includes('data_analysis'), false);
+assert.ok(ambiguousCmoActionFlow.includes('research'));
+assert.ok(ambiguousCmoActionFlow.includes('media_planner'));
+assert.ok(ambiguousCmoActionFlow.indexOf('research') < ambiguousCmoActionFlow.indexOf('media_planner'));
+assert.ok(ambiguousCmoActionFlow.some((task) => ['writing', 'seo_gap', 'landing'].includes(task)));
+const ambiguousCmoActionIndexes = ambiguousCmoActionFlow
+  .map((task, index) => ['directory_submission', 'x_post', 'reddit', 'indie_hackers', 'acquisition_automation'].includes(task) ? index : -1)
+  .filter((index) => index >= 0);
+assert.ok(ambiguousCmoActionIndexes.length >= 2);
+assert.ok(ambiguousCmoActionFlow.indexOf('media_planner') < Math.min(...ambiguousCmoActionIndexes));
+assert.ok(inferTaskSequence('cmo_leader', 'GA4とSearch Consoleを分析して登録率を改善する計画を作って', { maxTasks: 10 }).includes('data_analysis'));
 
 const cmoActionFlow = inferTaskSequence('cmo_leader', 'CMOスタートで外部コネクターまで実行し、X投稿とディレクトリ掲載のアクションまで完走したい', { maxTasks: 14 });
 assert.equal(isCmoExternalExecutionIntent('cmo_leader', '外部コネクターまで実行したい'), true);
@@ -68,7 +89,8 @@ assert.ok(launchFlow.includes('indie_hackers'));
 const explicitLaunchFlow = inferTaskSequence('agent_team_launch', 'Launch CAIt across all channels', { maxTasks: 11, expand: false });
 assert.equal(explicitLaunchFlow[0], 'cmo_leader');
 assert.ok(explicitLaunchFlow.includes('research'));
-assert.ok(explicitLaunchFlow.includes('growth'));
+assert.ok(explicitLaunchFlow.includes('media_planner'));
+assert.ok(explicitLaunchFlow.some((task) => ['directory_submission', 'x_post', 'reddit', 'indie_hackers'].includes(task)));
 
 const ctoFlow = inferTaskSequence('cto_leader', 'Fix a GitHub repo bug and send a pull request', { maxTasks: 6 });
 assert.equal(ctoFlow[0], 'cto_leader');
