@@ -65,9 +65,9 @@ function chatEngineConversationOwner(response = {}, options = {}) {
 export function chatEngineBuildIntakeState(response = {}, originalPrompt = '', options = {}) {
   const responseIntake = response?.intake && typeof response.intake === 'object' ? response.intake : {};
   const questions = Array.isArray(response.questions)
-    ? response.questions.filter(Boolean).slice(0, 8)
+    ? response.questions.filter(Boolean).slice(0, 4)
     : Array.isArray(responseIntake.questions)
-      ? responseIntake.questions.filter(Boolean).slice(0, 8)
+      ? responseIntake.questions.filter(Boolean).slice(0, 4)
       : [];
   const prompt = String(
     responseIntake.originalPrompt
@@ -109,6 +109,13 @@ export function chatEngineBuildIntakeState(response = {}, originalPrompt = '', o
 export function chatEngineBuildIntakeCombinedPrompt(intake = {}, answer = '', options = {}) {
   const original = String(intake?.originalPrompt || intake?.original_prompt || options.originalPrompt || '').trim();
   const clarification = String(answer || '').trim();
+  const connectorContext = String(
+    options.connectorContext
+    || options.appContextPrompt
+    || intake?.connectorContext
+    || intake?.appContextPrompt
+    || ''
+  ).trim();
   const lines = [
     'Original request:',
     original,
@@ -116,6 +123,13 @@ export function chatEngineBuildIntakeCombinedPrompt(intake = {}, answer = '', op
     'User clarification:',
     clarification
   ];
+  if (connectorContext) {
+    lines.push(
+      '',
+      'Attached connector context:',
+      connectorContext
+    );
+  }
   if (options.includeInstruction !== false) {
     lines.push(
       '',

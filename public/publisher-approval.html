@@ -8,8 +8,8 @@
   <meta name="robots" content="noindex,follow" />
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
-  <link rel="stylesheet" href="/app-console.css?v=20260505c" />
-  <script type="module" src="/publisher-approval.js?v=20260505d"></script>
+  <link rel="stylesheet" href="/app-console.css?v=20260507b" />
+  <script type="module" src="/publisher-approval.js?v=20260507b"></script>
 </head>
 <body>
   <main class="app-console-shell" aria-label="CAIt Publisher and Approval Studio">
@@ -28,21 +28,27 @@
         </div>
       </header>
       <div class="app-layout">
-        <aside class="side-nav" aria-label="Publisher sections">
-          <button class="active" type="button" data-section="posts">Content <span id="publisherPostsCount">0</span></button>
-          <button type="button" data-section="pages">Pages <span id="publisherPagesCount">0</span></button>
-          <button type="button" data-section="directory">Directory <span id="publisherDirectoryCount">0</span></button>
-          <button type="button" data-section="approval">Approval queue <span id="publisherApprovalCount">0</span></button>
-          <button type="button" data-section="settings">Header / footer <span id="publisherSettingsCount">0</span></button>
+        <aside class="side-nav" aria-label="Publishing destinations">
+          <div class="side-nav-head">
+            <span>Destinations</span>
+            <strong id="publisherDestinationCount">0</strong>
+          </div>
+          <div class="destination-nav" id="destinationNav"></div>
         </aside>
         <section class="workspace">
           <div class="workspace-head">
             <div>
-              <span class="kicker">Content, approval, and publish handoff</span>
-              <h1>Review what goes outside CAIt before it executes.</h1>
-              <p>Reduce publishing risk by approving content, directory submissions, and PR-ready changes before any external action runs.</p>
+              <span class="kicker">Global publishing operations</span>
+              <h1>Manage every destination before anything goes live.</h1>
+              <p>Review articles, pages, listings, and partner submissions by destination, market, and locale before CAIt routes execution.</p>
             </div>
             <div class="toolbar">
+              <select id="workSelect" aria-label="Work scope">
+                <option value="current">Current work</option>
+                <option value="all">All imported work</option>
+                <option value="approved">Approved only</option>
+                <option value="needs_review">Needs review</option>
+              </select>
               <select id="handoffTargetSelect" aria-label="Handoff target">
                 <option value="seo_gap">SEO Agent</option>
                 <option value="cmo_leader">CMO Leader</option>
@@ -52,9 +58,68 @@
             </div>
           </div>
 
+          <section class="workflow-strip" aria-label="Publisher workflow">
+            <div class="workflow-step current" id="publisherStepLoad">
+              <span class="step-index">1</span>
+              <span><strong>Choose destination</strong><span>Select the publication, channel, partner, or owned site.</span></span>
+            </div>
+            <div class="workflow-step" id="publisherStepApproval">
+              <span class="step-index">2</span>
+              <span><strong>Review item</strong><span>Check market, locale, copy, risk, and destination rules.</span></span>
+            </div>
+            <div class="workflow-step" id="publisherStepHandoff">
+              <span class="step-index">3</span>
+              <span><strong>Approve handoff</strong><span>Send the approved destination packet to CAIt or GitHub.</span></span>
+            </div>
+          </section>
+
+          <section class="metric-strip publisher-summary" aria-label="Publishing summary">
+            <article class="metric-card">
+              <span>Destinations</span>
+              <strong id="publisherDestinationMetric">0</strong>
+              <small>Publications, owned sites, channels, and partner listings.</small>
+            </article>
+            <article class="metric-card">
+              <span>Markets</span>
+              <strong id="publisherMarketMetric">0</strong>
+              <small>Regions or countries represented in the current packet.</small>
+            </article>
+            <article class="metric-card">
+              <span>Needs review</span>
+              <strong id="publisherReviewMetric">0</strong>
+              <small>Items waiting for approval or revision.</small>
+            </article>
+            <article class="metric-card">
+              <span>Approved</span>
+              <strong id="publisherApprovedMetric">0</strong>
+              <small>Ready for CAIt or repository handoff.</small>
+            </article>
+          </section>
+
+          <section class="panel publisher-controls" aria-label="Global publishing filters">
+            <div class="field-row">
+              <label for="marketFilterSelect">Market</label>
+              <select id="marketFilterSelect"></select>
+            </div>
+            <div class="field-row">
+              <label for="localeFilterSelect">Locale</label>
+              <select id="localeFilterSelect"></select>
+            </div>
+            <div class="field-row">
+              <label for="statusFilterSelect">Status</label>
+              <select id="statusFilterSelect">
+                <option value="all">All statuses</option>
+                <option value="needs_review">Needs review</option>
+                <option value="approved">Approved</option>
+                <option value="changes requested">Changes requested</option>
+                <option value="blocked">Blocked</option>
+              </select>
+            </div>
+          </section>
+
           <section class="editor-grid">
             <article class="panel">
-              <h2 id="listTitle">Content queue</h2>
+              <h2 id="listTitle">Destination queue</h2>
               <div class="item-list" id="contentList"></div>
             </article>
             <article class="panel">
@@ -63,6 +128,10 @@
                 <span class="status-pill pending" id="statusPill">needs approval</span>
               </div>
               <div class="field-grid">
+                <div class="field-row"><label for="destinationInput">Destination</label><input id="destinationInput" /></div>
+                <div class="field-row"><label for="marketInput">Market</label><input id="marketInput" placeholder="Global, US, EU, APAC..." /></div>
+                <div class="field-row"><label for="localeInput">Locale</label><input id="localeInput" placeholder="en, en-US, ja-JP..." /></div>
+                <div class="field-row"><label for="ownerInput">Owner</label><input id="ownerInput" placeholder="CMO, SEO, Partner manager..." /></div>
                 <div class="field-row"><label for="titleInput">Title</label><input id="titleInput" /></div>
                 <div class="field-row"><label for="slugInput">Slug / path</label><input id="slugInput" /></div>
                 <div class="field-row"><label for="metaInput">Meta description</label><textarea id="metaInput"></textarea></div>
@@ -111,7 +180,7 @@
           </section>
 
           <section class="split-main">
-            <article class="panel">
+            <article class="panel approval-table-panel">
               <h2>Approval queue</h2>
               <table class="data-table" id="approvalTable" aria-label="Approval queue"></table>
             </article>

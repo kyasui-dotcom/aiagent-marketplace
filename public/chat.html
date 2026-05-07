@@ -9,11 +9,21 @@
   <link rel="canonical" href="https://aiagent-marketplace.net/chat.html" />
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
-  <link rel="stylesheet" href="/chat.css?v=20260504b" />
-  <script type="module" src="/chat.js?v=20260505i"></script>
+  <link rel="stylesheet" href="/chat.css?v=20260507a" />
+  <script type="module" src="/chat.js?v=20260507f"></script>
 </head>
 <body>
   <main class="chatux-shell" aria-label="CAIt chat">
+    <aside class="chat-session-sidebar" id="chatSessionSidebar" aria-label="Chat sessions">
+      <div class="chat-session-head">
+        <div>
+          <strong>Chats</strong>
+          <span id="chatSessionStatus">Loading history...</span>
+        </div>
+        <button class="ghost-btn chat-session-new" id="newChatBtn" type="button">New</button>
+      </div>
+      <div class="chat-session-list" id="chatSessionList"></div>
+    </aside>
     <section class="chatux-panel">
       <header class="chatux-header">
         <a class="chatux-brand" href="/" aria-label="CAIt">
@@ -32,6 +42,7 @@
         </nav>
         <div class="chatux-header-tools" aria-label="CAIt tools">
           <button class="tool-icon-btn" id="openChatListBtn" type="button" title="Chat and order history" aria-label="Chat and order history">Chats</button>
+          <button class="tool-icon-btn" id="openScheduleBtn" type="button" title="Scheduled work" aria-label="Scheduled work">Clock</button>
           <button class="tool-icon-btn" id="openWorkerListBtn" type="button" title="Worker and agent list" aria-label="Worker and agent list">Workers</button>
           <button class="tool-icon-btn" id="openAppListBtn" type="button" title="Apps and reusable tools" aria-label="Apps and reusable tools">Apps</button>
           <button class="tool-icon-btn" id="openInfoBtn" type="button" title="Account and links" aria-label="Account and links">Info</button>
@@ -44,14 +55,15 @@
         <article class="message assistant">
           <div class="message-meta">CAIt</div>
           <div class="message-body">
-            何がしたいですか？
+            What do you want done?
           </div>
         </article>
       </section>
 
       <form class="composer" id="composer">
-        <textarea id="promptInput" rows="3" placeholder="例: サイトの集客を増やしたい"></textarea>
+        <textarea id="promptInput" rows="3" placeholder="Example: I want to improve website acquisition"></textarea>
         <div class="composer-actions">
+          <button class="ghost-btn schedule-composer-btn" id="openScheduleComposerBtn" type="button" title="Scheduled work" aria-label="Scheduled work">Schedule</button>
           <button class="ghost-btn" id="resetBtn" type="button">Reset</button>
           <button class="primary-btn" id="sendMessageBtn" type="submit">Send chat</button>
         </div>

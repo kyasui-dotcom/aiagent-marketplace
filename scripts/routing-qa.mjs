@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { DEFAULT_AGENT_SEEDS, agentTagsFromRecord, buildIntakeClarification, inferAgentTagsFromSignals, inferTaskSequence, inferTaskType, computeScore, isAgentTeamLaunchIntent, isBuiltInAgent, isCmoExternalExecutionIntent, isFreeWebGrowthIntent, isLargeAgentTeamIntent, optimizeOrderPromptForBroker } from '../lib/shared.js';
+import { prepareWorkOrderSeed } from '../public/work-intent-resolver.js';
 
 assert.equal(inferTaskType('', '料金計算ロジックのバグ修正'), 'code');
 assert.equal(inferTaskType('', '中古iPhone 13の買取比較'), 'research');
@@ -69,6 +70,13 @@ assert.equal(ctoFlow[0], 'cto_leader');
 assert.ok(ctoFlow.includes('code'));
 assert.ok(ctoFlow.includes('debug'));
 assert.ok(ctoFlow.includes('automation'));
+assert.equal(prepareWorkOrderSeed('CTO LeaderとしてSaaS全体設計とロールバック計画を作って').taskType, 'cto_leader');
+assert.equal(prepareWorkOrderSeed('Build Team LeaderとしてGitHub repoのバグ修正を分解して').taskType, 'build_team_leader');
+assert.equal(prepareWorkOrderSeed('i want to get new customers for my website').taskType, 'cmo_leader');
+assert.equal(prepareWorkOrderSeed('サイトの購入を増やしたい').taskType, 'cmo_leader');
+assert.equal(prepareWorkOrderSeed('write a blog post for my product').taskType, 'writing');
+assert.equal(prepareWorkOrderSeed('analyze GA4 and Search Console data').taskType, 'data_analysis');
+assert.equal(prepareWorkOrderSeed('create landing page hero copy').taskType, 'landing');
 assert.deepEqual(inferTaskSequence('retry_timeout_qa', 'timeout test', { maxTasks: 3, expand: false }), ['retry_timeout_qa']);
 
 const thinCmoIntake = buildIntakeClarification({
@@ -77,6 +85,7 @@ const thinCmoIntake = buildIntakeClarification({
 }, { taskType: 'cmo_leader' });
 assert.equal(thinCmoIntake.status, 'needs_input');
 assert.equal(thinCmoIntake.reason, 'leader_context_required');
+assert.ok(thinCmoIntake.questions.length <= 4, 'CMO intake should stay concise instead of asking a long questionnaire.');
 assert.ok(thinCmoIntake.missing_fields.includes('business_or_product'));
 assert.ok(thinCmoIntake.missing_fields.includes('source_data_context'));
 assert.ok(thinCmoIntake.questions.some((question) => question.includes('商材')));

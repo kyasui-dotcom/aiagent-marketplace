@@ -11,12 +11,16 @@ const els = {
   emailBtn: $('loginEmailBtn'),
   google: $('loginGoogleBtn'),
   github: $('loginGithubBtn'),
-  continueBtn: $('loginContinueBtn')
+  continueBtn: $('loginContinueBtn'),
+  trustNotice: $('loginTrustNotice')
 };
 
 let runtimeVisitorId = '';
 let authStatusChecked = false;
+let runtimeAuthBaseUrl = '';
+let runtimeUsesExternalAuth = false;
 const AUTH_STATUS_TIMEOUT_MS = 3500;
+const CAIT_TRUSTED_AUTH_ORIGIN = 'https://aiagent-marketplace.net';
 
 function safeString(value = '', max = 100) {
   return String(value ?? '')
@@ -59,6 +63,43 @@ function postLoginPath(value = '', fallback = '/') {
   } catch {
     return fallback;
   }
+}
+
+function originFromUrl(value = '') {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return '';
+  }
+}
+
+function isLoopbackOrigin(origin = window.location.origin) {
+  try {
+    const host = new URL(origin).hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  } catch {
+    return false;
+  }
+}
+
+function trustedAuthOrigin(status = {}) {
+  const candidate = originFromUrl(status?.authBaseUrl || '');
+  if (candidate && candidate.startsWith('https://')) return candidate;
+  if (isLoopbackOrigin()) return CAIT_TRUSTED_AUTH_ORIGIN;
+  return '';
+}
+
+function applyTrustedAuthOrigin(status = {}) {
+  runtimeAuthBaseUrl = trustedAuthOrigin(status);
+  runtimeUsesExternalAuth = Boolean(runtimeAuthBaseUrl && runtimeAuthBaseUrl !== window.location.origin);
+  if (els.trustNotice) {
+    els.trustNotice.hidden = false;
+    const label = runtimeUsesExternalAuth
+      ? `Sign-in opens ${runtimeAuthBaseUrl}.`
+      : 'You are on the official CAIt sign-in origin.';
+    els.trustNotice.querySelector('span').textContent = `${label} If Google shows an unverified-app warning for analytics access, use email login first and connect Google from the official CAIt domain after the consent screen is verified.`;
+  }
+  return runtimeUsesExternalAuth;
 }
 
 function currentRoute() {
@@ -121,17 +162,28 @@ async function track(event, meta = {}) {
 
 function buildAuthUrl(provider = 'google', route = currentRoute()) {
   const base = provider === 'github' ? '/auth/github' : '/auth/google';
-  const url = new URL(base, window.location.origin);
+  const url = new URL(base, runtimeAuthBaseUrl || window.location.origin);
   url.searchParams.set('return_to', postLoginPath(route.next));
   url.searchParams.set('login_source', route.source);
   url.searchParams.set('visitor_id', visitorId());
-  return `${url.pathname}${url.search}`;
+  return runtimeAuthBaseUrl && runtimeAuthBaseUrl !== window.location.origin
+    ? url.toString()
+    : `${url.pathname}${url.search}`;
+}
+
+function buildOfficialLoginUrl(route = currentRoute()) {
+  const url = new URL('/login', runtimeAuthBaseUrl || window.location.origin);
+  url.searchParams.set('next', postLoginPath(route.next));
+  url.searchParams.set('source', route.source);
+  url.searchParams.set('visitor_id', visitorId());
+  return url.toString();
 }
 
 function applyProviderAvailability(status = {}) {
-  const emailAvailable = Boolean(status?.emailConfigured);
-  const googleAvailable = Boolean(status?.googleConfigured);
-  const githubAvailable = Boolean(status?.githubConfigured || status?.githubAppConfigured);
+  const externalAuth = Boolean(runtimeUsesExternalAuth);
+  const emailAvailable = Boolean(status?.emailConfigured || externalAuth);
+  const googleAvailable = Boolean(status?.googleConfigured || externalAuth);
+  const githubAvailable = Boolean(status?.githubConfigured || status?.githubAppConfigured || externalAuth);
   if (els.emailInput) els.emailInput.disabled = !emailAvailable || !authStatusChecked || Boolean(status?.loggedIn);
   if (els.emailBtn) {
     els.emailBtn.hidden = !emailAvailable;
@@ -178,10 +230,13 @@ async function loadAuthStatus(route = currentRoute()) {
     const status = await response.json().catch(() => ({}));
     const nextPath = postLoginPath(route.next);
     authStatusChecked = true;
+    const usingExternalAuth = applyTrustedAuthOrigin(status);
     if (status?.loggedIn && els.status) {
       els.status.textContent = 'You are already signed in. Redirecting now.';
     } else if (els.status) {
-      els.status.textContent = 'Choose Google, GitHub, or email. After login, CAIt opens the requested chat workspace.';
+      els.status.textContent = usingExternalAuth
+        ? `Choose a provider. CAIt will open ${runtimeAuthBaseUrl} for trusted sign-in.`
+        : 'Choose Google, GitHub, or email. After login, CAIt opens the requested chat workspace.';
     }
     if (els.continueBtn) {
       els.continueBtn.hidden = !status?.loggedIn;
@@ -197,6 +252,7 @@ async function loadAuthStatus(route = currentRoute()) {
     await track('sign_in_required_shown', { source: `login_page:${route.source}`, status: 'visible' });
   } catch {
     authStatusChecked = true;
+    applyTrustedAuthOrigin({});
     showLoginPanel(true);
     if (els.emailInput) els.emailInput.disabled = false;
     if (els.emailBtn) {
@@ -220,17 +276,20 @@ async function loadAuthStatus(route = currentRoute()) {
 
 function bindProviderButton(button, provider, route = currentRoute()) {
   if (!button) return;
-  const targetUrl = buildAuthUrl(provider, route);
   button.onclick = () => {
     void track(`${provider}_login_started`, {
       source: `login_page:${route.source}`,
       action: route.next
     });
-    window.location.href = targetUrl;
+    window.location.href = buildAuthUrl(provider, route);
   };
 }
 
 async function requestEmailLink(route = currentRoute()) {
+  if (runtimeUsesExternalAuth) {
+    window.location.href = buildOfficialLoginUrl(route);
+    return;
+  }
   const email = safeString(els.emailInput?.value || '', 160).toLowerCase();
   const nextPath = postLoginPath(route.next);
   if (!email || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email)) {

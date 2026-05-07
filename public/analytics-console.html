@@ -8,8 +8,8 @@
   <meta name="robots" content="noindex,follow" />
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
-  <link rel="stylesheet" href="/app-console.css?v=20260505c" />
-  <script type="module" src="/analytics-console.js?v=20260505d"></script>
+  <link rel="stylesheet" href="/app-console.css?v=20260507a" />
+  <script type="module" src="/analytics-console.js?v=20260507c"></script>
 </head>
 <body>
   <main class="app-console-shell" aria-label="CAIt Analytics Console">
@@ -57,13 +57,28 @@
             </div>
           </div>
 
+          <section class="workflow-strip" aria-label="Analytics workflow">
+            <div class="workflow-step current" id="analyticsStepSources">
+              <span class="step-index">1</span>
+              <span><strong>Connect sources</strong><span>Choose a GA4 property or Search Console site.</span></span>
+            </div>
+            <div class="workflow-step" id="analyticsStepReport">
+              <span class="step-index">2</span>
+              <span><strong>Load report</strong><span>Fetch channel, query, page, and referral evidence.</span></span>
+            </div>
+            <div class="workflow-step" id="analyticsStepHandoff">
+              <span class="step-index">3</span>
+              <span><strong>Send to CAIt</strong><span>Pass the structured evidence packet to the selected leader.</span></span>
+            </div>
+          </section>
+
           <section class="split-main">
             <article class="panel">
               <div class="status-row">
                 <h2>Google sources</h2>
                 <div class="inline-actions">
-                  <button class="ghost-btn" id="connectGoogleBtn" type="button">Connect GA4</button>
-                  <button class="ghost-btn" id="connectSearchConsoleBtn" type="button">Connect Search Console</button>
+                  <a class="ghost-btn" id="connectGoogleBtn" data-google-connect-link="ga4" href="https://aiagent-marketplace.net/auth/google?action=analytics_connect&amp;return_to=%2Fanalytics-console.html&amp;login_source=analytics_console_ga4&amp;scope_group=ga4&amp;capabilities=google.read_ga4" target="_top">Connect GA4</a>
+                  <a class="ghost-btn" id="connectSearchConsoleBtn" data-google-connect-link="gsc" href="https://aiagent-marketplace.net/auth/google?action=analytics_connect&amp;return_to=%2Fanalytics-console.html&amp;login_source=analytics_console_gsc&amp;scope_group=gsc&amp;capabilities=google.read_gsc" target="_top">Connect Search Console</a>
                   <button class="ghost-btn" id="refreshGoogleSourcesBtn" type="button">Refresh sources</button>
                   <button class="ghost-btn" id="loadGoogleReportBtn" type="button">Load report</button>
                 </div>
@@ -80,6 +95,7 @@
                   <select id="ga4PropertySelect" aria-label="GA4 property">
                     <option value="">Connect Google and refresh sources</option>
                   </select>
+                  <input id="ga4PropertyInput" inputmode="numeric" autocomplete="off" placeholder="GA4 property ID, e.g. 123456789" aria-label="Manual GA4 property ID" />
                 </div>
               </div>
             </article>
@@ -102,14 +118,14 @@
           <section class="split-main">
             <article class="panel">
               <div class="status-row">
-                <h2 id="primaryTableTitle">Top search queries</h2>
+                <h2 id="primaryTableTitle">Channel acquisition</h2>
                 <span class="status-pill approved">leader-ready</span>
               </div>
               <table class="data-table" id="primaryTable" aria-label="Primary analytics table"></table>
             </article>
             <article class="panel">
-              <h2>Channel mix</h2>
-              <div class="chart-bars" id="channelChart" aria-label="Channel bar chart"></div>
+              <h2>Channel detail</h2>
+              <div class="chart-bars channel-detail" id="channelChart" aria-label="Channel detail"></div>
             </article>
           </section>
 

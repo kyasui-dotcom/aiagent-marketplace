@@ -1,55 +1,35 @@
 import { expect, test } from '@playwright/test';
-import { createHmac } from 'node:crypto';
-
-const externalBaseUrl = String(process.env.E2E_BASE_URL || '').trim();
-const liveMode = Boolean(externalBaseUrl) && !/^https?:\/\/(?:127\.0\.0\.1|localhost)(?::|\/|$)/i.test(externalBaseUrl);
-const canUseEmailAuth = !liveMode || Boolean(process.env.E2E_EMAIL_AUTH_SECRET);
-const emailAuthSecret = process.env.E2E_EMAIL_AUTH_SECRET || process.env.SESSION_SECRET || 'playwright-e2e-session-secret';
-
-function emailAuthToken(email, returnTo = '/chat') {
-  const payload = {
-    kind: 'email-auth',
-    email,
-    returnTo,
-    loginSource: 'playwright_chat_leader_handoff',
-    visitorId: `chat_leader_e2e_${Date.now().toString(36)}`,
-    exp: Date.now() + 20 * 60 * 1000
-  };
-  const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-  const signature = createHmac('sha256', emailAuthSecret).update(encoded).digest('base64url');
-  return `${encoded}.${signature}`;
-}
+import { authSkipReason, canUseAuth, chatResponseTimeout, openAuthenticatedChat } from './helpers/auth.js';
 
 async function openNewChat(page) {
-  const email = `chat-leader-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
-  await page.goto(`/auth/email/verify?token=${encodeURIComponent(emailAuthToken(email))}`, { waitUntil: 'domcontentloaded' });
-  await page.goto('/chat', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('#chatThread')).toBeVisible();
-  await expect(page.locator('#promptInput')).toBeVisible();
+  await openAuthenticatedChat(page, {
+    returnTo: '/chat',
+    loginSource: 'playwright_chat_leader_handoff'
+  });
 }
 
 test.describe('CAIt leader handoff chat', () => {
   test('keeps pause questions in chat instead of preparing or sending an order', async ({ page }) => {
-    test.skip(!canUseEmailAuth, 'Authenticated chat E2E requires E2E_EMAIL_AUTH_SECRET against an external target.');
+    test.skip(!canUseAuth, authSkipReason);
 
     await openNewChat(page);
 
     await page.locator('#promptInput').fill('集客したいです');
     await page.locator('#sendMessageBtn').click();
-    await expect(page.locator('#chatThread')).toContainText(/Answer what you can|回答/);
+    await expect(page.locator('#chatThread')).toContainText(/Answer what you can|分かる範囲で回答してください|実行前に確認したい内容/, { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText(/GA4|Search Console|サーチコンソール/);
     await expect(page.locator('#chatThread')).toContainText(/資料|sales deck|material/i);
-    await expect(page.locator('#chatThread')).toContainText('Nothing has been dispatched yet.');
+    await expect(page.locator('#chatThread')).toContainText(/Nothing has been dispatched yet\.|まだ実行も課金も発生していません/);
 
     await page.locator('#promptInput').fill('pause?');
     await page.locator('#sendMessageBtn').click();
-    await expect(page.locator('#chatThread')).toContainText(/No new order was created|発注外の会話/);
+    await expect(page.locator('#chatThread')).toContainText(/No new order was created|発注外の会話/, { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).not.toContainText('User clarification:');
     await expect(page.locator('#chatThread')).not.toContainText('Order accepted.');
   });
 
   test('hands broad marketing intent to CMO Leader and reaches terminal delivery in chat', async ({ page }) => {
-    test.skip(!canUseEmailAuth, 'Authenticated chat E2E requires E2E_EMAIL_AUTH_SECRET against an external target.');
+    test.skip(!canUseAuth, authSkipReason);
     test.setTimeout(150_000);
 
     const pageErrors = [];
@@ -61,12 +41,12 @@ test.describe('CAIt leader handoff chat', () => {
     await page.locator('#promptInput').fill('集客したいです');
     await page.locator('#sendMessageBtn').click();
 
-    await expect(page.locator('#activeLeaderStatus')).toContainText('Lead: CMO Leader');
+    await expect(page.locator('#activeLeaderStatus')).toContainText('Lead: CMO Leader', { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText('CMO Leader');
-    await expect(page.locator('#chatThread')).toContainText(/Answer what you can|回答/);
+    await expect(page.locator('#chatThread')).toContainText(/Answer what you can|分かる範囲で回答してください|実行前に確認したい内容/, { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText(/GA4|Search Console|サーチコンソール/);
     await expect(page.locator('#chatThread')).toContainText(/資料|sales deck|material/i);
-    await expect(page.locator('#chatThread')).toContainText('Nothing has been dispatched yet.');
+    await expect(page.locator('#chatThread')).toContainText(/Nothing has been dispatched yet\.|まだ実行も課金も発生していません/);
 
     await page.locator('#promptInput').fill([
       '1. autowifi-travel.com https://autowifi-travel.com/ is an eSIM ecommerce site.',
@@ -78,7 +58,7 @@ test.describe('CAIt leader handoff chat', () => {
     ].join('\n'));
     await page.locator('#sendMessageBtn').click();
 
-    await expect(page.locator('#chatThread')).toContainText('Lead: CMO Leader');
+    await expect(page.locator('#chatThread')).toContainText('Lead: CMO Leader', { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText('Task: cmo_leader');
     await expect(page.locator('#chatThread')).toContainText('Route: MULTI');
     await expect(page.getByRole('button', { name: 'Send order' })).toBeVisible();

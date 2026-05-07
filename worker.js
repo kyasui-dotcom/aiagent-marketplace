@@ -11,9 +11,11 @@ import {
   ORCHESTRATION_WATCHDOG_POLICY,
   leaderControlContractForTask,
   leaderActionLayerStart,
+  leaderSourceCollectionLayerTasks,
   leaderProtocolExtras,
   leaderTaskLayer,
   leaderTaskPhase,
+  leaderTaskRequiresSourceCollection,
   leaderTaskUsesWebSearch
 } from './lib/orchestration.js';
 import { GITHUB_ADAPTER_MARKER, adapterNextStepText, buildGithubAdapterPlan, createGithubBranch, createGithubPullRequest, fetchGithubBranchSha, fetchGithubRepoTree, fetchGithubTextFile, findKnownBrokerPath, upsertGithubTextFile } from './lib/github-adapter.js';
@@ -104,7 +106,7 @@ const SECURITY_HEADERS = {
     "object-src 'none'",
     "base-uri 'self'",
     "frame-ancestors 'none'",
-    "form-action 'self' https://github.com https://accounts.google.com https://twitter.com https://x.com https://checkout.stripe.com https://connect.stripe.com",
+    "form-action 'self' https://aiagent-marketplace.net https://www.aiagent-marketplace.net https://github.com https://accounts.google.com https://twitter.com https://x.com https://checkout.stripe.com https://connect.stripe.com",
     'upgrade-insecure-requests'
   ].join('; '),
   'referrer-policy': 'strict-origin-when-cross-origin',
@@ -222,6 +224,12 @@ function baseUrl(request, env) {
     || requestOrigin(request);
 }
 
+function baseUrlFromEnv(env) {
+  return normalizeBaseUrl(env?.PRIMARY_BASE_URL)
+    || normalizeBaseUrl(env?.BASE_URL)
+    || 'https://aiagent-marketplace.net';
+}
+
 function canonicalBrowserRedirect(request, env) {
   if (!['GET', 'HEAD'].includes(String(request.method || '').toUpperCase())) return null;
   const primary = normalizeBaseUrl(env?.PRIMARY_BASE_URL || env?.BASE_URL);
@@ -264,6 +272,11 @@ async function hmacSha256Base64Url(secret, value) {
   );
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(String(value || '')));
   return base64urlEncode(new Uint8Array(signature));
+}
+
+async function internalCronToken(env, cron = '', scheduledTime = Date.now()) {
+  const bucket = Math.floor(Number(scheduledTime || Date.now()) / 60_000);
+  return hmacSha256Base64Url(sessionSecretMaterial(env), `cron-workflow-completions:${String(cron || '')}:${bucket}`);
 }
 
 function base64urlDecode(value) {
@@ -439,7 +452,7 @@ const OPEN_CHAT_INTENT_SCHEMA = {
     intake_questions: {
       type: 'array',
       minItems: 0,
-      maxItems: 6,
+      maxItems: 4,
       items: { type: 'string' }
     },
     order_brief: { type: 'string' },
@@ -483,8 +496,8 @@ const LEADER_INTAKE_QUESTION_SCHEMA = {
     summary: { type: 'string' },
     questions: {
       type: 'array',
-      minItems: 3,
-      maxItems: 6,
+      minItems: 2,
+      maxItems: 4,
       items: { type: 'string' }
     }
   },
@@ -824,7 +837,7 @@ function normalizeOpenChatIntentResult(raw = {}, fallbackIntent = '', source = '
       ? (raw.intake_questions || raw.intakeQuestions)
         .map((question) => sanitizeOpenChatIntentText(question || '', 260, userLanguage))
         .filter(Boolean)
-        .slice(0, 6)
+        .slice(0, 4)
       : [],
     confidence: Math.max(0, Math.min(1, Number(raw.confidence || 0.5)))
   };
@@ -857,7 +870,7 @@ function openChatIntentSystemPrompt(userLanguage = 'English', uiLabels = WORK_OR
     'Examples that must be answer_in_chat: "pause?", "hold?", "status?", "what happened?", "これは発注？", "保留？", "今どこ？", "相談だけ".',
     'Bias toward execution only after the target, outcome, and enough context are known. The unit cost is low, but do not create vague work orders that hide missing business context.',
     'For growth/marketing/acquisition/team-leader requests such as "集客して", "売上を増やしたい", "grow users", or "marketing help", ask a clarifying question unless product/business URL, target customer, desired outcome, source materials or real-data status, and major constraints are available from conversation_context or prepared_brief.',
-    'When action is ask_clarifying_question for a Team Leader or growth request, fill intake_questions with 3-6 adaptive questions a good leader would ask before proposing. Prefer product/service URL, order-owner intent, source materials, real-data status, other data to read, constraints, and delivery format. If not a leader intake, intake_questions should be empty.',
+    'When action is ask_clarifying_question for a Team Leader or growth request, fill intake_questions with 2-4 adaptive questions a good leader would ask before proposing. Do not repeat intake after the user answers once; missing GA4/Search Console/SNS/source data should become connector or URL-sharing instructions and assumptions in the order brief. Prefer product/service URL, target customer, conversion outcome, available data/connectors, and delivery format. If not a leader intake, intake_questions should be empty.',
     'If the latest message is imperative/action-oriented ("do it", "please handle", "調べて", "作って", "発注したい"), set action to prepare_order unless safety or missing target/business context makes execution unreliable.',
     'If enough context exists to hand work to an agent, set action to prepare_order and return a polished CAIt order brief in order_brief.',
     'If the user wants to proceed with the previous prepared brief, set action to use_previous_brief and return a polished version of prepared_brief in order_brief.',
@@ -1738,7 +1751,7 @@ async function generateLeaderIntakeQuestionsWithOpenAi(body = {}, preliminary = 
             task_type: taskType,
             prompt,
             missing_fields: Array.isArray(preliminary?.missing_fields) ? preliminary.missing_fields.slice(0, 10) : [],
-            fallback_questions: Array.isArray(preliminary?.questions) ? preliminary.questions.slice(0, 6) : [],
+            fallback_questions: Array.isArray(preliminary?.questions) ? preliminary.questions.slice(0, 4) : [],
             selected_agent_name: String(body?.selected_agent_name || body?.selectedAgentName || '').slice(0, 120),
             input_counts: {
               url_count: Number(body?.url_count || body?.urlCount || 0),
@@ -1771,7 +1784,7 @@ async function buildIntakeClarificationWithAi(body = {}, options = {}, source = 
   const preliminary = buildIntakeClarification(body, options);
   if (!preliminary || preliminary.reason !== 'leader_context_required') return preliminary;
   const questions = await generateLeaderIntakeQuestionsWithOpenAi(body, preliminary, options.taskType || preliminary.inferred_task_type || body.task_type || body.taskType, source);
-  if (questions.length < 3) return preliminary;
+  if (questions.length < 2) return preliminary;
   return buildIntakeClarification(body, { ...options, dynamicIntakeQuestions: questions });
 }
 
@@ -1894,7 +1907,7 @@ async function googleAccessTokenForConnector(storage, env, login = '', user = nu
   const mergedToken = {
     ...token,
     refresh_token: refreshToken,
-    scope: token.scope || connector.scopes || googleOAuthScope(env)
+    scope: token.scope || connector.scopes || googleScopeForOAuthAction(env, 'analytics_connect')
   };
   let updatedConnector = connector;
   await storage.mutate(async (draft) => {
@@ -1921,16 +1934,22 @@ async function googleAccessTokenForConnector(storage, env, login = '', user = nu
 }
 
 async function googleAccessTokenForCurrent(storage, env, current = {}, connector = null) {
-  if (connector?.connected && connector?.accessTokenEnc) {
-    return googleAccessTokenForConnector(storage, env, current.login, current.user, current.authProvider, connector);
-  }
   const session = current?.session || null;
+  if (connector?.connected && connector?.accessTokenEnc) {
+    try {
+      return await googleAccessTokenForConnector(storage, env, current.login, current.user, current.authProvider, connector);
+    } catch (error) {
+      if (!(error?.code === 'connector_reauth_required' && sessionHasGoogleOauth(session) && String(session?.googleAccessToken || '').trim())) {
+        throw error;
+      }
+    }
+  }
   if (sessionHasGoogleOauth(session) && String(session?.googleAccessToken || '').trim()) {
     return {
       accessToken: String(session.googleAccessToken || ''),
       connector: {
         connected: true,
-        scopes: googleOAuthScope(env),
+        scopes: String(session?.googleScopes || connector?.scopes || googleScopeForOAuthAction(env, 'analytics_connect')),
         tokenExpiresAt: '',
         email: String(current?.googleIdentity?.email || session?.googleIdentity?.email || ''),
         providerUserId: String(current?.googleIdentity?.providerUserId || session?.googleIdentity?.providerUserId || '')
@@ -2908,21 +2927,7 @@ function googleConfigured(env) {
 }
 
 function googleOAuthScope(env) {
-  const configured = String(env?.GOOGLE_OAUTH_SCOPE || '').trim();
-  return configured || [
-    'openid',
-    'email',
-    'profile',
-    'https://www.googleapis.com/auth/analytics.readonly',
-    'https://www.googleapis.com/auth/webmasters.readonly',
-    'https://www.googleapis.com/auth/drive.readonly',
-    'https://www.googleapis.com/auth/documents.readonly',
-    'https://www.googleapis.com/auth/spreadsheets.readonly',
-    'https://www.googleapis.com/auth/presentations.readonly',
-    'https://www.googleapis.com/auth/calendar.readonly',
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/gmail.send'
-  ].join(' ');
+  return googleLoginScope(env);
 }
 
 function googleLoginScope(env) {
@@ -2930,34 +2935,186 @@ function googleLoginScope(env) {
   return configured || ['openid', 'email', 'profile'].join(' ');
 }
 
-function googleScopeForOAuthAction(env, action = 'login') {
-  return String(action || '').trim().toLowerCase() === 'link'
-    ? googleOAuthScope(env)
-    : googleLoginScope(env);
+function googleAnalyticsScope(env) {
+  const configured = String(env?.GOOGLE_ANALYTICS_OAUTH_SCOPE || '').trim();
+  return configured || [
+    'openid',
+    'email',
+    'profile',
+    'https://www.googleapis.com/auth/analytics.readonly',
+    'https://www.googleapis.com/auth/webmasters.readonly'
+  ].join(' ');
+}
+
+const GOOGLE_OAUTH_SCOPE_GROUPS = Object.freeze({
+  gsc: ['https://www.googleapis.com/auth/webmasters.readonly'],
+  ga4: ['https://www.googleapis.com/auth/analytics.readonly'],
+  drive: ['https://www.googleapis.com/auth/drive.readonly'],
+  docs: ['https://www.googleapis.com/auth/documents.readonly'],
+  sheets: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+  presentations: ['https://www.googleapis.com/auth/presentations.readonly'],
+  calendar_read: ['https://www.googleapis.com/auth/calendar.readonly'],
+  calendar_write: ['https://www.googleapis.com/auth/calendar'],
+  gmail_read: ['https://www.googleapis.com/auth/gmail.readonly'],
+  gmail_send: ['https://www.googleapis.com/auth/gmail.send']
+});
+
+function googleScopeGroupsForCapability(value = '') {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (normalized === 'google.read_gsc' || normalized === 'read_gsc' || normalized === 'gsc') return ['gsc'];
+  if (normalized === 'google.read_ga4' || normalized === 'read_ga4' || normalized === 'ga4') return ['ga4'];
+  if (normalized === 'google.read_drive' || normalized === 'read_drive' || normalized === 'drive') return ['drive'];
+  if (normalized === 'google.read_docs' || normalized === 'read_docs' || normalized === 'docs') return ['docs'];
+  if (normalized === 'google.read_sheets' || normalized === 'read_sheets' || normalized === 'sheets') return ['sheets'];
+  if (normalized === 'google.read_presentations' || normalized === 'read_presentations' || normalized === 'presentations' || normalized === 'slides') return ['presentations'];
+  if (normalized === 'google.read_calendar' || normalized === 'read_calendar' || normalized === 'calendar') return ['calendar_read'];
+  if (normalized === 'google.write_calendar' || normalized === 'google.create_meet' || normalized === 'write_calendar' || normalized === 'create_meet') return ['calendar_write'];
+  if (normalized === 'google.read_gmail' || normalized === 'read_gmail' || normalized === 'gmail') return ['gmail_read'];
+  if (normalized === 'google.send_gmail' || normalized === 'send_gmail' || normalized === 'gmail_send') return ['gmail_send'];
+  if (normalized === 'analytics' || normalized === 'analytics_connect') return ['gsc', 'ga4'];
+  return [];
+}
+
+function googleScopeGroupLabel(group = '') {
+  const normalized = String(group || '').trim().toLowerCase();
+  if (normalized === 'gsc') return 'Search Console';
+  if (normalized === 'ga4') return 'GA4';
+  if (normalized === 'drive') return 'Google Drive';
+  if (normalized === 'docs') return 'Google Docs';
+  if (normalized === 'sheets') return 'Google Sheets';
+  if (normalized === 'presentations') return 'Google Slides';
+  if (normalized === 'calendar' || normalized === 'calendar_read') return 'Google Calendar';
+  if (normalized === 'calendar_write') return 'Google Calendar write';
+  if (normalized === 'gmail' || normalized === 'gmail_read') return 'Gmail';
+  if (normalized === 'gmail_send') return 'Gmail send';
+  return normalized || 'Google';
+}
+
+function googleOAuthScopeGroupsFromUrl(url = null) {
+  const groups = new Set();
+  if (!url) return groups;
+  const values = [
+    ...url.searchParams.getAll('include'),
+    ...url.searchParams.getAll('includes'),
+    ...url.searchParams.getAll('google_scope'),
+    ...url.searchParams.getAll('google_scopes'),
+    ...url.searchParams.getAll('scope_group'),
+    ...url.searchParams.getAll('scope_groups'),
+    ...url.searchParams.getAll('capability'),
+    ...url.searchParams.getAll('capabilities'),
+    ...url.searchParams.getAll('required_capability'),
+    ...url.searchParams.getAll('required_capabilities')
+  ];
+  for (const value of values) {
+    for (const part of String(value || '').split(/[,\s]+/)) {
+      for (const group of googleScopeGroupsForCapability(part)) groups.add(group);
+    }
+  }
+  return groups;
+}
+
+function googleOAuthCapabilitiesFromGroups(groups = []) {
+  const capabilities = [];
+  for (const group of groups) {
+    if (group === 'gsc') capabilities.push('google.read_gsc');
+    else if (group === 'ga4') capabilities.push('google.read_ga4');
+    else if (group === 'drive') capabilities.push('google.read_drive');
+    else if (group === 'docs') capabilities.push('google.read_docs');
+    else if (group === 'sheets') capabilities.push('google.read_sheets');
+    else if (group === 'presentations') capabilities.push('google.read_presentations');
+    else if (group === 'calendar_read') capabilities.push('google.read_calendar');
+    else if (group === 'calendar_write') capabilities.push('google.write_calendar');
+    else if (group === 'gmail_read') capabilities.push('google.read_gmail');
+    else if (group === 'gmail_send') capabilities.push('google.send_gmail');
+  }
+  return [...new Set(capabilities)];
+}
+
+function googleScopedOAuthScope(env, groups = []) {
+  const scopes = new Set(['openid', 'email', 'profile']);
+  for (const group of groups) {
+    for (const scope of GOOGLE_OAUTH_SCOPE_GROUPS[group] || []) scopes.add(scope);
+  }
+  return [...scopes].join(' ');
+}
+
+function googleConnectorScopeSet(connector = null) {
+  return new Set(String(connector?.scopes || '')
+    .split(/\s+/)
+    .map((scope) => String(scope || '').trim().toLowerCase())
+    .filter(Boolean));
+}
+
+function googleConnectorHasScopeGroup(connector = null, group = '') {
+  const normalized = String(group || '').trim().toLowerCase();
+  const required = GOOGLE_OAUTH_SCOPE_GROUPS[normalized] || [];
+  if (!required.length) return true;
+  const scopes = googleConnectorScopeSet(connector);
+  if (!scopes.size) return false;
+  return required.some((scope) => scopes.has(String(scope || '').toLowerCase()));
+}
+
+function missingGoogleScopeGroups(connector = null, groups = []) {
+  return [...new Set((groups || []).map((group) => String(group || '').trim().toLowerCase()).filter(Boolean))]
+    .filter((group) => !googleConnectorHasScopeGroup(connector, group));
+}
+
+function googleScopeGroupForAssetInclude(group = '') {
+  const normalized = String(group || '').trim().toLowerCase();
+  if (normalized === 'calendar') return 'calendar_read';
+  if (normalized === 'gmail') return 'gmail_read';
+  return normalized;
+}
+
+function googleScopeForOAuthAction(env, action = 'login', url = null) {
+  const normalized = String(action || '').trim().toLowerCase();
+  if (normalized === 'login') return googleLoginScope(env);
+  const groups = googleOAuthScopeGroupsFromUrl(url);
+  if (normalized === 'analytics_connect' && !groups.size) {
+    groups.add('ga4');
+  }
+  if (['link', 'connect'].includes(normalized) && !groups.size) {
+    groups.add('ga4');
+  }
+  return googleScopedOAuthScope(env, groups);
 }
 
 function googlePromptForOAuthAction(action = 'login') {
-  return String(action || '').trim().toLowerCase() === 'link'
+  const normalized = String(action || '').trim().toLowerCase();
+  return ['link', 'connect', 'analytics_connect'].includes(normalized)
     ? 'select_account consent'
     : 'select_account';
 }
 
 function googleScopeList(env) {
-  return googleOAuthScope(env).split(/\s+/).map((item) => String(item || '').trim()).filter(Boolean);
+  return googleScopeForOAuthAction(env, 'analytics_connect').split(/\s+/).map((item) => String(item || '').trim()).filter(Boolean);
 }
 
 function xOAuthScopeLabel() {
-  return 'tweet.read tweet.write users.read offline.access';
+  return 'tweet.read users.read';
 }
 
 function githubPrivateRepoImportEnabled(env) {
   return String(env?.GITHUB_ALLOW_PRIVATE_REPO_IMPORT || '').trim() === '1';
 }
 
-function githubOAuthScope(env) {
+function githubOAuthScope(env, action = 'login', capabilities = []) {
   const configured = String(env?.GITHUB_OAUTH_SCOPE || '').trim();
-  if (configured) return configured;
-  return githubPrivateRepoImportEnabled(env) ? 'read:user repo' : 'read:user';
+  const requested = Array.isArray(capabilities) ? capabilities : String(capabilities || '').split(/[,\s]+/);
+  const needsRepo = requested.some((item) => /github\.(?:write_repo|write_pr|read_private_repo)|\brepo\b/i.test(String(item || '')))
+    || ['repo', 'private_repo', 'write_repo'].includes(String(action || '').trim().toLowerCase());
+  if (needsRepo) return configured || 'read:user repo';
+  return 'read:user';
+}
+
+function oauthCapabilitiesFromUrl(url = null) {
+  if (!url) return [];
+  return [
+    ...url.searchParams.getAll('capability'),
+    ...url.searchParams.getAll('capabilities'),
+    ...url.searchParams.getAll('required_capability'),
+    ...url.searchParams.getAll('required_capabilities')
+  ].flatMap((value) => String(value || '').split(/[,\s]+/)).map((item) => String(item || '').trim()).filter(Boolean);
 }
 
 function githubGrantedScopes(session) {
@@ -3509,25 +3666,12 @@ async function persistAccountForIdentity(storage, env, user, authProvider) {
 async function linkSessionIdentityToAccount(storage, env, targetLogin, user, authProvider) {
   let result = null;
   let signupCredits = null;
-  await storage.mutate(async (draft) => {
+  await mutateAccountByLogin(storage, targetLogin, async (draft) => {
     result = linkIdentityToAccountInState(draft, targetLogin, user, authProvider);
     if (result?.ok) {
       signupCredits = maybeGrantWelcomeCreditsForSignupInState(draft, result.account.login, { ...(user || {}), login: result.account.login }, authProvider, 0);
       result.account = accountSettingsForLogin(draft, result.account.login, user, authProvider);
       return;
-    }
-    if (result?.reason !== 'identity_already_linked' || !result?.linkedAccount?.login) return;
-    const merged = mergeAccountsInState(draft, result.linkedAccount.login, targetLogin);
-    result = {
-      ok: true,
-      merged: true,
-      sourceLogin: merged.sourceLogin,
-      targetLogin: merged.targetLogin,
-      account: accountSettingsForLogin(draft, targetLogin, user, authProvider)
-    };
-    if (result?.account?.login) {
-      signupCredits = maybeGrantWelcomeCreditsForSignupInState(draft, result.account.login, { ...(user || {}), login: result.account.login }, authProvider, 0);
-      result.account = accountSettingsForLogin(draft, result.account.login, user, authProvider);
     }
   });
   if (signupCredits?.status === 'granted') {
@@ -4428,6 +4572,37 @@ function authorityRequestRequiresApproval(request = null) {
       || request.requiredAccountSelection
   );
   const reason = String(request.reason || request.message || request.summary || '').trim();
+  const source = String(request.source || request.reason_code || request.reasonCode || '').trim().toLowerCase();
+  const channelCandidates = authorityStringList(
+    request.channel_candidates
+      || request.channelCandidates
+      || request.channels,
+    12,
+    60
+  );
+  const writeCapabilities = missingConnectorCapabilities.filter((item) => (
+    /(post|publish|send|write|submit|create|update|delete|calendar|gmail|email|x\.post|github\.write)/i.test(String(item || ''))
+    && !/^google\.read_/i.test(String(item || ''))
+  ));
+  if (
+    source === 'leader_execution_approval'
+    && explicitSelectionRequired
+    && !channelCandidates.length
+    && !writeCapabilities.length
+  ) {
+    return false;
+  }
+  const sourceOnlyConnectors = missingConnectors.length
+    && missingConnectors.every((item) => ['search', 'web_search', 'brave', 'ga4', 'google_analytics', 'search_console', 'gsc', 'analytics'].includes(String(item || '').trim().toLowerCase()));
+  if (
+    (source === 'search_connector_required' || sourceOnlyConnectors)
+    && !missingConnectorCapabilities.length
+    && !requiredGoogleSources.length
+    && !explicitSelectionRequired
+    && !/(approval|approve|publish|send|post|承認|投稿|送信)/i.test(reason)
+  ) {
+    return false;
+  }
   return Boolean(
     missingConnectors.length
     || missingConnectorCapabilities.length
@@ -4659,6 +4834,11 @@ function synthesizeAuthorityRequestFromDelivery(job = {}, agent = null) {
   const ownerLabel = agentName || (leaderLike ? 'Team Leader' : 'CAIt');
   const requireChannel = leaderLike && /(connector|handoff|publish|posting|send|schedule|external|投稿|送信|配信)/i.test(text);
   if (!inferred.connectors.length && !inferred.capabilities.length && !requireChannel) return null;
+  const writeCapabilities = inferred.capabilities.filter((item) => (
+    /(post|publish|send|write|submit|create|update|delete|calendar|gmail|email|x\.post|github\.write)/i.test(String(item || ''))
+    && !/^google\.read_/i.test(String(item || ''))
+  ));
+  if (leaderLike && requireChannel && !inferred.channels.length && !writeCapabilities.length) return null;
   return normalizeAuthorityRequest({
     reason: leaderLike
       ? `${ownerLabel} paused external execution until the exact connector/channel action is approved.`
@@ -4717,8 +4897,36 @@ function syncJobAuthorityRequest(job = {}, agent = null) {
     'citation_ops'
   ]);
   const maySynthesizeAuthority = !workflowChild || actionAuthorityTasks.has(task);
-  const request = normalizedExistingRequest || (maySynthesizeAuthority ? synthesizeAuthorityRequestFromDelivery(job, agent) : null);
-  if (!request) return null;
+  const preflight = job?.input?._broker?.agentPreflight && typeof job.input._broker.agentPreflight === 'object'
+    ? job.input._broker.agentPreflight
+    : null;
+  const preflightAuthorityStatus = String(preflight?.authorityStatus || preflight?.authority_status || '').trim().toLowerCase();
+  const preflightRequest = maySynthesizeAuthority && ['action_required', 'connector_required', 'approval_required', 'needs_action'].includes(preflightAuthorityStatus)
+    ? normalizeAuthorityRequest({
+        reason: preflight.warning || 'Connector approval is required before external execution.',
+        missing_connectors: preflight.missingConnectors || preflight.missing_connectors || [],
+        missing_connector_capabilities: preflight.missingConnectorCapabilities || preflight.missing_connector_capabilities || preflight.requiredConnectorCapabilities || preflight.required_connector_capabilities || [],
+        required_google_sources: [],
+        owner_label: String(job.workflowAgentName || agent?.name || '').trim() || 'CAIt',
+        source: 'agent_preflight',
+        required_channel_selection: ['x_post', 'instagram', 'reddit', 'indie_hackers'].includes(task),
+        channel_candidates: task === 'x_post' ? ['x'] : []
+      })
+    : null;
+  const request = normalizedExistingRequest || preflightRequest || (maySynthesizeAuthority ? synthesizeAuthorityRequestFromDelivery(job, agent) : null);
+  if (!request || !authorityRequestRequiresApproval(request)) {
+    if (report.authority_request || report.authorityRequest || report.action_required || report.actionRequired || report.executor_request || report.executorRequest) {
+      const cleanReport = { ...report };
+      delete cleanReport.authority_request;
+      delete cleanReport.authorityRequest;
+      delete cleanReport.action_required;
+      delete cleanReport.actionRequired;
+      delete cleanReport.executor_request;
+      delete cleanReport.executorRequest;
+      job.output.report = cleanReport;
+    }
+    return null;
+  }
   job.output.report = {
     ...report,
     authority_request: request
@@ -4757,23 +4965,26 @@ function normalizeCallbackPayload(body = {}) {
   const payload = body && typeof body === 'object' ? body : {};
   const status = String(payload.status || (payload.failure_reason || payload.error ? 'failed' : 'completed')).trim().toLowerCase();
   const normalizedStatus = status === 'failed' ? 'failed' : (isBlockedAgentResultStatus(status) ? 'blocked' : 'completed');
+  const reportCandidate = payload.report || payload.output || {
+    summary: payload.summary || (
+      normalizedStatus === 'failed'
+        ? 'Agent reported failure'
+        : (normalizedStatus === 'blocked' ? 'Agent is blocked pending approval or connector setup' : 'No report provided.')
+    )
+  };
+  const report = normalizeAgentReportPayload(payload, reportCandidate);
+  const failureReason = payload.failure_reason
+    || payload.failureReason
+    || payload.error
+    || (normalizedStatus === 'failed' ? (report.summary || payload.summary || 'Agent reported failure without a detailed reason.') : null);
   return {
     status: normalizedStatus,
-    report: normalizeAgentReportPayload(
-      payload,
-      payload.report || payload.output || {
-        summary: payload.summary || (
-          normalizedStatus === 'failed'
-            ? 'Agent reported failure'
-            : (normalizedStatus === 'blocked' ? 'Agent is blocked pending approval or connector setup' : 'No report provided.')
-        )
-      }
-    ),
+    report,
     files: Array.isArray(payload.files) ? payload.files : [],
     usage: normalizeUsageForBilling(payload.usage, 100),
     returnTargets: payload.return_targets || payload.returnTargets || ['chat', 'api', 'webhook'],
     externalJobId: payload.external_job_id || payload.remote_job_id || null,
-    failureReason: payload.failure_reason || payload.error || null
+    failureReason
   };
 }
 
@@ -4788,6 +4999,9 @@ function computeNextRetryAt(attempts, baseTime = Date.now()) {
 
 const DISPATCH_SCHEDULE_STALE_MS = 90_000;
 const BUILT_IN_DISPATCH_SCHEDULE_STALE_MS = 8 * 60 * 1000;
+const DISPATCH_SCHEDULE_TIMEOUT_MS = 10 * 60 * 1000;
+const COMPLETION_SWEEP_STALE_MS = 3 * 60 * 1000;
+const DEFAULT_WORKFLOW_DISPATCH_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function dispatchScheduleIsFresh(job, now = Date.now(), staleMs = DISPATCH_SCHEDULE_STALE_MS) {
   const status = String(job?.dispatch?.completionStatus || '').trim().toLowerCase();
@@ -4799,6 +5013,42 @@ function dispatchScheduleIsFresh(job, now = Date.now(), staleMs = DISPATCH_SCHED
 function dispatchScheduleIsFreshForAgent(job, agent, now = Date.now()) {
   const staleMs = sampleKindFromAgent(agent) ? BUILT_IN_DISPATCH_SCHEDULE_STALE_MS : DISPATCH_SCHEDULE_STALE_MS;
   return dispatchScheduleIsFresh(job, now, staleMs);
+}
+
+function dispatchExecutionIsFresh(job = {}, agent = null, now = Date.now()) {
+  const status = String(job?.dispatch?.completionStatus || '').trim().toLowerCase();
+  if (status !== 'dispatch_in_progress') return false;
+  const at = Date.parse(String(job?.dispatch?.dispatchInProgressAt || job?.dispatch?.lastAttemptAt || job?.dispatch?.dispatchRequestedAt || ''));
+  const deadlineMs = effectiveTimeoutDeadlineMs(job, agent) || DISPATCH_SCHEDULE_TIMEOUT_MS;
+  return Number.isFinite(at) && now - at < Math.max(DISPATCH_SCHEDULE_STALE_MS, deadlineMs);
+}
+
+function workflowDispatchMaxAgeMs(env = {}) {
+  const configured = Number(env?.WORKFLOW_DISPATCH_MAX_AGE_MS || env?.WORKFLOW_ACTIVE_DISPATCH_MAX_AGE_MS || 0);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_WORKFLOW_DISPATCH_MAX_AGE_MS;
+}
+
+function completionSweepStaleMs(env = {}) {
+  const configured = Number(env?.WORKFLOW_COMPLETION_SWEEP_STALE_MS || 0);
+  return Number.isFinite(configured) && configured > 0 ? configured : COMPLETION_SWEEP_STALE_MS;
+}
+
+function workflowDispatchQueue(env = {}) {
+  const queue = env?.WORKFLOW_DISPATCH_QUEUE;
+  return queue && typeof queue.send === 'function' ? queue : null;
+}
+
+function jobWithinDispatchAge(job = {}, env = {}, now = Date.now()) {
+  const activeAt = Math.max(
+    Date.parse(String(job.dispatch?.completionSweepRequestedAt || '')) || 0,
+    Date.parse(String(job.dispatch?.completionQueueRequestedAt || '')) || 0,
+    Date.parse(String(job.dispatch?.firstDispatchRequestedAt || '')) || 0,
+    Date.parse(String(job.dispatch?.dispatchRequestedAt || '')) || 0,
+    Date.parse(String(job.dispatch?.lastAttemptAt || '')) || 0,
+    Date.parse(String(job.startedAt || job.started_at || '')) || 0,
+    Date.parse(String(job.createdAt || job.created_at || '')) || 0
+  );
+  return activeAt > 0 && now - activeAt <= workflowDispatchMaxAgeMs(env);
 }
 
 function canRetryJob(job) {
@@ -4857,6 +5107,8 @@ async function authStatus(request, env) {
   return {
     loggedIn,
     authProvider: current?.authProvider || 'guest',
+    authBaseUrl: baseUrl(request, env),
+    currentOrigin: requestOrigin(request),
     emailConfigured: resendConfigured(env),
     githubConfigured: Boolean(githubClientId(env) && githubClientSecret(env)),
     googleConfigured: googleConfigured(env),
@@ -4980,6 +5232,40 @@ async function resolveWorkIntentRequest(storage, request) {
   };
 }
 
+function serverStructuredOrderBriefParts(value = '') {
+  const text = String(value || '').replace(/\r\n/g, '\n').trim();
+  const pick = (label) => {
+    const pattern = new RegExp(`(?:^|\\n)\\s*${label}:\\s*([\\s\\S]*?)(?=\\n\\s*(?:Task|Goal|Work split|Inputs|Constraints|Deliver|Output language|Acceptance):|$)`, 'i');
+    return String(text.match(pattern)?.[1] || '').trim();
+  };
+  return {
+    taskType: pick('Task').toLowerCase().replace(/[^a-z0-9_ -]+/g, '').replace(/\s+/g, '_'),
+    goal: pick('Goal'),
+    deliver: pick('Deliver')
+  };
+}
+
+function serverIsStructuredOrderBrief(value = '') {
+  const text = String(value || '').trim();
+  return Boolean(/^Task:\s+/im.test(text) && /(?:^|\n)\s*Goal:\s+/im.test(text) && /(?:^|\n)\s*Deliver:\s+/im.test(text));
+}
+
+function openChatIntentTaskTypeForPrepare(result = {}, prompt = '') {
+  const briefTask = serverStructuredOrderBriefParts(result.order_brief || result.orderBrief || '').taskType;
+  if (briefTask) return briefTask;
+  const intent = String(result.intent || '').trim();
+  if (intent === 'natural_business_growth' || intent === 'natural_marketing_launch') return 'cmo_leader';
+  if (intent === 'natural_idea_discovery') return 'research_team_leader';
+  if (intent === 'natural_entity_exploration') return 'research';
+  return String(result.task_type || result.taskType || '').trim().toLowerCase();
+}
+
+function prepareOrderSeedFromOpenChatIntent(result = {}, prompt = '', requestedStrategy = 'auto') {
+  const taskType = openChatIntentTaskTypeForPrepare(result, prompt) || '';
+  if (!taskType) return null;
+  return prepareWorkOrderSeed(prompt, requestedStrategy, { taskType });
+}
+
 async function prepareWorkOrderRequest(_storage, request, env = {}) {
   let body;
   try {
@@ -5011,10 +5297,103 @@ async function prepareWorkOrderRequest(_storage, request, env = {}) {
       reason: ''
     };
   }
-  const prepared = prepareWorkOrderSeed(prompt, requestedStrategy, {
-    taskType: body?.task_type || body?.taskType || body?.selected_task_type || body?.selectedTaskType || selectedAgentTaskType || '',
-    selectedAgentId
-  });
+  const explicitTaskType = String(body?.task_type || body?.taskType || body?.selected_task_type || body?.selectedTaskType || selectedAgentTaskType || '').trim();
+  const shouldUseOpenAiIntent = Boolean(!explicitTaskType && !selectedAgentId && !serverIsStructuredOrderBrief(prompt));
+  let prepared = null;
+  if (shouldUseOpenAiIntent) {
+    const authorization = await authorizeOpenChatIntentLlm(_storage, request, env);
+    if (!authorization.ok) {
+      return {
+        ok: false,
+        code: 'openai_intent_unavailable',
+        error: authorization.error || 'OpenAI intent classification is not available for this request.',
+        source: authorization.source || 'openai',
+        statusCode: authorization.statusCode || 503
+      };
+    }
+    const state = await _storage.getState();
+    const settings = appSettingsMap(state);
+    const uiLabels = orderUiLabelsFromAppSettings(settings);
+    const contextMarkdown = buildOpenChatRuntimeContextMarkdown(state, authorization.current || {}, {
+      prompt,
+      user_language: openChatIntentLanguage(prompt, body?.user_language || body?.userLanguage),
+      input_counts: body?.input_counts || body?.inputCounts || {}
+    }, uiLabels);
+    const intentResult = await classifyOpenChatIntent({
+      prompt,
+      fallback_intent: '',
+      prepared_brief: '',
+      conversation_context: body?.conversation_context || body?.conversationContext || [],
+      desired_output: 'Classify the user intent before any CAIt order draft. If enough context exists, return a structured order brief. If not, ask concise clarification questions.',
+      user_language: openChatIntentLanguage(prompt, body?.user_language || body?.userLanguage),
+      input_counts: body?.input_counts || body?.inputCounts || {}
+    }, env, {
+      allowOpenAiApiKeyFallback: authorization.allowOpenAiApiKeyFallback,
+      allowPlatformOpenAiApiKeyFallback: authorization.allowPlatformOpenAiApiKeyFallback,
+      contextMarkdown,
+      uiLabels
+    });
+    if (!intentResult?.ok) {
+      return {
+        ok: false,
+        code: 'openai_intent_failed',
+        error: intentResult?.error || 'OpenAI intent classification failed.',
+        source: intentResult?.source || 'openai',
+        statusCode: 503
+      };
+    }
+    const action = String(intentResult.action || '').trim();
+    prepared = prepareOrderSeedFromOpenChatIntent(intentResult, prompt, requestedStrategy);
+    if (action === 'answer_in_chat') {
+      return {
+        ok: true,
+        kind: 'chat',
+        status: 'chat_answer',
+        prompt,
+        source: intentResult.source || 'openai',
+        message: intentResult.chat_answer || intentResult.summary || 'OpenAI classified this as chat, not an order.'
+      };
+    }
+    if (action === 'ask_clarifying_question') {
+      const taskType = prepared?.taskType || openChatIntentTaskTypeForPrepare(intentResult, prompt) || 'research';
+      const dynamicQuestions = [
+        ...(Array.isArray(intentResult.intake_questions) ? intentResult.intake_questions : []),
+        intentResult.narrowing_question || ''
+      ].map((question) => String(question || '').trim()).filter(Boolean);
+      const clarification = buildIntakeClarification({
+        prompt,
+        task_type: taskType
+      }, { taskType, dynamicIntakeQuestions: dynamicQuestions });
+      return {
+        ok: true,
+        prompt,
+        ...(prepared || prepareWorkOrderSeed(prompt, requestedStrategy, { taskType })),
+        ...(clarification || {
+          status: 'needs_input',
+          needs_input: true,
+          reason: 'openai_clarification_required',
+          inferred_task_type: taskType,
+          questions: dynamicQuestions.slice(0, 4),
+          message: intentResult.summary || intentResult.narrowing_question || 'OpenAI needs one more clarification before preparing this order.'
+        }),
+        source: intentResult.source || 'openai'
+      };
+    }
+    if (!prepared) {
+      return {
+        ok: false,
+        code: 'openai_intent_missing_task',
+        error: 'OpenAI intent classification did not return a usable order task.',
+        source: intentResult.source || 'openai',
+        statusCode: 503
+      };
+    }
+  } else {
+    prepared = prepareWorkOrderSeed(prompt, requestedStrategy, {
+      taskType: explicitTaskType,
+      selectedAgentId
+    });
+  }
   const intakeClarification = await buildIntakeClarificationWithAi({
     prompt,
     task_type: prepared.taskType || 'research',
@@ -7309,6 +7688,7 @@ function linkedProvidersFromAccount(account = null) {
 }
 
 function mergeLinkedSession(baseSession = {}, patch = {}) {
+  const hasPatchField = (field) => Object.prototype.hasOwnProperty.call(patch, field);
   return {
     ...baseSession,
     ...patch,
@@ -7321,7 +7701,8 @@ function mergeLinkedSession(baseSession = {}, patch = {}) {
     githubAppUserAccessToken: patch.githubAppUserAccessToken || baseSession.githubAppUserAccessToken || '',
     githubApp: patch.githubApp || baseSession.githubApp || null,
     googleIdentity: patch.googleIdentity || baseSession.googleIdentity || null,
-    googleAccessToken: patch.googleAccessToken || baseSession.googleAccessToken || '',
+    googleAccessToken: hasPatchField('googleAccessToken') ? String(patch.googleAccessToken || '') : (baseSession.googleAccessToken || ''),
+    googleScopes: hasPatchField('googleScopes') ? String(patch.googleScopes || '') : String(baseSession.googleScopes || ''),
     linkedProviders: [...new Set([
       ...(Array.isArray(baseSession.linkedProviders) ? baseSession.linkedProviders : []),
       ...(Array.isArray(patch.linkedProviders) ? patch.linkedProviders : [])
@@ -7372,21 +7753,23 @@ function normalizeOAuthVisitorId(value = '') {
 
 async function oauthStartContext(request, env) {
   const url = new URL(request.url);
-  const explicitMode = String(url.searchParams.get('mode') || '').toLowerCase();
+  const explicitMode = String(url.searchParams.get('mode') || url.searchParams.get('action') || '').toLowerCase();
   const existingSession = await getSession(request, env);
-  const action = explicitMode === 'link' ? 'link' : 'login';
+  const action = ['link', 'connect', 'analytics_connect'].includes(explicitMode) ? explicitMode : 'login';
   return {
     url,
     existingSession,
     action,
     returnTo: normalizeLocalRedirectPath(request, env, url.searchParams.get('return_to') || '', '/'),
     loginSource: normalizeOAuthLoginSource(url.searchParams.get('login_source') || ''),
-    visitorId: normalizeOAuthVisitorId(url.searchParams.get('visitor_id') || '')
+    visitorId: normalizeOAuthVisitorId(url.searchParams.get('visitor_id') || ''),
+    googleScopeGroups: [...googleOAuthScopeGroupsFromUrl(url)]
   };
 }
 
 function shouldLinkOAuthCallback(cookieState = null, existingSession = null) {
-  return cookieState?.action === 'link';
+  const action = String(cookieState?.action || '').trim().toLowerCase();
+  return ['link', 'connect'].includes(action) || (action === 'analytics_connect' && hasOAuthBaseSession(existingSession));
 }
 
 function authSuccessRedirectPath(request, env, cookieState = null) {
@@ -7473,6 +7856,11 @@ async function handleLoginPageRequest(request, env) {
 
 function authFailureRedirectPath(request, env, code = 'auth_failed', cookieState = null) {
   const safeCode = String(code || 'auth_failed').trim() || 'auth_failed';
+  if (cookieState?.returnTo && ['link', 'connect', 'analytics_connect'].includes(String(cookieState?.action || '').trim().toLowerCase())) {
+    const returnUrl = new URL(authSuccessRedirectPath(request, env, cookieState), baseUrl(request, env));
+    returnUrl.searchParams.set('auth_error', safeCode);
+    return `${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`;
+  }
   if (cookieState?.action === 'login' && cookieState?.loginSource) {
     const loginUrl = new URL('/login', baseUrl(request, env));
     loginUrl.searchParams.set('auth_error', safeCode);
@@ -7506,6 +7894,52 @@ async function parseEmailAuthToken(env, raw = '') {
     email,
     returnTo: String(payload.returnTo || '/chat').trim() || '/chat',
     loginSource: String(payload.loginSource || 'login_page').trim().toLowerCase() || 'login_page',
+    visitorId: String(payload.visitorId || '').trim()
+  };
+}
+
+const DEFAULT_E2E_AUTH_EMAIL = 'e2e@aiagent-marketplace.net';
+
+function e2eAuthSecret(env) {
+  return String(env?.E2E_AUTH_SECRET || '').trim();
+}
+
+function e2eAuthAllowedEmails(env) {
+  const configured = String(env?.E2E_AUTH_ALLOWED_EMAILS || DEFAULT_E2E_AUTH_EMAIL)
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => validateEmailAddress(item));
+  return new Set(configured.length ? configured : [DEFAULT_E2E_AUTH_EMAIL]);
+}
+
+function decodeSignedE2ePayload(raw = '') {
+  const [payloadPart = ''] = String(raw || '').split('.');
+  if (!payloadPart) return null;
+  try {
+    return JSON.parse(Buffer.from(payloadPart, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function parseE2eAuthToken(env, raw = '') {
+  const secret = e2eAuthSecret(env);
+  if (!secret) return null;
+  const token = String(raw || '').trim();
+  const [payloadPart = '', signaturePart = ''] = token.split('.');
+  if (!payloadPart || !signaturePart) return null;
+  const expected = await hmacSha256Base64Url(secret, payloadPart);
+  if (!secretEquals(signaturePart, expected)) return null;
+  const payload = decodeSignedE2ePayload(token);
+  if (!payload || payload.kind !== 'e2e-auth') return null;
+  if (Number(payload.exp || 0) < Date.now()) return null;
+  const email = String(payload.email || '').trim().toLowerCase();
+  if (!validateEmailAddress(email)) return null;
+  if (!e2eAuthAllowedEmails(env).has(email)) return null;
+  return {
+    email,
+    returnTo: String(payload.returnTo || '/chat').trim() || '/chat',
+    loginSource: String(payload.loginSource || 'playwright_e2e').trim().toLowerCase() || 'playwright_e2e',
     visitorId: String(payload.visitorId || '').trim()
   };
 }
@@ -8092,15 +8526,17 @@ async function handleAuthStart(request, env) {
   }
   const { existingSession, action, returnTo, loginSource, visitorId } = await oauthStartContext(request, env);
   if (existingSession?.user && action === 'link' && sessionHasGithubOauth(existingSession)) return redirect(returnTo || '/');
-  if (existingSession?.user && action !== 'link') return redirect(returnTo || '/');
+  if (existingSession?.user && action === 'login') return redirect(returnTo || '/');
   const state = crypto.randomUUID();
   const callback = `${baseUrl(request, env)}/auth/github/callback`;
+  const url = new URL(request.url);
+  const requestedCapabilities = oauthCapabilitiesFromUrl(url);
   const githubUrl = new URL('https://github.com/login/oauth/authorize');
   githubUrl.searchParams.set('client_id', githubClientId(env));
   githubUrl.searchParams.set('redirect_uri', callback);
-  githubUrl.searchParams.set('scope', githubOAuthScope(env));
+  githubUrl.searchParams.set('scope', githubOAuthScope(env, action, requestedCapabilities));
   githubUrl.searchParams.set('state', state);
-  return redirectWithCookies(githubUrl.toString(), [await pushOAuthStateCookie(request, env, state, { provider: 'github-oauth', action, returnTo, loginSource, visitorId })]);
+  return redirectWithCookies(githubUrl.toString(), [await pushOAuthStateCookie(request, env, state, { provider: 'github-oauth', action, returnTo, loginSource, visitorId, requestedCapabilities })]);
 }
 
 async function handleAuthCallback(request, env) {
@@ -8214,20 +8650,20 @@ async function handleGoogleAuthStart(request, env) {
   if (!googleConfigured(env)) {
     return json({ error: 'Google OAuth is not configured yet. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.' }, 503);
   }
-  const { existingSession, action, returnTo, loginSource, visitorId } = await oauthStartContext(request, env);
-  if (existingSession?.user && action !== 'link') return redirect(returnTo || '/');
+  const { url, existingSession, action, returnTo, loginSource, visitorId, googleScopeGroups } = await oauthStartContext(request, env);
+  if (existingSession?.user && action === 'login') return redirect(returnTo || '/');
   const state = crypto.randomUUID();
   const callback = `${baseUrl(request, env)}/auth/google/callback`;
   const googleUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   googleUrl.searchParams.set('client_id', googleClientId(env));
   googleUrl.searchParams.set('redirect_uri', callback);
   googleUrl.searchParams.set('response_type', 'code');
-  googleUrl.searchParams.set('scope', googleScopeForOAuthAction(env, action));
+  googleUrl.searchParams.set('scope', googleScopeForOAuthAction(env, action, url));
   googleUrl.searchParams.set('state', state);
   googleUrl.searchParams.set('access_type', 'offline');
   googleUrl.searchParams.set('include_granted_scopes', 'true');
   googleUrl.searchParams.set('prompt', googlePromptForOAuthAction(action));
-  return redirectWithCookies(googleUrl.toString(), [await pushOAuthStateCookie(request, env, state, { provider: 'google-oauth', action, returnTo, loginSource, visitorId })]);
+  return redirectWithCookies(googleUrl.toString(), [await pushOAuthStateCookie(request, env, state, { provider: 'google-oauth', action, returnTo, loginSource, visitorId, googleScopeGroups })]);
 }
 
 async function handleGoogleAuthCallback(request, env) {
@@ -8278,7 +8714,8 @@ async function handleGoogleAuthCallback(request, env) {
       if (!linked?.ok) {
         return redirectWithCookies(authFailureRedirectPath(request, env, 'google_identity_already_linked', cookieState), [oauthState.cookie]);
       }
-      if (connectorTokenEncryptionConfigured(env)) {
+      const persistentGoogleConnector = connectorTokenEncryptionConfigured(env);
+      if (persistentGoogleConnector) {
         await mutateAccountByLogin(storage, linked.account.login, async (draft) => {
           const latest = accountSettingsForLogin(draft, linked.account.login, { ...googleIdentity, login: linked.account.login }, 'google-oauth');
           const google = await googleConnectorFromOAuthToken(env, googleIdentity, token, latest?.connectors?.google || {});
@@ -8294,12 +8731,14 @@ async function handleGoogleAuthCallback(request, env) {
         accountLogin: linked.account.login,
         googleIdentity: accountIdentityForProvider(linked.account, 'google') || googleIdentity,
         githubIdentity: accountIdentityForProvider(linked.account, 'github') || existingSession?.githubIdentity || null,
-        googleAccessToken: token.access_token,
+        googleAccessToken: persistentGoogleConnector ? '' : token.access_token,
+        googleScopes: token.scope || googleScopeForOAuthAction(env, cookieState?.action || 'analytics_connect'),
         linkedProviders: linkedProvidersFromAccount(linked.account)
       });
     } else {
       let account = await persistAccountForIdentity(storage, env, googleIdentity, 'google-oauth');
-      if (connectorTokenEncryptionConfigured(env)) {
+      const persistentGoogleConnector = connectorTokenEncryptionConfigured(env);
+      if (persistentGoogleConnector) {
         await mutateAccountByLogin(storage, account.login, async (draft) => {
           const latest = accountSettingsForLogin(draft, account.login, googleIdentity, 'google-oauth');
           const google = await googleConnectorFromOAuthToken(env, googleIdentity, token, latest?.connectors?.google || {});
@@ -8317,7 +8756,8 @@ async function handleGoogleAuthCallback(request, env) {
         accountLogin: account.login,
         googleIdentity: accountIdentityForProvider(account, 'google') || googleIdentity,
         githubIdentity: accountIdentityForProvider(account, 'github') || null,
-        googleAccessToken: token.access_token,
+        googleAccessToken: persistentGoogleConnector ? '' : token.access_token,
+        googleScopes: token.scope || googleScopeForOAuthAction(env, cookieState?.action || 'login'),
         linkedProviders: linkedProvidersFromAccount(account),
         createdAt: Date.now()
       });
@@ -8460,6 +8900,82 @@ async function handleEmailAuthVerify(request, env) {
   }
 }
 
+async function handleE2eAuthVerify(request, env) {
+  if (!e2eAuthSecret(env)) {
+    return new Response('Not found', {
+      status: 404,
+      headers: securityHeaders({ 'cache-control': 'no-store' })
+    });
+  }
+  const storage = runtimeStorage(env);
+  const url = new URL(request.url);
+  const token = String(url.searchParams.get('token') || '').trim();
+  const fallbackState = {
+    action: 'login',
+    loginSource: 'playwright_e2e',
+    returnTo: '/chat',
+    visitorId: ''
+  };
+  if (!token) {
+    await trackAuthLoginFailure(storage, 'e2e', {
+      source: 'e2e_auth_verify',
+      status: 'missing_token'
+    });
+    return redirect(authFailureRedirectPath(request, env, 'e2e_link_invalid', fallbackState));
+  }
+  const e2eState = await parseE2eAuthToken(env, token);
+  if (!e2eState) {
+    await trackAuthLoginFailure(storage, 'e2e', {
+      source: 'e2e_auth_verify',
+      status: 'invalid_token'
+    });
+    return redirect(authFailureRedirectPath(request, env, 'e2e_link_invalid', fallbackState));
+  }
+  try {
+    const account = await persistAccountForIdentity(storage, env, {
+      providerUserId: e2eState.email,
+      login: e2eState.email,
+      email: e2eState.email,
+      name: e2eState.email.split('@')[0] || e2eState.email,
+      avatarUrl: '',
+      profileUrl: ''
+    }, 'e2e');
+    const session = mergeLinkedSession({}, {
+      authProvider: 'e2e',
+      user: {
+        login: account?.login || e2eState.email,
+        name: account?.profile?.displayName || e2eState.email,
+        avatarUrl: '',
+        profileUrl: '',
+        email: e2eState.email,
+        accountId: account?.id || ''
+      },
+      accountLogin: account?.login || e2eState.email,
+      linkedProviders: [...new Set([...linkedProvidersFromAccount(account), 'e2e'])]
+    });
+    return redirectWithCookies(authSuccessRedirectPath(request, env, {
+      action: 'login',
+      loginSource: e2eState.loginSource,
+      returnTo: e2eState.returnTo,
+      visitorId: e2eState.visitorId
+    }), [
+      await makeSessionCookie(session, env)
+    ]);
+  } catch (error) {
+    await trackAuthLoginFailure(storage, 'e2e', {
+      source: 'e2e_auth_verify',
+      status: 'verify_error',
+      login: e2eState.email
+    });
+    return redirect(authFailureRedirectPath(request, env, 'e2e_link_invalid', {
+      action: 'login',
+      loginSource: e2eState.loginSource,
+      returnTo: e2eState.returnTo,
+      visitorId: e2eState.visitorId
+    }));
+  }
+}
+
 function xCallbackUrl(request, env) {
   return String(env?.X_CALLBACK_URL || '').trim() || `${baseUrl(request, env)}/auth/x/callback`;
 }
@@ -8581,12 +9097,17 @@ async function handleXAuthStart(request, env) {
   const current = await currentUserContext(request, env);
   if (!current?.login) return redirect(xAuthErrorRedirect('login_required_for_x'));
   const url = new URL(request.url);
+  const capabilities = [
+    ...url.searchParams.getAll('capability'),
+    ...url.searchParams.getAll('capabilities')
+  ].flatMap((value) => String(value || '').split(/[,\s]+/)).filter(Boolean);
   const state = crypto.randomUUID();
   const pkce = await buildXPkcePair();
   const authUrl = buildXAuthorizeUrl(env, {
     callbackUrl: xCallbackUrl(request, env),
     state,
-    codeChallenge: pkce.challenge
+    codeChallenge: pkce.challenge,
+    capabilities
   });
   return redirectWithCookies(authUrl.toString(), [
     await pushOAuthStateCookie(request, env, state, {
@@ -8771,6 +9292,14 @@ function googleDimensionValue(row = {}, index = 0) {
   return String(row?.dimensionValues?.[index]?.value || '');
 }
 
+function normalizeGoogleGa4PropertyName(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^properties\/[A-Za-z0-9_-]+$/.test(raw)) return raw;
+  const digits = raw.match(/\d{4,}/)?.[0] || '';
+  return digits ? `properties/${digits}` : raw;
+}
+
 async function fetchGoogleSearchConsoleReport(accessToken, siteUrl = '', range = {}) {
   const target = String(siteUrl || '').trim();
   if (!target) return { site_url: '', rows: [], totals: { clicks: 0, impressions: 0 }, skipped: true };
@@ -8811,7 +9340,7 @@ async function fetchGoogleSearchConsoleReport(accessToken, siteUrl = '', range =
 }
 
 async function fetchGoogleGa4RunReport(accessToken, property = '', body = {}) {
-  const target = String(property || '').trim();
+  const target = normalizeGoogleGa4PropertyName(property);
   if (!/^properties\/[A-Za-z0-9_-]+$/.test(target)) {
     const error = new Error('A valid GA4 property id such as properties/123456789 is required.');
     error.statusCode = 400;
@@ -8859,44 +9388,73 @@ function mapGoogleGa4Rows(report = {}, dimensions = []) {
 }
 
 async function fetchGoogleGa4Report(accessToken, property = '', range = {}) {
-  const target = String(property || '').trim();
+  const target = normalizeGoogleGa4PropertyName(property);
   if (!target) return {
     property: '',
     totals: { sessions: 0, conversions: 0 },
     landing_pages: [],
     channels: [],
+    channel_landing_pages: [],
+    channel_sources: [],
     countries: [],
+    warnings: [],
     skipped: true
   };
-  const [totalsResult, landingResult, channelsResult, countriesResult] = await Promise.all([
-    fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, [], 1),
+  const totalsResult = await fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, [], 1);
+  const [landingResult, channelsResult, channelPagesResult, channelSourcesResult, countriesResult] = await Promise.allSettled([
     fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, ['landingPagePlusQueryString'], 50),
     fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, ['sessionDefaultChannelGroup'], 25),
+    fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, ['sessionDefaultChannelGroup', 'landingPagePlusQueryString'], 100),
+    fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, ['sessionDefaultChannelGroup', 'sessionSourceMedium'], 100),
     fetchGoogleGa4ReportWithMetricFallback(accessToken, target, range, ['country'], 25)
   ]);
   const totalRow = mapGoogleGa4Rows(totalsResult.report, [])[0] || { sessions: 0, conversions: 0 };
+  const landingReport = landingResult.status === 'fulfilled' ? landingResult.value : null;
+  const channelsReport = channelsResult.status === 'fulfilled' ? channelsResult.value : null;
+  const channelPagesReport = channelPagesResult.status === 'fulfilled' ? channelPagesResult.value : null;
+  const channelSourcesReport = channelSourcesResult.status === 'fulfilled' ? channelSourcesResult.value : null;
+  const countriesReport = countriesResult.status === 'fulfilled' ? countriesResult.value : null;
+  const warnings = [];
+  if (landingResult.status === 'rejected') warnings.push(`GA4 landing pages: ${landingResult.reason?.message || landingResult.reason || 'request failed'}`);
+  if (channelsResult.status === 'rejected') warnings.push(`GA4 channels: ${channelsResult.reason?.message || channelsResult.reason || 'request failed'}`);
+  if (channelPagesResult.status === 'rejected') warnings.push(`GA4 channel landing pages: ${channelPagesResult.reason?.message || channelPagesResult.reason || 'request failed'}`);
+  if (channelSourcesResult.status === 'rejected') warnings.push(`GA4 channel sources: ${channelSourcesResult.reason?.message || channelSourcesResult.reason || 'request failed'}`);
+  if (countriesResult.status === 'rejected') warnings.push(`GA4 countries: ${countriesResult.reason?.message || countriesResult.reason || 'request failed'}`);
   return {
     property: target,
-    conversion_metric: totalsResult.conversionMetric || landingResult.conversionMetric || channelsResult.conversionMetric || countriesResult.conversionMetric || '',
+    conversion_metric: totalsResult.conversionMetric || landingReport?.conversionMetric || channelsReport?.conversionMetric || channelPagesReport?.conversionMetric || channelSourcesReport?.conversionMetric || countriesReport?.conversionMetric || '',
     totals: {
       sessions: Number(totalRow.sessions || 0),
       conversions: Number(totalRow.conversions || 0)
     },
-    landing_pages: mapGoogleGa4Rows(landingResult.report, ['landingPagePlusQueryString']).map((row) => ({
+    landing_pages: mapGoogleGa4Rows(landingReport?.report, ['landingPagePlusQueryString']).map((row) => ({
       page: row.dimensions[0] || '(not set)',
       sessions: row.sessions,
       conversions: row.conversions
     })),
-    channels: mapGoogleGa4Rows(channelsResult.report, ['sessionDefaultChannelGroup']).map((row) => ({
+    channels: mapGoogleGa4Rows(channelsReport?.report, ['sessionDefaultChannelGroup']).map((row) => ({
       channel: row.dimensions[0] || '(not set)',
       sessions: row.sessions,
       conversions: row.conversions
     })),
-    countries: mapGoogleGa4Rows(countriesResult.report, ['country']).map((row) => ({
+    channel_landing_pages: mapGoogleGa4Rows(channelPagesReport?.report, ['sessionDefaultChannelGroup', 'landingPagePlusQueryString']).map((row) => ({
+      channel: row.dimensions[0] || '(not set)',
+      page: row.dimensions[1] || '(not set)',
+      sessions: row.sessions,
+      conversions: row.conversions
+    })),
+    channel_sources: mapGoogleGa4Rows(channelSourcesReport?.report, ['sessionDefaultChannelGroup', 'sessionSourceMedium']).map((row) => ({
+      channel: row.dimensions[0] || '(not set)',
+      source_medium: row.dimensions[1] || '(not set)',
+      sessions: row.sessions,
+      conversions: row.conversions
+    })),
+    countries: mapGoogleGa4Rows(countriesReport?.report, ['country']).map((row) => ({
       country: row.dimensions[0] || '(not set)',
       sessions: row.sessions,
       conversions: row.conversions
-    }))
+    })),
+    warnings
   };
 }
 
@@ -8908,7 +9466,7 @@ async function handleGoogleAnalyticsReport(request, env) {
   if (!current?.user && current.apiKeyStatus !== 'valid') return json({ error: 'Login or CAIt API key required' }, 401);
   const url = new URL(request.url);
   const gscSite = String(url.searchParams.get('gsc_site') || url.searchParams.get('search_console_site') || '').trim();
-  const ga4Property = String(url.searchParams.get('ga4_property') || url.searchParams.get('property') || '').trim();
+  const ga4Property = normalizeGoogleGa4PropertyName(url.searchParams.get('ga4_property') || url.searchParams.get('property') || '');
   if (!gscSite && !ga4Property) {
     return json({ error: 'Select at least one Google source before loading a report.' }, 400);
   }
@@ -8926,6 +9484,21 @@ async function handleGoogleAnalyticsReport(request, env) {
   }
   try {
     const tokenInfo = await googleAccessTokenForCurrent(storage, env, current, connector);
+    const requestedGroups = [
+      gscSite ? 'gsc' : '',
+      ga4Property ? 'ga4' : ''
+    ].filter(Boolean);
+    const missingGroups = missingGoogleScopeGroups(tokenInfo.connector, requestedGroups);
+    if (missingGroups.length) {
+      return json({
+        error: `Google OAuth scope required for ${missingGroups.map(googleScopeGroupLabel).join(' and ')}.`,
+        code: 'google_scope_required',
+        missing_connectors: ['google'],
+        missing_connector_capabilities: googleOAuthCapabilitiesFromGroups(missingGroups),
+        missing_google_scope_groups: missingGroups,
+        action: connectorActionLabel('connect_google')
+      }, 409);
+    }
     const [gscResult, ga4Result] = await Promise.allSettled([
       gscSite ? fetchGoogleSearchConsoleReport(tokenInfo.accessToken, gscSite, dateRange) : Promise.resolve(null),
       ga4Property ? fetchGoogleGa4Report(tokenInfo.accessToken, ga4Property, dateRange) : Promise.resolve(null)
@@ -8933,6 +9506,7 @@ async function handleGoogleAnalyticsReport(request, env) {
     const warnings = [];
     if (gscResult.status === 'rejected') warnings.push(`Search Console report: ${gscResult.reason?.message || gscResult.reason || 'request failed'}`);
     if (ga4Result.status === 'rejected') warnings.push(`GA4 report: ${ga4Result.reason?.message || ga4Result.reason || 'request failed'}`);
+    if (ga4Result.status === 'fulfilled' && Array.isArray(ga4Result.value?.warnings)) warnings.push(...ga4Result.value.warnings);
     if (current?.apiKey?.id) await recordOrderApiKeyUsage(storage, current, request);
     return json({
       ok: true,
@@ -8995,23 +9569,26 @@ async function handleGoogleConnectorAssets(request, env) {
   }
   try {
     const tokenInfo = await googleAccessTokenForCurrent(storage, env, current, connector);
+    const missingGroups = includeGroups.filter((group) => !googleConnectorHasScopeGroup(tokenInfo.connector, googleScopeGroupForAssetInclude(group)));
+    const missingCapabilityGroups = missingGroups.map(googleScopeGroupForAssetInclude);
+    const readableGroups = includeGroups.filter((group) => !missingGroups.includes(group));
     const [sitesResult, ga4Result, driveResult, calendarResult, gmailProfileResult, gmailLabelsResult] = await Promise.allSettled([
-      includeGroups.includes('gsc')
+      readableGroups.includes('gsc')
         ? fetchGoogleAuthorizedJson('https://www.googleapis.com/webmasters/v3/sites', tokenInfo.accessToken)
         : Promise.resolve(null),
-      includeGroups.includes('ga4')
+      readableGroups.includes('ga4')
         ? fetchGoogleAuthorizedJson('https://analyticsadmin.googleapis.com/v1alpha/accountSummaries?pageSize=200', tokenInfo.accessToken)
         : Promise.resolve(null),
-      includeGroups.includes('drive')
+      readableGroups.includes('drive')
         ? fetchGoogleAuthorizedJson('https://www.googleapis.com/drive/v3/files?pageSize=50&fields=files(id,name,mimeType,webViewLink,modifiedTime)', tokenInfo.accessToken)
         : Promise.resolve(null),
-      includeGroups.includes('calendar')
+      readableGroups.includes('calendar')
         ? fetchGoogleAuthorizedJson('https://www.googleapis.com/calendar/v3/users/me/calendarList', tokenInfo.accessToken)
         : Promise.resolve(null),
-      includeGroups.includes('gmail')
+      readableGroups.includes('gmail')
         ? fetchGoogleAuthorizedJson('https://gmail.googleapis.com/gmail/v1/users/me/profile', tokenInfo.accessToken)
         : Promise.resolve(null),
-      includeGroups.includes('gmail')
+      readableGroups.includes('gmail')
         ? fetchGoogleAuthorizedJson('https://gmail.googleapis.com/gmail/v1/users/me/labels', tokenInfo.accessToken)
         : Promise.resolve(null)
     ]);
@@ -9066,6 +9643,9 @@ async function handleGoogleConnectorAssets(request, env) {
         }))
       : [];
     const warnings = [];
+    for (const group of missingGroups) {
+      warnings.push(`${googleScopeGroupLabel(group)}: OAuth scope is not connected. Use the ${googleScopeGroupLabel(group)} connect button to authorize only this source.`);
+    }
     if (includeGroups.includes('gsc') && sitesResult.status === 'rejected') warnings.push(`Search Console: ${sitesResult.reason?.message || sitesResult.reason || 'request failed'}`);
     if (includeGroups.includes('ga4') && ga4Result.status === 'rejected') warnings.push(`GA4: ${ga4Result.reason?.message || ga4Result.reason || 'request failed'}`);
     if (includeGroups.includes('drive') && driveResult.status === 'rejected') warnings.push(`Drive: ${driveResult.reason?.message || driveResult.reason || 'request failed'}`);
@@ -9079,6 +9659,9 @@ async function handleGoogleConnectorAssets(request, env) {
       google: {
         connected: true,
         scopes: String(tokenInfo.connector?.scopes || ''),
+        available_scope_groups: readableGroups,
+        missing_scope_groups: missingGroups,
+        missing_capabilities: googleOAuthCapabilitiesFromGroups(missingCapabilityGroups),
         token_expires_at: String(tokenInfo.connector?.tokenExpiresAt || ''),
         refreshed: tokenInfo.refreshed
       },
@@ -10045,7 +10628,7 @@ const WORKFLOW_TASK_SOFT_MATCH_MAP = Object.freeze({
   pricing: ['pricing', 'finance', 'billing', 'unit_economics'],
   validation: ['validation', 'product', 'research'],
   diligence: ['diligence', 'research', 'risk'],
-  summary: ['summary', 'research', 'analysis']
+  summary: ['summary', 'synthesis', 'recap', 'final_report']
 });
 
 function workflowTaskSoftMatchTokens(taskType = '', options = {}) {
@@ -10300,24 +10883,42 @@ function normalizeOrderStrategy(value = '') {
   return 'auto';
 }
 
-function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', prompt = '') {
+function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', prompt = '', options = {}) {
   const tasks = normalizeTaskTypes(plannedTasks);
   const primary = String(tasks[0] || primaryTask || '').trim().toLowerCase();
-  if (!['cmo_leader', 'free_web_growth_leader'].includes(primary)) return tasks;
+  if (!isWorkflowLeaderTask(primary)) return tasks;
+  const summaryTasks = new Set(['summary']);
+  const dataCollectionTasks = new Set(['data_analysis']);
+  const actionRequestPattern = /(external connector|external execution|connector handoff|connector execution|oauth|publish(?:ing)?|post(?:ing)?|send(?:ing)?|schedule(?:ing)?|execute(?: the)? action|run through action|through to action|through execution|complete through execution|action handoff|action packet|completion through delivery|complete through delivery|deliver through execution|plan\s*(?:and|&)\s*do|plan\s+then\s+execute|not\s+just\s+plan|execute\s+too|do\s+it|実行反映|実行まで|反映まで|アクションまで|actionまで|投稿まで|公開まで|送信まで|配信まで|掲載まで|納品まで|完走|最後まで|計画して実行|実行も|やって|やるところまで|実際に.*(?:投稿|公開|送信|配信|掲載|反映)|(?:x|twitter|ツイッター).*(?:投稿|ポスト|スレッド)|(?:メール|gmail).*(?:送信|配信|スケジュール)|(?:github|ギットハブ).*(?:pr|pull request|プルリク|反映))/i;
   const ordered = [];
   const push = (task) => {
     const safe = String(task || '').trim().toLowerCase();
-    if (!safe || ordered.includes(safe)) return;
+    if (!safe || summaryTasks.has(safe) || ordered.includes(safe)) return;
     ordered.push(safe);
   };
-  push('cmo_leader');
+  const sortLeaderWorkflowTasks = (items, max = items.length) => [...items].sort((left, right) => {
+    const leftLayer = leaderTaskLayer(primary, left) ?? 99;
+    const rightLayer = leaderTaskLayer(primary, right) ?? 99;
+    if (leftLayer !== rightLayer) return leftLayer - rightLayer;
+    return ordered.indexOf(left) - ordered.indexOf(right);
+  }).slice(0, max);
+  const sourceCollectionTasks = leaderSourceCollectionLayerTasks(primary);
+  const preferredSourceTask = sourceCollectionTasks.find((task) => ['research', 'data_analysis', 'validation', 'teardown', 'diligence', 'debug'].includes(task))
+    || sourceCollectionTasks[0]
+    || 'research';
+  push(primary);
   for (const task of tasks) {
     if (task !== 'free_web_growth_leader') push(task);
   }
-  CMO_WORKFLOW_RESEARCH_LAYER_TASKS.forEach(push);
-  CMO_WORKFLOW_PLANNING_LAYER_TASKS.forEach(push);
-  CMO_WORKFLOW_PREPARATION_LAYER_TASKS.forEach(push);
-  CMO_WORKFLOW_DEFAULT_EXECUTION_TASKS.forEach(push);
+  if (sourceCollectionTasks.length && !ordered.some((task) => leaderTaskRequiresSourceCollection(primary, task))) {
+    push(preferredSourceTask);
+  }
+  if (['cmo_leader', 'free_web_growth_leader'].includes(primary)) {
+    CMO_WORKFLOW_RESEARCH_LAYER_TASKS.forEach(push);
+    CMO_WORKFLOW_PLANNING_LAYER_TASKS.forEach(push);
+    CMO_WORKFLOW_PREPARATION_LAYER_TASKS.forEach(push);
+    CMO_WORKFLOW_DEFAULT_EXECUTION_TASKS.forEach(push);
+  }
   const text = String(prompt || '').toLowerCase();
   const requestedActions = [];
   const pushRequestedAction = (task) => {
@@ -10330,36 +10931,71 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
   if (/(reddit|subreddit|レディット|community|コミュニティ)/i.test(text)) pushRequestedAction('reddit');
   if (/(indie\s*hackers|indiehackers|インディーハッカー|インディーハッカーズ)/i.test(text)) pushRequestedAction('indie_hackers');
   if (/(directory submission|directory listing|掲載媒体|媒体掲載|無料掲載|ディレクトリ掲載)/i.test(text)) pushRequestedAction('directory_submission');
-  if (/(execute(?: the)? action|run through action|plan\s*(?:and|&)\s*do|plan\s+then\s+execute|not\s+just\s+plan|アクションまで|実行まで|掲載まで|完走|最後まで|計画して実行|実行も)/i.test(text)) {
+  if (actionRequestPattern.test(text)) {
     pushRequestedAction('directory_submission');
     pushRequestedAction('acquisition_automation');
   }
-  const sortCmoWorkflowTasks = (items) => [...items].sort((left, right) => {
-    const leftLayer = leaderTaskLayer('cmo_leader', left) ?? 99;
-    const rightLayer = leaderTaskLayer('cmo_leader', right) ?? 99;
-    if (leftLayer !== rightLayer) return leftLayer - rightLayer;
-    return ordered.indexOf(left) - ordered.indexOf(right);
-  });
-  if (ordered.length <= 14) return sortCmoWorkflowTasks(ordered);
   const selected = [];
   const pushSelected = (task) => {
     const safe = String(task || '').trim().toLowerCase();
-    if (!safe || selected.includes(safe)) return;
+    if (!safe || summaryTasks.has(safe) || selected.includes(safe)) return;
     selected.push(safe);
   };
-  pushSelected('cmo_leader');
-  requestedActions.forEach(pushSelected);
-  for (const layer of [1, 2, 3]) {
+  pushSelected(primary);
+  const layerLimits = new Map([
+    [2, 1],
+    [3, 1]
+  ]);
+  const layerCounts = new Map();
+  const sourceBucketCounts = new Map();
+  const sourceBucketForTask = (task) => dataCollectionTasks.has(String(task || '').trim().toLowerCase()) ? 'data' : 'research';
+  const pushLayerTask = (task, options = {}) => {
+    const safe = String(task || '').trim().toLowerCase();
+    if (!safe || safe === primary || summaryTasks.has(safe) || selected.includes(safe)) return;
+    const layer = leaderTaskLayer(primary, safe) || 1;
+    if (layer >= leaderActionLayerStart(primary)) {
+      if (options.force || requestedActions.includes(safe)) pushSelected(safe);
+      return;
+    }
+    if (layer === 1 && leaderTaskRequiresSourceCollection(primary, safe)) {
+      const bucket = sourceBucketForTask(safe);
+      const currentBucket = Number(sourceBucketCounts.get(bucket) || 0);
+      if (!options.force && currentBucket >= 1) return;
+      pushSelected(safe);
+      sourceBucketCounts.set(bucket, currentBucket + 1);
+      layerCounts.set(layer, Number(layerCounts.get(layer) || 0) + 1);
+      return;
+    }
+    const limit = layerLimits.has(layer) ? layerLimits.get(layer) : 1;
+    const current = Number(layerCounts.get(layer) || 0);
+    if (!options.force && current >= limit) return;
+    pushSelected(safe);
+    layerCounts.set(layer, current + 1);
+  };
+  const fillLayer = (layer, preferredTasks = []) => {
+    for (const task of preferredTasks) {
+      if (layer !== 1 && Number(layerCounts.get(layer) || 0) >= Number(layerLimits.get(layer) || 1)) break;
+      if (ordered.includes(task) && leaderTaskLayer(primary, task) === layer) pushLayerTask(task);
+    }
     for (const task of ordered) {
-      if (selected.length >= 14) break;
-      if (leaderTaskLayer('cmo_leader', task) === layer) pushSelected(task);
+      if (layer !== 1 && Number(layerCounts.get(layer) || 0) >= Number(layerLimits.get(layer) || 1)) break;
+      if (leaderTaskLayer(primary, task) === layer) pushLayerTask(task);
+    }
+  };
+  fillLayer(1, ['data_analysis', 'teardown', 'research', 'validation']);
+  fillLayer(2, primary === 'cmo_leader' || primary === 'free_web_growth_leader' ? ['growth', 'media_planner'] : []);
+  fillLayer(3, primary === 'cmo_leader' || primary === 'free_web_growth_leader' ? ['seo_gap', 'landing', 'writing', 'writer', 'list_creator'] : []);
+  for (const task of requestedActions) pushLayerTask(task, { force: true });
+  const actionTasks = ordered.filter((task) => (leaderTaskLayer(primary, task) || 1) >= leaderActionLayerStart(primary));
+  if (!requestedActions.length && actionRequestPattern.test(text) && actionTasks.length) pushLayerTask(actionTasks[0], { force: true });
+  for (const task of ordered) {
+    const layer = leaderTaskLayer(primary, task) || 1;
+    if (layer >= leaderActionLayerStart(primary)) continue;
+    if (!selected.includes(task)) {
+      pushLayerTask(task);
     }
   }
-  for (const task of ordered) {
-    if (selected.length >= 14) break;
-    pushSelected(task);
-  }
-  return sortCmoWorkflowTasks(selected).slice(0, 14);
+  return sortLeaderWorkflowTasks(selected);
 }
 
 function planWorkflowSelections(agents, taskType, prompt, options = {}) {
@@ -10368,14 +11004,14 @@ function planWorkflowSelections(agents, taskType, prompt, options = {}) {
   const leaderTeam = isWorkflowLeaderTask(primaryTask);
   const selectedAgentId = String(options.selectedAgentId || '').trim();
   const selectedAgentTaskType = normalizeTaskTypes([options.selectedAgentTaskType || taskType])[0] || '';
-  const defaultMaxTasks = options.maxTasks || (largeTeam || primaryTask === 'cmo_leader' ? 14 : leaderTeam ? 10 : 3);
+  const defaultMaxTasks = options.maxTasks || (primaryTask === 'cmo_leader' ? 14 : largeTeam ? 10 : leaderTeam ? 10 : 3);
   let plannedTasks = Array.isArray(options.plannedTasks) && options.plannedTasks.length
     ? normalizeTaskTypes(options.plannedTasks)
     : inferTaskSequence(taskType, prompt, {
         maxTasks: defaultMaxTasks,
         expand: options.expand !== false
       });
-  plannedTasks = ensureLeaderWorkflowActionTasks(plannedTasks, primaryTask, prompt);
+  plannedTasks = ensureLeaderWorkflowActionTasks(plannedTasks, primaryTask, prompt, { maxTasks: defaultMaxTasks });
   const tagHintsByTask = options.tagHintsByTask && typeof options.tagHintsByTask === 'object' ? options.tagHintsByTask : {};
   const selections = [];
   const usedAgentIds = new Set();
@@ -10415,6 +11051,23 @@ function planWorkflowSelections(agents, taskType, prompt, options = {}) {
         })
       : picked;
     if (!finalPicked?.agent) continue;
+    if (
+      ['build_team_leader', 'cto_leader'].includes(primaryTask)
+      && plannedTask === 'automation'
+      && (
+        String(finalPicked.dispatchTaskType || '').trim().toLowerCase() === 'acquisition_automation'
+        || /acquisition/i.test(String(finalPicked.agent?.id || finalPicked.agent?.name || ''))
+      )
+    ) {
+      continue;
+    }
+    if (
+      ['cpo_leader'].includes(primaryTask)
+      && plannedTask === 'landing'
+      && !['landing', 'writing', 'writer', 'seo_gap'].includes(String(finalPicked.dispatchTaskType || '').trim().toLowerCase())
+    ) {
+      continue;
+    }
     usedAgentIds.add(finalPicked.agent.id);
     selections.push({
       taskType: plannedTask,
@@ -10517,6 +11170,7 @@ function sanitizeLeaderPlannerResult(raw = {}, fallbackPlan = {}, agents = []) {
   }
   const requestedTasks = normalizeTaskTypes(raw.planned_tasks || raw.plannedTasks || [])
     .filter((task) => allowedTasks.has(task));
+  const maxPlannerTasks = 14;
   const preludeTasks = fallbackTasks
     .filter((task) => task !== primaryTask && workflowLayerForTask(primaryTask, task) === 1);
   const merged = [];
@@ -10529,8 +11183,8 @@ function sanitizeLeaderPlannerResult(raw = {}, fallbackPlan = {}, agents = []) {
   for (const task of preludeTasks) push(task);
   for (const task of requestedTasks) push(task);
   const targetSize = requestedTasks.length
-    ? Math.min(14, Math.max(primaryTask === 'cmo_leader' ? 6 : 2, 1 + preludeTasks.length + requestedTasks.length))
-    : Math.min(14, fallbackTasks.length);
+    ? Math.min(maxPlannerTasks, Math.max(primaryTask === 'cmo_leader' ? 6 : 2, 1 + preludeTasks.length + requestedTasks.length))
+    : Math.min(maxPlannerTasks, fallbackTasks.length);
   for (const task of fallbackTasks) {
     if (merged.length >= targetSize) break;
     push(task);
@@ -10552,7 +11206,7 @@ function sanitizeLeaderPlannerResult(raw = {}, fallbackPlan = {}, agents = []) {
     tagHintsByTask[task] = normalizeAgentTags(item.tags || [], { max: 8 });
   }
   return {
-    plannedTasks: merged.slice(0, 14),
+    plannedTasks: merged.slice(0, maxPlannerTasks),
     tagHintsByTask,
     leaderPlanning: {
       source: 'openai',
@@ -10781,6 +11435,7 @@ function buildWorkflowParentJob(body, input, plan, options = {}) {
       objective: originalPrompt,
       plannedTasks: plan.plannedTasks,
       leaderPlanning: plan.leaderPlanning || null,
+      ...(isWorkflowLeaderTask(plan.plannedTasks[0] || body.task_type) ? { leaderActionProtocol: workflowLeaderActionProtocol({ taskType: plan.plannedTasks[0] || body.task_type, workflow: { plannedTasks: plan.plannedTasks } }) } : {}),
       plannedChildRunCount: plan.selections.length,
       childJobIds: [],
       childRuns: plan.selections.map((item) => ({
@@ -11252,6 +11907,31 @@ async function reconcileWorkflowParent(storage, parentJobId) {
       parent.failureReason = null;
       return cloneJob(parent);
     }
+    if (blocked.length) {
+      const blockedParentStatus = workflowBlockedParentStatus(parent, children, blockingChildren);
+      if (blockedParentStatus === 'blocked') {
+        const authorityRequest = parentAuthorityRequest || authorityRequestFromReport(parent.output?.report);
+        if (authorityRequestRequiresApproval(authorityRequest)) {
+          markJobBlockedForAuthority(parent, authorityRequest, 'Workflow is blocked by a required specialist run.');
+        } else {
+          parent.status = 'blocked';
+          parent.completedAt = null;
+          parent.failedAt = null;
+          parent.failureReason = blockingChildren.length
+            ? (blockingChildren[0]?.failureReason || blockingChildren[0]?.output?.summary || 'Workflow is blocked by a required specialist run.')
+            : 'Workflow is blocked by a required specialist run.';
+          parent.failureCategory = 'workflow_blocked';
+          parent.dispatch = {
+            ...(parent.dispatch || {}),
+            completionStatus: 'workflow_blocked',
+            retryable: false,
+            nextRetryAt: null,
+            completedAt: null
+          };
+        }
+        return cloneJob(parent);
+      }
+    }
     if (children.some((item) => active.has(item.status))) {
       parent.status = running.length ? 'running' : 'queued';
       parent.completedAt = null;
@@ -11327,6 +12007,72 @@ function buildDispatchPayload(job, agent) {
   };
 }
 
+function workflowClipText(value = '', max = 12000) {
+  const text = String(value || '').trim();
+  if (!text || text.length <= max) return text;
+  return `${text.slice(0, Math.max(0, max - 1)).trim()}...`;
+}
+
+function compactWorkflowInputForBuiltInDispatch(job = {}) {
+  const input = job.input && typeof job.input === 'object' ? job.input : {};
+  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
+  const workflow = broker.workflow && typeof broker.workflow === 'object' ? broker.workflow : {};
+  const compactWorkflow = {
+    ...workflow,
+    objective: workflowClipText(workflow.objective, 8000),
+    originalPrompt: workflowClipText(workflow.originalPrompt, 8000),
+    leaderHandoff: workflow.leaderHandoff && typeof workflow.leaderHandoff === 'object'
+      ? {
+          ...workflow.leaderHandoff,
+          prompt: workflowClipText(workflow.leaderHandoff.prompt, 6000),
+          additionalPrompt: workflowClipText(workflow.leaderHandoff.additionalPrompt, 6000),
+          priorRuns: Array.isArray(workflow.leaderHandoff.priorRuns)
+            ? workflow.leaderHandoff.priorRuns.slice(0, 6).map((run) => ({
+                ...run,
+                summary: workflowClipText(run?.summary, 1200),
+                bullets: Array.isArray(run?.bullets) ? run.bullets.slice(0, 6).map((item) => workflowClipText(item, 500)) : [],
+                files: Array.isArray(run?.files) ? run.files.slice(0, 3).map((file) => ({ ...file, content: workflowClipText(file?.content, 1800) })) : []
+              }))
+            : []
+        }
+      : workflow.leaderHandoff
+  };
+  return {
+    source: input.source || 'workflow',
+    original_prompt: workflowClipText(input.original_prompt || input.originalPrompt || workflow.originalPrompt || job.originalPrompt || job.prompt || '', 8000),
+    _broker: {
+      commonQualityRules: Array.isArray(broker.commonQualityRules) ? broker.commonQualityRules.slice(0, 8) : [],
+      workflow: compactWorkflow,
+      intake: broker.intake && typeof broker.intake === 'object' ? broker.intake : undefined,
+      chatux: broker.chatux && typeof broker.chatux === 'object' ? broker.chatux : undefined
+    }
+  };
+}
+
+function buildCompactBuiltInDispatchPayload(job, agent) {
+  const prompt = workflowBasePrompt(job);
+  const additionalPrompt = workflowClipText(workflowAdditionalPromptForDispatch(job), 12000);
+  return {
+    job_id: job.id,
+    task_type: job.taskType,
+    prompt,
+    additional_prompt: additionalPrompt,
+    additionalPrompt,
+    full_prompt: [prompt, additionalPrompt].filter(Boolean).join('\n\n').trim() || prompt,
+    input: compactWorkflowInputForBuiltInDispatch(job),
+    quality_rules: Array.isArray(job?.input?._broker?.commonQualityRules) ? job.input._broker.commonQualityRules.slice(0, 8) : [],
+    parent_agent_id: job.parentAgentId,
+    assigned_agent_id: agent.id,
+    budget_cap: job.budgetCap,
+    deadline_sec: job.deadlineSec,
+    priority: job.priority,
+    created_at: job.createdAt,
+    callback_url: agent?.metadata?.brokerCallbackUrl || null,
+    callback_token: job.callbackToken || null,
+    return_targets: ['api']
+  };
+}
+
 function buildDispatchHeaders(agent) {
   const manifestAuth = agent?.metadata?.manifest?.auth;
   if (!manifestAuth || typeof manifestAuth !== 'object') return {};
@@ -11351,18 +12097,25 @@ function normalizeDispatchResponse(responseBody = {}) {
   const status = String(body.status || '').trim().toLowerCase();
   const report = normalizeAgentReportPayload(body, body.report || body.output || { summary: body.summary || 'No report provided.' });
   const blocked = isBlockedAgentResultStatus(status);
+  const failed = status === 'failed' || Boolean(body.error || body.failure_reason || body.failureReason);
+  const failureReason = body.failure_reason
+    || body.failureReason
+    || body.error
+    || (failed ? (report.summary || body.summary || 'Agent failed without a detailed reason.') : null);
   const hasArtifacts = Boolean(body.report || body.output || body.summary || (Array.isArray(body.files) && body.files.length));
-  const accepted = body.accepted === true || blocked || status === 'accepted' || status === 'queued' || status === 'running' || status === 'dispatched';
-  const completed = !blocked && (status === 'completed' || ((!status || status === 'ok' || status === 'success') && hasArtifacts));
+  const accepted = !failed && (body.accepted === true || blocked || status === 'accepted' || status === 'queued' || status === 'running' || status === 'dispatched');
+  const completed = !failed && !blocked && (status === 'completed' || ((!status || status === 'ok' || status === 'success') && hasArtifacts));
   return {
     accepted,
+    failed,
     blocked,
     completed,
-    status: blocked ? 'blocked' : (completed ? 'completed' : (status || (accepted ? 'accepted' : 'unknown'))),
+    status: failed ? 'failed' : (blocked ? 'blocked' : (completed ? 'completed' : (status || (accepted ? 'accepted' : 'unknown')))),
     report,
     files: Array.isArray(body.files) ? body.files : [],
     returnTargets: body.return_targets || body.returnTargets || ['api'],
     usage: normalizeUsageForBilling(body.usage, 100),
+    failureReason,
     externalJobId: body.external_job_id || body.remote_job_id || body.job_id || null,
     raw: body
   };
@@ -11370,6 +12123,12 @@ function normalizeDispatchResponse(responseBody = {}) {
 
 function classifyDispatchFailure(statusCode, errorMessage = '') {
   const msg = String(errorMessage || '').toLowerCase();
+  if (msg.includes('quality gate') || msg.includes('originality/source quality') || msg.includes('generic_template_left')) {
+    return { category: 'built_in_quality_gate_failed', retryable: false };
+  }
+  if (msg.includes('source-required') || msg.includes('source required') || msg.includes('source urls were available before generation') || msg.includes('missing_required_search_sources')) {
+    return { category: 'missing_required_sources', retryable: false };
+  }
   if (msg.includes('timed out') || msg.includes('timeout')) return { category: 'dispatch_timeout', retryable: true };
   if (statusCode >= 500) return { category: 'dispatch_http_5xx', retryable: true };
   if (statusCode >= 400) return { category: 'dispatch_http_4xx', retryable: false };
@@ -11485,11 +12244,11 @@ async function dispatchJobToAssignedAgent(job, agent, env) {
   const payload = buildDispatchPayload(job, agent);
   const sampleKind = builtInWorkflowKindForJob(job, agent);
   if (sampleKind) {
-    const workflowRun = Boolean(job?.workflowParentId || payload?.input?._broker?.workflow);
-    const body = workflowRun && !shouldRunBuiltInWorkflowThroughAgentRunner(env, job)
-      ? sampleAgentPayload(sampleKind, payload)
-      : await runBuiltInAgent(sampleKind, payload, env);
+    const body = await runBuiltInAgent(sampleKind, payload, env);
     const normalized = normalizeDispatchResponse(body);
+    if (normalized.failed) {
+      return { ok: false, endpoint, failureReason: normalized.failureReason || 'Built-in agent generation failed', statusCode: 502, responseBody: body };
+    }
     normalized.usage = usageWithObservedJobTokens(job, normalized.usage, normalized.report);
     return { ok: true, endpoint, normalized, statusCode: 200, responseBody: body };
   }
@@ -11500,6 +12259,9 @@ async function dispatchJobToAssignedAgent(job, agent, env) {
     return { ok: false, endpoint, failureReason: reason, statusCode: response.status, responseBody: body };
   }
   const normalized = normalizeDispatchResponse(body);
+  if (normalized.failed) {
+    return { ok: false, endpoint, failureReason: normalized.failureReason || 'Agent reported failure', statusCode: response.status, responseBody: body };
+  }
   normalized.usage = usageWithObservedJobTokens(job, normalized.usage, normalized.report);
   if (!normalized.accepted && !normalized.completed && !normalized.blocked) {
     return { ok: false, endpoint, failureReason: 'Dispatch response was malformed or did not acknowledge the job', statusCode: response.status, responseBody: body };
@@ -11517,11 +12279,52 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
   if (!resolveAgentJobEndpoint(agent)) {
     return { ok: true, mode: 'queued', job: cloneJob(job) };
   }
+  if (dispatchExecutionIsFresh(job, agent)) {
+    return { ok: true, mode: 'running', job: cloneJob(job), skippedInProgress: true };
+  }
+  const lockDispatchJob = async (draft) => {
+    const draftJob = draft.jobs.find((item) => item.id === job.id);
+    const draftAgent = draft.agents.find((item) => item.id === agent.id);
+    if (!draftJob) return { error: 'Job disappeared before dispatch lock', statusCode: 500 };
+    if (!draftAgent) return { error: 'Agent disappeared before dispatch lock', statusCode: 500 };
+    if (isTerminalJobStatus(draftJob.status)) {
+      return { ok: true, mode: draftJob.status, job: cloneJob(draftJob), skippedTerminal: true };
+    }
+    if (dispatchExecutionIsFresh(draftJob, draftAgent)) {
+      return { ok: true, mode: 'running', job: cloneJob(draftJob), skippedInProgress: true };
+    }
+    const completionStatus = String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase();
+    if (completionStatus && !['dispatch_scheduled', 'timed_out', 'failed', 'retry_queued', 'leader_auto_retry_queued', 'leader_checkpoint_queued', 'leader_final_summary_queued'].includes(completionStatus)) {
+      return { ok: true, mode: draftJob.status || completionStatus, job: cloneJob(draftJob), skippedLocked: true };
+    }
+    const at = nowIso();
+    draftJob.status = 'running';
+    draftJob.startedAt = draftJob.startedAt || at;
+    draftJob.dispatch = {
+      ...(draftJob.dispatch || {}),
+      endpoint: resolveAgentJobEndpoint(draftAgent),
+      dispatchInProgressAt: at,
+      lastAttemptAt: at,
+      completionStatus: 'dispatch_in_progress',
+      retryable: false,
+      nextRetryAt: null,
+      maxRetries: maxDispatchRetriesForJob(draftJob)
+    };
+    draftJob.logs = [...(draftJob.logs || []), `dispatch locked for ${draftAgent.id}`];
+    return { ok: true, mode: 'locked', job: cloneJob(draftJob), agent: structuredClone(draftAgent) };
+  };
+  const locked = typeof storage.mutateJobAndAgent === 'function'
+    ? await storage.mutateJobAndAgent(job.id, agent.id, lockDispatchJob)
+    : await storage.mutate(lockDispatchJob);
+  if (locked?.error) return { error: locked.error, statusCode: locked.statusCode || 500 };
+  if (locked?.mode && locked.mode !== 'locked') return locked;
+  const dispatchJob = locked?.job || job;
+  const dispatchAgent = locked?.agent || agent;
   try {
-    const dispatch = await dispatchJobToAssignedAgent(job, agent, env);
+    const dispatch = await dispatchJobToAssignedAgent(dispatchJob, dispatchAgent, env);
     const final = await storage.mutate(async (draft) => {
-      const draftJob = draft.jobs.find((item) => item.id === job.id);
-      const draftAgent = draft.agents.find((item) => item.id === agent.id);
+      const draftJob = draft.jobs.find((item) => item.id === dispatchJob.id);
+      const draftAgent = draft.agents.find((item) => item.id === dispatchAgent.id);
       if (!draftJob) return { error: 'Job disappeared during dispatch', statusCode: 500 };
       if (isTerminalJobStatus(draftJob.status)) {
         return { ok: true, mode: draftJob.status, job: cloneJob(draftJob), skippedTerminal: true };
@@ -11546,7 +12349,7 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
           nextRetryAt: failureMeta.nextRetryAt,
           completionStatus: 'failed'
         };
-        draftJob.logs = [...(draftJob.logs || []), `dispatch failed for ${agent.id}`, dispatch.failureReason, `retryable=${failureMeta.retryable}`];
+        draftJob.logs = [...(draftJob.logs || []), `dispatch failed for ${dispatchAgent.id}`, dispatch.failureReason, `retryable=${failureMeta.retryable}`];
         return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
       }
 
@@ -11564,7 +12367,7 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
         nextRetryAt: null,
         completionStatus: dispatch.normalized.blocked ? 'blocked' : (dispatch.normalized.completed ? 'completed' : 'accepted')
       };
-      draftJob.logs = [...(draftJob.logs || []), `dispatched to ${agent.id} endpoint=${dispatch.endpoint}`];
+      draftJob.logs = [...(draftJob.logs || []), `dispatched to ${dispatchAgent.id} endpoint=${dispatch.endpoint}`];
 
       if (dispatch.normalized.completed) {
         const explicitAuthorityRequest = authorityRequestFromReport(dispatch.normalized.report);
@@ -11577,20 +12380,41 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
           returnTargets: dispatch.normalized.returnTargets
         };
         appendWorkflowOriginalInfoUsage(draftJob);
+        const sourceProofFailure = workflowSearchCompletionFailureReason(draftJob, dispatch.normalized.report);
+        if (sourceProofFailure) {
+          draftJob.status = 'failed';
+          draftJob.completedAt = null;
+          draftJob.failedAt = nowIso();
+          draftJob.failureReason = sourceProofFailure;
+          draftJob.failureCategory = 'missing_required_sources';
+          draftJob.actualBilling = null;
+          draftJob.deliveryQuality = null;
+          if (draftJob.billingReservation && !draftJob.billingReservation?.releasedAt) {
+            releaseBillingReservationInState(draft, draftJob);
+          }
+          draftJob.dispatch = {
+            ...(draftJob.dispatch || {}),
+            completionStatus: 'failed',
+            retryable: false,
+            nextRetryAt: null
+          };
+          draftJob.logs.push(sourceProofFailure, 'failed before completion: missing search execution proof');
+          return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
+        }
         const authorityRequest = syncJobAuthorityRequest(draftJob, draftAgent);
-        if (shouldBlockCompletedJobForAuthorityRequest(draftJob, explicitAuthorityRequest)) {
+        if (shouldBlockCompletedJobForAuthorityRequest(draftJob, authorityRequest || explicitAuthorityRequest)) {
           markJobBlockedForAuthority(draftJob, authorityRequest || explicitAuthorityRequest, 'External execution is blocked waiting for connector approval.');
           markWorkflowParentBlockedIfNeeded(draft, draftJob);
           return { ok: true, mode: 'blocked', job: cloneJob(draftJob) };
         }
-        const billing = estimateBilling(agent, dispatch.normalized.usage);
+        const billing = estimateBilling(dispatchAgent, dispatch.normalized.usage);
         draftJob.actualBilling = billing;
         draftJob.deliveryQuality = {
           score: deliveryQualityScoreForJob(draftJob),
           version: 'delivery-quality/v1',
           checkedAt: draftJob.completedAt
         };
-        draftJob.logs.push(`completed by dispatch response from ${agent.id}`, billingLogLine(draftJob, billing), `delivery quality score=${draftJob.deliveryQuality.score}`);
+        draftJob.logs.push(`completed by dispatch response from ${dispatchAgent.id}`, billingLogLine(draftJob, billing), `delivery quality score=${draftJob.deliveryQuality.score}`);
         settleAgentEarnings(draftJob, draftAgent, billing);
         return { ok: true, mode: 'completed', job: cloneJob(draftJob), billing };
       }
@@ -11613,42 +12437,42 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
         draftJob.deliveryQuality = null;
         const authorityRequest = syncJobAuthorityRequest(draftJob, draftAgent);
         markJobBlockedForAuthority(draftJob, authorityRequest, 'External execution is blocked waiting for connector approval.');
-        draftJob.logs.push(`dispatch blocked by ${agent.id} status=${dispatch.normalized.status}`);
+        draftJob.logs.push(`dispatch blocked by ${dispatchAgent.id} status=${dispatch.normalized.status}`);
         markWorkflowParentBlockedIfNeeded(draft, draftJob);
         return { ok: true, mode: 'blocked', job: cloneJob(draftJob) };
       }
 
-      draftJob.logs.push(`dispatch accepted by ${agent.id} status=${dispatch.normalized.status}`);
+      draftJob.logs.push(`dispatch accepted by ${dispatchAgent.id} status=${dispatch.normalized.status}`);
       return { ok: true, mode: 'dispatched', job: cloneJob(draftJob) };
     });
 
     if (final.error) return { error: final.error, statusCode: final.statusCode || 500 };
     if (final.mode === 'completed') {
-      if (!final.skippedTerminal) await touchEvent(storage, 'COMPLETED', `${job.taskType}/${job.id.slice(0, 6)} completed by dispatch`);
+      if (!final.skippedTerminal) await touchEvent(storage, 'COMPLETED', `${dispatchJob.taskType}/${dispatchJob.id.slice(0, 6)} completed by dispatch`);
       if (final.billing) await recordBillingOutcome(storage, final.job, final.billing, 'external-dispatch');
     } else if (final.mode === 'blocked') {
-      await touchEvent(storage, 'RUNNING', `${job.taskType}/${job.id.slice(0, 6)} blocked waiting for approval or connector setup`);
+      await touchEvent(storage, 'RUNNING', `${dispatchJob.taskType}/${dispatchJob.id.slice(0, 6)} blocked waiting for approval or connector setup`);
     } else if (final.mode === 'dispatched') {
-      await touchEvent(storage, 'RUNNING', `${agent.name} accepted ${job.taskType}/${job.id.slice(0, 6)}`);
+      await touchEvent(storage, 'RUNNING', `${dispatchAgent.name} accepted ${dispatchJob.taskType}/${dispatchJob.id.slice(0, 6)}`);
     } else if (!final.skippedTerminal) {
-      await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} dispatch failed`);
+      await touchEvent(storage, 'FAILED', `${dispatchJob.taskType}/${dispatchJob.id.slice(0, 6)} dispatch failed`);
     }
-    if (job.workflowParentId) {
-      await reconcileWorkflowParent(storage, job.workflowParentId);
+    if (dispatchJob.workflowParentId) {
+      await reconcileWorkflowParent(storage, dispatchJob.workflowParentId);
       if (final.mode === 'completed') {
-        await refreshWorkflowLeaderHandoffForJobId(storage, job.workflowParentId);
-        await scheduleProgressDispatchesForJobId(storage, env, null, job.workflowParentId, 'leader workflow handoff', {
+        await refreshWorkflowLeaderHandoffForJobId(storage, dispatchJob.workflowParentId);
+        await scheduleProgressDispatchesForJobId(storage, env, null, dispatchJob.workflowParentId, 'leader workflow handoff', {
           maxTargets: 8,
           awaitDispatch: true
         });
-        await reconcileWorkflowParent(storage, job.workflowParentId);
+        await reconcileWorkflowParent(storage, dispatchJob.workflowParentId);
       }
     }
     return final;
   } catch (error) {
-    const failed = await failJob(storage, job.id, error.message, [`dispatch exception for ${agent.id}`], { failureCategory: 'dispatch_error', retryable: true, attempts: 1, nextRetryAt: computeNextRetryAt(1) });
-    await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} dispatch exception`);
-    if (job.workflowParentId) await reconcileWorkflowParent(storage, job.workflowParentId);
+    const failed = await failJob(storage, dispatchJob.id, error.message, [`dispatch exception for ${dispatchAgent.id}`], { failureCategory: 'dispatch_error', retryable: true, attempts: 1, nextRetryAt: computeNextRetryAt(1) });
+    await touchEvent(storage, 'FAILED', `${dispatchJob.taskType}/${dispatchJob.id.slice(0, 6)} dispatch exception`);
+    if (dispatchJob.workflowParentId) await reconcileWorkflowParent(storage, dispatchJob.workflowParentId);
     return { ok: true, mode: failed?.status || 'failed', job: failed, error: error.message };
   }
 }
@@ -11661,6 +12485,7 @@ function canAutoScheduleAsyncDispatch(job, agent) {
     const staleScheduledDispatch = status === 'running'
       && completionStatus === 'dispatch_scheduled'
       && !dispatchScheduleIsFreshForAgent(job, agent);
+    if (staleScheduledDispatch && Number(job.dispatch?.scheduleAttempts || 0) >= maxDispatchRetriesForJob(job)) return false;
     if (!staleScheduledDispatch) return false;
   }
   if (!job.assignedAgentId || job.assignedAgentId !== agent.id) return false;
@@ -11746,6 +12571,23 @@ function workflowChildIsApprovalBlockedTerminal(child = {}) {
   const authorityRequest = authorityRequestFromReport(child.output?.report);
   const authoritySource = String(authorityRequest?.source || '').trim().toLowerCase();
   if (authoritySource === 'search_connector_required') return false;
+  const missingConnectors = authorityStringList(
+    authorityRequest?.missing_connectors || authorityRequest?.missingConnectors || authorityRequest?.connectors,
+    8,
+    60
+  );
+  const missingCapabilities = authorityStringList(
+    authorityRequest?.missing_connector_capabilities || authorityRequest?.missingConnectorCapabilities || authorityRequest?.capabilities,
+    12,
+    80
+  );
+  if (
+    missingConnectors.length
+    && missingConnectors.every((item) => ['search', 'web_search', 'brave', 'ga4', 'google_analytics', 'search_console', 'gsc', 'analytics'].includes(String(item || '').trim().toLowerCase()))
+    && !missingCapabilities.length
+  ) {
+    return false;
+  }
   const phase = workflowSequencePhaseForJob(child);
   const task = workflowTaskName(child);
   const actionTask = ['x_post', 'instagram', 'reddit', 'indie_hackers', 'directory_submission', 'acquisition_automation', 'email_ops', 'cold_email'].includes(task);
@@ -11845,11 +12687,38 @@ function workflowSearchSourcesFromReport(report = {}) {
       return {
         url: String(item.url || item.link || '').trim(),
         title: String(item.title || item.name || '').trim(),
-        snippet: String(item.snippet || item.description || item.summary || '').trim()
+        snippet: String(item.snippet || item.description || item.summary || '').trim(),
+        query: String(item.query || item.search_query || item.searchQuery || '').trim(),
+        action: String(item.action || item.source_action || item.sourceAction || '').trim(),
+        provider: String(item.provider || item.search_provider || item.searchProvider || item.source || '').trim()
       };
     })
-    .filter((item) => item && (item.url || item.title || item.snippet))
+    .filter((item) => item && (item.url || item.title || item.snippet || item.query))
     .slice(0, 8);
+}
+
+function workflowSearchSourceHasExecutionProof(source = {}) {
+  if (!source || typeof source !== 'object') return false;
+  const query = String(source.query || '').trim();
+  if (query) return true;
+  const action = String(source.action || '').trim().toLowerCase();
+  if (/(search|brave|web_search|serp|source_collection)/i.test(action)) return true;
+  const provider = String(source.provider || '').trim().toLowerCase();
+  return /(brave|openai_web_search|web_search|search|serp)/i.test(provider);
+}
+
+function workflowSearchSourcesHaveExecutionProof(sources = []) {
+  return (Array.isArray(sources) ? sources : []).some((source) => workflowSearchSourceHasExecutionProof(source));
+}
+
+function workflowSearchCompletionFailureReason(job = {}, report = {}) {
+  if (!workflowJobRequiresSearch(job)) return '';
+  const sources = workflowSearchSourcesFromReport(report);
+  if (!sources.length) return 'Search-required workflow run did not attach any web_sources, so it cannot be completed.';
+  if (!workflowSearchSourcesHaveExecutionProof(sources)) {
+    return 'Search-required workflow run attached source URLs without search execution proof. Include the search query, search action, or search provider from the source collection step.';
+  }
+  return '';
 }
 
 function workflowSourceSignalStrings(sources = []) {
@@ -11868,6 +12737,9 @@ function workflowSourceSignalStrings(sources = []) {
     push(source.url);
     push(source.title);
     push(source.snippet);
+    push(source.query);
+    push(source.action);
+    push(source.provider);
     try {
       const hostname = source.url ? new URL(source.url).hostname.replace(/^www\./i, '') : '';
       push(hostname);
@@ -11996,6 +12868,7 @@ function workflowOutputText(job = {}) {
   const report = output.report && typeof output.report === 'object' ? output.report : {};
   const bullets = Array.isArray(report.bullets) ? report.bullets : [];
   const files = Array.isArray(output.files) ? output.files : [];
+  const webSources = workflowSearchSourcesFromReport(report);
   return [
     output.summary,
     report.summary,
@@ -12003,6 +12876,7 @@ function workflowOutputText(job = {}) {
     report.nextAction,
     report.next_action,
     ...bullets,
+    ...webSources.flatMap((source) => [source.title, source.url, source.snippet]),
     ...files.map((file) => file?.content || '')
   ]
     .map((item) => String(item || '').trim())
@@ -12691,14 +13565,15 @@ function workflowOriginalInfoQualityReview(parent = {}, child = {}) {
   const issues = [];
   if (requiresSearchEvidence) {
     if (!searchSources.length) issues.push('missing_search_execution');
-    if (searchSources.length && !searchSignalMatch.used) issues.push('missing_search_content_in_output');
+    if (searchSources.length && !workflowSearchSourcesHaveExecutionProof(searchSources)) issues.push('missing_search_execution');
+    if (searchSources.length && workflowSearchSourcesHaveExecutionProof(searchSources) && !searchSignalMatch.used) issues.push('missing_search_content_in_output');
     return {
       applicable: true,
       passed: issues.length === 0,
       scope: 'research_original_info',
       taskType,
       phase,
-      searched: searchSources.length > 0,
+      searched: workflowSearchSourcesHaveExecutionProof(searchSources),
       usedOriginalInfo: searchSignalMatch.used,
       matchedSignals: searchSignalMatch.matches,
       sourceCount: searchSources.length,
@@ -13188,7 +14063,13 @@ function workflowBlockingQualityGateBeforeLayer(parent = {}, children = [], laye
   for (const child of sorted) {
     if (!child || isWorkflowLeaderTask(workflowTaskName(child))) continue;
     if (workflowDispatchLayer(parent, child) >= targetLayer) continue;
-    const gate = child.qualityGate && typeof child.qualityGate === 'object' ? child.qualityGate : null;
+    const currentReview = String(child.status || '').trim().toLowerCase() === 'completed'
+      ? workflowOriginalInfoQualityReview(parent, child)
+      : null;
+    if (currentReview?.applicable) workflowApplyQualityReviewToChild(child, currentReview);
+    const gate = currentReview?.applicable
+      ? child.qualityGate
+      : (child.qualityGate && typeof child.qualityGate === 'object' ? child.qualityGate : null);
     if (gate && gate.applicable !== false && gate.passed === false) {
       return {
         type: 'child_quality_gate',
@@ -13907,10 +14788,18 @@ async function markDispatchScheduled(storage, jobId, agentId, reason = 'dispatch
     job.startedAt = job.startedAt || at;
     job.failureReason = null;
     job.failureCategory = null;
+    const previousDispatch = job.dispatch && typeof job.dispatch === 'object' ? job.dispatch : {};
+    const previousCompletionStatus = String(previousDispatch.completionStatus || '').trim().toLowerCase();
+    const firstDispatchRequestedAt = previousDispatch.firstDispatchRequestedAt || previousDispatch.dispatchRequestedAt || at;
+    const scheduleAttempts = Number(previousDispatch.scheduleAttempts || 0) + 1;
     job.dispatch = {
-      ...(job.dispatch || {}),
-      dispatchRequestedAt: at,
+      ...previousDispatch,
+      firstDispatchRequestedAt,
+      dispatchRequestedAt: previousCompletionStatus === 'dispatch_scheduled'
+        ? (previousDispatch.dispatchRequestedAt || firstDispatchRequestedAt)
+        : at,
       completionStatus: 'dispatch_scheduled',
+      scheduleAttempts,
       retryable: true,
       nextRetryAt: null,
       maxRetries: maxDispatchRetriesForJob(job)
@@ -13962,52 +14851,17 @@ async function scheduleProgressDispatchesForJobId(storage, env, waitUntil, jobId
       jobId: marked.job.id,
       parentJobId: marked.job.workflowParentId || target.parentJobId || null
     });
-    const sampleKind = builtInWorkflowKindForJob(marked.job, target.agent);
-    const workflowRun = Boolean(marked.job?.workflowParentId || marked.job?.input?._broker?.workflow);
-    if (sampleKind && workflowRun && !shouldRunBuiltInWorkflowThroughAgentRunner(env, marked.job)) {
-      try {
-        const payload = buildDispatchPayload(marked.job, target.agent);
-        const body = sampleAgentPayload(sampleKind, payload);
-        const normalized = normalizeDispatchResponse(body);
-        normalized.usage = usageWithObservedJobTokens(marked.job, normalized.usage, normalized.report);
-        const completed = await completeJobFromAgentResult(storage, marked.job.id, target.agent.id, {
-          report: normalized.report,
-          files: normalized.files,
-          usage: normalized.usage,
-          returnTargets: normalized.returnTargets
-        }, { source: 'built-in-workflow-deterministic' });
-        if (completed?.ok) {
-          if (completed.mode === 'blocked') {
-            await touchEvent(storage, 'RUNNING', `${marked.job.taskType}/${marked.job.id.slice(0, 6)} blocked by deterministic built-in workflow approval gate`);
-          } else {
-            await touchEvent(storage, 'COMPLETED', `${marked.job.taskType}/${marked.job.id.slice(0, 6)} completed by deterministic built-in workflow`);
-            await recordBillingOutcome(storage, completed.job, completed.billing, 'built-in-workflow-deterministic');
-          }
-          if (marked.job.workflowParentId && completed.mode !== 'blocked') {
-            await refreshWorkflowLeaderHandoffForJobId(storage, marked.job.workflowParentId);
-            await scheduleProgressDispatchesForJobId(storage, env, waitUntil, marked.job.workflowParentId, 'deterministic built-in workflow handoff', {
-              maxTargets: 8,
-              awaitDispatch,
-              refresh: false
-            });
-            await reconcileWorkflowParent(storage, marked.job.workflowParentId);
-          } else if (marked.job.workflowParentId) {
-            await reconcileWorkflowParent(storage, marked.job.workflowParentId);
-          }
-        } else {
-          await touchEvent(storage, 'FAILED', `${marked.job.taskType}/${marked.job.id.slice(0, 6)} deterministic built-in completion rejected: ${String(completed?.error || 'unknown').slice(0, 120)}`);
-        }
-      } catch (error) {
-        await touchEvent(storage, 'FAILED', `${marked.job.taskType}/${marked.job.id.slice(0, 6)} deterministic built-in exception ${String(error?.message || error).slice(0, 120)}`);
-      }
-      continue;
-    }
     if (marked.job.workflowParentId) {
       try {
         await reconcileWorkflowParent(storage, marked.job.workflowParentId);
       } catch (error) {
         await touchEvent(storage, 'FAILED', `${marked.job.taskType}/${marked.job.id.slice(0, 6)} pre-dispatch reconcile exception ${String(error?.message || error).slice(0, 120)}`);
       }
+    }
+    const queuedSampleKind = builtInWorkflowKindForJob(marked.job, marked.agent);
+    if (queuedSampleKind && workflowDispatchQueue(env)) {
+      await enqueueBuiltInWorkflowCompletion(storage, env, marked.job, marked.agent, queuedSampleKind, { source: reason });
+      continue;
     }
     dispatchPromises.push(dispatchExistingJobToAssignedAgent(storage, env, marked.job.id, marked.agent.id)
       .catch((error) => touchEvent(storage, 'FAILED', `${marked.job.taskType}/${marked.job.id.slice(0, 6)} scheduled dispatch exception ${String(error?.message || error).slice(0, 120)}`)));
@@ -14040,71 +14894,522 @@ async function scheduleProgressDispatchForJobId(storage, env, waitUntil, jobId, 
   };
 }
 
-async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) {
-  if (useOpenAiForBuiltInWorkflow(env)) return { ok: true, completed_count: 0, skipped: 'openai_workflow_enabled' };
-  const limit = Math.max(1, Math.min(10, Number(options.limit || 5) || 5));
-  const state = typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState();
-  const completed = [];
-  const candidates = (state.jobs || [])
-    .filter((job) => ['running', 'dispatched'].includes(String(job.status || '').trim().toLowerCase()))
-    .filter((job) => job.workflowParentId || job.input?._broker?.workflow)
-    .filter((job) => String(job.dispatch?.completionStatus || '').trim().toLowerCase() === 'dispatch_scheduled')
-    .sort((a, b) => String(a.dispatch?.dispatchRequestedAt || a.startedAt || a.createdAt || '').localeCompare(String(b.dispatch?.dispatchRequestedAt || b.startedAt || b.createdAt || '')));
-  for (const job of candidates) {
-    if (completed.length >= limit) break;
-    const agent = (state.agents || []).find((item) => item.id === job.assignedAgentId);
-    const sampleKind = builtInWorkflowKindForJob(job, agent);
-    if (!agent || !sampleKind) continue;
-    try {
-      const payload = buildDispatchPayload(job, agent);
-      const body = shouldRunBuiltInWorkflowThroughAgentRunner(env, job)
-        ? await runBuiltInAgent(sampleKind, payload, env)
-        : sampleAgentPayload(sampleKind, payload);
-      const normalized = normalizeDispatchResponse(body);
-      normalized.usage = usageWithObservedJobTokens(job, normalized.usage, normalized.report);
-      const result = await completeJobFromAgentResult(storage, job.id, agent.id, {
-        report: normalized.report,
-        files: normalized.files,
-        usage: normalized.usage,
-        returnTargets: normalized.returnTargets
-      }, { source: 'built-in-workflow-scheduled-sweep' });
-      if (result?.ok) {
-        completed.push(job.id);
-        if (result.mode === 'blocked') {
-          await touchEvent(storage, 'RUNNING', `${job.taskType}/${job.id.slice(0, 6)} blocked by scheduled built-in sweep approval gate`);
-        } else {
-          await touchEvent(storage, 'COMPLETED', `${job.taskType}/${job.id.slice(0, 6)} completed by scheduled built-in sweep`);
-          await recordBillingOutcome(storage, result.job, result.billing, 'built-in-workflow-scheduled-sweep');
-        }
-        if (job.workflowParentId && result.mode !== 'blocked') {
-          await refreshWorkflowLeaderHandoffForJobId(storage, job.workflowParentId);
-          await scheduleProgressDispatchesForJobId(storage, env, null, job.workflowParentId, 'scheduled built-in sweep handoff', {
-            maxTargets: 8,
-            awaitDispatch: true,
-            refresh: false
-          });
-          await reconcileWorkflowParent(storage, job.workflowParentId);
-        } else if (job.workflowParentId) {
-          await reconcileWorkflowParent(storage, job.workflowParentId);
-        }
+async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, sampleKind, options = {}) {
+  const eventLabel = options.eventLabel || 'scheduled built-in sweep';
+  const completionSource = options.completionSource || 'built-in-workflow-scheduled-sweep';
+  try {
+    const payload = buildCompactBuiltInDispatchPayload(locked, agent);
+    const body = await runBuiltInAgent(sampleKind, payload, env);
+    const normalized = normalizeDispatchResponse(body);
+    if (normalized.failed) {
+      await failJob(storage, locked.id, normalized.failureReason || 'Built-in agent generation failed', [`failed by ${eventLabel}`, 'failure source=built-in-generation'], {
+        failureStatus: 'failed',
+        failureCategory: 'built_in_generation_failed',
+        source: completionSource
+      });
+      await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} failed by ${eventLabel}`);
+      return { ok: true, mode: 'failed', jobId: locked.id };
+    }
+    normalized.usage = usageWithObservedJobTokens(locked, normalized.usage, normalized.report);
+    const result = await completeJobFromAgentResult(storage, locked.id, agent.id, {
+      report: normalized.report,
+      files: normalized.files,
+      usage: normalized.usage,
+      returnTargets: normalized.returnTargets
+    }, { source: completionSource });
+    if (result?.ok) {
+      if (result.mode === 'failed') {
+        await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} failed by ${eventLabel}: ${String(result.job?.failureReason || '').slice(0, 120)}`);
+      } else if (result.mode === 'blocked') {
+        await touchEvent(storage, 'RUNNING', `${locked.taskType}/${locked.id.slice(0, 6)} blocked by ${eventLabel} approval gate`);
       } else {
-        await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} scheduled built-in sweep rejected: ${String(result?.error || 'unknown').slice(0, 120)}`);
+        await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} completed by ${eventLabel}`);
+        await recordBillingOutcome(storage, result.job, result.billing, completionSource);
       }
-    } catch (error) {
-      await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} scheduled built-in sweep exception ${String(error?.message || error).slice(0, 120)}`);
+      if (locked.workflowParentId && result.mode === 'completed') {
+        await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
+        await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`, {
+          maxTargets: 8,
+          awaitDispatch: true,
+          refresh: false
+        });
+        await reconcileWorkflowParent(storage, locked.workflowParentId);
+      } else if (locked.workflowParentId) {
+        await reconcileWorkflowParent(storage, locked.workflowParentId);
+      }
+      return { ok: true, mode: result.mode, jobId: locked.id, job: result.job };
+    }
+    await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} ${eventLabel} rejected: ${String(result?.error || 'unknown').slice(0, 120)}`);
+    return { ok: false, mode: 'rejected', jobId: locked.id, error: result?.error || 'unknown' };
+  } catch (error) {
+    await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} ${eventLabel} exception ${String(error?.message || error).slice(0, 120)}`);
+    return { ok: false, mode: 'exception', jobId: locked.id, error: String(error?.message || error) };
+  }
+}
+
+async function enqueueBuiltInWorkflowCompletion(storage, env, locked, agent, sampleKind, options = {}) {
+  const queue = workflowDispatchQueue(env);
+  if (!queue) return { ok: false, reason: 'queue_not_configured' };
+  const queuedJob = typeof storage.mutateJobAndAgent === 'function'
+    ? await storage.mutateJobAndAgent(locked.id, agent.id, (draft) => {
+        const draftJob = draft.jobs.find((item) => item.id === locked.id);
+        if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
+        const completionStatus = String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase();
+        if (!['dispatch_scheduled', 'completion_queued'].includes(completionStatus)) return null;
+        const queueAttempts = Number(draftJob.dispatch?.completionQueueAttempts || 0);
+        const at = nowIso();
+        draftJob.dispatch = {
+          ...(draftJob.dispatch || {}),
+          completionStatus: 'completion_queued',
+          completionQueueRequestedAt: completionStatus === 'completion_queued'
+            ? (draftJob.dispatch?.completionQueueRequestedAt || at)
+            : at,
+          completionQueueAttempts: completionStatus === 'completion_queued' ? queueAttempts : queueAttempts + 1,
+          retryable: false,
+          nextRetryAt: null
+        };
+        draftJob.logs = [...(draftJob.logs || []), 'built-in workflow dispatch queued'];
+        return cloneJob(draftJob);
+      })
+    : await storage.mutate((draft) => {
+        const draftJob = draft.jobs.find((item) => item.id === locked.id);
+        if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
+        const completionStatus = String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase();
+        if (!['dispatch_scheduled', 'completion_queued'].includes(completionStatus)) return null;
+        const queueAttempts = Number(draftJob.dispatch?.completionQueueAttempts || 0);
+        const at = nowIso();
+        draftJob.dispatch = {
+          ...(draftJob.dispatch || {}),
+          completionStatus: 'completion_queued',
+          completionQueueRequestedAt: completionStatus === 'completion_queued'
+            ? (draftJob.dispatch?.completionQueueRequestedAt || at)
+            : at,
+          completionQueueAttempts: completionStatus === 'completion_queued' ? queueAttempts : queueAttempts + 1,
+          retryable: false,
+          nextRetryAt: null
+        };
+        draftJob.logs = [...(draftJob.logs || []), 'built-in workflow dispatch queued'];
+        return cloneJob(draftJob);
+      });
+  if (!queuedJob) return { ok: false, reason: 'job_not_queueable' };
+  try {
+    await queue.send({
+      kind: 'built_in_workflow_completion',
+      jobId: queuedJob.id,
+      agentId: agent.id,
+      sampleKind,
+      workflowParentId: queuedJob.workflowParentId || null,
+      source: options.source || 'workflow-completion-sweep',
+      queuedAt: nowIso()
+    }, { contentType: 'json' });
+    await touchEvent(storage, 'RUNNING', `${queuedJob.taskType}/${queuedJob.id.slice(0, 6)} queued for workflow dispatch consumer`);
+    return { ok: true };
+  } catch (error) {
+    const reason = `Workflow dispatch queue send failed: ${String(error?.message || error).slice(0, 260)}`;
+    await failJob(storage, queuedJob.id, reason, ['failed before generation: workflow dispatch queue send failed'], {
+      failureStatus: 'failed',
+      failureCategory: 'dispatch_queue_send_failed',
+      retryable: false,
+      source: 'workflow-dispatch-queue'
+    });
+    await touchEvent(storage, 'FAILED', `${queuedJob.taskType}/${queuedJob.id.slice(0, 6)} workflow dispatch queue send failed`);
+    if (queuedJob.workflowParentId) await reconcileWorkflowParent(storage, queuedJob.workflowParentId);
+    return { ok: false, reason };
+  }
+}
+
+async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) {
+  const limit = Math.max(1, Math.min(10, Number(options.limit || 5) || 5));
+  const completed = [];
+  const queued = [];
+  const skipped = {};
+  let state = null;
+  const expired = [];
+  const staleSweepJobs = typeof storage.listStaleCompletionSweepJobs === 'function'
+    ? await storage.listStaleCompletionSweepJobs({
+        limit,
+        maxAgeMs: workflowDispatchMaxAgeMs(env),
+        minAgeMs: completionSweepStaleMs(env)
+      })
+    : [];
+  for (const staleJob of staleSweepJobs) {
+    const expiredJob = typeof storage.mutateJobAndAgent === 'function'
+      ? await storage.mutateJobAndAgent(staleJob.id, staleJob.assignedAgentId, (draft) => {
+          const draftJob = draft.jobs.find((item) => item.id === staleJob.id);
+          if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
+          if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'completion_sweep_running') return null;
+          draftJob.status = 'timed_out';
+          draftJob.failedAt = nowIso();
+          draftJob.timedOutAt = draftJob.failedAt;
+          draftJob.failureReason = 'Built-in completion sweep started but did not finish before the cron safety timeout.';
+          draftJob.failureCategory = 'dispatch_timeout';
+          if (draftJob.billingReservation && !draftJob.billingSettlement?.settledAt && !draftJob.billingReservation?.releasedAt) {
+            draftJob.billingReservation = {
+              ...(draftJob.billingReservation || {}),
+              releasedAt: draftJob.failedAt,
+              releaseReason: 'completion_sweep_timeout'
+            };
+          }
+          draftJob.dispatch = {
+            ...(draftJob.dispatch || {}),
+            completionStatus: 'completion_sweep_timed_out',
+            retryable: false,
+            nextRetryAt: null
+          };
+          draftJob.logs = [...(draftJob.logs || []), draftJob.failureReason];
+          return cloneJob(draftJob);
+        })
+      : null;
+    if (expiredJob) {
+      expired.push(expiredJob.id);
+      await touchEvent(storage, 'FAILED', `${expiredJob.taskType}/${expiredJob.id.slice(0, 6)} completion sweep timed out`);
+      if (expiredJob.workflowParentId) await reconcileWorkflowParent(storage, expiredJob.workflowParentId);
     }
   }
-  return { ok: true, completed_count: completed.length, job_ids: completed };
+  const candidates = typeof storage.listScheduledWorkflowJobs === 'function'
+    ? await storage.listScheduledWorkflowJobs({
+        limit,
+        maxAgeMs: workflowDispatchMaxAgeMs(env),
+        minAgeMs: DISPATCH_SCHEDULE_TIMEOUT_MS
+      })
+    : (() => {
+        state = null;
+        return [];
+      })();
+  const fallbackCandidates = async () => {
+    state = typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState();
+    return (state.jobs || [])
+      .filter((job) => ['running', 'dispatched'].includes(String(job.status || '').trim().toLowerCase()))
+      .filter((job) => jobWithinDispatchAge(job, env))
+      .filter((job) => job.workflowParentId || job.input?._broker?.workflow)
+      .filter((job) => String(job.dispatch?.completionStatus || '').trim().toLowerCase() === 'dispatch_scheduled')
+      .filter((job) => {
+        const requestedAt = Date.parse(String(job.dispatch?.firstDispatchRequestedAt || job.dispatch?.dispatchRequestedAt || job.startedAt || ''));
+        return Number.isFinite(requestedAt) && Date.now() - requestedAt >= DISPATCH_SCHEDULE_TIMEOUT_MS;
+      })
+      .sort((a, b) => String(a.dispatch?.firstDispatchRequestedAt || a.dispatch?.dispatchRequestedAt || a.startedAt || a.createdAt || '').localeCompare(String(b.dispatch?.firstDispatchRequestedAt || b.dispatch?.dispatchRequestedAt || b.startedAt || b.createdAt || '')));
+  };
+  const jobs = candidates.length || typeof storage.listScheduledWorkflowJobs === 'function' ? candidates : await fallbackCandidates();
+  for (const job of jobs) {
+    if (completed.length >= limit) break;
+    const useQueue = Boolean(workflowDispatchQueue(env)) && options.forceDirectExecution !== true;
+    const agent = typeof storage.getAgentById === 'function'
+      ? await storage.getAgentById(job.assignedAgentId)
+      : ((state?.agents || []).find((item) => item.id === job.assignedAgentId) || null);
+    const sampleKind = builtInWorkflowKindForJob(job, agent);
+    if (!agent) {
+      skipped.missing_agent = (skipped.missing_agent || 0) + 1;
+      continue;
+    }
+    if (!sampleKind) {
+      skipped.not_builtin = (skipped.not_builtin || 0) + 1;
+      continue;
+    }
+    const lockScheduledJob = async (draft) => {
+      const draftJob = draft.jobs.find((item) => item.id === job.id);
+      if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
+      if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'dispatch_scheduled') return null;
+      const attempts = Number(draftJob.dispatch?.completionSweepAttempts || 0);
+      const queueAttempts = Number(draftJob.dispatch?.completionQueueAttempts || 0);
+      if (!useQueue && attempts >= 1) {
+        draftJob.status = 'timed_out';
+        draftJob.timedOutAt = nowIso();
+        draftJob.failureReason = 'Built-in scheduled completion sweep already retried once.';
+        draftJob.failureCategory = 'dispatch_timeout';
+        draftJob.dispatch = {
+          ...(draftJob.dispatch || {}),
+          completionStatus: 'completion_sweep_exhausted',
+          retryable: false,
+          nextRetryAt: null
+        };
+        return null;
+      }
+      if (useQueue && queueAttempts >= 3) {
+        draftJob.status = 'timed_out';
+        draftJob.timedOutAt = nowIso();
+        draftJob.failureReason = 'Built-in workflow dispatch queue was requested repeatedly but did not start execution.';
+        draftJob.failureCategory = 'dispatch_queue_timeout';
+        draftJob.dispatch = {
+          ...(draftJob.dispatch || {}),
+          completionStatus: 'completion_queue_exhausted',
+          retryable: false,
+          nextRetryAt: null
+        };
+        return null;
+      }
+      const at = nowIso();
+      draftJob.dispatch = {
+        ...(draftJob.dispatch || {}),
+        completionStatus: useQueue ? 'completion_queued' : 'completion_sweep_running',
+        ...(useQueue
+          ? { completionQueueRequestedAt: at, completionQueueAttempts: queueAttempts + 1 }
+          : { completionSweepRequestedAt: at, completionSweepAttempts: attempts + 1 }),
+        retryable: false,
+        nextRetryAt: null
+      };
+      draftJob.logs = [...(draftJob.logs || []), useQueue
+        ? 'built-in completion queued for workflow dispatch consumer'
+        : 'built-in completion sweep locked this job to prevent duplicate OpenAI execution'];
+      return cloneJob(draftJob);
+    };
+    const locked = typeof storage.mutateJobAndAgent === 'function'
+      ? await storage.mutateJobAndAgent(job.id, agent.id, lockScheduledJob)
+      : await storage.mutate(lockScheduledJob);
+    if (!locked) {
+      skipped.lock_rejected = (skipped.lock_rejected || 0) + 1;
+      continue;
+    }
+    if (useQueue) {
+      const enqueued = await enqueueBuiltInWorkflowCompletion(storage, env, locked, agent, sampleKind, { source: options.source || 'completion-sweep' });
+      if (enqueued.ok) queued.push(locked.id);
+      continue;
+    }
+    if (options.source === 'minute-cron-direct-fallback') {
+      await touchEvent(storage, 'RUNNING', `${locked.taskType}/${locked.id.slice(0, 6)} direct fallback generation started`);
+    }
+    const result = await runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, sampleKind, {
+      eventLabel: 'scheduled built-in sweep',
+      completionSource: 'built-in-workflow-scheduled-sweep'
+    });
+    if (result?.ok) {
+      if (['completed', 'failed', 'blocked'].includes(String(result.mode || ''))) {
+        completed.push(locked.id);
+      }
+    }
+  }
+  return { ok: true, completed_count: completed.length, queued_count: queued.length, job_ids: completed, queued_job_ids: queued, scanned_count: jobs.length, skipped, expired_count: expired.length, expired_job_ids: expired };
+}
+
+async function verifyInternalCronRequest(request, env, cron = '') {
+  const provided = String(request.headers.get('x-cait-cron-token') || '').trim();
+  const scheduledTime = Number(request.headers.get('x-cait-cron-time') || Date.now()) || Date.now();
+  if (provided) {
+    for (const offset of [0, -60_000, 60_000]) {
+      const expected = await internalCronToken(env, cron, scheduledTime + offset);
+      if (secretEquals(provided, expected)) return true;
+    }
+  }
+  const e2eSecret = e2eAuthSecret(env);
+  const providedE2e = String(request.headers.get('x-e2e-auth-secret') || '').trim();
+  return Boolean(e2eSecret && providedE2e && secretEquals(providedE2e, e2eSecret));
+}
+
+async function handleInternalWorkflowCompletionSweep(request, env) {
+  let body = {};
+  try {
+    body = await parseBody(request);
+  } catch {}
+  const cron = String(body.cron || request.headers.get('x-cait-cron') || '').trim();
+  if (!(await verifyInternalCronRequest(request, env, cron))) return json({ error: 'Not found' }, 404);
+  const storage = runtimeStorage(env);
+  const result = await completeScheduledBuiltInWorkflowJobs(storage, env, {
+    source: 'internal-cron-fetch',
+    cron,
+    limit: Number(body.limit || env?.SCHEDULED_BUILTIN_COMPLETION_SWEEP_LIMIT || 2) || 2
+  });
+  return json({ ok: true, ...result });
+}
+
+async function runMinuteWorkflowCompletionSweep(storage, env, cron = '', scheduledTime = Date.now()) {
+  const limit = Number(env?.SCHEDULED_BUILTIN_COMPLETION_SWEEP_LIMIT || 2) || 2;
+  let fetchOk = false;
+  const useInternalFetch = ['1', 'true', 'yes', 'on'].includes(String(env?.WORKFLOW_COMPLETION_SWEEP_INTERNAL_FETCH_ENABLED || '').trim().toLowerCase());
+  if (useInternalFetch) {
+    const token = await internalCronToken(env, cron, scheduledTime);
+    const fetchUrl = `${baseUrlFromEnv(env)}/api/internal/cron/workflow-completions`;
+    try {
+      const response = await fetch(fetchUrl, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-cait-cron': cron,
+          'x-cait-cron-time': String(scheduledTime),
+          'x-cait-cron-token': token
+        },
+        body: JSON.stringify({ cron, scheduledTime, limit })
+      });
+      fetchOk = response.ok;
+      if (!response.ok) {
+        await touchEvent(storage, 'FAILED', `minute workflow completion fetch failed status=${response.status}; running direct fallback`);
+      }
+    } catch (error) {
+      await touchEvent(storage, 'FAILED', `minute workflow completion fetch exception; running direct fallback: ${String(error?.message || error).slice(0, 120)}`);
+    }
+  }
+  if (fetchOk) return { ok: true, mode: 'internal_fetch' };
+  try {
+    const result = await completeScheduledBuiltInWorkflowJobs(storage, env, {
+      source: 'minute-cron-direct-fallback',
+      cron,
+      limit: Math.max(1, Math.min(2, limit))
+    });
+    if (result.completed_count) {
+      await touchEvent(storage, 'COMPLETED', `minute workflow completion direct fallback completed ${result.completed_count} job(s)`);
+    } else if (result.scanned_count) {
+      await touchEvent(storage, 'RUNNING', `minute workflow completion direct fallback scanned ${result.scanned_count} job(s), completed 0, skipped=${JSON.stringify(result.skipped || {})}`);
+    }
+    return { ok: true, mode: 'direct_fallback', ...result };
+  } catch (error) {
+    await touchEvent(storage, 'FAILED', `minute workflow completion direct fallback exception ${String(error?.message || error).slice(0, 120)}`);
+    return { ok: false, mode: 'direct_fallback_failed', error: String(error?.message || error) };
+  }
+}
+
+async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
+  const message = body && typeof body === 'object' ? body : {};
+  const kind = String(message.kind || message.type || '').trim();
+  if (kind !== 'built_in_workflow_completion') return { ok: true, mode: 'ignored' };
+  const jobId = String(message.jobId || message.job_id || '').trim();
+  const agentId = String(message.agentId || message.agent_id || '').trim();
+  if (!jobId || !agentId) return { ok: false, mode: 'invalid', error: 'Missing jobId or agentId' };
+  const job = typeof storage.getJobById === 'function' ? await storage.getJobById(jobId) : null;
+  const agent = typeof storage.getAgentById === 'function' ? await storage.getAgentById(agentId) : null;
+  if (!job) return { ok: false, mode: 'missing_job' };
+  if (!agent) {
+    await failJob(storage, jobId, 'Workflow dispatch queue consumer could not find the assigned agent.', ['queue consumer failed before generation: assigned agent missing'], {
+      failureStatus: 'failed',
+      failureCategory: 'missing_agent',
+      retryable: false,
+      source: 'workflow-dispatch-queue'
+    });
+    return { ok: false, mode: 'missing_agent' };
+  }
+  if (isTerminalJobStatus(job.status)) return { ok: true, mode: 'terminal' };
+  const sampleKind = String(message.sampleKind || message.sample_kind || '').trim().toLowerCase() || builtInWorkflowKindForJob(job, agent);
+  if (!sampleKind) {
+    await failJob(storage, jobId, 'Workflow dispatch queue consumer could not identify a built-in agent kind.', ['queue consumer failed before generation: built-in kind missing'], {
+      failureStatus: 'failed',
+      failureCategory: 'missing_builtin_kind',
+      retryable: false,
+      source: 'workflow-dispatch-queue'
+    });
+    return { ok: false, mode: 'missing_builtin_kind' };
+  }
+  const currentCompletionStatus = String(job.dispatch?.completionStatus || '').trim().toLowerCase();
+  if (currentCompletionStatus === 'completion_sweep_running') {
+    const requestedAt = Date.parse(String(job.dispatch?.completionSweepRequestedAt || job.dispatch?.completionQueueRequestedAt || job.startedAt || ''));
+    const ageMs = Number.isFinite(requestedAt) ? Date.now() - requestedAt : Number.MAX_SAFE_INTEGER;
+    const staleMs = completionSweepStaleMs(env);
+    if (ageMs >= staleMs) {
+      const timedOut = typeof storage.mutateJobAndAgent === 'function'
+        ? await storage.mutateJobAndAgent(jobId, agentId, (draft) => {
+            const draftJob = draft.jobs.find((item) => item.id === jobId);
+            if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
+            if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'completion_sweep_running') return null;
+            const at = nowIso();
+            draftJob.status = 'timed_out';
+            draftJob.failedAt = at;
+            draftJob.timedOutAt = at;
+            draftJob.failureReason = 'Workflow dispatch queue consumer started built-in generation but did not finish before the queue safety timeout.';
+            draftJob.failureCategory = 'dispatch_queue_timeout';
+            if (draftJob.billingReservation && !draftJob.billingSettlement?.settledAt && !draftJob.billingReservation?.releasedAt) {
+              releaseBillingReservationInState(draft, draftJob);
+            }
+            draftJob.dispatch = {
+              ...(draftJob.dispatch || {}),
+              completionStatus: 'completion_sweep_timed_out',
+              retryable: false,
+              nextRetryAt: null
+            };
+            draftJob.logs = [...(draftJob.logs || []), draftJob.failureReason];
+            return cloneJob(draftJob);
+          })
+        : await storage.mutate((draft) => {
+            const draftJob = draft.jobs.find((item) => item.id === jobId);
+            if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
+            if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'completion_sweep_running') return null;
+            const at = nowIso();
+            draftJob.status = 'timed_out';
+            draftJob.failedAt = at;
+            draftJob.timedOutAt = at;
+            draftJob.failureReason = 'Workflow dispatch queue consumer started built-in generation but did not finish before the queue safety timeout.';
+            draftJob.failureCategory = 'dispatch_queue_timeout';
+            if (draftJob.billingReservation && !draftJob.billingSettlement?.settledAt && !draftJob.billingReservation?.releasedAt) {
+              releaseBillingReservationInState(draft, draftJob);
+            }
+            draftJob.dispatch = {
+              ...(draftJob.dispatch || {}),
+              completionStatus: 'completion_sweep_timed_out',
+              retryable: false,
+              nextRetryAt: null
+            };
+            draftJob.logs = [...(draftJob.logs || []), draftJob.failureReason];
+            return cloneJob(draftJob);
+          });
+      if (timedOut) {
+        await touchEvent(storage, 'FAILED', `${timedOut.taskType}/${timedOut.id.slice(0, 6)} workflow dispatch queue timed out`);
+        if (timedOut.workflowParentId) await reconcileWorkflowParent(storage, timedOut.workflowParentId);
+      }
+      return { ok: true, mode: 'completion_sweep_timed_out' };
+    }
+    return {
+      ok: true,
+      mode: 'already_running_fresh',
+      retryDelaySeconds: Math.max(30, Math.min(300, Math.ceil((staleMs - ageMs) / 1000) + 15))
+    };
+  }
+  const locked = typeof storage.mutateJobAndAgent === 'function'
+    ? await storage.mutateJobAndAgent(jobId, agentId, (draft) => {
+        const draftJob = draft.jobs.find((item) => item.id === jobId);
+        if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
+        const completionStatus = String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase();
+        if (completionStatus === 'completion_sweep_running') return null;
+        if (!['completion_queued', 'dispatch_scheduled'].includes(completionStatus)) return null;
+        const at = nowIso();
+        draftJob.status = 'running';
+        draftJob.startedAt = draftJob.startedAt || at;
+        draftJob.dispatch = {
+          ...(draftJob.dispatch || {}),
+          completionStatus: 'completion_sweep_running',
+          completionSweepRequestedAt: at,
+          completionSweepAttempts: Number(draftJob.dispatch?.completionSweepAttempts || 0) + 1,
+          retryable: false,
+          nextRetryAt: null
+        };
+        draftJob.logs = [...(draftJob.logs || []), 'workflow dispatch queue consumer locked this job for built-in generation'];
+        return cloneJob(draftJob);
+      })
+    : await storage.mutate((draft) => {
+        const draftJob = draft.jobs.find((item) => item.id === jobId);
+        if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
+        const completionStatus = String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase();
+        if (completionStatus === 'completion_sweep_running') return null;
+        if (!['completion_queued', 'dispatch_scheduled'].includes(completionStatus)) return null;
+        const at = nowIso();
+        draftJob.status = 'running';
+        draftJob.startedAt = draftJob.startedAt || at;
+        draftJob.dispatch = {
+          ...(draftJob.dispatch || {}),
+          completionStatus: 'completion_sweep_running',
+          completionSweepRequestedAt: at,
+          completionSweepAttempts: Number(draftJob.dispatch?.completionSweepAttempts || 0) + 1,
+          retryable: false,
+          nextRetryAt: null
+        };
+        draftJob.logs = [...(draftJob.logs || []), 'workflow dispatch queue consumer locked this job for built-in generation'];
+        return cloneJob(draftJob);
+      });
+  if (!locked) {
+    const latest = typeof storage.getJobById === 'function' ? await storage.getJobById(jobId) : null;
+    await touchEvent(storage, 'RUNNING', `${job.taskType}/${job.id.slice(0, 6)} workflow dispatch queue skipped job_status=${String(latest?.status || job.status || 'unknown').slice(0, 40)} completion_status=${String(latest?.dispatch?.completionStatus || job.dispatch?.completionStatus || 'unknown').slice(0, 80)}`);
+    return { ok: true, mode: 'not_ready_or_already_running' };
+  }
+  await touchEvent(storage, 'RUNNING', `${locked.taskType}/${locked.id.slice(0, 6)} workflow dispatch queue generation started`);
+  return runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, sampleKind, {
+    eventLabel: 'workflow dispatch queue',
+    completionSource: 'workflow-dispatch-queue'
+  });
 }
 
 async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
-  const limit = Math.max(1, Math.min(5, Number(options.limit || 1) || 1));
+  const limit = Math.max(1, Math.min(20, Number(options.limit || 12) || 12));
   const scheduled = [];
   const scheduledJobIds = new Set();
   for (let i = 0; i < limit; i += 1) {
     const state = await storage.getState();
     const candidates = state.jobs
       .filter((job) => ['queued', 'running'].includes(String(job.status || '').toLowerCase()))
+      .filter((job) => jobWithinDispatchAge(job, env))
       .filter((job) => job.jobKind === 'workflow' || job.workflowParentId || (job.assignedAgentId && !job.workflowParentId))
       .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
     let picked = null;
@@ -14452,8 +15757,37 @@ async function completeJobFromAgentResult(storage, jobId, agentId, payload = {},
       returnTargets: payload.return_targets || payload.returnTargets || ['chat', 'api', 'webhook']
     };
     appendWorkflowOriginalInfoUsage(job);
+    const sourceProofFailure = targetStatus === 'completed' ? workflowSearchCompletionFailureReason(job, outputReport) : '';
+    if (sourceProofFailure) {
+      targetStatus = 'failed';
+      job.status = 'failed';
+      job.completedAt = null;
+      job.failedAt = completionAt;
+      job.timedOutAt = null;
+      job.failureReason = sourceProofFailure;
+      job.failureCategory = 'missing_required_sources';
+      job.usage = usage;
+      job.actualBilling = null;
+      job.deliveryQuality = null;
+      if (job.billingReservation && !job.billingReservation?.releasedAt) {
+        releaseBillingReservationInState(state, job);
+      }
+      job.dispatch = {
+        ...(job.dispatch || {}),
+        externalJobId: meta.externalJobId || job.dispatch?.externalJobId || null,
+        completionSource: meta.source || job.dispatch?.completionSource || null,
+        completionStatus: 'failed',
+        completedAt: null,
+        lastCallbackAt: meta.source === 'callback' ? completionAt : (job.dispatch?.lastCallbackAt || null),
+        retryable: false,
+        nextRetryAt: null
+      };
+      job.logs = [...(job.logs || []), sourceProofFailure, 'failed before completion: missing search execution proof'];
+      if (meta.source) job.logs.push(`completion source=${meta.source}`);
+      return { ok: true, mode: 'failed', job: cloneJob(job), billing: null, workflowParentId: job.workflowParentId || null };
+    }
     const authorityRequest = syncJobAuthorityRequest(job, agent);
-    if (targetStatus === 'completed' && shouldBlockCompletedJobForAuthorityRequest(job, explicitAuthorityRequest)) {
+    if (targetStatus === 'completed' && shouldBlockCompletedJobForAuthorityRequest(job, authorityRequest || explicitAuthorityRequest)) {
       targetStatus = 'blocked';
     }
     const billing = targetStatus === 'completed' ? estimateBilling(agent, usage) : null;
@@ -14500,6 +15834,7 @@ async function completeJobFromAgentResult(storage, jobId, agentId, payload = {},
 }
 
 async function failJob(storage, jobId, reason, extraLogs = [], options = {}) {
+  const failureReason = String(reason || options.failureReason || 'Job failed without a detailed reason.').trim();
   const result = await storage.mutate(async (state) => {
     const job = state.jobs.find((item) => item.id === jobId);
     if (!job) return null;
@@ -14508,7 +15843,7 @@ async function failJob(storage, jobId, reason, extraLogs = [], options = {}) {
     const failureStatus = options.failureStatus || (job.status === 'dispatched' ? 'timed_out' : 'failed');
     job.status = failureStatus;
     job.failedAt = failedAt;
-    job.failureReason = reason;
+    job.failureReason = failureReason;
     job.failureCategory = options.failureCategory || job.failureCategory || 'agent_failed';
     if (job.billingReservation && !job.billingSettlement?.settledAt && !job.billingReservation?.releasedAt) {
       releaseBillingReservationInState(state, job);
@@ -14526,7 +15861,7 @@ async function failJob(storage, jobId, reason, extraLogs = [], options = {}) {
       nextRetryAt: options.nextRetryAt ?? job.dispatch?.nextRetryAt ?? null,
       attempts: options.attempts ?? job.dispatch?.attempts ?? 0
     };
-    job.logs = [...(job.logs || []), ...extraLogs, reason];
+    job.logs = [...(job.logs || []), ...extraLogs, failureReason];
     return { ...cloneJob(job), workflowParentId: job.workflowParentId || null };
   });
   if (result?.workflowParentId) await reconcileWorkflowParent(storage, result.workflowParentId);
@@ -15119,7 +16454,8 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
     const layer = workflowDispatchLayer(workflowPseudoParent, { workflowTask: safeTask, taskType: safeTask });
     const phase = String(options.sequencePhase || '').trim().toLowerCase()
       || workflowSequencePhaseForTask(workflowPrimary, safeTask, layer);
-    const requiresResearchSearch = phase === 'research' && leaderTaskUsesWebSearch(workflowPrimary, safeTask);
+    const requiresSourceCollection = leaderTaskRequiresSourceCollection(workflowPrimary, safeTask);
+    const requiresResearchSearch = requiresSourceCollection && leaderTaskUsesWebSearch(workflowPrimary, safeTask);
     const childInputBase = body.input && typeof body.input === 'object' ? body.input : {};
     const childBrokerBase = childInputBase._broker && typeof childInputBase._broker === 'object'
       ? childInputBase._broker
@@ -15144,6 +16480,10 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
           ...(requiresResearchSearch ? {
             forceWebSearch: true,
             webSearchRequiredReason: 'leader_research_layer'
+          } : {}),
+          ...(requiresSourceCollection ? {
+            requiresSourceCollection: true,
+            sourceCollectionRequiredReason: 'leader_evidence_layer'
           } : {})
         }
       }
@@ -15190,7 +16530,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
     const estimatedBilling = estimateBilling(selection.agent, estimatedUsage);
     const failedByPreflight = !childPreflight.ok && !authorityBlockedDraft;
     const initialStatus = String(childOptions.initialStatus || '').trim().toLowerCase();
-    const status = initialStatus || (failedByPreflight ? 'failed' : 'queued');
+    const status = initialStatus || (authorityBlockedDraft ? 'blocked' : (failedByPreflight ? 'failed' : 'queued'));
     const createdAt = nowIso();
     const input = {
       ...childInputSourceBase,
@@ -15228,9 +16568,24 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
         }
       }
     };
+    const authorityRequestForBlockedDraft = authorityBlockedDraft
+      ? normalizeAuthorityRequest({
+          reason: childPreflight.error || childPreflight.warning || childPreflight.code || 'Connector approval is required before external execution.',
+          missing_connectors: childPreflight.missing_connectors || [],
+          missing_connector_capabilities: childPreflight.missing_connector_capabilities || childPreflight.required_connector_capabilities || [],
+          required_google_sources: [],
+          owner_label: selection.agent.name || selection.taskType || 'CAIt',
+          source: 'agent_preflight',
+          required_channel_selection: ['x_post', 'instagram', 'reddit', 'indie_hackers'].includes(selection.taskType),
+          channel_candidates: selection.taskType === 'x_post' ? ['x'] : []
+        })
+      : null;
+    const authorityExecutorPatch = authorityRequestForBlockedDraft
+      ? executorStatePatchFromAuthorityRequest(authorityRequestForBlockedDraft, {})
+      : null;
     const dispatch = status === 'blocked'
       ? {
-          completionStatus: childOptions.blockedCompletionStatus || 'leader_checkpoint_blocked',
+          completionStatus: authorityBlockedDraft ? 'blocked_waiting_for_approval' : (childOptions.blockedCompletionStatus || 'leader_checkpoint_blocked'),
           retryable: false,
           nextRetryAt: null
         }
@@ -15257,8 +16612,25 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
       score: selection.score,
       createdAt,
       failedAt: status === 'failed' ? createdAt : null,
-      failureReason: status === 'failed' ? (childPreflight.error || childPreflight.code || 'Preflight failed before workflow dispatch.') : null,
-      failureCategory: status === 'failed' ? (childPreflight.code || 'preflight_failed') : null,
+      failureReason: status === 'failed'
+        ? (childPreflight.error || childPreflight.code || 'Preflight failed before workflow dispatch.')
+        : (authorityBlockedDraft ? authorityBlockReasonFromRequest(authorityRequestForBlockedDraft, 'Connector approval is required before external execution.') : null),
+      failureCategory: status === 'failed'
+        ? (childPreflight.code || 'preflight_failed')
+        : (authorityBlockedDraft ? 'blocked_waiting_for_approval' : null),
+      ...(authorityRequestForBlockedDraft ? {
+        output: {
+          summary: authorityBlockReasonFromRequest(authorityRequestForBlockedDraft, 'Connector approval is required before external execution.'),
+          report: {
+            summary: authorityBlockReasonFromRequest(authorityRequestForBlockedDraft, 'Connector approval is required before external execution.'),
+            bullets: ['External connector execution is paused until approval or OAuth setup is complete.'],
+            nextAction: 'Approve/connect the required external capability, then resume this action lane.',
+            authority_request: authorityRequestForBlockedDraft
+          },
+          files: []
+        },
+        ...(authorityExecutorPatch ? { executorState: { ...authorityExecutorPatch, updatedAt: createdAt } } : {})
+      } : {}),
       callbackToken: callbackTokenForJob(),
       workflowParentId: parentJob.id,
       workflowTask: selection.taskType,
@@ -15308,8 +16680,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
   const enableLeaderSequence = workflowShouldEnableLeaderSequence(plan, body.task_type || taskType)
     || (
       isWorkflowLeaderTask(workflowPrimary)
-      && workflowPlanHasLayer((layer) => layer === 1)
-      && workflowPlanHasLayer((layer) => layer >= 2)
+      && workflowPlanHasLayer((layer) => layer >= 1)
     );
   const leaderSelection = enableLeaderSequence
     ? plan.selections.find((selection) => isWorkflowLeaderTask(selection.taskType)) || null
@@ -15337,7 +16708,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
     childJobs.push(child.job);
     childRuns.push(child.run);
   }
-  if (enableLeaderSequence && leaderSelection && workflowCheckpointSpecs.length) {
+  if (enableLeaderSequence && leaderSelection) {
     const checkpointRecords = [];
     for (const [index, checkpointSpec] of workflowCheckpointSpecs.entries()) {
       const checkpointAt = nowIso();
@@ -15379,6 +16750,21 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
           }
         };
       }
+    }
+    if (!workflowCheckpointSpecs.length) {
+      parentJob.workflow = {
+        ...(parentJob.workflow || {}),
+        ...(workflowLeaderProtocol ? { leaderActionProtocol: workflowLeaderProtocol } : {}),
+        leaderSequence: {
+          enabled: true,
+          status: 'completed',
+          completedAt: nowIso(),
+          sourceLeaderTask: leaderSelection.taskType,
+          actionProtocolVersion: workflowLeaderProtocol?.version || null,
+          checkpoints: [],
+          createdAt: nowIso()
+        }
+      };
     }
     if (parentJob.workflow?.leaderSequence) {
       parentJob.workflow.leaderSequence.checkpoints = checkpointRecords;
@@ -15578,7 +16964,8 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
 
 function currentFromRecurringOrder(state, order = {}) {
   const login = String(order.ownerLogin || order.owner_login || '').trim();
-  const account = login ? accountSettingsForLogin(state, login, order.user || { login }, order.authProvider || 'scheduled') : null;
+  const authProvider = String(order.authProvider || order.auth_provider || 'scheduled').trim() || 'scheduled';
+  const account = login ? accountSettingsForLogin(state, login, order.user || { login }, authProvider) : null;
   const user = order.user && typeof order.user === 'object'
     ? { ...order.user, login }
     : (accountUserFromSettings(account) || { login, name: login });
@@ -15586,7 +16973,7 @@ function currentFromRecurringOrder(state, order = {}) {
     session: null,
     user,
     login,
-    authProvider: 'scheduled',
+    authProvider,
     account,
     apiKeyStatus: 'scheduled',
     apiKey: null
@@ -16598,6 +17985,7 @@ async function handleAgentCallback(storage, request) {
     return json({
       ok: true,
       status: failed.status,
+      failure_reason: failed.failureReason || callback.failureReason || 'Agent reported failure without a detailed reason.',
       job: failed,
       delivery: { report: null, files: [], returnTargets: [] }
     });
@@ -16609,7 +17997,9 @@ async function handleAgentCallback(storage, request) {
     return_targets: callback.returnTargets
   }, { source: 'callback', externalJobId: callback.externalJobId, targetStatus: callback.status });
   if (result.error) return json({ error: result.error, code: result.code || null, job_status: result.job?.status || null }, result.statusCode || 400);
-  if (result.mode === 'blocked') {
+  if (result.mode === 'failed') {
+    await touchEvent(storage, 'FAILED', `${result.job.taskType}/${result.job.id.slice(0, 6)} failed by callback: ${String(result.job.failureReason || '').slice(0, 120)}`);
+  } else if (result.mode === 'blocked') {
     await touchEvent(storage, 'RUNNING', `${result.job.taskType}/${result.job.id.slice(0, 6)} blocked by callback`);
   } else {
     await touchEvent(storage, 'COMPLETED', `${result.job.taskType}/${result.job.id.slice(0, 6)} completed by callback`);
@@ -16835,7 +18225,7 @@ async function handleRetryDispatch(storage, request, env) {
         };
         appendWorkflowOriginalInfoUsage(draftJob);
         const authorityRequest = syncJobAuthorityRequest(draftJob, draftAgent);
-        if (shouldBlockCompletedJobForAuthorityRequest(draftJob, explicitAuthorityRequest)) {
+        if (shouldBlockCompletedJobForAuthorityRequest(draftJob, authorityRequest || explicitAuthorityRequest)) {
           markJobBlockedForAuthority(draftJob, authorityRequest || explicitAuthorityRequest, 'External execution is blocked waiting for connector approval.');
           markWorkflowParentBlockedIfNeeded(draft, draftJob);
           return { ok: true, mode: 'blocked', job: cloneJob(draftJob) };
@@ -16957,6 +18347,11 @@ function timeoutFloorMsForJob(job = {}, agent = null) {
 function effectiveTimeoutDeadlineMs(job = {}, agent = null) {
   const explicitMs = Number(job?.deadlineSec || 0) > 0 ? Number(job.deadlineSec) * 1000 : null;
   const floorMs = timeoutFloorMsForJob(job, agent);
+  const scheduledDispatch = String(job?.dispatch?.completionStatus || '').trim().toLowerCase() === 'dispatch_scheduled';
+  if (scheduledDispatch) {
+    const baseMs = explicitMs == null && floorMs == null ? DISPATCH_SCHEDULE_TIMEOUT_MS : Math.min(...[explicitMs, floorMs, DISPATCH_SCHEDULE_TIMEOUT_MS].filter((value) => value != null));
+    return Math.max(DISPATCH_SCHEDULE_STALE_MS, baseMs);
+  }
   if (explicitMs == null) return floorMs;
   if (floorMs == null) return explicitMs;
   return Math.max(explicitMs, floorMs);
@@ -17119,6 +18514,9 @@ export default {
       const refreshedCookie = await maybeRefreshSessionCookie(session, env);
       return refreshedCookie ? jsonWithCookies(status, 200, [refreshedCookie]) : json(status);
     }
+    if (url.pathname === '/api/internal/cron/workflow-completions' && request.method === 'POST') {
+      return handleInternalWorkflowCompletionSweep(request, env);
+    }
     if (request.method === 'GET' && isLoginPagePath(url.pathname)) {
       const loginRedirect = await handleLoginPageRequest(request, env);
       if (loginRedirect) return loginRedirect;
@@ -17142,6 +18540,8 @@ export default {
       return json({
         githubConfigured: Boolean(githubClientId(env) && githubClientSecret(env)),
         googleConfigured: googleConfigured(env),
+        authBaseUrl: baseUrl(request, env),
+        currentOrigin: requestOrigin(request),
         xConfigured: xOAuthConfigured(env),
         xTokenEncryptionConfigured: xTokenEncryptionConfigured(env),
         githubAppConfigured: githubAppConfigured(env),
@@ -17150,7 +18550,15 @@ export default {
         googleClientIdPresent: Boolean(googleClientId(env)),
         googleClientSecretPresent: Boolean(googleClientSecret(env)),
         requestedScope: githubOAuthScope(env),
-        googleRequestedScope: googleOAuthScope(env),
+        googleRequestedScope: googleScopeForOAuthAction(env, 'analytics_connect'),
+        googleScopeProfiles: {
+          login: googleLoginScope(env),
+          analytics: googleScopeForOAuthAction(env, 'analytics_connect'),
+          drive: googleScopedOAuthScope(env, ['drive']),
+          calendarRead: googleScopedOAuthScope(env, ['calendar_read']),
+          gmailRead: googleScopedOAuthScope(env, ['gmail_read']),
+          gmailSend: googleScopedOAuthScope(env, ['gmail_send'])
+        },
         xRequestedScope: xOAuthScopeLabel(),
         privateRepoImportEnabled: githubPrivateRepoImportEnabled(env),
         releaseStage: policy.releaseStage,
@@ -17228,6 +18636,9 @@ export default {
     }
     if (url.pathname === '/auth/email/verify' && request.method === 'GET') {
       return handleEmailAuthVerify(request, env);
+    }
+    if (url.pathname === '/auth/e2e/verify' && request.method === 'GET') {
+      return handleE2eAuthVerify(request, env);
     }
     if (url.pathname === '/auth/x' && request.method === 'GET') {
       return handleXAuthStart(request, env);
@@ -17822,14 +19233,62 @@ export default {
 
     return json({ error: 'Not found' }, 404);
   },
-  async scheduled(controller, env, ctx) {
+  async queue(batch, env, ctx) {
     const storage = runtimeStorage(env);
+    for (const message of batch?.messages || []) {
+      try {
+        const result = await processWorkflowDispatchQueueMessage(storage, env, message?.body || {});
+        if (result?.mode === 'already_running_fresh' && typeof message?.retry === 'function') {
+          message.retry({ delaySeconds: result.retryDelaySeconds || 180 });
+        } else if (typeof message?.ack === 'function') {
+          message.ack();
+        }
+      } catch (error) {
+        const jobId = String(message?.body?.jobId || message?.body?.job_id || '').trim();
+        await touchEvent(storage, 'FAILED', `workflow dispatch queue message failed${jobId ? ` for ${jobId.slice(0, 6)}` : ''}: ${String(error?.message || error).slice(0, 160)}`);
+        if (jobId) {
+          await failJob(storage, jobId, `Workflow dispatch queue message failed: ${String(error?.message || error).slice(0, 260)}`, ['queue consumer exception before durable completion'], {
+            failureStatus: 'failed',
+            failureCategory: 'dispatch_queue_consumer_failed',
+            retryable: false,
+            source: 'workflow-dispatch-queue'
+          }).catch(() => null);
+        }
+        if (typeof message?.ack === 'function') message.ack();
+      }
+    }
+  },
+  async scheduled(controller, env, ctx) {
     const cron = controller?.cron || '';
+    const storage = runtimeStorage(env);
+    if (cron === '* * * * *') {
+      const scheduledTime = Number(controller?.scheduledTime || Date.now()) || Date.now();
+      ctx.waitUntil((async () => {
+        await runMinuteWorkflowCompletionSweep(storage, env, cron, scheduledTime);
+        await runWorkflowOrchestrationWatchdog(storage, env, {
+          source: 'minute-cron',
+          cron,
+          limit: Math.min(10, Number(env?.WORKFLOW_ORCHESTRATION_WATCHDOG_LIMIT || 10) || 10),
+          staleAfterMs: Number(env?.WORKFLOW_ORCHESTRATION_STALE_MS || ORCHESTRATION_WATCHDOG_POLICY.staleAfterMs) || ORCHESTRATION_WATCHDOG_POLICY.staleAfterMs,
+          blockedAfterMs: Number(env?.WORKFLOW_ORCHESTRATION_BLOCKED_MS || ORCHESTRATION_WATCHDOG_POLICY.blockedAfterMs) || ORCHESTRATION_WATCHDOG_POLICY.blockedAfterMs,
+          reason: 'minute cron orchestration watchdog dispatch',
+          waitUntil: (promise) => ctx.waitUntil(promise)
+        });
+        await runQueuedBuiltInDispatchSweep(storage, env, {
+          source: 'minute-cron',
+          cron,
+          limit: Math.min(8, Number(env?.QUEUED_DISPATCH_SWEEP_LIMIT || 8) || 8),
+          reason: 'minute cron dispatch sweep',
+          waitUntil: (promise) => ctx.waitUntil(promise)
+        });
+      })());
+      return;
+    }
     ctx.waitUntil((async () => {
       await completeScheduledBuiltInWorkflowJobs(storage, env, {
         source: 'cron',
         cron,
-        limit: Number(env?.SCHEDULED_BUILTIN_COMPLETION_SWEEP_LIMIT || 5) || 5
+        limit: Number(env?.SCHEDULED_BUILTIN_COMPLETION_SWEEP_LIMIT || 10) || 10
       });
       await sweepTimedOutJobs(storage, {
         eventSource: 'cron'
@@ -17837,7 +19296,7 @@ export default {
       await runWorkflowTimeoutRetrySweep(storage, env, {
         source: 'cron',
         cron,
-        limit: Number(env?.WORKFLOW_TIMEOUT_RETRY_SWEEP_LIMIT || 3) || 3,
+        limit: Number(env?.WORKFLOW_TIMEOUT_RETRY_SWEEP_LIMIT || 10) || 10,
         waitUntil: (promise) => ctx.waitUntil(promise)
       });
       await runWorkflowOrchestrationWatchdog(storage, env, {
@@ -17852,7 +19311,7 @@ export default {
       await runQueuedBuiltInDispatchSweep(storage, env, {
         source: 'cron',
         cron,
-        limit: Number(env?.QUEUED_DISPATCH_SWEEP_LIMIT || 5) || 5,
+        limit: Number(env?.QUEUED_DISPATCH_SWEEP_LIMIT || 12) || 12,
         reason: 'cron dispatch sweep',
         waitUntil: (promise) => ctx.waitUntil(promise)
       });

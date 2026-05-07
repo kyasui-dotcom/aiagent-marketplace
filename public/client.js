@@ -49,7 +49,7 @@ import {
   isLeaderCatalogQuestionIntentText,
   isNonOrderConversationIntentText,
   isRepoBackedCodeIntentText
-} from './work-intent-resolver.js?v=20260505c';
+} from './work-intent-resolver.js?v=20260507b';
 import {
   chatEngineBuildIntakeCombinedPrompt,
   chatEngineBuildIntakeState,
@@ -908,7 +908,7 @@ function normalizeOrderProgressStatus(status = '') {
 function orderProgressStatusLabel(status = '', options = {}) {
   const normalized = normalizeOrderProgressStatus(status);
   const ja = Boolean(options.ja);
-  if (normalized === 'blocked') return ja ? '承認・接続待ち' : 'waiting';
+  if (normalized === 'blocked') return ja ? '待機中' : 'waiting';
   if (normalized === 'timed_out') return ja ? 'タイムアウト' : 'timed out';
   return normalized;
 }
@@ -929,8 +929,8 @@ function orderProgressSteps(status = '', options = {}) {
     ? ['注文受付', 'Agent処理', '納品完了']
     : ['Order accepted', 'Agent work', 'Delivery ready'];
   if (normalized === 'blocked') return ja
-    ? ['注文受付', '実行工程', '承認待ち']
-    : ['Order accepted', 'Action phase', 'Waiting for approval'];
+    ? ['注文受付', '実行工程', '待機中']
+    : ['Order accepted', 'Action phase', 'Waiting'];
   if (normalized === 'failed' || normalized === 'timed_out') return ja
     ? ['注文受付', 'Agent接続', '停止']
     : ['Order accepted', 'Agent handoff', 'Stopped'];
@@ -954,9 +954,36 @@ function orderProgressCounts(jobOrCreated = {}) {
   const completed = Number(counts.completed || childRuns.filter((run) => String(run?.status || '').toLowerCase() === 'completed').length || 0);
   const failed = Number(counts.failed || childRuns.filter((run) => ['failed', 'timed_out'].includes(String(run?.status || '').toLowerCase())).length || 0);
   const blocked = Number(counts.blocked || childRuns.filter((run) => String(run?.status || '').toLowerCase() === 'blocked').length || 0);
+  const approvalBlocked = childRuns.filter((run) => orderProgressChildBlockerType(run) === 'approval_required').length;
+  const stoppedAfterFailure = childRuns.filter((run) => orderProgressChildBlockerType(run) === 'stopped_after_failure').length;
+  const internalWaiting = childRuns.filter((run) => {
+    const type = orderProgressChildBlockerType(run);
+    return type === 'waiting_for_workflow_phase' || type === 'waiting_on_internal_workflow';
+  }).length;
   const running = Number(counts.running || childRuns.filter((run) => ['running', 'claimed', 'dispatched'].includes(String(run?.status || '').toLowerCase())).length || 0);
   const queued = Number(counts.queued || childRuns.filter((run) => String(run?.status || '').toLowerCase() === 'queued').length || 0);
-  return { total, completed, failed, blocked, running, queued };
+  return { total, completed, failed, blocked, approvalBlocked, stoppedAfterFailure, internalWaiting, running, queued };
+}
+
+function orderProgressChildBlockerType(child = {}) {
+  if (String(child?.status || '').trim().toLowerCase() !== 'blocked') return '';
+  const explicit = String(child?.blockerType || child?.blocker_type || '').trim().toLowerCase();
+  if (explicit) return explicit;
+  const text = [
+    child?.failureCategory,
+    child?.failure_category,
+    child?.failureReason,
+    child?.failure_reason,
+    child?.dispatchCompletionStatus,
+    child?.dispatch_completion_status,
+    child?.dispatch?.completionStatus,
+    child?.dispatch?.completion_status,
+    child?.summary
+  ].map((item) => String(item || '').trim().toLowerCase()).join(' ');
+  if (/blocked_waiting_for_approval|approval_required|connector|required|oauth|x\.post|google\.|github\.|承認|接続/.test(text)) return 'approval_required';
+  if (/blocked_after_leader_failure|workflow_blocked|leader_failure|quality_gate_failed|failed/.test(text)) return 'stopped_after_failure';
+  if (/leader_checkpoint_blocked|leader_final_summary_blocked|blocked until|waiting for earlier|waiting for the earlier/.test(text)) return 'waiting_for_workflow_phase';
+  return 'waiting_on_internal_workflow';
 }
 
 function orderCreateRecoverySessionId(source = {}) {
@@ -1373,13 +1400,18 @@ function startOpenChatAcceptanceProgress(prompt = '', options = {}) {
 function orderProgressSummaryFromJob(job = {}) {
   const output = job?.output && typeof job.output === 'object' ? job.output : {};
   const report = output.report && typeof output.report === 'object' ? output.report : {};
-  return compactChatText(
-    output.summary
-      || report.summary
-      || output.message
-      || '',
-    420
-  );
+  const rawSummary = String(output.summary || report.summary || output.message || '').trim();
+  const authority = authorityRequestFromReport(report);
+  if (!authorityRequestRequiresClientApproval(authority) && /waiting for approval|承認待ち/i.test(rawSummary)) {
+    const counts = orderProgressCounts(job);
+    return compactChatText([
+      `Integrated delivery: ${counts.completed}/${counts.total || 0} internal work items completed`,
+      counts.internalWaiting ? `${counts.internalWaiting} internal wait` : '',
+      counts.stoppedAfterFailure ? `${counts.stoppedAfterFailure} stopped after failure` : '',
+      counts.failed ? `${counts.failed} failed` : ''
+    ].filter(Boolean).join(', ') + '.', 420);
+  }
+  return compactChatText(rawSummary, 420);
 }
 
 function workflowChildRunsFromJob(job = {}) {
@@ -1527,9 +1559,21 @@ function workflowProgressDetails(job = {}, options = {}) {
       lines.push(`- ${workflowChildDisplayName(child, { ja })} (${status})${child.agentName ? ` - ${child.agentName}` : ''}: ${detail}`);
     });
   } else if (blocked.length) {
-    lines.push(ja ? 'Current phase: waiting for next workflow handoff' : 'Current phase: waiting for next workflow handoff');
+    const approvalCount = blocked.filter((child) => orderProgressChildBlockerType(child) === 'approval_required').length;
+    const stoppedCount = blocked.filter((child) => orderProgressChildBlockerType(child) === 'stopped_after_failure').length;
+    lines.push(approvalCount
+      ? (ja ? 'Current phase: waiting for approval or connector setup' : 'Current phase: waiting for approval or connector setup')
+      : (stoppedCount
+        ? (ja ? 'Current phase: stopped after an earlier failure' : 'Current phase: stopped after an earlier failure')
+        : (ja ? 'Current phase: waiting for next workflow handoff' : 'Current phase: waiting for next workflow handoff')));
     blocked.slice(0, 3).forEach((child) => {
-      const detail = child.latestLog || workflowTaskWorkingNote(child.taskType, child.sequencePhase, child.status, { ja });
+      const blockerType = orderProgressChildBlockerType(child);
+      const defaultDetail = blockerType === 'approval_required'
+        ? (ja ? '外部実行の承認またはコネクター接続待ちです。' : 'waiting for approval or connector setup.')
+        : (blockerType === 'stopped_after_failure'
+          ? (ja ? '前段の失敗により停止しています。承認待ちではありません。' : 'stopped after an earlier failure; this is not an approval wait.')
+          : workflowTaskWorkingNote(child.taskType, child.sequencePhase, child.status, { ja }));
+      const detail = child.latestLog || child.summary || defaultDetail;
       lines.push(`- ${workflowChildDisplayName(child, { ja })} (${String(orderProgressStatusLabel(child.status || 'unknown', { ja })).toUpperCase()}): ${detail}`);
     });
   }
@@ -1698,7 +1742,7 @@ function deliveryDownloadChatBody(job = {}, options = {}) {
   const status = normalizeOrderProgressStatus(job?.status || '');
   const report = job?.output?.report && typeof job.output.report === 'object' ? job.output.report : {};
   const authority = authorityRequestFromReport(report);
-  const authorityBlocked = status === 'blocked' || authorityRequestRequiresClientApproval(authority);
+  const authorityBlocked = authorityRequestRequiresClientApproval(authority);
   const files = downloadableDeliveryFilesForJob(job);
   const names = files
     .map((file) => String(file?.name || '').trim())
@@ -1708,7 +1752,9 @@ function deliveryDownloadChatBody(job = {}, options = {}) {
     return [
       authorityBlocked
         ? 'アクション工程まで進みました。納品ファイルは生成済みですが、外部投稿・送信は承認またはコネクター接続待ちです。'
-        : '納品ファイルをまとめてダウンロードできます。',
+        : (status === 'blocked'
+          ? 'ワークフローは待機中です。承認が必要な場合だけ、この画面に承認理由と必要コネクターを表示します。'
+          : '納品ファイルをまとめてダウンロードできます。'),
       '',
       `Order ID: ${orderId}`,
       authorityBlocked && authority?.reason ? `承認待ち理由: ${authority.reason}` : '',
@@ -1720,7 +1766,9 @@ function deliveryDownloadChatBody(job = {}, options = {}) {
   return [
     authorityBlocked
       ? 'The workflow reached the action phase. Delivery files are ready, but external posting/sending is waiting for approval or connector access.'
-      : 'The delivery files are ready to download as one ZIP.',
+      : (status === 'blocked'
+        ? 'The workflow is waiting. Approval is shown only when an explicit approval reason and connector requirement are present.'
+        : 'The delivery files are ready to download as one ZIP.'),
     '',
     `Order ID: ${orderId}`,
     authorityBlocked && authority?.reason ? `Approval wait: ${authority.reason}` : '',
@@ -1827,8 +1875,8 @@ function orderProgressMessageFromCreated(created = {}, prompt = '') {
     : (isWorkflow ? 'Agent Team' : 'auto-routing');
   const childLine = isWorkflow && counts.total
     ? (ja
-      ? `進捗: ${counts.completed}/${counts.total} agent runs 完了${counts.failed ? `, ${counts.failed} failed` : ''}${counts.blocked ? `, ${counts.blocked} waiting` : ''}`
-      : `Progress: ${counts.completed}/${counts.total} agent runs completed${counts.failed ? `, ${counts.failed} failed` : ''}${counts.blocked ? `, ${counts.blocked} waiting` : ''}`)
+      ? `進捗: ${counts.completed}/${counts.total} agent runs 完了${counts.failed ? `, ${counts.failed} failed` : ''}${counts.approvalBlocked ? `, ${counts.approvalBlocked} approval wait` : ''}${counts.internalWaiting ? `, ${counts.internalWaiting} internal wait` : ''}${counts.stoppedAfterFailure ? `, ${counts.stoppedAfterFailure} stopped after failure` : ''}`
+      : `Progress: ${counts.completed}/${counts.total} agent runs completed${counts.failed ? `, ${counts.failed} failed` : ''}${counts.approvalBlocked ? `, ${counts.approvalBlocked} approval wait` : ''}${counts.internalWaiting ? `, ${counts.internalWaiting} internal wait` : ''}${counts.stoppedAfterFailure ? `, ${counts.stoppedAfterFailure} stopped after failure` : ''}`)
     : '';
   const routingLines = orderRoutingContextLines(created, { ja });
   const failure = String(created?.failure_reason || created?.error || '').trim();
@@ -1860,7 +1908,7 @@ function orderProgressMessageFromCreated(created = {}, prompt = '') {
   }
   if (status === 'blocked') {
     return [
-      ja ? 'アクション工程で承認待ちになりました。' : 'The order reached the action phase and is waiting for approval.',
+      ja ? 'オーダーは待機状態になりました。承認が必要な場合は理由と必要コネクターを表示します。' : 'The order is waiting. Approval is shown only when an explicit approval reason and connector requirement are present.',
       '',
       orderId ? `Order ID: ${orderId}` : '',
       ja ? `状態: ${orderProgressStatusLabel(status, { ja })}` : `Status: ${orderProgressStatusLabel(status)}`,
@@ -1890,12 +1938,15 @@ function orderProgressMessageFromJob(job = {}, options = {}) {
   const isWorkflow = job?.jobKind === 'workflow' || Boolean(job?.workflow);
   const childLine = isWorkflow && counts.total
     ? (ja
-      ? `進捗: ${counts.completed}/${counts.total} agent runs 完了${counts.failed ? `, ${counts.failed} failed` : ''}${counts.blocked ? `, ${counts.blocked} waiting` : ''}${counts.running ? `, ${counts.running} running` : ''}${counts.queued ? `, ${counts.queued} queued` : ''}`
-      : `Progress: ${counts.completed}/${counts.total} agent runs completed${counts.failed ? `, ${counts.failed} failed` : ''}${counts.blocked ? `, ${counts.blocked} waiting` : ''}${counts.running ? `, ${counts.running} running` : ''}${counts.queued ? `, ${counts.queued} queued` : ''}`)
+      ? `進捗: ${counts.completed}/${counts.total} agent runs 完了${counts.failed ? `, ${counts.failed} failed` : ''}${counts.approvalBlocked ? `, ${counts.approvalBlocked} approval wait` : ''}${counts.internalWaiting ? `, ${counts.internalWaiting} internal wait` : ''}${counts.stoppedAfterFailure ? `, ${counts.stoppedAfterFailure} stopped after failure` : ''}${counts.running ? `, ${counts.running} running` : ''}${counts.queued ? `, ${counts.queued} queued` : ''}`
+      : `Progress: ${counts.completed}/${counts.total} agent runs completed${counts.failed ? `, ${counts.failed} failed` : ''}${counts.approvalBlocked ? `, ${counts.approvalBlocked} approval wait` : ''}${counts.internalWaiting ? `, ${counts.internalWaiting} internal wait` : ''}${counts.stoppedAfterFailure ? `, ${counts.stoppedAfterFailure} stopped after failure` : ''}${counts.running ? `, ${counts.running} running` : ''}${counts.queued ? `, ${counts.queued} queued` : ''}`)
     : '';
   const route = job?.assignedAgentId || (isWorkflow ? (job?.workflow?.teamName || 'Agent Team') : 'auto-routing');
   const summary = orderProgressSummaryFromJob(job);
   const workflowDetails = isWorkflow ? workflowProgressDetails(job, options) : [];
+  const report = job?.output?.report && typeof job.output.report === 'object' ? job.output.report : {};
+  const authority = authorityRequestFromReport(report);
+  const authorityBlocked = authorityRequestRequiresClientApproval(authority);
   if (status === 'completed') {
     return [
       isWorkflow
@@ -1915,19 +1966,28 @@ function orderProgressMessageFromJob(job = {}, options = {}) {
   }
   if (status === 'blocked') {
     return [
-      ja ? 'アクション工程まで進みましたが、外部投稿・送信は承認またはコネクター接続待ちです。' : 'The workflow reached the action phase, but external posting/sending is waiting for approval or connector access.',
+      authorityBlocked
+        ? (ja ? 'アクション工程まで進みましたが、外部投稿・送信は承認またはコネクター接続待ちです。' : 'The workflow reached the action phase, but external posting/sending is waiting for approval or connector access.')
+        : (counts.stoppedAfterFailure
+          ? (ja ? 'ワークフローは前段の失敗により停止しました。これは承認待ちではありません。' : 'The workflow stopped after an earlier failure. This is not an approval wait.')
+          : (ja ? 'ワークフローは内部工程の待機中です。これは承認待ちではありません。' : 'The workflow is waiting on an internal workflow phase. This is not an approval wait.')),
       '',
       `Order ID: ${job.id || 'unknown'}`,
       ja ? `状態: ${orderProgressStatusLabel(status, { ja })}` : `Status: ${orderProgressStatusLabel(status)}`,
       ja ? `接続先: ${route}` : `Route: ${route}`,
       job?.failureReason ? (ja ? `理由: ${job.failureReason}` : `Reason: ${job.failureReason}`) : '',
+      authorityBlocked && authority?.reason ? (ja ? `承認待ち理由: ${authority.reason}` : `Approval wait: ${authority.reason}`) : '',
       childLine,
       summary ? (ja ? `概要: ${summary}` : `Summary: ${summary}`) : '',
       ...jobDeliveryFileLines(job, { ja }),
       '',
-      ja
-        ? '次の対応: 必要なコネクターを接続・承認してください。再発注や追加コンテキストはCAIt Chatで続けてください。'
-        : 'Next: connect/approve the required connector. Use CAIt Chat for re-ordering or adding more context.'
+      authorityBlocked
+        ? (ja
+          ? '次の対応: 必要なコネクターを接続・承認してください。再発注や追加コンテキストはCAIt Chatで続けてください。'
+          : 'Next: connect/approve the required connector. Use CAIt Chat for re-ordering or adding more context.')
+        : (ja
+          ? '次の対応: 失敗または待機中の内部runを確認してください。外部承認ボタンで解決する状態ではありません。'
+          : 'Next: inspect the failed or waiting internal run. This state is not resolved by an external approval button.')
     ].filter(Boolean).join('\n');
   }
   if (status === 'failed' || status === 'timed_out') {
@@ -3020,7 +3080,17 @@ async function prepareWorkOrderViaApi(prompt = '', requestedStrategy = 'auto') {
       })
     });
     return result?.taskType ? result : null;
-  } catch {
+  } catch (error) {
+    const data = error?.data && typeof error.data === 'object' ? error.data : {};
+    if (/openai_intent|intent/i.test(String(data.code || data.error || error?.message || ''))) {
+      return {
+        ok: false,
+        status: 'intent_failed',
+        code: String(data.code || 'openai_intent_failed'),
+        error: String(data.error || error?.message || 'OpenAI intent classification failed.'),
+        source: String(data.source || 'openai')
+      };
+    }
     return null;
   }
 }
@@ -3772,8 +3842,18 @@ function primarySignInUrl(auth = state.snapshot?.auth || {}) {
   return '/auth/github';
 }
 
-function googleAuthActionUrl(auth = state.snapshot?.auth || {}) {
-  return auth?.loggedIn ? '/auth/google?mode=link' : '/auth/google';
+function googleAuthActionUrl(auth = state.snapshot?.auth || {}, options = {}) {
+  if (!auth?.loggedIn) return '/auth/google';
+  const capabilities = Array.isArray(options.capabilities)
+    ? options.capabilities
+    : String(options.capabilities || '').split(/[,\s]+/).filter(Boolean);
+  const url = new URL('/auth/google', window.location.origin);
+  url.searchParams.set('action', 'analytics_connect');
+  url.searchParams.set('return_to', '/chat');
+  url.searchParams.set('login_source', 'connect_google');
+  const requested = capabilities.length ? capabilities : [];
+  if (requested.length) url.searchParams.set('capabilities', requested.join(','));
+  return `${url.pathname}${url.search}`;
 }
 
 function githubAuthActionUrl(auth = state.snapshot?.auth || {}) {
@@ -14016,7 +14096,10 @@ function renderWorkChatThread(options = {}) {
       await handleChatActionButton(button.dataset.chatAction || '', {
         agentId: button.dataset.chatAgentId || '',
         connector: button.dataset.chatConnector || '',
-        orderId: button.dataset.chatOrderId || ''
+        orderId: button.dataset.chatOrderId || '',
+        capabilities: button.dataset.connectorCapabilities || '',
+        googleCapabilities: button.dataset.connectorCapabilities || '',
+        xCapabilities: button.dataset.connectorCapabilities || ''
       });
     });
   });
@@ -14183,8 +14266,8 @@ async function handleChatActionButton(action = '', detail = {}) {
       });
     },
     connect_github: async () => { openGithubSignIn(); },
-    connect_google: async () => { openPrimaryGoogleSignIn(); },
-    connect_x: async () => { connectXAccount(); },
+    connect_google: async () => { openPrimaryGoogleSignIn({ capabilities: detail.googleCapabilities || detail.capabilities || '' }); },
+    connect_x: async () => { connectXAccount({ capabilities: detail.xCapabilities || detail.capabilities || '' }); },
     post_current_to_x: async () => { void postCurrentComposerToX(); },
     download_delivery_zip: async () => {
       const orderId = String(detail.orderId || state.selectedJobId || '').trim();
@@ -14243,7 +14326,7 @@ function selectedAgent() {
   return state.snapshot?.agents?.find((agent) => agent.id === state.selectedAgentId) || null;
 }
 
-function openPrimaryGoogleSignIn() {
+function openPrimaryGoogleSignIn(options = {}) {
   if (isLikelyRestrictedGoogleOAuthBrowser()) {
     flash(googleOAuthBrowserWarning(), 'warn');
   }
@@ -14252,7 +14335,7 @@ function openPrimaryGoogleSignIn() {
     return;
   }
   trackLoginStarted('google');
-  window.location.href = googleAuthActionUrl(state.snapshot?.auth || {});
+  window.location.href = googleAuthActionUrl(state.snapshot?.auth || {}, options);
 }
 
 function continueOpenChatAsGuest() {
@@ -14261,7 +14344,7 @@ function continueOpenChatAsGuest() {
   els.jobPrompt?.focus();
 }
 
-function connectXAccount() {
+function connectXAccount(options = {}) {
   const auth = state.snapshot?.auth || {};
   if (!auth.loggedIn) {
     flash('Sign in first, then connect X. The X connector is saved to your CAIt account.', 'warn');
@@ -14272,7 +14355,13 @@ function connectXAccount() {
     flash('X OAuth is not configured on this deployment yet.', 'error');
     return;
   }
-  window.location.href = '/auth/x';
+  const capabilities = Array.isArray(options.capabilities)
+    ? options.capabilities
+    : String(options.capabilities || '').split(/[,\s]+/).filter(Boolean);
+  const url = new URL('/auth/x', window.location.origin);
+  if (capabilities.length) url.searchParams.set('capabilities', capabilities.join(','));
+  else url.searchParams.set('capabilities', 'x.post');
+  window.location.href = `${url.pathname}${url.search}`;
 }
 
 function currentXComposerText() {
@@ -20711,7 +20800,10 @@ function renderGenericDeliverableAuxiliaryButtons(run = null, deliverable = null
       .slice(0, 3)
       .map((connector) => {
         const action = connectorActionForChat(connector);
-        return `<button class="mini-btn" data-chat-action="${escapeHtml(action.action)}">${escapeHtml(action.label)}</button>`;
+        const capabilities = (Array.isArray(authority?.missingConnectorCapabilities) ? authority.missingConnectorCapabilities : [])
+          .filter((capability) => String(capability || '').trim().toLowerCase().startsWith(`${String(connector || '').trim().toLowerCase()}.`));
+        const capabilityAttr = capabilities.length ? ` data-connector-capabilities="${escapeHtml(capabilities.join(','))}"` : '';
+        return `<button class="mini-btn" data-chat-action="${escapeHtml(action.action)}"${capabilityAttr}>${escapeHtml(action.label)}</button>`;
       })
       .join('')
     : '';
@@ -20724,8 +20816,12 @@ function renderGenericDeliverableAuxiliaryButtons(run = null, deliverable = null
   const executorCommandButton = deliverable?.type === 'code_handoff' && options.executorCommand
     ? '<button class="mini-btn" data-copy-executor-command="1">COPY EXECUTOR COMMAND</button>'
     : '';
+  let connectCapabilities = '';
+  if (options.connectAction === 'connect_google' && deliverable?.type === 'email_pack' && String(options.target || '') === 'gmail') connectCapabilities = 'google.send_gmail';
+  if (options.connectAction === 'connect_x') connectCapabilities = 'x.post';
+  const connectCapabilityAttr = connectCapabilities ? ` data-connector-capabilities="${escapeHtml(connectCapabilities)}"` : '';
   const connectButton = options.connectAction && !options.connectReady && !authority
-    ? `<button class="mini-btn" data-chat-action="${escapeHtml(String(options.connectAction || ''))}">${escapeHtml(String(options.connectLabel || ''))}</button>`
+    ? `<button class="mini-btn" data-chat-action="${escapeHtml(String(options.connectAction || ''))}"${connectCapabilityAttr}>${escapeHtml(String(options.connectLabel || ''))}</button>`
     : '';
   const cliButton = deliverable?.type === 'code_handoff' && String(options.target || '') === 'local_terminal'
     ? '<button class="mini-btn" data-open-cli-help="1">OPEN CLI HELP</button>'
@@ -20983,7 +21079,11 @@ function bindDeliveryCommonActionButtons(root = null, options = {}) {
     downloadDeliverySummaryFile(options.run || null, String(options.summaryText || ''));
   });
   bindClickAction(root, 'data-chat-action', (button) => {
-    void handleChatActionButton(button.dataset.chatAction || '', {});
+    void handleChatActionButton(button.dataset.chatAction || '', {
+      capabilities: button.dataset.connectorCapabilities || '',
+      googleCapabilities: button.dataset.connectorCapabilities || '',
+      xCapabilities: button.dataset.connectorCapabilities || ''
+    });
   });
   bindClickAction(root, 'data-open-workflow-parent', () => {
     if (options.workflowParent?.id) openJobDetail(options.workflowParent.id);
@@ -25186,6 +25286,22 @@ async function createAndOptionallyRunJob() {
     if (resolvedIntent?.kind === 'order') {
       applyServerResolvedIntent(resolvedIntent, originalChatPrompt);
       const preparedOrder = await prepareWorkOrderViaApi(originalChatPrompt, requestedOrderStrategy());
+      if (preparedOrder?.ok === false && preparedOrder.status === 'intent_failed') {
+        appendOrderChatExchange(originalChatPrompt, {
+          kind: 'clarify',
+          tone: 'warn',
+          body: [
+            'I could not classify this request with OpenAI, so I did not create an order draft.',
+            '',
+            `Reason: ${preparedOrder.error || 'OpenAI intent classification failed.'}`,
+            '',
+            'Please try again in a moment, or add the target URL/product, desired outcome, and constraints.'
+          ].join('\n'),
+          status: 'OpenAI intent classification failed. No order was created.'
+        }, { transcriptId: submittedTranscriptId, tone: 'warn' });
+        void trackConversionEvent('open_chat_intent_failed', { ...analyticsDraft, status: preparedOrder.code || 'openai_intent_failed', source: preparedOrder.source || 'openai' });
+        return;
+      }
       if (chatEngineIsNeedsInputResponse(preparedOrder)) {
         handleNeedsInputResponse(preparedOrder, {
           ...draft,

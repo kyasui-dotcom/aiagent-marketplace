@@ -31,8 +31,10 @@ import {
   CONNECTOR_EXECUTION_POLICIES,
   connectorExecutionPolicyForTask,
   leaderControlContractForTask,
+  leaderSourceCollectionLayerTasks,
   leaderTaskLayer,
   leaderTaskPhase,
+  leaderTaskRequiresSourceCollection,
   leaderTaskUsesWebSearch
 } from '../lib/orchestration.js';
 import { assessAgentRegistrationSafety, normalizeManifest } from '../lib/manifest.js';
@@ -71,12 +73,13 @@ assert.ok(!orchestrationSource.includes('CMO_WORKFLOW_'), 'CMO workflow content 
 assert.ok(!orchestrationSource.includes('cmoAgentActionContract'), 'CMO action contracts should live in cmo-leader.js, not the shared orchestration connector');
 assert.ok(cmoLeaderSource.includes('CMO_AGENT_ACTION_CONTRACTS'), 'CMO action contracts should live in the CMO leader definition');
 assert.ok(cmoLeaderSource.includes('CMO_WORKFLOW_RESEARCH_LAYER_TASKS'), 'CMO workflow layer constants should live in the CMO leader definition');
-assert.deepEqual(CMO_WORKFLOW_RESEARCH_LAYER_TASKS, ['research', 'teardown', 'data_analysis']);
+assert.deepEqual(CMO_WORKFLOW_RESEARCH_LAYER_TASKS, ['research', 'teardown', 'data_analysis', 'validation']);
 assert.deepEqual(CMO_WORKFLOW_PLANNING_LAYER_TASKS, ['media_planner', 'growth']);
 assert.deepEqual(CMO_WORKFLOW_PREPARATION_LAYER_TASKS, ['list_creator', 'landing', 'seo_gap', 'writing', 'writer']);
 assert.deepEqual(CMO_WORKFLOW_ACTION_LAYER_TASKS, ['x_post', 'instagram', 'reddit', 'indie_hackers', 'email_ops', 'cold_email', 'directory_submission', 'citation_ops', 'acquisition_automation']);
 assert.deepEqual(CMO_WORKFLOW_EXECUTION_LAYER_TASKS, CMO_WORKFLOW_ACTION_LAYER_TASKS);
 assert.equal(leaderTaskLayer('cmo_leader', 'research'), 1);
+assert.equal(leaderTaskLayer('cmo_leader', 'validation'), 1);
 assert.equal(leaderTaskLayer('cmo_leader', 'media_planner'), 2);
 assert.equal(leaderTaskLayer('cmo_leader', 'list_creator'), 3);
 assert.equal(leaderTaskLayer('cmo_leader', 'seo_gap'), 3);
@@ -91,6 +94,7 @@ assert.ok(cmoLeaderControlContract.qualityChecks.some((check) => check.id === 'h
 assert.ok(cmoLeaderControlContract.downstreamTaskTypes.includes('x_post'));
 assert.equal(leaderControlContractForTask('x_post'), null);
 assert.equal(leaderTaskPhase('cmo_leader', 'teardown'), 'research');
+assert.equal(leaderTaskPhase('cmo_leader', 'validation'), 'research');
 assert.equal(leaderTaskPhase('cmo_leader', 'growth'), 'planning');
 assert.equal(leaderTaskPhase('cmo_leader', 'list_creator'), 'preparation');
 assert.equal(leaderTaskPhase('cmo_leader', 'landing'), 'preparation');
@@ -99,8 +103,15 @@ assert.equal(leaderTaskPhase('cmo_leader', 'instagram'), 'action');
 assert.equal(leaderTaskPhase('cmo_leader', 'citation_ops'), 'action');
 assert.equal(leaderTaskPhase('cmo_leader', 'directory_submission'), 'action');
 assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'research'), true);
+assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'validation'), true);
 assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'list_creator'), false);
 assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'media_planner'), false);
+assert.deepEqual(leaderSourceCollectionLayerTasks('cmo_leader'), ['research', 'teardown', 'data_analysis', 'validation']);
+assert.ok(leaderTaskRequiresSourceCollection('cmo_leader', 'data_analysis'), 'CMO data analysis should be evidence/source collection work.');
+assert.ok(leaderTaskRequiresSourceCollection('cpo_leader', 'validation'), 'CPO validation should be evidence/source collection work.');
+assert.ok(leaderTaskRequiresSourceCollection('cfo_leader', 'data_analysis'), 'CFO data analysis should be evidence/source collection work.');
+assert.ok(leaderTaskRequiresSourceCollection('legal_leader', 'diligence'), 'Legal diligence should be evidence/source collection work.');
+assert.equal(leaderTaskUsesWebSearch('cfo_leader', 'data_analysis'), true, 'Finance data analysis should require source collection/search in leader workflows.');
 assert.ok(builtInAgentEntrySource.includes("leaderTaskPhase('cmo_leader', normalizedKind)"), 'CMO specialist runtime phase must use the shared leader profile instead of hardcoded task buckets');
 for (const kind of ['media_planner', 'list_creator', 'writing', 'writer', 'instagram', 'citation_ops']) {
   assert.notEqual(cmoAgentActionContractForKind(kind).action, cmoAgentActionContractForKind('growth').action, `${kind} must not fall back to the generic growth action contract`);
@@ -234,8 +245,9 @@ assert.ok(builtInAgentSource.includes('BRAVE_SEARCH_API_KEY'), 'Brave search API
 assert.ok(builtInAgentSource.includes("X-Subscription-Token"), 'Brave search requests should use the Brave subscription token header');
 assert.ok(builtInAgentSource.includes('webSourcesOf(payload)'), 'OpenAI web search sources should be extracted from Responses payloads');
 assert.ok(builtInAgentSource.includes('web_sources'), 'OpenAI web sources should be surfaced in report/runtime payloads');
+assert.ok(builtInAgentSource.includes('summarize the actual content of each prior deliverable'), 'Leader final summary prompt should require content summaries, not only agent/status lists');
 assert.equal(
-  builtInShouldUseWebSearchForKind('cmo_leader', { input: { _broker: { workflow: { sequencePhase: 'initial', forceWebSearch: true } } } }),
+  builtInShouldUseWebSearchForKind('cmo_leader', { input: { _broker: { workflow: { sequencePhase: 'initial' } } } }),
   false,
   'Initial leader workflow runs must not use web search'
 );
@@ -246,8 +258,8 @@ assert.equal(
 );
 assert.equal(
   builtInShouldUseWebSearchForKind('media_planner', { input: { _broker: { workflow: { sequencePhase: 'planning', forceWebSearch: true } } } }),
-  false,
-  'Planning layer specialists must consume the leader source bundle instead of browsing'
+  true,
+  'Explicitly forced data-collection specialists must use web search even when their phase is not named research'
 );
 assert.ok(builtInAgentSource.includes('Supporting work products'), 'Leader final deliveries should include supporting work product tables');
 assert.ok(builtInAgentSource.includes('target URL/path, H1 or title, section outline, CTA copy'), 'Growth operator output must include executable artifact packets');
@@ -257,7 +269,8 @@ assert.ok(builtInAgentSource.includes('workflow_fast_draft'), 'Workflow built-in
 assert.ok(builtInAgentSource.includes('BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS'), 'Workflow built-in run timeout must be configurable');
 assert.ok(builtInAgentSource.includes("normalizedKind.endsWith('_leader')"), 'Leader workflow planning should not spend the first dispatch on web search');
 assert.ok(builtInAgentSource.includes('Promise.race'), 'OpenAI calls should have an explicit timeout race, not only AbortController');
-assert.ok(builtInAgentSource.includes('workflow_fast_fallback'), 'Workflow built-in runs should complete with a fallback if OpenAI exceeds the latency budget');
+assert.ok(builtInAgentSource.includes('workflow_fast_generation_failed'), 'Workflow built-in runs should fail instead of returning fallback output if OpenAI exceeds the latency budget');
+assert.ok(!builtInAgentSource.includes('workflow_fast_fallback'), 'Workflow built-in runs must not return fallback output when generation fails');
 
 function builtInSeedManifest(seed = {}) {
   const manifest = seed?.metadata?.manifest && typeof seed.metadata.manifest === 'object'
@@ -962,6 +975,19 @@ const originalBuiltinQaFetch = globalThis.fetch;
 let genericCmoOpenAiCalls = 0;
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
+  if (url.startsWith('https://api.search.brave.com/res/v1/web/search?')) {
+    return new Response(JSON.stringify({
+      web: {
+        results: [
+          {
+            url: 'https://example.com/cmo-quality-source',
+            title: 'CMO quality source',
+            description: 'Current market context for CMO workflow quality gate QA.'
+          }
+        ]
+      }
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
   if (url === 'https://api.openai.com/v1/responses') {
     genericCmoOpenAiCalls += 1;
     return new Response(JSON.stringify({
@@ -1009,17 +1035,17 @@ globalThis.fetch = async (input, init) => {
   return originalBuiltinQaFetch(input, init);
 };
 try {
-  const openAiGenericResearchFallback = await runBuiltInAgent('research', cmoWorkflowEnglishSpecialistInput, {
+  const openAiGenericResearchFailure = await runBuiltInAgent('research', cmoWorkflowEnglishSpecialistInput, {
+    BRAVE_SEARCH_API_KEY: 'brave-test-key',
     OPENAI_API_KEY: 'sk-test-cmo-quality',
     BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS: '5000'
   });
   assert.equal(genericCmoOpenAiCalls, 1, 'CMO workflow QA should exercise the OpenAI draft path');
-  assert.equal(openAiGenericResearchFallback.runtime.provider, 'built_in');
-  assert.equal(openAiGenericResearchFallback.runtime.workflow, 'cmo_workflow_quality_gate');
-  assert.equal(openAiGenericResearchFallback.runtime.fallback_reason, 'generic_template_left_in_cmo_workflow_delivery');
-  assert.ok(openAiGenericResearchFallback.files[0].content.includes('CMO acquisition research delivery'));
-  assert.ok(openAiGenericResearchFallback.files[0].content.includes('Acquisition research readout'));
-  assert.ok(!/Option A|Decision or question framing|Name the single highest-value follow-up check|Task:|Goal:/i.test(openAiGenericResearchFallback.files[0].content));
+  assert.equal(openAiGenericResearchFailure.status, 'failed');
+  assert.equal(openAiGenericResearchFailure.runtime.provider, 'none');
+  assert.equal(openAiGenericResearchFailure.runtime.workflow, 'quality_gate_failed');
+  assert.ok(openAiGenericResearchFailure.failure_reason.includes('generic_template_left_in_cmo_workflow_delivery'));
+  assert.equal(openAiGenericResearchFailure.files.length, 0);
 } finally {
   globalThis.fetch = originalBuiltinQaFetch;
 }
@@ -1048,10 +1074,10 @@ try {
     OPENAI_API_KEY: 'sk-test-search-required',
     BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS: '5000'
   });
-  assert.equal(missingWorkflowSearchSourceCalls, 1, 'search-required workflow should attempt the OpenAI draft path once');
-  assert.equal(blockedWorkflowSearchPayload.status, 'blocked');
-  assert.equal(blockedWorkflowSearchPayload.report.authority_request.missing_connectors[0], 'search');
-  assert.equal(blockedWorkflowSearchPayload.report.authority_request.source, 'search_connector_required');
+  assert.equal(missingWorkflowSearchSourceCalls, 0, 'source-required workflow must not call OpenAI when no source URL is available');
+  assert.equal(blockedWorkflowSearchPayload.status, 'failed');
+  assert.ok(blockedWorkflowSearchPayload.failure_reason.includes('OpenAI generation was not started'));
+  assert.equal(blockedWorkflowSearchPayload.runtime.workflow, 'missing_required_search_sources');
   assert.equal(blockedWorkflowSearchPayload.files.length, 0);
 } finally {
   globalThis.fetch = originalBuiltinQaFetch;
@@ -1085,19 +1111,18 @@ try {
     BRAVE_SEARCH_API_KEY: 'brave-test-key'
   });
   assert.equal(braveOnlyCalls, 1, 'Brave-only built-in search should issue one Brave search request');
-  assert.equal(braveOnlyPayload.runtime.provider, 'built_in');
+  assert.equal(braveOnlyPayload.status, 'failed');
+  assert.equal(braveOnlyPayload.runtime.provider, 'none');
   assert.equal(braveOnlyPayload.runtime.search_provider, 'brave');
   assert.equal(braveOnlyPayload.report.web_sources[0].url, 'https://example.com/brave-source');
-  assert.ok(braveOnlyPayload.files[0].content.includes('## Web sources used'));
-  assert.ok(braveOnlyPayload.files[0].content.includes('https://example.com/brave-source'));
+  assert.equal(braveOnlyPayload.files.length, 0);
   const cmoBravePayload = await runBuiltInAgent('research', cmoWorkflowEnglishSpecialistInput, {
     BRAVE_SEARCH_API_KEY: 'brave-test-key'
   });
   assert.ok(cmoBraveQuery.includes('aiagent-marketplace.net'), 'CMO Brave query should keep the target product/domain, not only generic acquisition terms');
   assert.ok(cmoBraveQuery.includes('AI agent marketplace'), 'CMO Brave query should include agent-marketplace search intent');
-  assert.ok(cmoBravePayload.files[0].content.includes('## Source-backed evidence used'), 'CMO research should integrate Brave sources into the body, not only append raw URLs');
-  assert.ok(cmoBravePayload.files[0].content.includes('https://example.com/brave-source'));
-  assert.ok(!/No search or handoff sources were attached|検索\/受け渡しソースは未添付/.test(cmoBravePayload.files[0].content), 'CMO research with Brave URLs must not also claim sources are missing');
+  assert.equal(cmoBravePayload.status, 'failed');
+  assert.equal(cmoBravePayload.files.length, 0);
   await runBuiltInAgent('research', {
     ...cmoWorkflowEnglishSpecialistInput,
     prompt: 'Task: cmo_leader Goal: grow https://aiagent-marketplace.net CAIt for engineers. Need signups with no ads through X and SEO, media proposal, and actual post content.'
@@ -1266,6 +1291,70 @@ const mergedXExecutionOutput = buildAgentTeamDeliveryOutput({
 ]);
 const mergedXCandidate = mergedXExecutionOutput.files.find((file) => file.content_type === 'social_post_pack');
 assert.equal(mergedXCandidate?.draft_defaults?.postText, cmoWorkflowXPayload.files[0].draft_defaults.postText);
+
+const failedLeaderWorkflowOutput = buildAgentTeamDeliveryOutput({
+  id: 'qa-failed-parent',
+  status: 'failed',
+  originalPrompt: 'CMO execution workflow',
+  workflow: { childRuns: [{ id: 'qa-leader-timeout' }, { id: 'qa-research-blocked' }, { id: 'qa-checkpoint-blocked' }] }
+}, [
+  {
+    id: 'qa-leader-timeout',
+    taskType: 'cmo_leader',
+    workflowTask: 'cmo_leader',
+    status: 'timed_out',
+    failureReason: 'Run exceeded timeout window',
+    failureCategory: 'deadline_timeout'
+  },
+  {
+    id: 'qa-research-blocked',
+    taskType: 'research',
+    workflowTask: 'research',
+    status: 'blocked',
+    failureReason: 'blocked_after_leader_failure',
+    failureCategory: 'workflow_blocked',
+    dispatch: { completionStatus: 'blocked_after_leader_failure' }
+  },
+  {
+    id: 'qa-checkpoint-blocked',
+    taskType: 'cmo_leader',
+    workflowTask: 'cmo_leader',
+    status: 'blocked',
+    dispatch: { completionStatus: 'leader_checkpoint_blocked' }
+  }
+]);
+assert.ok(failedLeaderWorkflowOutput.summary.includes('stopped after failure'), 'failed workflow summary must not call internal blocked children approval waits');
+assert.ok(!failedLeaderWorkflowOutput.summary.includes('waiting for approval'), 'failed workflow summary must not imply approval is required');
+assert.ok(failedLeaderWorkflowOutput.report.bullets.some((line) => /Stopped after failure/.test(line)), 'failed workflow must explain stopped-after-failure children');
+assert.ok(/not an approval wait/i.test(failedLeaderWorkflowOutput.report.nextAction), 'failed workflow next action must say it is not approval');
+assert.equal(failedLeaderWorkflowOutput.report.authority_request, undefined, 'failed internal workflow must not synthesize authority approval');
+
+const approvalBlockedWorkflowOutput = buildAgentTeamDeliveryOutput({
+  id: 'qa-approval-parent',
+  status: 'blocked',
+  originalPrompt: 'CMO X execution workflow',
+  workflow: { childRuns: [{ id: 'qa-x-blocked' }] }
+}, [
+  {
+    id: 'qa-x-blocked',
+    taskType: 'x_post',
+    workflowTask: 'x_post',
+    status: 'blocked',
+    failureCategory: 'blocked_waiting_for_approval',
+    dispatch: { completionStatus: 'blocked_waiting_for_approval' },
+    output: {
+      report: {
+        authority_request: {
+          reason: 'X posting authority is required before CAIt can publish this post.',
+          missing_connectors: ['x'],
+          missing_connector_capabilities: ['x.post']
+        }
+      }
+    }
+  }
+]);
+assert.ok(approvalBlockedWorkflowOutput.summary.includes('waiting for approval/connector'), 'true approval blocks should still be labeled as approval/connector waits');
+assert.equal(approvalBlockedWorkflowOutput.report.completion_state, 'blocked_waiting_for_approval');
 
 const cmoBareDomainPayload = sampleAgentPayload('research', {
   prompt: 'Task: cmo_leader Goal: aiagent-marketplace.netの会員登録を増やす。plan and do actions.',

@@ -53,12 +53,28 @@ function caitOrigin(options = {}) {
   return DEFAULT_CAIt_ORIGIN;
 }
 
+async function caitCsrfToken(origin = '') {
+  if (origin !== window.location.origin) return '';
+  try {
+    const response = await fetch(`${origin}/auth/status`, {
+      headers: { accept: 'application/json' },
+      credentials: 'same-origin'
+    });
+    const data = await response.json().catch(() => ({}));
+    return String(data?.csrfToken || '').trim();
+  } catch {
+    return '';
+  }
+}
+
 async function createServerAppContext(context = {}, options = {}) {
   if (options.server === false) return null;
   const origin = caitOrigin(options);
   const headers = { 'content-type': 'application/json', accept: 'application/json' };
   const apiKey = safeText(options.apiKey || options.caitApiKey || '', 300);
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+  const csrfToken = await caitCsrfToken(origin);
+  if (csrfToken) headers['x-aiagent2-csrf'] = csrfToken;
   const response = await fetch(`${origin}/api/app-contexts`, {
     method: 'POST',
     headers,
@@ -74,6 +90,32 @@ async function createServerAppContext(context = {}, options = {}) {
     ...data,
     chat_url: new URL(data.chat_url, origin).toString()
   };
+}
+
+function sameOriginOpener() {
+  try {
+    if (!window.opener || window.opener.closed) return null;
+    return window.opener.location.origin === window.location.origin ? window.opener : null;
+  } catch {
+    return null;
+  }
+}
+
+function localChatReturnUrl(serverContext = {}, context = {}, options = {}) {
+  const origin = caitOrigin(options);
+  const raw = context?.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
+  const requested = safeText(options.returnTo || options.chatReturnTo || raw.chat_return_to || raw.chatReturnTo || '', 1000);
+  const fallback = serverContext?.chat_url || `${origin}/chat`;
+  if (!requested) return new URL(fallback, origin).toString();
+  try {
+    const url = new URL(requested, origin);
+    if (url.origin !== origin || !/^\/chat(?:\.html)?$/.test(url.pathname)) return new URL(fallback, origin).toString();
+    if (serverContext?.app_context_id) url.searchParams.set('app_context_id', String(serverContext.app_context_id));
+    if (serverContext?.app_context_token) url.searchParams.set('app_context_token', String(serverContext.app_context_token));
+    return url.toString();
+  } catch {
+    return new URL(fallback, origin).toString();
+  }
 }
 
 export function buildCaitAppContext(raw = {}) {
@@ -107,6 +149,31 @@ export function storeCaitAppContext(raw = {}) {
 
 export function caitAppContextChatPrompt(context = {}) {
   const c = buildCaitAppContext(context);
+  const raw = c.raw_context && typeof c.raw_context === 'object' ? c.raw_context : {};
+  const source = String(c.source_app || '').toLowerCase();
+  if (source === 'analytics_console' || raw.googleGa4Property || raw.googleSearchConsoleSite || raw.googleReportLoaded) {
+    const services = [
+      raw.googleGa4Property ? 'GA4' : '',
+      raw.googleSearchConsoleSite ? 'Search Console' : ''
+    ].filter(Boolean);
+    const metricValue = (name) => {
+      const metric = c.metrics.find((item) => String(item?.label || item?.name || '').toLowerCase() === name);
+      return metric ? String(metric.value ?? metric.current ?? '').trim() : '';
+    };
+    const lines = [
+      `Attached connector context: ${services.length ? services.join(' + ') : 'Google Analytics/Search Console'}`,
+      raw.googleGa4Property ? `- GA4 property: ${raw.googleGa4Property}` : '',
+      raw.googleSearchConsoleSite ? `- Search Console site: ${raw.googleSearchConsoleSite}` : '',
+      raw.googleReportDateRange?.start_date && raw.googleReportDateRange?.end_date
+        ? `- Date range: ${raw.googleReportDateRange.start_date} to ${raw.googleReportDateRange.end_date}`
+        : '',
+      metricValue('sessions') ? `- Sessions: ${metricValue('sessions')}` : '',
+      metricValue('conversions') ? `- Conversions: ${metricValue('conversions')}` : '',
+      metricValue('conversion_rate') ? `- Conversion rate: ${metricValue('conversion_rate')}` : '',
+      'Use this attached connector data as evidence. Do not ask the user to paste GA4/Search Console rows again.'
+    ].filter(Boolean);
+    return lines.join('\n');
+  }
   const lines = [
     `Use this ${c.source_app_label || c.source_app} context with CAIt.`,
     '',
@@ -141,8 +208,23 @@ export function caitAppContextThreadHtml(context = {}) {
 export async function sendContextToCait(raw = {}, options = {}) {
   const context = buildCaitAppContext(raw);
   const serverContext = await createServerAppContext(context, options);
-  const target = serverContext.chat_url;
+  const target = localChatReturnUrl(serverContext, context, options);
   if (options.open === false) return target;
+  const opener = options.postToOpener === false ? null : sameOriginOpener();
+  if (opener) {
+    opener.postMessage({
+      type: 'cait-app-context',
+      source: 'cait-app-bridge',
+      context,
+      app_context_id: serverContext?.app_context_id || '',
+      app_context_token: serverContext?.app_context_token || '',
+      chat_url: target
+    }, window.location.origin);
+    window.setTimeout(() => {
+      try { window.close(); } catch {}
+    }, 100);
+    return target;
+  }
   window.location.href = target;
   return target;
 }

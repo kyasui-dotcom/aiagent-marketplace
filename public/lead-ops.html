@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Lead Ops Console | CAIt Apps</title>
-  <meta name="description" content="CAIt Lead Ops Console manages lead rows, evidence URLs, statuses, next actions, and email drafts before approval." />
+  <meta name="description" content="CAIt Lead Ops Console manages lead rows, outreach channels, schedules, event triggers, and approval-gated messages before execution." />
   <meta name="robots" content="noindex,follow" />
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
-  <link rel="stylesheet" href="/app-console.css?v=20260505c" />
-  <script type="module" src="/lead-ops.js?v=20260505c"></script>
+  <link rel="stylesheet" href="/app-console.css?v=20260507d" />
+  <script type="module" src="/lead-ops.js?v=20260507d"></script>
 </head>
 <body>
   <main class="app-console-shell" aria-label="CAIt Lead Ops Console">
@@ -33,14 +33,16 @@
           <button type="button" data-status="review">Needs review <span id="leadReviewNavCount">0</span></button>
           <button type="button" data-status="draft">Draft ready <span id="leadDraftNavCount">0</span></button>
           <button type="button" data-status="approved">Approved <span id="leadApprovedNavCount">0</span></button>
+          <button type="button" data-status="scheduled">Scheduled <span id="leadScheduledNavCount">0</span></button>
+          <button type="button" data-status="triggered">Trigger-ready <span id="leadTriggeredNavCount">0</span></button>
           <button type="button" data-status="blocked">Waiting <span id="leadBlockedNavCount">0</span></button>
         </aside>
         <section class="workspace">
           <div class="workspace-head">
             <div>
-              <span class="kicker">Lead evidence and email drafts</span>
-              <h1>Keep acquisition rows reviewable before outreach.</h1>
-              <p>Turn sourced leads into reviewed outreach drafts with evidence, owner, status, and next action ready for a growth leader.</p>
+              <span class="kicker">Lead outreach operations</span>
+              <h1>Plan every message before CAIt sends it.</h1>
+              <p>Convert sourced leads into email, SMS, and event-triggered outreach plans with schedule, consent, evidence, and approval state in one packet.</p>
             </div>
             <div class="toolbar">
               <select id="leaderSelect" aria-label="Leader target">
@@ -49,32 +51,103 @@
                 <option value="list_creator">List Creator</option>
               </select>
               <button class="ghost-btn" id="markDraftBtn" type="button">Mark draft ready</button>
+              <button class="ghost-btn" id="approveLeadBtn" type="button">Approve</button>
+              <button class="ghost-btn" id="scheduleLeadBtn" type="button">Schedule</button>
+              <button class="ghost-btn" id="triggerLeadBtn" type="button">Set trigger</button>
+              <button class="ghost-btn" id="waitLeadBtn" type="button">Set waiting</button>
             </div>
           </div>
 
+          <section class="workflow-strip" aria-label="Lead Ops workflow">
+            <div class="workflow-step current" id="leadStepLoad">
+              <span class="step-index">1</span>
+              <span><strong>Select lead</strong><span>Bring in public-source lead evidence from CAIt.</span></span>
+            </div>
+            <div class="workflow-step" id="leadStepDraft">
+              <span class="step-index">2</span>
+              <span><strong>Build outreach plan</strong><span>Choose email, SMS, schedule, or event trigger.</span></span>
+            </div>
+            <div class="workflow-step" id="leadStepApproval">
+              <span class="step-index">3</span>
+              <span><strong>Approve execution</strong><span>Send reviewed outreach rules back to CAIt.</span></span>
+            </div>
+          </section>
+
           <section class="metric-strip" aria-label="Lead metrics">
             <article class="metric-card"><span>Total leads</span><strong id="leadTotalMetric">-</strong><small>public-source rows only</small></article>
-            <article class="metric-card"><span>Draft ready</span><strong id="leadDraftMetric">-</strong><small>approval required</small></article>
-            <article class="metric-card"><span>Approved</span><strong id="leadApprovedMetric">-</strong><small>not sent by this app</small></article>
+            <article class="metric-card"><span>Draft ready</span><strong id="leadDraftMetric">-</strong><small>message copy exists</small></article>
+            <article class="metric-card"><span>Approved</span><strong id="leadApprovedMetric">-</strong><small>ready for CAIt handoff</small></article>
+            <article class="metric-card"><span>Scheduled</span><strong id="leadScheduledMetric">-</strong><small>time-based send plan</small></article>
+            <article class="metric-card"><span>Trigger-ready</span><strong id="leadTriggeredMetric">-</strong><small>event-based send plan</small></article>
             <article class="metric-card"><span>Waiting</span><strong id="leadBlockedMetric">-</strong><small>missing evidence or consent</small></article>
           </section>
 
           <section class="split-main">
-            <article class="panel">
+            <article class="panel lead-table-panel">
               <h2>Lead rows</h2>
               <table class="data-table" id="leadTable" aria-label="Lead rows"></table>
             </article>
             <article class="panel">
               <div class="status-row">
-                <h2>Email draft</h2>
+                <h2>Outreach plan</h2>
                 <span class="status-pill pending" id="leadStatusPill">needs review</span>
               </div>
               <div class="field-grid">
                 <div class="field-row"><label for="leadNameInput">Lead</label><input id="leadNameInput" /></div>
+                <div class="field-row"><label for="leadContactInput">Contact path</label><input id="leadContactInput" placeholder="email, phone, form URL, CRM ID..." /></div>
                 <div class="field-row"><label for="leadSourceInput">Evidence URL</label><input id="leadSourceInput" /></div>
-                <div class="field-row"><label for="emailSubjectInput">Subject</label><input id="emailSubjectInput" /></div>
-                <div class="field-row"><label for="emailBodyInput">Body</label><textarea id="emailBodyInput"></textarea></div>
+                <div class="field-row">
+                  <label for="outreachChannelSelect">Channel</label>
+                  <select id="outreachChannelSelect">
+                    <option value="email">Email</option>
+                    <option value="sms">SMS</option>
+                    <option value="linkedin">LinkedIn</option>
+                    <option value="crm_task">CRM task</option>
+                    <option value="manual">Manual review</option>
+                  </select>
+                </div>
+                <div class="field-row">
+                  <label for="consentSelect">Consent / basis</label>
+                  <select id="consentSelect">
+                    <option value="needs_review">Needs review</option>
+                    <option value="existing_customer">Existing customer</option>
+                    <option value="inbound_opt_in">Inbound opt-in</option>
+                    <option value="public_business_contact">Public business contact</option>
+                    <option value="manual_approval_required">Manual approval required</option>
+                  </select>
+                </div>
+                <div class="field-row">
+                  <label for="sendModeSelect">Send mode</label>
+                  <select id="sendModeSelect">
+                    <option value="manual_approval">Manual approval</option>
+                    <option value="scheduled">Scheduled</option>
+                    <option value="event_trigger">Event trigger</option>
+                    <option value="sequence_step">Sequence step</option>
+                  </select>
+                </div>
+                <div class="field-row"><label for="scheduleAtInput">Schedule at</label><input id="scheduleAtInput" type="datetime-local" /></div>
+                <div class="field-row">
+                  <label for="triggerEventSelect">Trigger event</label>
+                  <select id="triggerEventSelect">
+                    <option value="none">No trigger</option>
+                    <option value="lead_created">Lead created</option>
+                    <option value="score_increased">Lead score increased</option>
+                    <option value="page_revisited">Lead revisited key page</option>
+                    <option value="form_started_not_submitted">Form started but not submitted</option>
+                    <option value="no_reply_after_wait">No reply after wait</option>
+                  </select>
+                </div>
+                <div class="field-row"><label for="triggerConditionInput">Trigger condition</label><input id="triggerConditionInput" placeholder="score >= 70, wait 3 days, visited pricing..." /></div>
+                <div class="field-row"><label for="senderEmailInput">Resend from email</label><input id="senderEmailInput" placeholder="sales@your-domain.com" /></div>
+                <div class="field-row"><label for="replyToEmailInput">Reply-to email</label><input id="replyToEmailInput" placeholder="Optional reply-to" /></div>
+                <div class="field-row"><label for="emailSubjectInput">Subject / SMS label</label><input id="emailSubjectInput" /></div>
+                <div class="field-row"><label for="emailBodyInput">Message body</label><textarea id="emailBodyInput"></textarea></div>
               </div>
+              <div class="inline-actions" style="margin-top:12px">
+                <button class="primary-btn" id="sendResendBtn" type="button">Send email via Resend</button>
+                <button class="ghost-btn" id="scheduleResendBtn" type="button">Schedule via Resend</button>
+              </div>
+              <p class="muted" id="resendStatusNote">Resend execution is available for approved email leads only. SMS remains a CAIt handoff.</p>
             </article>
           </section>
 
