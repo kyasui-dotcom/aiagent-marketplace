@@ -114,8 +114,8 @@ assert.ok(html.includes('href="/apps.html"'), 'Root should expose the new CAIt a
 assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat composer.');
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
-assert.ok(chatHtml.includes('/chat.css?v=20260507a'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260507f"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('/chat.css?v=20260507c'), 'Chat page should load root chat CSS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260507h"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -479,6 +479,9 @@ assert.ok(chatJs.includes("Connect Search Console") && chatJs.includes("Connect 
 assert.ok(!chatJs.includes('/chatux/'), 'Chat JS must not navigate users to /chatux.');
 assert.ok(chatJs.includes('function showChatListPanel'), 'Chat should expose recent chat/order list modal.');
 assert.ok(chatJs.includes('function showWorkerListPanel'), 'Chat should expose worker/agent list modal.');
+assert.ok(chatJs.includes('function initialAgentMapHtml'), 'Chat should render an initial agent map after workflow order acceptance.');
+assert.ok(chatJs.includes('workflowCurrentLocationLabel'), 'Chat progress should show the current workflow phase and active agent.');
+assert.ok(chatJs.includes('function workflowPhaseProgressMapHtml'), 'Chat should render a progress map when the workflow phase changes.');
 assert.ok(chatJs.includes('function showAppListPanel'), 'Chat should expose app list modal.');
 assert.ok(chatJs.includes('registeredApps: []'), 'Chat should keep registered marketplace apps in state.');
 assert.ok(chatJs.includes('const CHATUX_CATALOG_PAGE_SIZE = 10'), 'Workers and apps should initially load only ten catalog rows.');

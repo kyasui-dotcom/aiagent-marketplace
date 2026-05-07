@@ -1149,8 +1149,9 @@ function statusLabel(job = {}) {
     const completed = Number(counts.completed || 0) || 0;
     const blocked = Number(counts.blocked || 0) || 0;
     const failed = Number(counts.failed || 0) || 0;
+    const location = workflowCurrentLocationLabel(job);
     const suffix = total ? `, ${completed}/${total} agent runs complete${blocked ? `, ${blocked} waiting` : ''}${failed ? `, ${failed} failed` : ''}` : '';
-    return `${visibleStatus}${suffix}`;
+    return `${visibleStatus}${suffix}${location ? `, now: ${location}` : ''}`;
   }
   return visibleStatus;
 }
@@ -1163,6 +1164,172 @@ function workflowChildIsInternalLeaderSequenceRun(child = {}) {
 
 function visibleWorkflowChildRuns(childRuns = []) {
   return (Array.isArray(childRuns) ? childRuns : []).filter((child) => !workflowChildIsInternalLeaderSequenceRun(child));
+}
+
+function workflowPhaseLabel(phase = '') {
+  const safe = String(phase || '').trim().toLowerCase();
+  const labels = {
+    initial: 'Leader intake',
+    research: 'Research/Data',
+    planning: 'Planning',
+    preparation: 'Preparation',
+    action: 'Action',
+    leader: 'Leader',
+    summary: 'Summary'
+  };
+  return labels[safe] || (safe ? safe.replace(/_/g, ' ') : 'Workflow');
+}
+
+function workflowPhaseRank(phase = '') {
+  const safe = String(phase || '').trim().toLowerCase();
+  return { initial: 1, research: 2, planning: 3, preparation: 4, action: 5, summary: 6 }[safe] || 9;
+}
+
+function workflowChildStatusRank(status = '') {
+  const safe = String(status || '').trim().toLowerCase();
+  return { running: 1, claimed: 1, dispatched: 1, queued: 2, blocked: 3, completed: 8, failed: 9, timed_out: 9 }[safe] || 5;
+}
+
+function workflowChildDisplayLabel(child = {}) {
+  return String(child.agentName || child.agent_name || taskLabel(child.taskType || child.task_type || child.dispatchTaskType || child.dispatch_task_type || 'work')).trim();
+}
+
+function workflowCurrentChildRun(job = {}) {
+  const childRuns = createdOrderChildRuns(job);
+  if (!childRuns.length) return '';
+  const active = childRuns
+    .filter((child) => ['running', 'claimed', 'dispatched', 'queued', 'blocked'].includes(String(child.status || '').trim().toLowerCase()))
+    .sort((left, right) => (
+      workflowChildStatusRank(left.status) - workflowChildStatusRank(right.status)
+      || workflowPhaseRank(left.sequencePhase || left.sequence_phase) - workflowPhaseRank(right.sequencePhase || right.sequence_phase)
+    ));
+  const completed = childRuns
+    .filter((child) => String(child.status || '').trim().toLowerCase() === 'completed')
+    .sort((left, right) => workflowPhaseRank(right.sequencePhase || right.sequence_phase) - workflowPhaseRank(left.sequencePhase || left.sequence_phase));
+  return active[0] || completed[0] || null;
+}
+
+function workflowCurrentLocationLabel(job = {}) {
+  const current = workflowCurrentChildRun(job);
+  if (!current) return '';
+  const phase = workflowPhaseLabel(current.sequencePhase || current.sequence_phase);
+  const agent = workflowChildDisplayLabel(current);
+  const status = statusDisplayLabel(current.status || 'queued');
+  return `${phase} / ${agent} / ${status}`;
+}
+
+function workflowCurrentPhaseKey(job = {}) {
+  const current = workflowCurrentChildRun(job);
+  return String(current?.sequencePhase || current?.sequence_phase || '').trim().toLowerCase();
+}
+
+function createdOrderChildRuns(created = {}) {
+  const raw = Array.isArray(created?.child_runs)
+    ? created.child_runs
+    : (Array.isArray(created?.childRuns)
+      ? created.childRuns
+      : (Array.isArray(created?.workflow?.childRuns) ? created.workflow.childRuns : []));
+  return visibleWorkflowChildRuns(raw).map((child) => ({
+    id: String(child.id || child.job_id || child.jobId || '').trim(),
+    taskType: String(child.taskType || child.task_type || child.dispatchTaskType || child.dispatch_task_type || '').trim(),
+    dispatchTaskType: String(child.dispatchTaskType || child.dispatch_task_type || child.taskType || child.task_type || '').trim(),
+    agentId: String(child.agentId || child.agent_id || '').trim(),
+    agentName: String(child.agentName || child.agent_name || '').trim(),
+    sequencePhase: String(child.sequencePhase || child.sequence_phase || '').trim().toLowerCase(),
+    status: String(child.status || 'queued').trim().toLowerCase()
+  })).filter((child) => child.taskType || child.agentName || child.agentId);
+}
+
+function workflowAgentMapHtml(childRuns = [], options = {}) {
+  const visibleRuns = Array.isArray(childRuns) ? childRuns : [];
+  if (!visibleRuns.length) return '';
+  const currentPhase = String(options.currentPhase || '').trim().toLowerCase();
+  const currentChildId = String(options.currentChildId || '').trim();
+  const groups = [];
+  for (const child of visibleRuns) {
+    const phase = child.sequencePhase || 'workflow';
+    let group = groups.find((item) => item.phase === phase);
+    if (!group) {
+      group = { phase, items: [] };
+      groups.push(group);
+    }
+    group.items.push(child);
+  }
+  groups.sort((left, right) => workflowPhaseRank(left.phase) - workflowPhaseRank(right.phase));
+  const diagram = groups.map((group, index) => {
+    const phaseIsCurrent = currentPhase && group.phase === currentPhase;
+    return [
+      index ? '<div class="agent-map-arrow" aria-hidden="true">→</div>' : '',
+      `<div class="agent-map-phase${phaseIsCurrent ? ' current' : ''}">`,
+      `<div class="agent-map-phase-title">${escapeHtml(workflowPhaseLabel(group.phase))}${phaseIsCurrent ? '<span>Now</span>' : ''}</div>`,
+      ...group.items.slice(0, 4).map((child) => {
+        const status = String(child.status || 'queued').trim().toLowerCase();
+        const statusClass = status.replace(/[^a-z0-9_-]+/g, '');
+        const isCurrent = currentChildId
+          ? currentChildId === String(child.id || '').trim()
+          : phaseIsCurrent && ['running', 'claimed', 'dispatched', 'queued', 'blocked'].includes(status);
+        return [
+          `<div class="agent-map-node ${escapeHtml(statusClass)}${isCurrent ? ' current' : ''}">`,
+          `<strong>${escapeHtml(workflowChildDisplayLabel(child))}</strong>`,
+          `<span>${escapeHtml(taskLabel(child.taskType || child.dispatchTaskType || 'work'))} · ${escapeHtml(statusDisplayLabel(child.status || 'queued'))}</span>`,
+          '</div>'
+        ].join('');
+      }),
+      group.items.length > 4 ? `<span class="agent-map-more">+${group.items.length - 4} more</span>` : '',
+      '</div>'
+    ].filter(Boolean).join('\n');
+  }).join('\n');
+  const footer = String(options.footer || '').trim();
+  return [
+    `<div class="agent-map-card${options.progress ? ' progress' : ''}">`,
+    '<div class="agent-map-head">',
+    `<strong>${escapeHtml(options.title || 'Agent map')}</strong>`,
+    `<span>${escapeHtml(options.subtitle || `${visibleRuns.length} visible agent runs`)}</span>`,
+    '</div>',
+    `<div class="agent-map-diagram">${diagram}</div>`,
+    footer ? `<div class="chat-hint">${escapeHtml(footer)}</div>` : '',
+    '</div>'
+  ].join('\n');
+}
+
+function initialAgentMapHtml(created = {}, prompt = '') {
+  const childRuns = createdOrderChildRuns(created);
+  const isWorkflow = String(created?.mode || '').toLowerCase() === 'workflow' || Boolean(created?.workflow_job_id || created?.workflowJobId);
+  if (!isWorkflow && !childRuns.length && !created?.matched_agent_id) return '';
+  if (!isWorkflow) {
+    return [
+      '<div class="agent-map-card">',
+      '<div class="agent-map-head">',
+      '<strong>Agent map</strong>',
+      '<span>Initial route</span>',
+      '</div>',
+      '<div class="agent-map-single">',
+      `<strong>${escapeHtml(String(created?.matched_agent_name || created?.matched_agent_id || 'Selected agent'))}</strong>`,
+      `<span>${escapeHtml(statusDisplayLabel(created?.status || 'created'))}</span>`,
+      '</div>',
+      '</div>'
+    ].join('\n');
+  }
+  return workflowAgentMapHtml(childRuns, {
+    title: 'Agent map',
+    subtitle: `${childRuns.length} visible agent runs · initial plan only`,
+    footer: 'Progress updates below will show the current phase and active agent. A new map appears when the phase changes.'
+  });
+}
+
+function workflowPhaseProgressMapHtml(job = {}) {
+  const childRuns = createdOrderChildRuns(job);
+  const current = workflowCurrentChildRun(job);
+  if (!childRuns.length || !current) return '';
+  const phase = String(current.sequencePhase || '').trim().toLowerCase();
+  return workflowAgentMapHtml(childRuns, {
+    title: `Now: ${workflowPhaseLabel(phase)}`,
+    subtitle: `${workflowChildDisplayLabel(current)} · ${statusDisplayLabel(current.status || 'queued')}`,
+    footer: `Order ${String(job.id || '').slice(0, 8)} moved to ${workflowPhaseLabel(phase)}.`,
+    currentPhase: phase,
+    currentChildId: current.id,
+    progress: true
+  });
 }
 
 function statusDisplayLabel(status = '') {
@@ -4122,6 +4289,8 @@ async function sendOrder() {
       `Status: ${created.status || created.mode || 'created'}`,
       created.routing_reason ? `Route reason: ${created.routing_reason}` : ''
     ].filter(Boolean).join('\n'), { tone: 'ok', label: actorLabel });
+    const agentMap = initialAgentMapHtml(created, payload.prompt || '');
+    if (agentMap) appendMessage('assistant', agentMap, { tone: 'info', label: 'Agent map' });
     if (state.orderId) startPolling(state.orderId);
     else startDeliveryBackfillLoop({ maxRuns: 60 });
     state.pendingAppContext = null;
@@ -4239,17 +4408,25 @@ async function postXDraftFromChat(jobId = '', postText = '') {
 function startPolling(orderId) {
   if (state.polling) window.clearInterval(state.polling);
   let lastKey = '';
+  let lastPhaseKey = '';
   let pollCount = 0;
   const tick = async () => {
     pollCount += 1;
     try {
       const result = await api(`/api/jobs/${encodeURIComponent(orderId)}?visitor_id=${encodeURIComponent(state.visitorId)}`);
       const job = result.job && typeof result.job === 'object' ? { ...result.job, id: result.job.id || orderId } : { id: orderId };
-      const key = `${job.status}|${job.completedAt || ''}|${job.failedAt || ''}|${job.failureReason || ''}|${JSON.stringify(job.workflow?.statusCounts || {})}`;
+      const key = `${job.status}|${job.completedAt || ''}|${job.failedAt || ''}|${job.failureReason || ''}|${JSON.stringify(job.workflow?.agentStatusCounts || job.workflow?.statusCounts || {})}|${workflowCurrentLocationLabel(job)}`;
+      const phaseKey = workflowCurrentPhaseKey(job);
       maybeRenderAuthorityNotice(job, { label: 'Approval required' });
       if (key !== lastKey) {
         lastKey = key;
         appendTextMessage('system', `Order ${orderId.slice(0, 8)}: ${statusLabel(job)}`);
+      }
+      if (phaseKey && phaseKey !== lastPhaseKey) {
+        const shouldRenderPhaseMap = Boolean(lastPhaseKey) || phaseKey !== 'initial';
+        lastPhaseKey = phaseKey;
+        const phaseMap = shouldRenderPhaseMap ? workflowPhaseProgressMapHtml(job) : '';
+        if (phaseMap) appendMessage('assistant', phaseMap, { tone: 'info', label: 'Progress map' });
       }
       if (isTerminalStatus(job.status)) {
         window.clearInterval(state.polling);
