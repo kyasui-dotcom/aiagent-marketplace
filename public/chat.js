@@ -1437,7 +1437,8 @@ function workflowPhaseLabel(phase = '') {
   const safe = String(phase || '').trim().toLowerCase();
   const labels = {
     initial: 'Leader intake',
-    research: 'Research/Data',
+    data: 'Data',
+    research: 'Research',
     planning: 'Planning',
     preparation: 'Preparation',
     action: 'Action',
@@ -1449,7 +1450,7 @@ function workflowPhaseLabel(phase = '') {
 
 function workflowPhaseRank(phase = '') {
   const safe = String(phase || '').trim().toLowerCase();
-  return { initial: 1, research: 2, planning: 3, preparation: 4, action: 5, summary: 6 }[safe] || 9;
+  return { initial: 1, data: 2, research: 3, planning: 4, preparation: 5, action: 6, summary: 7 }[safe] || 9;
 }
 
 function workflowChildStatusRank(status = '') {

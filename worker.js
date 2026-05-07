@@ -4,6 +4,7 @@ import { API_ROUTES, apiRouteMatches } from './lib/api-routes.js';
 import { BUILT_IN_KINDS, builtInAgentHealthPayload, runBuiltInAgent, sampleAgentPayload } from './lib/builtin-agents.js';
 import {
   CMO_WORKFLOW_ACTION_LAYER_TASKS,
+  CMO_WORKFLOW_DATA_LAYER_TASKS,
   CMO_WORKFLOW_DEFAULT_EXECUTION_TASKS,
   CMO_WORKFLOW_PLANNING_LAYER_TASKS,
   CMO_WORKFLOW_PREPARATION_LAYER_TASKS,
@@ -10551,16 +10552,25 @@ function cmoSourceLayerPreferencesFromText(text = '') {
     if (task && !tasks.includes(task)) tasks.push(task);
   };
   if (/(ga4|gsc|search console|google analytics|analytics|kpi|dashboard|cohort|funnel|metrics|アクセス解析|データ分析|計測|指標|登録率|cv率|サチコ)/i.test(safe)) push('data_analysis');
-  if (/(competitor|teardown|benchmark|positioning|vs\.?|競合|比較|ベンチマーク|ポジショニング)/i.test(safe)) push('teardown');
-  if (!tasks.length || /(research|market|audience|icp|調査|市場|顧客|ターゲット)/i.test(safe)) push('research');
+  push(/(competitor|teardown|benchmark|positioning|vs\.?|競合|比較|ベンチマーク|ポジショニング)/i.test(safe) ? 'teardown' : 'research');
   return tasks;
 }
 
-function cmoSourceLayerLimitFromText(text = '', configuredLimit = 0) {
-  const configured = Number(configuredLimit || 0);
-  if (Number.isFinite(configured) && configured > 0) return Math.max(1, Math.min(2, configured));
-  const preferences = cmoSourceLayerPreferencesFromText(text);
-  return preferences.includes('data_analysis') && preferences.includes('teardown') ? 2 : 1;
+function cmoPreparationTasksForActions(actions = [], text = '') {
+  const selected = [];
+  const push = (task) => {
+    const safe = String(task || '').trim().toLowerCase();
+    if (safe && !selected.includes(safe)) selected.push(safe);
+  };
+  const actionSet = new Set((Array.isArray(actions) ? actions : []).map((task) => String(task || '').trim().toLowerCase()).filter(Boolean));
+  if (['x_post', 'instagram', 'reddit', 'indie_hackers', 'email_ops', 'directory_submission'].some((task) => actionSet.has(task))) push('writing');
+  if (actionSet.has('cold_email')) {
+    push('list_creator');
+    push('writing');
+  }
+  if (actionSet.has('directory_submission') || actionSet.has('citation_ops') || /(seo|自然検索|search|サチコ|search console)/i.test(text)) push('seo_gap');
+  if (actionSet.has('acquisition_automation')) push('landing');
+  return selected;
 }
 
 function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', prompt = '', options = {}) {
@@ -10608,6 +10618,7 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     push(preferredSourceTask);
   }
   if (['cmo_leader', 'free_web_growth_leader'].includes(primary)) {
+    CMO_WORKFLOW_DATA_LAYER_TASKS.forEach(push);
     CMO_WORKFLOW_RESEARCH_LAYER_TASKS.forEach(push);
     CMO_WORKFLOW_PLANNING_LAYER_TASKS.forEach(push);
     CMO_WORKFLOW_PREPARATION_LAYER_TASKS.forEach(push);
@@ -10623,10 +10634,14 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     push(safe);
   };
   if (/(x\.com|(?:^|[^a-z0-9])x(?:\s+post|\s+posts|\s+thread)?(?=$|[^a-z0-9])|twitter|tweet|x投稿|ツイッター)/i.test(text)) pushRequestedAction('x_post');
+  if (/(instagram|insta|ig\b|インスタ|インスタグラム|reel|carousel|story|ストーリー|リール|カルーセル)/i.test(text)) pushRequestedAction('instagram');
   if (/(reddit|subreddit|レディット|community|コミュニティ)/i.test(text)) pushRequestedAction('reddit');
   if (/(indie\s*hackers|indiehackers|インディーハッカー|インディーハッカーズ)/i.test(text)) pushRequestedAction('indie_hackers');
   if (/(directory submission|directory listing|掲載媒体|媒体掲載|無料掲載|ディレクトリ掲載)/i.test(text)) pushRequestedAction('directory_submission');
+  if (/(gbp|google business profile|googleビジネスプロフィール|サイテーション|citation|meo|ローカルseo)/i.test(text)) pushRequestedAction('citation_ops');
   if (/acquisition automation|獲得自動化|集客自動化/i.test(text)) pushRequestedAction('acquisition_automation');
+  if (/(email ops|email campaign|newsletter|gmail|mailbox|send email|メール配信|メルマガ)/i.test(text)) pushRequestedAction('email_ops');
+  if (/(cold\s*email|outbound|sales email|営業メール|アウトバウンド|新規開拓|リード獲得)/i.test(text)) pushRequestedAction('cold_email');
   const selected = [];
   const pushSelected = (task) => {
     const safe = String(task || '').trim().toLowerCase();
@@ -10634,18 +10649,26 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     selected.push(safe);
   };
   pushSelected(primary);
-  const layerLimits = new Map([
-    [2, cmoWorkflow ? 2 : 1],
-    [3, 1]
-  ]);
+  const actionRequested = requestedActions.length > 0 || requestedExternalExecution;
+  const preparationForRequestedActions = cmoPreparationTasksForActions(requestedActions, text);
+  const layerLimits = new Map(cmoWorkflow
+    ? [
+        [1, 1],
+        [2, 1],
+        [3, 1],
+        [4, actionRequested ? Math.max(1, preparationForRequestedActions.length || 1) : 1]
+      ]
+    : [
+        [2, 1],
+        [3, 1]
+      ]);
   const layerCounts = new Map();
   const sourceBucketCounts = new Map();
   const sourceBucketForTask = (task) => dataCollectionTasks.has(String(task || '').trim().toLowerCase()) ? 'data' : 'research';
-  const sourceCollectionLimit = cmoWorkflow ? cmoSourceLayerLimitFromText(text, configuredResearchBucketLimit) : 1;
-  const sourceCollectionCount = () => [...sourceBucketCounts.values()].reduce((sum, count) => sum + Number(count || 0), 0);
   const pushLayerTask = (task, options = {}) => {
     const safe = String(task || '').trim().toLowerCase();
     if (!safe || safe === primary || summaryTasks.has(safe) || selected.includes(safe)) return;
+    if (cmoWorkflow && safe === 'data_analysis' && !preferredCmoSourceTasks.includes('data_analysis') && !options.force) return;
     const layer = leaderTaskLayer(primary, safe) || 1;
     if (layer >= leaderActionLayerStart(primary)) {
       if (options.force || requestedActions.includes(safe)) pushSelected(safe);
@@ -10654,10 +10677,7 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     if (layer === 1 && leaderTaskRequiresSourceCollection(primary, safe)) {
       const bucket = sourceBucketForTask(safe);
       const currentBucket = Number(sourceBucketCounts.get(bucket) || 0);
-      const bucketLimit = cmoWorkflow && bucket === 'research'
-        ? sourceCollectionLimit
-        : 1;
-      if (!options.force && cmoWorkflow && sourceCollectionCount() >= sourceCollectionLimit) return;
+      const bucketLimit = 1;
       if (!options.force && currentBucket >= bucketLimit) return;
       pushSelected(safe);
       sourceBucketCounts.set(bucket, currentBucket + 1);
@@ -10680,9 +10700,20 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
       if (leaderTaskLayer(primary, task) === layer) pushLayerTask(task);
     }
   };
-  fillLayer(1, cmoWorkflow ? [...preferredCmoSourceTasks, 'research', 'teardown', 'data_analysis', 'validation'] : ['data_analysis', 'teardown', 'research', 'validation']);
-  fillLayer(2, cmoWorkflow ? ['growth', 'media_planner'] : []);
-  fillLayer(3, cmoWorkflow ? ['seo_gap', 'landing', 'writing', 'writer', 'list_creator'] : []);
+  if (cmoWorkflow) {
+    const planningPreferences = requestedActions.some((task) => ['directory_submission', 'citation_ops'].includes(task))
+      ? ['media_planner', 'growth']
+      : ['growth', 'media_planner'];
+    if (preferredCmoSourceTasks.includes('data_analysis')) fillLayer(1, ['data_analysis']);
+    fillLayer(2, preferredCmoSourceTasks.filter((task) => task !== 'data_analysis').concat(['research', 'teardown', 'validation']));
+    fillLayer(3, planningPreferences);
+    for (const task of preparationForRequestedActions) pushLayerTask(task, { force: true });
+    fillLayer(4, preparationForRequestedActions.concat(['seo_gap', 'landing', 'writing', 'writer', 'list_creator']));
+  } else {
+    fillLayer(1, ['data_analysis', 'teardown', 'research', 'validation']);
+    fillLayer(2, []);
+    fillLayer(3, []);
+  }
   for (const task of requestedActions) pushLayerTask(task, { force: true });
   const actionTasks = ordered.filter((task) => (leaderTaskLayer(primary, task) || 1) >= leaderActionLayerStart(primary));
   if (
@@ -10699,6 +10730,7 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
   for (const task of ordered) {
     const layer = leaderTaskLayer(primary, task) || 1;
     if (layer >= leaderActionLayerStart(primary)) continue;
+    if (cmoWorkflow && task === 'data_analysis' && !preferredCmoSourceTasks.includes('data_analysis')) continue;
     if (!selected.includes(task)) {
       pushLayerTask(task);
     }
@@ -13736,9 +13768,11 @@ function workflowSequencePhaseForTask(primaryTask = '', taskType = '', layer = n
 }
 
 function workflowLayerLabel(primaryTask = '', layer = 1) {
-  const profilePhase = ['research', 'planning', 'preparation', 'action', 'summary'][Math.max(1, Number(layer || 1)) - 1] || `layer_${layer}`;
   const primary = String(primaryTask || '').trim().toLowerCase();
-  if (primary === 'cmo_leader') return profilePhase;
+  if (primary === 'cmo_leader') {
+    return ({ 1: 'data', 2: 'research', 3: 'planning', 4: 'preparation', 5: 'action', 6: 'summary' })[Number(layer || 1)] || `layer_${layer}`;
+  }
+  const profilePhase = ['research', 'planning', 'preparation', 'action', 'summary'][Math.max(1, Number(layer || 1)) - 1] || `layer_${layer}`;
   if (Number(layer || 1) <= 1) return 'research';
   if (Number(layer || 1) === 2) return 'execution';
   return profilePhase;
@@ -13968,13 +14002,17 @@ async function refreshWorkflowLeaderHandoffForJobId(storage, jobId) {
     if (leaderSequence?.enabled && checkpointJob) {
       const checkpointStatus = String(checkpointJob.status || '').trim().toLowerCase();
       if (leaderSequence.status === 'pending' && checkpointStatus === 'blocked') {
-        const layerOneChildren = workflowChildrenForLayer(parent, children, 1);
-        const layerOnePending = layerOneChildren.some((child) => !workflowChildIsTerminalForProgress(child));
-        if (!layerOnePending) {
-          const qualityGate = workflowLayerQualityGate(parent, layerOneChildren, { layer: 1 });
+        const checkpointLayer = Math.max(1, Number(leaderSequence.checkpointLayer || 1) || 1);
+        const requiredBeforeLayer = Math.max(checkpointLayer + 1, Number(leaderSequence.requiredBeforeLayer || (checkpointLayer + 1)) || (checkpointLayer + 1));
+        const priorLayerChildren = children
+          .filter((child) => !isWorkflowLeaderTask(workflowTaskName(child)))
+          .filter((child) => workflowDispatchLayer(parent, child) <= checkpointLayer);
+        const priorLayerPending = priorLayerChildren.some((child) => !workflowChildIsTerminalForProgress(child));
+        if (!priorLayerPending && priorLayerChildren.length) {
+          const qualityGate = workflowLayerQualityGate(parent, priorLayerChildren, { layer: checkpointLayer });
           if (qualityGate.applicableCount && !qualityGate.passed) {
             const blockedAt = nowIso();
-            checkpointJob.failureReason = `Leader quality gate blocked layer-1 progression: ${qualityGate.summary}`;
+            checkpointJob.failureReason = `Leader quality gate blocked layer-${checkpointLayer} progression: ${qualityGate.summary}`;
             checkpointJob.failureCategory = 'leader_quality_gate_failed';
             checkpointJob.qualityGate = qualityGate;
             checkpointJob.dispatch = {
@@ -13985,7 +14023,7 @@ async function refreshWorkflowLeaderHandoffForJobId(storage, jobId) {
             };
             checkpointJob.logs = [
               ...(checkpointJob.logs || []),
-              `leader quality gate blocked after layer-1 completion: ${qualityGate.summary} (${blockedAt})`
+              `leader quality gate blocked after layer-${checkpointLayer} completion: ${qualityGate.summary} (${blockedAt})`
             ];
             markWorkflowParentBlockedByLeaderQuality(parent, checkpointJob.failureReason);
             parent.workflow = {
@@ -13993,7 +14031,7 @@ async function refreshWorkflowLeaderHandoffForJobId(storage, jobId) {
               leaderSequence: {
                 ...leaderSequence,
                 lastQualityGate: {
-                  scope: 'layer_1',
+                  scope: `layer_${checkpointLayer}`,
                   passed: false,
                   summary: qualityGate.summary,
                   checkedAt: blockedAt,
@@ -14006,12 +14044,14 @@ async function refreshWorkflowLeaderHandoffForJobId(storage, jobId) {
           } else {
             const sourceLeader = completedWorkflowLeader(parent, children.filter((child) => child.id !== checkpointJob.id));
             if (sourceLeader) {
-              const handoff = workflowLeaderHandoff(parent, sourceLeader, children, 2);
+              const handoff = workflowLeaderHandoff(parent, sourceLeader, children, requiredBeforeLayer);
               const input = checkpointJob.input && typeof checkpointJob.input === 'object' ? { ...checkpointJob.input } : {};
               const broker = input._broker && typeof input._broker === 'object' ? { ...input._broker } : {};
               const workflow = broker.workflow && typeof broker.workflow === 'object' ? { ...broker.workflow } : {};
               workflow.leaderHandoff = handoff;
               workflow.sequencePhase = 'checkpoint';
+              workflow.checkpointLayer = checkpointLayer;
+              workflow.requiredBeforeLayer = requiredBeforeLayer;
               if (!workflow.leaderActionProtocol && handoff?.actionProtocol) workflow.leaderActionProtocol = handoff.actionProtocol;
               broker.workflow = workflow;
               input._broker = broker;
@@ -14035,7 +14075,7 @@ async function refreshWorkflowLeaderHandoffForJobId(storage, jobId) {
               };
               checkpointJob.logs = [
                 ...(checkpointJob.logs || []),
-                `leader checkpoint queued after layer-1 completion from ${sourceLeader.id.slice(0, 6)}`
+                `leader checkpoint queued after layer-${checkpointLayer} completion from ${sourceLeader.id.slice(0, 6)}`
               ];
               parent.workflow = {
                 ...(parent.workflow || {}),
@@ -14044,10 +14084,10 @@ async function refreshWorkflowLeaderHandoffForJobId(storage, jobId) {
                   status: 'queued',
                   queuedAt: nowIso(),
                   sourceLeaderJobId: sourceLeader.id,
-                  layer1Completed: layerOneChildren.filter((child) => child.status === 'completed').length,
-                  layer1Total: layerOneChildren.length,
+                  [`layer${checkpointLayer}Completed`]: priorLayerChildren.filter((child) => child.status === 'completed').length,
+                  [`layer${checkpointLayer}Total`]: priorLayerChildren.length,
                   lastQualityGate: {
-                    scope: 'layer_1',
+                    scope: `layer_${checkpointLayer}`,
                     passed: true,
                     summary: '',
                     checkedAt: nowIso(),
@@ -14530,6 +14570,20 @@ async function markDispatchScheduled(storage, jobId, agentId, reason = 'dispatch
     job.startedAt = job.startedAt || at;
     job.failureReason = null;
     job.failureCategory = null;
+    let workflowLeaderHandoffForDispatch = options.workflowLeaderHandoff || null;
+    if (job.workflowParentId && !isWorkflowLeaderTask(workflowTaskName(job))) {
+      const parent = state.jobs.find((item) => item.id === job.workflowParentId && item.jobKind === 'workflow') || null;
+      if (parent) {
+        const children = sortWorkflowChildren(
+          parent,
+          state.jobs.filter((item) => item.workflowParentId === parent.id)
+        );
+        const leader = completedWorkflowLeader(parent, children);
+        const targetLayer = workflowDispatchLayer(parent, job);
+        const freshHandoff = workflowLeaderHandoff(parent, leader, children, targetLayer);
+        if (freshHandoff) workflowLeaderHandoffForDispatch = freshHandoff;
+      }
+    }
     const previousDispatch = job.dispatch && typeof job.dispatch === 'object' ? job.dispatch : {};
     const previousCompletionStatus = String(previousDispatch.completionStatus || '').trim().toLowerCase();
     const firstDispatchRequestedAt = previousDispatch.firstDispatchRequestedAt || previousDispatch.dispatchRequestedAt || at;
@@ -14546,13 +14600,13 @@ async function markDispatchScheduled(storage, jobId, agentId, reason = 'dispatch
       nextRetryAt: null,
       maxRetries: maxDispatchRetriesForJob(job)
     };
-    if (options.workflowLeaderHandoff && job.workflowParentId && !isWorkflowLeaderTask(workflowTaskName(job))) {
+    if (workflowLeaderHandoffForDispatch && job.workflowParentId && !isWorkflowLeaderTask(workflowTaskName(job))) {
       const input = job.input && typeof job.input === 'object' ? { ...job.input } : {};
       const broker = input._broker && typeof input._broker === 'object' ? { ...input._broker } : {};
       const workflow = broker.workflow && typeof broker.workflow === 'object' ? { ...broker.workflow } : {};
-      workflow.leaderHandoff = options.workflowLeaderHandoff;
-      if (!workflow.leaderActionProtocol && options.workflowLeaderHandoff?.actionProtocol) {
-        workflow.leaderActionProtocol = options.workflowLeaderHandoff.actionProtocol;
+      workflow.leaderHandoff = workflowLeaderHandoffForDispatch;
+      if (!workflow.leaderActionProtocol && workflowLeaderHandoffForDispatch?.actionProtocol) {
+        workflow.leaderActionProtocol = workflowLeaderHandoffForDispatch.actionProtocol;
       }
       broker.workflow = workflow;
       input._broker = broker;
@@ -14561,8 +14615,8 @@ async function markDispatchScheduled(storage, jobId, agentId, reason = 'dispatch
     }
     job.logs = [
       ...(job.logs || []),
-      ...(options.workflowLeaderHandoff && job.workflowParentId && !isWorkflowLeaderTask(workflowTaskName(job))
-        ? [`leader handoff attached from ${options.workflowLeaderHandoff.leaderTaskType}/${String(options.workflowLeaderHandoff.leaderJobId || '').slice(0, 6)}`]
+      ...(workflowLeaderHandoffForDispatch && job.workflowParentId && !isWorkflowLeaderTask(workflowTaskName(job))
+        ? [`leader handoff attached from ${workflowLeaderHandoffForDispatch.leaderTaskType}/${String(workflowLeaderHandoffForDispatch.leaderJobId || '').slice(0, 6)}`]
         : []),
       `${reason}; dispatch scheduled for ${agent.id}`
     ];
@@ -14640,7 +14694,42 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
   const eventLabel = options.eventLabel || 'scheduled built-in sweep';
   const completionSource = options.completionSource || 'built-in-workflow-scheduled-sweep';
   try {
-    const payload = buildCompactBuiltInDispatchPayload(locked, agent);
+    let effectiveLocked = locked;
+    if (locked?.workflowParentId && !isWorkflowLeaderTask(workflowTaskName(locked))) {
+      await storage.mutate(async (state) => {
+        const job = state.jobs.find((item) => item.id === locked.id) || null;
+        const parent = job?.workflowParentId
+          ? state.jobs.find((item) => item.id === job.workflowParentId && item.jobKind === 'workflow') || null
+          : null;
+        if (!job || !parent) return { updated: 0 };
+        const children = sortWorkflowChildren(
+          parent,
+          state.jobs.filter((item) => item.workflowParentId === parent.id)
+        );
+        const leader = completedWorkflowLeader(parent, children);
+        const freshHandoff = workflowLeaderHandoff(parent, leader, children, workflowDispatchLayer(parent, job));
+        if (!freshHandoff) {
+          effectiveLocked = cloneJob(job);
+          return { updated: 0 };
+        }
+        const input = job.input && typeof job.input === 'object' ? { ...job.input } : {};
+        const broker = input._broker && typeof input._broker === 'object' ? { ...input._broker } : {};
+        const workflow = broker.workflow && typeof broker.workflow === 'object' ? { ...broker.workflow } : {};
+        workflow.leaderHandoff = freshHandoff;
+        if (!workflow.leaderActionProtocol && freshHandoff?.actionProtocol) workflow.leaderActionProtocol = freshHandoff.actionProtocol;
+        broker.workflow = workflow;
+        input._broker = broker;
+        job.input = input;
+        applyWorkflowHandoffPromptContextToJob(job);
+        job.logs = [
+          ...(job.logs || []),
+          `leader handoff refreshed before built-in completion from ${freshHandoff.leaderTaskType}/${String(freshHandoff.leaderJobId || '').slice(0, 6)}`
+        ];
+        effectiveLocked = cloneJob(job);
+        return { updated: 1 };
+      });
+    }
+    const payload = buildCompactBuiltInDispatchPayload(effectiveLocked, agent);
     const body = await runBuiltInAgent(sampleKind, payload, env);
     const normalized = normalizeDispatchResponse(body);
     if (normalized.failed) {

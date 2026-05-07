@@ -366,8 +366,8 @@ async function main() {
     assert.ok(childRuns.length >= 5, 'CMO leader orchestration should include enough specialist runs');
     assert.ok(childRuns.some((run) => run.taskType === 'research'), 'CMO workflow should include research');
     assert.equal(childRuns.some((run) => run.taskType === 'teardown'), false, 'CMO workflow should not include competitor teardown unless competitor analysis is requested');
-    assert.ok(childRuns.some((run) => run.taskType === 'media_planner'), 'CMO workflow should include media planning');
-    assert.ok(childRuns.some((run) => run.taskType === 'growth'), 'CMO workflow should include growth execution planning');
+    assert.ok(childRuns.some((run) => ['media_planner', 'growth'].includes(run.taskType)), 'CMO workflow should include one planning specialist');
+    assert.ok(childRuns.filter((run) => ['media_planner', 'growth'].includes(run.taskType)).length <= 1, 'CMO workflow should not duplicate the planning layer');
     assert.equal(Number(statusCounts.failed || 0), 0, 'no child run should fail');
     assert.equal(Number(statusCounts.queued || 0), 0, 'no child run should remain queued');
     assert.equal(Number(statusCounts.running || 0), 0, 'no child run should remain running');

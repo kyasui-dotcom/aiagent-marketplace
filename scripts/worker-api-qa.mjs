@@ -95,14 +95,18 @@ function workerApiQaOpenAiStructuredOutput(schemaName = '') {
       : kind === 'validation'
         ? 'Validation packet: test one offer, one audience, one page, and one conversion signal before expanding channels.'
         : kind === 'media_planner'
-          ? 'Media plan: prioritize owned SEO, X proof posts, and directory listing only after evidence review.'
+          ? 'Media-fit analysis and Priority media queue: prioritize owned SEO, X proof posts, and directory listing only after evidence review. Channels to avoid: unfocused paid awareness.'
           : kind === 'directory_submission'
             ? 'Directory submission packet: listing title, one-line pitch, category, destination URL, and review checklist.'
             : kind === 'x_post'
               ? 'Exact X post packet: approved_copy, destination URL, utm_source=x, metric, and stop rule.'
               : kind === 'acquisition_automation'
                 ? 'Acquisition automation flow: source capture, qualification state, manual approval, follow-up trigger, and stop rule.'
-                : 'Execution packet: owner, objective, artifact, metric, stop rule, and approval owner.';
+                : kind === 'seo_gap'
+                  ? 'SEO gap packet: target query, current page gap, title/H1 fix, internal link, directory/citation support, metric, and review checklist.'
+                  : kind === 'landing'
+                    ? 'Landing packet: hero copy, CTA copy, proof module, objection handling, measurement event, and publish note.'
+                    : 'Execution packet: owner, objective, artifact, metric, stop rule, and approval owner.';
   return {
     summary: `QA ${kind || 'agent'} delivery ready.`,
     report_summary: `QA ${kind || 'agent'} report with source-aware action packet.`,
@@ -682,10 +686,16 @@ assert.equal(
   'async Agent Team must persist every planned child/checkpoint job before dispatch starts'
 );
 assert.ok(asyncWorkflowFirstState.body.job.workflow.childRuns.length >= 11, 'CMO workflow should not stop after only the first research children are inserted');
-assert.ok(asyncWorkflowTaskOrder.indexOf('data_analysis') > 0, 'CMO workflow should schedule data analysis before growth execution');
-assert.ok(asyncWorkflowTaskOrder.indexOf('data_analysis') < asyncWorkflowTaskOrder.indexOf('growth'), 'CMO data layer should precede growth layer');
-assert.equal(asyncWorkflowTaskOrder.includes('teardown'), false, 'CMO workflow should not add competitor teardown unless competitor analysis is requested');
+assert.ok(asyncWorkflowTaskOrder.indexOf('data_analysis') > 0, 'CMO workflow should schedule data analysis when funnel/analytics data is requested');
 const asyncDataRun = asyncWorkflowFirstState.body.job.workflow.childRuns.find((run) => run.taskType === 'data_analysis');
+const asyncResearchRun = asyncWorkflowFirstState.body.job.workflow.childRuns.find((run) => run.sequencePhase === 'research' && ['research', 'teardown', 'validation'].includes(run.taskType));
+const asyncPlanningRun = asyncWorkflowFirstState.body.job.workflow.childRuns.find((run) => run.sequencePhase === 'planning');
+assert.equal(asyncDataRun?.sequencePhase, 'data', 'CMO data analysis should run in the dedicated data phase');
+assert.ok(asyncResearchRun, 'CMO workflow should keep one market research phase separate from data');
+assert.ok(asyncPlanningRun && ['media_planner', 'growth'].includes(asyncPlanningRun.taskType), 'CMO workflow should schedule one planning specialist');
+assert.ok(asyncWorkflowTaskOrder.indexOf('data_analysis') < asyncWorkflowTaskOrder.indexOf(asyncResearchRun.taskType), 'CMO data layer should precede the research layer');
+assert.ok(asyncWorkflowTaskOrder.indexOf(asyncResearchRun.taskType) < asyncWorkflowTaskOrder.indexOf(asyncPlanningRun.taskType), 'CMO research layer should precede planning');
+assert.equal(asyncWorkflowTaskOrder.includes('teardown'), false, 'CMO workflow should not add competitor teardown unless competitor analysis is requested');
 assert.notEqual(asyncDataRun?.agentName, 'RESEARCH TEAM LEADER', 'data_analysis should use the data specialist instead of a research leader');
 assert.ok(asyncWorkflowFirstState.body.job.workflow.statusCounts.completed >= 2, 'leader handoff should release eligible built-in specialists after the leader completes');
 
@@ -877,9 +887,15 @@ await qaStorage.mutate(async (draft) => {
         leaderSequence: {
           enabled: true,
           status: 'pending',
-          checkpointJobId: blockedResearchCheckpointId,
-          checkpointLayer: 1,
-          requiredBeforeLayer: 2,
+          checkpoints: [
+            {
+              jobId: blockedResearchCheckpointId,
+              afterLayer: 2,
+              beforeLayer: 3,
+              status: 'pending',
+              label: 'research_to_planning'
+            }
+          ],
           finalSummaryJobId: 'qa-blocked-research-sequence-final',
           finalSummaryStatus: 'pending'
         }
@@ -982,9 +998,15 @@ await qaStorage.mutate(async (draft) => {
         leaderSequence: {
           enabled: true,
           status: 'pending',
-          checkpointJobId: missingOriginalSearchCheckpointId,
-          checkpointLayer: 1,
-          requiredBeforeLayer: 2
+          checkpoints: [
+            {
+              jobId: missingOriginalSearchCheckpointId,
+              afterLayer: 2,
+              beforeLayer: 3,
+              status: 'pending',
+              label: 'research_to_planning'
+            }
+          ]
         }
       },
       logs: ['missing original search qa parent']
@@ -1039,7 +1061,7 @@ await qaStorage.mutate(async (draft) => {
       assignedAgentId: 'agent_cmo_leader_01',
       workflowParentId: missingOriginalSearchParentId,
       createdAt: at,
-      input: { _broker: { workflow: { sequencePhase: 'checkpoint', checkpointLayer: 1, requiredBeforeLayer: 2 } } },
+      input: { _broker: { workflow: { sequencePhase: 'checkpoint', checkpointLayer: 2, requiredBeforeLayer: 3 } } },
       dispatch: { completionStatus: 'leader_checkpoint_blocked' },
       logs: []
     }
@@ -1077,9 +1099,9 @@ await qaStorage.mutate(async (draft) => {
           enabled: true,
           status: 'pending',
           checkpointJobId: reportSourcesOnlyCheckpointId,
-          checkpointLayer: 1,
-          requiredBeforeLayer: 2,
-          lastQualityGate: { scope: 'layer_1', passed: false, summary: 'stale prior rule failure' }
+          checkpointLayer: 2,
+          requiredBeforeLayer: 3,
+          lastQualityGate: { scope: 'layer_2', passed: false, summary: 'stale prior rule failure' }
         }
       },
       logs: ['report sources only qa parent']
@@ -1139,7 +1161,7 @@ await qaStorage.mutate(async (draft) => {
       assignedAgentId: 'agent_cmo_leader_01',
       workflowParentId: reportSourcesOnlyParentId,
       createdAt: at,
-      input: { _broker: { workflow: { sequencePhase: 'checkpoint', checkpointLayer: 1, requiredBeforeLayer: 2 } } },
+      input: { _broker: { workflow: { sequencePhase: 'checkpoint', checkpointLayer: 2, requiredBeforeLayer: 3 } } },
       dispatch: { completionStatus: 'leader_checkpoint_blocked' },
       logs: []
     }
@@ -1191,12 +1213,12 @@ await qaStorage.mutate(async (draft) => {
           enabled: true,
           status: 'pending',
           checkpoints: [
-            { jobId: 'qa-missing-handoff-usage-checkpoint-1', afterLayer: 1, beforeLayer: 2, status: 'completed', completedAt: at },
-            { jobId: missingHandoffUsageCheckpointId, afterLayer: 2, beforeLayer: 3, status: 'pending' }
+            { jobId: 'qa-missing-handoff-usage-checkpoint-1', afterLayer: 2, beforeLayer: 3, status: 'completed', completedAt: at },
+            { jobId: missingHandoffUsageCheckpointId, afterLayer: 3, beforeLayer: 4, status: 'pending' }
           ],
           checkpointJobId: 'qa-missing-handoff-usage-checkpoint-1',
-          checkpointLayer: 1,
-          requiredBeforeLayer: 2
+          checkpointLayer: 2,
+          requiredBeforeLayer: 3
         }
       },
       logs: ['missing handoff usage qa parent']
@@ -1257,7 +1279,7 @@ await qaStorage.mutate(async (draft) => {
       workflowParentId: missingHandoffUsageParentId,
       createdAt: at,
       completedAt: at,
-      input: { _broker: { workflow: { sequencePhase: 'checkpoint', checkpointLayer: 1, requiredBeforeLayer: 2 } } },
+      input: { _broker: { workflow: { sequencePhase: 'checkpoint', checkpointLayer: 2, requiredBeforeLayer: 3 } } },
       output: { summary: 'checkpoint 1 completed', report: { summary: 'checkpoint 1 completed' }, files: [] },
       logs: []
     },
@@ -1294,7 +1316,7 @@ await qaStorage.mutate(async (draft) => {
       assignedAgentId: 'agent_cmo_leader_01',
       workflowParentId: missingHandoffUsageParentId,
       createdAt: at,
-      input: { _broker: { workflow: { sequencePhase: 'checkpoint', checkpointLayer: 2, requiredBeforeLayer: 3 } } },
+      input: { _broker: { workflow: { sequencePhase: 'checkpoint', checkpointLayer: 3, requiredBeforeLayer: 4 } } },
       dispatch: { completionStatus: 'leader_checkpoint_blocked' },
       logs: []
     },
@@ -1797,10 +1819,10 @@ await qaStorage.mutate(async (draft) => {
           enabled: true,
           status: 'pending',
           checkpointJobId: watchdogReleaseCheckpointId,
-          checkpointLayer: 1,
-          requiredBeforeLayer: 2,
+          checkpointLayer: 2,
+          requiredBeforeLayer: 3,
           checkpoints: [
-            { jobId: watchdogReleaseCheckpointId, afterLayer: 1, beforeLayer: 2, status: 'pending' }
+            { jobId: watchdogReleaseCheckpointId, afterLayer: 2, beforeLayer: 3, status: 'pending' }
           ]
         }
       },
@@ -1864,7 +1886,7 @@ await qaStorage.mutate(async (draft) => {
       assignedAgentId: 'agent_cmo_leader_01',
       workflowParentId: watchdogReleaseParentId,
       createdAt: early,
-      input: { _broker: { workflow: { sequencePhase: 'checkpoint', checkpointLayer: 1, requiredBeforeLayer: 2 } } },
+      input: { _broker: { workflow: { sequencePhase: 'checkpoint', checkpointLayer: 2, requiredBeforeLayer: 3 } } },
       dispatch: { completionStatus: 'leader_checkpoint_blocked' },
       logs: ['watchdog release checkpoint blocked']
     },
@@ -1982,8 +2004,8 @@ const checkpointLeaderAfterResearch = asyncAfterResearchState.jobs.find((job) =>
   job.workflowParentId === asyncWorkflow.body.workflow_job_id
   && job.taskType === 'cmo_leader'
   && job.input?._broker?.workflow?.sequencePhase === 'checkpoint'
-  && Number(job.input?._broker?.workflow?.checkpointLayer || 0) === 1
-  && Number(job.input?._broker?.workflow?.requiredBeforeLayer || 0) === 2
+  && Number(job.input?._broker?.workflow?.checkpointLayer || 0) === 2
+  && Number(job.input?._broker?.workflow?.requiredBeforeLayer || 0) === 3
 ));
 assert.equal(checkpointLeaderAfterResearch?.status, 'completed', 'research-to-planning checkpoint leader should complete before planning dispatch');
 const planningWithPriorResearch = asyncAfterResearchState.jobs.find((job) => (
@@ -2045,8 +2067,8 @@ const checkpointLeaderAfterPlanning = asyncAfterPlanningState.jobs.find((job) =>
   job.workflowParentId === asyncWorkflow.body.workflow_job_id
   && job.taskType === 'cmo_leader'
   && job.input?._broker?.workflow?.sequencePhase === 'checkpoint'
-  && Number(job.input?._broker?.workflow?.checkpointLayer || 0) === 2
-  && Number(job.input?._broker?.workflow?.requiredBeforeLayer || 0) === 3
+  && Number(job.input?._broker?.workflow?.checkpointLayer || 0) === 3
+  && Number(job.input?._broker?.workflow?.requiredBeforeLayer || 0) === 4
 ));
 assert.equal(checkpointLeaderAfterPlanning?.status, 'completed', 'planning-to-preparation checkpoint leader should complete before preparation dispatch');
 const preparationWithPriorPlanning = asyncAfterPlanningState.jobs.find((job) => (
@@ -2077,8 +2099,8 @@ const checkpointLeaderBeforeAction = asyncAfterPreparationState.jobs.find((job) 
   job.workflowParentId === asyncWorkflow.body.workflow_job_id
   && job.taskType === 'cmo_leader'
   && job.input?._broker?.workflow?.sequencePhase === 'checkpoint'
-  && Number(job.input?._broker?.workflow?.checkpointLayer || 0) === 3
-  && Number(job.input?._broker?.workflow?.requiredBeforeLayer || 0) === 4
+  && Number(job.input?._broker?.workflow?.checkpointLayer || 0) === 4
+  && Number(job.input?._broker?.workflow?.requiredBeforeLayer || 0) === 5
 ));
 assert.equal(checkpointLeaderBeforeAction?.status, 'completed', 'preparation-to-action checkpoint leader should complete before action dispatch');
 assert.equal(checkpointLeaderBeforeAction?.input?._broker?.workflow?.requiresUserApprovalBeforeAction, true, 'final action checkpoint should carry the user approval gate');

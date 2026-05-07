@@ -137,7 +137,7 @@ assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat c
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/chat.css?v=20260507c'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508a"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508b"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -216,11 +216,14 @@ assert.ok(wrangler.includes('"WORKFLOW_ORCHESTRATION_STALE_MS": "60000"'), 'Work
 assert.ok(wrangler.includes('"WORKFLOW_ORCHESTRATION_BLOCKED_MS": "600000"'), 'Workflow watchdog should surface a visible blocker instead of leaving queued forever.');
 assert.ok(worker.includes('const layerLimits = new Map'), 'CMO leader task selection should cap upstream work per layer instead of using one global task limit.');
 assert.ok(
-  worker.includes('[2, cmoWorkflow ? 2 : 1]')
+  worker.includes('[1, 1]')
+  && worker.includes('[2, 1]')
   && worker.includes('[3, 1]')
+  && worker.includes('[4, actionRequested ? Math.max(1, preparationForRequestedActions.length || 1) : 1]')
   && worker.includes('sourceBucketForTask')
+  && worker.includes("preferredCmoSourceTasks.includes('data_analysis')")
   && worker.includes('maxExternalResearchTasks'),
-  'Leader upstream layers should cap preparation, separate data/research source buckets, and allow CMO fallback/planner research fan-out limits.'
+  'Leader upstream layers should keep data/research/planning capped while expanding action-specific preparation.'
 );
 assert.ok(worker.includes('DISPATCH_SCHEDULE_TIMEOUT_MS'), 'Scheduled dispatch attempts should have a timeout instead of refreshing forever.');
 assert.ok(worker.includes('firstDispatchRequestedAt'), 'Dispatch scheduling should preserve the first requested timestamp for stalled-run diagnosis.');

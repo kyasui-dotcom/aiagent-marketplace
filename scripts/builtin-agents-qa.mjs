@@ -21,6 +21,7 @@ import {
 import { BUILT_IN_KIND_DEFAULTS } from '../lib/builtin-agents/agents/index.js';
 import {
   CMO_WORKFLOW_ACTION_LAYER_TASKS,
+  CMO_WORKFLOW_DATA_LAYER_TASKS,
   CMO_WORKFLOW_EXECUTION_LAYER_TASKS,
   CMO_WORKFLOW_PLANNING_LAYER_TASKS,
   CMO_WORKFLOW_PREPARATION_LAYER_TASKS,
@@ -73,17 +74,20 @@ assert.ok(!orchestrationSource.includes('CMO_WORKFLOW_'), 'CMO workflow content 
 assert.ok(!orchestrationSource.includes('cmoAgentActionContract'), 'CMO action contracts should live in cmo-leader.js, not the shared orchestration connector');
 assert.ok(cmoLeaderSource.includes('CMO_AGENT_ACTION_CONTRACTS'), 'CMO action contracts should live in the CMO leader definition');
 assert.ok(cmoLeaderSource.includes('CMO_WORKFLOW_RESEARCH_LAYER_TASKS'), 'CMO workflow layer constants should live in the CMO leader definition');
-assert.deepEqual(CMO_WORKFLOW_RESEARCH_LAYER_TASKS, ['research', 'teardown', 'data_analysis', 'validation']);
+assert.deepEqual(CMO_WORKFLOW_DATA_LAYER_TASKS, ['data_analysis']);
+assert.deepEqual(CMO_WORKFLOW_RESEARCH_LAYER_TASKS, ['research', 'teardown', 'validation']);
 assert.deepEqual(CMO_WORKFLOW_PLANNING_LAYER_TASKS, ['media_planner', 'growth']);
 assert.deepEqual(CMO_WORKFLOW_PREPARATION_LAYER_TASKS, ['list_creator', 'landing', 'seo_gap', 'writing', 'writer']);
 assert.deepEqual(CMO_WORKFLOW_ACTION_LAYER_TASKS, ['x_post', 'instagram', 'reddit', 'indie_hackers', 'email_ops', 'cold_email', 'directory_submission', 'citation_ops', 'acquisition_automation']);
 assert.deepEqual(CMO_WORKFLOW_EXECUTION_LAYER_TASKS, CMO_WORKFLOW_ACTION_LAYER_TASKS);
-assert.equal(leaderTaskLayer('cmo_leader', 'research'), 1);
-assert.equal(leaderTaskLayer('cmo_leader', 'validation'), 1);
-assert.equal(leaderTaskLayer('cmo_leader', 'media_planner'), 2);
-assert.equal(leaderTaskLayer('cmo_leader', 'list_creator'), 3);
-assert.equal(leaderTaskLayer('cmo_leader', 'seo_gap'), 3);
-assert.equal(leaderTaskLayer('cmo_leader', 'x_post'), 4);
+assert.equal(leaderTaskLayer('cmo_leader', 'data_analysis'), 1);
+assert.equal(leaderTaskLayer('cmo_leader', 'research'), 2);
+assert.equal(leaderTaskLayer('cmo_leader', 'validation'), 2);
+assert.equal(leaderTaskLayer('cmo_leader', 'media_planner'), 3);
+assert.equal(leaderTaskLayer('cmo_leader', 'list_creator'), 4);
+assert.equal(leaderTaskLayer('cmo_leader', 'seo_gap'), 4);
+assert.equal(leaderTaskLayer('cmo_leader', 'x_post'), 5);
+assert.equal(leaderTaskLayer('cmo_leader', 'summary'), 6);
 const cmoLeaderControlContract = leaderControlContractForTask('cmo_leader');
 assert.equal(cmoLeaderControlContract.version, 'leader-control/v1');
 assert.equal(cmoLeaderControlContract.role, 'agent_selection_handoff_review_synthesis');
@@ -93,6 +97,7 @@ assert.ok(cmoLeaderControlContract.handoffFields.includes('source_inputs'));
 assert.ok(cmoLeaderControlContract.qualityChecks.some((check) => check.id === 'handoff_input_used'));
 assert.ok(cmoLeaderControlContract.downstreamTaskTypes.includes('x_post'));
 assert.equal(leaderControlContractForTask('x_post'), null);
+assert.equal(leaderTaskPhase('cmo_leader', 'data_analysis'), 'data');
 assert.equal(leaderTaskPhase('cmo_leader', 'teardown'), 'research');
 assert.equal(leaderTaskPhase('cmo_leader', 'validation'), 'research');
 assert.equal(leaderTaskPhase('cmo_leader', 'growth'), 'planning');
@@ -104,9 +109,10 @@ assert.equal(leaderTaskPhase('cmo_leader', 'citation_ops'), 'action');
 assert.equal(leaderTaskPhase('cmo_leader', 'directory_submission'), 'action');
 assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'research'), true);
 assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'validation'), true);
+assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'data_analysis'), false);
 assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'list_creator'), false);
 assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'media_planner'), false);
-assert.deepEqual(leaderSourceCollectionLayerTasks('cmo_leader'), ['research', 'teardown', 'data_analysis', 'validation']);
+assert.deepEqual(leaderSourceCollectionLayerTasks('cmo_leader'), ['data_analysis', 'research', 'teardown', 'validation']);
 assert.ok(leaderTaskRequiresSourceCollection('cmo_leader', 'data_analysis'), 'CMO data analysis should be evidence/source collection work.');
 assert.ok(leaderTaskRequiresSourceCollection('cpo_leader', 'validation'), 'CPO validation should be evidence/source collection work.');
 assert.ok(leaderTaskRequiresSourceCollection('cfo_leader', 'data_analysis'), 'CFO data analysis should be evidence/source collection work.');
@@ -170,9 +176,10 @@ const cmoActionSequence = inferTaskSequence(
 assert.ok(cmoActionSequence.includes('x_post'), 'CMO action sequence must preserve requested X posting');
 assert.ok(cmoActionSequence.includes('directory_submission'), 'CMO action sequence must preserve requested directory submission');
 assert.ok(cmoActionSequence.includes('media_planner'), 'CMO action sequence must include planning before action');
-assert.ok(cmoActionSequence.includes('landing'), 'CMO action sequence must include preparation before action');
+assert.ok(cmoActionSequence.includes('writing'), 'CMO action sequence must include action-specific writing before action');
+assert.ok(cmoActionSequence.includes('seo_gap'), 'CMO directory action sequence must include SEO/directory preparation before action');
 assert.ok(cmoActionSequence.indexOf('media_planner') < cmoActionSequence.indexOf('x_post'), 'CMO planning must run before X action');
-assert.ok(cmoActionSequence.indexOf('landing') < cmoActionSequence.indexOf('x_post'), 'CMO preparation must run before X action');
+assert.ok(cmoActionSequence.indexOf('writing') < cmoActionSequence.indexOf('x_post'), 'CMO preparation must run before X action');
 assert.equal(connectorExecutionPolicyForTask('x_post').capability, 'x.post');
 assert.equal(connectorExecutionPolicyForTask('directory_submission').fallback, 'manual_submission_queue');
 assert.ok(CONNECTOR_EXECUTION_POLICIES.email_ops, 'email connector policy should be shared for any agent');

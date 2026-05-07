@@ -70,7 +70,7 @@ globalThis.fetch = async (input, init) => {
         report_summary: `QA ${kind} report with evidence-backed recommendations and a concrete next action.`,
         bullets: [
           'Search evidence used: Leader workflow QA source https://example.test/leader-workflow-source',
-          'Recommendation is specific to the requested leader workflow.',
+          'Chosen path is specific to the requested leader workflow.',
           'Connector execution is outside this mocked QA delivery.'
         ],
         next_action: 'Review the delivery and continue with the next workflow step.',
@@ -200,7 +200,7 @@ for (const testCase of cases) {
   assert.ok(created.body.workflow_job_id, `${testCase.taskType} should return a workflow job id`);
 
   let latest = null;
-  for (let attempt = 0; attempt < 6; attempt += 1) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
     latest = await request(`/api/jobs/${created.body.workflow_job_id}`);
     assert.equal(latest.status, 200, `${testCase.taskType} workflow fetch should succeed`);
     if (['completed', 'failed', 'blocked'].includes(latest.body?.job?.status)) break;
@@ -267,16 +267,19 @@ for (const testCase of cases) {
   );
   if (testCase.taskType === 'cmo_leader') {
     assert.ok(researchLayerChildren.length >= 1, 'cmo_leader should create search/research-layer specialist children');
+    const dataLayerChildren = rawChildren.filter((item) => item.taskType !== testCase.taskType && item.input?._broker?.workflow?.sequencePhase === 'data');
     const planningLayerChildren = rawChildren.filter((item) => item.taskType !== testCase.taskType && item.input?._broker?.workflow?.sequencePhase === 'planning');
     const preparationLayerChildren = rawChildren.filter((item) => item.taskType !== testCase.taskType && item.input?._broker?.workflow?.sequencePhase === 'preparation');
     const actionLayerChildren = rawChildren.filter((item) => item.taskType !== testCase.taskType && item.input?._broker?.workflow?.sequencePhase === 'action');
     const additionalPromptFor = (item) => String(item?.additionalPrompt || item?.additional_prompt || item?.input?._broker?.workflow?.additionalPrompt || '').trim();
+    assert.ok(dataLayerChildren.length <= 1, 'cmo_leader should use at most one data-layer specialist');
+    assert.ok(dataLayerChildren.every((item) => item.taskType === 'data_analysis'), 'cmo_leader data layer should be reserved for data_analysis');
     assert.ok(planningLayerChildren.some((item) => ['media_planner', 'growth'].includes(item.taskType)), 'cmo_leader should create one planning-layer specialist');
     assert.ok(preparationLayerChildren.some((item) => ['list_creator', 'seo_gap', 'landing', 'writing', 'writer'].includes(item.taskType)), 'cmo_leader should create one preparation-layer specialist');
     assert.ok(planningLayerChildren.length <= 1, 'cmo_leader should keep planning-layer selection to one specialist');
-    assert.ok(preparationLayerChildren.length <= 1, 'cmo_leader should keep preparation-layer selection to one specialist');
-    assert.ok(researchLayerChildren.filter((item) => item.taskType === 'data_analysis').length <= 1, 'cmo_leader should use at most one data-analysis specialist');
-    assert.ok(researchLayerChildren.filter((item) => item.taskType !== 'data_analysis').length <= 1, 'cmo_leader should use at most one external research specialist');
+    assert.ok(preparationLayerChildren.length <= 3, 'cmo_leader should keep preparation focused while allowing action-specific writing/support');
+    assert.equal(researchLayerChildren.some((item) => item.taskType === 'data_analysis'), false, 'cmo_leader data analysis should not be mixed into the research layer');
+    assert.ok(researchLayerChildren.length <= 1, 'cmo_leader should use at most one external research specialist');
     assert.ok(actionLayerChildren.some((item) => ['x_post', 'directory_submission', 'acquisition_automation'].includes(item.taskType)), 'cmo_leader action layer should include final action specialists');
     assert.ok(actionLayerChildren.some((item) => item.status === 'blocked' && item.output?.report?.authority_request?.missing_connector_capabilities?.includes('x.post')), 'cmo_leader should block X posting until x.post authority is approved');
     assert.ok(job.output?.report?.authority_request?.missing_connector_capabilities?.includes('x.post'), 'cmo_leader parent delivery should surface the blocked X approval request');
@@ -345,6 +348,10 @@ assert.equal(
 assert.ok(
   implicitCmoRuns.some((run) => String(run?.task_type || run?.taskType || '').trim().toLowerCase() === 'data_analysis'),
   'cmo_leader should use attached GA4/Search Console context as the single evidence lane for broad acquisition planning'
+);
+assert.ok(
+  implicitCmoRuns.some((run) => String(run?.task_type || run?.taskType || '').trim().toLowerCase() === 'research'),
+  'cmo_leader should keep market research separate from the optional data lane'
 );
 
 globalThis.fetch = originalLeaderWorkflowQaFetch;
