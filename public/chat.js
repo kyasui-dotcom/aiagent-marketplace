@@ -176,6 +176,7 @@ const state = {
   orderId: '',
   polling: null,
   deliveryBackfill: null,
+  oauthPopupMonitor: null,
   trackedOrderIds: new Set(),
   deliveredOrderIds: new Set(),
   authorityNoticeKeys: new Set(),
@@ -1911,7 +1912,7 @@ function googleAuthHrefForAuthority(request = null, group = '') {
   saveChatOAuthReturnState(`google_${kind}_approval`);
   const url = new URL('/auth/google', window.location.origin);
   url.searchParams.set('action', 'analytics_connect');
-  url.searchParams.set('return_to', currentChatReturnPath());
+  url.searchParams.set('return_to', currentChatReturnPath({ oauthPopup: true }));
   url.searchParams.set('login_source', `chatux_${kind}_approval`);
   url.searchParams.set('visitor_id', state.visitorId);
   url.searchParams.set('scope_group', kind);
@@ -2149,6 +2150,7 @@ function currentChatReturnPath(options = {}) {
     for (const [key, value] of current.searchParams.entries()) {
       if (['auth_error'].includes(key)) continue;
       if (options.includeRestoreParams === false && ['cait_restore_chat', 'cait_chat_session_id', 'cait_order_id'].includes(key)) continue;
+      if (['cait_oauth_popup'].includes(key)) continue;
       url.searchParams.append(key, value);
     }
     url.hash = current.hash || '';
@@ -2162,6 +2164,7 @@ function currentChatReturnPath(options = {}) {
     if (sessionId) url.searchParams.set('cait_chat_session_id', sessionId);
     if (orderId) url.searchParams.set('cait_order_id', orderId);
   }
+  if (options.oauthPopup === true) url.searchParams.set('cait_oauth_popup', '1');
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
@@ -3405,7 +3408,7 @@ function renderAuthorityRequest(job = {}) {
     actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in with Google</a>`);
   } else if (googleNeeded) {
     const nextGoogleGroup = googleSources.includes('ga4') ? 'ga4' : (googleSources.includes('gsc') ? 'gsc' : (missingCapabilities.includes('google.read_gsc') ? 'gsc' : 'ga4'));
-    actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(googleAuthHrefForAuthority(authority, nextGoogleGroup))}">${escapeHtml(nextGoogleGroup === 'gsc' ? 'Connect Search Console' : 'Connect GA4')}</a>`);
+    actionLinks.push(`<a class="primary-btn inline-btn file-action" data-chat-oauth-popup="google" href="${escapeHtml(googleAuthHrefForAuthority(authority, nextGoogleGroup))}">${escapeHtml(nextGoogleGroup === 'gsc' ? 'Connect Search Console' : 'Connect GA4')}</a>`);
   }
   actionLinks.push(`<a class="ghost-btn inline-btn file-action" href="${escapeHtml(openWorkHref)}">Open chat approval</a>`);
   return [
@@ -4909,8 +4912,10 @@ async function refreshAuth() {
 function resetChat() {
   if (state.polling) window.clearInterval(state.polling);
   if (state.deliveryBackfill) window.clearInterval(state.deliveryBackfill);
+  if (state.oauthPopupMonitor) window.clearInterval(state.oauthPopupMonitor);
   state.polling = null;
   state.deliveryBackfill = null;
+  state.oauthPopupMonitor = null;
   state.pendingAppContext = null;
   startNewChatSession();
   setBusy(false);
@@ -4956,6 +4961,134 @@ async function hydrateAppContextFromUrl() {
   return handleInboundAppContext(context, { label: 'App context' });
 }
 
+function chatOAuthPopupFeatures() {
+  const width = 560;
+  const height = 760;
+  const left = Math.max(0, Math.round((window.screen?.width || width) / 2 - width / 2));
+  const top = Math.max(0, Math.round((window.screen?.height || height) / 2 - height / 2));
+  return [
+    'popup=yes',
+    `width=${width}`,
+    `height=${height}`,
+    `left=${left}`,
+    `top=${top}`,
+    'resizable=yes',
+    'scrollbars=yes'
+  ].join(',');
+}
+
+function startOAuthPopupMonitor(popup = null) {
+  if (!popup) return;
+  if (state.oauthPopupMonitor) window.clearInterval(state.oauthPopupMonitor);
+  let checks = 0;
+  state.oauthPopupMonitor = window.setInterval(() => {
+    checks += 1;
+    if (popup.closed || checks > 240) {
+      window.clearInterval(state.oauthPopupMonitor);
+      state.oauthPopupMonitor = null;
+      void refreshAuth();
+      if (state.orderId) {
+        state.authorityNoticeKeys.clear();
+        void fetchVisibleJob(state.orderId)
+          .then((job) => {
+            maybeRenderAuthorityNotice(job, { label: 'Approval required' });
+            if (isTerminalStatus(job.status)) renderDeliveryOnce(job, { force: true });
+            else startPolling(job.id || state.orderId);
+          })
+          .catch(() => startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false }));
+      }
+    }
+  }, 1500);
+}
+
+function openChatOAuthPopup(href = '', label = 'Google connection') {
+  const target = String(href || '').trim();
+  if (!target) return false;
+  saveChatOAuthReturnState('oauth_popup_open');
+  const popup = window.open(target, 'cait_oauth_connect', chatOAuthPopupFeatures());
+  if (!popup) return false;
+  try {
+    popup.focus();
+  } catch {}
+  appendTextMessage('system', chatText(
+    `${label} opened in a separate window. Keep this chat open; I will continue from here when the connection finishes.`,
+    `${label} を別ウィンドウで開きました。このチャットは開いたままにしてください。接続が終わったらここから続けます。`,
+    state.chatMessages[0]?.body || state.conversationLanguage
+  ), { label: 'Connector' });
+  startOAuthPopupMonitor(popup);
+  return true;
+}
+
+async function handleOAuthPopupReturnMessage(data = {}) {
+  const status = String(data.status || '').trim().toLowerCase();
+  if (status === 'error') {
+    appendTextMessage('assistant', chatText(
+      `Google connection did not complete: ${data.error || 'auth_failed'}`,
+      `Google接続が完了しませんでした: ${data.error || 'auth_failed'}`,
+      state.chatMessages[0]?.body || state.conversationLanguage
+    ), { tone: 'error', label: 'Connector' });
+    return;
+  }
+  appendTextMessage('system', chatText(
+    'Google connection finished. Checking this order again from the original chat.',
+    'Google接続が完了しました。元のチャットでこのオーダーを再確認します。',
+    state.chatMessages[0]?.body || state.conversationLanguage
+  ), { label: 'Connector' });
+  state.authorityNoticeKeys.clear();
+  await refreshAuth();
+  if (state.orderId) {
+    try {
+      const job = await fetchVisibleJob(state.orderId);
+      maybeRenderAuthorityNotice(job, { label: 'Approval required' });
+      if (isTerminalStatus(job.status)) renderDeliveryOnce(job, { force: true });
+      else startPolling(job.id || state.orderId);
+    } catch {
+      startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
+    }
+  } else {
+    startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
+  }
+}
+
+function handleChatOAuthPopupReturn() {
+  let url = null;
+  try {
+    url = new URL(window.location.href);
+  } catch {
+    return false;
+  }
+  if (url.searchParams.get('cait_oauth_popup') !== '1') return false;
+  const error = String(url.searchParams.get('auth_error') || '').trim();
+  try {
+    window.opener?.postMessage({
+      type: 'cait-oauth-return',
+      provider: 'google',
+      status: error ? 'error' : 'ok',
+      error,
+      sessionId: String(url.searchParams.get('cait_chat_session_id') || '').trim(),
+      orderId: String(url.searchParams.get('cait_order_id') || '').trim()
+    }, window.location.origin);
+  } catch {}
+  document.body.innerHTML = [
+    '<main class="chatux-shell" aria-label="Google connection complete">',
+    '<section class="chatux-panel">',
+    '<div class="chatux-thread">',
+    '<article class="message system">',
+    '<div class="message-meta">Connector</div>',
+    `<div class="message-body">${escapeHtml(error ? `Google connection failed: ${error}` : 'Google connection completed. Return to the original chat window.')}</div>`,
+    '</article>',
+    '</div>',
+    '</section>',
+    '</main>'
+  ].join('');
+  window.setTimeout(() => {
+    try {
+      window.close();
+    } catch {}
+  }, error ? 1800 : 600);
+  return true;
+}
+
 els.composer.addEventListener('submit', async (event) => {
   event.preventDefault();
   const prompt = String(els.promptInput.value || '').trim();
@@ -4996,6 +5129,10 @@ els.composer.addEventListener('submit', async (event) => {
 window.addEventListener('message', (event) => {
   if (event.origin !== window.location.origin) return;
   const data = event.data && typeof event.data === 'object' ? event.data : {};
+  if (data.type === 'cait-oauth-return') {
+    void handleOAuthPopupReturnMessage(data);
+    return;
+  }
   if (data.type !== 'cait-app-context') return;
   void handleInboundAppContext(data.context || {}, {
     label: 'App context',
@@ -5008,6 +5145,13 @@ document.addEventListener('click', (event) => {
   const oauthLink = event.target?.closest?.('a[href^="/auth/google"], a[href^="/auth/github"], a[href^="/auth/x"]');
   if (!oauthLink) return;
   saveChatOAuthReturnState('oauth_link_click');
+  if (oauthLink.dataset.chatOauthPopup) {
+    event.preventDefault();
+    const label = String(oauthLink.textContent || 'Google connection').trim() || 'Google connection';
+    if (!openChatOAuthPopup(oauthLink.href || oauthLink.getAttribute('href') || '', label)) {
+      window.location.href = oauthLink.href || oauthLink.getAttribute('href') || CHATUX_RETURN_PATH;
+    }
+  }
 }, { capture: true });
 
 els.authStatus?.addEventListener('click', (event) => {
@@ -5484,8 +5628,10 @@ els.openChatListBtn?.addEventListener('click', () => {
 els.newChatBtn?.addEventListener('click', () => {
   if (state.polling) window.clearInterval(state.polling);
   if (state.deliveryBackfill) window.clearInterval(state.deliveryBackfill);
+  if (state.oauthPopupMonitor) window.clearInterval(state.oauthPopupMonitor);
   state.polling = null;
   state.deliveryBackfill = null;
+  state.oauthPopupMonitor = null;
   startNewChatSession();
   setBusy(false);
 });
@@ -5533,9 +5679,11 @@ els.resetBtn.addEventListener('click', resetChat);
 renderActiveLeaderStatus();
 updateComposerMode();
 renderChatSessionSidebar();
-restoreChatOAuthReturnStateFromUrl();
-void hydrateAppContextFromUrl();
-void refreshChatSessionHistory({ force: true }).then(() => {
-  restoreRequestedChatSessionFromHistory();
-});
-void refreshAuth();
+if (!handleChatOAuthPopupReturn()) {
+  restoreChatOAuthReturnStateFromUrl();
+  void hydrateAppContextFromUrl();
+  void refreshChatSessionHistory({ force: true }).then(() => {
+    restoreRequestedChatSessionFromHistory();
+  });
+  void refreshAuth();
+}

@@ -137,7 +137,7 @@ assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat c
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/chat.css?v=20260507c'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260507k"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260507l"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -505,6 +505,11 @@ assert.ok(chatJs.includes("url.searchParams.set('return_to', currentChatReturnPa
 assert.ok(chatJs.includes("url.searchParams.set('cait_restore_chat', '1')"), 'Chat OAuth return paths should request active chat restoration.');
 assert.ok(chatJs.includes("url.searchParams.set('cait_chat_session_id', sessionId)"), 'Chat OAuth return paths should include the active chat session id.');
 assert.ok(chatJs.includes("url.searchParams.set('cait_order_id', orderId)"), 'Chat OAuth return paths should include the active order id.');
+assert.ok(chatJs.includes("url.searchParams.set('cait_oauth_popup', '1')"), 'Chat Google connector return paths should mark popup OAuth returns.');
+assert.ok(chatJs.includes('data-chat-oauth-popup="google"'), 'Chat Google connector approval links should open OAuth outside the active chat tab.');
+assert.ok(chatJs.includes('function openChatOAuthPopup'), 'Chat should keep the active thread open while Google OAuth runs in a separate window.');
+assert.ok(chatJs.includes("type: 'cait-oauth-return'"), 'OAuth popup returns should notify the original chat window.');
+assert.ok(chatJs.includes('handleOAuthPopupReturnMessage'), 'Original chat should refresh connector/order state after popup OAuth completes.');
 assert.ok(chatJs.includes('restoreChatOAuthReturnStateFromUrl'), 'Chat should restore the active thread immediately after Google OAuth returns.');
 assert.ok(chatJs.includes('restoreRequestedChatSessionFromHistory'), 'Chat should fall back to server chat memory when the OAuth snapshot is unavailable.');
 assert.ok(chatJs.includes("saveChatOAuthReturnState('oauth_link_click')"), 'Chat should save the latest runtime state immediately before OAuth navigation.');
