@@ -1877,6 +1877,37 @@ function googleIncludeGroupsFromAuthority(request = null) {
   return [...new Set(groups)];
 }
 
+function googleAuthorityConnectGroups(request = null, preferredGroup = '') {
+  const groups = [];
+  const add = (group) => {
+    const normalized = String(group || '').trim().toLowerCase();
+    const safe = normalized === 'gsc' ? 'gsc' : (normalized === 'ga4' ? 'ga4' : '');
+    if (safe && !groups.includes(safe)) groups.push(safe);
+  };
+  for (const group of googleIncludeGroupsFromAuthority(request)) add(group);
+  const capabilities = listValues(request?.missing_connector_capabilities || request?.missingConnectorCapabilities || request?.capabilities);
+  if (capabilities.some((item) => /^google\.read_ga4$/i.test(String(item || '')))) add('ga4');
+  if (capabilities.some((item) => /^google\.read_gsc$/i.test(String(item || '')))) add('gsc');
+  if (!groups.length) add(preferredGroup);
+  if (!groups.length) add('ga4');
+  return ['ga4', 'gsc'].filter((group) => groups.includes(group));
+}
+
+function googleCapabilitiesForGroups(groups = []) {
+  const normalized = Array.isArray(groups) ? groups : [];
+  const capabilities = [];
+  if (normalized.includes('ga4')) capabilities.push('google.read_ga4');
+  if (normalized.includes('gsc')) capabilities.push('google.read_gsc');
+  return capabilities;
+}
+
+function googleConnectLabelForGroups(groups = []) {
+  const normalized = Array.isArray(groups) ? groups : [];
+  if (normalized.includes('ga4') && normalized.includes('gsc')) return 'Connect GA4 + Search Console';
+  if (normalized.includes('gsc')) return 'Connect Search Console';
+  return 'Connect GA4';
+}
+
 function authorityNeedsApproval(request = null) {
   if (!request || typeof request !== 'object') return false;
   const missingConnectors = listValues(request.missing_connectors || request.missingConnectors || request.connectors);
@@ -1908,15 +1939,17 @@ function authorityNeedsApproval(request = null) {
 }
 
 function googleAuthHrefForAuthority(request = null, group = '') {
-  const kind = String(group || '').trim().toLowerCase() === 'gsc' ? 'gsc' : 'ga4';
-  saveChatOAuthReturnState(`google_${kind}_approval`);
+  const groups = googleAuthorityConnectGroups(request, group);
+  const groupKey = groups.join('_') || 'ga4';
+  const capabilities = googleCapabilitiesForGroups(groups);
+  saveChatOAuthReturnState(`google_${groupKey}_approval`);
   const url = new URL('/auth/google', window.location.origin);
   url.searchParams.set('action', 'analytics_connect');
   url.searchParams.set('return_to', currentChatReturnPath({ oauthPopup: true }));
-  url.searchParams.set('login_source', `chatux_${kind}_approval`);
+  url.searchParams.set('login_source', `chatux_${groupKey}_approval`);
   url.searchParams.set('visitor_id', state.visitorId);
-  url.searchParams.set('scope_group', kind);
-  url.searchParams.set('capabilities', kind === 'gsc' ? 'google.read_gsc' : 'google.read_ga4');
+  url.searchParams.set('scope_group', groups.join(','));
+  url.searchParams.set('capabilities', capabilities.join(','));
   return `${url.pathname}${url.search}`;
 }
 
@@ -3408,7 +3441,8 @@ function renderAuthorityRequest(job = {}) {
     actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in with Google</a>`);
   } else if (googleNeeded) {
     const nextGoogleGroup = googleSources.includes('ga4') ? 'ga4' : (googleSources.includes('gsc') ? 'gsc' : (missingCapabilities.includes('google.read_gsc') ? 'gsc' : 'ga4'));
-    actionLinks.push(`<a class="primary-btn inline-btn file-action" data-chat-oauth-popup="google" href="${escapeHtml(googleAuthHrefForAuthority(authority, nextGoogleGroup))}">${escapeHtml(nextGoogleGroup === 'gsc' ? 'Connect Search Console' : 'Connect GA4')}</a>`);
+    const googleGroups = googleAuthorityConnectGroups(authority, nextGoogleGroup);
+    actionLinks.push(`<a class="primary-btn inline-btn file-action" data-chat-oauth-popup="google" href="${escapeHtml(googleAuthHrefForAuthority(authority, nextGoogleGroup))}">${escapeHtml(googleConnectLabelForGroups(googleGroups))}</a>`);
   }
   actionLinks.push(`<a class="ghost-btn inline-btn file-action" href="${escapeHtml(openWorkHref)}">Open chat approval</a>`);
   return [
@@ -4397,9 +4431,9 @@ function leaderTaskTypeFromIntentResult(prompt = '', result = {}) {
   if (/(cpo|product|ux|roadmap|feature|プロダクト|機能|ux|ロードマップ)/i.test(text)) return 'cpo_leader';
   if (/(cfo|pricing|finance|unit economics|cash|価格|財務|収支|粗利)/i.test(text)) return 'cfo_leader';
   if (/(legal|privacy|terms|contract|compliance|規約|法務|契約|プライバシー)/i.test(text)) return 'legal_leader';
-  if (/(research|compare|decision|調査|比較|意思決定)/i.test(text)) return 'research_team_leader';
-  if (/(build team|implementation|debug|実装|修正|バグ)/i.test(text)) return 'build_team_leader';
   if (intent === 'natural_business_growth' || intent === 'natural_marketing_launch' || /(growth|marketing|sales|acquisition|launch|集客|売上|マーケ|ローンチ)/i.test(text)) return 'cmo_leader';
+  if (/(build team|implementation|debug|実装|修正|バグ)/i.test(text)) return 'build_team_leader';
+  if (/(research team|analysis team|decision team|調査チーム|分析チーム|複数.*(?:調査|分析)|意思決定)/i.test(text)) return 'research_team_leader';
   return '';
 }
 
@@ -4826,10 +4860,12 @@ function startPolling(orderId) {
   let lastKey = '';
   let lastPhaseKey = '';
   let pollCount = 0;
+  let consecutiveProgressErrors = 0;
   const tick = async () => {
     pollCount += 1;
     try {
       const result = await api(`/api/jobs/${encodeURIComponent(orderId)}?visitor_id=${encodeURIComponent(state.visitorId)}`);
+      consecutiveProgressErrors = 0;
       const job = result.job && typeof result.job === 'object' ? { ...result.job, id: result.job.id || orderId } : { id: orderId };
       const key = `${job.status}|${job.completedAt || ''}|${job.failedAt || ''}|${job.failureReason || ''}|${JSON.stringify(job.workflow?.agentStatusCounts || job.workflow?.statusCounts || {})}|${workflowCurrentLocationLabel(job)}`;
       const phaseKey = workflowCurrentPhaseKey(job);
@@ -4856,6 +4892,18 @@ function startPolling(orderId) {
         startDeliveryBackfillLoop({ maxRuns: 60 });
       }
     } catch (error) {
+      consecutiveProgressErrors += 1;
+      const status = Number(error?.status || error?.statusCode || error?.data?.status || 0);
+      const message = String(error?.message || '').toLowerCase();
+      const transient = [408, 429, 500, 502, 503, 504].includes(status)
+        || /failed to fetch|network|timeout|temporar|unavailable|gateway|rate limit|service/i.test(message);
+      if (transient && consecutiveProgressErrors < 10) {
+        if ([1, 4, 8].includes(consecutiveProgressErrors)) {
+          appendTextMessage('system', `Progress check temporarily failed${status ? ` (${status})` : ''}. Retrying in this chat; the order remains attached.`);
+        }
+        if (consecutiveProgressErrors === 1) startDeliveryBackfillLoop({ maxRuns: 8 });
+        return;
+      }
       window.clearInterval(state.polling);
       state.polling = null;
       appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Progress stopped' });

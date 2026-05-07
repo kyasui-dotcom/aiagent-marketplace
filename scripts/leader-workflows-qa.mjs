@@ -336,14 +336,15 @@ const implicitCmoActionCreated = await request('/api/jobs', {
 assert.equal(implicitCmoActionCreated.status, 201, 'cmo_leader acquisition workflow should create successfully without explicit post/send wording');
 const implicitCmoRuns = Array.isArray(implicitCmoActionCreated.body?.child_runs) ? implicitCmoActionCreated.body.child_runs : [];
 const implicitCmoActionRuns = implicitCmoRuns.filter((run) => String(run?.sequence_phase || run?.sequencePhase || '').trim().toLowerCase() === 'action');
-assert.ok(implicitCmoActionRuns.length >= 1, 'cmo_leader should select one action-layer specialist even when the user asks broadly for acquisition');
-assert.ok(
-  implicitCmoActionRuns.some((run) => ['x_post', 'directory_submission', 'acquisition_automation'].includes(String(run?.task_type || run?.taskType || '').trim().toLowerCase())),
-  'cmo_leader broad acquisition action layer should choose an execution-capable specialist'
+assert.equal(implicitCmoActionRuns.length, 0, 'cmo_leader should not infer external action specialists from broad SNS/SEO planning context alone');
+assert.equal(
+  implicitCmoRuns.some((run) => ['x_post', 'instagram'].includes(String(run?.task_type || run?.taskType || '').trim().toLowerCase())),
+  false,
+  'cmo_leader broad SNS context should not default to X or Instagram connector work'
 );
 assert.ok(
-  implicitCmoActionRuns.some((run) => String(run?.task_type || run?.taskType || '').trim().toLowerCase() === 'x_post'),
-  'cmo_leader social acquisition context should choose X post as the default action layer'
+  implicitCmoRuns.some((run) => String(run?.task_type || run?.taskType || '').trim().toLowerCase() === 'data_analysis'),
+  'cmo_leader should use attached GA4/Search Console context as the single evidence lane for broad acquisition planning'
 );
 
 globalThis.fetch = originalLeaderWorkflowQaFetch;

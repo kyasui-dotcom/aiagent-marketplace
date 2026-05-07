@@ -10444,6 +10444,13 @@ function selectedAgentIsLeader(agents = [], body = {}) {
   return tasks.some((task) => isWorkflowLeaderTask(task));
 }
 
+function agentRecordIsWorkflowLeader(agent = {}) {
+  const tasks = normalizeTaskTypes(agent?.taskTypes || agent?.task_types || []);
+  const metadata = agent?.metadata && typeof agent.metadata === 'object' ? agent.metadata : {};
+  const kind = normalizeTaskTypes([agent?.kind || metadata.kind || metadata.category || ''])[0] || '';
+  return tasks.some((task) => isWorkflowLeaderTask(task)) || isWorkflowLeaderTask(kind);
+}
+
 function agentManifestKind(agent = {}) {
   const manifest = agent?.metadata?.manifest && typeof agent.metadata.manifest === 'object' ? agent.metadata.manifest : {};
   const raw = String(manifest.kind || agent?.metadata?.kind || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
@@ -10460,6 +10467,12 @@ function pickAgent(agents, taskType, budgetCap = 0, requestedAgentId = '', optio
   const excluded = new Set(Array.isArray(options.excludeAgentIds) ? options.excludeAgentIds : []);
   const requireEndpoint = options.requireEndpoint === true;
   const verified = agents.filter((a) => a.online && isAgentVerified(a) && !isAgentGroupRecord(a) && !excluded.has(a.id) && (!requireEndpoint || resolveAgentJobEndpoint(a)));
+  const requestedTask = normalizeTaskTypes([taskType])[0] || String(taskType || '').trim().toLowerCase();
+  const requestedIsLeader = isWorkflowLeaderTask(requestedTask);
+  const specialistCandidateExists = !requestedIsLeader && verified.some((agent) => (
+    !agentRecordIsWorkflowLeader(agent)
+    && taskMatchForAgent(agent, taskType, options).matches
+  ));
   const scoreAgent = (agent, match) => +(computeScore(agent, match?.dispatchTaskType || taskType, budgetCap) + agentTagFitScore(agent, options.tagHints || []) + agentPatternFitScore(agent, {
     body: options.body || {},
     scheduled: options.scheduled === true,
@@ -10474,6 +10487,7 @@ function pickAgent(agents, taskType, budgetCap = 0, requestedAgentId = '', optio
   }
   const ranked = verified
     .map((agent) => {
+      if (!requestedIsLeader && specialistCandidateExists && agentRecordIsWorkflowLeader(agent)) return null;
       const match = taskMatchForAgent(agent, taskType, options);
       if (!match.matches) return null;
       return {
@@ -10525,9 +10539,28 @@ function defaultCmoActionTaskFromText(text = '') {
   if (/(instagram|インスタ|ig)/i.test(safe)) return 'instagram';
   if (/(reddit|subreddit|レディット|community|コミュニティ)/i.test(safe)) return 'reddit';
   if (/(indie\s*hackers|indiehackers|インディーハッカー|インディーハッカーズ)/i.test(safe)) return 'indie_hackers';
-  if (/(sns|social|ソーシャル|x\.com|(?:^|[^a-z0-9])x(?:\s+post|\s+posts|\s+thread)?(?=$|[^a-z0-9])|twitter|tweet|x投稿|ツイッター)/i.test(safe)) return 'x_post';
-  if (/(directory|listing|citation|掲載|媒体|ディレクトリ|サイテーション|自然検索|seo|search console|サチコ|検索流入|オーガニック)/i.test(safe)) return 'directory_submission';
-  return 'x_post';
+  if (/(x\.com|(?:^|[^a-z0-9])x(?:\s+post|\s+posts|\s+thread)?(?=$|[^a-z0-9])|twitter|tweet|x投稿|ツイッター)/i.test(safe)) return 'x_post';
+  if (/(directory|listing|citation|掲載媒体|媒体掲載|ディレクトリ|サイテーション)/i.test(safe)) return 'directory_submission';
+  return '';
+}
+
+function cmoSourceLayerPreferencesFromText(text = '') {
+  const safe = String(text || '').trim();
+  const tasks = [];
+  const push = (task) => {
+    if (task && !tasks.includes(task)) tasks.push(task);
+  };
+  if (/(ga4|gsc|search console|google analytics|analytics|kpi|dashboard|cohort|funnel|metrics|アクセス解析|データ分析|計測|指標|登録率|cv率|サチコ)/i.test(safe)) push('data_analysis');
+  if (/(competitor|teardown|benchmark|positioning|vs\.?|競合|比較|ベンチマーク|ポジショニング)/i.test(safe)) push('teardown');
+  if (!tasks.length || /(research|market|audience|icp|調査|市場|顧客|ターゲット)/i.test(safe)) push('research');
+  return tasks;
+}
+
+function cmoSourceLayerLimitFromText(text = '', configuredLimit = 0) {
+  const configured = Number(configuredLimit || 0);
+  if (Number.isFinite(configured) && configured > 0) return Math.max(1, Math.min(2, configured));
+  const preferences = cmoSourceLayerPreferencesFromText(text);
+  return preferences.includes('data_analysis') && preferences.includes('teardown') ? 2 : 1;
 }
 
 function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', prompt = '', options = {}) {
@@ -10535,6 +10568,7 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
   const primary = String(tasks[0] || primaryTask || '').trim().toLowerCase();
   if (!isWorkflowLeaderTask(primary)) return tasks;
   const cmoWorkflow = ['cmo_leader', 'free_web_growth_leader'].includes(primary);
+  const text = workflowHumanActionIntentText(prompt).toLowerCase();
   const configuredResearchBucketLimit = Number(options.maxExternalResearchTasks || 0);
   const summaryTasks = new Set(['summary']);
   const dataCollectionTasks = new Set(['data_analysis']);
@@ -10551,7 +10585,9 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     return ordered.indexOf(left) - ordered.indexOf(right);
   }).slice(0, max);
   const sourceCollectionTasks = leaderSourceCollectionLayerTasks(primary);
-  const preferredSourceTask = sourceCollectionTasks.find((task) => ['research', 'data_analysis', 'validation', 'teardown', 'diligence', 'debug'].includes(task))
+  const preferredCmoSourceTasks = cmoWorkflow ? cmoSourceLayerPreferencesFromText(text) : [];
+  const preferredSourceTask = (cmoWorkflow ? preferredCmoSourceTasks.find((task) => sourceCollectionTasks.includes(task)) : '')
+    || sourceCollectionTasks.find((task) => ['research', 'data_analysis', 'validation', 'teardown', 'diligence', 'debug'].includes(task))
     || sourceCollectionTasks[0]
     || 'research';
   push(primary);
@@ -10578,7 +10614,6 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     CMO_WORKFLOW_DEFAULT_EXECUTION_TASKS.forEach(push);
     CMO_WORKFLOW_ACTION_LAYER_TASKS.forEach(push);
   }
-  const text = workflowHumanActionIntentText(prompt).toLowerCase();
   const requestedExternalExecution = WORKFLOW_EXTERNAL_ACTION_REQUEST_PATTERN.test(text);
   const requestedActions = [];
   const pushRequestedAction = (task) => {
@@ -10606,6 +10641,8 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
   const layerCounts = new Map();
   const sourceBucketCounts = new Map();
   const sourceBucketForTask = (task) => dataCollectionTasks.has(String(task || '').trim().toLowerCase()) ? 'data' : 'research';
+  const sourceCollectionLimit = cmoWorkflow ? cmoSourceLayerLimitFromText(text, configuredResearchBucketLimit) : 1;
+  const sourceCollectionCount = () => [...sourceBucketCounts.values()].reduce((sum, count) => sum + Number(count || 0), 0);
   const pushLayerTask = (task, options = {}) => {
     const safe = String(task || '').trim().toLowerCase();
     if (!safe || safe === primary || summaryTasks.has(safe) || selected.includes(safe)) return;
@@ -10618,8 +10655,9 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
       const bucket = sourceBucketForTask(safe);
       const currentBucket = Number(sourceBucketCounts.get(bucket) || 0);
       const bucketLimit = cmoWorkflow && bucket === 'research'
-        ? (configuredResearchBucketLimit > 0 ? configuredResearchBucketLimit : 2)
+        ? sourceCollectionLimit
         : 1;
+      if (!options.force && cmoWorkflow && sourceCollectionCount() >= sourceCollectionLimit) return;
       if (!options.force && currentBucket >= bucketLimit) return;
       pushSelected(safe);
       sourceBucketCounts.set(bucket, currentBucket + 1);
@@ -10642,7 +10680,7 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
       if (leaderTaskLayer(primary, task) === layer) pushLayerTask(task);
     }
   };
-  fillLayer(1, ['data_analysis', 'teardown', 'research', 'validation']);
+  fillLayer(1, cmoWorkflow ? [...preferredCmoSourceTasks, 'research', 'teardown', 'data_analysis', 'validation'] : ['data_analysis', 'teardown', 'research', 'validation']);
   fillLayer(2, cmoWorkflow ? ['growth', 'media_planner'] : []);
   fillLayer(3, cmoWorkflow ? ['seo_gap', 'landing', 'writing', 'writer', 'list_creator'] : []);
   for (const task of requestedActions) pushLayerTask(task, { force: true });
@@ -10650,16 +10688,14 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
   if (
     !requestedActions.length
     && ['cmo_leader', 'free_web_growth_leader'].includes(primary)
+    && requestedExternalExecution
     && !selected.some((task) => (leaderTaskLayer(primary, task) || 1) >= leaderActionLayerStart(primary))
   ) {
     const defaultActionTask = defaultCmoActionTaskFromText(text);
     if (actionTasks.includes(defaultActionTask)) {
       pushLayerTask(defaultActionTask, { force: true });
-    } else if (actionTasks.length) {
-      pushLayerTask(actionTasks[0], { force: true });
     }
   }
-  if (!requestedActions.length && requestedExternalExecution && actionTasks.length) pushLayerTask(actionTasks[0], { force: true });
   for (const task of ordered) {
     const layer = leaderTaskLayer(primary, task) || 1;
     if (layer >= leaderActionLayerStart(primary)) continue;

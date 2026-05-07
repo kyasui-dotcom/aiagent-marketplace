@@ -20,10 +20,17 @@ assert.ok(!inferTaskSequence('cmo_leader', 'https://aiagent-marketplace.net の�
 const cmoFlow = inferTaskSequence('cmo_leader', 'https://aiagent-marketplace.net の集客を広告費なしで増やしたい。媒体と投稿案が欲しい。', { maxTasks: 11 });
 assert.equal(cmoFlow[0], 'cmo_leader');
 assert.ok(cmoFlow.includes('research'));
-assert.ok(cmoFlow.includes('teardown'));
 assert.ok(cmoFlow.includes('growth'));
 assert.ok(cmoFlow.includes('summary'));
 assert.ok(cmoFlow.indexOf('research') > cmoFlow.indexOf('cmo_leader'));
+assert.equal(cmoFlow.includes('instagram'), false);
+assert.equal(cmoFlow.includes('x_post'), false);
+const cmoGenericSeoSocial = inferTaskSequence('cmo_leader', '自然検索・SEOとSNS・ソーシャルを中心に登録を増やす計画を作って。実施案は計画のみ。', { maxTasks: 10 });
+assert.equal(cmoGenericSeoSocial[0], 'cmo_leader');
+assert.ok(cmoGenericSeoSocial.includes('seo_gap'));
+assert.ok(cmoGenericSeoSocial.includes('growth'));
+assert.equal(cmoGenericSeoSocial.includes('instagram'), false);
+assert.equal(cmoGenericSeoSocial.includes('x_post'), false);
 assert.equal(isAgentTeamLaunchIntent('', '1告知でX Reddit Indie Hackers Instagramまでまとめて作りたい'), true);
 assert.equal(isFreeWebGrowthIntent('', '広告費なしでWeb周りの無料施策をやりたい'), true);
 assert.equal(isLargeAgentTeamIntent('', '広告費なしでWeb周りの無料施策をやりたい'), true);

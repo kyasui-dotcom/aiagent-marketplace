@@ -682,10 +682,11 @@ assert.equal(
   'async Agent Team must persist every planned child/checkpoint job before dispatch starts'
 );
 assert.ok(asyncWorkflowFirstState.body.job.workflow.childRuns.length >= 11, 'CMO workflow should not stop after only the first research children are inserted');
-assert.ok(asyncWorkflowTaskOrder.indexOf('teardown') > 0, 'CMO workflow should schedule competitor/market analysis before growth execution');
 assert.ok(asyncWorkflowTaskOrder.indexOf('data_analysis') > 0, 'CMO workflow should schedule data analysis before growth execution');
-assert.ok(asyncWorkflowTaskOrder.indexOf('teardown') < asyncWorkflowTaskOrder.indexOf('growth'), 'CMO analysis layer should precede growth layer');
 assert.ok(asyncWorkflowTaskOrder.indexOf('data_analysis') < asyncWorkflowTaskOrder.indexOf('growth'), 'CMO data layer should precede growth layer');
+assert.equal(asyncWorkflowTaskOrder.includes('teardown'), false, 'CMO workflow should not add competitor teardown unless competitor analysis is requested');
+const asyncDataRun = asyncWorkflowFirstState.body.job.workflow.childRuns.find((run) => run.taskType === 'data_analysis');
+assert.notEqual(asyncDataRun?.agentName, 'RESEARCH TEAM LEADER', 'data_analysis should use the data specialist instead of a research leader');
 assert.ok(asyncWorkflowFirstState.body.job.workflow.statusCounts.completed >= 2, 'leader handoff should release eligible built-in specialists after the leader completes');
 
 const qaStorage = createD1LikeStorage(env.MY_BINDING, { allowInMemory: true, stateCacheTtlMs: 0 });

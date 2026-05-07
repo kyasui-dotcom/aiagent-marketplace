@@ -131,6 +131,7 @@ export function inferWorkIntentTaskType(prompt = '') {
   const text = normalizeWorkIntentText(prompt);
   if (!text) return 'research';
   if (isRepoBackedCodeIntentText(prompt, 'code')) return 'code';
+  if (isBroadMarketingGrowthIntentText(prompt)) return 'cmo_leader';
   if (hasAnyPattern(text, [/(research team|analysis team|decision team|調査チーム|分析チーム)/i])) return 'research_team_leader';
   if (hasAnyPattern(text, [/(build team|coding team|implementation team|engineering team|開発チーム|実装チーム)/i])) return 'build_team_leader';
   if (hasAnyPattern(text, [/(?:\bcmo\b|chief marketing|marketing leader|マーケ責任者|マーケティング責任者)/i])) return 'cmo_leader';
@@ -144,7 +145,6 @@ export function inferWorkIntentTaskType(prompt = '') {
   if (hasAnyPattern(text, [/(pricing|price model|unit economics|ltv|cac|margin|financial model|価格|値付け|料金|財務|収支|粗利|利益)/i])) return 'pricing';
   if (hasAnyPattern(text, [/(validate|validation|idea validation|user interview|mvp|仮説検証|アイデア検証|需要検証|ユーザー調査)/i])) return 'validation';
   if (hasAnyPattern(text, [/(summari[sz]e|summary|要約|まとめ)/i])) return 'summary';
-  if (isBroadMarketingGrowthIntentText(prompt)) return 'cmo_leader';
   if (hasAnyPattern(text, [/(growth|go[-\s]?to[-\s]?market|gtm|acquisition|activation|retention|signup|signups|more users|new customers?|get customers?|grow customers?|more sales|increase sales|increase revenue|increase purchases?|outreach|community|product hunt|marketing|sales|revenue|集客|登録数|会員登録|ユーザー獲得|顧客獲得|問い合わせ.*増|購入.*増|マーケ|営業|グロース)/i])) return 'growth';
   if (hasAnyPattern(text, [/(fix|bug|debug|実装|修正|直し|直して|コード|バグ|不具合|\bapi\b|server|worker|deploy|billing|\bui\b)/i])) return 'code';
   if (hasAnyPattern(text, [/(research|compare|analysis|investigate|市場|比較|調査|戦略)/i])) return 'research';

@@ -365,7 +365,7 @@ async function main() {
     })}`);
     assert.ok(childRuns.length >= 5, 'CMO leader orchestration should include enough specialist runs');
     assert.ok(childRuns.some((run) => run.taskType === 'research'), 'CMO workflow should include research');
-    assert.ok(childRuns.some((run) => run.taskType === 'teardown'), 'CMO workflow should include competitor teardown');
+    assert.equal(childRuns.some((run) => run.taskType === 'teardown'), false, 'CMO workflow should not include competitor teardown unless competitor analysis is requested');
     assert.ok(childRuns.some((run) => run.taskType === 'media_planner'), 'CMO workflow should include media planning');
     assert.ok(childRuns.some((run) => run.taskType === 'growth'), 'CMO workflow should include growth execution planning');
     assert.equal(Number(statusCounts.failed || 0), 0, 'no child run should fail');
