@@ -3932,6 +3932,9 @@ function visibleEventsForRequest(state, current, env) {
 function sanitizeJobForViewer(job, env) {
   const cloned = cloneJob(job);
   if (!cloned) return null;
+  if (['failed', 'timed_out'].includes(normalizeJobStatus(cloned.status))) {
+    clearJobAuthorityRequest(cloned);
+  }
   if (!runtimePolicy(env).exposeJobSecrets) delete cloned.callbackToken;
   return cloned;
 }
@@ -4541,7 +4544,39 @@ function executorStatePatchFromAuthorityRequest(request = null, existingExecutor
   return patch.authorityRequired ? patch : null;
 }
 
+function clearJobAuthorityRequest(job = {}) {
+  const report = job?.output?.report && typeof job.output.report === 'object'
+    ? job.output.report
+    : null;
+  if (report) {
+    delete report.authority_request;
+    delete report.authorityRequest;
+    delete report.action_required;
+    delete report.actionRequired;
+    delete report.executor_request;
+    delete report.executorRequest;
+  }
+  const existingExecutorState = job.executorState && typeof job.executorState === 'object'
+    ? job.executorState
+    : null;
+  if (existingExecutorState && Object.prototype.hasOwnProperty.call(existingExecutorState, 'authorityRequired')) {
+    const nextExecutorState = { ...existingExecutorState };
+    delete nextExecutorState.authorityRequired;
+    if (Array.isArray(nextExecutorState.googleIncludeGroups) && !nextExecutorState.googleIncludeGroups.length) {
+      delete nextExecutorState.googleIncludeGroups;
+    }
+    job.executorState = {
+      ...nextExecutorState,
+      updatedAt: nowIso()
+    };
+  }
+}
+
 function syncJobAuthorityRequest(job = {}, agent = null) {
+  if (['failed', 'timed_out'].includes(normalizeJobStatus(job.status))) {
+    clearJobAuthorityRequest(job);
+    return null;
+  }
   if (!job?.output || typeof job.output !== 'object') return null;
   const report = job.output.report && typeof job.output.report === 'object' ? job.output.report : {};
   const existingRequest = authorityRequestFromReport(report);

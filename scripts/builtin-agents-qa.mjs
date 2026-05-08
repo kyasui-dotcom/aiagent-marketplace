@@ -1336,6 +1336,41 @@ assert.ok(failedLeaderWorkflowOutput.report.bullets.some((line) => /Stopped afte
 assert.ok(/not an approval wait/i.test(failedLeaderWorkflowOutput.report.nextAction), 'failed workflow next action must say it is not approval');
 assert.equal(failedLeaderWorkflowOutput.report.authority_request, undefined, 'failed internal workflow must not synthesize authority approval');
 
+const failedLeaderWithActionAuthorityOutput = buildAgentTeamDeliveryOutput({
+  id: 'qa-failed-action-parent',
+  status: 'failed',
+  originalPrompt: 'CMO execution workflow with action lanes',
+  workflow: { childRuns: [{ id: 'qa-leader-timeout' }, { id: 'qa-x-blocked' }] }
+}, [
+  {
+    id: 'qa-leader-timeout',
+    taskType: 'cmo_leader',
+    workflowTask: 'cmo_leader',
+    status: 'timed_out',
+    failureReason: 'Built-in completion sweep timed out',
+    failureCategory: 'dispatch_timeout'
+  },
+  {
+    id: 'qa-x-blocked',
+    taskType: 'x_post',
+    workflowTask: 'x_post',
+    status: 'blocked',
+    failureCategory: 'blocked_waiting_for_approval',
+    dispatch: { completionStatus: 'blocked_waiting_for_approval' },
+    output: {
+      report: {
+        authority_request: {
+          reason: 'X posting authority is required before CAIt can publish this post.',
+          missing_connectors: ['x'],
+          missing_connector_capabilities: ['x.post']
+        }
+      }
+    }
+  }
+]);
+assert.equal(failedLeaderWithActionAuthorityOutput.report.authority_request, undefined, 'failed workflow must suppress downstream action authority after a leader timeout');
+assert.ok(!failedLeaderWithActionAuthorityOutput.summary.includes('waiting for approval/connector'), 'failed workflow with action lanes must not look like an approval wait');
+
 const approvalBlockedWorkflowOutput = buildAgentTeamDeliveryOutput({
   id: 'qa-approval-parent',
   status: 'blocked',

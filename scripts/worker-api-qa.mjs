@@ -43,6 +43,7 @@ assert.ok(workerSource.includes('ORCHESTRATION_WATCHDOG_POLICY'), 'workflow orch
 assert.ok(workerSource.includes('function runWorkflowOrchestrationWatchdog'), 'cron should have a workflow watchdog that reconciles and safely advances stale parents');
 assert.ok(workerSource.includes('workflow_orchestration_stalled'), 'watchdog should surface stale no-target workflows as visible blockers');
 assert.ok(!workerSource.includes("skipped: 'openai_workflow_enabled'"), 'scheduled built-in completion sweep must recover OpenAI-backed workflow jobs instead of skipping them.');
+assert.ok(workerSource.includes('clearJobAuthorityRequest(cloned)'), 'public job views must suppress stale authority requests on failed or timed-out jobs.');
 
 const env = {
   APP_VERSION: '0.2.0-test',

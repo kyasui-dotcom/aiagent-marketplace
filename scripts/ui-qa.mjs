@@ -138,7 +138,7 @@ assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat c
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/chat.css?v=20260508a'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508d"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508e"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -528,6 +528,7 @@ assert.ok(chatJs.includes("saveChatOAuthReturnState('oauth_link_click')"), 'Chat
 assert.ok(chatJs.includes('function xAuthHref'), 'X OAuth links should be built centrally.');
 assert.ok(!chatJs.includes('href="/auth/x">Connect X'), 'Chat should not use bare X OAuth links.');
 assert.ok(chatJs.includes('maybeRenderAuthorityNotice(job'), 'Chat should render approval or connector requests while an order is still running.');
+assert.ok(chatJs.includes("['failed', 'timed_out'].includes(String(job.status || '').trim().toLowerCase())"), 'Chat should not show stale connector approval cards on failed or timed-out orders.');
 assert.ok(chatJs.includes('googleAuthHrefForAuthority'), 'Chat approval cards should link directly to the required Google connector scope.');
 assert.ok(chatJs.includes("Connect Search Console") && chatJs.includes("Connect GA4"), 'Chat approval cards should label GA4 and Search Console connector actions separately.');
 assert.ok(!chatJs.includes('/chatux/'), 'Chat JS must not navigate users to /chatux.');

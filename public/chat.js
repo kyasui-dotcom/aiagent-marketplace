@@ -3708,6 +3708,7 @@ async function reuseAiAgent(id = '') {
 }
 
 function renderAuthorityRequest(job = {}) {
+  if (['failed', 'timed_out'].includes(String(job.status || '').trim().toLowerCase())) return '';
   const authority = authorityRequestFromJob(job);
   if (!authorityNeedsApproval(authority)) return '';
   const missingConnectors = listValues(authority.missing_connectors || authority.missingConnectors || authority.connectors);
