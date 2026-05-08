@@ -138,7 +138,7 @@ assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat c
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/chat.css?v=20260508a'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508k"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508l"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -267,7 +267,7 @@ assert.ok(appsHtml.includes('cait-app-context/v1'), 'Apps hub should explain the
 assert.ok(analyticsHtml.includes('Analytics Console'), 'Analytics Console should be a first-class app page.');
 assert.ok(analyticsHtml.includes('href="/apps.html"'), 'Analytics Console should link back to the apps hub.');
 assert.ok(analyticsHtml.includes('id="sendContextBtn"'), 'Analytics Console should send context to CAIt.');
-assert.ok(analyticsHtml.includes('/analytics-console.js?v=20260507d'), 'Analytics Console should load the app-context receiving controller.');
+assert.ok(analyticsHtml.includes('/analytics-console.js?v=20260508e'), 'Analytics Console should load the app-context receiving controller.');
 assert.ok(analyticsHtml.includes('/app-console.css?v=20260507a'), 'Analytics Console should load the current shared app console CSS.');
 assert.ok(analyticsHtml.includes('id="analyticsStepSources"'), 'Analytics Console should show a compact workflow state strip.');
 assert.ok(analyticsHtml.includes('id="connectGoogleBtn"'), 'Analytics Console should expose a Google OAuth connection button.');
@@ -348,7 +348,7 @@ for (const app of builtInAppEntries) {
 }
 
 assert.ok(analyticsJs.includes("source_app: 'analytics_console'"), 'Analytics app logic should stay in analytics-console.js.');
-assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260507a"), 'Analytics Console should load the latest CAIt app bridge.');
+assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260508b"), 'Analytics Console should load the latest CAIt app bridge.');
 assert.ok(caitAppBridge.includes("fetch(`${origin}/auth/status`"), 'CAIt app bridge should read auth status before same-origin context handoff.');
 assert.ok(caitAppBridge.includes("headers['x-aiagent2-csrf'] = csrfToken"), 'CAIt app bridge should attach CSRF token to same-origin context handoff writes.');
 assert.ok(!analyticsJs.includes("source_app: 'publisher_approval_studio'"), 'Analytics Console JS should not contain Publisher app logic.');

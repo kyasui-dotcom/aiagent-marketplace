@@ -5913,6 +5913,21 @@ async function handleInboundAppContext(context = {}, options = {}) {
   return true;
 }
 
+function handleInboundAppContextServerRecord(data = {}) {
+  const id = String(data.app_context_id || data.context_id || '').trim();
+  if (!id) return false;
+  const token = String(data.app_context_token || '').trim();
+  const chatUrl = String(data.chat_url || '').trim();
+  const record = { id, token, chatUrl };
+  if (state.pendingIntake) {
+    state.pendingIntake.appContextServerRecord = record;
+  }
+  if (state.pendingAppContext && typeof state.pendingAppContext === 'object') {
+    state.pendingAppContext.server_record = record;
+  }
+  return true;
+}
+
 async function hydrateAppContextFromUrl() {
   const context = await consumeCaitAppContextForChat();
   if (!context) return false;
@@ -6100,6 +6115,10 @@ window.addEventListener('message', (event) => {
   const data = event.data && typeof event.data === 'object' ? event.data : {};
   if (data.type === 'cait-oauth-return') {
     void handleOAuthPopupReturnMessage(data);
+    return;
+  }
+  if (data.type === 'cait-app-context-server-record') {
+    handleInboundAppContextServerRecord(data);
     return;
   }
   if (data.type !== 'cait-app-context') return;

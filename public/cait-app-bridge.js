@@ -92,6 +92,21 @@ async function createServerAppContext(context = {}, options = {}) {
   };
 }
 
+async function createServerAppContextWithRetry(context = {}, options = {}) {
+  const attempts = Math.max(1, Math.min(3, Number(options.serverAttempts || 2) || 2));
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await createServerAppContext(context, options);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts) break;
+      await new Promise((resolve) => window.setTimeout(resolve, 500 * attempt));
+    }
+  }
+  throw lastError || new Error('app context create failed');
+}
+
 function sameOriginOpener() {
   try {
     if (!window.opener || window.opener.closed) return null;
@@ -207,24 +222,41 @@ export function caitAppContextThreadHtml(context = {}) {
 
 export async function sendContextToCait(raw = {}, options = {}) {
   const context = buildCaitAppContext(raw);
-  const serverContext = await createServerAppContext(context, options);
-  const target = localChatReturnUrl(serverContext, context, options);
-  if (options.open === false) return target;
   const opener = options.postToOpener === false ? null : sameOriginOpener();
   if (opener) {
+    const serverContextPromise = createServerAppContextWithRetry(context, options).catch((error) => {
+      console.warn('CAIt app context server record failed; continuing with opener handoff.', error);
+      return null;
+    });
+    const immediateTarget = localChatReturnUrl(null, context, options);
     opener.postMessage({
       type: 'cait-app-context',
       source: 'cait-app-bridge',
       context,
-      app_context_id: serverContext?.app_context_id || '',
-      app_context_token: serverContext?.app_context_token || '',
-      chat_url: target
+      app_context_id: '',
+      app_context_token: '',
+      chat_url: immediateTarget,
+      server_record_pending: true
     }, window.location.origin);
+    const serverContext = await serverContextPromise;
+    if (serverContext?.app_context_id) {
+      opener.postMessage({
+        type: 'cait-app-context-server-record',
+        source: 'cait-app-bridge',
+        context_id: serverContext.app_context_id,
+        app_context_id: serverContext.app_context_id,
+        app_context_token: serverContext.app_context_token || '',
+        chat_url: localChatReturnUrl(serverContext, context, options)
+      }, window.location.origin);
+    }
     window.setTimeout(() => {
       try { window.close(); } catch {}
     }, 100);
-    return target;
+    return localChatReturnUrl(serverContext, context, options);
   }
+  const serverContext = await createServerAppContextWithRetry(context, options);
+  const target = localChatReturnUrl(serverContext, context, options);
+  if (options.open === false) return target;
   window.location.href = target;
   return target;
 }

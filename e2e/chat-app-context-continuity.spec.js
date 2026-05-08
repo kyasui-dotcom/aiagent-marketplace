@@ -13,7 +13,6 @@ test.describe('CAIt app context continuity', () => {
         body: JSON.stringify({ error: 'Open chat LLM disabled for deterministic app continuity E2E.' })
       });
     });
-
     await openAuthenticatedChat(page, {
       returnTo: '/chat?e2e=app-context-continuity',
       loginSource: 'playwright_app_context_continuity'
@@ -32,6 +31,17 @@ test.describe('CAIt app context continuity', () => {
     const analyticsUrl = new URL(analyticsPage.url());
     expect(analyticsUrl.origin).toBe(new URL(page.url()).origin);
     expect(analyticsUrl.searchParams.get('chat_return_to')).toContain('/chat');
+    await analyticsPage.route('**/api/app-contexts', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'App context persistence temporarily unavailable.' })
+      });
+    });
 
     await analyticsPage.locator('#sendContextBtn').click();
     await expect(page.locator('#chatThread')).toContainText(/アプリの情報を進行中のヒアリングに戻しました|App context returned to the active intake/, { timeout: chatResponseTimeout });
