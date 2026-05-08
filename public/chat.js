@@ -175,6 +175,9 @@ const state = {
   draftRevision: 0,
   orderId: '',
   polling: null,
+  progressNarratorArticle: null,
+  progressNarratorKey: '',
+  followupTargetOrderId: '',
   deliveryBackfill: null,
   oauthPopupMonitor: null,
   trackedOrderIds: new Set(),
@@ -258,6 +261,10 @@ const PROMPT_PLACEHOLDERS = {
   intake: {
     en: 'Answer the questions above before CAIt prepares the order...',
     ja: '発注準備の前に、上の質問へ回答してください...'
+  },
+  active: {
+    en: 'Add a request to the running order, or ask for status...',
+    ja: '進行中オーダーへの追加要望を書くか、状態を聞いてください...'
   }
 };
 
@@ -1407,6 +1414,103 @@ function appendThinkingMessage(sample = '') {
   return article;
 }
 
+function progressNarratorHtml(text = '', options = {}) {
+  const detail = String(options.detail || '').trim();
+  const status = String(options.status || '').trim();
+  const phase = String(options.phase || '').trim();
+  const steps = Array.isArray(options.steps) ? options.steps.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 4) : [];
+  return [
+    '<div class="progress-narrator" data-progress-narrator>',
+    '<div class="progress-narrator-row">',
+    `<span class="progress-narrator-pulse" aria-hidden="true"></span>`,
+    `<strong data-progress-narrator-text>${escapeHtml(text || 'Working through the order...')}</strong>`,
+    '<span class="progress-narrator-caret" aria-hidden="true"></span>',
+    '</div>',
+    detail ? `<div class="progress-narrator-detail" data-progress-narrator-detail>${escapeHtml(detail)}</div>` : '<div class="progress-narrator-detail" data-progress-narrator-detail hidden></div>',
+    (status || phase) ? `<div class="progress-narrator-meta" data-progress-narrator-meta>${escapeHtml([phase, status].filter(Boolean).join(' / '))}</div>` : '<div class="progress-narrator-meta" data-progress-narrator-meta hidden></div>',
+    steps.length ? `<div class="progress-narrator-steps" data-progress-narrator-steps>${steps.map((step) => `<span>${escapeHtml(step)}</span>`).join('')}</div>` : '<div class="progress-narrator-steps" data-progress-narrator-steps hidden></div>',
+    '</div>'
+  ].join('\n');
+}
+
+function updateProgressNarratorArticle(article, text = '', options = {}) {
+  if (!article) return;
+  const textNode = article.querySelector('[data-progress-narrator-text]');
+  const detailNode = article.querySelector('[data-progress-narrator-detail]');
+  const metaNode = article.querySelector('[data-progress-narrator-meta]');
+  const stepsNode = article.querySelector('[data-progress-narrator-steps]');
+  if (textNode) textNode.textContent = String(text || 'Working through the order...');
+  if (detailNode) {
+    const detail = String(options.detail || '').trim();
+    detailNode.textContent = detail;
+    detailNode.hidden = !detail;
+  }
+  if (metaNode) {
+    const meta = [options.phase, options.status].map((item) => String(item || '').trim()).filter(Boolean).join(' / ');
+    metaNode.textContent = meta;
+    metaNode.hidden = !meta;
+  }
+  if (stepsNode) {
+    const steps = Array.isArray(options.steps) ? options.steps.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 4) : [];
+    stepsNode.innerHTML = steps.map((step) => `<span>${escapeHtml(step)}</span>`).join('');
+    stepsNode.hidden = !steps.length;
+  }
+  article.classList.toggle('ok', options.done === true);
+}
+
+function showProgressNarrator(text = '', options = {}) {
+  const key = String(options.key || state.orderId || 'progress').trim();
+  if (!state.progressNarratorArticle || !state.progressNarratorArticle.isConnected || (key && state.progressNarratorKey !== key)) {
+    state.progressNarratorArticle = appendMessage('assistant', progressNarratorHtml(text, options), {
+      tone: options.done ? 'ok' : 'thinking',
+      label: options.label || 'CAIt',
+      record: false
+    });
+    state.progressNarratorKey = key;
+    return state.progressNarratorArticle;
+  }
+  updateProgressNarratorArticle(state.progressNarratorArticle, text, options);
+  scrollThread();
+  return state.progressNarratorArticle;
+}
+
+function progressNarratorTextForJob(job = {}) {
+  const current = workflowCurrentChildRun(job);
+  const phase = String(current?.sequencePhase || current?.sequence_phase || '').trim().toLowerCase();
+  const agent = workflowChildDisplayLabel(current || {});
+  const status = String(current?.status || job.status || '').trim().toLowerCase();
+  if (phase === 'initial') return `${agent || 'Leader'} is reading the order and deciding the next handoff.`;
+  if (phase === 'data') return `${agent || 'Data agent'} is checking the available metrics before research moves on.`;
+  if (phase === 'research') return `${agent || 'Research agent'} is gathering source-backed context for the plan.`;
+  if (phase === 'planning') return `${agent || 'Planner'} is turning the inputs into a channel and execution plan.`;
+  if (phase === 'preparation') return `${agent || 'Preparation agent'} is preparing copy, pages, packets, or handoff assets.`;
+  if (phase === 'action') return `${agent || 'Action agent'} is waiting for approval or preparing the external action packet.`;
+  if (status === 'completed') return 'The order is complete. Preparing the delivery for this chat.';
+  if (status === 'failed' || status === 'timed_out') return 'The order stopped. Collecting the failure reason and next step.';
+  return 'CAIt is checking the current order state and keeping this chat attached.';
+}
+
+function progressNarratorOptionsForJob(job = {}) {
+  const current = workflowCurrentChildRun(job);
+  const counts = job.workflow?.agentStatusCounts || job.workflow?.statusCounts || {};
+  const total = Number(counts.total || job.workflow?.plannedAgentRunCount || job.workflow?.plannedChildRunCount || 0) || 0;
+  const completed = Number(counts.completed || 0) || 0;
+  const phase = workflowPhaseLabel(current?.sequencePhase || current?.sequence_phase || '');
+  const status = statusLabel(job);
+  return {
+    key: String(job.id || state.orderId || 'progress'),
+    phase,
+    status,
+    detail: current ? `${workflowChildDisplayLabel(current)} is ${statusDisplayLabel(current.status || 'queued')}.` : '',
+    steps: [
+      total ? `${completed}/${total} runs complete` : '',
+      workflowCurrentLocationLabel(job),
+      job.failureReason || job.failure_reason || ''
+    ].filter(Boolean),
+    done: isTerminalStatus(job.status)
+  };
+}
+
 function statusLabel(job = {}) {
   const status = String(job.status || '').trim() || 'created';
   const visibleStatus = statusDisplayLabel(status);
@@ -1429,8 +1533,16 @@ function workflowChildIsInternalLeaderSequenceRun(child = {}) {
   return ['checkpoint', 'final_summary'].includes(phase) && task.endsWith('_leader');
 }
 
+function workflowChildIsAdaptivePending(child = {}) {
+  return child?.adaptivePending === true
+    || child?.adaptive_pending === true
+    || String(child?.dispatchCompletionStatus || child?.dispatch_completion_status || '').trim().toLowerCase() === 'leader_adaptive_pending';
+}
+
 function visibleWorkflowChildRuns(childRuns = []) {
-  return (Array.isArray(childRuns) ? childRuns : []).filter((child) => !workflowChildIsInternalLeaderSequenceRun(child));
+  return (Array.isArray(childRuns) ? childRuns : [])
+    .filter((child) => !workflowChildIsInternalLeaderSequenceRun(child))
+    .filter((child) => !workflowChildIsAdaptivePending(child));
 }
 
 function workflowPhaseLabel(phase = '') {
@@ -1580,8 +1692,8 @@ function initialAgentMapHtml(created = {}, prompt = '') {
   }
   return workflowAgentMapHtml(childRuns, {
     title: 'Agent map',
-    subtitle: `${childRuns.length} visible agent runs · initial plan only`,
-    footer: 'Progress updates below will show the current phase and active agent. A new map appears when the phase changes.'
+    subtitle: `${childRuns.length} visible agent runs · adaptive first layer`,
+    footer: 'Progress updates below will show the current phase and active agent. Later layers appear after leader checkpoints.'
   });
 }
 
@@ -3610,7 +3722,8 @@ function draftBrief(prompt, prepared) {
 function updateComposerMode() {
   const pending = Boolean(state.draft);
   const intake = Boolean(state.pendingIntake);
-  const placeholder = intake ? PROMPT_PLACEHOLDERS.intake : (pending ? PROMPT_PLACEHOLDERS.pending : PROMPT_PLACEHOLDERS.default);
+  const active = Boolean(state.orderId && state.polling);
+  const placeholder = intake ? PROMPT_PLACEHOLDERS.intake : (pending ? PROMPT_PLACEHOLDERS.pending : (active ? PROMPT_PLACEHOLDERS.active : PROMPT_PLACEHOLDERS.default));
   els.promptInput.rows = intake ? 4 : (pending ? 2 : 3);
   els.promptInput.placeholder = chatText(placeholder.en, placeholder.ja);
 }
@@ -4581,6 +4694,77 @@ async function prepareRetryFromOrder(orderId = '') {
   }
 }
 
+function activeOrderFollowupAllowedText(prompt = '') {
+  const text = String(prompt || '').trim();
+  if (!text || !state.orderId || state.draft || state.pendingIntake) return false;
+  const compact = text.replace(/[?？!！。.,、\s]+$/g, '').trim();
+  if (/^(send|send order|発注|注文|実行)$/i.test(compact)) return false;
+  if (/^(status|help|状況|現状|今どこ|何待ち|ヘルプ)$/i.test(compact)) return false;
+  if (/^(pause|hold|stop|later|not now|cancel|一旦保留|いったん保留|保留|あとで|後で|ストップ|止めて|中断|キャンセル|やめる)$/i.test(compact)) return false;
+  return true;
+}
+
+async function prepareFollowupForRunningOrder(prompt = '') {
+  const text = String(prompt || '').trim();
+  const orderId = String(state.orderId || '').trim();
+  if (!text || !orderId) return false;
+  const job = await fetchVisibleJob(orderId);
+  if (!job?.id || isTerminalStatus(job.status)) return false;
+  const taskType = String(
+    (Array.isArray(job.workflow?.plannedTasks) ? job.workflow.plannedTasks[0] : '')
+    || job.taskType
+    || 'research'
+  ).trim().toLowerCase() || 'research';
+  const isWorkflow = job.jobKind === 'workflow' || Boolean(job.workflow);
+  const followupPrompt = [
+    `Follow-up/change request for running order ${job.id}:`,
+    text,
+    '',
+    'Use the previous order context, completed specialist outputs, active blockers, and current workflow state. Treat this as an additive/revised instruction, not a separate unrelated request.'
+  ].join('\n');
+  const prepared = {
+    taskType,
+    task_type: taskType,
+    resolvedOrderStrategy: isWorkflow ? 'multi' : 'auto',
+    resolved_order_strategy: isWorkflow ? 'multi' : 'auto',
+    reason: `Prepared as an add-on request for running order ${job.id.slice(0, 8)}. It will not run until Send order is pressed.`,
+    conversationOwner: taskType.endsWith('_leader')
+      ? { type: 'leader', taskType, label: taskLabel(taskType), reason: 'Follow-up request for active leader workflow.' }
+      : { type: 'cait', label: 'CAIt', reason: 'Follow-up request for active order.' }
+  };
+  state.draft = chatEngineBuildOrderDraft(followupPrompt, prepared, {
+    originalPrompt: text,
+    intakeChecked: true,
+    intakeAnswered: true,
+    conversationOwner: prepared.conversationOwner
+  });
+  const broker = state.draft.input?._broker && typeof state.draft.input._broker === 'object' ? state.draft.input._broker : {};
+  state.draft.input = {
+    ...(state.draft.input || {}),
+    _broker: {
+      ...broker,
+      conversation: {
+        ...(broker.conversation && typeof broker.conversation === 'object' ? broker.conversation : {}),
+        mode: 'followup',
+        followupToJobId: job.id,
+        followup_to_job_id: job.id,
+        requestedAt: new Date().toISOString()
+      }
+    }
+  };
+  state.draft.followupToJobId = job.id;
+  state.followupTargetOrderId = job.id;
+  state.draftRevision += 1;
+  setConversationOwnerFromPrepared(state.draft, { sample: text });
+  appendTextMessage('assistant', chatText(
+    `I prepared this as an add-on request for running order ${job.id.slice(0, 8)}. Review it, then press Send order to attach the new request.`,
+    `進行中オーダー ${job.id.slice(0, 8)} への追加要望としてドラフト化しました。内容を確認し、Send order でこの要望を紐づけて実行します。`,
+    text
+  ), { tone: 'ok', label: 'Follow-up' });
+  appendOrderConfirmation({ updated: true });
+  return true;
+}
+
 function handleNonOrderConversation(prompt = '') {
   const text = String(prompt || '').trim();
   if (!text || !isNonOrderConversationIntentText(text)) return false;
@@ -4689,6 +4873,8 @@ async function sendOrder() {
         }
       }
     });
+    const followupToJobId = String(acceptedDraft.followupToJobId || acceptedDraft.followup_to_job_id || acceptedDraft.input?._broker?.conversation?.followupToJobId || '').trim();
+    if (followupToJobId) payload.followup_to_job_id = followupToJobId;
     payload.session_id = chatSessionId;
     payload.input = {
       ...(payload.input || {}),
@@ -4697,6 +4883,16 @@ async function sendOrder() {
     rememberPendingRecoveryPayload(payload);
     startDeliveryBackfillLoop();
     appendTextMessage('system', 'Sending order. I will keep polling and post progress here.');
+    showProgressNarrator(chatText(
+      'Sending the order and attaching this chat to the live run.',
+      'オーダーを送信し、このチャットを進行中の実行に接続しています。',
+      acceptedDraft.originalPrompt || payload.prompt
+    ), {
+      key: `sending:${chatSessionId}`,
+      phase: 'Dispatch',
+      status: 'sending',
+      steps: ['Create order', 'Build first agent layer', 'Start live progress']
+    });
     let created;
     try {
       created = await api('/api/jobs', {
@@ -4731,6 +4927,7 @@ async function sendOrder() {
     }
     rememberAiAgentsFromDraft(acceptedDraft, created, payload);
     state.draft = null;
+    state.followupTargetOrderId = '';
     state.draftRevision += 1;
     updateComposerMode();
     appendTextMessage('assistant', [
@@ -4740,6 +4937,18 @@ async function sendOrder() {
       `Status: ${created.status || created.mode || 'created'}`,
       created.routing_reason ? `Route reason: ${created.routing_reason}` : ''
     ].filter(Boolean).join('\n'), { tone: 'ok', label: actorLabel });
+    if (state.orderId) {
+      showProgressNarrator(chatText(
+        'Order accepted. The leader will release later agent layers after each checkpoint.',
+        'オーダーを受け付けました。以降のエージェント層は checkpoint ごとに leader が解放します。',
+        acceptedDraft.originalPrompt || payload.prompt
+      ), {
+        key: state.orderId,
+        phase: 'Leader intake',
+        status: created.status || created.mode || 'created',
+        steps: ['Initial layer only', 'Checkpoint-driven handoff', 'Approval before external writes']
+      });
+    }
     const agentMap = initialAgentMapHtml(created, payload.prompt || '');
     if (agentMap) appendMessage('assistant', agentMap, { tone: 'info', label: 'Agent map' });
     if (state.orderId) startPolling(state.orderId);
@@ -4871,6 +5080,7 @@ function startPolling(orderId) {
       const key = `${job.status}|${job.completedAt || ''}|${job.failedAt || ''}|${job.failureReason || ''}|${JSON.stringify(job.workflow?.agentStatusCounts || job.workflow?.statusCounts || {})}|${workflowCurrentLocationLabel(job)}`;
       const phaseKey = workflowCurrentPhaseKey(job);
       maybeRenderAuthorityNotice(job, { label: 'Approval required' });
+      showProgressNarrator(progressNarratorTextForJob(job), progressNarratorOptionsForJob(job));
       if (key !== lastKey) {
         lastKey = key;
         appendTextMessage('system', `Order ${orderId.slice(0, 8)}: ${statusLabel(job)}`);
@@ -4884,11 +5094,14 @@ function startPolling(orderId) {
       if (isTerminalStatus(job.status)) {
         window.clearInterval(state.polling);
         state.polling = null;
+        showProgressNarrator(progressNarratorTextForJob(job), { ...progressNarratorOptionsForJob(job), done: true });
+        updateComposerMode();
         renderDeliveryOnce(job);
       }
       if (pollCount >= CHATUX_PROGRESS_MAX_POLLS) {
         window.clearInterval(state.polling);
         state.polling = null;
+        updateComposerMode();
         appendTextMessage('system', 'Live progress polling reached its limit, so I switched to background order-history checks. No new order was created. Reload or ask for status to check again.');
         startDeliveryBackfillLoop({ maxRuns: 60 });
       }
@@ -4899,6 +5112,16 @@ function startPolling(orderId) {
       const transient = [408, 429, 500, 502, 503, 504].includes(status)
         || /failed to fetch|network|timeout|temporar|unavailable|gateway|rate limit|service/i.test(message);
       if (transient && consecutiveProgressErrors < 10) {
+        showProgressNarrator(chatText(
+          'Progress check hit a temporary server error. I am retrying without detaching the order.',
+          '進捗確認が一時的なサーバーエラーになりました。オーダーはこのチャットに紐づけたまま再試行します。',
+          state.chatMessages[0]?.body || state.conversationLanguage
+        ), {
+          key: String(orderId || state.orderId || 'progress'),
+          phase: 'Progress',
+          status: status ? `retrying after ${status}` : 'retrying',
+          steps: ['Live poll retry', 'History backfill active']
+        });
         if ([1, 4, 8].includes(consecutiveProgressErrors)) {
           appendTextMessage('system', `Progress check temporarily failed${status ? ` (${status})` : ''}. Retrying in this chat; the order remains attached.`);
         }
@@ -4907,6 +5130,22 @@ function startPolling(orderId) {
       }
       window.clearInterval(state.polling);
       state.polling = null;
+      updateComposerMode();
+      if (transient) {
+        appendTextMessage('system', `Live progress checks are still failing${status ? ` (${status})` : ''}, so I switched to background order-history checks. The order remains attached.`);
+        showProgressNarrator(chatText(
+          'Live polling paused, but background history checks are still watching this order.',
+          'ライブ進捗確認は一時停止しましたが、履歴チェックでこのオーダーを追跡し続けます。',
+          state.chatMessages[0]?.body || state.conversationLanguage
+        ), {
+          key: String(orderId || state.orderId || 'progress'),
+          phase: 'Progress',
+          status: 'background checks',
+          steps: ['No new order created', 'Delivery will be posted here']
+        });
+        startDeliveryBackfillLoop({ maxRuns: 60 });
+        return;
+      }
       appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Progress stopped' });
       appendTextMessage('system', 'I will keep checking order history and post the delivery here if the work completes.');
       startDeliveryBackfillLoop({ maxRuns: 60 });
@@ -4914,6 +5153,7 @@ function startPolling(orderId) {
   };
   void tick();
   state.polling = window.setInterval(tick, 3500);
+  updateComposerMode();
 }
 
 function loginHref(provider) {
@@ -4965,6 +5205,9 @@ function resetChat() {
   state.polling = null;
   state.deliveryBackfill = null;
   state.oauthPopupMonitor = null;
+  state.progressNarratorArticle = null;
+  state.progressNarratorKey = '';
+  state.followupTargetOrderId = '';
   state.pendingAppContext = null;
   startNewChatSession();
   setBusy(false);
@@ -5159,6 +5402,8 @@ els.composer.addEventListener('submit', async (event) => {
       // blocked before intent classification, draft adjustment, or dispatch prep
     } else if (handleNonOrderConversation(prompt)) {
       // handled as chat, not a work order
+    } else if (activeOrderFollowupAllowedText(prompt) && await prepareFollowupForRunningOrder(prompt)) {
+      // prepared as an add-on request attached to the running order
     } else if (state.pendingIntake) {
       await answerPendingIntake(prompt);
     } else if (state.draft) {

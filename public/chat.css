@@ -408,6 +408,88 @@ textarea {
   font-weight: 700;
 }
 
+.progress-narrator {
+  display: grid;
+  gap: 8px;
+  min-width: min(520px, 100%);
+  white-space: normal;
+}
+
+.progress-narrator-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ink);
+}
+
+.progress-narrator-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.progress-narrator-pulse {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 rgba(31, 107, 88, 0.28);
+  animation: progressPulse 1.35s ease-out infinite;
+}
+
+.progress-narrator-caret {
+  width: 7px;
+  height: 16px;
+  flex: 0 0 auto;
+  border-right: 2px solid rgba(31, 107, 88, 0.55);
+  animation: progressCaret 920ms steps(1) infinite;
+}
+
+.progress-narrator-detail,
+.progress-narrator-meta {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.progress-narrator-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.progress-narrator-steps span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(31, 107, 88, 0.18);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.message.ok .progress-narrator-pulse,
+.progress-narrator.ok .progress-narrator-pulse {
+  animation: none;
+  background: var(--ok);
+  box-shadow: none;
+}
+
+@keyframes progressPulse {
+  0% { box-shadow: 0 0 0 0 rgba(31, 107, 88, 0.28); }
+  70% { box-shadow: 0 0 0 9px rgba(31, 107, 88, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(31, 107, 88, 0); }
+}
+
+@keyframes progressCaret {
+  0%, 45% { opacity: 1; }
+  46%, 100% { opacity: 0; }
+}
+
 .composer {
   display: grid;
   grid-template-columns: 1fr auto;

@@ -10567,6 +10567,41 @@ function cmoBroadMultiActionIntentFromText(text = '') {
   return /(as much as possible|multiple actions?|all possible|all channels|cross[-\s]?channel|do as many|できる限り|可能な限り|複数アクション|複数.*実行|最大限|全部|まとめて|実行フェイズ|できるだけ.*(?:実行|アクション)|複数.*(?:媒体|チャネル|施策))/i.test(String(text || ''));
 }
 
+function cmoPlanOnlyIntentFromText(text = '') {
+  const source = String(text || '');
+  if (/(plan only|planning only|strategy only|no execution|do not execute|do not post|proposal only|計画のみ|計画だけ|提案のみ|提案だけ|実行しない|投稿しない|配信しない|掲載しない)/i.test(source)) return true;
+  const asksPlan = /(make|create|build|draft|作って|作成|欲しい|ほしい).{0,30}(plan|strategy|プラン|計画|戦略|媒体プラン)|(?:plan|strategy|プラン|計画|戦略|媒体プラン).{0,30}(make|create|build|draft|作って|作成|欲しい|ほしい)/i.test(source);
+  const asksExecution = /(execute|execution|do actions?|run|post|send|publish|submit|external write|実行まで|実行して|実施して|アクション|投稿して|配信して|掲載して|送信して)/i.test(source);
+  return Boolean(asksPlan && !asksExecution);
+}
+
+function cmoMediaPlanningPreferredFromText(text = '') {
+  return /(priority channels?|preferred channels?|channel mix|media mix|referral sites?|directories?|directory listing|sns|social media|social\b|community|communities|媒体|チャネル|優先チャネル|優先媒体|紹介サイト|外部掲載|掲載先|SNS|ソーシャル|コミュニティ)/i.test(String(text || ''));
+}
+
+function cmoChannelPreferenceActionTasksFromText(taskType = '', text = '') {
+  const task = String(taskType || '').trim().toLowerCase();
+  if (!['cmo_leader', 'free_web_growth_leader', 'agent_team_launch'].includes(task)) return [];
+  const source = String(text || '').trim();
+  if (!source || cmoPlanOnlyIntentFromText(source)) return [];
+  const wantsAction = cmoBroadMultiActionIntentFromText(source)
+    || /(execute|execution|do actions?|run|post|send|publish|submit|external write|実行まで|実行して|実施して|アクション|投稿して|配信して|掲載して|送信して)/i.test(source);
+  if (!wantsAction) return [];
+  const actions = [];
+  const push = (name) => {
+    if (name && !actions.includes(name)) actions.push(name);
+  };
+  if (/(referral sites?|directories?|directory listing|listing sites?|掲載先|紹介サイト|外部掲載|媒体掲載|ディレクトリ)/i.test(source)) {
+    push('directory_submission');
+  }
+  if (/(sns|social media|social\b|community|communities|x\/twitter|twitter\/x|SNS|ソーシャル|コミュニティ)/i.test(source)) {
+    push('x_post');
+    push('reddit');
+    push('indie_hackers');
+  }
+  return actions;
+}
+
 function cmoPlannerCandidateActionTasksFromText(taskType = '', text = '') {
   const task = String(taskType || '').trim().toLowerCase();
   if (!['cmo_leader', 'free_web_growth_leader', 'agent_team_launch'].includes(task)) return [];
@@ -10673,7 +10708,12 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
   if (/acquisition automation|獲得自動化|集客自動化/i.test(text)) pushRequestedAction('acquisition_automation');
   if (/(email ops|email campaign|newsletter|gmail|mailbox|send email|メール配信|メルマガ)/i.test(text)) pushRequestedAction('email_ops');
   if (/(cold\s*email|outbound|sales email|営業メール|アウトバウンド|新規開拓|リード獲得)/i.test(text)) pushRequestedAction('cold_email');
-  const plannerCandidateActions = cmoWorkflow ? cmoPlannerCandidateActionTasksFromText(primary, text) : [];
+  const plannerCandidateActions = cmoWorkflow
+    ? [
+        ...cmoPlannerCandidateActionTasksFromText(primary, text),
+        ...cmoChannelPreferenceActionTasksFromText(primary, text)
+      ].filter((task, index, self) => self.indexOf(task) === index)
+    : [];
   for (const task of plannerCandidateActions) pushRequestedAction(task);
   const selected = [];
   const pushSelected = (task) => {
@@ -10734,7 +10774,7 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     }
   };
   if (cmoWorkflow) {
-    const planningPreferences = requestedActions.some((task) => ['directory_submission', 'citation_ops'].includes(task)) || plannerCandidateActions.length
+    const planningPreferences = requestedActions.some((task) => ['directory_submission', 'citation_ops'].includes(task)) || plannerCandidateActions.length || cmoMediaPlanningPreferredFromText(text)
       ? ['media_planner', 'growth']
       : ['growth', 'media_planner'];
     if (preferredCmoSourceTasks.includes('data_analysis')) fillLayer(1, ['data_analysis']);
@@ -11262,6 +11302,8 @@ function workflowChildSnapshot(children = []) {
     failedAt: job.failedAt || null,
     failureReason: job.failureReason || null,
     qualityGate: job.qualityGate || null,
+    adaptivePending: workflowChildIsAdaptivePending(job),
+    adaptiveLayer: workflowChildAdaptiveLayer(job) || null,
     latestLog: Array.isArray(job.logs) ? String(job.logs.slice(-1)[0] || '').trim() : ''
   }));
 }
@@ -11274,6 +11316,10 @@ function workflowChildIsInternalLeaderSequenceRun(child = {}) {
 
 function workflowAgentRunChildren(children = []) {
   return (Array.isArray(children) ? children : []).filter((child) => !workflowChildIsInternalLeaderSequenceRun(child));
+}
+
+function workflowVisibleAgentRunChildren(children = []) {
+  return workflowAgentRunChildren(children).filter((child) => !workflowChildIsAdaptivePending(child));
 }
 
 function workflowStatusCounts(children = [], planned = null) {
@@ -11505,6 +11551,7 @@ async function reconcileWorkflowParent(storage, parentJobId) {
     expectedTotal = children.length;
     const childRuns = workflowChildSnapshot(children);
     const agentChildren = workflowAgentRunChildren(children);
+    const visibleAgentChildren = workflowVisibleAgentRunChildren(children);
     const internalChildren = children.filter((child) => workflowChildIsInternalLeaderSequenceRun(child));
     const completed = children.filter((item) => item.status === 'completed');
     const failed = children.filter((item) => item.status === 'failed' || item.status === 'timed_out');
@@ -11517,9 +11564,11 @@ async function reconcileWorkflowParent(storage, parentJobId) {
       childJobIds: children.map((item) => item.id),
       childRuns,
       plannedChildRunCount: expectedTotal,
-      plannedAgentRunCount: agentChildren.length,
+      plannedAgentRunCount: visibleAgentChildren.length,
+      plannedCandidateAgentRunCount: agentChildren.length,
+      adaptiveCandidateRunCount: agentChildren.length - visibleAgentChildren.length,
       internalCheckpointRunCount: internalChildren.length,
-      agentStatusCounts: workflowStatusCounts(agentChildren),
+      agentStatusCounts: workflowStatusCounts(visibleAgentChildren),
       internalStatusCounts: workflowStatusCounts(internalChildren),
       statusCounts: workflowStatusCounts(children, plannedRunCount)
     };
@@ -12103,7 +12152,7 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
       return { ok: true, mode: 'running', job: cloneJob(draftJob), skippedInProgress: true };
     }
     const completionStatus = String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase();
-    if (completionStatus && !['dispatch_scheduled', 'timed_out', 'failed', 'retry_queued', 'leader_auto_retry_queued', 'leader_checkpoint_queued', 'leader_final_summary_queued'].includes(completionStatus)) {
+    if (completionStatus && !['dispatch_scheduled', 'timed_out', 'failed', 'retry_queued', 'leader_auto_retry_queued', 'leader_checkpoint_queued', 'leader_final_summary_queued', 'leader_adaptive_queued'].includes(completionStatus)) {
       return { ok: true, mode: draftJob.status || completionStatus, job: cloneJob(draftJob), skippedLocked: true };
     }
     const at = nowIso();
@@ -12366,9 +12415,27 @@ function workflowSequencePhaseForJob(job = {}) {
   return String(job?.input?._broker?.workflow?.sequencePhase || '').trim().toLowerCase();
 }
 
+function workflowChildIsAdaptivePending(child = {}) {
+  const workflow = workflowBrokerWorkflowForJob(child) || {};
+  const completionStatus = String(child?.dispatch?.completionStatus || child?.dispatch_completion_status || '').trim().toLowerCase();
+  return Boolean(
+    workflow.adaptivePending === true
+    || child?.adaptivePending === true
+    || child?.adaptive_pending === true
+    || completionStatus === 'leader_adaptive_pending'
+  );
+}
+
+function workflowChildAdaptiveLayer(child = {}) {
+  const workflow = workflowBrokerWorkflowForJob(child) || {};
+  const layer = Number(workflow.adaptivePendingLayer || workflow.dispatchLayer || child?.adaptiveLayer || child?.adaptive_layer || 0) || 0;
+  return layer > 0 ? layer : null;
+}
+
 function workflowChildIsBlockingProgress(child = {}) {
   const status = String(child?.status || '').trim().toLowerCase();
   if (status !== 'blocked') return false;
+  if (workflowChildIsAdaptivePending(child)) return false;
   if (isWorkflowLeaderTask(workflowTaskName(child))) return false;
   return true;
 }
@@ -12407,9 +12474,159 @@ function workflowChildIsApprovalBlockedTerminal(child = {}) {
 }
 
 function workflowChildIsTerminalForProgress(child = {}) {
+  if (workflowChildIsAdaptivePending(child)) return false;
   if (workflowChildIsApprovalBlockedTerminal(child)) return true;
   if (workflowChildIsBlockingProgress(child)) return false;
   return workflowChildIsTerminal(child);
+}
+
+function workflowAdaptiveAuthorityRequestForChild(child = {}, parent = {}) {
+  const workflow = workflowBrokerWorkflowForJob(child) || {};
+  const task = workflowTaskName(child);
+  const layer = Number(workflow.dispatchLayer || workflowChildAdaptiveLayer(child) || workflowDispatchLayer(parent, child) || 0) || 0;
+  if (layer < leaderActionLayerStart(workflowPrimaryTask(parent))) return null;
+  const preflight = child?.input?._broker?.agentPreflight && typeof child.input._broker.agentPreflight === 'object'
+    ? child.input._broker.agentPreflight
+    : {};
+  const missingConnectors = authorityStringList(
+    preflight.missingConnectors || preflight.missing_connectors || preflight.requiredConnectors || preflight.required_connectors,
+    8,
+    60
+  );
+  const missingCapabilities = authorityStringList(
+    preflight.missingConnectorCapabilities || preflight.missing_connector_capabilities || preflight.requiredConnectorCapabilities || preflight.required_connector_capabilities,
+    12,
+    80
+  );
+  const authorityStatus = String(preflight.authorityStatus || preflight.authority_status || '').trim().toLowerCase();
+  if (!missingConnectors.length && !missingCapabilities.length && authorityStatus !== 'action_required') return null;
+  return normalizeAuthorityRequest({
+    reason: preflight.warning || 'Connector approval is required before releasing this external action lane.',
+    missing_connectors: missingConnectors,
+    missing_connector_capabilities: missingCapabilities,
+    required_google_sources: [],
+    owner_label: child.workflowAgentName || task || 'CAIt',
+    source: 'adaptive_agent_preflight',
+    required_channel_selection: ['x_post', 'instagram', 'reddit', 'indie_hackers'].includes(task),
+    channel_candidates: task === 'x_post' ? ['x'] : []
+  });
+}
+
+function recordWorkflowAdaptiveActivation(parent = {}, targetLayer = 0, activatedIds = [], options = {}) {
+  if (!activatedIds.length) return;
+  const at = options.at || nowIso();
+  const priorPlan = parent.workflow?.adaptivePlan && typeof parent.workflow.adaptivePlan === 'object'
+    ? parent.workflow.adaptivePlan
+    : {};
+  const priorActivations = Array.isArray(priorPlan.activations) ? priorPlan.activations : [];
+  const pendingIds = Array.isArray(priorPlan.pendingChildJobIds)
+    ? priorPlan.pendingChildJobIds.filter((id) => !activatedIds.includes(String(id || '').trim()))
+    : [];
+  parent.workflow = {
+    ...(parent.workflow || {}),
+    adaptivePlan: {
+      ...priorPlan,
+      enabled: true,
+      lastActivatedLayer: targetLayer,
+      lastActivatedAt: at,
+      pendingChildJobIds: pendingIds,
+      activations: [
+        ...priorActivations,
+        {
+          layer: targetLayer,
+          childJobIds: activatedIds,
+          sourceCheckpointJobId: options.checkpointJobId || null,
+          activatedAt: at
+        }
+      ].slice(-12)
+    }
+  };
+}
+
+function activateWorkflowAdaptivePendingChildren(parent = {}, children = [], targetLayer = 1, options = {}) {
+  const layer = Math.max(1, Number(targetLayer || 1) || 1);
+  const activatedAt = nowIso();
+  const activated = [];
+  const sourceLeader = options.sourceLeader || options.checkpointJob || completedWorkflowLeader(parent, children);
+  const handoff = sourceLeader ? workflowLeaderHandoff(parent, sourceLeader, children, layer) : null;
+  for (const child of Array.isArray(children) ? children : []) {
+    if (!workflowChildIsAdaptivePending(child)) continue;
+    if (workflowDispatchLayer(parent, child) !== layer) continue;
+    const input = child.input && typeof child.input === 'object' ? { ...child.input } : {};
+    const broker = input._broker && typeof input._broker === 'object' ? { ...input._broker } : {};
+    const workflow = broker.workflow && typeof broker.workflow === 'object' ? { ...broker.workflow } : {};
+    workflow.adaptivePending = false;
+    workflow.adaptiveActivatedAt = activatedAt;
+    workflow.adaptiveActivatedBy = options.source || 'leader_checkpoint';
+    workflow.adaptiveActivationLayer = layer;
+    if (handoff) {
+      workflow.leaderHandoff = handoff;
+      if (!workflow.leaderActionProtocol && handoff?.actionProtocol) workflow.leaderActionProtocol = handoff.actionProtocol;
+    }
+    broker.workflow = workflow;
+    input._broker = broker;
+    child.input = input;
+
+    const authorityRequest = workflowAdaptiveAuthorityRequestForChild(child, parent);
+    if (authorityRequest) {
+      const authorityExecutorPatch = executorStatePatchFromAuthorityRequest(authorityRequest, {});
+      child.status = 'blocked';
+      child.completedAt = null;
+      child.failedAt = null;
+      child.timedOutAt = null;
+      child.failureReason = authorityBlockReasonFromRequest(authorityRequest, 'Connector approval is required before external execution.');
+      child.failureCategory = 'blocked_waiting_for_approval';
+      child.output = {
+        summary: child.failureReason,
+        report: {
+          summary: child.failureReason,
+          bullets: ['This action lane was selected after leader review, but external execution is paused until approval or OAuth setup is complete.'],
+          nextAction: 'Approve/connect the required external capability, then resume this action lane.',
+          authority_request: authorityRequest
+        },
+        files: []
+      };
+      if (authorityExecutorPatch) child.executorState = { ...authorityExecutorPatch, updatedAt: activatedAt };
+      child.dispatch = {
+        ...(child.dispatch || {}),
+        completionStatus: 'blocked_waiting_for_approval',
+        retryable: false,
+        nextRetryAt: null,
+        completedAt: null
+      };
+      syncJobAuthorityRequest(child);
+    } else {
+      child.status = 'queued';
+      child.startedAt = null;
+      child.completedAt = null;
+      child.failedAt = null;
+      child.timedOutAt = null;
+      child.claimedAt = null;
+      child.dispatchedAt = null;
+      child.failureReason = null;
+      child.failureCategory = null;
+      child.qualityGate = null;
+      child.dispatch = {
+        ...(child.dispatch || {}),
+        completionStatus: 'leader_adaptive_queued',
+        retryable: true,
+        nextRetryAt: null,
+        dispatchRequestedAt: null,
+        maxRetries: maxDispatchRetriesForJob(child)
+      };
+      applyWorkflowHandoffPromptContextToJob(child);
+    }
+    child.logs = [
+      ...(child.logs || []),
+      `leader adaptive release for layer-${layer}${sourceLeader?.id ? ` from ${String(sourceLeader.id).slice(0, 6)}` : ''} (${activatedAt})`
+    ];
+    activated.push(child.id);
+  }
+  recordWorkflowAdaptiveActivation(parent, layer, activated, {
+    at: activatedAt,
+    checkpointJobId: options.checkpointJob?.id || options.checkpointJobId || null
+  });
+  return activated;
 }
 
 function workflowBlockedParentStatus(parent = {}, children = [], blockingChildren = []) {
@@ -12440,14 +12657,17 @@ function markWorkflowParentBlockedIfNeeded(state = {}, childJob = {}) {
   const blockedStatus = workflowBlockedParentStatus(parent, children, blockingChildren);
   if (blockedStatus !== 'blocked') return false;
   const agentChildren = workflowAgentRunChildren(children);
+  const visibleAgentChildren = workflowVisibleAgentRunChildren(children);
   const internalChildren = children.filter((child) => workflowChildIsInternalLeaderSequenceRun(child));
   parent.workflow = {
     ...(parent.workflow || {}),
     childJobIds: children.map((item) => item.id),
     childRuns: workflowChildSnapshot(children),
-    plannedAgentRunCount: agentChildren.length,
+    plannedAgentRunCount: visibleAgentChildren.length,
+    plannedCandidateAgentRunCount: agentChildren.length,
+    adaptiveCandidateRunCount: agentChildren.length - visibleAgentChildren.length,
     internalCheckpointRunCount: internalChildren.length,
-    agentStatusCounts: workflowStatusCounts(agentChildren),
+    agentStatusCounts: workflowStatusCounts(visibleAgentChildren),
     internalStatusCounts: workflowStatusCounts(internalChildren),
     statusCounts: workflowStatusCounts(children, Array.isArray(parent.workflow?.childRuns) ? parent.workflow.childRuns.length : children.length)
   };
@@ -13750,6 +13970,7 @@ function workflowLeaderActionProtocol(parent = {}) {
   const commonRules = [
     'Evaluate completed research/analysis outputs before choosing execution.',
     'Separate observed evidence from assumptions and strategic bets.',
+    'At each checkpoint, release only the next useful specialist layer; defer or stop lanes that the evidence no longer supports.',
     'Decide one primary action lane first unless independent lanes are explicitly justified.',
     'Every action decision must define owner, objective, artifact, trigger/timing, metric, and stop rule.',
     'Any write-capable connector action requires explicit leader or human approval.'
@@ -13775,7 +13996,7 @@ function workflowLeaderActionProtocol(parent = {}) {
     rules: [...commonRules, ...primaryExtras],
     phaseGuidance: {
       initial: 'Establish evidence questions and decision criteria before assigning action-layer specialists.',
-      checkpoint: 'After layer-1 completion, summarize the evidence received, choose the next executable lane, and emit approval-ready action packets.',
+      checkpoint: 'After each completed layer, summarize the evidence received, choose/revise the next executable lane, and release only the next useful layer.',
       final_summary: 'After specialist execution, synthesize the evidence, final recommendation, open risks, immediate next actions, and exact downloadable/approval artifacts into one delivery.'
     }
   };
@@ -14163,12 +14384,19 @@ async function refreshWorkflowLeaderHandoffForJobId(storage, jobId) {
           updated += 1;
         } else {
           workflowApplyQualityReviewToLeader(checkpointJob, workflowLeaderOutputQualityReview(parent, checkpointJob));
+          const releaseLayer = Math.max(2, Number(leaderSequence.requiredBeforeLayer || checkpointJob.input?._broker?.workflow?.requiredBeforeLayer || 2) || 2);
+          const activated = activateWorkflowAdaptivePendingChildren(parent, children, releaseLayer, {
+            checkpointJob,
+            sourceLeader: checkpointJob,
+            source: 'leader_checkpoint_completed'
+          });
           parent.workflow = {
             ...(parent.workflow || {}),
             leaderSequence: {
               ...leaderSequence,
               status: 'completed',
-              completedAt: checkpointJob.completedAt || nowIso()
+              completedAt: checkpointJob.completedAt || nowIso(),
+              ...(activated.length ? { activatedChildJobIds: activated, activatedLayer: releaseLayer } : {})
             }
           };
           leaderSequence = workflowLeaderSequence(parent);
@@ -14228,6 +14456,22 @@ async function refreshWorkflowLeaderHandoffForJobId(storage, jobId) {
               ...checkpoint,
               status: 'completed',
               completedAt: checkpointJob.completedAt || nowIso()
+            };
+            updated += 1;
+          }
+          const beforeLayer = Math.max(2, Number(checkpoint.beforeLayer || checkpoint.requiredBeforeLayer || checkpointJob.input?._broker?.workflow?.requiredBeforeLayer || 2) || 2);
+          const activated = activateWorkflowAdaptivePendingChildren(parent, children, beforeLayer, {
+            checkpointJob,
+            sourceLeader: checkpointJob,
+            source: 'leader_checkpoint_completed'
+          });
+          if (activated.length) {
+            const currentCheckpoint = nextCheckpoints[index] || checkpoint;
+            nextCheckpoints[index] = {
+              ...currentCheckpoint,
+              activatedChildJobIds: [...new Set([...(Array.isArray(currentCheckpoint.activatedChildJobIds) ? currentCheckpoint.activatedChildJobIds : []), ...activated])],
+              activatedLayer: beforeLayer,
+              activatedAt: nowIso()
             };
             updated += 1;
           }
@@ -16350,6 +16594,11 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
           ...(options.requiredBeforeLayer ? { requiredBeforeLayer: Number(options.requiredBeforeLayer) } : {}),
           ...(options.checkpointLabel ? { checkpointLabel: String(options.checkpointLabel).slice(0, 80) } : {}),
           ...(options.requiresUserApprovalBeforeAction ? { requiresUserApprovalBeforeAction: true } : {}),
+          ...(options.adaptivePending ? {
+            adaptivePending: true,
+            adaptivePendingLayer: Number(options.adaptivePendingLayer || layer || 0) || layer,
+            adaptiveHoldReason: String(options.adaptiveHoldReason || 'waiting_for_leader_checkpoint').slice(0, 120)
+          } : {}),
           ...(requiresResearchSearch ? {
             forceWebSearch: true,
             webSearchRequiredReason: 'leader_research_layer'
@@ -16386,6 +16635,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
     });
     const authorityBlockedDraft = !childPreflight.ok
       && ['connector_required', 'confirmation_required'].includes(String(childPreflight.code || '').trim());
+    const authorityBlockedForDraft = authorityBlockedDraft && childOptions.adaptivePending !== true;
     const listCreatorEstimate = listCreatorUsageEstimateForOrder({
       ...childBody,
       task_type: childTaskType,
@@ -16402,7 +16652,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
     const estimatedBilling = estimateBilling(selection.agent, estimatedUsage);
     const failedByPreflight = !childPreflight.ok && !authorityBlockedDraft;
     const initialStatus = String(childOptions.initialStatus || '').trim().toLowerCase();
-    const status = initialStatus || (authorityBlockedDraft ? 'blocked' : (failedByPreflight ? 'failed' : 'queued'));
+    const status = initialStatus || (authorityBlockedForDraft ? 'blocked' : (failedByPreflight ? 'failed' : 'queued'));
     const createdAt = nowIso();
     const input = {
       ...childInputSourceBase,
@@ -16440,7 +16690,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
         }
       }
     };
-    const authorityRequestForBlockedDraft = authorityBlockedDraft
+    const authorityRequestForBlockedDraft = authorityBlockedForDraft
       ? normalizeAuthorityRequest({
           reason: childPreflight.error || childPreflight.warning || childPreflight.code || 'Connector approval is required before external execution.',
           missing_connectors: childPreflight.missing_connectors || [],
@@ -16457,7 +16707,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
       : null;
     const dispatch = status === 'blocked'
       ? {
-          completionStatus: authorityBlockedDraft ? 'blocked_waiting_for_approval' : (childOptions.blockedCompletionStatus || 'leader_checkpoint_blocked'),
+          completionStatus: authorityBlockedForDraft ? 'blocked_waiting_for_approval' : (childOptions.blockedCompletionStatus || 'leader_checkpoint_blocked'),
           retryable: false,
           nextRetryAt: null
         }
@@ -16486,10 +16736,10 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
       failedAt: status === 'failed' ? createdAt : null,
       failureReason: status === 'failed'
         ? (childPreflight.error || childPreflight.code || 'Preflight failed before workflow dispatch.')
-        : (authorityBlockedDraft ? authorityBlockReasonFromRequest(authorityRequestForBlockedDraft, 'Connector approval is required before external execution.') : null),
+        : (authorityBlockedForDraft ? authorityBlockReasonFromRequest(authorityRequestForBlockedDraft, 'Connector approval is required before external execution.') : null),
       failureCategory: status === 'failed'
         ? (childPreflight.code || 'preflight_failed')
-        : (authorityBlockedDraft ? 'blocked_waiting_for_approval' : null),
+        : (authorityBlockedForDraft ? 'blocked_waiting_for_approval' : null),
       ...(authorityRequestForBlockedDraft ? {
         output: {
           summary: authorityBlockReasonFromRequest(authorityRequestForBlockedDraft, 'Connector approval is required before external execution.'),
@@ -16524,7 +16774,8 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
         ...(followupConversation ? [`follow-up to ${followupConversation.followupToJobId} turn=${followupConversation.turn}`] : []),
         ...(childPromptOptimization.optimized ? [`prompt optimized mode=${childPromptOptimization.mode} originalChars=${childPromptOptimization.originalChars} optimizedChars=${childPromptOptimization.optimizedChars} outputLanguage=${childPromptOptimization.outputLanguageCode}`] : []),
         childPreflight.warning ? `preflight warning: ${childPreflight.warning}` : 'preflight ok',
-        authorityBlockedDraft ? `authority blocker captured for draft handoff: ${childPreflight.code || 'authority_required'}` : null,
+        authorityBlockedForDraft ? `authority blocker captured for draft handoff: ${childPreflight.code || 'authority_required'}` : null,
+        authorityBlockedDraft && childOptions.adaptivePending === true ? `authority blocker deferred behind adaptive leader gate: ${childPreflight.code || 'authority_required'}` : null,
         `${selection.selectionMode === 'manual' ? 'manually selected' : 'matched to'} ${selection.agent.id} score=${selection.score} source=${isBuiltInAgent(selection.agent) ? 'built-in-fallback' : 'provider'}`,
         `inferred taskType=${childTaskType}`,
         childOptions.blockedLog || null
@@ -16540,6 +16791,10 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
       sequence_phase: workflowSequencePhaseForJob(job) || null,
       ...(childOptions.checkpointLayer ? { checkpoint_layer: Number(childOptions.checkpointLayer) } : {}),
       ...(childOptions.requiredBeforeLayer ? { required_before_layer: Number(childOptions.requiredBeforeLayer) } : {}),
+      ...(childOptions.adaptivePending ? {
+        adaptive_pending: true,
+        adaptive_layer: Number(childOptions.adaptivePendingLayer || workflowDispatchLayer(workflowPseudoParent, { workflowTask: selection.taskType, taskType: selection.taskType }) || 0) || null
+      } : {}),
       status,
       failure_reason: job.failureReason || null
     };
@@ -16575,10 +16830,82 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
       requiresUserApprovalBeforeAction: beforeLayer >= actionStartLayer
     });
   }
+  const adaptiveWorkflowEnabled = enableLeaderSequence
+    && isWorkflowLeaderTask(workflowPrimary)
+    && workflowLayerNumbers.length > 1
+    && workflowCheckpointSpecs.length > 0;
+  const adaptiveInitialLayer = adaptiveWorkflowEnabled ? workflowLayerNumbers[0] : null;
+  const adaptiveCandidateSelections = adaptiveWorkflowEnabled
+    ? plan.selections.filter((selection) => {
+        const task = String(selection?.taskType || '').trim().toLowerCase();
+        if (!task || isWorkflowLeaderTask(task)) return false;
+        const layer = workflowDispatchLayer(workflowPseudoParent, { workflowTask: task, taskType: task });
+        return layer > adaptiveInitialLayer;
+      })
+    : [];
+  if (adaptiveWorkflowEnabled) {
+    const adaptiveExecution = {
+      enabled: true,
+      mode: 'leader_checkpoint_release',
+      initialLayer: adaptiveInitialLayer,
+      initialPhase: workflowLayerLabel(workflowPrimary, adaptiveInitialLayer),
+      pendingTasks: adaptiveCandidateSelections.map((selection) => selection.taskType),
+      pendingLayers: [...new Set(adaptiveCandidateSelections.map((selection) => workflowDispatchLayer(workflowPseudoParent, {
+        workflowTask: selection.taskType,
+        taskType: selection.taskType
+      })))]
+        .sort((left, right) => left - right),
+      rule: 'Only the leader and the first specialist layer start immediately. Later layers stay held until a leader checkpoint reviews the previous layer.'
+    };
+    workflowSharedMeta.adaptiveExecution = adaptiveExecution;
+    const parentBroker = parentJob.input?._broker && typeof parentJob.input._broker === 'object' ? parentJob.input._broker : {};
+    const parentWorkflow = parentBroker.workflow && typeof parentBroker.workflow === 'object' ? parentBroker.workflow : {};
+    parentJob.input = {
+      ...(parentJob.input || {}),
+      _broker: {
+        ...parentBroker,
+        workflow: {
+          ...parentWorkflow,
+          adaptiveExecution
+        }
+      }
+    };
+    parentJob.workflow = {
+      ...(parentJob.workflow || {}),
+      adaptivePlan: {
+        enabled: true,
+        mode: 'leader_checkpoint_release',
+        initialLayer: adaptiveInitialLayer,
+        initialPhase: workflowLayerLabel(workflowPrimary, adaptiveInitialLayer),
+        pendingTasks: adaptiveExecution.pendingTasks,
+        pendingLayers: adaptiveExecution.pendingLayers,
+        pendingChildJobIds: [],
+        activations: []
+      }
+    };
+  }
   for (const selection of plan.selections) {
-    const child = buildWorkflowChildJobDraft(selection);
+    const task = String(selection?.taskType || '').trim().toLowerCase();
+    const layer = workflowDispatchLayer(workflowPseudoParent, { workflowTask: task, taskType: task });
+    const adaptivePending = adaptiveWorkflowEnabled
+      && task
+      && !isWorkflowLeaderTask(task)
+      && layer > adaptiveInitialLayer;
+    const child = buildWorkflowChildJobDraft(selection, adaptivePending ? {
+      initialStatus: 'blocked',
+      blockedCompletionStatus: 'leader_adaptive_pending',
+      blockedLog: `adaptive candidate held until leader checkpoint releases layer-${layer}`,
+      adaptivePending: true,
+      adaptivePendingLayer: layer,
+      adaptiveHoldReason: `waiting_for_layer_${layer - 1}_leader_checkpoint`
+    } : {});
     childJobs.push(child.job);
     childRuns.push(child.run);
+  }
+  if (adaptiveWorkflowEnabled && parentJob.workflow?.adaptivePlan) {
+    parentJob.workflow.adaptivePlan.pendingChildJobIds = childJobs
+      .filter((job) => workflowChildIsAdaptivePending(job))
+      .map((job) => job.id);
   }
   if (enableLeaderSequence && leaderSelection) {
     const checkpointRecords = [];
@@ -16664,6 +16991,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
   }
   const refreshParentWorkflowSnapshot = () => {
     const agentChildJobs = workflowAgentRunChildren(childJobs);
+    const visibleAgentChildJobs = workflowVisibleAgentRunChildren(childJobs);
     const internalChildJobs = childJobs.filter((job) => workflowChildIsInternalLeaderSequenceRun(job));
     parentJob.workflow = {
       ...(parentJob.workflow || {}),
@@ -16676,12 +17004,16 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
         agentName: item.agent_name,
         sequencePhase: item.sequence_phase || null,
         status: item.status || 'queued',
-        failureReason: item.failure_reason || null
+        failureReason: item.failure_reason || null,
+        adaptivePending: item.adaptive_pending === true,
+        adaptiveLayer: item.adaptive_layer || null
       })),
       plannedChildRunCount: childJobs.length,
-      plannedAgentRunCount: agentChildJobs.length,
+      plannedAgentRunCount: visibleAgentChildJobs.length,
+      plannedCandidateAgentRunCount: agentChildJobs.length,
+      adaptiveCandidateRunCount: agentChildJobs.length - visibleAgentChildJobs.length,
       internalCheckpointRunCount: internalChildJobs.length,
-      agentStatusCounts: workflowStatusCounts(agentChildJobs),
+      agentStatusCounts: workflowStatusCounts(visibleAgentChildJobs),
       internalStatusCounts: workflowStatusCounts(internalChildJobs),
       statusCounts: workflowStatusCounts(childJobs)
     };

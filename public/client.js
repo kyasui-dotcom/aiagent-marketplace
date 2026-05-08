@@ -948,8 +948,16 @@ function workflowChildIsInternalLeaderSequenceRun(child = {}) {
   return ['checkpoint', 'final_summary'].includes(phase) && task.endsWith('_leader');
 }
 
+function workflowChildIsAdaptivePending(child = {}) {
+  return child?.adaptivePending === true
+    || child?.adaptive_pending === true
+    || String(child?.dispatchCompletionStatus || child?.dispatch_completion_status || child?.dispatch?.completionStatus || '').trim().toLowerCase() === 'leader_adaptive_pending';
+}
+
 function visibleWorkflowChildRuns(childRuns = []) {
-  return (Array.isArray(childRuns) ? childRuns : []).filter((child) => !workflowChildIsInternalLeaderSequenceRun(child));
+  return (Array.isArray(childRuns) ? childRuns : [])
+    .filter((child) => !workflowChildIsInternalLeaderSequenceRun(child))
+    .filter((child) => !workflowChildIsAdaptivePending(child));
 }
 
 function orderProgressCounts(jobOrCreated = {}) {
