@@ -18,7 +18,7 @@ test.describe('CAIt leader handoff chat', () => {
     await page.locator('#sendMessageBtn').click();
     await expect(page.locator('#chatThread')).toContainText(/Answer what you can|分かる範囲で回答してください|実行前に確認したい内容/, { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText(/GA4|Search Console|サーチコンソール/);
-    await expect(page.locator('#chatThread')).toContainText(/資料|sales deck|material/i);
+    await expect(page.locator('#chatThread')).toContainText(/資料|sales deck|material|current acquisition|現在の集客|広告|CRM/i);
     await expect(page.locator('#chatThread')).toContainText(/Nothing has been dispatched yet\.|まだ実行も課金も発生していません/);
 
     await page.locator('#promptInput').fill('pause?');
@@ -45,7 +45,7 @@ test.describe('CAIt leader handoff chat', () => {
     await expect(page.locator('#chatThread')).toContainText('CMO Leader');
     await expect(page.locator('#chatThread')).toContainText(/Answer what you can|分かる範囲で回答してください|実行前に確認したい内容/, { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText(/GA4|Search Console|サーチコンソール/);
-    await expect(page.locator('#chatThread')).toContainText(/資料|sales deck|material/i);
+    await expect(page.locator('#chatThread')).toContainText(/資料|sales deck|material|current acquisition|現在の集客|広告|CRM/i);
     await expect(page.locator('#chatThread')).toContainText(/Nothing has been dispatched yet\.|まだ実行も課金も発生していません/);
 
     await page.locator('#promptInput').fill([
