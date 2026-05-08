@@ -26,6 +26,19 @@ test.describe('CAIt app context continuity', () => {
         body: JSON.stringify({ error: 'Prepare-order temporarily unavailable.' })
       });
     });
+    let appContextOpenFailures = 0;
+    await page.route('**/api/app-contexts', async (route) => {
+      if (route.request().method() !== 'POST' || appContextOpenFailures > 0) {
+        await route.continue();
+        return;
+      }
+      appContextOpenFailures += 1;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Initial app context persistence temporarily unavailable.' })
+      });
+    });
     await openAuthenticatedChat(page, {
       returnTo: '/chat?e2e=app-context-continuity',
       loginSource: 'playwright_app_context_continuity'

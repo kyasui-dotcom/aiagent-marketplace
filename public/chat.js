@@ -4827,9 +4827,11 @@ async function openAnalyticsConsoleForIntake(intake = {}, answer = '') {
       answer
     ), { tone: 'ok', label: 'Analytics' });
   } catch (error) {
-    const fallback = '/analytics-console.html';
-    if (popup) popup.location.href = fallback;
-    else window.open(fallback, '_blank', 'noopener,noreferrer');
+    const fallback = new URL('/analytics-console.html', window.location.origin);
+    fallback.searchParams.set('chat_handoff_id', handoffId);
+    fallback.searchParams.set('chat_return_to', chatReturnTo);
+    if (popup) popup.location.href = fallback.toString();
+    else window.open(fallback.toString(), '_blank');
     appendTextMessage('assistant', `${chatText('I opened Analytics Console, but could not attach the intake context automatically.', 'Analytics Consoleを開きましたが、ヒアリング文脈の自動添付には失敗しました。', answer)} ${orderErrorMessage(error)}`, { tone: 'error', label: 'Analytics' });
   }
 }
