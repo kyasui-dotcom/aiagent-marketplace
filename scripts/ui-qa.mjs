@@ -138,7 +138,7 @@ assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat c
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/chat.css?v=20260508a'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508c"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508d"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -582,6 +582,7 @@ assert.ok(chatJs.includes('approved_text'));
 assert.ok(chatJs.includes('Final action: X Client Ops'), 'X Client Ops delivery card should use English copy.');
 assert.ok(chatJs.includes('CAIt has attached the X post draft and strategy context prepared during the workflow.'), 'X Client Ops explanation should be English.');
 assert.ok(chatJs.includes('function renderAppHandoffTools'), 'Chat deliveries should expose generic app handoff cards.');
+assert.ok(chatJs.includes("String(job.status || '').trim().toLowerCase() !== 'completed'"), 'Chat app handoffs should only render for completed deliveries.');
 assert.ok(chatJs.includes('function appHandoffRelevanceScore'), 'Generic app handoff cards should score relevance against the current delivery before rendering.');
 assert.ok(chatJs.includes('handoffRelevanceScore'), 'Generic app handoff candidates should carry a relevance score.');
 assert.ok(!chatJs.includes("id === 'delivery-manager'"), 'Generic app handoffs should not score Deliveries as an app handoff candidate.');
@@ -606,7 +607,8 @@ assert.ok(chatJs.includes('navigator.clipboard'));
 assert.ok(chatJs.includes('state.trackedOrderIds:') || chatJs.includes('trackedOrderIds: new Set()'), 'Tracked orders should be in-memory only for the active chat session.');
 assert.ok(chatJs.includes('renderRestoredSessionOrderContext'), 'Restored chat sessions should render related order status/results inside the chat.');
 assert.ok(chatJs.includes('data-chat-order-retry'), 'Restored order cards should offer an explicit retry confirmation path.');
-assert.ok(chatJs.includes('deliveryOrderActionsHtml'), 'Blocked delivery updates should keep status/retry actions visible after connector returns.');
+assert.ok(chatJs.includes('deliveryOrderActionsHtml'), 'Terminal delivery updates should keep status/retry actions visible after connector returns.');
+assert.ok(chatJs.includes("return ['completed', 'failed', 'timed_out'].includes"), 'Blocked approval waits should stay progress states, not terminal deliveries.');
 assert.ok(chatJs.includes('restored-order-progress'), 'Restored order cards should keep progress details visible.');
 assert.ok(chatCss.includes('.restored-order-card'), 'Chat CSS should style restored order history cards.');
 assert.ok(chatJs.includes('recentJobsApiPath'), 'Recent chat/order history should come from the server job API.');
@@ -615,6 +617,8 @@ assert.ok(chatJs.includes('Live progress polling reached its limit'), 'Chat poll
 assert.ok(chatJs.includes('isNonOrderConversationIntentText'), 'Chat should keep pause/status/help messages out of order dispatch.');
 assert.ok(chatJs.includes('const matchesTracked = state.trackedOrderIds.has(safeId)'), 'Chat backfill should only auto-deliver explicitly tracked orders or active recovery candidates.');
 assert.ok(chatJs.includes('if (!matchesTracked && !matchesRecovery) continue;'), 'Chat backfill should not dump every historical chatux job into a new chat.');
+assert.ok(chatJs.includes('_caitRecoveryStartedAt'), 'Chat recovery matching should ignore older same-session jobs from before the current send attempt.');
+assert.ok(chatJs.includes('includeHistoricalTracked'), 'Chat backfill should ignore historical tracked orders while a current order is attached.');
 assert.ok(chatJs.includes('renderTerminalDeliveries: false'), 'Chat startup should not render historical terminal deliveries automatically.');
 assert.ok(!chatJs.includes("String(job?.parentAgentId || '').trim() === 'chatux'"), 'Chat startup recovery should not match all historical chatux parent jobs.');
 

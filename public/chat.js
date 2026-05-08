@@ -1795,7 +1795,7 @@ function statusDisplayLabel(status = '') {
 }
 
 function isTerminalStatus(status = '') {
-  return ['completed', 'failed', 'timed_out', 'blocked'].includes(String(status || '').toLowerCase());
+  return ['completed', 'failed', 'timed_out'].includes(String(status || '').toLowerCase());
 }
 
 function extractOrderId(created = {}) {
@@ -2654,7 +2654,7 @@ function appAgentHandoffCandidates(job = {}) {
 }
 
 function renderAppHandoffTools(job = {}) {
-  if (!isTerminalStatus(job.status)) return '';
+  if (String(job.status || '').trim().toLowerCase() !== 'completed') return '';
   const entries = appAgentHandoffCandidates(job);
   if (!entries.length) return '';
   const rows = entries.map((entry) => {
@@ -3148,7 +3148,7 @@ function restoredSessionOrderCardHtml(job = {}) {
   const failed = ['failed', 'timed_out'].includes(status);
   const completed = status === 'completed';
   const waiting = status === 'blocked';
-  const active = !terminal;
+  const active = !terminal && !waiting;
   const title = [
     taskLabel(job.taskType || job.workflowTask || 'work'),
     orderId ? `#${orderId.slice(0, 8)}` : ''
@@ -3189,12 +3189,12 @@ function restoredSessionOrderCardHtml(job = {}) {
     job.failedAt ? `Failed: ${shortDateTime(job.failedAt)}` : '',
     job.timedOutAt ? `Timed out: ${shortDateTime(job.timedOutAt)}` : ''
   ].filter(Boolean).join(' / ');
-  const hint = active
-    ? 'This order is still in progress. CAIt will resume polling from this chat.'
-    : completed
-      ? 'This order has a result. Review it here before scheduling or retrying.'
-      : waiting
-        ? 'This order is waiting for an approval or connector action. Review the requested action before continuing.'
+  const hint = waiting
+    ? 'This order is waiting for an approval or connector action. Review the requested action before continuing.'
+    : active
+      ? 'This order is still in progress. CAIt will resume polling from this chat.'
+      : completed
+        ? 'This order has a result. Review it here before scheduling or retrying.'
         : 'This order ended without a successful delivery. Review the reason before preparing a retry.';
   const actions = [
     orderId ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(orderId)}">${escapeHtml(terminal ? 'Show result' : 'Check status')}</button>` : '',
@@ -3797,7 +3797,7 @@ function deliveryOrderActionsHtml(job = {}) {
   const orderId = String(job.id || '').trim();
   if (!orderId || !isTerminalStatus(job.status)) return '';
   const status = String(job.status || '').trim().toLowerCase();
-  const failed = ['failed', 'timed_out', 'blocked'].includes(status);
+  const failed = ['failed', 'timed_out'].includes(status);
   const completed = status === 'completed';
   const actions = [
     `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(orderId)}">Check status</button>`,
@@ -3837,6 +3837,7 @@ function renderDeliveryOnce(job = {}, options = {}) {
 
 function rememberPendingRecoveryPayload(payload = {}) {
   if (!payload || typeof payload !== 'object') return;
+  payload._caitRecoveryStartedAt = Date.now();
   state.pendingRecoveryPayloads = [
     payload,
     ...state.pendingRecoveryPayloads
@@ -3852,9 +3853,11 @@ function clearPendingRecoveryPayload(payload = {}) {
 async function backfillChatDeliveries(options = {}) {
   const jobs = await refreshRecentJobs({ force: true, limit: 30 });
   let delivered = 0;
+  const activeOrderId = String(options.orderId || state.orderId || '').trim();
   for (const job of jobs) {
     const safeId = String(job?.id || '').trim();
     if (!safeId) continue;
+    if (activeOrderId && safeId !== activeOrderId && options.includeHistoricalTracked !== true) continue;
     const matchesTracked = state.trackedOrderIds.has(safeId);
     const matchesRecovery = state.pendingRecoveryPayloads.some((payload) => recoveryCandidate(job, payload));
     if (!matchesTracked && !matchesRecovery) continue;
@@ -3950,11 +3953,14 @@ function recoveryCandidate(job = {}, payload = {}) {
   if (parentAgent && String(job.parentAgentId || '') !== parentAgent) return false;
   const createdMs = Date.parse(job.createdAt || job.created_at || '');
   if (!Number.isFinite(createdMs) || Date.now() - createdMs > 10 * 60 * 1000) return false;
+  const recoveryStartedRaw = payload?._caitRecoveryStartedAt || payload?._cait_recovery_started_at || 0;
+  const recoveryStartedMs = Number(recoveryStartedRaw) || Date.parse(String(recoveryStartedRaw || '')) || 0;
+  if (recoveryStartedMs && createdMs < recoveryStartedMs - 15000) return false;
   const requestedSession = recoverySessionId(payload);
   const jobSession = recoverySessionId(job);
   return Boolean(
     recoveryPromptMatches(job, payload)
-    || (requestedSession && jobSession && requestedSession === jobSession)
+    || (recoveryStartedMs && requestedSession && jobSession && requestedSession === jobSession)
   );
 }
 
@@ -5056,7 +5062,6 @@ async function sendOrder() {
       session_id: chatSessionId
     };
     rememberPendingRecoveryPayload(payload);
-    startDeliveryBackfillLoop();
     appendTextMessage('system', 'Sending order. I will keep polling and post progress here.');
     showProgressNarrator(chatText(
       'Sending the order and attaching this chat to the live run.',
