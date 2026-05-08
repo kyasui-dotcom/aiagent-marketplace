@@ -37,12 +37,14 @@ assert.ok(
 assert.ok(workerSource.includes('workflow-handoff/v2'), 'workflow handoff should carry an explicit versioned handoff contract');
 assert.ok(workerSource.includes('workflow-execution-program/v1'), 'workflow handoff should carry explicit programmatic process state');
 assert.ok(workerSource.includes('PRIOR SPECIALIST DELIVERABLES (mandatory context)'), 'downstream prompts should mark prior specialist deliverables as mandatory context');
-assert.ok(workerSource.includes('function workflowPriorUnavailableRuns'), 'CMO workflow should carry unavailable optional data-layer runs instead of blocking downstream layers.');
-assert.ok(workerSource.includes('UNAVAILABLE PRIOR WORK'), 'workflow handoff prompt should tell downstream agents when optional prior data was unavailable.');
+assert.ok(workerSource.includes('prior_layer_unavailable'), 'workflow dispatch should block downstream layers when a prior data/research layer fails or times out.');
+assert.ok(workerSource.includes('Treat this as a blocker for quality'), 'workflow handoff prompt should not tell downstream agents to proceed from unavailable prior work.');
 assert.ok(workerSource.includes('function workflowAppContextOriginalSignals'), 'leader quality gates should accept attached app context evidence when a data child has no prior run output.');
-assert.ok(workerSource.includes('function workflowDataAnalysisAppContextShortcut'), 'data_analysis should complete directly from attached analytics context instead of timing out in the workflow queue.');
-assert.ok(workerSource.includes('app-context-data-analysis-shortcut'), 'data_analysis app-context shortcut should be observable in billing/events.');
-assert.ok(workerSource.includes('app-context-research-shortcut'), 'research should also complete from attached context when no fresh web search is required.');
+assert.ok(workerSource.includes('compactWorkflowAppContextsForDispatch'), 'attached app contexts should be passed into built-in dispatch instead of shortcut-completing data/research.');
+assert.ok(!workerSource.includes('app-context-data-analysis-shortcut'), 'data_analysis must not complete through simulated attached-context shortcut fallback.');
+assert.ok(!workerSource.includes('app-context-research-shortcut'), 'research must not complete through simulated attached-context shortcut fallback.');
+assert.ok(workerSource.includes('leader_planner_unavailable'), 'leader planner failures should stop order creation instead of silently using deterministic fallback.');
+assert.ok(workerSource.includes('deterministic fallback is disabled for quality'), 'leader planner fallback must be explicitly disabled for quality-sensitive orders.');
 assert.ok(workerSource.includes('workflowBlockingQualityGateBeforeLayer'), 'workflow dispatch should not release downstream layers after prior handoff/search quality gates fail');
 assert.ok(workerSource.includes('consideredRootJobIds'), 'cron dispatch sweep must dedupe workflow children by parent and avoid direct child execution');
 assert.ok(workerSource.includes('ORCHESTRATION_WATCHDOG_POLICY'), 'workflow orchestration watchdog policy should be shared through lib/orchestration.js');
@@ -95,7 +97,9 @@ function workerApiQaOpenAiStructuredOutput(schemaName = '') {
     };
   }
   const kind = name.replace(/^aiagent2_/, '').replace(/_(draft|review)$/, '');
-  const artifact = kind === 'teardown'
+  const artifact = kind === 'cmo_leader'
+    ? 'Leader synthesis of supporting work products: prior specialist evidence, qa research completed for research, qa planning completed for media_planner, qa preparation completed for seo_gap, qa action completed for x_post. Uses handed-off source URL https://aiagent-marketplace.net/. Return this to the CMO leader for synthesis.'
+    : kind === 'teardown'
     ? 'Competitor teardown: compare CAIt marketplace positioning, buyer proof, and conversion friction against visible alternatives.'
     : kind === 'data_analysis'
       ? 'Funnel contract: track source, landing page view, primary intent event, purchase, and assisted conversion.'
@@ -119,9 +123,10 @@ function workerApiQaOpenAiStructuredOutput(schemaName = '') {
     report_summary: `QA ${kind || 'agent'} report with source-aware action packet.`,
     bullets: [
       'Search evidence used: CAIt AI agent marketplace https://aiagent-marketplace.net/',
+      kind === 'cmo_leader' ? 'Supporting work products and prior specialist handoff were synthesized.' : 'Prior specialist handoff was used where available.',
       'Owner and approval are explicit before external execution.',
       'Metric and stop rule are included for the next run.'
-    ],
+    ].slice(0, 4),
     next_action: 'Review the packet, approve the exact connector action, then dispatch the next specialist.',
     file_markdown: [
       `# QA ${kind || 'agent'} delivery`,
@@ -190,6 +195,24 @@ globalThis.fetch = async (input, init) => {
           input_tokens: 120,
           output_tokens: 80,
           total_tokens: 200
+        }
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (schemaName === 'cait_leader_workflow_plan') {
+      const userPayload = JSON.parse(String(requestBody?.input?.find((item) => item?.role === 'user')?.content || '{}'));
+      const deterministic = Array.isArray(userPayload.deterministic_plan) ? userPayload.deterministic_plan : [];
+      const planned = deterministic.length ? deterministic.slice(0, 10) : ['cmo_leader', 'research', 'media_planner', 'seo_gap'];
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          planned_tasks: planned,
+          task_tags: planned.map((task) => ({ task_type: task, tags: ['qa', 'source-aware'] })),
+          reason: 'QA leader planner keeps deterministic ordering while making the planner success explicit.',
+          confidence: 0.86
+        }),
+        usage: {
+          input_tokens: 100,
+          output_tokens: 60,
+          total_tokens: 160
         }
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
@@ -2027,16 +2050,25 @@ async function completeAsyncWorkflowSpecialists(phase, nextAction) {
             ].join('\n')
           : [
               `# qa ${phase} for ${job.taskType}`,
+              phase === 'preparation'
+                ? `## ${job.taskType === 'seo_gap' ? 'SEO page packet' : 'Copy draft'}`
+                : `## ${job.taskType === 'x_post' ? 'Exact X post packet' : 'Action packet'}`,
               firstPriorSource?.title ? `Uses handed-off source title: ${firstPriorSource.title}` : '',
               firstPriorSource?.url ? `Uses handed-off source URL: ${firstPriorSource.url}` : '',
-              !firstPriorSource?.url && firstPriorSummary ? `Uses handed-off summary: ${firstPriorSummary}` : ''
+              !firstPriorSource?.url && firstPriorSummary ? `Uses handed-off summary: ${firstPriorSummary}` : '',
+              `Artifact: ${job.taskType} ${phase} draft using CAIt AI agent marketplace https://aiagent-marketplace.net/ and the prior planning handoff.`,
+              'Metric: qualified intent event and purchase.',
+              'Stop rule: stop if no qualified signal after 7 days.'
             ].filter(Boolean).join('\n');
         job.status = 'completed';
         job.completedAt = job.completedAt || nowIso();
-        job.output = job.output || {
+        job.output = {
           report: {
-            summary: `qa ${phase} completed for ${job.taskType}`,
-            bullets: [`${job.taskType} ${phase} evidence`],
+            summary: `qa ${phase} completed for ${job.taskType} with an action packet artifact using https://aiagent-marketplace.net/`,
+            bullets: [
+              `${job.taskType} ${phase} evidence from CAIt AI agent marketplace https://aiagent-marketplace.net/`,
+              `Action packet artifact for ${job.taskType} uses the prior handoff and includes metric plus stop rule.`
+            ],
             nextAction,
             ...(phase === 'research'
               ? {
@@ -2212,7 +2244,11 @@ const finalSummaryChildRun = asyncFinalSummaryState.body.job.workflow.childRuns.
   run.taskType === 'cmo_leader'
   && run.sequencePhase === 'final_summary'
 ));
-assert.equal(finalSummaryChildRun?.status, 'completed', 'final summary leader should complete after specialists finish');
+assert.equal(
+  finalSummaryChildRun?.status,
+  'completed',
+  `final summary leader should complete after specialists finish; qualityGate=${JSON.stringify(finalSummaryChildRun?.qualityGate || null)} failure=${String(finalSummaryChildRun?.failureReason || '')}`
+);
 assert.equal(asyncFinalSummaryState.body.job.output?.report?.leaderPhase, 'final_summary', 'workflow output should promote the final leader summary');
 assert.ok(asyncFinalSummaryState.body.job.output?.files?.[0]?.content_type, 'workflow output should surface an explicit execution candidate file when a specialist packet exists');
 

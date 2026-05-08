@@ -32,6 +32,30 @@ globalThis.fetch = async (input, init) => {
   if (String(url || '') === 'https://api.openai.com/v1/responses') {
     const requestBody = JSON.parse(String(init?.body || '{}'));
     const schemaName = String(requestBody?.text?.format?.name || '').trim().toLowerCase();
+    if (schemaName === 'cait_leader_workflow_plan') {
+      let userPayload = {};
+      try {
+        const input = Array.isArray(requestBody.input) ? requestBody.input : [];
+        const userMessage = input.find((item) => item?.role === 'user');
+        const textPart = Array.isArray(userMessage?.content) ? userMessage.content[0]?.text : userMessage?.content;
+        userPayload = JSON.parse(String(textPart || '{}'));
+      } catch {}
+      const deterministic = Array.isArray(userPayload?.deterministic_plan)
+        ? userPayload.deterministic_plan.map((item) => String(item || '').trim()).filter(Boolean)
+        : [];
+      const planned = deterministic.length
+        ? deterministic.slice(0, 10)
+        : ['cmo_leader', 'research', 'media_planner', 'seo_gap'];
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          planned_tasks: planned,
+          task_tags: planned.map((taskType) => ({ task_type: taskType, tags: ['qa', 'leader-workflow'] })),
+          reason: 'QA leader planner preserves the verified deterministic skeleton while exercising OpenAI planning.',
+          confidence: 0.86
+        }),
+        usage: { input_tokens: 120, output_tokens: 80, total_tokens: 200 }
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
     if (schemaName.endsWith('_plan')) {
       return new Response(JSON.stringify({
         output_text: JSON.stringify({
@@ -61,13 +85,17 @@ globalThis.fetch = async (input, init) => {
                   ? 'Acquisition automation packet: Manual-first flow, state machine, source capture, qualification state, Connector gate, manual approval, follow-up trigger, and stop rule.'
                   : kind === 'list_creator'
                     ? 'Reviewable lead rows: company_name, contact_source_url, public_email_or_contact_path, fit_reason, next_step, and approval_status rows.'
+                    : kind === 'writing' || kind === 'writer'
+                      ? 'Copy draft: landing-page hero promise, CTA copy, proof block, post-ready hook, metric, stop rule, and approval owner.'
+                      : kind === 'seo_gap' || kind === 'seo'
+                        ? 'SEO page packet: target query, SERP intent, Meta title, H1, internal link, review checklist, metric, and stop rule.'
                     : kind === 'landing'
-                      ? 'Landing packet: hero copy, CTA copy, proof module, objection handling, measurement event, and publish note.'
+                      ? 'Destination page packet: Page structure, hero copy, CTA copy, proof module, objection handling, measurement event, and publish note.'
                       : `Execution packet for ${kind}: owner, objective, artifact, metric, stop rule, and approval owner.`;
     return new Response(JSON.stringify({
       output_text: JSON.stringify({
         summary: `QA ${kind} delivery ready.`,
-        report_summary: `QA ${kind} report with evidence-backed recommendations and a concrete next action.`,
+        report_summary: `QA ${kind} report with source-backed decisions and a concrete next action.`,
         bullets: [
           'Search evidence used: Leader workflow QA source https://example.test/leader-workflow-source',
           'Chosen path is specific to the requested leader workflow.',
@@ -209,7 +237,11 @@ for (const testCase of cases) {
   const job = latest.body?.job || {};
   const childRuns = Array.isArray(job.workflow?.childRuns) ? job.workflow.childRuns : [];
   const expectedStatus = testCase.expectedStatus || 'completed';
-  assert.equal(job.status, expectedStatus, `${testCase.taskType} workflow should reach ${expectedStatus}`);
+  assert.equal(
+    job.status,
+    expectedStatus,
+    `${testCase.taskType} workflow should reach ${expectedStatus}; counts=${JSON.stringify(job.workflow?.statusCounts || null)} childRuns=${JSON.stringify(childRuns.map((run) => ({ taskType: run.taskType, phase: run.sequencePhase, status: run.status, failure: run.failureReason })).slice(0, 20))}`
+  );
   assert.ok(childRuns.length >= testCase.minChildren, `${testCase.taskType} should create enough child runs`);
   assert.ok(childRuns.some((run) => run.taskType === testCase.taskType), `${testCase.taskType} should include the leader child run`);
   assert.ok(childRuns.some((run) => run.taskType !== testCase.taskType), `${testCase.taskType} should include at least one specialist child run`);

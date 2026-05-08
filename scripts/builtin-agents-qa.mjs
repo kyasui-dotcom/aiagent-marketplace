@@ -985,7 +985,34 @@ const originalBuiltinQaFetch = globalThis.fetch;
 let cmoLeaderNetworkCalls = 0;
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
-  if (url === 'https://api.openai.com/v1/responses' || url.startsWith('https://api.search.brave.com/res/v1/web/search?')) {
+  if (url === 'https://api.openai.com/v1/responses') {
+    cmoLeaderNetworkCalls += 1;
+    return new Response(JSON.stringify({
+      output_text: JSON.stringify({
+        summary: 'CMO leader intake synthesized the order and next handoff.',
+        report_summary: 'CMO leader intake synthesized the order and next handoff.',
+        bullets: ['Use research before planning.', 'Keep SEO, referral, and social lanes available.'],
+        next_action: 'Run research, then release media planning and preparation.',
+        file_markdown: [
+          '# CMO leader intake',
+          '',
+          '## Answer first',
+          'Run research before planning, then release SEO, referral, and social preparation based on evidence.',
+          '',
+          '## Handoff',
+          'research -> planning -> preparation',
+          '',
+          '## Execution / approval packet',
+          '| Owner | Objective | Artifact | Metric | Stop rule | Approval owner |',
+          '| --- | --- | --- | --- | --- | --- |',
+          '| CMO Leader | Turn research into one approved growth action | Approval-ready SEO/social/referral packet | signup intent and trial start | stop if no qualified signal after 7 days | order owner |'
+        ].join('\n'),
+        confidence: 0.7,
+        authority_request: null
+      })
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  if (url.startsWith('https://api.search.brave.com/res/v1/web/search?')) {
     cmoLeaderNetworkCalls += 1;
   }
   return originalBuiltinQaFetch(input, init);
@@ -1007,9 +1034,9 @@ try {
     OPENAI_API_KEY: 'sk-test-leader-packet',
     BRAVE_SEARCH_API_KEY: 'brave-test-key'
   });
-  assert.equal(cmoLeaderNetworkCalls, 0, 'Workflow leader packet should not spend the first dispatch on OpenAI or Brave');
+  assert.equal(cmoLeaderNetworkCalls, 1, 'Workflow leader intake should use OpenAI instead of deterministic leader packet fallback');
   assert.equal(cmoLeaderWorkflowPacket.status, 'completed');
-  assert.equal(cmoLeaderWorkflowPacket.runtime.workflow, 'workflow_leader_packet');
+  assert.equal(cmoLeaderWorkflowPacket.runtime.workflow, 'workflow_fast_draft');
   assert.ok(cmoLeaderWorkflowPacket.files[0].content.includes('research -> planning -> preparation'));
 } finally {
   globalThis.fetch = originalBuiltinQaFetch;

@@ -11228,7 +11228,9 @@ async function planLeaderWorkflowWithOpenAi(agents = [], body = {}, fallbackPlan
   const config = leaderPlannerLlmConfig(env);
   if (!config.enabled || !config.apiKey) return null;
   const candidates = leaderPlannerCandidateAgents(agents);
-  if (!candidates.length) return null;
+  if (!candidates.length) {
+    return { plannerError: 'Leader planner had no verified candidate agents to choose from.', plannerStatusCode: 503 };
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
   try {
@@ -11279,11 +11281,15 @@ async function planLeaderWorkflowWithOpenAi(agents = [], body = {}, fallbackPlan
       })
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) return null;
+    if (!response.ok) {
+      const message = payload?.error?.message || payload?.message || `Leader planner failed with status ${response.status}`;
+      return { plannerError: String(message).slice(0, 500), plannerStatusCode: response.status };
+    }
     const parsed = parseIntentJson(extractOpenAiIntentText(payload));
-    return sanitizeLeaderPlannerResult(parsed, fallbackPlan, agents);
-  } catch {
-    return null;
+    return sanitizeLeaderPlannerResult(parsed, fallbackPlan, agents)
+      || { plannerError: 'Leader planner returned no usable task plan.', plannerStatusCode: 502 };
+  } catch (error) {
+    return { plannerError: String(error?.message || error || 'Leader planner failed').slice(0, 500), plannerStatusCode: error?.name === 'AbortError' ? 504 : 502 };
   } finally {
     clearTimeout(timeout);
   }
@@ -11308,6 +11314,25 @@ async function maybeRefineWorkflowPlanWithLeaderLlm(agents = [], body = {}, reso
     maxExternalResearchTasks
   });
   const refined = await planLeaderWorkflowWithOpenAi(agents, body, resolved.plan, env);
+  if (refined?.plannerError) {
+    return {
+      ...resolved,
+      error: 'Leader planner failed before order creation. Retry rather than falling back to a weaker deterministic plan.',
+      code: 'leader_planner_unavailable',
+      statusCode: refined.plannerStatusCode || 503,
+      planner_error: refined.plannerError,
+      plan: {
+        ...(resolved.plan || {}),
+        leaderPlanning: {
+          source: 'openai_failed',
+          reason: refined.plannerError,
+          confidence: 0,
+          checkedAt: nowIso()
+        }
+      },
+      reason: `${resolved.reason} Leader planner failed and deterministic fallback is disabled for quality.`
+    };
+  }
   if (!refined?.plannedTasks?.length) {
     if (!maxExternalResearchTasks) return resolved;
     const cappedPlan = rebuildPlan(resolved.plan.plannedTasks, resolved.plan.tagHintsByTask, resolved.plan.leaderPlanning || null);
@@ -12062,6 +12087,29 @@ function workflowClipText(value = '', max = 12000) {
   return `${text.slice(0, Math.max(0, max - 1)).trim()}...`;
 }
 
+function compactWorkflowAppContextsForDispatch(appContexts = []) {
+  return (Array.isArray(appContexts) ? appContexts : [])
+    .filter((context) => context && typeof context === 'object')
+    .slice(0, 4)
+    .map((context) => ({
+      id: workflowClipText(context.id, 160),
+      source_app: workflowClipText(context.source_app || context.sourceApp, 120),
+      source_app_label: workflowClipText(context.source_app_label || context.sourceAppLabel, 160),
+      title: workflowClipText(context.title, 220),
+      summary: workflowClipText(context.summary, 1200),
+      facts: Array.isArray(context.facts) ? context.facts.slice(0, 20).map((item) => workflowClipText(item, 500)) : [],
+      metrics: Array.isArray(context.metrics) ? context.metrics.slice(0, 12).map((item) => (
+        typeof item === 'string'
+          ? workflowClipText(item, 300)
+          : {
+              label: workflowClipText(item?.label || item?.name, 160),
+              value: workflowClipText(item?.value, 240)
+            }
+      )) : [],
+      created_at: workflowClipText(context.created_at || context.createdAt, 80)
+    }));
+}
+
 function compactWorkflowInputForBuiltInDispatch(job = {}) {
   const input = job.input && typeof job.input === 'object' ? job.input : {};
   const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
@@ -12092,6 +12140,7 @@ function compactWorkflowInputForBuiltInDispatch(job = {}) {
     _broker: {
       commonQualityRules: Array.isArray(broker.commonQualityRules) ? broker.commonQualityRules.slice(0, 8) : [],
       workflow: compactWorkflow,
+      appContexts: compactWorkflowAppContextsForDispatch(broker.appContexts),
       intake: broker.intake && typeof broker.intake === 'object' ? broker.intake : undefined,
       chatux: broker.chatux && typeof broker.chatux === 'object' ? broker.chatux : undefined
     }
@@ -12776,6 +12825,7 @@ function activateWorkflowAdaptivePendingChildren(parent = {}, children = [], tar
     broker.workflow = workflow;
     input._broker = broker;
     child.input = input;
+    applyWorkflowHandoffPromptContextToJob(child);
 
     const authorityRequest = workflowAdaptiveAuthorityRequestForChild(child, parent);
     if (authorityRequest) {
@@ -12824,7 +12874,6 @@ function activateWorkflowAdaptivePendingChildren(parent = {}, children = [], tar
         dispatchRequestedAt: null,
         maxRetries: maxDispatchRetriesForJob(child)
       };
-      applyWorkflowHandoffPromptContextToJob(child);
     }
     child.logs = [
       ...(child.logs || []),
@@ -13564,7 +13613,7 @@ function workflowHandoffPromptContext(job = {}) {
       : 'PRIOR SPECIALIST DELIVERABLES (mandatory context): none yet.',
     ...priorRuns.map((run, index) => workflowHandoffPromptDataFromRun(run, index, { includeMarkdownExcerpt })),
     unavailablePriorRuns.length
-      ? 'UNAVAILABLE PRIOR WORK: the following earlier layer did not produce usable output. Do not block only because it is missing; state the gap and proceed with assumptions/research.'
+      ? 'UNAVAILABLE PRIOR WORK: the following earlier layer did not produce usable output. Treat this as a blocker for quality; do not proceed with assumptions unless a human explicitly changes the order scope.'
       : '',
     ...unavailableLines,
     'Required output behavior: explicitly cite which prior work item(s) you used, preserve source URLs when provided, and return concrete decisions/artifacts for this phase. If you cannot use the required prior work, return BLOCKED with the missing handoff reason.',
@@ -13942,7 +13991,7 @@ function workflowLeaderOutputQualityReview(parent = {}, leaderJob = {}) {
   if (!priorRuns.length && (unavailablePriorRuns.length || workflowLeaderPriorLayerUnavailable(parent, leaderJob))) {
     return {
       applicable: true,
-      passed: true,
+      passed: false,
       scope: 'leader_handoff_usage',
       taskType,
       phase,
@@ -13951,8 +14000,8 @@ function workflowLeaderOutputQualityReview(parent = {}, leaderJob = {}) {
       sourceCount: 0,
       priorRunCount: 0,
       unavailablePriorRunCount: unavailablePriorRuns.length || 1,
-      skippedUnavailablePriorLayer: true,
-      issues: []
+      skippedUnavailablePriorLayer: false,
+      issues: ['prior_layer_unavailable']
     };
   }
   const handoffSignals = workflowHandoffOriginalSignals(priorRuns);
@@ -14181,24 +14230,7 @@ function workflowPriorCompletedRuns(parent = {}, children = [], targetLayer = 1)
 }
 
 function workflowOptionalUnavailablePriorRun(parent = {}, child = {}, targetLayer = 1) {
-  const status = String(child?.status || '').trim().toLowerCase();
-  if (!['failed', 'timed_out'].includes(status)) return null;
-  if (isWorkflowLeaderTask(workflowTaskName(child))) return null;
-  const primary = workflowPrimaryTask(parent);
-  const taskType = workflowTaskName(child);
-  if (primary !== 'cmo_leader' || taskType !== 'data_analysis') return null;
-  if (workflowDispatchLayer(parent, child) >= targetLayer) return null;
-  const reason = String(child.failureReason || child.failure_reason || '').trim()
-    || (status === 'timed_out' ? 'Data analysis timed out before producing a usable report.' : 'Data analysis did not produce a usable report.');
-  return {
-    jobId: child.id || null,
-    taskType,
-    agentName: child.workflowAgentName || child.assignedAgentId || taskLabel(taskType),
-    status,
-    failureReason: reason.slice(0, 700),
-    failedAt: child.failedAt || child.timedOutAt || child.completedAt || null,
-    fallbackInstruction: 'Proceed without analytics output. State the data gap and continue with research/planning assumptions instead of blocking the workflow.'
-  };
+  return null;
 }
 
 function workflowPriorUnavailableRuns(parent = {}, children = [], targetLayer = 1) {
@@ -14275,13 +14307,6 @@ function workflowLeaderHandoff(parent = {}, leader = null, children = [], target
         minimumDistinctPriorItems: workflowMinimumPriorUseForPhase(targetPhase, priorRuns.length),
         targetPhase
       }
-      : unavailablePriorRuns.length
-        ? {
-          instruction: 'The prior data layer did not produce usable output. Continue without blocking, state this data gap, and use assumptions or research for the next layer.',
-          completedRunCount: 0,
-          unavailableRunCount: unavailablePriorRuns.length,
-          targetPhase
-        }
       : null,
     handoffContract: {
       version: 'workflow-handoff/v2',
@@ -14450,6 +14475,17 @@ function workflowBlockingQualityGateBeforeLayer(parent = {}, children = [], laye
   for (const child of sorted) {
     if (!child || isWorkflowLeaderTask(workflowTaskName(child))) continue;
     if (workflowDispatchLayer(parent, child) >= targetLayer) continue;
+    const status = String(child.status || '').trim().toLowerCase();
+    if (['failed', 'timed_out'].includes(status)) {
+      return {
+        type: 'prior_layer_unavailable',
+        childId: child.id,
+        taskType: workflowTaskName(child),
+        summary: child.failureReason || child.failure_reason || (status === 'timed_out'
+          ? 'prior layer timed out before producing usable output'
+          : 'prior layer failed before producing usable output')
+      };
+    }
     const currentReview = String(child.status || '').trim().toLowerCase() === 'completed'
       ? workflowOriginalInfoQualityReview(parent, child)
       : null;
@@ -15324,100 +15360,6 @@ async function scheduleProgressDispatchForJobId(storage, env, waitUntil, jobId, 
   };
 }
 
-function workflowAnalyticsAppContextsForDataShortcut(job = {}) {
-  if (!['data_analysis', 'research'].includes(workflowTaskName(job))) return [];
-  const broker = job?.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
-  const contexts = Array.isArray(broker.appContexts) ? broker.appContexts : [];
-  return contexts.filter((context) => {
-    const text = [
-      context?.source_app,
-      context?.source_app_label,
-      context?.title,
-      context?.summary,
-      ...(Array.isArray(context?.facts) ? context.facts.slice(0, 20) : [])
-    ].map((item) => String(item || '')).join(' ');
-    return /(analytics|ga4|google analytics|search console|gsc|sessions|conversions|conversion rate|search clicks|アナリティクス|サーチコンソール)/i.test(text);
-  }).slice(0, 3);
-}
-
-function workflowDataAnalysisAppContextShortcut(job = {}, sampleKind = '') {
-  const kind = String(sampleKind || '').trim().toLowerCase();
-  if (!['data_analysis', 'research'].includes(kind)) return null;
-  if (kind === 'research' && workflowJobRequiresSearch(job)) return null;
-  const contexts = workflowAnalyticsAppContextsForDataShortcut(job);
-  if (!contexts.length) return null;
-  const facts = [];
-  const seen = new Set();
-  const pushFact = (value = '') => {
-    const text = String(value || '').replace(/\s+/g, ' ').trim();
-    if (!text) return;
-    const key = text.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    facts.push(text.slice(0, 260));
-  };
-  for (const context of contexts) {
-    pushFact(context.summary);
-    for (const fact of Array.isArray(context.facts) ? context.facts : []) pushFact(fact);
-    for (const metric of Array.isArray(context.metrics) ? context.metrics : []) {
-      if (typeof metric === 'string') pushFact(metric);
-      else if (metric && typeof metric === 'object') pushFact([metric.label || metric.name, metric.value].filter(Boolean).join(': '));
-    }
-  }
-  const sourceLabel = contexts.map((context) => String(context.source_app_label || context.title || context.source_app || 'analytics context').trim()).filter(Boolean)[0] || 'attached analytics context';
-  const selectedFacts = facts.slice(0, 12);
-  const taskLabel = kind === 'research' ? 'Research' : 'Data analysis';
-  const summary = selectedFacts.length
-    ? `${taskLabel} completed from attached ${sourceLabel}. ${selectedFacts.slice(0, 4).join(' / ')}`
-    : `${taskLabel} completed from attached ${sourceLabel}.`;
-  const bullets = selectedFacts.length
-    ? selectedFacts.slice(0, 8)
-    : [`Attached analytics context was present, so CAIt used it directly instead of starting a long-running ${kind} generation task.`];
-  const nextAction = kind === 'research'
-    ? 'Use these attached facts as the evidence layer, then continue to planning. State that no new external web search was run unless a later lane explicitly requests it.'
-    : 'Use these analytics facts as the data layer, then continue to research/planning. State any data gaps instead of blocking the workflow.';
-  const markdown = [
-    `# ${taskLabel} from attached context`,
-    '',
-    `Source: ${sourceLabel}`,
-    '',
-    '## Key facts',
-    ...bullets.map((item) => `- ${item}`),
-    '',
-    '## Next action',
-    nextAction
-  ].join('\n');
-  return {
-    report: {
-      summary,
-      bullets,
-      nextAction,
-      next_action: nextAction,
-      confidence: 'medium',
-      data_status: kind === 'research' ? 'attached_context_research_summarized' : 'attached_context_summarized',
-      source: 'attached_app_context',
-      app_context_ids: contexts.map((context) => String(context.id || '').trim()).filter(Boolean)
-    },
-    files: [
-      {
-        name: kind === 'research' ? 'research-context-summary.md' : 'data-analysis-context-summary.md',
-        type: 'text/markdown',
-        content: markdown
-      }
-    ],
-    usage: {
-      input_tokens: Math.max(80, JSON.stringify(contexts).length / 4),
-      output_tokens: Math.max(80, markdown.length / 4),
-      total_tokens: Math.max(160, (JSON.stringify(contexts).length + markdown.length) / 4),
-      api_cost: 0,
-      simulated: true,
-      source: kind === 'research' ? 'attached_app_context_research_shortcut' : 'attached_app_context_shortcut'
-    },
-    source: kind === 'research' ? 'app-context-research-shortcut' : 'app-context-data-analysis-shortcut',
-    returnTargets: ['api']
-  };
-}
-
 async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, sampleKind, options = {}) {
   const eventLabel = options.eventLabel || 'scheduled built-in sweep';
   const completionSource = options.completionSource || 'built-in-workflow-scheduled-sweep';
@@ -15456,34 +15398,6 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
         effectiveLocked = cloneJob(job);
         return { updated: 1 };
       });
-    }
-    const shortcut = workflowDataAnalysisAppContextShortcut(effectiveLocked, sampleKind);
-    if (shortcut) {
-      const result = await completeJobFromAgentResult(storage, locked.id, agent.id, {
-        report: shortcut.report,
-        files: shortcut.files,
-        usage: shortcut.usage,
-        returnTargets: shortcut.returnTargets
-      }, { source: shortcut.source || 'app-context-data-analysis-shortcut' });
-      if (result?.ok) {
-        if (result.mode === 'completed') {
-          await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} completed from attached analytics context`);
-          await recordBillingOutcome(storage, result.job, result.billing, shortcut.source || 'app-context-data-analysis-shortcut');
-          if (locked.workflowParentId) {
-            await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
-            await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} analytics context shortcut`, {
-              maxTargets: 8,
-              awaitDispatch: true,
-              refresh: false
-            });
-            await reconcileWorkflowParent(storage, locked.workflowParentId);
-          }
-        } else if (locked.workflowParentId) {
-          await reconcileWorkflowParent(storage, locked.workflowParentId);
-        }
-        return { ok: true, mode: result.mode, jobId: locked.id, job: result.job, shortcut: 'attached_app_context' };
-      }
-      await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} analytics context shortcut rejected: ${String(result?.error || 'unknown').slice(0, 120)}`);
     }
     const payload = buildCompactBuiltInDispatchPayload(effectiveLocked, agent);
     const body = await runBuiltInAgent(sampleKind, payload, env);
@@ -17807,9 +17721,17 @@ async function runRecurringOrderSweep(storage, env, options = {}) {
         const requestedStrategy = normalizeOrderStrategy(body.order_strategy || body.orderStrategy || 'auto');
         let resolved = resolveOrderStrategy(latestState.agents || [], body, requestedStrategy);
         resolved = await maybeRefineWorkflowPlanWithLeaderLlm(latestState.agents || [], body, resolved, env, { recurring: true });
-        result = resolved.strategy === 'multi'
-          ? await handleCreateWorkflowJob(storage, request, env, current, body, { workflowPlan: resolved.plan, initialState: latestState })
-          : await performSingleJobCreate(storage, env, current, body, { request });
+        result = resolved.error
+          ? {
+              error: resolved.error,
+              code: resolved.code || 'leader_planner_unavailable',
+              planner_error: resolved.planner_error || null,
+              statusCode: resolved.statusCode || 503,
+              status: 'failed'
+            }
+          : resolved.strategy === 'multi'
+            ? await handleCreateWorkflowJob(storage, request, env, current, body, { workflowPlan: resolved.plan, initialState: latestState })
+            : await performSingleJobCreate(storage, env, current, body, { request });
         if (!result.error) {
           result.order_strategy_requested = requestedStrategy;
           result.order_strategy_resolved = resolved.strategy;
@@ -17861,8 +17783,16 @@ async function handleCreateJob(storage, request, env, ctx = null) {
     const asyncDispatch = body.async_dispatch === true || body.asyncDispatch === true || body.respond_async === true || body.respondAsync === true;
     const state = requestedStrategy !== 'single' ? await storage.getState() : null;
     let resolved = resolveOrderStrategy(state?.agents || [], body, requestedStrategy);
-    if (!asyncDispatch) {
-      resolved = await maybeRefineWorkflowPlanWithLeaderLlm(state?.agents || [], body, resolved, env);
+    resolved = await maybeRefineWorkflowPlanWithLeaderLlm(state?.agents || [], body, resolved, env);
+    if (resolved?.error) {
+      await touchUsage();
+      return json({
+        error: resolved.error,
+        code: resolved.code || 'leader_planner_unavailable',
+        planner_error: resolved.planner_error || null,
+        routing_reason: resolved.reason,
+        routing_planned_task_types: resolved.plan?.plannedTasks || []
+      }, resolved.statusCode || 503);
     }
     const guestPrepared = await prepareGuestTrialOrderContext(storage, current, body, resolved);
     if (guestPrepared.error) return json(guestPrepared, guestPrepared.statusCode || 400);
