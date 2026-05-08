@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createD1LikeStorage } from '../lib/storage.js';
 import {
   createAppFromManifest,
+  isCoreFeatureAppId,
   normalizeAppManifest,
   sanitizeAppForPublic,
   validateAppManifest
@@ -67,6 +68,8 @@ assert.deepEqual(normalized.mcp.tools, ['example.prepare_packet']);
 assert.deepEqual(normalized.capabilities, ['x_post_queue', 'approval_packet']);
 assert.deepEqual(normalized.requiredConnectors, ['x']);
 assert.deepEqual(validateAppManifest(normalized), { ok: true, errors: [] });
+assert.equal(isCoreFeatureAppId('delivery-manager'), true, 'Deliveries should be reserved as a core CAIt feature id');
+assert.equal(validateAppManifest({ ...normalized, id: 'delivery-manager' }).ok, false, 'Core CAIt feature ids should not be app-registerable');
 
 const app = createAppFromManifest(normalized, { owner: 'publisher', metadata: { githubLogin: 'publisher' } });
 assert.equal(app.owner, 'publisher');
@@ -95,6 +98,7 @@ const initial = await storage.getState();
 assert.ok(Array.isArray(initial.apps), 'storage state should include apps');
 assert.ok(Array.isArray(initial.appContexts), 'storage state should include app contexts');
 assert.ok(initial.apps.some((item) => item.id === 'x-client-ops'), 'default X Client Ops app should be seeded');
+assert.ok(!initial.apps.some((item) => item.id === 'delivery-manager'), 'Deliveries should not be seeded as an app');
 const contextRecord = createAppContextRecord({
   source_app: 'x-client-ops',
   title: 'X action packet',

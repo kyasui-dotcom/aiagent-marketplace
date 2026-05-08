@@ -233,13 +233,13 @@ function deliveryFromAppContext(context = {}) {
   return {
     id: String(context.id || `context-${Date.now()}`),
     workId: String(context.id || `context-${Date.now()}`),
-    workTitle: String(context.title || 'Imported CAIt app context'),
+    workTitle: String(context.title || 'Imported CAIt context'),
     jobKind: 'app_context',
     taskType: String(context.source_app || 'app_context'),
     workflowTask: '',
     workflowParentId: '',
     workflow: null,
-    title: String(context.title || 'Imported CAIt app context'),
+    title: String(context.title || 'Imported CAIt context'),
     status: 'reusable',
     summary: String(context.summary || ''),
     files: files.map((file, index) => ({
@@ -249,9 +249,9 @@ function deliveryFromAppContext(context = {}) {
       updatedAt: String(context.updated_at || context.updatedAt || '')
     })),
     nextAction: String((Array.isArray(context.recommended_next_actions) ? context.recommended_next_actions[0] : '') || 'Use this context for a follow-up order.'),
-    agentName: String(context.source_app_label || context.source_app || 'CAIt app'),
+    agentName: String(context.source_app_label || context.source_app || 'CAIt context'),
     updatedAt: String(context.updated_at || context.updatedAt || ''),
-    sourceLabel: 'App context',
+    sourceLabel: 'CAIt context',
     sourceContext: context
   };
 }
@@ -298,9 +298,9 @@ function buildContext() {
   if (!delivery) {
     return buildCaitAppContext({
       source_app: 'delivery_manager',
-      source_app_label: 'Delivery Manager',
-      title: 'Delivery Manager context',
-      summary: 'No delivery package is currently loaded. Refresh server jobs or open this app from a CAIt app context handoff.',
+      source_app_label: 'CAIt Deliveries',
+      title: 'CAIt delivery context',
+      summary: 'No delivery package is currently loaded. Refresh server jobs or open Deliveries from a CAIt context handoff.',
       facts: ['No delivery selected'],
       recommended_next_actions: ['Refresh server-side jobs or return to chat and select a delivery.'],
       handoff_targets: ['cmo_leader', 'seo_gap', 'build_team_leader']
@@ -308,18 +308,18 @@ function buildContext() {
   }
   return buildCaitAppContext({
     source_app: 'delivery_manager',
-    source_app_label: 'Delivery Manager',
+    source_app_label: 'CAIt Deliveries',
     title: `Reusable delivery - ${delivery.title}`,
     summary: delivery.summary,
     facts: [
-      importedContext ? `Imported context: ${importedContext.title || importedContext.id || 'CAIt app context'}` : '',
+      importedContext ? `Imported context: ${importedContext.title || importedContext.id || 'CAIt context'}` : '',
       `Delivery id: ${delivery.id}`,
       `Status: ${delivery.status}`,
       `Files: ${(delivery.files || []).length}`,
       delivery.updatedAt ? `Updated: ${delivery.updatedAt}` : ''
     ].filter(Boolean),
     assumptions: [
-      importedContext ? 'Files and artifacts are loaded from a server-side CAIt app context.' : 'Files are loaded from server-side job output when available.',
+      importedContext ? 'Files and artifacts are loaded from a server-side CAIt context.' : 'Files are loaded from server-side job output when available.',
       'Reusing a delivery creates a new CAIt context; it does not automatically execute follow-up work.'
     ],
     artifacts: [
@@ -328,7 +328,7 @@ function buildContext() {
     delivery_files: (delivery.files || []).map((file) => ({ name: file.name, type: file.type, content: file.content })),
     recommended_next_actions: [
       delivery.nextAction || 'Ask a leader to run follow-up with this delivery.',
-      'Send to the appropriate app only after approval and connector state are visible.'
+      'Use external action tools only after approval and connector state are visible.'
     ],
     handoff_targets: ['cmo_leader', 'seo_gap', 'build_team_leader'],
     raw_context: importedContext ? { received_context: importedContext } : {}
@@ -466,7 +466,7 @@ function renderList() {
   }).join('') : [
     '<div class="delivery-empty">',
     '<strong>No matching delivery</strong>',
-    '<span>Refresh jobs, clear search, or open this app from a CAIt context handoff.</span>',
+    '<span>Refresh jobs, clear search, or open Deliveries from a CAIt context handoff.</span>',
     '</div>'
   ].join('');
 }
@@ -500,14 +500,14 @@ function renderSelected() {
     els.railCopyBtn
   ].forEach((button) => { button.disabled = !hasDelivery; });
   els.deliveryTitleInput.value = delivery?.title || 'No delivery selected';
-  els.deliverySummaryInput.value = delivery?.summary || 'Refresh server jobs or open Delivery Manager from a CAIt context handoff to review reusable work.';
+  els.deliverySummaryInput.value = delivery?.summary || 'Refresh server jobs or open Deliveries from a CAIt context handoff to review reusable work.';
   els.deliveryStatusPill.textContent = hasDelivery ? statusLabel(delivery?.status || '') : 'waiting';
   els.deliveryStatusPill.className = `status-pill ${hasDelivery ? statusClass(delivery?.status || '') : 'pending'}`;
   els.deliveryUpdatedMeta.textContent = delivery?.updatedAt ? `Updated ${normalizedDate(delivery.updatedAt) || delivery.updatedAt}` : 'No timestamp';
   els.summaryCount.textContent = `${String(delivery?.summary || '').length.toLocaleString('en-US')} / 1000`;
   els.nextActionText.textContent = delivery?.nextAction || 'Load a delivery package before running follow-up.';
   els.packageMetaText.textContent = files.length ? `${files.length} file${files.length === 1 ? '' : 's'} ready` : 'No files attached';
-  els.sourceMetaText.textContent = delivery?.sourceLabel || (importedContext ? 'App context' : 'Server jobs');
+  els.sourceMetaText.textContent = delivery?.sourceLabel || (importedContext ? 'CAIt context' : 'Server jobs');
   els.previewTitle.textContent = selectedFile ? `Preview: ${selectedFile.name}` : 'Output preview';
   els.outputPreview.textContent = selectedFile?.content || delivery?.summary || 'No delivery output is available yet. Refresh jobs or return from chat with a completed delivery context.';
   els.fileMetaText.textContent = files.length ? `${files.length} file${files.length === 1 ? '' : 's'} in this package.` : 'No files loaded.';
@@ -525,7 +525,7 @@ function renderSelected() {
   ].join('') : '<tbody><tr><td>No files loaded.</td><td>-</td><td>-</td><td>-</td></tr></tbody>';
   els.actionRailSummary.textContent = delivery
     ? `Send "${compact(delivery.title, 58)}" to CAIt as context for the next order.`
-    : 'No delivery is loaded yet. Refresh jobs or open this app from a completed CAIt delivery.';
+    : 'No delivery is loaded yet. Refresh jobs or open Deliveries from a completed CAIt delivery.';
 }
 
 function renderReadiness() {

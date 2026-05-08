@@ -30,6 +30,7 @@ const CHATUX_OAUTH_RETURN_STATE_KEY = 'cait.chat.oauthReturnState.v1';
 const CHATUX_OAUTH_RETURN_MAX_AGE_MS = 30 * 60 * 1000;
 const CHATUX_WELCOME_TEXT = 'What do you want done?';
 const X_CLIENT_OPS_URL = 'https://x.niche-s.com/';
+const CORE_FEATURE_APP_IDS = new Set(['delivery-manager']);
 
 function leaderCatalogChatAnswer(prompt = '') {
   const ja = chatLanguage(prompt) === 'ja';
@@ -115,23 +116,6 @@ const APP_AGENT_MANIFESTS = [
     },
     tags: ['crm', 'lead', 'email'],
     reusePrompt: 'Open Lead Ops Console to review lead rows and email drafts, then send a lead packet back to CAIt.'
-  },
-  {
-    id: 'delivery-manager',
-    name: 'Delivery Manager',
-    kind: 'application_agent',
-    description: 'CAIt delivery package, file download, copy, reuse, and follow-up context manager.',
-    baseUrl: '/delivery-manager.html',
-    entryUrl: '/delivery-manager.html',
-    capabilities: ['delivery_package', 'file_download', 'delivery_reuse', 'follow_up_context'],
-    requiresApprovalFor: [],
-    inputContract: {
-      schemaVersion: 'cait-app-context/v1',
-      accepts: ['delivery_files', 'job_output', 'follow_up_context'],
-      returns: ['delivery_files', 'artifacts', 'recommended_next_actions']
-    },
-    tags: ['delivery', 'files', 'reuse'],
-    reusePrompt: 'Open Delivery Manager to reuse a prior delivery, download files, or send a follow-up context back to CAIt.'
   },
   {
     id: 'x-client-ops',
@@ -896,6 +880,10 @@ function normalizeUsageId(value = '') {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_.:-]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+function isCoreFeatureAppId(value = '') {
+  return CORE_FEATURE_APP_IDS.has(normalizeUsageId(value));
+}
+
 function compactUsageText(value = '', max = 420) {
   return compact(String(value || '').replace(/\r\n/g, '\n'), max);
 }
@@ -969,7 +957,7 @@ function mergeUsageEntry(list = [], entry = {}, options = {}) {
 
 function normalizeAppAgentManifest(app = {}) {
   const id = normalizeUsageId(app.id || app.name);
-  if (!id) return null;
+  if (!id || isCoreFeatureAppId(id)) return null;
   const baseUrl = String(app.baseUrl || app.base_url || app.url || '').trim();
   const entryUrl = String(app.entryUrl || app.entry_url || app.launchUrl || app.launch_url || baseUrl).trim();
   return {
@@ -2506,7 +2494,6 @@ function appHandoffRelevanceScore(entry = {}, job = {}, options = {}) {
   const id = normalizeUsageId(entry.id || '');
   const jobText = options.jobText || appHandoffJobSignalText(job);
   const appText = appHandoffManifestSignalText(entry);
-  const files = deliveryFiles(job);
   const authority = authorityRequestFromJob(job) || {};
   const childRuns = visibleWorkflowChildRuns(job.workflow?.childRuns);
   const taskSet = new Set([
@@ -2527,10 +2514,6 @@ function appHandoffRelevanceScore(entry = {}, job = {}, options = {}) {
     if (reason && !score.reasons.includes(reason)) score.reasons.push(reason);
   };
 
-  if (id === 'delivery-manager') {
-    if (files.length) add(36, 'delivery files');
-    else if (String(deliveryText(job) || '').trim().length > 120) add(12, 'delivery summary');
-  }
   if (id === 'analytics-console') {
     if (taskSet.has('data_analysis')) add(44, 'analytics/data lane');
     if (/(ga4|gsc|search console|google analytics|analytics|conversion|traffic|流入|検索クエリ|サーチコンソール)/i.test(jobText)) add(30, 'analytics evidence');
@@ -2827,7 +2810,7 @@ async function refreshRegisteredApps(options = {}) {
   if (state.registeredAppsRequest) return state.registeredAppsRequest;
   state.registeredAppsRequest = api(catalogApiPath('/api/apps', options), { method: 'GET' })
     .then((result) => {
-      const apps = Array.isArray(result?.apps) ? result.apps : [];
+      const apps = (Array.isArray(result?.apps) ? result.apps : []).filter((app) => !isCoreFeatureAppId(app?.id));
       state.registeredApps = append ? mergeCatalogById(state.registeredApps, apps) : apps;
       state.registeredAppsTotal = Math.max(state.registeredApps.length, Number(result?.total || 0));
       const nextOffset = Number(result?.offset ?? offset) + apps.length;

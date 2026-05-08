@@ -257,7 +257,8 @@ assert.ok(appsJs.includes('sameOriginAppUrl'), 'Apps hub should normalize built-
 assert.ok(appsJs.includes('analytics-console'), 'Apps hub registry rendering should include Analytics Console.');
 assert.ok(appsJs.includes('publisher-approval-studio'), 'Apps hub registry rendering should include Publisher and Approval Studio.');
 assert.ok(appsJs.includes('lead-ops-console'), 'Apps hub registry rendering should include Lead Ops.');
-assert.ok(appsJs.includes('delivery-manager'), 'Apps hub registry rendering should include Delivery Manager.');
+assert.ok(appsJs.includes('CORE_FEATURE_APP_IDS'), 'Apps hub should filter core CAIt features out of app registry rendering.');
+assert.ok(!appsJs.includes("['delivery-manager', { tag: 'Follow-up'"), 'Apps hub should not feature Deliveries as a registered app.');
 assert.ok(appsHtml.includes('cait-app-context/v1'), 'Apps hub should explain the shared context contract.');
 assert.ok(analyticsHtml.includes('Analytics Console'), 'Analytics Console should be a first-class app page.');
 assert.ok(analyticsHtml.includes('href="/apps.html"'), 'Analytics Console should link back to the apps hub.');
@@ -300,8 +301,8 @@ assert.ok(leadOpsHtml.includes('id="outreachChannelSelect"'), 'Lead Ops should l
 assert.ok(leadOpsHtml.includes('id="sendResendBtn"'), 'Lead Ops should execute approved email through CAIt Resend.');
 assert.ok(leadOpsHtml.includes('id="scheduleResendBtn"'), 'Lead Ops should schedule approved email through CAIt Resend.');
 assert.ok(leadOpsHtml.includes('id="leadAllNavCount"'), 'Lead Ops side navigation counts should come from runtime data.');
-assert.ok(deliveryManagerHtml.includes('Delivery Manager'), 'Delivery Manager should be a first-class CAIt feature page.');
-assert.ok(deliveryManagerHtml.includes('href="/apps.html"'), 'Delivery Manager should link back to the apps hub.');
+assert.ok(deliveryManagerHtml.includes('Deliveries'), 'Deliveries should be a first-class CAIt feature page.');
+assert.ok(deliveryManagerHtml.includes('href="/chat"'), 'Deliveries should link back to chat.');
 assert.ok(deliveryManagerHtml.includes('id="downloadSelectedBtn"'), 'Delivery Manager should expose downloadable delivery files.');
 assert.ok(deliveryManagerHtml.includes('/delivery-manager.js?v=20260505d'), 'Delivery Manager should load the app-context receiving controller.');
 assert.ok(deliveryManagerHtml.includes('id="deliverySearchInput"'), 'Delivery Manager should expose delivery search.');
@@ -357,7 +358,7 @@ assert.ok(leadOpsJs.includes("source_app: 'lead_ops_console'"), 'Lead Ops app lo
 assert.ok(!leadOpsJs.includes("source_app: 'analytics_console'"), 'Lead Ops JS should not contain Analytics app logic.');
 assert.ok(!leadOpsJs.includes("source_app: 'publisher_approval_studio'"), 'Lead Ops JS should not contain Publisher app logic.');
 assert.ok(!leadOpsJs.includes("source_app: 'delivery_manager'"), 'Lead Ops JS should not contain Delivery Manager app logic.');
-assert.ok(deliveryManagerJs.includes("source_app: 'delivery_manager'"), 'Delivery Manager app logic should stay in delivery-manager.js.');
+assert.ok(deliveryManagerJs.includes("source_app: 'delivery_manager'"), 'Deliveries feature logic should stay in delivery-manager.js.');
 assert.ok(!deliveryManagerJs.includes("source_app: 'analytics_console'"), 'Delivery Manager JS should not contain Analytics app logic.');
 assert.ok(!deliveryManagerJs.includes("source_app: 'publisher_approval_studio'"), 'Delivery Manager JS should not contain Publisher app logic.');
 assert.ok(!deliveryManagerJs.includes("source_app: 'lead_ops_console'"), 'Delivery Manager JS should not contain Lead Ops app logic.');
@@ -482,7 +483,7 @@ assert.ok(leadOpsJs.includes('applyInboundContext'), 'Lead Ops should map inboun
 assert.ok(leadOpsJs.includes('leadAllNavCount'), 'Lead Ops should update side navigation counts from runtime rows.');
 assert.ok(leadOpsJs.includes('No lead rows loaded.'), 'Lead Ops should render an explicit empty state before server context is loaded.');
 assert.ok(!/Travel Creator|Remote Japan|Airport Arrival|example\.com\/japan-travel/i.test(leadOpsJs), 'Lead Ops should not ship built-in sample lead rows.');
-assert.ok(deliveryManagerJs.includes('source_app: \'delivery_manager\''), 'Delivery Manager should create delivery app context.');
+assert.ok(deliveryManagerJs.includes('source_app: \'delivery_manager\''), 'Deliveries should create reusable delivery context.');
 assert.ok(deliveryManagerJs.includes('delivery_files'), 'Delivery Manager should include delivery files.');
 assert.ok(deliveryManagerJs.includes('fetchCaitAppContextFromUrl'), 'Delivery Manager should receive CAIt contexts through the server context API.');
 assert.ok(deliveryManagerJs.includes('applyInboundContext'), 'Delivery Manager should map inbound context into delivery packages.');
@@ -504,7 +505,8 @@ assert.ok(!chatJs.includes('localStorage'), 'Chat should not persist order, app,
 assert.ok(chatJs.includes('analytics-console'), 'Chat app catalog should include Analytics Console.');
 assert.ok(chatJs.includes('publisher-approval-studio'), 'Chat app catalog should include Publisher and Approval Studio.');
 assert.ok(chatJs.includes('lead-ops-console'), 'Chat app catalog should include Lead Ops Console.');
-assert.ok(chatJs.includes('delivery-manager'), 'Chat app catalog should include Delivery Manager.');
+assert.ok(chatJs.includes('CORE_FEATURE_APP_IDS'), 'Chat should filter core CAIt features out of app manifests.');
+assert.ok(!chatJs.includes("id: 'delivery-manager'"), 'Chat app catalog should not include Deliveries as an app.');
 assert.ok(chatJs.includes("const CHATUX_RETURN_PATH = '/chat'"), 'OAuth and delivery return path should use the canonical chat route, not /chatux or /chat.html.');
 assert.ok(chatJs.includes('CHATUX_OAUTH_RETURN_STATE_KEY'), 'Chat should keep a short-lived OAuth return snapshot for in-progress order recovery.');
 assert.ok(chatJs.includes("url.searchParams.set('return_to', currentChatReturnPath());"), 'OAuth links should carry the active chat return path with restore identifiers.');
@@ -576,6 +578,7 @@ assert.ok(chatJs.includes('CAIt has attached the X post draft and strategy conte
 assert.ok(chatJs.includes('function renderAppHandoffTools'), 'Chat deliveries should expose generic app handoff cards.');
 assert.ok(chatJs.includes('function appHandoffRelevanceScore'), 'Generic app handoff cards should score relevance against the current delivery before rendering.');
 assert.ok(chatJs.includes('handoffRelevanceScore'), 'Generic app handoff candidates should carry a relevance score.');
+assert.ok(!chatJs.includes("id === 'delivery-manager'"), 'Generic app handoffs should not score Deliveries as an app handoff candidate.');
 assert.ok(chatJs.includes('Only apps matched to this delivery'), 'App handoff copy should explain that unrelated apps are filtered out.');
 assert.ok(!chatJs.includes('return appManifestSources()\\n    .filter((entry) => {\\n      if (!entry?.id || (!entry.entryUrl && !entry.baseUrl && !entry.handoff?.createUrl)) return false;'), 'App handoff should not display the raw app catalog for every delivery.');
 assert.ok(chatJs.includes('data-app-agent-handoff'), 'Generic app handoff cards should be actionable from delivery chat.');

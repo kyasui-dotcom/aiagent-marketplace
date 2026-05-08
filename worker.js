@@ -23,7 +23,7 @@ import {
 } from './lib/orchestration.js';
 import { GITHUB_ADAPTER_MARKER, adapterNextStepText, buildGithubAdapterPlan, createGithubBranch, createGithubPullRequest, fetchGithubBranchSha, fetchGithubRepoTree, fetchGithubTextFile, findKnownBrokerPath, upsertGithubTextFile } from './lib/github-adapter.js';
 import { MANIFEST_CANDIDATE_PATHS, assessAgentRegistrationSafety, buildDraftManifestFromAgentSkill, buildDraftManifestFromRepoAnalysis, buildDraftManifestFromRepoAnalysisWithAi, deriveManifestSignalPaths, normalizeManifest, parseAndValidateManifest, sanitizeManifestForPublic, validateManifest } from './lib/manifest.js';
-import { createAppFromInput, createAppFromManifest, normalizeAppManifest, sanitizeAppForPublic, validateAppManifest } from './lib/apps.js';
+import { createAppFromInput, createAppFromManifest, isCoreFeatureAppId, normalizeAppManifest, sanitizeAppForPublic, validateAppManifest } from './lib/apps.js';
 import { appContextIsExpired, createAppContextRecord, publicAppContext } from './lib/app-context.js';
 import { buildMcpDiscovery, handleMcpJsonRpc } from './lib/mcp.js';
 import { sanitizeExactMatchActionPatch, sanitizeExactMatchActionsForClient } from './lib/exact-actions.js';
@@ -2599,7 +2599,9 @@ function statsOf(state) {
   return {
     activeJobs: state.jobs.filter((j) => ['queued', 'claimed', 'running', 'dispatched'].includes(j.status)).length,
     onlineAgents: state.agents.filter((a) => a.online).length,
-    registeredApps: Array.isArray(state.apps) ? state.apps.filter((app) => String(app?.status || '').toLowerCase() !== 'deprecated').length : 0,
+    registeredApps: Array.isArray(state.apps)
+      ? state.apps.filter((app) => app?.id && !isCoreFeatureAppId(app.id) && String(app?.status || '').toLowerCase() !== 'deprecated').length
+      : 0,
     grossVolume: +grossVolume.toFixed(1),
     todayCost: +api.toFixed(1),
     platformRevenue: +rev.toFixed(1),
@@ -2636,7 +2638,9 @@ function publicAgent(agent, catalog = []) {
 function publicApp(app) {
   const metadata = app?.metadata && typeof app.metadata === 'object' ? app.metadata : {};
   if (
-    metadata.hidden_from_catalog
+    isCoreFeatureAppId(app?.id)
+    || !app?.id
+    || metadata.hidden_from_catalog
     || metadata.deleted_at
     || metadata.deletedAt
     || String(app?.status || '').toLowerCase() === 'deprecated'
@@ -3140,6 +3144,9 @@ function appOwnerMatches(app = {}, current = null) {
 function authorizeAppOwnerAction(state, request, env, appId, current = null) {
   const resolvedCurrent = current || null;
   const policy = runtimePolicy(env);
+  if (isCoreFeatureAppId(appId)) {
+    return { error: 'This CAIt feature is not part of the app catalog.', statusCode: 400, current: resolvedCurrent, policy };
+  }
   const app = (Array.isArray(state.apps) ? state.apps : []).find((item) => String(item?.id || '') === String(appId || ''));
   if (!app) return { error: 'App not found', statusCode: 404, current: resolvedCurrent, policy };
   if (String(app.owner || '').toLowerCase() === 'built-in' && !policy.openWriteApiEnabled) {
@@ -17642,6 +17649,7 @@ async function handleAppHandoff(storage, request, env, appId = '') {
   const current = await currentAgentRequesterContext(storage, request, env);
   if (!current.user && current.apiKeyStatus === 'invalid') return json({ error: 'Invalid API key' }, 401);
   if (!current.user && current.apiKeyStatus !== 'valid') return json({ error: 'Login or CAIt API key required' }, 401);
+  if (isCoreFeatureAppId(appId)) return json({ error: 'This CAIt feature is not an app handoff target.' }, 400);
   let body;
   try {
     body = await parseBody(request);

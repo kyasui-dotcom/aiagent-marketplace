@@ -1,6 +1,7 @@
 const listEl = document.querySelector('[data-context-list]');
 const registryListEl = document.querySelector('[data-app-registry-list]');
 const featuredListEl = document.querySelector('[data-featured-app-list]');
+const CORE_FEATURE_APP_IDS = new Set(['delivery-manager']);
 
 function escapeHtml(value = '') {
   return String(value ?? '')
@@ -41,6 +42,10 @@ function list(value = []) {
   return Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : [];
 }
 
+function isCoreFeatureAppId(value = '') {
+  return CORE_FEATURE_APP_IDS.has(String(value || '').trim().toLowerCase());
+}
+
 function normalizeApp(record = {}) {
   const inputContract = record.inputContract && typeof record.inputContract === 'object' ? record.inputContract : {};
   const handoff = record.handoff && typeof record.handoff === 'object' ? record.handoff : {};
@@ -50,7 +55,7 @@ function normalizeApp(record = {}) {
   const mcp = record.mcp && typeof record.mcp === 'object' ? record.mcp : {};
   const returns = list(inputContract.returns);
   const id = String(record.id || '').trim();
-  if (!id) return null;
+  if (!id || isCoreFeatureAppId(id)) return null;
   const isAction = requiresApprovalFor.length > 0
     || Boolean(handoff.createUrl || handoff.create_url)
     || capabilities.some((item) => /(^|_)(publish|submit|send|action|queue|handoff)(_|$)/i.test(item));
@@ -87,7 +92,6 @@ function sameOriginAppUrl(value = '') {
       '/analytics-console.html',
       '/publisher-approval.html',
       '/lead-ops.html',
-      '/delivery-manager.html',
       '/apps.html'
     ].includes(parsed.pathname);
     if (isBuiltInCaitHost && isKnownLocalApp) {
@@ -164,7 +168,6 @@ function renderFeaturedApps(records = []) {
     ['analytics-console', { tag: 'SEO / CMO', description: 'Find the next growth move from traffic evidence.' }],
     ['publisher-approval-studio', { tag: 'Approval', description: 'Review external publishing changes before they leave CAIt.' }],
     ['lead-ops-console', { tag: 'Growth', description: 'Turn sourced leads into reviewed outreach drafts.' }],
-    ['delivery-manager', { tag: 'Follow-up', description: 'Reuse finished work as the next brief.' }],
     ['x-client-ops', { tag: 'Social', description: 'Prepare approved social action packets.' }]
   ]);
   const featured = [...featureCopy.keys()]
