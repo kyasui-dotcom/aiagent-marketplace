@@ -138,7 +138,7 @@ assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat c
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/chat.css?v=20260508a'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508g"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508h"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -496,7 +496,7 @@ assert.ok(deliveryManagerJs.includes('isLeaderDelivery'), 'Delivery Manager shou
 assert.ok(deliveryManagerJs.includes('delivery-work-group'), 'Delivery Manager should render work items as dropdown groups.');
 assert.ok(!deliveryManagerJs.includes('local delivery samples'), 'Delivery Manager should not depend on local delivery sample payloads.');
 
-assert.ok(chatJs.includes("from './chat-engine.js?v=20260507a'"), 'Chat JS should use root-relative shared chat engine import.');
+assert.ok(chatJs.includes("from './chat-engine.js?v=20260508a'"), 'Chat JS should use root-relative shared chat engine import.');
 assert.ok(chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should use root-relative delivery action import.');
 assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260507a'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
 assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
@@ -544,6 +544,12 @@ assert.ok(chatJs.includes('includeAdaptivePending: true'), 'Agent maps should sh
 assert.ok(chatJs.includes('function leaderTextHasCmoSignal'), 'Chat intake routing should identify signup/channel/growth requests as CMO work.');
 assert.ok(chatJs.includes('function leaderTextHasSpecificCpoSignal'), 'Chat intake routing should not treat generic Product/service labels as CPO work.');
 assert.ok(chatJs.indexOf("if (leaderTextHasCmoSignal(text, intent)) return 'cmo_leader';") < chatJs.indexOf("if (leaderTextHasSpecificCpoSignal(text)) return 'cpo_leader';"), 'Chat intake routing should prefer CMO over CPO when growth and product wording both appear.');
+assert.ok(chatJs.includes('activeLeaderLocked: false'), 'Chat should track when a leader has been confirmed and locked.');
+assert.ok(chatJs.includes('function lockedLeaderOwnerForPrompt'), 'Chat should preserve a confirmed leader unless the user explicitly asks to change it.');
+assert.ok(chatJs.includes('leaderChangeRequested'), 'Chat should mark explicit user leader-change requests separately from automatic reclassification.');
+assert.ok(chatJs.includes("chat-engine.js?v=20260508a"), 'Chat should cache-bust the chat engine when leader-lock payload fields change.');
+assert.ok(chatEngine.includes('active_leader_locked'), 'Chat engine should send active leader lock state in prepare and job payloads.');
+assert.ok(worker.includes('function applyActiveLeaderLockToOrderBody'), 'Worker should enforce locked chat leader routing server-side.');
 assert.ok(chatJs.includes('function showAppListPanel'), 'Chat should expose app list modal.');
 assert.ok(chatJs.includes('registeredApps: []'), 'Chat should keep registered marketplace apps in state.');
 assert.ok(chatJs.includes('const CHATUX_CATALOG_PAGE_SIZE = 10'), 'Workers and apps should initially load only ten catalog rows.');
@@ -572,7 +578,7 @@ assert.ok(chatJs.includes('data-chat-logout'), 'Chat should render logout contro
 assert.ok(chatJs.includes("new URL('/login', window.location.origin)"), 'Chat should client-gate unauthenticated static asset access.');
 assert.ok(chatJs.includes("loginUrl.searchParams.set('next', nextPath || CHATUX_RETURN_PATH)"), 'Chat login gate should preserve the current chat path and context query.');
 assert.ok(chatJs.includes("await api('/api/work/prepare-order'"));
-assert.ok(chatJs.includes('taskType: intake.taskType'), 'Intake answers should preserve the originally selected leader task.');
+assert.ok(chatJs.includes('intake.taskType || intake.task_type'), 'Intake answers should preserve the originally selected leader task.');
 assert.ok(chatJs.includes('taskType: task'), 'Worker list selections should pass the selected task type into prepare-order.');
 assert.ok(chatJs.includes('data-utility-agent-id'), 'Worker Use buttons should carry the selected agent id, not only the task type.');
 assert.ok(chatJs.includes('selectedAgentId: agentId'), 'Worker Use should pin the selected agent in the order draft.');

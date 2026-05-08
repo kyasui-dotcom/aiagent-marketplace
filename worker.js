@@ -4913,6 +4913,7 @@ async function resolveWorkActionRequest(storage, request) {
   } catch (error) {
     return { error: error.message, statusCode: 400 };
   }
+  body = applyActiveLeaderLockToOrderBody(body);
   const prompt = String(body?.prompt || '').trim();
   if (!prompt) return { ok: true, action: '', source: 'empty' };
   if (isDeveloperExecutionIntentText(prompt)) {
@@ -4989,6 +4990,137 @@ function serverIsStructuredOrderBrief(value = '') {
   return Boolean(/^Task:\s+/im.test(text) && /(?:^|\n)\s*Goal:\s+/im.test(text) && /(?:^|\n)\s*Deliver:\s+/im.test(text));
 }
 
+function normalizeLockedLeaderTaskType(value = '') {
+  const token = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const aliases = {
+    cmo: 'cmo_leader',
+    cmo_leader: 'cmo_leader',
+    marketing_leader: 'cmo_leader',
+    growth_leader: 'cmo_leader',
+    cto: 'cto_leader',
+    cto_leader: 'cto_leader',
+    technical_leader: 'cto_leader',
+    build_team: 'build_team_leader',
+    build_team_leader: 'build_team_leader',
+    engineering_leader: 'build_team_leader',
+    cpo: 'cpo_leader',
+    cpo_leader: 'cpo_leader',
+    product_leader: 'cpo_leader',
+    cfo: 'cfo_leader',
+    cfo_leader: 'cfo_leader',
+    finance_leader: 'cfo_leader',
+    legal: 'legal_leader',
+    legal_leader: 'legal_leader',
+    legal_counsel: 'legal_leader',
+    research: 'research_team_leader',
+    research_team: 'research_team_leader',
+    research_team_leader: 'research_team_leader',
+    secretary: 'secretary_leader',
+    secretary_leader: 'secretary_leader'
+  };
+  return aliases[token] || (token.endsWith('_leader') ? token : '');
+}
+
+function explicitLeaderChangeTaskTypeFromServerText(value = '') {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const leaderMention = /(cmo|cto|cpo|cfo|legal|research\s+team|build\s+team|marketing\s+leader|growth\s+leader|technical\s+leader|product\s+leader|finance\s+leader|legal\s+leader|secretary\s+leader|マーケ|cmoリーダー|技術責任者|ctoリーダー|プロダクト責任者|cpoリーダー|財務|cfoリーダー|法務|legalリーダー|調査リーダー|リサーチリーダー|ビルドリーダー|秘書リーダー)/i.test(text);
+  if (!leaderMention) return '';
+  const explicitChange = /(?:leader|リーダー|担当|主体|lead|owner|route|routing|use|switch|change|変更|切替|切り替|変え|にして|で進め|でお願い|に戻|に固定|固定|指名|選択)/i.test(text)
+    || /^(?:cmo|cto|cpo|cfo|legal|research\s+team|build\s+team)(?:\s+leader)?$/i.test(text);
+  if (!explicitChange) return '';
+  if (/(cmo|marketing|growth|マーケ)/i.test(text)) return 'cmo_leader';
+  if (/(cto|technical|技術責任者)/i.test(text)) return 'cto_leader';
+  if (/(build\s+team|engineering|ビルド)/i.test(text)) return 'build_team_leader';
+  if (/(cpo|product|プロダクト責任者)/i.test(text)) return 'cpo_leader';
+  if (/(cfo|finance|財務)/i.test(text)) return 'cfo_leader';
+  if (/(legal|法務)/i.test(text)) return 'legal_leader';
+  if (/(research|調査|リサーチ)/i.test(text)) return 'research_team_leader';
+  if (/(secretary|秘書)/i.test(text)) return 'secretary_leader';
+  return '';
+}
+
+function lockedLeaderTaskTypeFromOrderBody(body = {}) {
+  const input = body?.input && typeof body.input === 'object' ? body.input : {};
+  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
+  const owner = body.conversationOwner || body.conversation_owner || broker.conversationOwner || {};
+  const active = broker.activeLeader || {};
+  return normalizeLockedLeaderTaskType(
+    body.active_leader_task_type
+    || body.activeLeaderTaskType
+    || owner.taskType
+    || owner.task_type
+    || active.taskType
+    || active.task_type
+    || ''
+  );
+}
+
+function orderBodyHasActiveLeaderLock(body = {}) {
+  const broker = body?.input?._broker && typeof body.input._broker === 'object' ? body.input._broker : {};
+  return body.active_leader_locked === true
+    || body.activeLeaderLocked === true
+    || body.leader_locked === true
+    || broker.activeLeaderLocked === true
+    || broker.active_leader_locked === true;
+}
+
+function orderBodyLeaderChangeRequested(body = {}) {
+  const broker = body?.input?._broker && typeof body.input._broker === 'object' ? body.input._broker : {};
+  return body.leader_change_requested === true
+    || body.leaderChangeRequested === true
+    || broker.leaderChangeRequested === true
+    || broker.leader_change_requested === true;
+}
+
+function applyActiveLeaderLockToOrderBody(body = {}) {
+  if (!body || typeof body !== 'object') return body;
+  const lockedTaskType = lockedLeaderTaskTypeFromOrderBody(body);
+  if (!lockedTaskType || !orderBodyHasActiveLeaderLock(body)) return body;
+  const explicitChangeTaskType = explicitLeaderChangeTaskTypeFromServerText(body.prompt || '');
+  const taskType = explicitChangeTaskType || lockedTaskType;
+  const leaderChangeRequested = orderBodyLeaderChangeRequested(body) || Boolean(explicitChangeTaskType);
+  const input = body.input && typeof body.input === 'object' ? body.input : {};
+  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
+  const label = String(explicitChangeTaskType ? '' : (body.active_leader_name || body.activeLeaderName || broker.activeLeader?.label || '')).trim()
+    || taskType.split(/[_\s-]+/).filter(Boolean).map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`).join(' ');
+  return {
+    ...body,
+    task_type: taskType,
+    taskType,
+    active_leader_task_type: taskType,
+    activeLeaderTaskType: taskType,
+    active_leader_name: label,
+    activeLeaderName: label,
+    active_leader_locked: true,
+    activeLeaderLocked: true,
+    ...(leaderChangeRequested ? { leader_change_requested: true, leaderChangeRequested: true } : {}),
+    input: {
+      ...input,
+      _broker: {
+        ...broker,
+        activeLeaderLocked: true,
+        ...(leaderChangeRequested ? { leaderChangeRequested: true } : {}),
+        conversationOwner: {
+          type: 'leader',
+          taskType,
+          label,
+          reason: leaderChangeRequested
+            ? 'User explicitly changed the locked leader.'
+            : 'Leader was already confirmed in chat.'
+        },
+        activeLeader: {
+          taskType,
+          label,
+          reason: leaderChangeRequested
+            ? 'User explicitly changed the locked leader.'
+            : 'Leader was already confirmed in chat.'
+        }
+      }
+    }
+  };
+}
+
 function openChatIntentTaskTypeForPrepare(result = {}, prompt = '') {
   const briefTask = serverStructuredOrderBriefParts(result.order_brief || result.orderBrief || '').taskType;
   if (briefTask) return briefTask;
@@ -5012,6 +5144,7 @@ async function prepareWorkOrderRequest(_storage, request, env = {}) {
   } catch (error) {
     return { error: error.message, statusCode: 400 };
   }
+  body = applyActiveLeaderLockToOrderBody(body);
   const prompt = String(body?.prompt || '').trim();
   const promptInjection = promptInjectionGuardForPrompt(prompt);
   if (promptInjection.blocked) return { ...promptPolicyBlockPayload(promptInjection), statusCode: 400 };
@@ -17409,6 +17542,7 @@ async function handleCreateJob(storage, request, env, ctx = null) {
   } catch (error) {
     return json({ error: error.message }, 400);
   }
+  body = applyActiveLeaderLockToOrderBody(body);
   try {
     current = await currentOrderRequesterContext(storage, request, env);
     const touchUsage = async () => {

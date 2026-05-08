@@ -435,6 +435,36 @@ assert.ok(
 assert.equal(selectedCmoPrepare.body.ownerType, 'leader', 'selected CMO leader should make the leader the chat owner.');
 assert.equal(selectedCmoPrepare.body.activeLeaderTaskType, 'cmo_leader', 'selected CMO leader should be exposed as the active chat lead.');
 
+const lockedCmoPrepare = await request('/api/work/prepare-order', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    prompt: 'Original request: improve signup growth. User clarification: Product/service: https://example.com; target signup trials; also review product wording.',
+    active_leader_task_type: 'cmo_leader',
+    active_leader_name: 'CMO Leader',
+    active_leader_locked: true,
+    requestedStrategy: 'auto'
+  })
+});
+assert.equal(lockedCmoPrepare.status, 200);
+assert.equal(lockedCmoPrepare.body.taskType, 'cmo_leader', 'active leader lock should preserve CMO even when later clarification contains generic product wording.');
+assert.equal(lockedCmoPrepare.body.activeLeaderTaskType, 'cmo_leader');
+
+const explicitCpoOverridePrepare = await request('/api/work/prepare-order', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    prompt: 'CPO Leaderに変更して、プロダクトロードマップとして進めてください。',
+    active_leader_task_type: 'cmo_leader',
+    active_leader_name: 'CMO Leader',
+    active_leader_locked: true,
+    requestedStrategy: 'auto'
+  })
+});
+assert.equal(explicitCpoOverridePrepare.status, 200);
+assert.equal(explicitCpoOverridePrepare.body.taskType, 'cpo_leader', 'explicit user leader-change wording should override the locked leader.');
+assert.equal(explicitCpoOverridePrepare.body.activeLeaderTaskType, 'cpo_leader');
+
 const broadGrowthPrepare = await request('/api/work/prepare-order', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },

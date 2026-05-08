@@ -10,11 +10,19 @@ export function chatEngineIsNeedsInputResponse(response = {}) {
 }
 
 export function chatEngineBuildPrepareOrderPayload(prompt = '', options = {}) {
-  const taskType = String(options.taskType || options.task_type || options.selectedTaskType || '').trim();
   const selectedAgentId = String(options.selectedAgentId || options.selected_agent_id || '').trim();
   const selectedAgentName = String(options.selectedAgentName || options.selected_agent_name || '').trim();
   const activeLeaderTaskType = String(options.activeLeaderTaskType || options.active_leader_task_type || '').trim();
   const activeLeaderName = String(options.activeLeaderName || options.active_leader_name || '').trim();
+  const activeLeaderLocked = options.activeLeaderLocked === true || options.active_leader_locked === true;
+  const leaderChangeRequested = options.leaderChangeRequested === true || options.leader_change_requested === true;
+  const taskType = String(
+    options.taskType
+    || options.task_type
+    || options.selectedTaskType
+    || (activeLeaderLocked && !leaderChangeRequested ? activeLeaderTaskType : '')
+    || ''
+  ).trim();
   return {
     prompt: String(prompt || '').trim(),
     requestedStrategy: String(options.requestedStrategy || CHAT_ENGINE_DEFAULT_REQUESTED_STRATEGY).trim() || CHAT_ENGINE_DEFAULT_REQUESTED_STRATEGY,
@@ -23,6 +31,8 @@ export function chatEngineBuildPrepareOrderPayload(prompt = '', options = {}) {
     ...(selectedAgentName ? { selected_agent_name: selectedAgentName } : {}),
     ...(activeLeaderTaskType ? { active_leader_task_type: activeLeaderTaskType } : {}),
     ...(activeLeaderName ? { active_leader_name: activeLeaderName } : {}),
+    ...(activeLeaderLocked ? { active_leader_locked: true } : {}),
+    ...(leaderChangeRequested ? { leader_change_requested: true } : {}),
     ...(options.intakeAnswered === true ? { intake_answered: true } : {})
   };
 }
@@ -162,6 +172,14 @@ export function chatEngineDraftBrief(prompt = '', prepared = {}, options = {}) {
 
 export function chatEngineBuildOrderDraft(prompt = '', prepared = {}, options = {}) {
   const owner = chatEngineConversationOwner(prepared, options);
+  const activeLeaderLocked = options.activeLeaderLocked === true
+    || options.active_leader_locked === true
+    || prepared.activeLeaderLocked === true
+    || prepared.active_leader_locked === true;
+  const leaderChangeRequested = options.leaderChangeRequested === true
+    || options.leader_change_requested === true
+    || prepared.leaderChangeRequested === true
+    || prepared.leader_change_requested === true;
   return {
     ...prepared,
     prompt: chatEngineDraftBrief(prompt, prepared, options),
@@ -173,6 +191,8 @@ export function chatEngineBuildOrderDraft(prompt = '', prepared = {}, options = 
     conversationOwner: owner,
     activeLeaderTaskType: owner.type === 'leader' ? owner.taskType : '',
     activeLeaderName: owner.type === 'leader' ? owner.label : '',
+    activeLeaderLocked: activeLeaderLocked && owner.type === 'leader',
+    leaderChangeRequested,
     updatedAt: new Date().toISOString()
   };
 }
@@ -195,6 +215,12 @@ export function chatEngineBuildJobPayload(draft = {}, options = {}) {
     visitor_id: options.visitorId || draft.visitor_id || '',
     budget_cap: Number(options.budgetCap ?? draft.budget_cap ?? 500),
     deadline_sec: Number(options.deadlineSec ?? draft.deadline_sec ?? 300),
+    ...(draft.activeLeaderLocked === true && owner.type === 'leader' ? {
+      active_leader_task_type: owner.taskType,
+      active_leader_name: owner.label,
+      active_leader_locked: true
+    } : {}),
+    ...(draft.leaderChangeRequested === true ? { leader_change_requested: true } : {}),
     confirmation: {
       accepted: true,
       source: 'chat_send_order',
@@ -209,6 +235,8 @@ export function chatEngineBuildJobPayload(draft = {}, options = {}) {
         ...((draft.input && typeof draft.input === 'object' && draft.input._broker && typeof draft.input._broker === 'object') ? draft.input._broker : {}),
         ...broker,
         conversationOwner: owner,
+        ...(draft.activeLeaderLocked === true && owner.type === 'leader' ? { activeLeaderLocked: true } : {}),
+        ...(draft.leaderChangeRequested === true ? { leaderChangeRequested: true } : {}),
         ...(owner.type === 'leader' ? {
           activeLeader: {
             taskType: owner.taskType,
