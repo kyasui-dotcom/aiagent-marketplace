@@ -982,6 +982,39 @@ assert.notEqual(cmoWorkflowEnglishMediaContent, cmoWorkflowEnglishDirectoryConte
 assert.notEqual(cmoWorkflowEnglishXContent, cmoWorkflowEnglishRedditContent, 'CMO social action agents must produce channel-specific fallback artifacts.');
 
 const originalBuiltinQaFetch = globalThis.fetch;
+let cmoLeaderNetworkCalls = 0;
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input.url;
+  if (url === 'https://api.openai.com/v1/responses' || url.startsWith('https://api.search.brave.com/res/v1/web/search?')) {
+    cmoLeaderNetworkCalls += 1;
+  }
+  return originalBuiltinQaFetch(input, init);
+};
+try {
+  const cmoLeaderWorkflowPacket = await runBuiltInAgent('cmo_leader', {
+    prompt: 'Task: cmo_leader Goal: grow signups for https://aiagent-marketplace.net with SEO, referral sites, and social.',
+    output_language: 'English',
+    input: {
+      _broker: {
+        workflow: {
+          primaryTask: 'cmo_leader',
+          sequencePhase: 'initial',
+          plannedTasks: ['cmo_leader', 'research', 'media_planner', 'seo_gap']
+        }
+      }
+    }
+  }, {
+    OPENAI_API_KEY: 'sk-test-leader-packet',
+    BRAVE_SEARCH_API_KEY: 'brave-test-key'
+  });
+  assert.equal(cmoLeaderNetworkCalls, 0, 'Workflow leader packet should not spend the first dispatch on OpenAI or Brave');
+  assert.equal(cmoLeaderWorkflowPacket.status, 'completed');
+  assert.equal(cmoLeaderWorkflowPacket.runtime.workflow, 'workflow_leader_packet');
+  assert.ok(cmoLeaderWorkflowPacket.files[0].content.includes('research -> planning -> preparation'));
+} finally {
+  globalThis.fetch = originalBuiltinQaFetch;
+}
+
 let genericCmoOpenAiCalls = 0;
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
