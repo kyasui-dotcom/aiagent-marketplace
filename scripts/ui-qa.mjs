@@ -348,7 +348,7 @@ for (const app of builtInAppEntries) {
 }
 
 assert.ok(analyticsJs.includes("source_app: 'analytics_console'"), 'Analytics app logic should stay in analytics-console.js.');
-assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260508d"), 'Analytics Console should load the latest CAIt app bridge.');
+assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260508e"), 'Analytics Console should load the latest CAIt app bridge.');
 assert.ok(caitAppBridge.includes("`${origin}/auth/status`"), 'CAIt app bridge should read auth status before same-origin context handoff.');
 assert.ok(caitAppBridge.includes("headers['x-aiagent2-csrf'] = csrfToken"), 'CAIt app bridge should attach CSRF token to same-origin context handoff writes.');
 assert.ok(caitAppBridge.includes('createServerAppContextWithRetry'), 'CAIt app bridge should retry server-side app context writes.');
@@ -501,7 +501,7 @@ assert.ok(!deliveryManagerJs.includes('local delivery samples'), 'Delivery Manag
 
 assert.ok(chatJs.includes("from './chat-engine.js?v=20260508c'"), 'Chat JS should use root-relative shared chat engine import.');
 assert.ok(chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should use root-relative delivery action import.');
-assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260508d'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
+assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260508e'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
 assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
 assert.ok(chatJs.includes('await consumeCaitAppContextForChat()'), 'Chat should await server-side app context retrieval before filling the composer.');
 assert.ok(chatJs.includes('refreshAppContexts'), 'Chat Apps panel should load reusable app contexts from the server.');
@@ -587,7 +587,7 @@ assert.ok(chatJs.includes("await api('/auth/logout'"), 'Chat sign out should cal
 assert.ok(chatJs.includes('data-chat-logout'), 'Chat should render logout controls.');
 assert.ok(chatJs.includes("new URL('/login', window.location.origin)"), 'Chat should client-gate unauthenticated static asset access.');
 assert.ok(chatJs.includes("loginUrl.searchParams.set('next', nextPath || CHATUX_RETURN_PATH)"), 'Chat login gate should preserve the current chat path and context query.');
-assert.ok(chatJs.includes("timeoutMs: 2500"), 'Chat auth checks should time out quickly enough to retry instead of leaving Checking session stuck.');
+assert.ok(chatJs.includes("timeoutMs: 5000"), 'Chat auth checks should time out quickly enough to retry without false session-unavailable states.');
 assert.ok(chatJs.includes("await apiWithRetry('/api/work/prepare-order'"), 'Chat should retry transient prepare-order failures before surfacing an error.');
 assert.ok(chatJs.includes('maxAttempts: 5'), 'Chat prepare-order retry should wait through short production 5xx/429 bursts.');
 assert.ok(chatJs.includes('intake.taskType || intake.task_type'), 'Intake answers should preserve the originally selected leader task.');

@@ -15,7 +15,7 @@ import {
   caitAppContextChatPrompt,
   caitAppContextThreadHtml,
   consumeCaitAppContextForChat
-} from './cait-app-bridge.js?v=20260508d';
+} from './cait-app-bridge.js?v=20260508e';
 import {
   isLeaderCatalogQuestionIntentText,
   isNonOrderConversationIntentText
@@ -5967,7 +5967,7 @@ async function refreshAuth(options = {}) {
   try {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
-        const auth = await api('/auth/status', { method: 'GET', timeoutMs: 2500 });
+        const auth = await api('/auth/status', { method: 'GET', timeoutMs: 5000 });
         if (!applyAuthState(auth || {}, { redirectIfGuest: true })) return;
         warmUtilityCatalogs();
         if (!state.chatSessionHistoryFetchedAt && !state.chatSessionHistoryRequest) void refreshChatSessionHistory({ force: true });
@@ -5982,7 +5982,7 @@ async function refreshAuth(options = {}) {
     if (options.scheduleRetry !== false) {
       state.authRefreshRetryTimer = window.setTimeout(() => {
         state.authRefreshRetryTimer = null;
-        void refreshAuth({ maxAttempts: 2, scheduleRetry: false });
+        void refreshAuth({ maxAttempts: 2 });
       }, authRefreshRetryDelay(lastError, maxAttempts));
     }
   } finally {

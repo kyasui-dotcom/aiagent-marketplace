@@ -59,5 +59,5 @@ export async function openAuthenticatedChat(page, options = {}) {
   await expect(page.locator('#chatThread')).toBeVisible();
   await expect(page.locator('#promptInput')).toBeVisible();
   await expect(page.locator('#sendMessageBtn')).toBeVisible();
-  await expect(page.locator('#authStatus')).toContainText(/Signed in as|ログイン|サインイン/, { timeout: 15_000 });
+  await expect(page.locator('#authStatus')).toContainText(/Signed in as|ログイン|サインイン/, { timeout: liveMode ? 45_000 : 15_000 });
 }

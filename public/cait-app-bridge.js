@@ -89,7 +89,7 @@ async function caitCsrfToken(origin = '') {
     const { response, data } = await fetchJsonWithTimeout(`${origin}/auth/status`, {
       headers: { accept: 'application/json' },
       credentials: 'same-origin'
-    }, 2500);
+    }, 5000);
     if (!response.ok) return '';
     return String(data?.csrfToken || '').trim();
   } catch {
