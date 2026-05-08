@@ -1,4 +1,5 @@
 const CAIT_APP_CONTEXT_SCHEMA = 'cait-app-context/v1';
+const CAIT_APP_CONTEXT_CHANNEL = 'cait-app-context';
 const DEFAULT_CAIt_ORIGIN = 'https://aiagent-marketplace.net';
 
 function nowIso() {
@@ -116,6 +117,20 @@ function sameOriginOpener() {
   }
 }
 
+function publishCaitAppContextMessage(message = {}) {
+  if (!message || typeof message !== 'object') return;
+  const payload = {
+    ...message,
+    origin: window.location.origin,
+    sent_at: nowIso()
+  };
+  try {
+    const channel = new BroadcastChannel(CAIT_APP_CONTEXT_CHANNEL);
+    channel.postMessage(payload);
+    channel.close();
+  } catch {}
+}
+
 function localChatReturnUrl(serverContext = {}, context = {}, options = {}) {
   const origin = caitOrigin(options);
   const raw = context?.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
@@ -229,7 +244,7 @@ export async function sendContextToCait(raw = {}, options = {}) {
       return null;
     });
     const immediateTarget = localChatReturnUrl(null, context, options);
-    opener.postMessage({
+    const immediateMessage = {
       type: 'cait-app-context',
       source: 'cait-app-bridge',
       context,
@@ -237,17 +252,21 @@ export async function sendContextToCait(raw = {}, options = {}) {
       app_context_token: '',
       chat_url: immediateTarget,
       server_record_pending: true
-    }, window.location.origin);
+    };
+    opener.postMessage(immediateMessage, window.location.origin);
+    publishCaitAppContextMessage(immediateMessage);
     const serverContext = await serverContextPromise;
     if (serverContext?.app_context_id) {
-      opener.postMessage({
+      const serverRecordMessage = {
         type: 'cait-app-context-server-record',
         source: 'cait-app-bridge',
         context_id: serverContext.app_context_id,
         app_context_id: serverContext.app_context_id,
         app_context_token: serverContext.app_context_token || '',
         chat_url: localChatReturnUrl(serverContext, context, options)
-      }, window.location.origin);
+      };
+      opener.postMessage(serverRecordMessage, window.location.origin);
+      publishCaitAppContextMessage(serverRecordMessage);
     }
     window.setTimeout(() => {
       try { window.close(); } catch {}
@@ -257,6 +276,14 @@ export async function sendContextToCait(raw = {}, options = {}) {
   const serverContext = await createServerAppContextWithRetry(context, options);
   const target = localChatReturnUrl(serverContext, context, options);
   if (options.open === false) return target;
+  publishCaitAppContextMessage({
+    type: 'cait-app-context',
+    source: 'cait-app-bridge',
+    context,
+    app_context_id: serverContext?.app_context_id || '',
+    app_context_token: serverContext?.app_context_token || '',
+    chat_url: target
+  });
   window.location.href = target;
   return target;
 }

@@ -28,6 +28,7 @@ const CHATUX_CATALOG_CACHE_TTL_MS = 60000;
 const CHATUX_PROGRESS_MAX_POLLS = 300;
 const CHATUX_OAUTH_RETURN_STATE_KEY = 'cait.chat.oauthReturnState.v1';
 const CHATUX_OAUTH_RETURN_MAX_AGE_MS = 30 * 60 * 1000;
+const CAIT_APP_CONTEXT_CHANNEL = 'cait-app-context';
 const CHATUX_WELCOME_TEXT = 'What do you want done?';
 const X_CLIENT_OPS_URL = 'https://x.niche-s.com/';
 const CORE_FEATURE_APP_IDS = new Set(['delivery-manager']);
@@ -211,6 +212,7 @@ const state = {
 const deliveryFileStore = new Map();
 const appTransferStore = new Map();
 const processedAppContextIds = new Set();
+let appContextBroadcastChannel = null;
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -6000,6 +6002,34 @@ function handleInboundAppContextServerRecord(data = {}) {
   return true;
 }
 
+function handleCaitAppContextMessage(data = {}, options = {}) {
+  if (!data || typeof data !== 'object') return false;
+  const origin = String(options.origin || data.origin || '').trim();
+  if (origin && origin !== window.location.origin) return false;
+  if (data.type === 'cait-app-context-server-record') {
+    return handleInboundAppContextServerRecord(data);
+  }
+  if (data.type !== 'cait-app-context') return false;
+  void handleInboundAppContext(data.context || {}, {
+    label: 'App context',
+    appContextId: data.app_context_id || '',
+    appContextToken: data.app_context_token || ''
+  });
+  return true;
+}
+
+function startAppContextBroadcastListener() {
+  if (appContextBroadcastChannel || typeof BroadcastChannel !== 'function') return;
+  try {
+    appContextBroadcastChannel = new BroadcastChannel(CAIT_APP_CONTEXT_CHANNEL);
+    appContextBroadcastChannel.addEventListener('message', (event) => {
+      handleCaitAppContextMessage(event.data || {});
+    });
+  } catch {
+    appContextBroadcastChannel = null;
+  }
+}
+
 async function hydrateAppContextFromUrl() {
   const context = await consumeCaitAppContextForChat();
   if (!context) return false;
@@ -6189,16 +6219,7 @@ window.addEventListener('message', (event) => {
     void handleOAuthPopupReturnMessage(data);
     return;
   }
-  if (data.type === 'cait-app-context-server-record') {
-    handleInboundAppContextServerRecord(data);
-    return;
-  }
-  if (data.type !== 'cait-app-context') return;
-  void handleInboundAppContext(data.context || {}, {
-    label: 'App context',
-    appContextId: data.app_context_id || '',
-    appContextToken: data.app_context_token || ''
-  });
+  handleCaitAppContextMessage(data, { origin: event.origin });
 });
 
 document.addEventListener('click', (event) => {
@@ -6749,6 +6770,7 @@ els.resetBtn.addEventListener('click', resetChat);
 renderActiveLeaderStatus();
 updateComposerMode();
 renderChatSessionSidebar();
+startAppContextBroadcastListener();
 if (!handleChatOAuthPopupReturn()) {
   restoreChatOAuthReturnStateFromUrl();
   void hydrateAppContextFromUrl();

@@ -138,7 +138,7 @@ assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat c
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/chat.css?v=20260508a'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508m"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508n"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -267,7 +267,7 @@ assert.ok(appsHtml.includes('cait-app-context/v1'), 'Apps hub should explain the
 assert.ok(analyticsHtml.includes('Analytics Console'), 'Analytics Console should be a first-class app page.');
 assert.ok(analyticsHtml.includes('href="/apps.html"'), 'Analytics Console should link back to the apps hub.');
 assert.ok(analyticsHtml.includes('id="sendContextBtn"'), 'Analytics Console should send context to CAIt.');
-assert.ok(analyticsHtml.includes('/analytics-console.js?v=20260508e'), 'Analytics Console should load the app-context receiving controller.');
+assert.ok(analyticsHtml.includes('/analytics-console.js?v=20260508f'), 'Analytics Console should load the app-context receiving controller.');
 assert.ok(analyticsHtml.includes('/app-console.css?v=20260507a'), 'Analytics Console should load the current shared app console CSS.');
 assert.ok(analyticsHtml.includes('id="analyticsStepSources"'), 'Analytics Console should show a compact workflow state strip.');
 assert.ok(analyticsHtml.includes('id="connectGoogleBtn"'), 'Analytics Console should expose a Google OAuth connection button.');
@@ -348,7 +348,7 @@ for (const app of builtInAppEntries) {
 }
 
 assert.ok(analyticsJs.includes("source_app: 'analytics_console'"), 'Analytics app logic should stay in analytics-console.js.');
-assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260508b"), 'Analytics Console should load the latest CAIt app bridge.');
+assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260508c"), 'Analytics Console should load the latest CAIt app bridge.');
 assert.ok(caitAppBridge.includes("fetch(`${origin}/auth/status`"), 'CAIt app bridge should read auth status before same-origin context handoff.');
 assert.ok(caitAppBridge.includes("headers['x-aiagent2-csrf'] = csrfToken"), 'CAIt app bridge should attach CSRF token to same-origin context handoff writes.');
 assert.ok(!analyticsJs.includes("source_app: 'publisher_approval_studio'"), 'Analytics Console JS should not contain Publisher app logic.');
@@ -418,6 +418,7 @@ assert.ok(caitAppBridge.includes('sendContextToCait'), 'Shared app bridge should
 assert.ok(caitAppBridge.includes('fetchCaitAppContextFromUrl'), 'Shared app bridge should let apps receive server-side CAIt contexts by id/token.');
 assert.ok(caitAppBridge.includes('consumeCaitAppContextForChat'), 'Shared app bridge should let chat consume returned app context.');
 assert.ok(caitAppBridge.includes('/api/app-contexts'), 'Shared app bridge should use the generic server-side app context API when possible.');
+assert.ok(caitAppBridge.includes('BroadcastChannel'), 'Shared app bridge should notify an already-open chat without browser persistence.');
 assert.ok(caitAppBridge.includes('app_context_id'), 'Shared app bridge should support server-side app context ids.');
 assert.ok(caitAppBridge.includes('cait_app_context_id'), 'Shared app bridge should support CAIt app handoff context ids.');
 assert.ok(!caitAppBridge.includes('localStorage'), 'Shared app bridge should not use browser localStorage for app context transfer.');
@@ -503,6 +504,7 @@ assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app 
 assert.ok(chatJs.includes('await consumeCaitAppContextForChat()'), 'Chat should await server-side app context retrieval before filling the composer.');
 assert.ok(chatJs.includes('refreshAppContexts'), 'Chat Apps panel should load reusable app contexts from the server.');
 assert.ok(chatJs.includes('/api/app-contexts'), 'Chat should read app context history through the server API.');
+assert.ok(chatJs.includes('BroadcastChannel'), 'Chat should receive app context handoffs from a separate same-origin app window.');
 assert.ok(chatJs.includes('data-app-context-load'), 'Chat should let users load a server-side app context back into the composer.');
 assert.ok(chatJs.includes('refreshRecentJobs'), 'Chat history should be derived from the server job API.');
 assert.ok(!chatJs.includes('localStorage'), 'Chat should not persist order, app, or agent history in browser localStorage.');
