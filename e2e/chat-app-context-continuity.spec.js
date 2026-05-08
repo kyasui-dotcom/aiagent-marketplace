@@ -13,6 +13,19 @@ test.describe('CAIt app context continuity', () => {
         body: JSON.stringify({ error: 'Open chat LLM disabled for deterministic app continuity E2E.' })
       });
     });
+    let prepareOrderFailures = 0;
+    await page.route('**/api/work/prepare-order', async (route) => {
+      if (route.request().method() !== 'POST' || prepareOrderFailures > 0) {
+        await route.continue();
+        return;
+      }
+      prepareOrderFailures += 1;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Prepare-order temporarily unavailable.' })
+      });
+    });
     await openAuthenticatedChat(page, {
       returnTo: '/chat?e2e=app-context-continuity',
       loginSource: 'playwright_app_context_continuity'

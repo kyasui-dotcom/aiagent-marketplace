@@ -5072,6 +5072,66 @@ function leaderTaskTypeFromIntentResult(prompt = '', result = {}) {
   return '';
 }
 
+function clientPrepareOrderIntakeFallback(prompt = '', options = {}) {
+  const taskType = String(options.taskType || options.task_type || options.activeLeaderTaskType || options.active_leader_task_type || leaderTaskTypeFromIntentResult(prompt, {}) || 'research').trim();
+  const leaderName = options.activeLeaderName || options.active_leader_name || taskLabel(taskType);
+  const ja = chatLanguage(prompt) === 'ja';
+  const cmo = taskType === 'cmo_leader';
+  const questions = cmo
+    ? (ja
+        ? [
+            '売りたい商材・サービス内容とそのURLを教えてください。',
+            '増やしたい具体的な行動（購入、問い合わせ、登録など）とターゲット層を教えてください。',
+            'GA4、Search Console、LP、価格表、営業資料など参考にしたい資料や実データはありますか？',
+            '優先したいチャネル、避けたい施策、予算や期限などの制約を教えてください。'
+          ]
+        : [
+            'What product, service, and URL should this acquisition work focus on?',
+            'Which action should increase, such as purchases, inquiries, signups, or trials, and who is the target audience?',
+            'Do you have GA4, Search Console, landing pages, pricing, sales material, or other evidence to use?',
+            'Which channels, constraints, budget, deadline, or avoided tactics should the leader respect?'
+          ])
+    : (ja
+        ? [
+            '今回達成したい成果と対象を教えてください。',
+            '参考にしたい資料、URL、データ、制約があれば教えてください。',
+            '最終アウトプットの形式と優先順位を教えてください。'
+          ]
+        : [
+            'What outcome and target should this work focus on?',
+            'What source material, URLs, data, or constraints should be used?',
+            'What final output format and priority should the leader optimize for?'
+          ]);
+  return {
+    ok: true,
+    status: 'needs_input',
+    needs_input: true,
+    reason: 'client_prepare_order_intake_fallback',
+    prompt,
+    source: 'client_fallback',
+    inferred_task_type: taskType,
+    taskType,
+    activeLeaderTaskType: taskType,
+    activeLeaderName: leaderName,
+    questions,
+    message: ja
+      ? `${leaderName} が実行前に確認したい内容です。まだ実行も課金もしていません。`
+      : `${leaderName} needs this context before execution. Nothing has run or been billed yet.`,
+    conversationOwner: {
+      type: 'leader',
+      taskType,
+      label: leaderName,
+      reason: 'Client-side intake fallback after prepare-order was temporarily unavailable.'
+    },
+    intake: {
+      originalPrompt: prompt,
+      taskType,
+      questions,
+      questionSource: 'client_fallback'
+    }
+  };
+}
+
 async function handleChatIntentWithLlm(prompt = '') {
   const result = await resolveChatIntentWithLlm(prompt);
   if (!result) return false;
@@ -5411,9 +5471,12 @@ async function prepareOrder(prompt, options = {}) {
     || lockedStateLeader?.label
     || '';
   const activeLeaderLocked = Boolean(state.activeLeaderLocked && state.activeLeader?.taskType);
-  const prepared = await api('/api/work/prepare-order', {
-    method: 'POST',
-    body: JSON.stringify(chatEngineBuildPrepareOrderPayload(prompt, {
+  const skipOpenAiIntent = options.skipOpenAiIntent === true || options.skip_openai_intent === true;
+  let prepared;
+  try {
+    prepared = await api('/api/work/prepare-order', {
+      method: 'POST',
+      body: JSON.stringify(chatEngineBuildPrepareOrderPayload(prompt, {
       requestedStrategy: 'auto',
       taskType: effectiveLeaderOwner?.taskType || options.taskType || options.task_type || '',
       selectedAgentId: options.selectedAgentId || options.selected_agent_id || '',
@@ -5423,9 +5486,18 @@ async function prepareOrder(prompt, options = {}) {
       activeLeaderLocked,
       leaderChangeRequested,
       intakeAnswered: options.intakeAnswered === true,
-      skipOpenAiIntent: options.skipOpenAiIntent === true || options.skip_openai_intent === true
-    }))
-  });
+      skipOpenAiIntent
+      }))
+    });
+  } catch (error) {
+    if (!skipOpenAiIntent || options.intakeAnswered === true) throw error;
+    prepared = clientPrepareOrderIntakeFallback(prompt, {
+      ...options,
+      taskType: effectiveLeaderOwner?.taskType || options.taskType || options.task_type || effectiveActiveLeaderTaskType,
+      activeLeaderTaskType: effectiveActiveLeaderTaskType,
+      activeLeaderName: effectiveActiveLeaderName
+    });
+  }
   const finalPrepared = effectiveLeaderOwner
     ? withLeaderOwner(prepared, effectiveLeaderOwner, {
         leaderChangeRequested,
