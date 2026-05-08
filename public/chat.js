@@ -5421,7 +5421,8 @@ async function prepareOrder(prompt, options = {}) {
       activeLeaderName: effectiveActiveLeaderName,
       activeLeaderLocked,
       leaderChangeRequested,
-      intakeAnswered: options.intakeAnswered === true
+      intakeAnswered: options.intakeAnswered === true,
+      skipOpenAiIntent: options.skipOpenAiIntent === true || options.skip_openai_intent === true
     }))
   });
   const finalPrepared = effectiveLeaderOwner
