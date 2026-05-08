@@ -120,6 +120,7 @@ assert.ok(!html.includes('href="/chat.html"'), 'Root should not link directly to
 assert.ok(html.includes('<nav class="home-links" aria-label="CAIt pages">'), 'Root should expose the common public navigation in the landing header.');
 assert.ok(html.includes('href="/login?next=%2Fchat&amp;source=nav"'), 'Root header Chat link should route through login.');
 assert.ok(html.includes('href="/apps.html"'), 'Root should expose the new CAIt app hub.');
+assert.ok(html.includes('href="/delivery-manager.html"'), 'Root header should expose the built-in Deliveries feature.');
 assert.ok(html.includes('href="/legal-notice.html"'), 'Root footer should link to the legal notice disclosure.');
 assert.ok(html.includes('Legal Notice (SCTA)'), 'Root footer should use a concise global legal notice label.');
 assert.ok(!html.includes('href="/tokushoho.html"'), 'Root footer should not use the Japanese romanized legal notice URL.');
@@ -149,6 +150,7 @@ assert.ok(chatHtml.includes('id="newChatBtn"'), 'Chat should expose a New chat a
 assert.ok(chatHtml.includes('id="openScheduleBtn"'), 'Chat should expose a compact schedule button.');
 assert.ok(chatHtml.includes('id="openScheduleComposerBtn"'), 'Chat should expose scheduled work next to the chat composer.');
 assert.ok(chatHtml.includes('class="chatux-nav"'), 'Chat should expose links to existing pages.');
+assert.ok(chatHtml.includes('href="/delivery-manager.html"'), 'Chat header should link to the built-in Deliveries feature.');
 assert.ok(chatHtml.includes('href="/admin" id="adminNavLink" hidden'), 'Chat should expose an admin link only when admin auth reveals it.');
 assert.ok(chatJs.includes('appendThinkingMessage'), 'Chat should show a transient thinking state while OpenAI intent classification is running.');
 assert.ok(chatJs.includes('Thinking...'), 'Chat thinking state should use English copy on the English chat page.');
@@ -251,7 +253,9 @@ assert.ok(adminHtml.includes('type="module" src="/admin.js?v=20260501b"'), 'Admi
 assert.ok(adminHtml.includes('id="adminRegistrationsMetric"'), 'Admin should show member registration counts.');
 assert.ok(adminHtml.includes('id="accountsTable"'), 'Admin should include a user/account table.');
 assert.ok(adminHtml.includes('id="downloadAccountsBtn"'), 'Admin should provide account CSV download.');
+assert.ok(adminHtml.includes('href="/delivery-manager.html"'), 'Admin header should link to the built-in Deliveries feature.');
 assert.ok(appsHtml.includes('CAIt Apps'), 'Apps hub should list CAIt app consoles.');
+assert.ok(appsHtml.includes('href="/delivery-manager.html"'), 'Apps hub header should link to the built-in Deliveries feature.');
 assert.ok(appsHtml.includes('data-featured-app-list'), 'Apps hub should render featured workflows from the app registry.');
 assert.ok(appsJs.includes('sameOriginAppUrl'), 'Apps hub should normalize built-in app URLs to the current origin.');
 assert.ok(appsJs.includes('analytics-console'), 'Apps hub registry rendering should include Analytics Console.');
