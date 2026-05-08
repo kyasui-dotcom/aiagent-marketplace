@@ -172,6 +172,8 @@ const state = {
   trackedOrderIds: new Set(),
   deliveredOrderIds: new Set(),
   authorityNoticeKeys: new Set(),
+  progressPollLimitNotifiedOrderIds: new Set(),
+  progressErrorNoticeKeys: new Set(),
   appAgentHistory: [],
   aiAgentHistory: [],
   recentJobs: [],
@@ -5863,7 +5865,10 @@ function startPolling(orderId) {
         window.clearInterval(state.polling);
         state.polling = null;
         updateComposerMode();
-        appendTextMessage('system', 'Live progress polling reached its limit, so I switched to background order-history checks. No new order was created. Reload or ask for status to check again.');
+        if (!state.progressPollLimitNotifiedOrderIds.has(orderId)) {
+          state.progressPollLimitNotifiedOrderIds.add(orderId);
+          appendTextMessage('system', 'Live progress polling reached its limit, so I switched to background order-history checks. No new order was created. Reload or ask for status to check again.');
+        }
         startDeliveryBackfillLoop({ maxRuns: 60 });
       }
     } catch (error) {
@@ -5883,7 +5888,9 @@ function startPolling(orderId) {
           status: status ? `retrying after ${status}` : 'retrying',
           steps: ['Live poll retry', 'History backfill active']
         });
-        if ([1, 4, 8].includes(consecutiveProgressErrors)) {
+        const noticeKey = `${orderId}|${status || 'network'}|${consecutiveProgressErrors}`;
+        if ([1, 4, 8].includes(consecutiveProgressErrors) && !state.progressErrorNoticeKeys.has(noticeKey)) {
+          state.progressErrorNoticeKeys.add(noticeKey);
           appendTextMessage('system', `Progress check temporarily failed${status ? ` (${status})` : ''}. Retrying in this chat; the order remains attached.`);
         }
         if (consecutiveProgressErrors === 1) startDeliveryBackfillLoop({ maxRuns: 8 });

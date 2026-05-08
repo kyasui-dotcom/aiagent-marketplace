@@ -4701,7 +4701,7 @@ function computeNextRetryAt(attempts, baseTime = Date.now()) {
 const DISPATCH_SCHEDULE_STALE_MS = 90_000;
 const BUILT_IN_DISPATCH_SCHEDULE_STALE_MS = 8 * 60 * 1000;
 const DISPATCH_SCHEDULE_TIMEOUT_MS = 10 * 60 * 1000;
-const COMPLETION_SWEEP_STALE_MS = 3 * 60 * 1000;
+const COMPLETION_SWEEP_STALE_MS = 15 * 60 * 1000;
 const DEFAULT_WORKFLOW_DISPATCH_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function dispatchScheduleIsFresh(job, now = Date.now(), staleMs = DISPATCH_SCHEDULE_STALE_MS) {
@@ -11918,6 +11918,43 @@ async function reconcileWorkflowParent(storage, parentJobId) {
         parent.failureReason = leaderQualityGateBlock.failureReason || 'Leader quality gate blocked workflow progression';
         return cloneJob(parent);
       }
+      const unrecoverableFailedChild = failed.find((item) => (
+        !canRetryJob(item)
+        && !isWorkflowLeaderTask(workflowTaskName(item))
+        && workflowDispatchLayer(parent, item) <= 2
+      ));
+      const approvalBlockedChild = children.some(workflowChildIsApprovalBlockedTerminal);
+      if (unrecoverableFailedChild && !approvalBlockedChild && !running.length && !queued.length) {
+        blockWorkflowPendingChildren(children.filter((item) => item.status === 'blocked' || item.status === 'queued'), 'blocked_after_prior_layer_failure');
+        const refreshedChildRuns = workflowChildSnapshot(children);
+        parent.workflow = {
+          ...(parent.workflow || {}),
+          childRuns: refreshedChildRuns,
+          statusCounts: {
+            total: expectedTotal,
+            planned: plannedRunCount,
+            completed: children.filter((item) => item.status === 'completed').length,
+            failed: children.filter((item) => ['failed', 'timed_out'].includes(String(item.status || '').toLowerCase())).length,
+            blocked: children.filter((item) => item.status === 'blocked').length,
+            queued: children.filter((item) => item.status === 'queued').length,
+            running: children.filter((item) => ['claimed', 'running', 'dispatched'].includes(String(item.status || '').toLowerCase())).length
+          },
+          leaderSequence: {
+            ...leaderSequence,
+            status: 'failed',
+            failedAt: unrecoverableFailedChild.failedAt || unrecoverableFailedChild.timedOutAt || nowIso()
+          }
+        };
+        parent.status = 'failed';
+        parent.completedAt = null;
+        parent.failedAt = unrecoverableFailedChild.failedAt || unrecoverableFailedChild.timedOutAt || nowIso();
+        parent.failureCategory = unrecoverableFailedChild.failureCategory || 'workflow_child_failed';
+        const failedTaskLabel = workflowTaskName(unrecoverableFailedChild) || unrecoverableFailedChild.taskType || 'workflow child';
+        parent.failureReason = `${failedTaskLabel} failed before the workflow could reach final summary: ${unrecoverableFailedChild.failureReason || 'No detailed failure reason was recorded.'}`;
+        parent.output = buildAgentTeamDeliveryOutput(parent, children);
+        syncJobAuthorityRequest(parent);
+        return cloneJob(parent);
+      }
       if (finalSummaryJobId && finalSummaryStatus !== 'completed') {
         parent.output = buildAgentTeamDeliveryOutput(parent, children);
         syncJobAuthorityRequest(parent);
@@ -12239,6 +12276,36 @@ function sourceCollectionFailureRetryMeta(env = {}, job = {}, options = {}) {
   const attempts = Number(job?.dispatch?.attempts || 0) + (options.alreadyAttempted ? 0 : 1);
   const maxRetries = workflowSourceCollectionMaxRetries(env);
   const retryable = attempts < maxRetries;
+  return {
+    attempts,
+    maxRetries,
+    retryable,
+    nextRetryAt: retryable ? computeNextRetryAt(attempts) : null
+  };
+}
+
+function workflowQualitySourceTask(job = {}) {
+  const task = String(job?.workflowTask || job?.taskType || '').trim().toLowerCase();
+  return Boolean(job?.workflowParentId) && ['research', 'teardown', 'data_analysis', 'validation', 'diligence'].includes(task);
+}
+
+function workflowBuiltInFailureRetryMeta(env = {}, job = {}, failureMeta = {}) {
+  const category = String(failureMeta.category || '').trim().toLowerCase();
+  const attempts = Number.isFinite(Number(failureMeta.attempts))
+    ? Number(failureMeta.attempts)
+    : Number(job?.dispatch?.attempts || 0) + 1;
+  const qualityRetryCategory = [
+    'missing_required_sources',
+    'dispatch_timeout',
+    'dispatch_queue_timeout',
+    'dispatch_http_5xx',
+    'dispatch_error'
+  ].includes(category);
+  const qualitySourceRetry = workflowQualitySourceTask(job) && qualityRetryCategory;
+  const maxRetries = qualitySourceRetry
+    ? Math.max(maxDispatchRetriesForJob(job), workflowSourceCollectionMaxRetries(env))
+    : (Number.isFinite(Number(failureMeta.maxRetries)) ? Number(failureMeta.maxRetries) : maxDispatchRetriesForJob(job));
+  const retryable = Boolean((qualitySourceRetry || failureMeta.retryable) && attempts < maxRetries);
   return {
     attempts,
     maxRetries,
@@ -15393,20 +15460,15 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
     if (normalized.failed) {
       const failureReason = normalized.failureReason || 'Built-in agent generation failed';
       const failureMeta = buildDispatchFailureMeta(locked, 502, failureReason);
-      const sourceCollectionFailure = failureMeta.category === 'missing_required_sources';
-      const attempts = Number(locked.dispatch?.attempts || 0) + 1;
-      const maxRetries = sourceCollectionFailure ? workflowSourceCollectionMaxRetries(env) : maxDispatchRetriesForJob(locked);
-      const retryable = sourceCollectionFailure
-        ? attempts < maxRetries
-        : failureMeta.retryable && attempts < maxRetries;
+      const retryMeta = workflowBuiltInFailureRetryMeta(env, locked, failureMeta);
       await failJob(storage, locked.id, normalized.failureReason || 'Built-in agent generation failed', [`failed by ${eventLabel}`, 'failure source=built-in-generation'], {
         failureStatus: 'failed',
         failureCategory: failureMeta.category || 'built_in_generation_failed',
         source: completionSource,
-        retryable,
-        attempts,
-        nextRetryAt: retryable ? computeNextRetryAt(attempts) : null,
-        maxRetries
+        retryable: retryMeta.retryable,
+        attempts: retryMeta.attempts,
+        nextRetryAt: retryMeta.nextRetryAt,
+        maxRetries: retryMeta.maxRetries
       });
       await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} failed by ${eventLabel}`);
       return { ok: true, mode: 'failed', jobId: locked.id };
@@ -15443,8 +15505,20 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
     await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} ${eventLabel} rejected: ${String(result?.error || 'unknown').slice(0, 120)}`);
     return { ok: false, mode: 'rejected', jobId: locked.id, error: result?.error || 'unknown' };
   } catch (error) {
+    const failureReason = `Built-in agent generation exception: ${String(error?.message || error).slice(0, 260)}`;
+    const failureMeta = buildDispatchFailureMeta(locked, error?.name === 'AbortError' ? 504 : 502, failureReason);
+    const retryMeta = workflowBuiltInFailureRetryMeta(env, locked, failureMeta);
+    await failJob(storage, locked.id, failureReason, [`${eventLabel} exception`, 'failure source=built-in-generation-exception'], {
+      failureStatus: 'failed',
+      failureCategory: failureMeta.category || 'built_in_generation_exception',
+      source: completionSource,
+      retryable: retryMeta.retryable,
+      attempts: retryMeta.attempts,
+      nextRetryAt: retryMeta.nextRetryAt,
+      maxRetries: retryMeta.maxRetries
+    });
     await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} ${eventLabel} exception ${String(error?.message || error).slice(0, 120)}`);
-    return { ok: false, mode: 'exception', jobId: locked.id, error: String(error?.message || error) };
+    return { ok: true, mode: 'failed', jobId: locked.id, error: String(error?.message || error) };
   }
 }
 
@@ -15544,6 +15618,8 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
           draftJob.timedOutAt = draftJob.failedAt;
           draftJob.failureReason = 'Built-in completion sweep started but did not finish before the cron safety timeout.';
           draftJob.failureCategory = 'dispatch_timeout';
+          const failureMeta = buildDispatchFailureMeta(draftJob, 504, draftJob.failureReason);
+          const retryMeta = workflowBuiltInFailureRetryMeta(env, draftJob, failureMeta);
           if (draftJob.billingReservation && !draftJob.billingSettlement?.settledAt && !draftJob.billingReservation?.releasedAt) {
             draftJob.billingReservation = {
               ...(draftJob.billingReservation || {}),
@@ -15554,8 +15630,10 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
           draftJob.dispatch = {
             ...(draftJob.dispatch || {}),
             completionStatus: 'completion_sweep_timed_out',
-            retryable: false,
-            nextRetryAt: null
+            retryable: retryMeta.retryable,
+            nextRetryAt: retryMeta.nextRetryAt,
+            attempts: retryMeta.attempts,
+            maxRetries: retryMeta.maxRetries
           };
           draftJob.logs = [...(draftJob.logs || []), draftJob.failureReason];
           return cloneJob(draftJob);
@@ -15803,14 +15881,18 @@ async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
             draftJob.timedOutAt = at;
             draftJob.failureReason = 'Workflow dispatch queue consumer started built-in generation but did not finish before the queue safety timeout.';
             draftJob.failureCategory = 'dispatch_queue_timeout';
+            const failureMeta = buildDispatchFailureMeta(draftJob, 504, draftJob.failureReason);
+            const retryMeta = workflowBuiltInFailureRetryMeta(env, draftJob, failureMeta);
             if (draftJob.billingReservation && !draftJob.billingSettlement?.settledAt && !draftJob.billingReservation?.releasedAt) {
               releaseBillingReservationInState(draft, draftJob);
             }
             draftJob.dispatch = {
               ...(draftJob.dispatch || {}),
               completionStatus: 'completion_sweep_timed_out',
-              retryable: false,
-              nextRetryAt: null
+              retryable: retryMeta.retryable,
+              nextRetryAt: retryMeta.nextRetryAt,
+              attempts: retryMeta.attempts,
+              maxRetries: retryMeta.maxRetries
             };
             draftJob.logs = [...(draftJob.logs || []), draftJob.failureReason];
             return cloneJob(draftJob);
@@ -15825,14 +15907,18 @@ async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
             draftJob.timedOutAt = at;
             draftJob.failureReason = 'Workflow dispatch queue consumer started built-in generation but did not finish before the queue safety timeout.';
             draftJob.failureCategory = 'dispatch_queue_timeout';
+            const failureMeta = buildDispatchFailureMeta(draftJob, 504, draftJob.failureReason);
+            const retryMeta = workflowBuiltInFailureRetryMeta(env, draftJob, failureMeta);
             if (draftJob.billingReservation && !draftJob.billingSettlement?.settledAt && !draftJob.billingReservation?.releasedAt) {
               releaseBillingReservationInState(draft, draftJob);
             }
             draftJob.dispatch = {
               ...(draftJob.dispatch || {}),
               completionStatus: 'completion_sweep_timed_out',
-              retryable: false,
-              nextRetryAt: null
+              retryable: retryMeta.retryable,
+              nextRetryAt: retryMeta.nextRetryAt,
+              attempts: retryMeta.attempts,
+              maxRetries: retryMeta.maxRetries
             };
             draftJob.logs = [...(draftJob.logs || []), draftJob.failureReason];
             return cloneJob(draftJob);
