@@ -13723,6 +13723,31 @@ function workflowHandoffOriginalSignals(priorRuns = []) {
   return signals.slice(0, 24);
 }
 
+function workflowAppContextOriginalSignals(job = {}) {
+  const broker = job?.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
+  const appContexts = Array.isArray(broker.appContexts) ? broker.appContexts : [];
+  const signals = [];
+  const seen = new Set();
+  const push = (value = '') => {
+    const text = String(value || '').trim();
+    if (!text) return;
+    const normalized = text.toLowerCase();
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    signals.push(text);
+  };
+  for (const context of appContexts.slice(0, 4)) {
+    push(context.title);
+    push(context.summary);
+    for (const fact of Array.isArray(context.facts) ? context.facts.slice(0, 12) : []) push(fact);
+    for (const metric of Array.isArray(context.metrics) ? context.metrics.slice(0, 8) : []) {
+      if (typeof metric === 'string') push(metric);
+      else if (metric && typeof metric === 'object') push([metric.label || metric.name, metric.value].filter(Boolean).join(': '));
+    }
+  }
+  return signals.slice(0, 24);
+}
+
 function workflowTextUsesSignals(text = '', signals = []) {
   const normalizedText = String(text || '').toLowerCase();
   const matches = [];
@@ -13899,8 +13924,26 @@ function workflowLeaderOutputQualityReview(parent = {}, leaderJob = {}) {
   }
   const handoffSignals = workflowHandoffOriginalSignals(priorRuns);
   const outputText = workflowOutputText(leaderJob);
+  const appContextSignals = workflowAppContextOriginalSignals(leaderJob);
+  const appContextSignalMatch = workflowTextUsesSignals(outputText, appContextSignals);
   const signalMatch = workflowTextUsesSignals(outputText, handoffSignals);
   const issues = [];
+  if (!priorRuns.length && appContextSignalMatch.used) {
+    return {
+      applicable: true,
+      passed: true,
+      scope: 'leader_handoff_usage',
+      taskType,
+      phase,
+      usedOriginalInfo: true,
+      matchedSignals: appContextSignalMatch.matches,
+      sourceCount: appContextSignals.length,
+      priorRunCount: 0,
+      appContextSourceCount: appContextSignals.length,
+      unavailablePriorRunCount: unavailablePriorRuns.length,
+      issues: []
+    };
+  }
   if (!priorRuns.length) issues.push('missing_leader_handoff_prior_runs');
   if (handoffSignals.length && !signalMatch.used) issues.push('leader_ignored_handoff_prior_runs');
   if (

@@ -39,6 +39,7 @@ assert.ok(workerSource.includes('workflow-execution-program/v1'), 'workflow hand
 assert.ok(workerSource.includes('PRIOR SPECIALIST DELIVERABLES (mandatory context)'), 'downstream prompts should mark prior specialist deliverables as mandatory context');
 assert.ok(workerSource.includes('function workflowPriorUnavailableRuns'), 'CMO workflow should carry unavailable optional data-layer runs instead of blocking downstream layers.');
 assert.ok(workerSource.includes('UNAVAILABLE PRIOR WORK'), 'workflow handoff prompt should tell downstream agents when optional prior data was unavailable.');
+assert.ok(workerSource.includes('function workflowAppContextOriginalSignals'), 'leader quality gates should accept attached app context evidence when a data child has no prior run output.');
 assert.ok(workerSource.includes('workflowBlockingQualityGateBeforeLayer'), 'workflow dispatch should not release downstream layers after prior handoff/search quality gates fail');
 assert.ok(workerSource.includes('consideredRootJobIds'), 'cron dispatch sweep must dedupe workflow children by parent and avoid direct child execution');
 assert.ok(workerSource.includes('ORCHESTRATION_WATCHDOG_POLICY'), 'workflow orchestration watchdog policy should be shared through lib/orchestration.js');
