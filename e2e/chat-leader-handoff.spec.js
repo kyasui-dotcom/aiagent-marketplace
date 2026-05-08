@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { authSkipReason, canUseAuth, chatResponseTimeout, openAuthenticatedChat } from './helpers/auth.js';
+import { authSkipReason, canUseAuth, chatResponseTimeout, liveMode, openAuthenticatedChat } from './helpers/auth.js';
 
 async function openNewChat(page) {
   await openAuthenticatedChat(page, {
@@ -9,6 +9,8 @@ async function openNewChat(page) {
 }
 
 test.describe('CAIt leader handoff chat', () => {
+  test.setTimeout(liveMode ? 180_000 : 60_000);
+
   test('keeps pause questions in chat instead of preparing or sending an order', async ({ page }) => {
     test.skip(!canUseAuth, authSkipReason);
 
@@ -30,7 +32,7 @@ test.describe('CAIt leader handoff chat', () => {
 
   test('hands broad marketing intent to CMO Leader and reaches terminal delivery in chat', async ({ page }) => {
     test.skip(!canUseAuth, authSkipReason);
-    test.setTimeout(150_000);
+    test.setTimeout(liveMode ? 180_000 : 150_000);
 
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));

@@ -587,7 +587,7 @@ assert.ok(chatJs.includes("await api('/auth/logout'"), 'Chat sign out should cal
 assert.ok(chatJs.includes('data-chat-logout'), 'Chat should render logout controls.');
 assert.ok(chatJs.includes("new URL('/login', window.location.origin)"), 'Chat should client-gate unauthenticated static asset access.');
 assert.ok(chatJs.includes("loginUrl.searchParams.set('next', nextPath || CHATUX_RETURN_PATH)"), 'Chat login gate should preserve the current chat path and context query.');
-assert.ok(chatJs.includes("timeoutMs: 5000"), 'Chat auth checks should time out quickly enough to retry without false session-unavailable states.');
+assert.ok(chatJs.includes("timeoutMs: 15000"), 'Chat auth checks should allow production auth/status to finish before surfacing session-unavailable states.');
 assert.ok(chatJs.includes("await apiWithRetry('/api/work/prepare-order'"), 'Chat should retry transient prepare-order failures before surfacing an error.');
 assert.ok(chatJs.includes('maxAttempts: 5'), 'Chat prepare-order retry should wait through short production 5xx/429 bursts.');
 assert.ok(chatJs.includes('intake.taskType || intake.task_type'), 'Intake answers should preserve the originally selected leader task.');

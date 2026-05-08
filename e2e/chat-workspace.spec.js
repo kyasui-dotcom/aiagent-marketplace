@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { authSkipReason, canUseAuth, chatResponseTimeout, openAuthenticatedChat } from './helpers/auth.js';
+import { authSkipReason, canUseAuth, chatResponseTimeout, liveMode, openAuthenticatedChat } from './helpers/auth.js';
 
 async function openChat(page) {
   await openAuthenticatedChat(page, {
@@ -9,6 +9,8 @@ async function openChat(page) {
 }
 
 test.describe('CAIt Chat workspace', () => {
+  test.setTimeout(liveMode ? 180_000 : 60_000);
+
   test('loads the current chat shell and keeps pause questions out of order state', async ({ page }) => {
     test.skip(!canUseAuth, authSkipReason);
 
@@ -149,6 +151,26 @@ test.describe('CAIt Chat workspace', () => {
     test.skip(!canUseAuth, authSkipReason);
 
     await openChat(page);
+    await page.route('**/api/open-chat/intent', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          action: 'ask_clarifying_question',
+          intent: 'social publishing approval',
+          summary: 'X publishing work needs approval context before execution.',
+          intake_questions: [
+            'What product, service, and URL should the post promote?',
+            'What audience, CTA, tone, and publishing constraint should be used?'
+          ]
+        })
+      });
+    });
 
     await page.locator('#promptInput').fill('I need an X post drafted and approved for publishing.');
     await page.locator('#sendMessageBtn').click();

@@ -5974,7 +5974,7 @@ async function refreshAuth(options = {}) {
   try {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
-        const auth = await api('/auth/status', { method: 'GET', timeoutMs: 5000 });
+        const auth = await api('/auth/status', { method: 'GET', timeoutMs: 15000 });
         if (!applyAuthState(auth || {}, { redirectIfGuest: true })) return;
         warmUtilityCatalogs();
         if (!state.chatSessionHistoryFetchedAt && !state.chatSessionHistoryRequest) void refreshChatSessionHistory({ force: true });
