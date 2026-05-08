@@ -1617,20 +1617,36 @@ async function api(path, options = {}) {
     headers.set('x-aiagent2-csrf', state.auth.csrfToken);
   }
   if (state.visitorId) headers.set('x-aiagent2-visitor-id', state.visitorId);
-  const response = await fetch(path, {
-    ...options,
-    method,
-    headers,
-    credentials: 'same-origin'
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(String(data?.error || `Request failed (${response.status})`));
-    error.status = response.status;
-    error.data = data;
+  const timeoutMs = Math.max(0, Number(options.timeoutMs || 0) || 0);
+  const controller = timeoutMs && !options.signal ? new AbortController() : null;
+  const timeout = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const response = await fetch(path, {
+      ...options,
+      method,
+      headers,
+      credentials: 'same-origin',
+      ...(controller ? { signal: controller.signal } : {})
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(String(data?.error || `Request failed (${response.status})`));
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      const timeoutError = new Error(`Request timed out (${timeoutMs}ms)`);
+      timeoutError.status = 0;
+      timeoutError.data = { error: 'request_timeout', timeout_ms: timeoutMs };
+      throw timeoutError;
+    }
     throw error;
+  } finally {
+    if (timeout) window.clearTimeout(timeout);
   }
-  return data;
 }
 
 function apiRetryableError(error = {}, statuses = []) {
@@ -5951,7 +5967,7 @@ async function refreshAuth(options = {}) {
   try {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
-        const auth = await api('/auth/status', { method: 'GET' });
+        const auth = await api('/auth/status', { method: 'GET', timeoutMs: 2500 });
         if (!applyAuthState(auth || {}, { redirectIfGuest: true })) return;
         warmUtilityCatalogs();
         if (!state.chatSessionHistoryFetchedAt && !state.chatSessionHistoryRequest) void refreshChatSessionHistory({ force: true });
