@@ -275,6 +275,7 @@ assert.ok(builtInAgentSource.includes('target URL/path, H1 or title, section out
 assert.ok(builtInAgentSource.includes('Execution-request handling'), 'Action-through-delivery orders must activate execution-specific leader behavior');
 assert.ok(BUILT_IN_KIND_DEFAULTS.cmo_leader.systemPrompt.includes('do not stop at a plan or "approve research first"'), 'CMO leader must not end action requests as plan-only approval reports');
 assert.ok(builtInAgentSource.includes('workflow_fast_draft'), 'Workflow built-in runs should use a bounded single-draft path to avoid Cloudflare background timeout loops');
+assert.ok(builtInAgentSource.includes('workflow_search_source_packet'), 'Search-required workflow research should complete from a Brave source packet instead of waiting for long OpenAI generation');
 assert.ok(builtInAgentSource.includes('BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS'), 'Workflow built-in run timeout must be configurable');
 assert.ok(builtInAgentSource.includes("normalizedKind.endsWith('_leader')"), 'Leader workflow planning should not spend the first dispatch on web search');
 assert.ok(builtInAgentSource.includes('Promise.race'), 'OpenAI calls should have an explicit timeout race, not only AbortController');
@@ -1044,7 +1045,18 @@ globalThis.fetch = async (input, init) => {
   return originalBuiltinQaFetch(input, init);
 };
 try {
-  const openAiGenericResearchFailure = await runBuiltInAgent('research', cmoWorkflowEnglishSpecialistInput, {
+  const openAiGenericResearchFailure = await runBuiltInAgent('research', {
+    ...cmoWorkflowEnglishSpecialistInput,
+    input: {
+      _broker: {
+        workflow: {
+          ...cmoWorkflowEnglishSpecialistInput.input._broker.workflow,
+          sequencePhase: 'planning',
+          forceWebSearch: false
+        }
+      }
+    }
+  }, {
     BRAVE_SEARCH_API_KEY: 'brave-test-key',
     OPENAI_API_KEY: 'sk-test-cmo-quality',
     BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS: '5000'
@@ -1130,8 +1142,9 @@ try {
   });
   assert.ok(cmoBraveQuery.includes('aiagent-marketplace.net'), 'CMO Brave query should keep the target product/domain, not only generic acquisition terms');
   assert.ok(cmoBraveQuery.includes('AI agent marketplace'), 'CMO Brave query should include agent-marketplace search intent');
-  assert.equal(cmoBravePayload.status, 'failed');
-  assert.equal(cmoBravePayload.files.length, 0);
+  assert.equal(cmoBravePayload.status, 'completed');
+  assert.equal(cmoBravePayload.runtime.workflow, 'workflow_search_source_packet');
+  assert.equal(cmoBravePayload.files.length, 1);
   await runBuiltInAgent('research', {
     ...cmoWorkflowEnglishSpecialistInput,
     prompt: 'Task: cmo_leader Goal: grow https://aiagent-marketplace.net CAIt for engineers. Need signups with no ads through X and SEO, media proposal, and actual post content.'
@@ -1216,8 +1229,9 @@ try {
     BRAVE_SEARCH_API_KEY: 'brave-test-key',
     BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS: '5000'
   });
-  assert.equal(bravePreferredOpenAiCalls, 1, 'Workflow OpenAI path should run once with Brave-grounded sources');
-  assert.equal(bravePreferredPayload.runtime.provider, 'openai');
+  assert.equal(bravePreferredOpenAiCalls, 0, 'Search-required workflow research should not call OpenAI after Brave source collection');
+  assert.equal(bravePreferredPayload.runtime.provider, 'brave');
+  assert.equal(bravePreferredPayload.runtime.workflow, 'workflow_search_source_packet');
   assert.equal(bravePreferredPayload.runtime.search_provider, 'brave');
   assert.equal(bravePreferredPayload.report.web_sources[0].url, 'https://example.com/brave-competitor');
   assert.ok(bravePreferredPayload.files[0].content.includes('https://example.com/brave-competitor'));
