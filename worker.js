@@ -19,7 +19,8 @@ import {
   leaderTaskLayer,
   leaderTaskPhase,
   leaderTaskRequiresSourceCollection,
-  leaderTaskUsesWebSearch
+  leaderTaskUsesWebSearch,
+  taskRequiresConnectorApproval
 } from './lib/orchestration.js';
 import { GITHUB_ADAPTER_MARKER, adapterNextStepText, buildGithubAdapterPlan, createGithubBranch, createGithubPullRequest, fetchGithubBranchSha, fetchGithubRepoTree, fetchGithubTextFile, findKnownBrokerPath, upsertGithubTextFile } from './lib/github-adapter.js';
 import { MANIFEST_CANDIDATE_PATHS, assessAgentRegistrationSafety, buildDraftManifestFromAgentSkill, buildDraftManifestFromRepoAnalysis, buildDraftManifestFromRepoAnalysisWithAi, deriveManifestSignalPaths, normalizeManifest, parseAndValidateManifest, sanitizeManifestForPublic, validateManifest } from './lib/manifest.js';
@@ -10786,7 +10787,8 @@ function ensureLeaderWorkflowActionTasks(plannedTasks = [], primaryTask = '', pr
     if (cmoWorkflow && safe === 'data_analysis' && !preferredCmoSourceTasks.includes('data_analysis') && !options.force) return;
     const layer = leaderTaskLayer(primary, safe) || 1;
     if (layer >= leaderActionLayerStart(primary)) {
-      if (options.force || requestedActions.includes(safe)) pushSelected(safe);
+      const internalLeaderAction = primary === 'cpo_leader' && safe === 'writing';
+      if (options.force || requestedActions.includes(safe) || internalLeaderAction) pushSelected(safe);
       return;
     }
     if (layer === 1 && leaderTaskRequiresSourceCollection(primary, safe)) {
@@ -14068,10 +14070,27 @@ function workflowLayerLabel(primaryTask = '', layer = 1) {
   if (primary === 'cmo_leader') {
     return ({ 1: 'data', 2: 'research', 3: 'planning', 4: 'preparation', 5: 'action', 6: 'summary' })[Number(layer || 1)] || `layer_${layer}`;
   }
+  if (primary === 'cpo_leader') {
+    return ({ 1: 'research', 2: 'product_design', 3: 'action', 4: 'summary' })[Number(layer || 1)] || `layer_${layer}`;
+  }
   const profilePhase = ['research', 'planning', 'preparation', 'action', 'summary'][Math.max(1, Number(layer || 1)) - 1] || `layer_${layer}`;
   if (Number(layer || 1) <= 1) return 'research';
   if (Number(layer || 1) === 2) return 'execution';
   return profilePhase;
+}
+
+function workflowLayerRequiresUserApprovalBeforeRelease(primaryTask = '', beforeLayer = 1, selections = []) {
+  const primary = String(primaryTask || '').trim().toLowerCase();
+  const targetLayer = Number(beforeLayer || 1) || 1;
+  if (targetLayer < leaderActionLayerStart(primary)) return false;
+  if (['cmo_leader', 'free_web_growth_leader'].includes(primary)) return true;
+  return (Array.isArray(selections) ? selections : []).some((selection) => {
+    const task = String(selection?.taskType || '').trim().toLowerCase();
+    if (!task || isWorkflowLeaderTask(task)) return false;
+    const layer = workflowDispatchLayer({ taskType: primary, workflow: { plannedTasks: [primary] } }, { workflowTask: task, taskType: task });
+    if (layer !== targetLayer) return false;
+    return taskRequiresConnectorApproval(task) || taskRequiresConnectorApproval(selection?.dispatchTaskType);
+  });
 }
 
 function workflowLeaderSequence(parent = {}) {
@@ -16869,7 +16888,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
       afterLayer,
       beforeLayer,
       label: `${workflowLayerLabel(workflowPrimary, afterLayer)}_to_${workflowLayerLabel(workflowPrimary, beforeLayer)}`,
-      requiresUserApprovalBeforeAction: beforeLayer >= actionStartLayer
+      requiresUserApprovalBeforeAction: workflowLayerRequiresUserApprovalBeforeRelease(workflowPrimary, beforeLayer, plan.selections)
     });
   }
   const adaptiveWorkflowEnabled = enableLeaderSequence

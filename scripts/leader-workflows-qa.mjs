@@ -235,6 +235,16 @@ for (const testCase of cases) {
   const finalSummaryLeader = rawChildren.find((item) => item.taskType === testCase.taskType && item.input?._broker?.workflow?.sequencePhase === 'final_summary');
   assert.ok(finalSummaryLeader, `${testCase.taskType} should create a final summary leader run`);
   if (testCase.taskType === 'cpo_leader') {
+    const cpoActionLayerChildren = rawChildren.filter((item) => item.taskType !== 'cpo_leader' && item.input?._broker?.workflow?.sequencePhase === 'action');
+    assert.ok(
+      cpoActionLayerChildren.some((item) => item.taskType === 'writing'),
+      'cpo_leader should route the product handoff/specification through an action-layer writing child'
+    );
+    assert.equal(
+      rawChildren.some((item) => item.taskType === 'cpo_leader' && item.input?._broker?.workflow?.requiresUserApprovalBeforeAction === true),
+      false,
+      'cpo_leader internal product handoff action should not require external-write approval'
+    );
     assert.equal(
       rawChildren.some((item) => item.taskType === 'summary' && /teardown|competitor/i.test(String(item.workflowAgentName || item.workflow_agent_name || item.assignedAgentId || item.assigned_agent_id || ''))),
       false,

@@ -115,6 +115,8 @@ assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'media_planner'), false);
 assert.deepEqual(leaderSourceCollectionLayerTasks('cmo_leader'), ['data_analysis', 'research', 'teardown', 'validation']);
 assert.ok(leaderTaskRequiresSourceCollection('cmo_leader', 'data_analysis'), 'CMO data analysis should be evidence/source collection work.');
 assert.ok(leaderTaskRequiresSourceCollection('cpo_leader', 'validation'), 'CPO validation should be evidence/source collection work.');
+assert.equal(leaderTaskLayer('cpo_leader', 'writing'), 3, 'CPO writing should be the action handoff layer.');
+assert.equal(leaderTaskPhase('cpo_leader', 'writing'), 'action', 'CPO writing should be labeled as action handoff work.');
 assert.ok(leaderTaskRequiresSourceCollection('cfo_leader', 'data_analysis'), 'CFO data analysis should be evidence/source collection work.');
 assert.ok(leaderTaskRequiresSourceCollection('legal_leader', 'diligence'), 'Legal diligence should be evidence/source collection work.');
 assert.equal(leaderTaskUsesWebSearch('cfo_leader', 'data_analysis'), true, 'Finance data analysis should require source collection/search in leader workflows.');

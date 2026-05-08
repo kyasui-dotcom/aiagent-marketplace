@@ -1375,11 +1375,19 @@ function setBusy(next) {
   });
 }
 
-function scrollThread() {
+function threadIsNearBottom(threshold = 80) {
+  const thread = els.chatThread;
+  if (!thread) return true;
+  return thread.scrollHeight - thread.scrollTop - thread.clientHeight <= threshold;
+}
+
+function scrollThread(options = {}) {
+  if (options.force !== true && !threadIsNearBottom()) return;
   els.chatThread.scrollTop = els.chatThread.scrollHeight;
 }
 
 function appendMessage(role, body, options = {}) {
+  const shouldScroll = options.forceScroll === true || role === 'user' || threadIsNearBottom();
   const article = document.createElement('article');
   article.className = `message ${role}${options.tone ? ` ${options.tone}` : ''}`;
   article.innerHTML = [
@@ -1387,7 +1395,7 @@ function appendMessage(role, body, options = {}) {
     `<div class="message-body">${body}</div>`
   ].join('');
   els.chatThread.appendChild(article);
-  scrollThread();
+  if (shouldScroll) scrollThread({ force: true });
   recordChatSessionMessage(role, options.plainText || htmlToPlainText(body), options);
   return article;
 }
@@ -1398,8 +1406,9 @@ function appendTextMessage(role, text, options = {}) {
 
 function removeMessage(article) {
   if (!article?.parentNode) return;
+  const shouldScroll = threadIsNearBottom();
   article.remove();
-  scrollThread();
+  if (shouldScroll) scrollThread({ force: true });
 }
 
 function appendThinkingMessage(sample = '') {
@@ -1534,18 +1543,20 @@ function updateProgressNarratorArticle(article, text = '', options = {}) {
 
 function showProgressNarrator(text = '', options = {}) {
   const key = String(options.key || state.orderId || 'progress').trim();
+  const shouldScroll = options.forceScroll === true || threadIsNearBottom();
   if (!state.progressNarratorArticle || !state.progressNarratorArticle.isConnected || (key && state.progressNarratorKey !== key)) {
     state.progressNarratorArticle = appendMessage('assistant', progressNarratorHtml(text, options), {
       tone: options.done ? 'ok' : 'thinking',
       label: options.label || 'CAIt',
-      record: false
+      record: false,
+      forceScroll: shouldScroll
     });
     state.progressNarratorKey = key;
     syncProgressNarratorAnimation(state.progressNarratorArticle, text, options);
     return state.progressNarratorArticle;
   }
   updateProgressNarratorArticle(state.progressNarratorArticle, text, options);
-  scrollThread();
+  if (shouldScroll) scrollThread({ force: true });
   return state.progressNarratorArticle;
 }
 
@@ -1614,10 +1625,10 @@ function workflowChildIsAdaptivePending(child = {}) {
     || String(child?.dispatchCompletionStatus || child?.dispatch_completion_status || '').trim().toLowerCase() === 'leader_adaptive_pending';
 }
 
-function visibleWorkflowChildRuns(childRuns = []) {
+function visibleWorkflowChildRuns(childRuns = [], options = {}) {
   return (Array.isArray(childRuns) ? childRuns : [])
     .filter((child) => !workflowChildIsInternalLeaderSequenceRun(child))
-    .filter((child) => !workflowChildIsAdaptivePending(child));
+    .filter((child) => options.includeAdaptivePending === true || !workflowChildIsAdaptivePending(child));
 }
 
 function workflowPhaseLabel(phase = '') {
@@ -1627,8 +1638,10 @@ function workflowPhaseLabel(phase = '') {
     data: 'Data',
     research: 'Research',
     planning: 'Planning',
+    product_design: 'Product design',
     preparation: 'Preparation',
     action: 'Action',
+    prompt_handoff: 'Action handoff',
     leader: 'Leader',
     summary: 'Summary'
   };
@@ -1637,7 +1650,7 @@ function workflowPhaseLabel(phase = '') {
 
 function workflowPhaseRank(phase = '') {
   const safe = String(phase || '').trim().toLowerCase();
-  return { initial: 1, data: 2, research: 3, planning: 4, preparation: 5, action: 6, summary: 7 }[safe] || 9;
+  return { initial: 1, data: 2, research: 3, product_design: 4, planning: 4, preparation: 5, prompt_handoff: 6, action: 6, summary: 7 }[safe] || 9;
 }
 
 function workflowChildStatusRank(status = '') {
@@ -1678,20 +1691,21 @@ function workflowCurrentPhaseKey(job = {}) {
   return String(current?.sequencePhase || current?.sequence_phase || '').trim().toLowerCase();
 }
 
-function createdOrderChildRuns(created = {}) {
+function createdOrderChildRuns(created = {}, options = {}) {
   const raw = Array.isArray(created?.child_runs)
     ? created.child_runs
     : (Array.isArray(created?.childRuns)
       ? created.childRuns
       : (Array.isArray(created?.workflow?.childRuns) ? created.workflow.childRuns : []));
-  return visibleWorkflowChildRuns(raw).map((child) => ({
+  return visibleWorkflowChildRuns(raw, options).map((child) => ({
     id: String(child.id || child.job_id || child.jobId || '').trim(),
     taskType: String(child.taskType || child.task_type || child.dispatchTaskType || child.dispatch_task_type || '').trim(),
     dispatchTaskType: String(child.dispatchTaskType || child.dispatch_task_type || child.taskType || child.task_type || '').trim(),
     agentId: String(child.agentId || child.agent_id || '').trim(),
     agentName: String(child.agentName || child.agent_name || '').trim(),
     sequencePhase: String(child.sequencePhase || child.sequence_phase || '').trim().toLowerCase(),
-    status: String(child.status || 'queued').trim().toLowerCase()
+    status: String(child.status || 'queued').trim().toLowerCase(),
+    adaptivePending: workflowChildIsAdaptivePending(child)
   })).filter((child) => child.taskType || child.agentName || child.agentId);
 }
 
@@ -1719,14 +1733,15 @@ function workflowAgentMapHtml(childRuns = [], options = {}) {
       `<div class="agent-map-phase-title">${escapeHtml(workflowPhaseLabel(group.phase))}${phaseIsCurrent ? '<span>Now</span>' : ''}</div>`,
       ...group.items.slice(0, 4).map((child) => {
         const status = String(child.status || 'queued').trim().toLowerCase();
-        const statusClass = status.replace(/[^a-z0-9_-]+/g, '');
+        const shownStatus = child.adaptivePending ? 'planned' : status;
+        const statusClass = shownStatus.replace(/[^a-z0-9_-]+/g, '');
         const isCurrent = currentChildId
           ? currentChildId === String(child.id || '').trim()
           : phaseIsCurrent && ['running', 'claimed', 'dispatched', 'queued', 'blocked'].includes(status);
         return [
           `<div class="agent-map-node ${escapeHtml(statusClass)}${isCurrent ? ' current' : ''}">`,
           `<strong>${escapeHtml(workflowChildDisplayLabel(child))}</strong>`,
-          `<span>${escapeHtml(taskLabel(child.taskType || child.dispatchTaskType || 'work'))} · ${escapeHtml(statusDisplayLabel(child.status || 'queued'))}</span>`,
+          `<span>${escapeHtml(taskLabel(child.taskType || child.dispatchTaskType || 'work'))} · ${escapeHtml(statusDisplayLabel(shownStatus || 'queued'))}</span>`,
           '</div>'
         ].join('');
       }),
@@ -1748,7 +1763,7 @@ function workflowAgentMapHtml(childRuns = [], options = {}) {
 }
 
 function initialAgentMapHtml(created = {}, prompt = '') {
-  const childRuns = createdOrderChildRuns(created);
+  const childRuns = createdOrderChildRuns(created, { includeAdaptivePending: true });
   const isWorkflow = String(created?.mode || '').toLowerCase() === 'workflow' || Boolean(created?.workflow_job_id || created?.workflowJobId);
   if (!isWorkflow && !childRuns.length && !created?.matched_agent_id) return '';
   if (!isWorkflow) {
@@ -1773,7 +1788,7 @@ function initialAgentMapHtml(created = {}, prompt = '') {
 }
 
 function workflowPhaseProgressMapHtml(job = {}) {
-  const childRuns = createdOrderChildRuns(job);
+  const childRuns = createdOrderChildRuns(job, { includeAdaptivePending: true });
   const current = workflowCurrentChildRun(job);
   if (!childRuns.length || !current) return '';
   const phase = String(current.sequencePhase || '').trim().toLowerCase();

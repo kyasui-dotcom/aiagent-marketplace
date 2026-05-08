@@ -138,7 +138,7 @@ assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat c
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/chat.css?v=20260508a'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508e"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508f"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -539,6 +539,8 @@ assert.ok(chatJs.includes('workflowCurrentLocationLabel'), 'Chat progress should
 assert.ok(chatJs.includes('function workflowPhaseProgressMapHtml'), 'Chat should render a progress map when the workflow phase changes.');
 assert.ok(chatJs.includes('data-progress-narrator-stream'), 'Chat progress should render a live text activity stream during running orders.');
 assert.ok(chatJs.includes('function syncProgressNarratorAnimation'), 'Chat progress should animate narrator text independently of poll responses.');
+assert.ok(chatJs.includes('function threadIsNearBottom'), 'Chat should only auto-scroll progress updates when the reader is already near the latest message.');
+assert.ok(chatJs.includes('includeAdaptivePending: true'), 'Agent maps should show adaptive planned later layers instead of hiding all future action work.');
 assert.ok(chatJs.includes('function showAppListPanel'), 'Chat should expose app list modal.');
 assert.ok(chatJs.includes('registeredApps: []'), 'Chat should keep registered marketplace apps in state.');
 assert.ok(chatJs.includes('const CHATUX_CATALOG_PAGE_SIZE = 10'), 'Workers and apps should initially load only ten catalog rows.');
