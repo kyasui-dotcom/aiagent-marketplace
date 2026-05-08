@@ -59,7 +59,7 @@ async function verifyAuthWithRequest(page, url, attempts = liveMode ? 3 : 1) {
       if (/auth_error=/i.test(location)) {
         throw new Error(`Auth verification redirected to an error: ${location}`);
       }
-      await applyAuthCookiesFromResponse(page, response);
+      await applyAuthCookiesFromResponse(page, response).catch(() => {});
       return response;
     } catch (error) {
       lastError = error;
@@ -142,7 +142,8 @@ export async function openAuthenticatedChat(page, options = {}) {
   });
   try {
     await verifyAuthWithRequest(page, verificationPath);
-  } catch {
+  } catch (error) {
+    if (liveMode) throw error;
     await gotoWithRetry(page, verificationPath, { waitUntil: 'domcontentloaded' });
   }
   await gotoWithRetry(page, target, { waitUntil: 'domcontentloaded' });

@@ -8827,26 +8827,18 @@ async function handleE2eAuthVerify(request, env) {
     return redirect(authFailureRedirectPath(request, env, 'e2e_link_invalid', fallbackState));
   }
   try {
-    const account = await persistAccountForIdentity(storage, env, {
-      providerUserId: e2eState.email,
-      login: e2eState.email,
-      email: e2eState.email,
-      name: e2eState.email.split('@')[0] || e2eState.email,
-      avatarUrl: '',
-      profileUrl: ''
-    }, 'e2e');
     const session = mergeLinkedSession({}, {
       authProvider: 'e2e',
       user: {
-        login: account?.login || e2eState.email,
-        name: account?.profile?.displayName || e2eState.email,
+        login: e2eState.email,
+        name: e2eState.email.split('@')[0] || e2eState.email,
         avatarUrl: '',
         profileUrl: '',
         email: e2eState.email,
-        accountId: account?.id || ''
+        accountId: ''
       },
-      accountLogin: account?.login || e2eState.email,
-      linkedProviders: [...new Set([...linkedProvidersFromAccount(account), 'e2e'])]
+      accountLogin: e2eState.email,
+      linkedProviders: ['e2e']
     });
     return redirectWithCookies(authSuccessRedirectPath(request, env, {
       action: 'login',
