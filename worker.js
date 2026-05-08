@@ -13482,6 +13482,9 @@ function workflowHandoffPromptContext(job = {}) {
   const priorRuns = Array.isArray(handoff.priorRuns)
     ? handoff.priorRuns.filter((run) => run && typeof run === 'object').slice(0, 10)
     : [];
+  const unavailablePriorRuns = Array.isArray(handoff.unavailablePriorRuns)
+    ? handoff.unavailablePriorRuns.filter((run) => run && typeof run === 'object').slice(0, 6)
+    : [];
   const minimumPriorUse = workflowMinimumPriorUseForPhase(
     workflow?.sequencePhase || workflowSequencePhaseForJob(job),
     priorRuns.length
@@ -13503,9 +13506,15 @@ function workflowHandoffPromptContext(job = {}) {
     : workflowExecutionProgram(job, Number(handoff.targetLayer || 1) || 1, priorRuns);
   const currentPhase = String(workflow?.sequencePhase || workflowSequencePhaseForJob(job) || '').trim().toLowerCase();
   const includeMarkdownExcerpt = ['preparation', 'action', 'implementation'].includes(currentPhase);
-  if (!objective && !leaderSummary && !leaderNextAction && !leaderBullets.length && !briefFile?.content_available && !priorRuns.length) {
+  if (!objective && !leaderSummary && !leaderNextAction && !leaderBullets.length && !briefFile?.content_available && !priorRuns.length && !unavailablePriorRuns.length) {
     return '';
   }
+  const unavailableLines = unavailablePriorRuns.map((run, index) => {
+    const task = workflowHandoffClip(run.taskType || run.workflowTask || `unavailable_${index + 1}`, 80);
+    const status = workflowHandoffClip(run.status || 'unavailable', 60);
+    const reason = workflowHandoffClip(run.failureReason || run.failure_reason || 'No usable output was produced.', 420);
+    return `Unavailable prior work ${index + 1}: ${task} / ${status}. ${reason}`;
+  });
   const lines = [
     WORKFLOW_HANDOFF_CONTEXT_START,
     ...workflowHandoffPhaseRules(job, workflow || {}),
@@ -13521,6 +13530,10 @@ function workflowHandoffPromptContext(job = {}) {
       ? `PRIOR SPECIALIST DELIVERABLES (mandatory context): use at least ${minimumPriorUse} distinct prior work item${minimumPriorUse === 1 ? '' : 's'} when available.`
       : 'PRIOR SPECIALIST DELIVERABLES (mandatory context): none yet.',
     ...priorRuns.map((run, index) => workflowHandoffPromptDataFromRun(run, index, { includeMarkdownExcerpt })),
+    unavailablePriorRuns.length
+      ? 'UNAVAILABLE PRIOR WORK: the following earlier layer did not produce usable output. Do not block only because it is missing; state the gap and proceed with assumptions/research.'
+      : '',
+    ...unavailableLines,
     'Required output behavior: explicitly cite which prior work item(s) you used, preserve source URLs when provided, and return concrete decisions/artifacts for this phase. If you cannot use the required prior work, return BLOCKED with the missing handoff reason.',
     WORKFLOW_HANDOFF_CONTEXT_END
   ].filter(Boolean);
@@ -13862,8 +13875,27 @@ function workflowLeaderOutputQualityReview(parent = {}, leaderJob = {}) {
   const priorRuns = Array.isArray(workflow.leaderHandoff?.priorRuns)
     ? workflow.leaderHandoff.priorRuns
     : [];
+  const unavailablePriorRuns = Array.isArray(workflow.leaderHandoff?.unavailablePriorRuns)
+    ? workflow.leaderHandoff.unavailablePriorRuns
+    : [];
   if (!hasLeaderHandoff && !priorRuns.length) {
     return { applicable: false, passed: true, scope: 'not_applicable', issues: [] };
+  }
+  if (!priorRuns.length && (unavailablePriorRuns.length || workflowLeaderPriorLayerUnavailable(parent, leaderJob))) {
+    return {
+      applicable: true,
+      passed: true,
+      scope: 'leader_handoff_usage',
+      taskType,
+      phase,
+      usedOriginalInfo: false,
+      matchedSignals: [],
+      sourceCount: 0,
+      priorRunCount: 0,
+      unavailablePriorRunCount: unavailablePriorRuns.length || 1,
+      skippedUnavailablePriorLayer: true,
+      issues: []
+    };
   }
   const handoffSignals = workflowHandoffOriginalSignals(priorRuns);
   const outputText = workflowOutputText(leaderJob);
@@ -14072,6 +14104,51 @@ function workflowPriorCompletedRuns(parent = {}, children = [], targetLayer = 1)
     .slice(0, 10);
 }
 
+function workflowOptionalUnavailablePriorRun(parent = {}, child = {}, targetLayer = 1) {
+  const status = String(child?.status || '').trim().toLowerCase();
+  if (!['failed', 'timed_out'].includes(status)) return null;
+  if (isWorkflowLeaderTask(workflowTaskName(child))) return null;
+  const primary = workflowPrimaryTask(parent);
+  const taskType = workflowTaskName(child);
+  if (primary !== 'cmo_leader' || taskType !== 'data_analysis') return null;
+  if (workflowDispatchLayer(parent, child) >= targetLayer) return null;
+  const reason = String(child.failureReason || child.failure_reason || '').trim()
+    || (status === 'timed_out' ? 'Data analysis timed out before producing a usable report.' : 'Data analysis did not produce a usable report.');
+  return {
+    jobId: child.id || null,
+    taskType,
+    agentName: child.workflowAgentName || child.assignedAgentId || taskLabel(taskType),
+    status,
+    failureReason: reason.slice(0, 700),
+    failedAt: child.failedAt || child.timedOutAt || child.completedAt || null,
+    fallbackInstruction: 'Proceed without analytics output. State the data gap and continue with research/planning assumptions instead of blocking the workflow.'
+  };
+}
+
+function workflowPriorUnavailableRuns(parent = {}, children = [], targetLayer = 1) {
+  return sortWorkflowChildren(parent, children)
+    .map((child) => workflowOptionalUnavailablePriorRun(parent, child, targetLayer))
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
+function workflowLeaderPriorLayerUnavailable(parent = {}, leaderJob = {}) {
+  const phase = workflowSequencePhaseForJob(leaderJob);
+  if (phase !== 'checkpoint') return false;
+  const workflow = leaderJob?.input?._broker?.workflow && typeof leaderJob.input._broker.workflow === 'object'
+    ? leaderJob.input._broker.workflow
+    : {};
+  const checkpointLayer = Math.max(1, Number(workflow.checkpointLayer || workflow.afterLayer || 1) || 1);
+  const childRuns = Array.isArray(parent?.workflow?.childRuns) ? parent.workflow.childRuns : [];
+  const priorLayerRuns = childRuns
+    .filter((child) => !isWorkflowLeaderTask(workflowTaskName(child)))
+    .filter((child) => workflowDispatchLayer(parent, child) <= checkpointLayer);
+  if (!priorLayerRuns.length) return false;
+  const completedPrior = priorLayerRuns.some((child) => String(child.status || '').trim().toLowerCase() === 'completed');
+  if (completedPrior) return false;
+  return priorLayerRuns.every((child) => Boolean(workflowOptionalUnavailablePriorRun(parent, child, checkpointLayer + 1)));
+}
+
 function workflowLeaderHandoff(parent = {}, leader = null, children = [], targetLayer = 1) {
   if (!leader) return null;
   const output = leader.output && typeof leader.output === 'object' ? leader.output : {};
@@ -14079,6 +14156,7 @@ function workflowLeaderHandoff(parent = {}, leader = null, children = [], target
   const file = Array.isArray(output.files) ? output.files.find((item) => String(item?.content || '').trim()) : null;
   const fullPriorRuns = workflowPriorCompletedRuns(parent, children, targetLayer);
   const priorRuns = fullPriorRuns.map(workflowSlimPriorRunForHandoff);
+  const unavailablePriorRuns = workflowPriorUnavailableRuns(parent, children, targetLayer);
   const priorDeliverables = workflowHandoffPriorDeliverables(priorRuns);
   const structuredHandoffDigest = priorRuns
     .map((run) => run.structuredDigest || workflowStructuredHandoffDigestFromRun(run))
@@ -14111,6 +14189,7 @@ function workflowLeaderHandoff(parent = {}, leader = null, children = [], target
       }
       : null,
     priorRuns,
+    unavailablePriorRuns,
     priorDeliverables,
     structuredHandoffDigest,
     analysisContext: priorRuns.length
@@ -14120,12 +14199,20 @@ function workflowLeaderHandoff(parent = {}, leader = null, children = [], target
         minimumDistinctPriorItems: workflowMinimumPriorUseForPhase(targetPhase, priorRuns.length),
         targetPhase
       }
+      : unavailablePriorRuns.length
+        ? {
+          instruction: 'The prior data layer did not produce usable output. Continue without blocking, state this data gap, and use assumptions or research for the next layer.',
+          completedRunCount: 0,
+          unavailableRunCount: unavailablePriorRuns.length,
+          targetPhase
+        }
       : null,
     handoffContract: {
       version: 'workflow-handoff/v2',
       targetLayer,
       targetPhase,
       priorDeliverableCount: priorDeliverables.length,
+      unavailablePriorRunCount: unavailablePriorRuns.length,
       minimumDistinctPriorItems: workflowMinimumPriorUseForPhase(targetPhase, priorRuns.length),
       requiredBehavior: 'Downstream agents must use the structured digest, source URLs, and execution program in their output, or return BLOCKED with the missing handoff reason.'
     },
