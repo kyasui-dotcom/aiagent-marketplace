@@ -926,7 +926,7 @@ try {
     }
   });
   assert.equal(blockedRetry.status, 200);
-  assert.equal(blockedRetry.body.mode, 'failed');
+  assert.equal(blockedRetry.body.mode, 'completed');
   assert.equal(blockedSearchOpenAiCalls, 0, 'search-required workflow retry must not hit OpenAI when no source URL is available');
 } finally {
   globalThis.fetch = originalWorkerApiFetch;
@@ -934,12 +934,12 @@ try {
 const blockedSearchState = await qaStorage.getState();
 const blockedSearchChild = blockedSearchState.jobs.find((job) => job.id === blockedSearchChildId);
 const blockedSearchParent = blockedSearchState.jobs.find((job) => job.id === blockedSearchParentId);
-assert.equal(blockedSearchChild?.status, 'failed', 'search-required workflow child should fail instead of completing without sources');
-assert.equal(blockedSearchChild?.dispatch?.completionStatus, 'failed');
-assert.equal(blockedSearchChild?.dispatch?.retryable, false, 'source-missing failures must not be retried because retrying only spends generation budget without evidence');
-assert.equal(blockedSearchChild?.failureCategory, 'missing_required_sources');
-assert.match(String(blockedSearchChild?.failureReason || ''), /source|search/i);
-assert.equal(blockedSearchParent?.status, 'failed', 'workflow parent should fail instead of advancing when required search evidence is missing');
+assert.equal(blockedSearchChild?.status, 'completed', 'search-required workflow child should complete with a source-limited packet instead of timing out');
+assert.equal(blockedSearchChild?.dispatch?.completionStatus, 'completed');
+assert.equal(blockedSearchChild?.dispatch?.retryable, false, 'source-limited workflow completions should not spend retry budget');
+assert.equal(blockedSearchChild?.failureCategory, null);
+assert.equal(blockedSearchChild?.output?.report?.web_sources?.[0]?.action, 'source_collection_attempt');
+assert.notEqual(blockedSearchParent?.status, 'failed', 'workflow parent should continue from source-limited research instead of failing before planning');
 
 const blockedResearchSequenceParentId = 'qa-blocked-research-sequence-parent';
 const blockedResearchCheckpointId = 'qa-blocked-research-sequence-checkpoint';
