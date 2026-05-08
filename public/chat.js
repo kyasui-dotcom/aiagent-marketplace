@@ -6,7 +6,7 @@ import {
   chatEngineBuildPrepareOrderPayload,
   chatEngineDraftBrief,
   chatEngineIsNeedsInputResponse
-} from './chat-engine.js?v=20260508b';
+} from './chat-engine.js?v=20260508c';
 import {
   deliveryExecutionPromptPresentation,
   extractSocialPostTextFromDeliveryContent
@@ -1199,20 +1199,20 @@ function explicitLeaderChangeTaskTypeFromText(value = '') {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
   const lower = text.toLowerCase();
-  const leaderPattern = /(cmo|cto|cpo|cfo|legal|research\s+team|build\s+team|marketing\s+leader|growth\s+leader|technical\s+leader|product\s+leader|finance\s+leader|legal\s+leader|secretary\s+leader|マーケ|cmoリーダー|技術責任者|ctoリーダー|プロダクト責任者|cpoリーダー|財務|cfoリーダー|法務|legalリーダー|調査リーダー|リサーチリーダー|ビルドリーダー|秘書リーダー)/i;
+  const leaderPattern = /(\b(?:cmo|cto|cpo|cfo|legal)\b|research\s+team|build\s+team|marketing\s+leader|growth\s+leader|technical\s+leader|product\s+leader|finance\s+leader|legal\s+leader|secretary\s+leader|マーケ|cmoリーダー|技術責任者|ctoリーダー|プロダクト責任者|cpoリーダー|財務|cfoリーダー|法務|legalリーダー|調査リーダー|リサーチリーダー|ビルドリーダー|秘書リーダー)/i;
   const leaderMatch = lower.match(leaderPattern);
   if (!leaderMatch) return '';
   const explicitChange = /(?:leader|リーダー|担当|主体|lead|owner|route|routing|use|switch|change|変更|切替|切り替|変え|にして|で進め|でお願い|に戻|に固定|固定|指名|選択)/i.test(text)
     || /^(?:cmo|cto|cpo|cfo|legal|research\s+team|build\s+team)(?:\s+leader)?$/i.test(text);
   if (!explicitChange) return '';
-  if (/(cmo|marketing|growth|マーケ)/i.test(text)) return 'cmo_leader';
-  if (/(cto|technical|技術責任者)/i.test(text)) return 'cto_leader';
-  if (/(build\s+team|engineering|ビルド)/i.test(text)) return 'build_team_leader';
-  if (/(cpo|product|プロダクト責任者)/i.test(text)) return 'cpo_leader';
-  if (/(cfo|finance|財務)/i.test(text)) return 'cfo_leader';
-  if (/(legal|法務)/i.test(text)) return 'legal_leader';
-  if (/(research|調査|リサーチ)/i.test(text)) return 'research_team_leader';
-  if (/(secretary|秘書)/i.test(text)) return 'secretary_leader';
+  if (/\b(?:cmo|marketing|growth)\b|マーケ/i.test(text)) return 'cmo_leader';
+  if (/\b(?:cto|technical)\b|技術責任者/i.test(text)) return 'cto_leader';
+  if (/\b(?:build\s+team|engineering)\b|ビルド/i.test(text)) return 'build_team_leader';
+  if (/\b(?:cpo|product)\b|プロダクト責任者/i.test(text)) return 'cpo_leader';
+  if (/\b(?:cfo|finance)\b|財務/i.test(text)) return 'cfo_leader';
+  if (/\blegal\b|法務/i.test(text)) return 'legal_leader';
+  if (/\bresearch\b|調査|リサーチ/i.test(text)) return 'research_team_leader';
+  if (/\bsecretary\b|秘書/i.test(text)) return 'secretary_leader';
   return '';
 }
 
@@ -5336,6 +5336,9 @@ async function prepareFollowupForRunningOrder(prompt = '') {
 function handleNonOrderConversation(prompt = '') {
   const text = String(prompt || '').trim();
   if (!text || !isNonOrderConversationIntentText(text)) return false;
+  const normalized = text.replace(/[?？!！。.,、\s]+$/g, '');
+  const explicitConversationControl = /^(pause|hold|stop|later|not now|cancel|status|help|what now|where are we|continue chatting|一旦保留|いったん保留|保留|あとで|後で|また後で|ストップ|止めて|中断|キャンセル|やめる|やっぱやめる|今はやめる|状況|現状|今どこ|何待ち|ヘルプ|相談だけ)$/i.test(normalized);
+  if (state.pendingIntake && !explicitConversationControl) return false;
   if (isLeaderCatalogQuestionIntentText(text)) {
     appendTextMessage('assistant', leaderCatalogChatAnswer(text), { tone: 'info', label: 'Chat' });
     return true;
@@ -5344,7 +5347,7 @@ function handleNonOrderConversation(prompt = '') {
   const hasDraft = Boolean(state.draft);
   const hasIntake = Boolean(state.pendingIntake);
   const hasOrder = Boolean(state.orderId);
-  if (/^(pause|hold|stop|later|not now|cancel|一旦保留|いったん保留|保留|あとで|後で|また後で|ストップ|止めて|中断|キャンセル|やめる|やっぱやめる|今はやめる)/i.test(text.replace(/[?？!！。.,、\s]+$/g, ''))) {
+  if (/^(pause|hold|stop|later|not now|cancel|一旦保留|いったん保留|保留|あとで|後で|また後で|ストップ|止めて|中断|キャンセル|やめる|やっぱやめる|今はやめる)/i.test(normalized)) {
     state.pendingIntake = null;
     state.pendingLeaderChange = null;
     updateComposerMode();
@@ -6041,7 +6044,16 @@ els.composer.addEventListener('submit', async (event) => {
     } else if (await handleChatIntentWithLlm(prompt)) {
       // OpenAI classified this as chat, clarification, or an order-ready brief.
     } else {
-      await prepareOrder(prompt);
+      const fallbackLeaderTaskType = leaderTaskTypeFromIntentResult(prompt, {});
+      await prepareOrder(prompt, {
+        skipOpenAiIntent: true,
+        ...(fallbackLeaderTaskType ? {
+          taskType: fallbackLeaderTaskType,
+          activeLeaderTaskType: fallbackLeaderTaskType,
+          activeLeaderName: taskLabel(fallbackLeaderTaskType),
+          activeLeaderLocked: true
+        } : {})
+      });
     }
   } catch (error) {
     appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error' });

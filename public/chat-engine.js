@@ -33,7 +33,8 @@ export function chatEngineBuildPrepareOrderPayload(prompt = '', options = {}) {
     ...(activeLeaderName ? { active_leader_name: activeLeaderName } : {}),
     ...(activeLeaderLocked ? { active_leader_locked: true } : {}),
     ...(leaderChangeRequested ? { leader_change_requested: true } : {}),
-    ...(options.intakeAnswered === true ? { intake_answered: true } : {})
+    ...(options.intakeAnswered === true ? { intake_answered: true } : {}),
+    ...(options.skipOpenAiIntent === true || options.skip_openai_intent === true ? { skip_openai_intent: true } : {})
   };
 }
 

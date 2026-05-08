@@ -138,7 +138,7 @@ assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat c
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/chat.css?v=20260508a'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508i"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508j"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -496,7 +496,7 @@ assert.ok(deliveryManagerJs.includes('isLeaderDelivery'), 'Delivery Manager shou
 assert.ok(deliveryManagerJs.includes('delivery-work-group'), 'Delivery Manager should render work items as dropdown groups.');
 assert.ok(!deliveryManagerJs.includes('local delivery samples'), 'Delivery Manager should not depend on local delivery sample payloads.');
 
-assert.ok(chatJs.includes("from './chat-engine.js?v=20260508b'"), 'Chat JS should use root-relative shared chat engine import.');
+assert.ok(chatJs.includes("from './chat-engine.js?v=20260508c'"), 'Chat JS should use root-relative shared chat engine import.');
 assert.ok(chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should use root-relative delivery action import.');
 assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260507a'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
 assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
@@ -552,7 +552,7 @@ assert.ok(chatJs.includes('function suggestLeaderChangeIfNeeded'), 'Chat should 
 assert.ok(chatJs.includes('data-chat-action="keep-leader"'), 'Chat should offer a keep-current-leader action when a different leader is suggested.');
 assert.ok(chatJs.includes('data-chat-action="switch-leader"'), 'Chat should offer an explicit switch-leader action instead of automatically changing the leader.');
 assert.ok(chatJs.includes('leaderChangeRequested'), 'Chat should mark explicit user leader-change requests separately from automatic reclassification.');
-assert.ok(chatJs.includes("chat-engine.js?v=20260508b"), 'Chat should cache-bust the chat engine when leader-lock payload fields change.');
+assert.ok(chatJs.includes("chat-engine.js?v=20260508c"), 'Chat should cache-bust the chat engine when leader-lock payload fields change.');
 assert.ok(chatEngine.includes('active_leader_locked'), 'Chat engine should send active leader lock state in prepare and job payloads.');
 assert.ok(chatEngine.includes('fallbackLeaderLocked'), 'Chat engine should ignore unlocked active leader fallbacks when deriving the conversation owner.');
 assert.ok(worker.includes('function applyActiveLeaderLockToOrderBody'), 'Worker should enforce locked chat leader routing server-side.');

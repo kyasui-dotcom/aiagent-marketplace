@@ -43,13 +43,14 @@ test.describe('CAIt app UI/UX surfaces', () => {
 
   test('built-in app registry links stay on the current origin', async ({ page }) => {
     await page.goto('/apps.html', { waitUntil: 'networkidle' });
-    await expect(page.locator('.app-registry-row')).toHaveCount(5);
+    await expect(page.locator('.app-registry-row')).toHaveCount(4);
     const hrefs = await page.locator('.app-registry-row .primary-btn').evaluateAll((links) => links.map((link) => link.href));
-    const sameOriginBuiltIns = hrefs.filter((href) => /\/(?:analytics-console|publisher-approval|lead-ops|delivery-manager)\.html$/.test(href));
-    expect(sameOriginBuiltIns).toHaveLength(4);
+    const sameOriginBuiltIns = hrefs.filter((href) => /\/(?:analytics-console|publisher-approval|lead-ops)\.html$/.test(href));
+    expect(sameOriginBuiltIns).toHaveLength(3);
     for (const href of sameOriginBuiltIns) {
       expect(new URL(href).origin).toBe(new URL(page.url()).origin);
     }
+    await expect(page.locator('.app-nav a[href="/delivery-manager.html"]')).toBeVisible();
   });
 
   test('task app headers keep only the primary Send to CAIt action', async ({ page }) => {

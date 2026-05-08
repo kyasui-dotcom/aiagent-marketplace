@@ -5184,22 +5184,17 @@ async function prepareWorkOrderRequest(_storage, request, env = {}) {
     };
   }
   const explicitTaskType = String(body?.task_type || body?.taskType || body?.selected_task_type || body?.selectedTaskType || selectedAgentTaskType || '').trim();
-  const shouldUseOpenAiIntent = Boolean(!explicitTaskType && !selectedAgentId && !serverIsStructuredOrderBrief(prompt));
+  const skipOpenAiIntent = body?.skip_openai_intent === true || body?.skipOpenAiIntent === true;
+  const shouldUseOpenAiIntent = Boolean(!skipOpenAiIntent && !explicitTaskType && !selectedAgentId && !serverIsStructuredOrderBrief(prompt));
   let prepared = null;
   if (shouldUseOpenAiIntent) {
     const authorization = await authorizeOpenChatIntentLlm(_storage, request, env);
     if (!authorization.ok) {
-      return {
-        ok: false,
-        code: 'openai_intent_unavailable',
-        error: authorization.error || 'OpenAI intent classification is not available for this request.',
-        source: authorization.source || 'openai',
-        statusCode: authorization.statusCode || 503
-      };
-    }
-    if (!authorization.config?.enabled) {
       prepared = prepareWorkOrderSeed(prompt, requestedStrategy);
-    } else {
+    }
+    if (!prepared && !authorization.config?.enabled) {
+      prepared = prepareWorkOrderSeed(prompt, requestedStrategy);
+    } else if (!prepared) {
       const state = await _storage.getState();
       const settings = appSettingsMap(state);
       const uiLabels = orderUiLabelsFromAppSettings(settings);
@@ -5223,59 +5218,52 @@ async function prepareWorkOrderRequest(_storage, request, env = {}) {
         uiLabels
       });
       if (!intentResult?.ok) {
-        return {
-          ok: false,
-          code: 'openai_intent_failed',
-          error: intentResult?.error || 'OpenAI intent classification failed.',
-          source: intentResult?.source || 'openai',
-          statusCode: 503
-        };
+        prepared = prepareWorkOrderSeed(prompt, requestedStrategy);
       }
-      const action = String(intentResult.action || '').trim();
-      prepared = prepareOrderSeedFromOpenChatIntent(intentResult, prompt, requestedStrategy);
-      if (action === 'answer_in_chat') {
-        return {
-          ok: true,
-          kind: 'chat',
-          status: 'chat_answer',
-          prompt,
-          source: intentResult.source || 'openai',
-          message: intentResult.chat_answer || intentResult.summary || 'OpenAI classified this as chat, not an order.'
-        };
-      }
-      if (action === 'ask_clarifying_question') {
-        const taskType = prepared?.taskType || openChatIntentTaskTypeForPrepare(intentResult, prompt) || 'research';
-        const dynamicQuestions = [
-          ...(Array.isArray(intentResult.intake_questions) ? intentResult.intake_questions : []),
-          intentResult.narrowing_question || ''
-        ].map((question) => String(question || '').trim()).filter(Boolean);
-        const clarification = buildIntakeClarification({
-          prompt,
-          task_type: taskType
-        }, { taskType, dynamicIntakeQuestions: dynamicQuestions });
-        return {
-          ok: true,
-          prompt,
-          ...(prepared || prepareWorkOrderSeed(prompt, requestedStrategy, { taskType })),
-          ...(clarification || {
-            status: 'needs_input',
-            needs_input: true,
-            reason: 'openai_clarification_required',
-            inferred_task_type: taskType,
-            questions: dynamicQuestions.slice(0, 4),
-            message: intentResult.summary || intentResult.narrowing_question || 'OpenAI needs one more clarification before preparing this order.'
-          }),
-          source: intentResult.source || 'openai'
-        };
-      }
-      if (!prepared) {
-        return {
-          ok: false,
-          code: 'openai_intent_missing_task',
-          error: 'OpenAI intent classification did not return a usable order task.',
-          source: intentResult.source || 'openai',
-          statusCode: 503
-        };
+      if (prepared) {
+        // Continue with deterministic work-order seeding. The actual order creation path
+        // still runs the stricter leader planner and quality gates before dispatch.
+      } else {
+        const action = String(intentResult.action || '').trim();
+        prepared = prepareOrderSeedFromOpenChatIntent(intentResult, prompt, requestedStrategy);
+        if (action === 'answer_in_chat') {
+          return {
+            ok: true,
+            kind: 'chat',
+            status: 'chat_answer',
+            prompt,
+            source: intentResult.source || 'openai',
+            message: intentResult.chat_answer || intentResult.summary || 'OpenAI classified this as chat, not an order.'
+          };
+        }
+        if (action === 'ask_clarifying_question') {
+          const taskType = prepared?.taskType || openChatIntentTaskTypeForPrepare(intentResult, prompt) || 'research';
+          const dynamicQuestions = [
+            ...(Array.isArray(intentResult.intake_questions) ? intentResult.intake_questions : []),
+            intentResult.narrowing_question || ''
+          ].map((question) => String(question || '').trim()).filter(Boolean);
+          const clarification = buildIntakeClarification({
+            prompt,
+            task_type: taskType
+          }, { taskType, dynamicIntakeQuestions: dynamicQuestions });
+          return {
+            ok: true,
+            prompt,
+            ...(prepared || prepareWorkOrderSeed(prompt, requestedStrategy, { taskType })),
+            ...(clarification || {
+              status: 'needs_input',
+              needs_input: true,
+              reason: 'openai_clarification_required',
+              inferred_task_type: taskType,
+              questions: dynamicQuestions.slice(0, 4),
+              message: intentResult.summary || intentResult.narrowing_question || 'OpenAI needs one more clarification before preparing this order.'
+            }),
+            source: intentResult.source || 'openai'
+          };
+        }
+        if (!prepared) {
+          prepared = prepareWorkOrderSeed(prompt, requestedStrategy);
+        }
       }
     }
   } else {
