@@ -1129,11 +1129,11 @@ try {
     BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS: '5000'
   });
   assert.equal(missingWorkflowSearchSourceCalls, 0, 'source-required workflow must not call OpenAI when no source URL is available');
-  assert.equal(blockedWorkflowSearchPayload.status, 'completed');
-  assert.equal(blockedWorkflowSearchPayload.runtime.workflow, 'workflow_search_source_packet');
-  assert.equal(blockedWorkflowSearchPayload.runtime.provider, 'brave');
-  assert.equal(blockedWorkflowSearchPayload.report.web_sources[0].action, 'source_collection_attempt');
-  assert.equal(blockedWorkflowSearchPayload.files.length, 1);
+  assert.equal(blockedWorkflowSearchPayload.status, 'failed');
+  assert.equal(blockedWorkflowSearchPayload.runtime.workflow, 'missing_required_search_sources');
+  assert.equal(blockedWorkflowSearchPayload.runtime.search_provider, 'none');
+  assert.match(blockedWorkflowSearchPayload.failure_reason, /source|search|OpenAI generation was not started/i);
+  assert.equal(blockedWorkflowSearchPayload.files.length, 0);
 } finally {
   globalThis.fetch = originalBuiltinQaFetch;
 }

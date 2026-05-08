@@ -926,7 +926,7 @@ try {
     }
   });
   assert.equal(blockedRetry.status, 200);
-  assert.equal(blockedRetry.body.mode, 'completed');
+  assert.equal(blockedRetry.body.mode, 'failed');
   assert.equal(blockedSearchOpenAiCalls, 0, 'search-required workflow retry must not hit OpenAI when no source URL is available');
 } finally {
   globalThis.fetch = originalWorkerApiFetch;
@@ -934,12 +934,13 @@ try {
 const blockedSearchState = await qaStorage.getState();
 const blockedSearchChild = blockedSearchState.jobs.find((job) => job.id === blockedSearchChildId);
 const blockedSearchParent = blockedSearchState.jobs.find((job) => job.id === blockedSearchParentId);
-assert.equal(blockedSearchChild?.status, 'completed', 'search-required workflow child should complete with a source-limited packet instead of timing out');
-assert.equal(blockedSearchChild?.dispatch?.completionStatus, 'completed');
-assert.equal(blockedSearchChild?.dispatch?.retryable, false, 'source-limited workflow completions should not spend retry budget');
-assert.equal(blockedSearchChild?.failureCategory, null);
-assert.equal(blockedSearchChild?.output?.report?.web_sources?.[0]?.action, 'source_collection_attempt');
-assert.notEqual(blockedSearchParent?.status, 'failed', 'workflow parent should continue from source-limited research instead of failing before planning');
+assert.equal(blockedSearchChild?.status, 'failed', 'search-required workflow child should fail quality-first when no source URL is available');
+assert.equal(blockedSearchChild?.dispatch?.completionStatus, 'failed');
+assert.equal(blockedSearchChild?.dispatch?.retryable, true, 'source collection failures should keep retry budget for data/research quality');
+assert.equal(blockedSearchChild?.dispatch?.maxRetries, 10);
+assert.equal(blockedSearchChild?.failureCategory, 'missing_required_sources');
+assert.match(blockedSearchChild?.failureReason || '', /source|search|OpenAI generation was not started/i);
+assert.notEqual(blockedSearchParent?.status, 'completed', 'workflow parent should not advance as completed from source-missing research');
 
 const blockedResearchSequenceParentId = 'qa-blocked-research-sequence-parent';
 const blockedResearchCheckpointId = 'qa-blocked-research-sequence-checkpoint';

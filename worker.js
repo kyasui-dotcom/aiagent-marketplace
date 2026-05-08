@@ -4760,16 +4760,30 @@ function canRetryJob(job) {
   return attempts < maxDispatchRetriesForJob(job);
 }
 
-function shouldAutoRetryTimedOutWorkflowChild(parent = null, job = {}) {
+function workflowSourceCollectionMaxRetries(env = {}) {
+  const configured = Number(env?.WORKFLOW_SOURCE_COLLECTION_MAX_RETRIES || env?.WORKFLOW_RESEARCH_SOURCE_MAX_RETRIES || 0);
+  return Number.isFinite(configured) && configured > 0 ? Math.min(50, Math.max(1, configured)) : 10;
+}
+
+function shouldAutoRetryWorkflowChild(parent = null, job = {}) {
   if (!parent || parent.jobKind !== 'workflow' || !job?.workflowParentId) return false;
-  if (String(job.status || '').trim().toLowerCase() !== 'timed_out') return false;
+  const status = String(job.status || '').trim().toLowerCase();
+  const sourceCollectionFailure = status === 'failed'
+    && String(job.failureCategory || '').trim().toLowerCase() === 'missing_required_sources';
+  if (status !== 'timed_out' && !sourceCollectionFailure) return false;
   if (!canRetryJob(job)) return false;
+  const nextRetryAt = Date.parse(String(job.dispatch?.nextRetryAt || ''));
+  if (Number.isFinite(nextRetryAt) && Date.now() < nextRetryAt) return false;
   const primary = workflowPrimaryTask(parent);
   if (!isWorkflowLeaderTask(primary)) return false;
   const task = String(job.workflowTask || job.taskType || '').trim().toLowerCase();
   if (isWorkflowLeaderTask(task)) return true;
   const layer = workflowDispatchLayer(parent, job);
   return layer <= 2;
+}
+
+function shouldAutoRetryTimedOutWorkflowChild(parent = null, job = {}) {
+  return shouldAutoRetryWorkflowChild(parent, job);
 }
 
 function githubAppRecommendedSettings(request, env) {
@@ -12162,7 +12176,7 @@ function classifyDispatchFailure(statusCode, errorMessage = '') {
     return { category: 'built_in_quality_gate_failed', retryable: false };
   }
   if (msg.includes('source-required') || msg.includes('source required') || msg.includes('source urls were available before generation') || msg.includes('missing_required_search_sources')) {
-    return { category: 'missing_required_sources', retryable: false };
+    return { category: 'missing_required_sources', retryable: true };
   }
   if (msg.includes('timed out') || msg.includes('timeout')) return { category: 'dispatch_timeout', retryable: true };
   if (statusCode >= 500) return { category: 'dispatch_http_5xx', retryable: true };
@@ -12180,6 +12194,18 @@ function buildDispatchFailureMeta(job, statusCode, errorMessage = '') {
     category: classified.category,
     retryable,
     attempts,
+    nextRetryAt: retryable ? computeNextRetryAt(attempts) : null
+  };
+}
+
+function sourceCollectionFailureRetryMeta(env = {}, job = {}, options = {}) {
+  const attempts = Number(job?.dispatch?.attempts || 0) + (options.alreadyAttempted ? 0 : 1);
+  const maxRetries = workflowSourceCollectionMaxRetries(env);
+  const retryable = attempts < maxRetries;
+  return {
+    attempts,
+    maxRetries,
+    retryable,
     nextRetryAt: retryable ? computeNextRetryAt(attempts) : null
   };
 }
@@ -12366,6 +12392,9 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
       }
       if (!dispatch.ok) {
         const failureMeta = buildDispatchFailureMeta(draftJob, dispatch.statusCode, dispatch.failureReason);
+        const sourceRetryMeta = failureMeta.category === 'missing_required_sources'
+          ? sourceCollectionFailureRetryMeta(env, draftJob)
+          : null;
         draftJob.status = 'failed';
         draftJob.failedAt = nowIso();
         draftJob.failureReason = dispatch.failureReason;
@@ -12379,12 +12408,13 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
           statusCode: dispatch.statusCode || null,
           responseStatus: dispatch.responseBody?.status || null,
           lastAttemptAt: nowIso(),
-          attempts: failureMeta.attempts,
-          retryable: failureMeta.retryable,
-          nextRetryAt: failureMeta.nextRetryAt,
+          attempts: sourceRetryMeta?.attempts ?? failureMeta.attempts,
+          retryable: sourceRetryMeta?.retryable ?? failureMeta.retryable,
+          nextRetryAt: sourceRetryMeta?.nextRetryAt ?? failureMeta.nextRetryAt,
+          maxRetries: sourceRetryMeta?.maxRetries ?? maxDispatchRetriesForJob(draftJob),
           completionStatus: 'failed'
         };
-        draftJob.logs = [...(draftJob.logs || []), `dispatch failed for ${dispatchAgent.id}`, dispatch.failureReason, `retryable=${failureMeta.retryable}`];
+        draftJob.logs = [...(draftJob.logs || []), `dispatch failed for ${dispatchAgent.id}`, dispatch.failureReason, `retryable=${sourceRetryMeta?.retryable ?? failureMeta.retryable}`];
         return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
       }
 
@@ -12417,6 +12447,7 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
         appendWorkflowOriginalInfoUsage(draftJob);
         const sourceProofFailure = workflowSearchCompletionFailureReason(draftJob, dispatch.normalized.report);
         if (sourceProofFailure) {
+          const sourceRetryMeta = sourceCollectionFailureRetryMeta(env, draftJob, { alreadyAttempted: true });
           draftJob.status = 'failed';
           draftJob.completedAt = null;
           draftJob.failedAt = nowIso();
@@ -12430,8 +12461,10 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
           draftJob.dispatch = {
             ...(draftJob.dispatch || {}),
             completionStatus: 'failed',
-            retryable: false,
-            nextRetryAt: null
+            retryable: sourceRetryMeta.retryable,
+            attempts: sourceRetryMeta.attempts,
+            nextRetryAt: sourceRetryMeta.nextRetryAt,
+            maxRetries: sourceRetryMeta.maxRetries
           };
           draftJob.logs.push(sourceProofFailure, 'failed before completion: missing search execution proof');
           return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
@@ -15456,10 +15489,22 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
     const body = await runBuiltInAgent(sampleKind, payload, env);
     const normalized = normalizeDispatchResponse(body);
     if (normalized.failed) {
+      const failureReason = normalized.failureReason || 'Built-in agent generation failed';
+      const failureMeta = buildDispatchFailureMeta(locked, 502, failureReason);
+      const sourceCollectionFailure = failureMeta.category === 'missing_required_sources';
+      const attempts = Number(locked.dispatch?.attempts || 0) + 1;
+      const maxRetries = sourceCollectionFailure ? workflowSourceCollectionMaxRetries(env) : maxDispatchRetriesForJob(locked);
+      const retryable = sourceCollectionFailure
+        ? attempts < maxRetries
+        : failureMeta.retryable && attempts < maxRetries;
       await failJob(storage, locked.id, normalized.failureReason || 'Built-in agent generation failed', [`failed by ${eventLabel}`, 'failure source=built-in-generation'], {
         failureStatus: 'failed',
-        failureCategory: 'built_in_generation_failed',
-        source: completionSource
+        failureCategory: failureMeta.category || 'built_in_generation_failed',
+        source: completionSource,
+        retryable,
+        attempts,
+        nextRetryAt: retryable ? computeNextRetryAt(attempts) : null,
+        maxRetries
       });
       await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} failed by ${eventLabel}`);
       return { ok: true, mode: 'failed', jobId: locked.id };
@@ -16216,12 +16261,12 @@ async function runWorkflowTimeoutRetrySweep(storage, env, options = {}) {
   for (let i = 0; i < limit; i += 1) {
     const state = await storage.getState();
     const candidate = state.jobs
-      .filter((job) => String(job.status || '').trim().toLowerCase() === 'timed_out')
+      .filter((job) => ['timed_out', 'failed'].includes(String(job.status || '').trim().toLowerCase()))
       .filter((job) => job.workflowParentId)
       .sort((a, b) => String(a.timedOutAt || a.failedAt || a.createdAt || '').localeCompare(String(b.timedOutAt || b.failedAt || b.createdAt || '')))
       .find((job) => {
         const parent = state.jobs.find((item) => item.id === job.workflowParentId && item.jobKind === 'workflow');
-        return shouldAutoRetryTimedOutWorkflowChild(parent, job)
+        return shouldAutoRetryWorkflowChild(parent, job)
           && state.agents.some((item) => item.id === job.assignedAgentId);
       });
     if (!candidate) break;
@@ -16232,7 +16277,10 @@ async function runWorkflowTimeoutRetrySweep(storage, env, options = {}) {
       const draftJob = draft.jobs.find((item) => item.id === candidate.id);
       if (!draftJob) return null;
       const parent = draft.jobs.find((item) => item.id === draftJob.workflowParentId && item.jobKind === 'workflow');
-      if (!shouldAutoRetryTimedOutWorkflowChild(parent, draftJob)) return null;
+      if (!shouldAutoRetryWorkflowChild(parent, draftJob)) return null;
+      const sourceCollectionRetry = String(draftJob.failureCategory || '').trim().toLowerCase() === 'missing_required_sources';
+      const retryReason = sourceCollectionRetry ? 'source collection workflow child' : 'timed-out workflow child';
+      const maxRetries = sourceCollectionRetry ? workflowSourceCollectionMaxRetries(env) : maxDispatchRetriesForJob(draftJob);
       draftJob.status = 'queued';
       draftJob.failedAt = null;
       draftJob.timedOutAt = null;
@@ -16243,7 +16291,7 @@ async function runWorkflowTimeoutRetrySweep(storage, env, options = {}) {
       draftJob.startedAt = null;
       draftJob.logs = [
         ...(draftJob.logs || []),
-        `leader auto retry queued timed-out workflow child (attempt=${attempts})`
+        `leader auto retry queued ${retryReason} (attempt=${attempts})`
       ];
       draftJob.dispatch = {
         ...(draftJob.dispatch || {}),
@@ -16252,7 +16300,7 @@ async function runWorkflowTimeoutRetrySweep(storage, env, options = {}) {
         nextRetryAt: null,
         completionStatus: 'leader_auto_retry_queued',
         retriedAt: nowIso(),
-        maxRetries: maxDispatchRetriesForJob(draftJob)
+        maxRetries
       };
       return cloneJob(draftJob);
     });
@@ -16413,7 +16461,8 @@ async function failJob(storage, jobId, reason, extraLogs = [], options = {}) {
       lastCallbackAt: options.source === 'callback' ? failedAt : (job.dispatch?.lastCallbackAt || null),
       retryable: options.retryable ?? job.dispatch?.retryable ?? false,
       nextRetryAt: options.nextRetryAt ?? job.dispatch?.nextRetryAt ?? null,
-      attempts: options.attempts ?? job.dispatch?.attempts ?? 0
+      attempts: options.attempts ?? job.dispatch?.attempts ?? 0,
+      maxRetries: options.maxRetries ?? job.dispatch?.maxRetries
     };
     job.logs = [...(job.logs || []), ...extraLogs, failureReason];
     return { ...cloneJob(job), workflowParentId: job.workflowParentId || null };
@@ -18838,6 +18887,9 @@ async function handleRetryDispatch(storage, request, env) {
       if (!draftJob) return { error: 'Job not found', statusCode: 404 };
       if (!dispatch.ok) {
         const failureMeta = buildDispatchFailureMeta(draftJob, dispatch.statusCode, dispatch.failureReason);
+        const sourceRetryMeta = failureMeta.category === 'missing_required_sources'
+          ? sourceCollectionFailureRetryMeta(env, draftJob)
+          : null;
         draftJob.status = 'failed';
         draftJob.failedAt = nowIso();
         draftJob.failureReason = dispatch.failureReason;
@@ -18848,12 +18900,13 @@ async function handleRetryDispatch(storage, request, env) {
           statusCode: dispatch.statusCode || null,
           responseStatus: dispatch.responseBody?.status || null,
           lastAttemptAt: nowIso(),
-          attempts: failureMeta.attempts,
-          retryable: failureMeta.retryable,
-          nextRetryAt: failureMeta.nextRetryAt,
+          attempts: sourceRetryMeta?.attempts ?? failureMeta.attempts,
+          retryable: sourceRetryMeta?.retryable ?? failureMeta.retryable,
+          nextRetryAt: sourceRetryMeta?.nextRetryAt ?? failureMeta.nextRetryAt,
+          maxRetries: sourceRetryMeta?.maxRetries ?? maxDispatchRetriesForJob(draftJob),
           completionStatus: 'failed'
         };
-        draftJob.logs = [...(draftJob.logs || []), 'worker dispatch retry failed', dispatch.failureReason, `retryable=${failureMeta.retryable}`];
+        draftJob.logs = [...(draftJob.logs || []), 'worker dispatch retry failed', dispatch.failureReason, `retryable=${sourceRetryMeta?.retryable ?? failureMeta.retryable}`];
         return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
       }
 
@@ -18890,6 +18943,27 @@ async function handleRetryDispatch(storage, request, env) {
           returnTargets: dispatch.normalized.returnTargets
         };
         appendWorkflowOriginalInfoUsage(draftJob);
+        const sourceProofFailure = workflowSearchCompletionFailureReason(draftJob, dispatch.normalized.report);
+        if (sourceProofFailure) {
+          const sourceRetryMeta = sourceCollectionFailureRetryMeta(env, draftJob, { alreadyAttempted: true });
+          draftJob.status = 'failed';
+          draftJob.completedAt = null;
+          draftJob.failedAt = nowIso();
+          draftJob.failureReason = sourceProofFailure;
+          draftJob.failureCategory = 'missing_required_sources';
+          draftJob.actualBilling = null;
+          draftJob.deliveryQuality = null;
+          draftJob.dispatch = {
+            ...(draftJob.dispatch || {}),
+            completionStatus: 'failed',
+            retryable: sourceRetryMeta.retryable,
+            attempts: sourceRetryMeta.attempts,
+            nextRetryAt: sourceRetryMeta.nextRetryAt,
+            maxRetries: sourceRetryMeta.maxRetries
+          };
+          draftJob.logs.push(sourceProofFailure, 'failed before retry completion: missing search execution proof');
+          return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
+        }
         const authorityRequest = syncJobAuthorityRequest(draftJob, draftAgent);
         if (shouldBlockCompletedJobForAuthorityRequest(draftJob, authorityRequest || explicitAuthorityRequest)) {
           markJobBlockedForAuthority(draftJob, authorityRequest || explicitAuthorityRequest, 'External execution is blocked waiting for connector approval.');
