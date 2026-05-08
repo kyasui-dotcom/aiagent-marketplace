@@ -5183,7 +5183,21 @@ function addChatAdjustmentToDraft(prompt = '') {
 function retryDraftFromJob(job = {}) {
   const taskType = String(job.taskType || job.workflowTask || 'research').trim().toLowerCase() || 'research';
   const route = String(job.input?.order_strategy || job.orderStrategy || (job.workflow ? 'auto' : 'single')).trim().toLowerCase() || 'auto';
-  const originalPrompt = String(job.input?.original_prompt || job.originalPrompt || job.workflow?.objective || job.prompt || '').trim();
+  const broker = job.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
+  const workflow = job.workflow && typeof job.workflow === 'object'
+    ? job.workflow
+    : (broker.workflow && typeof broker.workflow === 'object' ? broker.workflow : {});
+  const promptCandidates = [
+    workflow.originalPrompt,
+    workflow.objective,
+    job.originalPrompt,
+    job.prompt,
+    job.input?.original_prompt,
+    job.input?.originalPrompt
+  ].map((item) => String(item || '').trim()).filter(Boolean);
+  const originalPrompt = promptCandidates.find((item) => !/^(?:retry|redo|rerun|再実行|リトライ|やり直し)$/i.test(item))
+    || promptCandidates[0]
+    || '';
   const prompt = isStructuredOrderBriefText(job.prompt)
     ? String(job.prompt || '').trim()
     : draftBrief(originalPrompt || job.prompt || '', {
@@ -5191,7 +5205,6 @@ function retryDraftFromJob(job = {}) {
         resolvedOrderStrategy: route,
         reason: `Retry prepared from order ${String(job.id || '').slice(0, 8)}.`
       }, { ja: looksJapanese(originalPrompt || job.prompt || '') });
-  const broker = job.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
   const owner = broker.conversationOwner || broker.activeLeader || {};
   const ownerTaskType = String(owner.taskType || owner.task_type || '').trim().toLowerCase();
   const ownerLabel = String(owner.label || owner.name || '').trim();
