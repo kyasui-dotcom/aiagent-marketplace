@@ -43,6 +43,9 @@ test.describe('CAIt app context continuity', () => {
       returnTo: '/chat?e2e=app-context-continuity',
       loginSource: 'playwright_app_context_continuity'
     });
+    await page.locator('#newChatBtn').click();
+    await expect(page.locator('#chatThread')).toContainText('What do you want done?');
+    await expect(page.locator('#promptInput')).toHaveValue('');
 
     await page.locator('#promptInput').fill('集客したいです');
     await page.locator('#sendMessageBtn').click();
@@ -79,8 +82,9 @@ test.describe('CAIt app context continuity', () => {
       .filter((button) => !['analytics-use'].includes(button.dataset.chatAction || '') && button.disabled)
       .map((button) => button.textContent?.trim() || button.getAttribute('data-intake-choice') || 'unknown'));
     expect(disabledIntakeChoices).toEqual([]);
-    await expect(page.getByRole('button', { name: /売上|購入|sales|revenue/i }).first()).toBeEnabled();
-    await page.getByRole('button', { name: /売上|購入|sales|revenue/i }).first().click();
+    const intakeThread = page.locator('#chatThread');
+    await expect(intakeThread.getByRole('button', { name: /売上|購入|sales|revenue/i }).first()).toBeEnabled();
+    await intakeThread.getByRole('button', { name: /売上|購入|sales|revenue/i }).first().click();
     await expect(page.locator('#chatThread')).not.toContainText('There is no active intake to answer.');
     await expect(page.locator('#promptInput')).toHaveValue(/主な目的|Main goal/);
     await page.locator('#sendMessageBtn').click();

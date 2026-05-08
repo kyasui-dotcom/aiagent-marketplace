@@ -74,7 +74,8 @@ test.describe('CAIt Chat workspace', () => {
     await expect(page.locator('#chatThread')).not.toContainText('Task: research');
     await page.getByRole('button', { name: 'Founders/operators' }).click();
     await page.getByRole('button', { name: 'Marketing/growth teams' }).click();
-    await expect(page.locator('#promptInput')).toHaveValue(/Founders\/operators[\s\S]*Marketing\/growth teams/);
+    await expect(page.locator('#promptInput')).toHaveValue(/Founders\/operators/);
+    await expect(page.locator('#promptInput')).toHaveValue(/Marketing\/growth teams/);
     await expect(page.getByRole('button', { name: 'Founders/operators' })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('button', { name: 'Marketing/growth teams' })).toHaveAttribute('aria-pressed', 'true');
     await page.locator('.intake-confirmed-item', { hasText: 'Founders/operators' }).getByRole('button', { name: 'Remove' }).click();

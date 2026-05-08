@@ -1633,6 +1633,35 @@ async function api(path, options = {}) {
   return data;
 }
 
+function apiRetryableError(error = {}, statuses = []) {
+  const status = Number(error?.status || 0);
+  if (!status) return true;
+  return (statuses.length ? statuses : [408, 429, 500, 502, 503, 504]).includes(status);
+}
+
+function apiRetryDelay(error = {}, attempt = 1, options = {}) {
+  const retryAfter = Number(error?.data?.retry_after || error?.data?.retryAfter || 0);
+  const maxDelayMs = Math.max(500, Number(options.maxDelayMs || 8000) || 8000);
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.min(maxDelayMs, retryAfter * 1000);
+  return Math.min(maxDelayMs, Math.max(500, Number(options.baseDelayMs || 1000) || 1000) * Math.max(1, attempt));
+}
+
+async function apiWithRetry(path, options = {}, retryOptions = {}) {
+  const maxAttempts = Math.max(1, Math.min(8, Number(retryOptions.maxAttempts || 1) || 1));
+  const retryStatuses = Array.isArray(retryOptions.retryStatuses) ? retryOptions.retryStatuses : [];
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await api(path, options);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts || !apiRetryableError(error, retryStatuses)) throw error;
+      await sleep(apiRetryDelay(error, attempt, retryOptions));
+    }
+  }
+  throw lastError || new Error('Request failed');
+}
+
 function setBusy(next) {
   state.busy = Boolean(next);
   els.sendMessageBtn.disabled = state.busy;
@@ -5478,7 +5507,7 @@ async function prepareOrder(prompt, options = {}) {
   const skipOpenAiIntent = options.skipOpenAiIntent === true || options.skip_openai_intent === true;
   let prepared;
   try {
-    prepared = await api('/api/work/prepare-order', {
+    prepared = await apiWithRetry('/api/work/prepare-order', {
       method: 'POST',
       body: JSON.stringify(chatEngineBuildPrepareOrderPayload(prompt, {
       requestedStrategy: 'auto',
@@ -5492,6 +5521,11 @@ async function prepareOrder(prompt, options = {}) {
       intakeAnswered: options.intakeAnswered === true,
       skipOpenAiIntent
       }))
+    }, {
+      maxAttempts: 5,
+      baseDelayMs: 1000,
+      maxDelayMs: 12000,
+      retryStatuses: [408, 429, 500, 502, 503, 504]
     });
   } catch (error) {
     if (!skipOpenAiIntent || options.intakeAnswered === true) throw error;
