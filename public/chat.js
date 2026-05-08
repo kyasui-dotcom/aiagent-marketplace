@@ -2467,16 +2467,120 @@ function appHandoffRememberDetails(appId = '', payload = {}, handoffUrl = '', so
   });
 }
 
+function appHandoffJobSignalText(job = {}) {
+  const files = deliveryFiles(job);
+  const authority = authorityRequestFromJob(job) || {};
+  const childRuns = visibleWorkflowChildRuns(job.workflow?.childRuns);
+  return [
+    job.taskType,
+    job.workflowTask,
+    job.workflow?.objective,
+    job.input?.original_prompt,
+    job.originalPrompt,
+    job.prompt,
+    deliveryText(job),
+    ...files.flatMap((file) => [file?.name, file?.type, file?.content_type, String(file?.content || '').slice(0, 1800)]),
+    ...childRuns.flatMap((child) => [child.taskType, child.dispatchTaskType, child.agentName, child.sequencePhase, child.failureReason]),
+    authority.reason,
+    authority.source,
+    ...listValues(authority.missing_connectors || authority.missingConnectors || authority.connectors),
+    ...listValues(authority.missing_connector_capabilities || authority.missingConnectorCapabilities || authority.capabilities),
+    ...listValues(authority.channel_candidates || authority.channelCandidates || authority.channels)
+  ].map((item) => String(item || '').trim()).filter(Boolean).join('\n').toLowerCase();
+}
+
+function appHandoffManifestSignalText(entry = {}) {
+  return [
+    entry.id,
+    entry.name,
+    entry.description,
+    ...(Array.isArray(entry.capabilities) ? entry.capabilities : []),
+    ...(Array.isArray(entry.tags) ? entry.tags : []),
+    ...(Array.isArray(entry.requiredConnectors) ? entry.requiredConnectors : []),
+    ...(Array.isArray(entry.requiresApprovalFor) ? entry.requiresApprovalFor : []),
+    ...(Array.isArray(entry.inputContract?.accepts) ? entry.inputContract.accepts : [])
+  ].map((item) => String(item || '').trim()).filter(Boolean).join('\n').toLowerCase();
+}
+
+function appHandoffRelevanceScore(entry = {}, job = {}, options = {}) {
+  const id = normalizeUsageId(entry.id || '');
+  const jobText = options.jobText || appHandoffJobSignalText(job);
+  const appText = appHandoffManifestSignalText(entry);
+  const files = deliveryFiles(job);
+  const authority = authorityRequestFromJob(job) || {};
+  const childRuns = visibleWorkflowChildRuns(job.workflow?.childRuns);
+  const taskSet = new Set([
+    String(job.taskType || '').trim().toLowerCase(),
+    String(job.workflowTask || '').trim().toLowerCase(),
+    ...(Array.isArray(job.workflow?.plannedTasks) ? job.workflow.plannedTasks : []),
+    ...childRuns.flatMap((child) => [child.taskType, child.dispatchTaskType])
+  ].map((task) => String(task || '').trim().toLowerCase()).filter(Boolean));
+  const missing = [
+    ...listValues(authority.missing_connectors || authority.missingConnectors || authority.connectors),
+    ...listValues(authority.missing_connector_capabilities || authority.missingConnectorCapabilities || authority.capabilities),
+    ...listValues(authority.channel_candidates || authority.channelCandidates || authority.channels)
+  ].join(' ').toLowerCase();
+  const score = { value: 0, reasons: [] };
+  const add = (value, reason) => {
+    if (!value) return;
+    score.value += value;
+    if (reason && !score.reasons.includes(reason)) score.reasons.push(reason);
+  };
+
+  if (id === 'delivery-manager') {
+    if (files.length) add(36, 'delivery files');
+    else if (String(deliveryText(job) || '').trim().length > 120) add(12, 'delivery summary');
+  }
+  if (id === 'analytics-console') {
+    if (taskSet.has('data_analysis')) add(44, 'analytics/data lane');
+    if (/(ga4|gsc|search console|google analytics|analytics|conversion|traffic|流入|検索クエリ|サーチコンソール)/i.test(jobText)) add(30, 'analytics evidence');
+    if (/google\.read_ga4|google\.read_gsc|ga4|gsc|search_console/.test(missing)) add(34, 'Google analytics connector');
+  }
+  if (id === 'publisher-approval-studio') {
+    if ([...taskSet].some((task) => ['seo_gap', 'landing', 'writing', 'directory_submission', 'citation_ops', 'code', 'debug'].includes(task))) add(38, 'content/publishing lane');
+    if (/(article|landing|seo|directory|citation|publisher|approval|github|pull request|pr|publish|submit|掲載|承認|記事|lp|ディレクトリ)/i.test(jobText)) add(28, 'publishable artifact');
+    if (/(github|directory|publish|submit|write)/i.test(missing)) add(34, 'write approval');
+  }
+  if (id === 'lead-ops-console') {
+    if ([...taskSet].some((task) => ['list_creator', 'email_ops', 'cold_email', 'acquisition_automation'].includes(task))) add(42, 'lead/outreach lane');
+    if (/(lead|crm|email|gmail|outreach|cold email|newsletter|prospect|sales|リード|営業メール|メール)/i.test(jobText)) add(30, 'lead or email artifact');
+    if (/(email|gmail|crm|lead)/i.test(missing)) add(34, 'lead/email connector');
+  }
+  if (id === 'x-client-ops') {
+    if (xPostDraftFromJob(job)?.text) add(70, 'X post draft');
+    if (taskSet.has('x_post')) add(46, 'X action lane');
+    if (/(x post|twitter|tweet|x\.post|投稿ドラフト|x投稿)/i.test(jobText) || /(x\.post|twitter|x\b)/i.test(missing)) add(34, 'X/social action');
+  }
+
+  const appTokens = new Set(appText.split(/[^a-z0-9_]+/).filter((token) => token.length >= 4));
+  const jobTokens = new Set(jobText.split(/[^a-z0-9_]+/).filter((token) => token.length >= 4));
+  const overlaps = [...appTokens].filter((token) => jobTokens.has(token)).slice(0, 5);
+  if (overlaps.length) add(Math.min(18, overlaps.length * 4), `matched ${overlaps.slice(0, 2).join(', ')}`);
+
+  return score;
+}
+
 function appAgentHandoffCandidates(job = {}) {
   const hasXPostTool = Boolean(xPostDraftFromJob(job)?.text);
+  const jobText = appHandoffJobSignalText(job);
   return appManifestSources()
+    .map((entry) => {
+      const relevance = appHandoffRelevanceScore(entry, job, { jobText });
+      return {
+        ...entry,
+        handoffRelevanceScore: relevance.value,
+        handoffReason: relevance.reasons.slice(0, 2).join(' / ')
+      };
+    })
     .filter((entry) => {
       if (!entry?.id || (!entry.entryUrl && !entry.baseUrl && !entry.handoff?.createUrl)) return false;
       if (normalizeUsageId(entry.id) === 'x-client-ops' && hasXPostTool) return false;
       if (String(entry.status || '').toLowerCase() === 'deprecated') return false;
+      if (Number(entry.handoffRelevanceScore || 0) <= 0) return false;
       return true;
     })
-    .slice(0, 6);
+    .sort((left, right) => Number(right.handoffRelevanceScore || 0) - Number(left.handoffRelevanceScore || 0))
+    .slice(0, 3);
 }
 
 function renderAppHandoffTools(job = {}) {
@@ -2494,6 +2598,7 @@ function renderAppHandoffTools(job = {}) {
       '<div class="app-handoff-main">',
       `<strong>${escapeHtml(entry.name || 'Registered app')}</strong>`,
       `<span>${escapeHtml(entry.description || 'Receive this CAIt delivery as structured app context.')}</span>`,
+      entry.handoffReason ? `<span class="chat-hint">Matched: ${escapeHtml(entry.handoffReason)}</span>` : '',
       capabilities ? `<div class="usage-badges">${capabilities}</div>` : '',
       '</div>',
       '<div class="app-handoff-actions">',
@@ -2506,7 +2611,7 @@ function renderAppHandoffTools(job = {}) {
   return [
     '<div class="app-handoff-card">',
     '<strong>App handoff</strong>',
-    '<div class="chat-hint">Send this delivery, files, agent chain, and order context to registered apps through their handoff API or a server-side CAIt app context. External execution still requires that app or connector to ask for final approval.</div>',
+    '<div class="chat-hint">Only apps matched to this delivery, files, agent chain, connector blocker, or action lane are shown here. External execution still requires that app or connector to ask for final approval.</div>',
     rows,
     '</div>'
   ].join('\n');
