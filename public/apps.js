@@ -2,6 +2,68 @@ const listEl = document.querySelector('[data-context-list]');
 const registryListEl = document.querySelector('[data-app-registry-list]');
 const featuredListEl = document.querySelector('[data-featured-app-list]');
 const CORE_FEATURE_APP_IDS = new Set(['delivery-manager']);
+const FALLBACK_BUILT_IN_APPS = [
+  {
+    id: 'analytics-console',
+    name: 'Analytics Console',
+    description: 'Old-GA-style acquisition, search query, landing page, conversion, country, channel, and post-run measurement console for CAIt leaders.',
+    entryUrl: '/analytics-console.html',
+    capabilities: ['analytics_context', 'search_console_packet', 'ga4_packet', 'post_run_measurement'],
+    requiredConnectors: ['google'],
+    requiresApprovalFor: [],
+    inputContract: { returns: ['facts', 'metrics', 'artifacts', 'recommended_next_actions'] },
+    tags: ['analytics', 'seo', 'growth'],
+    owner: 'built-in',
+    status: 'active',
+    verificationStatus: 'built_in',
+    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] }
+  },
+  {
+    id: 'publisher-approval-studio',
+    name: 'Publisher & Approval Studio',
+    description: 'Content, page, metadata, directory submission, PR draft, and approval queue studio for external action handoffs.',
+    entryUrl: '/publisher-approval.html',
+    capabilities: ['content_management', 'approval_queue', 'directory_submission_packet', 'publisher_change_set'],
+    requiredConnectors: ['github'],
+    requiresApprovalFor: ['publish_change', 'directory_submit', 'github_pr', 'external_send'],
+    inputContract: { returns: ['approval_requests', 'artifacts', 'delivery_files', 'recommended_next_actions'] },
+    tags: ['publisher', 'approval', 'seo'],
+    owner: 'built-in',
+    status: 'active',
+    verificationStatus: 'built_in',
+    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] }
+  },
+  {
+    id: 'lead-ops-console',
+    name: 'Lead Ops Console',
+    description: 'Lead rows, public source evidence, statuses, owners, next actions, and email draft management before approval.',
+    entryUrl: '/lead-ops.html',
+    capabilities: ['lead_management', 'email_draft', 'crm_packet', 'outreach_review'],
+    requiredConnectors: ['google'],
+    requiresApprovalFor: ['email_send', 'crm_write', 'external_send'],
+    inputContract: { returns: ['artifacts', 'approval_requests', 'recommended_next_actions'] },
+    tags: ['crm', 'lead', 'email'],
+    owner: 'built-in',
+    status: 'active',
+    verificationStatus: 'built_in',
+    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] }
+  },
+  {
+    id: 'x-client-ops',
+    name: 'X Client Ops',
+    description: 'X post drafting, strategy context transfer, and approval-ready posting queue for CAIt action handoffs.',
+    entryUrl: 'https://x.niche-s.com/',
+    capabilities: ['x_post_draft', 'x_post_queue', 'social_action'],
+    requiredConnectors: ['x'],
+    requiresApprovalFor: ['post_now', 'send_external'],
+    inputContract: { returns: ['approval_requests', 'artifacts'] },
+    tags: ['social', 'x', 'posting'],
+    owner: 'built-in',
+    status: 'active',
+    verificationStatus: 'built_in',
+    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] }
+  }
+];
 
 function escapeHtml(value = '') {
   return String(value ?? '')
@@ -196,9 +258,12 @@ function renderFeaturedApps(records = []) {
 
 async function loadApps() {
   if (!registryListEl) return;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 6000);
   try {
     const response = await fetch('/api/apps?limit=100', {
       credentials: 'same-origin',
+      signal: controller.signal,
       headers: { accept: 'application/json' }
     });
     const data = await response.json().catch(() => ({}));
@@ -207,8 +272,10 @@ async function loadApps() {
     renderApps(apps);
     renderFeaturedApps(apps);
   } catch (error) {
-    updateAppMetrics([]);
-    registryListEl.innerHTML = `<div class="notice">Registered apps could not be loaded. ${escapeHtml(String(error?.message || error || ''))}</div>`;
+    renderApps(FALLBACK_BUILT_IN_APPS);
+    renderFeaturedApps(FALLBACK_BUILT_IN_APPS);
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 
