@@ -429,6 +429,26 @@ textarea {
   line-height: 1.35;
 }
 
+.progress-narrator-stream {
+  min-height: 20px;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: 1px solid rgba(31, 107, 88, 0.14);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: #ffffff;
+  color: rgba(42, 54, 48, 0.72);
+  font-family: "SFMono-Regular", Consolas, ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.progress-narrator-stream.done {
+  color: var(--muted);
+}
+
 .progress-narrator-pulse {
   width: 9px;
   height: 9px;

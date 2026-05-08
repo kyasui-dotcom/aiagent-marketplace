@@ -161,6 +161,8 @@ const state = {
   polling: null,
   progressNarratorArticle: null,
   progressNarratorKey: '',
+  progressNarratorTimer: null,
+  progressNarratorTimerArticle: null,
   followupTargetOrderId: '',
   deliveryBackfill: null,
   oauthPopupMonitor: null,
@@ -519,7 +521,10 @@ function applyRestoredChatSnapshot(snapshot = {}, request = {}) {
   const session = normalizeChatSession(snapshot.session || {});
   if (!session && !snapshot.orderId && !snapshot.pendingIntake && !snapshot.draft) return false;
   if (state.polling) window.clearInterval(state.polling);
+  stopProgressNarratorAnimation();
   state.polling = null;
+  state.progressNarratorArticle = null;
+  state.progressNarratorKey = '';
   state.currentChatSessionId = session?.id || String(snapshot.currentChatSessionId || request.sessionId || '').trim();
   state.chatMessages = (Array.isArray(session?.messages) ? session.messages : []).slice(-80);
   state.lastTranscriptPrompt = '';
@@ -682,6 +687,7 @@ function renderChatSessionSidebar() {
 }
 
 function startNewChatSession() {
+  stopProgressNarratorAnimation();
   state.currentChatSessionId = '';
   state.chatMessages = [];
   state.lastTranscriptPrompt = '';
@@ -692,6 +698,8 @@ function startNewChatSession() {
   state.conversationLanguage = '';
   state.draftRevision += 1;
   state.orderId = '';
+  state.progressNarratorArticle = null;
+  state.progressNarratorKey = '';
   state.authorityNoticeKeys.clear();
   deliveryFileStore.clear();
   appTransferStore.clear();
@@ -706,7 +714,10 @@ function loadChatSession(sessionId = '') {
   const session = state.chatSessions.find((item) => item.id === sessionId || item.sessionId === sessionId);
   if (!session) return;
   if (state.polling) window.clearInterval(state.polling);
+  stopProgressNarratorAnimation();
   state.polling = null;
+  state.progressNarratorArticle = null;
+  state.progressNarratorKey = '';
   state.currentChatSessionId = session.id;
   state.chatMessages = (Array.isArray(session.messages) ? session.messages : []).slice(-80);
   state.lastTranscriptPrompt = '';
@@ -1407,6 +1418,7 @@ function progressNarratorHtml(text = '', options = {}) {
   const status = String(options.status || '').trim();
   const phase = String(options.phase || '').trim();
   const steps = Array.isArray(options.steps) ? options.steps.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 4) : [];
+  const streamText = progressNarratorStreamText(text, options, 0);
   return [
     '<div class="progress-narrator" data-progress-narrator>',
     '<div class="progress-narrator-row">',
@@ -1414,11 +1426,84 @@ function progressNarratorHtml(text = '', options = {}) {
     `<strong data-progress-narrator-text>${escapeHtml(text || 'Working through the order...')}</strong>`,
     '<span class="progress-narrator-caret" aria-hidden="true"></span>',
     '</div>',
+    `<div class="progress-narrator-stream" data-progress-narrator-stream aria-live="off">${escapeHtml(streamText)}</div>`,
     detail ? `<div class="progress-narrator-detail" data-progress-narrator-detail>${escapeHtml(detail)}</div>` : '<div class="progress-narrator-detail" data-progress-narrator-detail hidden></div>',
     (status || phase) ? `<div class="progress-narrator-meta" data-progress-narrator-meta>${escapeHtml([phase, status].filter(Boolean).join(' / '))}</div>` : '<div class="progress-narrator-meta" data-progress-narrator-meta hidden></div>',
     steps.length ? `<div class="progress-narrator-steps" data-progress-narrator-steps>${steps.map((step) => `<span>${escapeHtml(step)}</span>`).join('')}</div>` : '<div class="progress-narrator-steps" data-progress-narrator-steps hidden></div>',
     '</div>'
   ].join('\n');
+}
+
+function progressNarratorStreamSegments(text = '', options = {}) {
+  const sample = [text, options.detail, options.phase, options.status, state.conversationLanguage].join(' ');
+  const ja = chatLanguage(sample) === 'ja';
+  const base = ja
+    ? ['注文を確認中', '現在フェーズを同期', '担当エージェントを確認', '待機項目を検査', '結果をチャットへ反映準備']
+    : ['reading order', 'syncing phase', 'checking active agent', 'watching waits', 'preparing chat update'];
+  const specific = [
+    options.phase ? `${ja ? 'フェーズ' : 'phase'}: ${options.phase}` : '',
+    options.status ? `${ja ? '状態' : 'status'}: ${options.status}` : '',
+    ...(Array.isArray(options.steps) ? options.steps : []).slice(0, 3)
+  ].map((item) => String(item || '').trim()).filter(Boolean);
+  return [...specific, ...base].filter(Boolean).slice(0, 8);
+}
+
+function progressNarratorStreamText(text = '', options = {}, frame = 0) {
+  const segments = progressNarratorStreamSegments(text, options);
+  const cursor = ['|', '/', '-', '\\'][Math.abs(Number(frame || 0)) % 4];
+  const start = Math.abs(Number(frame || 0)) % Math.max(1, segments.length);
+  const ordered = [...segments.slice(start), ...segments.slice(0, start)];
+  const count = Math.min(4, Math.max(2, 2 + (Math.abs(Number(frame || 0)) % 3)));
+  const dots = '.'.repeat(1 + (Math.abs(Number(frame || 0)) % 3));
+  return `${cursor} ${ordered.slice(0, count).join('  ·  ')}${dots}`;
+}
+
+function stopProgressNarratorAnimation(article = null) {
+  if (article && state.progressNarratorTimerArticle && state.progressNarratorTimerArticle !== article) return;
+  if (state.progressNarratorTimer) window.clearInterval(state.progressNarratorTimer);
+  state.progressNarratorTimer = null;
+  state.progressNarratorTimerArticle = null;
+}
+
+function syncProgressNarratorAnimation(article, text = '', options = {}) {
+  if (!article) return;
+  const streamNode = article.querySelector('[data-progress-narrator-stream]');
+  if (!streamNode) return;
+  article.dataset.progressNarratorText = String(text || '');
+  article.dataset.progressNarratorOptions = JSON.stringify({
+    detail: String(options.detail || ''),
+    phase: String(options.phase || ''),
+    status: String(options.status || ''),
+    steps: Array.isArray(options.steps) ? options.steps.slice(0, 4) : []
+  });
+  if (options.done === true) {
+    streamNode.textContent = progressNarratorStreamText(text, options, 0);
+    streamNode.classList.add('done');
+    stopProgressNarratorAnimation(article);
+    return;
+  }
+  streamNode.classList.remove('done');
+  const renderFrame = () => {
+    if (!article.isConnected) {
+      stopProgressNarratorAnimation(article);
+      return;
+    }
+    const frame = Number(article.dataset.progressNarratorFrame || 0) + 1;
+    article.dataset.progressNarratorFrame = String(frame);
+    let parsed = {};
+    try {
+      parsed = JSON.parse(article.dataset.progressNarratorOptions || '{}');
+    } catch {
+      parsed = {};
+    }
+    streamNode.textContent = progressNarratorStreamText(article.dataset.progressNarratorText || text, parsed, frame);
+  };
+  renderFrame();
+  if (state.progressNarratorTimerArticle !== article) {
+    stopProgressNarratorAnimation();
+    state.progressNarratorTimerArticle = article;
+    state.progressNarratorTimer = window.setInterval(renderFrame, 820);
+  }
 }
 
 function updateProgressNarratorArticle(article, text = '', options = {}) {
@@ -1444,6 +1529,7 @@ function updateProgressNarratorArticle(article, text = '', options = {}) {
     stepsNode.hidden = !steps.length;
   }
   article.classList.toggle('ok', options.done === true);
+  syncProgressNarratorAnimation(article, text, options);
 }
 
 function showProgressNarrator(text = '', options = {}) {
@@ -1455,6 +1541,7 @@ function showProgressNarrator(text = '', options = {}) {
       record: false
     });
     state.progressNarratorKey = key;
+    syncProgressNarratorAnimation(state.progressNarratorArticle, text, options);
     return state.progressNarratorArticle;
   }
   updateProgressNarratorArticle(state.progressNarratorArticle, text, options);
