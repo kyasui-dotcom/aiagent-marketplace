@@ -204,6 +204,7 @@ const state = {
   lastTranscriptId: '',
   chatSessionHistoryFetchedAt: 0,
   chatSessionHistoryRequest: null,
+  authRefreshRetryTimer: null,
   visitorId: makeVisitorId()
 };
 
@@ -5819,14 +5820,45 @@ async function signOut() {
   }
 }
 
-async function refreshAuth() {
+function authRefreshRetryDelay(error, attempt = 1) {
+  const retryAfter = Number(error?.data?.retry_after || error?.data?.retryAfter || 0);
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.min(5000, retryAfter * 1000);
+  return Math.min(4000, 500 * Math.max(1, attempt));
+}
+
+function authRefreshRetryable(error) {
+  const status = Number(error?.status || 0);
+  return !status || status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+async function refreshAuth(options = {}) {
+  if (state.authRefreshRetryTimer) {
+    window.clearTimeout(state.authRefreshRetryTimer);
+    state.authRefreshRetryTimer = null;
+  }
+  const maxAttempts = Math.max(1, Math.min(5, Number(options.maxAttempts || 4) || 4));
+  let lastError = null;
   try {
-    const auth = await api('/auth/status', { method: 'GET' });
-    if (!applyAuthState(auth || {}, { redirectIfGuest: true })) return;
-    warmUtilityCatalogs();
-    if (!state.chatSessionHistoryFetchedAt && !state.chatSessionHistoryRequest) void refreshChatSessionHistory({ force: true });
-  } catch {
-    els.authStatus.textContent = 'Session status unavailable.';
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const auth = await api('/auth/status', { method: 'GET' });
+        if (!applyAuthState(auth || {}, { redirectIfGuest: true })) return;
+        warmUtilityCatalogs();
+        if (!state.chatSessionHistoryFetchedAt && !state.chatSessionHistoryRequest) void refreshChatSessionHistory({ force: true });
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt >= maxAttempts || !authRefreshRetryable(error)) break;
+        await sleep(authRefreshRetryDelay(error, attempt));
+      }
+    }
+    if (els.authStatus) els.authStatus.textContent = 'Session status unavailable. Retrying...';
+    if (options.scheduleRetry !== false) {
+      state.authRefreshRetryTimer = window.setTimeout(() => {
+        state.authRefreshRetryTimer = null;
+        void refreshAuth({ maxAttempts: 2, scheduleRetry: false });
+      }, authRefreshRetryDelay(lastError, maxAttempts));
+    }
   } finally {
     startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
   }
