@@ -15291,6 +15291,94 @@ async function scheduleProgressDispatchForJobId(storage, env, waitUntil, jobId, 
   };
 }
 
+function workflowAnalyticsAppContextsForDataShortcut(job = {}) {
+  if (workflowTaskName(job) !== 'data_analysis') return [];
+  const broker = job?.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
+  const contexts = Array.isArray(broker.appContexts) ? broker.appContexts : [];
+  return contexts.filter((context) => {
+    const text = [
+      context?.source_app,
+      context?.source_app_label,
+      context?.title,
+      context?.summary,
+      ...(Array.isArray(context?.facts) ? context.facts.slice(0, 20) : [])
+    ].map((item) => String(item || '')).join(' ');
+    return /(analytics|ga4|google analytics|search console|gsc|sessions|conversions|conversion rate|search clicks|アナリティクス|サーチコンソール)/i.test(text);
+  }).slice(0, 3);
+}
+
+function workflowDataAnalysisAppContextShortcut(job = {}, sampleKind = '') {
+  if (String(sampleKind || '').trim().toLowerCase() !== 'data_analysis') return null;
+  const contexts = workflowAnalyticsAppContextsForDataShortcut(job);
+  if (!contexts.length) return null;
+  const facts = [];
+  const seen = new Set();
+  const pushFact = (value = '') => {
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    const key = text.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    facts.push(text.slice(0, 260));
+  };
+  for (const context of contexts) {
+    pushFact(context.summary);
+    for (const fact of Array.isArray(context.facts) ? context.facts : []) pushFact(fact);
+    for (const metric of Array.isArray(context.metrics) ? context.metrics : []) {
+      if (typeof metric === 'string') pushFact(metric);
+      else if (metric && typeof metric === 'object') pushFact([metric.label || metric.name, metric.value].filter(Boolean).join(': '));
+    }
+  }
+  const sourceLabel = contexts.map((context) => String(context.source_app_label || context.title || context.source_app || 'analytics context').trim()).filter(Boolean)[0] || 'attached analytics context';
+  const selectedFacts = facts.slice(0, 12);
+  const summary = selectedFacts.length
+    ? `Data analysis completed from attached ${sourceLabel}. ${selectedFacts.slice(0, 4).join(' / ')}`
+    : `Data analysis completed from attached ${sourceLabel}.`;
+  const bullets = selectedFacts.length
+    ? selectedFacts.slice(0, 8)
+    : ['Attached analytics context was present, so CAIt used it directly instead of starting a long-running generation task.'];
+  const nextAction = 'Use these analytics facts as the data layer, then continue to research/planning. State any data gaps instead of blocking the workflow.';
+  const markdown = [
+    '# Data analysis from attached context',
+    '',
+    `Source: ${sourceLabel}`,
+    '',
+    '## Key facts',
+    ...bullets.map((item) => `- ${item}`),
+    '',
+    '## Next action',
+    nextAction
+  ].join('\n');
+  return {
+    report: {
+      summary,
+      bullets,
+      nextAction,
+      next_action: nextAction,
+      confidence: 'medium',
+      data_status: 'attached_context_summarized',
+      source: 'attached_app_context',
+      app_context_ids: contexts.map((context) => String(context.id || '').trim()).filter(Boolean)
+    },
+    files: [
+      {
+        name: 'data-analysis-context-summary.md',
+        type: 'text/markdown',
+        content: markdown
+      }
+    ],
+    usage: {
+      input_tokens: Math.max(80, JSON.stringify(contexts).length / 4),
+      output_tokens: Math.max(80, markdown.length / 4),
+      total_tokens: Math.max(160, (JSON.stringify(contexts).length + markdown.length) / 4),
+      api_cost: 0,
+      simulated: true,
+      source: 'attached_app_context_shortcut'
+    },
+    returnTargets: ['api']
+  };
+}
+
 async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, sampleKind, options = {}) {
   const eventLabel = options.eventLabel || 'scheduled built-in sweep';
   const completionSource = options.completionSource || 'built-in-workflow-scheduled-sweep';
@@ -15329,6 +15417,34 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
         effectiveLocked = cloneJob(job);
         return { updated: 1 };
       });
+    }
+    const shortcut = workflowDataAnalysisAppContextShortcut(effectiveLocked, sampleKind);
+    if (shortcut) {
+      const result = await completeJobFromAgentResult(storage, locked.id, agent.id, {
+        report: shortcut.report,
+        files: shortcut.files,
+        usage: shortcut.usage,
+        returnTargets: shortcut.returnTargets
+      }, { source: 'app-context-data-analysis-shortcut' });
+      if (result?.ok) {
+        if (result.mode === 'completed') {
+          await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} completed from attached analytics context`);
+          await recordBillingOutcome(storage, result.job, result.billing, 'app-context-data-analysis-shortcut');
+          if (locked.workflowParentId) {
+            await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
+            await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} analytics context shortcut`, {
+              maxTargets: 8,
+              awaitDispatch: true,
+              refresh: false
+            });
+            await reconcileWorkflowParent(storage, locked.workflowParentId);
+          }
+        } else if (locked.workflowParentId) {
+          await reconcileWorkflowParent(storage, locked.workflowParentId);
+        }
+        return { ok: true, mode: result.mode, jobId: locked.id, job: result.job, shortcut: 'attached_app_context' };
+      }
+      await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} analytics context shortcut rejected: ${String(result?.error || 'unknown').slice(0, 120)}`);
     }
     const payload = buildCompactBuiltInDispatchPayload(effectiveLocked, agent);
     const body = await runBuiltInAgent(sampleKind, payload, env);
