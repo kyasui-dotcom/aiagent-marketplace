@@ -4735,14 +4735,23 @@ function normalizeLlmIntakeQuestions(value = []) {
     .slice(0, 4);
 }
 
+function leaderTextHasCmoSignal(text = '', intent = '') {
+  const source = `${intent}\n${text}`;
+  return /natural_business_growth|natural_marketing_launch|growth|marketing|sales|acquisition|launch|signup|signups|trial|trials|customers?|conversion|seo|paid ads?|referral|sns|social|channels?|campaign|go[-\s]?to[-\s]?market|gtm|集客|売上|マーケ|ローンチ|会員登録|登録|トライアル|顧客獲得|広告|自然流入|オーガニック|媒体|チャネル|sns/i.test(source);
+}
+
+function leaderTextHasSpecificCpoSignal(text = '') {
+  return /(?:\bcpo\b|chief product|product leader|product strategy|product roadmap|roadmap|ux strategy|feature priorit|feature roadmap|mvp roadmap|onboarding friction|activation path|user journey|information architecture|プロダクト責任者|プロダクト戦略|ロードマップ|機能優先|機能ロードマップ|ux戦略|仮説検証計画|アイデア検証計画)/i.test(String(text || ''));
+}
+
 function leaderTaskTypeFromIntentResult(prompt = '', result = {}) {
   const text = `${prompt}\n${result?.summary || ''}\n${result?.narrowing_question || ''}`.toLowerCase();
   const intent = String(result?.intent || '').trim();
   if (/(cto|architecture|technical|repo|github|code|deploy|技術|実装|リポジトリ|デプロイ)/i.test(text)) return 'cto_leader';
-  if (/(cpo|product|ux|roadmap|feature|プロダクト|機能|ux|ロードマップ)/i.test(text)) return 'cpo_leader';
   if (/(cfo|pricing|finance|unit economics|cash|価格|財務|収支|粗利)/i.test(text)) return 'cfo_leader';
   if (/(legal|privacy|terms|contract|compliance|規約|法務|契約|プライバシー)/i.test(text)) return 'legal_leader';
-  if (intent === 'natural_business_growth' || intent === 'natural_marketing_launch' || /(growth|marketing|sales|acquisition|launch|集客|売上|マーケ|ローンチ)/i.test(text)) return 'cmo_leader';
+  if (leaderTextHasCmoSignal(text, intent)) return 'cmo_leader';
+  if (leaderTextHasSpecificCpoSignal(text)) return 'cpo_leader';
   if (/(build team|implementation|debug|実装|修正|バグ)/i.test(text)) return 'build_team_leader';
   if (/(research team|analysis team|decision team|調査チーム|分析チーム|複数.*(?:調査|分析)|意思決定)/i.test(text)) return 'research_team_leader';
   return '';
