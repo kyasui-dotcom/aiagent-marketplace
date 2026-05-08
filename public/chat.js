@@ -15,7 +15,7 @@ import {
   caitAppContextChatPrompt,
   caitAppContextThreadHtml,
   consumeCaitAppContextForChat
-} from './cait-app-bridge.js?v=20260507a';
+} from './cait-app-bridge.js?v=20260508d';
 import {
   isLeaderCatalogQuestionIntentText,
   isNonOrderConversationIntentText

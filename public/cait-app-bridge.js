@@ -54,14 +54,43 @@ function caitOrigin(options = {}) {
   return DEFAULT_CAIt_ORIGIN;
 }
 
+function delay(ms = 0) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function retryableStatus(status = 0) {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let timeoutId = null;
+  if (controller && Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  }
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller ? controller.signal : options.signal
+    });
+    const data = await response.json().catch(() => ({}));
+    return { response, data };
+  } catch (error) {
+    error.retryable = true;
+    throw error;
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
+}
+
 async function caitCsrfToken(origin = '') {
   if (origin !== window.location.origin) return '';
   try {
-    const response = await fetch(`${origin}/auth/status`, {
+    const { response, data } = await fetchJsonWithTimeout(`${origin}/auth/status`, {
       headers: { accept: 'application/json' },
       credentials: 'same-origin'
-    });
-    const data = await response.json().catch(() => ({}));
+    }, 2500);
+    if (!response.ok) return '';
     return String(data?.csrfToken || '').trim();
   } catch {
     return '';
@@ -76,7 +105,7 @@ async function createServerAppContext(context = {}, options = {}) {
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
   const csrfToken = await caitCsrfToken(origin);
   if (csrfToken) headers['x-aiagent2-csrf'] = csrfToken;
-  const response = await fetch(`${origin}/api/app-contexts`, {
+  const { response, data } = await fetchJsonWithTimeout(`${origin}/api/app-contexts`, {
     method: 'POST',
     headers,
     credentials: origin === window.location.origin ? 'same-origin' : 'omit',
@@ -84,9 +113,13 @@ async function createServerAppContext(context = {}, options = {}) {
       app_id: context.source_app,
       context
     })
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data?.chat_url) throw new Error(String(data?.error || `app context create failed (${response.status})`));
+  }, Number(options.serverTimeoutMs || 12000) || 12000);
+  if (!response.ok || !data?.chat_url) {
+    const error = new Error(String(data?.error || `app context create failed (${response.status})`));
+    error.status = response.status;
+    error.retryable = retryableStatus(response.status);
+    throw error;
+  }
   return {
     ...data,
     chat_url: new URL(data.chat_url, origin).toString()
@@ -94,7 +127,7 @@ async function createServerAppContext(context = {}, options = {}) {
 }
 
 async function createServerAppContextWithRetry(context = {}, options = {}) {
-  const attempts = Math.max(1, Math.min(3, Number(options.serverAttempts || 2) || 2));
+  const attempts = Math.max(1, Math.min(6, Number(options.serverAttempts || 5) || 5));
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -102,7 +135,8 @@ async function createServerAppContextWithRetry(context = {}, options = {}) {
     } catch (error) {
       lastError = error;
       if (attempt >= attempts) break;
-      await new Promise((resolve) => window.setTimeout(resolve, 500 * attempt));
+      if (error?.retryable === false || (Number(error?.status || 0) >= 400 && !retryableStatus(Number(error.status)))) break;
+      await delay(Math.min(5000, 600 * attempt * attempt));
     }
   }
   throw lastError || new Error('app context create failed');

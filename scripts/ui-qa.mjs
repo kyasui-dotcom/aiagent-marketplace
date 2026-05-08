@@ -348,9 +348,11 @@ for (const app of builtInAppEntries) {
 }
 
 assert.ok(analyticsJs.includes("source_app: 'analytics_console'"), 'Analytics app logic should stay in analytics-console.js.');
-assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260508c"), 'Analytics Console should load the latest CAIt app bridge.');
-assert.ok(caitAppBridge.includes("fetch(`${origin}/auth/status`"), 'CAIt app bridge should read auth status before same-origin context handoff.');
+assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260508d"), 'Analytics Console should load the latest CAIt app bridge.');
+assert.ok(caitAppBridge.includes("`${origin}/auth/status`"), 'CAIt app bridge should read auth status before same-origin context handoff.');
 assert.ok(caitAppBridge.includes("headers['x-aiagent2-csrf'] = csrfToken"), 'CAIt app bridge should attach CSRF token to same-origin context handoff writes.');
+assert.ok(caitAppBridge.includes('createServerAppContextWithRetry'), 'CAIt app bridge should retry server-side app context writes.');
+assert.ok(caitAppBridge.includes('fetchJsonWithTimeout'), 'CAIt app bridge should bound app context network waits.');
 assert.ok(!analyticsJs.includes("source_app: 'publisher_approval_studio'"), 'Analytics Console JS should not contain Publisher app logic.');
 assert.ok(!analyticsJs.includes("source_app: 'lead_ops_console'"), 'Analytics Console JS should not contain Lead Ops app logic.');
 assert.ok(!analyticsJs.includes("source_app: 'delivery_manager'"), 'Analytics Console JS should not contain Delivery Manager app logic.');
@@ -499,7 +501,7 @@ assert.ok(!deliveryManagerJs.includes('local delivery samples'), 'Delivery Manag
 
 assert.ok(chatJs.includes("from './chat-engine.js?v=20260508c'"), 'Chat JS should use root-relative shared chat engine import.');
 assert.ok(chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should use root-relative delivery action import.');
-assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260507a'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
+assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260508d'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
 assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
 assert.ok(chatJs.includes('await consumeCaitAppContextForChat()'), 'Chat should await server-side app context retrieval before filling the composer.');
 assert.ok(chatJs.includes('refreshAppContexts'), 'Chat Apps panel should load reusable app contexts from the server.');

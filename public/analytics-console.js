@@ -1,4 +1,4 @@
-import { buildCaitAppContext, copyContextJson, downloadContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260508c';
+import { buildCaitAppContext, copyContextJson, downloadContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260508d';
 
 const GOOGLE_SOURCE_CACHE_COOKIE = 'cait_analytics_sources';
 

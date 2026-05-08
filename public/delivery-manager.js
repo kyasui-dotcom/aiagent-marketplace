@@ -1,4 +1,4 @@
-import { buildCaitAppContext, downloadContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260506b';
+import { buildCaitAppContext, downloadContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260508d';
 
 let deliveries = [];
 let selectedId = '';
@@ -8,6 +8,22 @@ let activeTab = 'overview';
 let searchText = '';
 let importedContext = null;
 const expandedWorkIds = new Set();
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let timeoutId = null;
+  if (controller && Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  }
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller ? controller.signal : options.signal
+    });
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
+}
 
 const els = {
   filterButtons: [...document.querySelectorAll('[data-filter]')],
@@ -269,7 +285,7 @@ function applyInboundContext(context = null) {
 async function refreshDeliveries() {
   els.refreshDeliveriesBtn.textContent = 'Refreshing';
   try {
-    const response = await fetch('/api/jobs?limit=40', { credentials: 'same-origin' });
+    const response = await fetchWithTimeout('/api/jobs?limit=40', { credentials: 'same-origin' }, 10000);
     if (!response.ok) throw new Error(`jobs ${response.status}`);
     const data = await response.json();
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];

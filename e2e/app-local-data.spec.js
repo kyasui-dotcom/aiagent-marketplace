@@ -56,7 +56,7 @@ function expectNoBrowserPersistence(snapshot, label) {
 test.describe('CAIt apps do not persist local browser data', () => {
   test('app pages keep browser persistence APIs empty on load', async ({ page }) => {
     for (const appPage of appPages) {
-      await page.goto(appPage.path, { waitUntil: 'networkidle' });
+      await page.goto(appPage.path, { waitUntil: 'domcontentloaded' });
       await expect(page.locator(appPage.ready)).toBeVisible();
       expectNoBrowserPersistence(await browserStorageSnapshot(page), appPage.path);
     }
@@ -64,12 +64,13 @@ test.describe('CAIt apps do not persist local browser data', () => {
 
   test('Send to CAIt uses the server context API without local browser persistence', async ({ page }) => {
     for (const appPage of appPages.filter((item) => item.send)) {
-      await page.goto(appPage.path, { waitUntil: 'networkidle' });
+      await page.goto(appPage.path, { waitUntil: 'domcontentloaded' });
       await expect(page.locator(appPage.ready)).toBeVisible();
 
       const contextResponse = page.waitForResponse((response) => (
         response.url().includes('/api/app-contexts')
         && response.request().method() === 'POST'
+        && response.ok()
       ));
 
       await page.locator(appPage.send).click();

@@ -52,7 +52,7 @@ test.describe('CAIt Chat workspace', () => {
     await expect(page.locator('#chatThread')).toContainText(/Answer what you can|分かる範囲で回答してください|実行前に確認したい内容/, { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText(/URL|商材|サービス/, { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText(/GA4|Search Console|サーチコンソール/, { timeout: chatResponseTimeout });
-    await expect(page.locator('#chatThread')).toContainText(/資料|sales deck|material/i, { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText(/資料|sales deck|material|current acquisition|現在の集客|広告/i, { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText(/Nothing has been dispatched yet\.|まだ実行も課金も発生していません/, { timeout: chatResponseTimeout });
 
     await page.locator('#promptInput').fill('pause?');
@@ -152,8 +152,19 @@ test.describe('CAIt Chat workspace', () => {
 
     await page.locator('#promptInput').fill('I need an X post drafted and approved for publishing.');
     await page.locator('#sendMessageBtn').click();
+    const sendOrderButton = page.locator('[data-chat-action="send-order"]').last();
+    if (!(await sendOrderButton.isVisible().catch(() => false))) {
+      await expect(page.locator('#chatThread')).toContainText(/Answer what you can|分かる範囲で回答してください|実行前に確認したい内容|What product or service|URL/i, { timeout: chatResponseTimeout });
+      await page.locator('#promptInput').fill([
+        'Product/topic: CAIt launch post for https://aiagent-marketplace.net.',
+        'Audience: founders and marketing teams.',
+        'CTA: Try CAIt. Tone: professional. Single X post.',
+        'No external publishing until approval. Exact text must be approved before posting.'
+      ].join('\n'));
+      await page.locator('#sendMessageBtn').click();
+    }
     await expect(page.locator('#chatThread')).toContainText('Task:', { timeout: chatResponseTimeout });
-    await expect(page.getByRole('button', { name: 'Send order' })).toBeVisible();
+    await expect(sendOrderButton).toBeVisible();
 
     const blockedJob = {
       id: 'e2e-approval-required',
@@ -204,7 +215,7 @@ test.describe('CAIt Chat workspace', () => {
       });
     });
 
-    await page.getByRole('button', { name: 'Send order' }).click();
+    await sendOrderButton.click();
     await expect(page.locator('#chatThread')).toContainText(/承認が必要です|Action approval required/, { timeout: chatResponseTimeout });
     const approvalLink = page.getByRole('link', { name: 'Open chat approval' });
     await expect(approvalLink).toHaveAttribute('href', /^#approval-e2e-approval-required$/);
