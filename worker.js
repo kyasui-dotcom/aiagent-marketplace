@@ -15292,7 +15292,7 @@ async function scheduleProgressDispatchForJobId(storage, env, waitUntil, jobId, 
 }
 
 function workflowAnalyticsAppContextsForDataShortcut(job = {}) {
-  if (workflowTaskName(job) !== 'data_analysis') return [];
+  if (!['data_analysis', 'research'].includes(workflowTaskName(job))) return [];
   const broker = job?.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
   const contexts = Array.isArray(broker.appContexts) ? broker.appContexts : [];
   return contexts.filter((context) => {
@@ -15308,7 +15308,9 @@ function workflowAnalyticsAppContextsForDataShortcut(job = {}) {
 }
 
 function workflowDataAnalysisAppContextShortcut(job = {}, sampleKind = '') {
-  if (String(sampleKind || '').trim().toLowerCase() !== 'data_analysis') return null;
+  const kind = String(sampleKind || '').trim().toLowerCase();
+  if (!['data_analysis', 'research'].includes(kind)) return null;
+  if (kind === 'research' && workflowJobRequiresSearch(job)) return null;
   const contexts = workflowAnalyticsAppContextsForDataShortcut(job);
   if (!contexts.length) return null;
   const facts = [];
@@ -15331,15 +15333,18 @@ function workflowDataAnalysisAppContextShortcut(job = {}, sampleKind = '') {
   }
   const sourceLabel = contexts.map((context) => String(context.source_app_label || context.title || context.source_app || 'analytics context').trim()).filter(Boolean)[0] || 'attached analytics context';
   const selectedFacts = facts.slice(0, 12);
+  const taskLabel = kind === 'research' ? 'Research' : 'Data analysis';
   const summary = selectedFacts.length
-    ? `Data analysis completed from attached ${sourceLabel}. ${selectedFacts.slice(0, 4).join(' / ')}`
-    : `Data analysis completed from attached ${sourceLabel}.`;
+    ? `${taskLabel} completed from attached ${sourceLabel}. ${selectedFacts.slice(0, 4).join(' / ')}`
+    : `${taskLabel} completed from attached ${sourceLabel}.`;
   const bullets = selectedFacts.length
     ? selectedFacts.slice(0, 8)
-    : ['Attached analytics context was present, so CAIt used it directly instead of starting a long-running generation task.'];
-  const nextAction = 'Use these analytics facts as the data layer, then continue to research/planning. State any data gaps instead of blocking the workflow.';
+    : [`Attached analytics context was present, so CAIt used it directly instead of starting a long-running ${kind} generation task.`];
+  const nextAction = kind === 'research'
+    ? 'Use these attached facts as the evidence layer, then continue to planning. State that no new external web search was run unless a later lane explicitly requests it.'
+    : 'Use these analytics facts as the data layer, then continue to research/planning. State any data gaps instead of blocking the workflow.';
   const markdown = [
-    '# Data analysis from attached context',
+    `# ${taskLabel} from attached context`,
     '',
     `Source: ${sourceLabel}`,
     '',
@@ -15356,13 +15361,13 @@ function workflowDataAnalysisAppContextShortcut(job = {}, sampleKind = '') {
       nextAction,
       next_action: nextAction,
       confidence: 'medium',
-      data_status: 'attached_context_summarized',
+      data_status: kind === 'research' ? 'attached_context_research_summarized' : 'attached_context_summarized',
       source: 'attached_app_context',
       app_context_ids: contexts.map((context) => String(context.id || '').trim()).filter(Boolean)
     },
     files: [
       {
-        name: 'data-analysis-context-summary.md',
+        name: kind === 'research' ? 'research-context-summary.md' : 'data-analysis-context-summary.md',
         type: 'text/markdown',
         content: markdown
       }
@@ -15373,8 +15378,9 @@ function workflowDataAnalysisAppContextShortcut(job = {}, sampleKind = '') {
       total_tokens: Math.max(160, (JSON.stringify(contexts).length + markdown.length) / 4),
       api_cost: 0,
       simulated: true,
-      source: 'attached_app_context_shortcut'
+      source: kind === 'research' ? 'attached_app_context_research_shortcut' : 'attached_app_context_shortcut'
     },
+    source: kind === 'research' ? 'app-context-research-shortcut' : 'app-context-data-analysis-shortcut',
     returnTargets: ['api']
   };
 }
@@ -15425,11 +15431,11 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
         files: shortcut.files,
         usage: shortcut.usage,
         returnTargets: shortcut.returnTargets
-      }, { source: 'app-context-data-analysis-shortcut' });
+      }, { source: shortcut.source || 'app-context-data-analysis-shortcut' });
       if (result?.ok) {
         if (result.mode === 'completed') {
           await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} completed from attached analytics context`);
-          await recordBillingOutcome(storage, result.job, result.billing, 'app-context-data-analysis-shortcut');
+          await recordBillingOutcome(storage, result.job, result.billing, shortcut.source || 'app-context-data-analysis-shortcut');
           if (locked.workflowParentId) {
             await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
             await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} analytics context shortcut`, {

@@ -42,6 +42,7 @@ assert.ok(workerSource.includes('UNAVAILABLE PRIOR WORK'), 'workflow handoff pro
 assert.ok(workerSource.includes('function workflowAppContextOriginalSignals'), 'leader quality gates should accept attached app context evidence when a data child has no prior run output.');
 assert.ok(workerSource.includes('function workflowDataAnalysisAppContextShortcut'), 'data_analysis should complete directly from attached analytics context instead of timing out in the workflow queue.');
 assert.ok(workerSource.includes('app-context-data-analysis-shortcut'), 'data_analysis app-context shortcut should be observable in billing/events.');
+assert.ok(workerSource.includes('app-context-research-shortcut'), 'research should also complete from attached context when no fresh web search is required.');
 assert.ok(workerSource.includes('workflowBlockingQualityGateBeforeLayer'), 'workflow dispatch should not release downstream layers after prior handoff/search quality gates fail');
 assert.ok(workerSource.includes('consideredRootJobIds'), 'cron dispatch sweep must dedupe workflow children by parent and avoid direct child execution');
 assert.ok(workerSource.includes('ORCHESTRATION_WATCHDOG_POLICY'), 'workflow orchestration watchdog policy should be shared through lib/orchestration.js');
