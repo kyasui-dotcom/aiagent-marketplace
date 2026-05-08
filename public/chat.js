@@ -6,7 +6,7 @@ import {
   chatEngineBuildPrepareOrderPayload,
   chatEngineDraftBrief,
   chatEngineIsNeedsInputResponse
-} from './chat-engine.js?v=20260508a';
+} from './chat-engine.js?v=20260508b';
 import {
   deliveryExecutionPromptPresentation,
   extractSocialPostTextFromDeliveryContent
@@ -157,6 +157,7 @@ const state = {
   pendingIntake: null,
   activeLeader: null,
   activeLeaderLocked: false,
+  pendingLeaderChange: null,
   draftRevision: 0,
   orderId: '',
   polling: null,
@@ -485,6 +486,7 @@ function chatRuntimeStateSnapshot(reason = '') {
     pendingAppContext: safeJsonClone(state.pendingAppContext, { depth: 5, maxText: 1600, maxArray: 16 }),
     activeLeader: safeJsonClone(state.activeLeader, { depth: 4, maxText: 900, maxArray: 12 }),
     activeLeaderLocked: Boolean(state.activeLeaderLocked && state.activeLeader?.taskType),
+    pendingLeaderChange: safeJsonClone(state.pendingLeaderChange, { depth: 3, maxText: 1000, maxArray: 4 }),
     conversationLanguage: String(state.conversationLanguage || '').trim(),
     promptValue: String(els.promptInput?.value || '').slice(0, 8000)
   };
@@ -547,6 +549,7 @@ function applyRestoredChatSnapshot(snapshot = {}, request = {}) {
   state.pendingAppContext = snapshot.pendingAppContext && typeof snapshot.pendingAppContext === 'object' ? snapshot.pendingAppContext : null;
   state.activeLeader = snapshot.activeLeader && typeof snapshot.activeLeader === 'object' ? snapshot.activeLeader : null;
   state.activeLeaderLocked = Boolean(snapshot.activeLeaderLocked && state.activeLeader?.taskType);
+  state.pendingLeaderChange = snapshot.pendingLeaderChange && typeof snapshot.pendingLeaderChange === 'object' ? snapshot.pendingLeaderChange : null;
   state.conversationLanguage = String(snapshot.conversationLanguage || '').trim();
   state.draftRevision += 1;
   state.authorityNoticeKeys.clear();
@@ -709,6 +712,7 @@ function startNewChatSession() {
   state.pendingIntake = null;
   state.activeLeader = null;
   state.activeLeaderLocked = false;
+  state.pendingLeaderChange = null;
   state.conversationLanguage = '';
   state.draftRevision += 1;
   state.orderId = '';
@@ -740,6 +744,7 @@ function loadChatSession(sessionId = '') {
   state.pendingIntake = null;
   state.activeLeader = session.activeLeader && typeof session.activeLeader === 'object' ? session.activeLeader : null;
   state.activeLeaderLocked = Boolean(session.activeLeaderLocked && state.activeLeader?.taskType);
+  state.pendingLeaderChange = null;
   state.draftRevision += 1;
   state.orderId = session.linkedOrderId || '';
   state.authorityNoticeKeys.clear();
@@ -1107,29 +1112,42 @@ function conversationOwnerFromPrepared(value = {}, fallback = {}) {
     || fallback.conversationOwner
     || {};
   const ownerType = String(owner.type || source.ownerType || source.owner_type || fallback.ownerType || '').trim().toLowerCase();
-  const fallbackLeaderTaskType = ownerType ? '' : (fallback.activeLeaderTaskType || '');
-  const fallbackLeaderName = ownerType ? '' : (fallback.activeLeaderName || '');
-  const taskType = String(
-    owner.taskType
-    || owner.task_type
-    || source.activeLeaderTaskType
+  const sourceLeaderLocked = source.activeLeaderLocked === true
+    || source.active_leader_locked === true
+    || intake.activeLeaderLocked === true
+    || intake.active_leader_locked === true;
+  const fallbackLeaderLocked = fallback.activeLeaderLocked === true || fallback.active_leader_locked === true;
+  const sourceLeaderTaskType = String(
+    source.activeLeaderTaskType
     || source.active_leader_task_type
     || intake.activeLeaderTaskType
     || intake.active_leader_task_type
+    || ''
+  ).trim().toLowerCase();
+  const sourceLeaderName = String(
+    source.activeLeaderName
+    || source.active_leader_name
+    || intake.activeLeaderName
+    || intake.active_leader_name
+    || ''
+  ).trim();
+  const fallbackLeaderTaskType = ownerType ? '' : (fallbackLeaderLocked ? fallback.activeLeaderTaskType || '' : '');
+  const fallbackLeaderName = ownerType ? '' : (fallbackLeaderLocked ? fallback.activeLeaderName || '' : '');
+  const taskType = String(
+    owner.taskType
+    || owner.task_type
+    || (ownerType === 'leader' || sourceLeaderLocked ? sourceLeaderTaskType : '')
     || fallbackLeaderTaskType
     || ''
   ).trim().toLowerCase();
   const label = String(
     owner.label
-    || source.activeLeaderName
-    || source.active_leader_name
-    || intake.activeLeaderName
-    || intake.active_leader_name
+    || (ownerType === 'leader' || sourceLeaderLocked ? sourceLeaderName : '')
     || fallbackLeaderName
     || (taskType ? taskLabel(taskType) : 'CAIt')
   ).trim();
   const reason = String(owner.reason || source.reason || fallback.reason || '').trim();
-  if ((ownerType === 'leader' || taskType) && taskType) {
+  if ((ownerType === 'leader' || owner.taskType || owner.task_type || sourceLeaderLocked || fallbackLeaderLocked) && taskType) {
     return {
       type: 'leader',
       taskType,
@@ -1247,6 +1265,134 @@ function lockedLeaderOwnerForPrompt(prompt = '', options = {}) {
   return leaderOwner(state.activeLeader.taskType, state.activeLeader.reason || 'Leader already confirmed in this chat.');
 }
 
+function currentLockedLeaderOwner() {
+  if (!state.activeLeaderLocked || !state.activeLeader?.taskType) return null;
+  return leaderOwner(state.activeLeader.taskType, state.activeLeader.reason || 'Leader already confirmed in this chat.');
+}
+
+function leaderChangeProposalHtml(currentOwner = {}, suggestedOwner = {}, sample = '') {
+  const ja = chatLanguage(sample) === 'ja';
+  const currentLabel = currentOwner.label || taskLabel(currentOwner.taskType);
+  const suggestedLabel = suggestedOwner.label || taskLabel(suggestedOwner.taskType);
+  return [
+    `<strong>${ja ? 'リーダー変更の確認' : 'Leader change check'}</strong>`,
+    '',
+    ja
+      ? `現在のリーダー: ${escapeHtml(currentLabel)} (${escapeHtml(currentOwner.taskType || '')})`
+      : `Current lead: ${escapeHtml(currentLabel)} (${escapeHtml(currentOwner.taskType || '')})`,
+    ja
+      ? `候補: ${escapeHtml(suggestedLabel)} (${escapeHtml(suggestedOwner.taskType || '')})`
+      : `Suggested lead: ${escapeHtml(suggestedLabel)} (${escapeHtml(suggestedOwner.taskType || '')})`,
+    ja
+      ? 'このチャットでは現在のリーダーを維持します。変更する場合だけ選択してください。'
+      : 'I will keep the current leader for this chat unless you choose to switch.',
+    '<div class="inline-actions">',
+    `<button class="primary-btn inline-btn" type="button" data-chat-action="keep-leader">${escapeHtml(ja ? `${currentLabel}のまま進める` : `Keep ${currentLabel}`)}</button>`,
+    `<button class="ghost-btn inline-btn" type="button" data-chat-action="switch-leader" data-leader-task="${escapeHtml(suggestedOwner.taskType || '')}">${escapeHtml(ja ? `${suggestedLabel}に変更` : `Switch to ${suggestedLabel}`)}</button>`,
+    '</div>'
+  ].join('\n');
+}
+
+function suggestLeaderChangeIfNeeded(candidateTaskType = '', sample = '', source = '', options = {}) {
+  if (options.skipLeaderChangeProposal === true) return false;
+  const currentOwner = currentLockedLeaderOwner();
+  const suggestedOwner = leaderOwner(candidateTaskType, 'Suggested by the latest request wording.');
+  if (!currentOwner || !suggestedOwner || currentOwner.taskType === suggestedOwner.taskType) return false;
+  const previous = state.pendingLeaderChange;
+  state.pendingLeaderChange = {
+    fromTaskType: currentOwner.taskType,
+    fromLabel: currentOwner.label || taskLabel(currentOwner.taskType),
+    toTaskType: suggestedOwner.taskType,
+    toLabel: suggestedOwner.label || taskLabel(suggestedOwner.taskType),
+    sample: String(sample || '').slice(0, 4000),
+    preparedPrompt: String(options.preparedPrompt || sample || '').slice(0, 8000),
+    source: String(source || '').slice(0, 80),
+    createdAt: isoNow()
+  };
+  if (previous
+    && previous.fromTaskType === state.pendingLeaderChange.fromTaskType
+    && previous.toTaskType === state.pendingLeaderChange.toTaskType
+    && previous.preparedPrompt === state.pendingLeaderChange.preparedPrompt) {
+    updateComposerMode();
+    setBusy(state.busy);
+    return true;
+  }
+  appendMessage('assistant', leaderChangeProposalHtml(currentOwner, suggestedOwner, sample), {
+    tone: 'info',
+    label: chatText('Leader choice', 'リーダー確認', sample)
+  });
+  updateComposerMode();
+  setBusy(state.busy);
+  return true;
+}
+
+async function resolvePendingLeaderChange(accept = false, taskType = '') {
+  const pending = state.pendingLeaderChange && typeof state.pendingLeaderChange === 'object' ? state.pendingLeaderChange : null;
+  if (!pending) {
+    appendTextMessage('assistant', chatText(
+      'There is no pending leader change to resolve.',
+      '確認中のリーダー変更はありません。',
+      state.conversationLanguage
+    ), { tone: 'error', label: 'Leader choice' });
+    return;
+  }
+  const currentOwner = leaderOwner(pending.fromTaskType, 'Leader kept by user choice.');
+  const suggestedOwner = leaderOwner(taskType || pending.toTaskType, 'User accepted the leader change.');
+  const owner = accept ? suggestedOwner : currentOwner;
+  if (!owner?.taskType) {
+    state.pendingLeaderChange = null;
+    appendTextMessage('assistant', chatText(
+      'I could not resolve that leader choice. Please name the leader directly if you want to switch.',
+      'リーダー選択を解決できませんでした。変更する場合はリーダー名を直接指定してください。',
+      pending.sample
+    ), { tone: 'error', label: 'Leader choice' });
+    return;
+  }
+  state.pendingLeaderChange = null;
+  state.activeLeader = {
+    taskType: owner.taskType,
+    label: owner.label || taskLabel(owner.taskType),
+    reason: owner.reason || ''
+  };
+  state.activeLeaderLocked = true;
+  renderActiveLeaderStatus();
+  if (state.pendingIntake) {
+    state.pendingIntake.taskType = owner.taskType;
+    state.pendingIntake.activeLeaderTaskType = owner.taskType;
+    state.pendingIntake.activeLeaderName = owner.label || taskLabel(owner.taskType);
+    state.pendingIntake.conversationOwner = owner;
+  }
+  if (state.draft) {
+    state.draft = withLeaderOwner(state.draft, owner, {
+      leaderChangeRequested: accept,
+      leader_change_requested: accept
+    });
+    appendOrderConfirmation({ updated: true });
+    return;
+  }
+  appendTextMessage('assistant', chatText(
+    accept
+      ? `${owner.label || taskLabel(owner.taskType)} will lead this chat. I will prepare the order from the same request.`
+      : `${owner.label || taskLabel(owner.taskType)} stays as the lead. I will prepare the order from the same request.`,
+    accept
+      ? `${owner.label || taskLabel(owner.taskType)} に切り替えます。同じ依頼内容で発注準備を続けます。`
+      : `${owner.label || taskLabel(owner.taskType)} のまま進めます。同じ依頼内容で発注準備を続けます。`,
+    pending.sample
+  ), { tone: 'ok', label: chatText('Leader choice', 'リーダー確認', pending.sample) });
+  const prompt = String(pending.preparedPrompt || pending.sample || '').trim();
+  if (prompt) {
+    await prepareOrder(prompt, {
+      originalPrompt: pending.sample || prompt,
+      taskType: owner.taskType,
+      activeLeaderTaskType: owner.taskType,
+      activeLeaderName: owner.label || taskLabel(owner.taskType),
+      activeLeaderLocked: true,
+      leaderChangeRequested: accept,
+      skipLeaderChangeProposal: true
+    });
+  }
+}
+
 function sameConversationOwner(left = {}, right = {}) {
   return String(left?.type || '') === String(right?.type || '')
     && String(left?.taskType || '') === String(right?.taskType || '')
@@ -1271,10 +1417,14 @@ function setConversationOwnerFromPrepared(prepared = {}, options = {}) {
   const previous = state.activeLeader
     ? { type: 'leader', ...state.activeLeader }
     : { type: 'cait', label: 'CAIt', taskType: '' };
+  const lockedStateLeader = state.activeLeaderLocked && state.activeLeader?.taskType
+    ? state.activeLeader
+    : null;
   const lockedOwner = lockedLeaderOwnerForPrompt(options.sample || prepared.prompt || '', options);
   const owner = lockedOwner || conversationOwnerFromPrepared(prepared, {
-    activeLeaderTaskType: options.activeLeaderTaskType || state.activeLeader?.taskType || '',
-    activeLeaderName: options.activeLeaderName || state.activeLeader?.label || '',
+    activeLeaderTaskType: options.activeLeaderTaskType || lockedStateLeader?.taskType || '',
+    activeLeaderName: options.activeLeaderName || lockedStateLeader?.label || '',
+    activeLeaderLocked: options.activeLeaderLocked === true || Boolean(lockedStateLeader),
     conversationOwner: options.conversationOwner || null
   });
   state.activeLeader = owner.type === 'leader'
@@ -1488,6 +1638,9 @@ function setBusy(next) {
   });
   document.querySelectorAll('[data-chat-action="analytics-use"], [data-chat-action="analytics-skip"], [data-intake-choice], [data-intake-other-add]').forEach((button) => {
     button.disabled = state.busy || !state.pendingIntake;
+  });
+  document.querySelectorAll('[data-chat-action="keep-leader"], [data-chat-action="switch-leader"]').forEach((button) => {
+    button.disabled = state.busy || !state.pendingLeaderChange;
   });
   document.querySelectorAll('[data-x-post-submit]').forEach((button) => {
     button.disabled = state.busy;
@@ -4149,6 +4302,7 @@ function startIntake(response = {}, originalPrompt = '') {
         leader_change_requested: Boolean(requestedLeaderOwner)
       })
     : response;
+  state.pendingLeaderChange = null;
   state.pendingIntake = chatEngineBuildIntakeState(intakeResponse, originalPrompt);
   setConversationOwnerFromPrepared(intakeResponse, {
     sample: originalPrompt,
@@ -4711,14 +4865,17 @@ async function answerPendingIntake(answer = '', options = {}) {
   });
   state.pendingIntake = null;
   updateComposerMode();
+  const lockedStateLeader = state.activeLeaderLocked && state.activeLeader?.taskType
+    ? state.activeLeader
+    : null;
   await prepareOrder(combined, {
     intakeAnswered: true,
     originalPrompt: intake.originalPrompt || combined,
     taskType: changedLeaderOwner?.taskType || intake.taskType || intake.task_type || '',
     selectedAgentId: intake.selectedAgentId || intake.selected_agent_id || '',
     selectedAgentName: intake.selectedAgentName || intake.selected_agent_name || '',
-    activeLeaderTaskType: changedLeaderOwner?.taskType || intake.activeLeaderTaskType || intake.active_leader_task_type || intake.conversationOwner?.taskType || state.activeLeader?.taskType || '',
-    activeLeaderName: changedLeaderOwner?.label || intake.activeLeaderName || intake.active_leader_name || intake.conversationOwner?.label || state.activeLeader?.label || '',
+    activeLeaderTaskType: changedLeaderOwner?.taskType || intake.activeLeaderTaskType || intake.active_leader_task_type || intake.conversationOwner?.taskType || lockedStateLeader?.taskType || '',
+    activeLeaderName: changedLeaderOwner?.label || intake.activeLeaderName || intake.active_leader_name || intake.conversationOwner?.label || lockedStateLeader?.label || '',
     activeLeaderLocked: Boolean(state.activeLeaderLocked && state.activeLeader?.taskType),
     leaderChangeRequested: Boolean(changedLeaderOwner),
     conversationOwner: changedLeaderOwner || intake.conversationOwner || null,
@@ -4893,15 +5050,23 @@ function leaderTextHasSpecificCpoSignal(text = '') {
   return /(?:\bcpo\b|chief product|product leader|product strategy|product roadmap|roadmap|ux strategy|feature priorit|feature roadmap|mvp roadmap|onboarding friction|activation path|user journey|information architecture|プロダクト責任者|プロダクト戦略|ロードマップ|機能優先|機能ロードマップ|ux戦略|仮説検証計画|アイデア検証計画)/i.test(String(text || ''));
 }
 
+function leaderTextHasSpecificCtoSignal(text = '') {
+  return /(?:\bcto\b|chief technology|technical leader|engineering leader|architecture|system design|technical architecture|repo-wide|repository-wide|codebase|github repo|repository|pull request|\bpr\b|implementation plan|deploy plan|rollback plan|infra(?:structure)?|database schema|api design|技術責任者|開発責任者|アーキテクチャ|全体設計|技術設計|実装計画|デプロイ計画|ロールバック|リポジトリ|コードベース|プルリク)/i.test(String(text || ''));
+}
+
+function leaderTextHasSpecificBuildSignal(text = '') {
+  return /(?:build team|coding team|implementation team|engineering team|debug|bug|fix(?:ing)?|code change|code implementation|repo fix|開発チーム|実装チーム|複数.*(?:実装|修正|開発)|デバッグ|バグ|不具合|コード修正)/i.test(String(text || ''));
+}
+
 function leaderTaskTypeFromIntentResult(prompt = '', result = {}) {
   const text = `${prompt}\n${result?.summary || ''}\n${result?.narrowing_question || ''}`.toLowerCase();
   const intent = String(result?.intent || '').trim();
-  if (/(cto|architecture|technical|repo|github|code|deploy|技術|実装|リポジトリ|デプロイ)/i.test(text)) return 'cto_leader';
   if (/(cfo|pricing|finance|unit economics|cash|価格|財務|収支|粗利)/i.test(text)) return 'cfo_leader';
   if (/(legal|privacy|terms|contract|compliance|規約|法務|契約|プライバシー)/i.test(text)) return 'legal_leader';
   if (leaderTextHasCmoSignal(text, intent)) return 'cmo_leader';
+  if (leaderTextHasSpecificCtoSignal(text)) return 'cto_leader';
   if (leaderTextHasSpecificCpoSignal(text)) return 'cpo_leader';
-  if (/(build team|implementation|debug|実装|修正|バグ)/i.test(text)) return 'build_team_leader';
+  if (leaderTextHasSpecificBuildSignal(text)) return 'build_team_leader';
   if (/(research team|analysis team|decision team|調査チーム|分析チーム|複数.*(?:調査|分析)|意思決定)/i.test(text)) return 'research_team_leader';
   return '';
 }
@@ -4922,7 +5087,9 @@ async function handleChatIntentWithLlm(prompt = '') {
     const intakeQuestions = normalizeLlmIntakeQuestions(result.intake_questions || result.intakeQuestions || []);
     const explicitLeaderTaskType = explicitLeaderChangeTaskTypeFromText(prompt);
     const lockedOwner = lockedLeaderOwnerForPrompt(prompt, { leaderChangeRequested: Boolean(explicitLeaderTaskType) });
-    const leaderTaskType = explicitLeaderTaskType || lockedOwner?.taskType || leaderTaskTypeFromIntentResult(prompt, result);
+    const automaticLeaderTaskType = leaderTaskTypeFromIntentResult(prompt, result);
+    if (!explicitLeaderTaskType && suggestLeaderChangeIfNeeded(automaticLeaderTaskType, prompt, 'openai_intake', { preparedPrompt: prompt })) return true;
+    const leaderTaskType = explicitLeaderTaskType || lockedOwner?.taskType || automaticLeaderTaskType;
     if (leaderTaskType && intakeQuestions.length >= 2) {
       startIntake({
         status: 'needs_input',
@@ -4968,12 +5135,14 @@ async function handleChatIntentWithLlm(prompt = '') {
       return true;
     }
     const explicitLeaderTaskType = explicitLeaderChangeTaskTypeFromText(prompt);
+    const automaticLeaderTaskType = leaderTaskTypeFromIntentResult(prompt, result);
+    if (!explicitLeaderTaskType && suggestLeaderChangeIfNeeded(automaticLeaderTaskType, prompt, 'openai_prepare', { preparedPrompt: brief || prompt })) return true;
     await prepareOrder(brief || prompt, {
       originalPrompt: prompt,
       intakeChecked: true,
       taskType: explicitLeaderTaskType || '',
-      activeLeaderTaskType: explicitLeaderTaskType || state.activeLeader?.taskType || '',
-      activeLeaderName: explicitLeaderTaskType ? taskLabel(explicitLeaderTaskType) : state.activeLeader?.label || '',
+      activeLeaderTaskType: explicitLeaderTaskType || (state.activeLeaderLocked ? state.activeLeader?.taskType || '' : ''),
+      activeLeaderName: explicitLeaderTaskType ? taskLabel(explicitLeaderTaskType) : (state.activeLeaderLocked ? state.activeLeader?.label || '' : ''),
       activeLeaderLocked: Boolean(state.activeLeaderLocked && state.activeLeader?.taskType),
       leaderChangeRequested: Boolean(explicitLeaderTaskType)
     });
@@ -5164,6 +5333,7 @@ function handleNonOrderConversation(prompt = '') {
   const hasOrder = Boolean(state.orderId);
   if (/^(pause|hold|stop|later|not now|cancel|一旦保留|いったん保留|保留|あとで|後で|また後で|ストップ|止めて|中断|キャンセル|やめる|やっぱやめる|今はやめる)/i.test(text.replace(/[?？!！。.,、\s]+$/g, ''))) {
     state.pendingIntake = null;
+    state.pendingLeaderChange = null;
     updateComposerMode();
   }
   appendTextMessage('assistant', ja
@@ -5191,6 +5361,7 @@ async function prepareOrder(prompt, options = {}) {
   const leaderChangeRequested = options.leaderChangeRequested === true || Boolean(explicitLeaderTaskType);
   const requestedLeaderOwner = explicitLeaderTaskType ? leaderOwner(explicitLeaderTaskType, 'User explicitly changed the leader.') : null;
   if (requestedLeaderOwner) {
+    state.pendingLeaderChange = null;
     state.activeLeader = {
       taskType: requestedLeaderOwner.taskType,
       label: requestedLeaderOwner.label,
@@ -5199,17 +5370,28 @@ async function prepareOrder(prompt, options = {}) {
     state.activeLeaderLocked = true;
     renderActiveLeaderStatus();
   }
+  const automaticLeaderTaskType = leaderTaskTypeFromIntentResult(prompt, {});
+  if (!requestedLeaderOwner && suggestLeaderChangeIfNeeded(automaticLeaderTaskType, options.originalPrompt || prompt, 'prepare_order', {
+    preparedPrompt: prompt,
+    skipLeaderChangeProposal: options.skipLeaderChangeProposal === true
+  })) {
+    return;
+  }
+  state.pendingLeaderChange = null;
   const lockedOwner = lockedLeaderOwnerForPrompt(prompt, { ...options, leaderChangeRequested });
   const effectiveLeaderOwner = requestedLeaderOwner || lockedOwner || null;
+  const lockedStateLeader = state.activeLeaderLocked && state.activeLeader?.taskType
+    ? state.activeLeader
+    : null;
   const effectiveActiveLeaderTaskType = effectiveLeaderOwner?.taskType
     || options.activeLeaderTaskType
     || options.active_leader_task_type
-    || state.activeLeader?.taskType
+    || lockedStateLeader?.taskType
     || '';
   const effectiveActiveLeaderName = effectiveLeaderOwner?.label
     || options.activeLeaderName
     || options.active_leader_name
-    || state.activeLeader?.label
+    || lockedStateLeader?.label
     || '';
   const activeLeaderLocked = Boolean(state.activeLeaderLocked && state.activeLeader?.taskType);
   const prepared = await api('/api/work/prepare-order', {
@@ -6175,6 +6357,16 @@ els.chatThread.addEventListener('click', async (event) => {
     void sendOrder();
   } else if (action === 'reset-chat') {
     resetChat();
+  } else if (action === 'keep-leader') {
+    setBusy(true);
+    void resolvePendingLeaderChange(false)
+      .catch((error) => appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Leader choice' }))
+      .finally(() => setBusy(false));
+  } else if (action === 'switch-leader') {
+    setBusy(true);
+    void resolvePendingLeaderChange(true, button.dataset.leaderTask || '')
+      .catch((error) => appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Leader choice' }))
+      .finally(() => setBusy(false));
   } else if (action === 'analytics-use') {
     if (!state.pendingIntake) {
       appendTextMessage('assistant', 'There is no active intake to attach analytics to.', { tone: 'error', label: 'Analytics' });

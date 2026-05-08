@@ -40,24 +40,41 @@ export function chatEngineBuildPrepareOrderPayload(prompt = '', options = {}) {
 function chatEngineConversationOwner(response = {}, options = {}) {
   const owner = response?.conversationOwner || response?.conversation_owner || response?.intake?.conversationOwner || response?.intake?.conversation_owner || {};
   const ownerType = String(owner.type || response.ownerType || response.owner_type || '').trim().toLowerCase();
-  const fallbackLeaderTaskType = ownerType ? '' : (options.activeLeaderTaskType || '');
-  const fallbackLeaderName = ownerType ? '' : (options.activeLeaderName || '');
-  const activeLeaderTaskType = String(
+  const responseLeaderLocked = response.activeLeaderLocked === true
+    || response.active_leader_locked === true
+    || response?.intake?.activeLeaderLocked === true
+    || response?.intake?.active_leader_locked === true;
+  const fallbackLeaderLocked = options.activeLeaderLocked === true || options.active_leader_locked === true;
+  const responseLeaderTaskType = String(
     response.activeLeaderTaskType
     || response.active_leader_task_type
-    || owner.taskType
+    || response?.intake?.activeLeaderTaskType
+    || response?.intake?.active_leader_task_type
+    || ''
+  ).trim();
+  const responseLeaderName = String(
+    response.activeLeaderName
+    || response.active_leader_name
+    || response?.intake?.activeLeaderName
+    || response?.intake?.active_leader_name
+    || ''
+  ).trim();
+  const fallbackLeaderTaskType = ownerType ? '' : (fallbackLeaderLocked ? options.activeLeaderTaskType || '' : '');
+  const fallbackLeaderName = ownerType ? '' : (fallbackLeaderLocked ? options.activeLeaderName || '' : '');
+  const activeLeaderTaskType = String(
+    owner.taskType
     || owner.task_type
+    || (ownerType === 'leader' || responseLeaderLocked ? responseLeaderTaskType : '')
     || fallbackLeaderTaskType
     || ''
   ).trim();
   const activeLeaderName = String(
-    response.activeLeaderName
-    || response.active_leader_name
-    || owner.label
+    owner.label
+    || (ownerType === 'leader' || responseLeaderLocked ? responseLeaderName : '')
     || fallbackLeaderName
     || ''
   ).trim();
-  if ((ownerType === 'leader' || activeLeaderTaskType) && activeLeaderTaskType) {
+  if ((ownerType === 'leader' || owner.taskType || owner.task_type || responseLeaderLocked || fallbackLeaderLocked) && activeLeaderTaskType) {
     return {
       type: 'leader',
       taskType: activeLeaderTaskType,
@@ -74,6 +91,7 @@ function chatEngineConversationOwner(response = {}, options = {}) {
 
 export function chatEngineBuildIntakeState(response = {}, originalPrompt = '', options = {}) {
   const responseIntake = response?.intake && typeof response.intake === 'object' ? response.intake : {};
+  const conversationOwner = chatEngineConversationOwner(response, options);
   const questions = Array.isArray(response.questions)
     ? response.questions.filter(Boolean).slice(0, 4)
     : Array.isArray(responseIntake.questions)
@@ -102,9 +120,9 @@ export function chatEngineBuildIntakeState(response = {}, originalPrompt = '', o
     ).trim() || 'research',
     selectedAgentId: String(responseIntake.selectedAgentId || responseIntake.selected_agent_id || response.selectedAgentId || response.selected_agent_id || options.selectedAgentId || '').trim(),
     selectedAgentName: String(responseIntake.selectedAgentName || responseIntake.selected_agent_name || response.selectedAgentName || response.selected_agent_name || options.selectedAgentName || '').trim(),
-    conversationOwner: chatEngineConversationOwner(response, options),
-    activeLeaderTaskType: String(responseIntake.activeLeaderTaskType || responseIntake.active_leader_task_type || response.activeLeaderTaskType || response.active_leader_task_type || '').trim(),
-    activeLeaderName: String(responseIntake.activeLeaderName || responseIntake.active_leader_name || response.activeLeaderName || response.active_leader_name || '').trim(),
+    conversationOwner,
+    activeLeaderTaskType: conversationOwner.type === 'leader' ? conversationOwner.taskType : '',
+    activeLeaderName: conversationOwner.type === 'leader' ? conversationOwner.label : '',
     questions,
     missingFields: Array.isArray(responseIntake.missingFields)
       ? responseIntake.missingFields
