@@ -3337,6 +3337,23 @@ async function currentUserContext(request, env, options = {}) {
     ? options.session
     : await getSession(request, env);
   if (!session?.user?.login && !session?.accountLogin) return { session: null, user: null, login: '', authProvider: 'guest' };
+  if (sessionAuthProvider(session) === 'e2e') {
+    return {
+      session,
+      user: session.user || null,
+      login: session.accountLogin || session.user?.login || '',
+      authProvider: 'e2e',
+      account: null,
+      githubIdentity: null,
+      googleIdentity: null,
+      githubLinked: false,
+      googleLinked: false,
+      xLinked: false,
+      githubAuthorized: false,
+      googleAuthorized: false,
+      xAuthorized: false
+    };
+  }
   const storage = runtimeStorage(env);
   let state = options.state && typeof options.state === 'object' ? options.state : await storage.getState();
   let account = session?.accountLogin
