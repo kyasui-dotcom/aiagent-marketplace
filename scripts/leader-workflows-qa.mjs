@@ -122,7 +122,7 @@ globalThis.fetch = async (input, init) => {
           '## Supporting work products',
           '- Specialist deliverable preview: prior evidence, source URL, artifact, action, approval, and handoff are synthesized here.',
           '- Execution / approval packet: owner, exact artifact, connector state, metric, and stop rule are ready for review.',
-          '- Specialist成果物プレビュー: supporting-specialist-deliverables.md',
+          '- Specialist成果物プレビュー: visible delivery summary',
           '- 実行・承認packet: connector state, exact artifact, metric, stop rule.',
           '',
           '| Owner | Objective | Artifact | Metric | Stop rule | Approval owner |',

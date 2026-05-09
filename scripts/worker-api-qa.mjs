@@ -2509,9 +2509,14 @@ assert.ok(
   'first executable delivery file should preserve the concrete execution artifact body'
 );
 const syntheticSupportingBundle = syntheticAgentTeamOutput.files?.find((file) => file.name === 'supporting-specialist-deliverables.md');
-assert.ok(syntheticSupportingBundle, 'agent team output should bundle specialist deliverable content into the parent delivery files');
+assert.ok(syntheticSupportingBundle, 'agent team output should keep specialist bundle internally for downstream context');
+assert.equal(syntheticSupportingBundle.delivery_visible, false, 'supporting specialist bundle should not be shown as a user-facing delivery file');
+assert.equal(syntheticSupportingBundle.user_visible, false, 'supporting specialist bundle should not be shown as a user-facing delivery file');
 assert.ok(syntheticSupportingBundle.content.includes('X post pack'), 'supporting bundle should include specialist file content, not only filenames');
 assert.ok(syntheticSupportingBundle.content.includes('Launching now'), 'supporting bundle should include the specialist deliverable body');
+
+const fallbackIntegratedFile = checkpointOnlyAgentTeamOutput.files?.find((file) => file.name === 'integrated-delivery.md');
+assert.equal(fallbackIntegratedFile?.delivery_visible, false, 'generated integrated status markdown should stay internal when final summary is not ready');
 
 const syntheticLeaderOnlyOutput = buildAgentTeamDeliveryOutput({
   workflow: { objective: 'Launch synthetic QA through action' },

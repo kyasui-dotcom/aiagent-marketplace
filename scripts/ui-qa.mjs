@@ -658,6 +658,9 @@ assert.ok(chatJs.includes('Retrying the same idempotent order request once'), 'C
 assert.ok(clientJs.includes('client_order_id'), 'Open Chat order create should include a client order id for idempotent recovery.');
 assert.ok(clientJs.includes('orderCreateRequestBody(payload)'), 'Open Chat order create should strip local recovery markers before POSTing.');
 assert.ok(clientJs.includes('same idempotent order request once'), 'Open Chat recovery should safely retry the same idempotent create request once.');
+assert.ok(chatJs.includes('visibleDeliveryFiles(candidates)'), 'Chat delivery should hide internal workflow markdown bundles from user-facing files.');
+assert.ok(clientJs.includes('visibleDeliveryFiles(run.output?.files)'), 'Open Chat delivery should hide internal workflow markdown bundles from user-facing files.');
+assert.ok(deliveryManagerJs.includes('visibleDeliveryFiles(output.files)'), 'Delivery Manager should hide internal workflow markdown bundles from user-facing files.');
 assert.ok(chatJs.includes('includeHistoricalTracked'), 'Chat backfill should ignore historical tracked orders while a current order is attached.');
 assert.ok(chatJs.includes('renderTerminalDeliveries: false'), 'Chat startup should not render historical terminal deliveries automatically.');
 assert.ok(!chatJs.includes("String(job?.parentAgentId || '').trim() === 'chatux'"), 'Chat startup recovery should not match all historical chatux parent jobs.');

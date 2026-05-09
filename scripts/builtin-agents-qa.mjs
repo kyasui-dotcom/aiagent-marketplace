@@ -1682,7 +1682,8 @@ assert.ok(cmoFinalSummaryPayload.files[0].content.includes('cmo team leader exec
 assert.ok(cmoFinalSummaryPayload.files[0].content.includes('Execution status'));
 assert.ok(cmoFinalSummaryPayload.files[0].content.includes('x_post'));
 assert.ok(cmoFinalSummaryPayload.files[0].content.includes('Discover and compare AI agents for engineers'));
-assert.ok(cmoFinalSummaryPayload.files[0].content.includes('supporting-specialist-deliverables.md'));
+assert.ok(cmoFinalSummaryPayload.files[0].content.includes('visible delivery summary'));
+assert.ok(!cmoFinalSummaryPayload.files[0].content.includes('supporting-specialist-deliverables.md'));
 assert.ok(!cmoFinalSummaryPayload.files[0].content.includes('Specialist outputs are not attached'));
 assert.ok(!/\bTBD\b|not attached|not connected|最終納品ではありません/i.test(cmoFinalSummaryPayload.files[0].content));
 assert.equal(cmoFinalSummaryPayload.files[0].content_type, 'report_bundle');

@@ -1744,7 +1744,7 @@ function workflowChildDeliveryBody(child = {}, options = {}) {
 
 function jobDeliveryFileLines(job = {}, options = {}) {
   const ja = Boolean(options.ja);
-  const files = Array.isArray(job?.output?.files) ? job.output.files : [];
+  const files = visibleDeliveryFiles(job?.output?.files);
   const names = files
     .map((file) => String(file?.name || '').trim())
     .filter(Boolean)
@@ -1753,8 +1753,25 @@ function jobDeliveryFileLines(job = {}, options = {}) {
   return [ja ? `ファイル: ${names.join(', ')}` : `Files: ${names.join(', ')}`];
 }
 
+function isInternalDeliveryFile(file = {}) {
+  const name = String(file?.name || file?.filename || file || '').trim().toLowerCase();
+  const content = String(file?.content || file?.body || '').trim();
+  const visibility = String(file?.visibility || file?.delivery_visibility || file?.deliveryVisibility || '').trim().toLowerCase();
+  if (file && typeof file === 'object') {
+    if (file.internal === true || file.user_visible === false || file.userVisible === false || file.delivery_visible === false || file.deliveryVisible === false) return true;
+  }
+  if (['internal', 'hidden', 'system'].includes(visibility)) return true;
+  if (name === 'supporting-specialist-deliverables.md') return true;
+  if (name === 'integrated-delivery.md' && /#\s+Integrated delivery|##\s+Supporting work products|##\s+Integrated next actions/i.test(content)) return true;
+  return false;
+}
+
+function visibleDeliveryFiles(files = []) {
+  return (Array.isArray(files) ? files : []).filter((file) => file && !isInternalDeliveryFile(file));
+}
+
 function deliveryFileNames(files = [], limit = 8) {
-  return (Array.isArray(files) ? files : [])
+  return visibleDeliveryFiles(files)
     .map((file) => String(file?.name || file || '').trim())
     .filter(Boolean)
     .slice(0, limit);
@@ -1779,9 +1796,8 @@ function buildJobDeliveryCard(job = {}, options = {}) {
 }
 
 function downloadableDeliveryFilesForJob(job = {}) {
-  return Array.isArray(job?.output?.files)
-    ? job.output.files.filter((file) => String(file?.content || '').trim())
-    : [];
+  return visibleDeliveryFiles(job?.output?.files)
+    .filter((file) => String(file?.content || '').trim());
 }
 
 function authorityConnectorActionsForJob(job = {}, options = {}) {
@@ -18151,7 +18167,7 @@ function deliveryStateFromValue(value) {
   const derivedDelivery = run
     ? {
         report: run.output?.report || null,
-        files: Array.isArray(run.output?.files) ? run.output.files : [],
+        files: visibleDeliveryFiles(run.output?.files),
         returnTargets: run.output?.returnTargets || ['chat', 'api']
       }
     : null;
@@ -18457,7 +18473,7 @@ function marketingFocusJobIds(contextJob = null) {
 function marketingDeliverableForJob(job = null) {
   if (!job?.id) return { genericDeliverable: null, article: null, summaryText: '', previewText: '', previewLabel: '', report: null, files: [] };
   const report = job.output?.report || null;
-  const files = Array.isArray(job.output?.files) ? job.output.files : [];
+  const files = visibleDeliveryFiles(job.output?.files);
   const cached = state.deliveryPublishClassifications?.[job.id] || null;
   const genericDeliverable = genericDeliverableFromClassification(job, cached);
   const article = articleCandidateFromDelivery(job, report || {}, files) || articleCandidateFromClassification(job, cached);
@@ -21858,7 +21874,7 @@ function renderDeliveryFileList(files = []) {
 }
 
 function renderDeliveryFilesPanel(files = [], options = {}) {
-  const safeFiles = Array.isArray(files) ? files : [];
+  const safeFiles = visibleDeliveryFiles(files);
   const downloadableFiles = safeFiles.filter((file) => String(file?.content || '').trim());
   if (!safeFiles.length) {
     return `
@@ -21914,7 +21930,7 @@ function deliveryEmptyStatePresentation(run = null, delivery = null, report = nu
 function deliveryRenderContextFromValue(value) {
   const { run, delivery } = deliveryStateFromValue(value);
   const report = delivery?.report || null;
-  const files = Array.isArray(delivery?.files) ? delivery.files : [];
+  const files = visibleDeliveryFiles(delivery?.files);
   const workflowChildren = workflowChildRunsFromDelivery(run, report || {});
   const workflowParent = run?.workflowParentId ? jobById(run.workflowParentId) : null;
   const summaryText = deliverySummaryText(report || {});

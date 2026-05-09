@@ -184,6 +184,21 @@ function deliveryChildBlockerType(child = {}) {
   return 'waiting_on_internal_workflow';
 }
 
+function isInternalDeliveryFile(file = {}) {
+  const name = String(file?.name || file?.filename || '').trim().toLowerCase();
+  const content = String(file?.content || file?.body || '').trim();
+  const visibility = String(file?.visibility || file?.delivery_visibility || file?.deliveryVisibility || '').trim().toLowerCase();
+  if (file?.internal === true || file?.user_visible === false || file?.userVisible === false || file?.delivery_visible === false || file?.deliveryVisible === false) return true;
+  if (['internal', 'hidden', 'system'].includes(visibility)) return true;
+  if (name === 'supporting-specialist-deliverables.md') return true;
+  if (name === 'integrated-delivery.md' && /#\s+Integrated delivery|##\s+Supporting work products|##\s+Integrated next actions/i.test(content)) return true;
+  return false;
+}
+
+function visibleDeliveryFiles(files = []) {
+  return (Array.isArray(files) ? files : []).filter((file) => file && !isInternalDeliveryFile(file));
+}
+
 function deliveryWorkflowSummary(job = {}, output = {}) {
   const raw = String(output.summary || output.text || job.failureReason || `Order ${String(job.id || '').slice(0, 8)} is ${job.status || 'updated'}.`);
   if (!/waiting for approval|承認待ち/i.test(raw)) return raw;
@@ -206,7 +221,7 @@ function deliveryWorkflowSummary(job = {}, output = {}) {
 
 function normalizeJobDelivery(job = {}) {
   const output = job.output && typeof job.output === 'object' ? job.output : {};
-  const files = Array.isArray(output.files) ? output.files : [];
+  const files = visibleDeliveryFiles(output.files);
   const createdAt = String(job.completedAt || job.updatedAt || job.createdAt || '');
   const taskType = String(job.workflowTask || job.taskType || '');
   const workId = String(job.workflowParentId || job.id || `job-${Date.now()}`);
@@ -236,7 +251,7 @@ function normalizeJobDelivery(job = {}) {
 }
 
 function deliveryFromAppContext(context = {}) {
-  const files = [
+  const files = visibleDeliveryFiles([
     ...(Array.isArray(context.delivery_files) ? context.delivery_files : []),
     ...(Array.isArray(context.artifacts) ? context.artifacts : [])
       .filter((artifact) => artifact?.content || artifact?.body || artifact?.markdown)
@@ -245,7 +260,7 @@ function deliveryFromAppContext(context = {}) {
         type: artifact.content_type || artifact.type || 'text/plain',
         content: artifact.content || artifact.body || artifact.markdown || ''
       }))
-  ];
+  ]);
   return {
     id: String(context.id || `context-${Date.now()}`),
     workId: String(context.id || `context-${Date.now()}`),

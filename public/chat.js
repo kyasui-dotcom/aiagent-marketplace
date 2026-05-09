@@ -1520,6 +1520,21 @@ function fileMimeType(name = '', content = '') {
   return 'text/plain;charset=utf-8';
 }
 
+function isInternalDeliveryFile(file = {}) {
+  const name = String(file?.name || file?.filename || '').trim().toLowerCase();
+  const content = String(file?.content || file?.body || '').trim();
+  const visibility = String(file?.visibility || file?.delivery_visibility || file?.deliveryVisibility || '').trim().toLowerCase();
+  if (file?.internal === true || file?.user_visible === false || file?.userVisible === false || file?.delivery_visible === false || file?.deliveryVisible === false) return true;
+  if (['internal', 'hidden', 'system'].includes(visibility)) return true;
+  if (name === 'supporting-specialist-deliverables.md') return true;
+  if (name === 'integrated-delivery.md' && /#\s+Integrated delivery|##\s+Supporting work products|##\s+Integrated next actions/i.test(content)) return true;
+  return false;
+}
+
+function visibleDeliveryFiles(files = []) {
+  return (Array.isArray(files) ? files : []).filter((file) => file && !isInternalDeliveryFile(file));
+}
+
 function registerDeliveryFile(file = {}, fallbackName = 'delivery.md') {
   const name = safeFileName(file.name || fallbackName, fallbackName);
   const content = String(file.content || '');
@@ -2157,7 +2172,7 @@ function deliveryFiles(job = {}) {
     ...(Array.isArray(deliveryReport.files) ? deliveryReport.files : [])
   ];
   const seen = new Set();
-  return candidates
+  return visibleDeliveryFiles(candidates)
     .filter((file) => file && (file.content || file.name))
     .filter((file) => {
       const key = `${file.name || ''}:${String(file.content || '').slice(0, 120)}`;
