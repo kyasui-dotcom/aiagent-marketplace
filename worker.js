@@ -15599,7 +15599,6 @@ async function scheduleProgressDispatchForJobId(storage, env, waitUntil, jobId, 
 
 function workflowShouldCompleteDataUnavailable(job = {}) {
   return workflowTaskName(job) === 'data_analysis'
-    && workflowSequencePhaseForJob(job) === 'data'
     && !workflowJobHasAttachedDataContext(job);
 }
 
