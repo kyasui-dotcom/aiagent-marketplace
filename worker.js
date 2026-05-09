@@ -15660,6 +15660,59 @@ function workflowDataUnavailableCompletionPayload(job = {}) {
   };
 }
 
+async function completeWorkflowDataUnavailableJob(storage, locked, agent, completionSource = 'workflow-dispatch-queue') {
+  const payload = workflowDataUnavailableCompletionPayload(locked);
+  const report = normalizeAgentReportPayload(payload, payload.report || { summary: payload.summary });
+  const usage = usageWithObservedJobTokens(locked, payload.usage, report);
+  const completeDraft = (draft) => {
+    const job = draft.jobs.find((item) => item.id === locked.id);
+    if (!job || isTerminalJobStatus(job.status)) return null;
+    const assigned = draft.agents.find((item) => item.id === agent.id);
+    if (!assigned || (job.assignedAgentId && job.assignedAgentId !== assigned.id)) return null;
+    const completedAt = nowIso();
+    job.assignedAgentId = assigned.id;
+    job.startedAt = job.startedAt || completedAt;
+    job.completedAt = completedAt;
+    job.failedAt = null;
+    job.timedOutAt = null;
+    job.failureReason = null;
+    job.failureCategory = null;
+    job.status = 'completed';
+    job.output = {
+      report,
+      files: payload.files,
+      returnTargets: payload.return_targets || payload.returnTargets || ['chat', 'api']
+    };
+    job.usage = usage;
+    job.actualBilling = null;
+    job.deliveryQuality = {
+      score: deliveryQualityScoreForJob(job),
+      version: 'delivery-quality/v1',
+      checkedAt: completedAt
+    };
+    if (job.billingReservation && !job.billingSettlement?.settledAt && !job.billingReservation?.releasedAt) {
+      releaseBillingReservationInState(draft, job);
+    }
+    job.dispatch = {
+      ...(job.dispatch || {}),
+      completionSource,
+      completionStatus: 'completed',
+      completedAt,
+      retryable: false,
+      nextRetryAt: null
+    };
+    job.logs = [
+      ...(job.logs || []),
+      'data layer skipped: no analytics/data context attached',
+      `completion source=${completionSource}`
+    ];
+    return cloneJob(job);
+  };
+  return typeof storage.mutateJobAndAgent === 'function'
+    ? storage.mutateJobAndAgent(locked.id, agent.id, completeDraft)
+    : storage.mutate(completeDraft);
+}
+
 async function runBuiltInAgentWithWorkflowQueueGuard(sampleKind, payload, env, job = {}, sourceTimeoutMs = 30000) {
   if (!workflowQualitySourceTask(job)) return runBuiltInAgent(sampleKind, payload, env);
   const timeoutMs = workflowQueueGenerationTimeoutMs(env, sourceTimeoutMs);
@@ -15711,17 +15764,9 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
   const completionSource = options.completionSource || 'built-in-workflow-scheduled-sweep';
   try {
     if (workflowShouldCompleteDataUnavailable(locked)) {
-      const normalized = normalizeDispatchResponse(workflowDataUnavailableCompletionPayload(locked));
-      normalized.usage = usageWithObservedJobTokens(locked, normalized.usage, normalized.report);
-      const result = await completeJobFromAgentResult(storage, locked.id, agent.id, {
-        report: normalized.report,
-        files: normalized.files,
-        usage: normalized.usage,
-        returnTargets: normalized.returnTargets
-      }, { source: completionSource });
-      if (result?.ok) {
+      const completedJob = await completeWorkflowDataUnavailableJob(storage, locked, agent, completionSource);
+      if (completedJob) {
         await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} skipped by ${eventLabel}: no analytics/data context`);
-        await recordBillingOutcome(storage, result.job, result.billing, completionSource);
         if (locked.workflowParentId) {
           await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
           await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`, {
@@ -15731,10 +15776,10 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
           });
           await reconcileWorkflowParent(storage, locked.workflowParentId);
         }
-        return { ok: true, mode: result.mode, jobId: locked.id, job: result.job };
+        return { ok: true, mode: 'completed', jobId: locked.id, job: completedJob };
       }
-      await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} data-unavailable completion rejected: ${String(result?.error || 'unknown').slice(0, 120)}`);
-      return { ok: false, mode: 'rejected', jobId: locked.id, error: result?.error || 'unknown' };
+      await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} data-unavailable completion rejected`);
+      return { ok: false, mode: 'rejected', jobId: locked.id, error: 'data-unavailable completion rejected' };
     }
     let effectiveLocked = locked;
     if (locked?.workflowParentId && !isWorkflowLeaderTask(workflowTaskName(locked))) {
