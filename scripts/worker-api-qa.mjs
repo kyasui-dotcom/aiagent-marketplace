@@ -2186,7 +2186,22 @@ const checkpointLeaderAfterResearch = asyncAfterResearchState.jobs.find((job) =>
   && Number(job.input?._broker?.workflow?.checkpointLayer || 0) === 2
   && Number(job.input?._broker?.workflow?.requiredBeforeLayer || 0) === 3
 ));
-assert.equal(checkpointLeaderAfterResearch?.status, 'completed', 'research-to-planning checkpoint leader should complete before planning dispatch');
+const asyncParentAfterResearch = asyncAfterResearchState.jobs.find((job) => job.id === asyncWorkflow.body.workflow_job_id);
+assert.equal(checkpointLeaderAfterResearch?.status, 'completed', `research-to-planning checkpoint leader should complete before planning dispatch: ${JSON.stringify({
+  status: checkpointLeaderAfterResearch?.status,
+  failureCategory: checkpointLeaderAfterResearch?.failureCategory,
+  failureReason: checkpointLeaderAfterResearch?.failureReason,
+  dispatch: checkpointLeaderAfterResearch?.dispatch,
+  logs: (checkpointLeaderAfterResearch?.logs || []).slice(-5),
+  checkpoints: asyncParentAfterResearch?.workflow?.leaderSequence?.checkpoints,
+  leaderSequenceStatus: asyncParentAfterResearch?.workflow?.leaderSequence?.status,
+  childRuns: (asyncParentAfterResearch?.workflow?.childRuns || []).map((run) => ({
+    taskType: run.taskType,
+    phase: run.sequencePhase,
+    layer: run.layer,
+    status: run.status
+  }))
+})}`);
 const planningWithPriorResearch = asyncAfterResearchState.jobs.find((job) => (
   job.workflowParentId === asyncWorkflow.body.workflow_job_id
   && job.input?._broker?.workflow?.sequencePhase === 'planning'

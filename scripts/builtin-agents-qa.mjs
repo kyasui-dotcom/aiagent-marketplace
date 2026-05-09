@@ -1043,6 +1043,40 @@ try {
   globalThis.fetch = originalBuiltinQaFetch;
 }
 
+let cmoDataNoContextNetworkCalls = 0;
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input.url;
+  if (url === 'https://api.openai.com/v1/responses' || url.startsWith('https://api.search.brave.com/res/v1/web/search?')) {
+    cmoDataNoContextNetworkCalls += 1;
+  }
+  return originalBuiltinQaFetch(input, init);
+};
+try {
+  const cmoDataNoContextPacket = await runBuiltInAgent('data_analysis', {
+    prompt: 'Task: data_analysis Goal: inspect analytics for https://aiagent-marketplace.net before growth planning.',
+    output_language: 'English',
+    input: {
+      _broker: {
+        workflow: {
+          primaryTask: 'cmo_leader',
+          sequencePhase: 'data',
+          plannedTasks: ['cmo_leader', 'data_analysis', 'research', 'media_planner', 'seo_gap']
+        }
+      }
+    }
+  }, {
+    OPENAI_API_KEY: 'sk-test-data-skip',
+    BRAVE_SEARCH_API_KEY: 'brave-test-key'
+  });
+  assert.equal(cmoDataNoContextNetworkCalls, 0, 'CMO workflow data layer without analytics context should not wait on OpenAI or Brave.');
+  assert.equal(cmoDataNoContextPacket.status, 'completed');
+  assert.equal(cmoDataNoContextPacket.runtime.workflow, 'workflow_data_unavailable_packet');
+  assert.equal(cmoDataNoContextPacket.runtime.mode, 'data_unavailable_packet');
+  assert.match(cmoDataNoContextPacket.files[0].content, /No GA4|no analytics\/data context|Data layer skip/i);
+} finally {
+  globalThis.fetch = originalBuiltinQaFetch;
+}
+
 let genericCmoOpenAiCalls = 0;
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;

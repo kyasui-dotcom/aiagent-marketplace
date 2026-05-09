@@ -14064,6 +14064,22 @@ function workflowLeaderOutputQualityReview(parent = {}, leaderJob = {}) {
   if (!hasLeaderHandoff && !priorRuns.length) {
     return { applicable: false, passed: true, scope: 'not_applicable', issues: [] };
   }
+  if (!priorRuns.length && unavailablePriorRuns.length && unavailablePriorRuns.every(workflowUnavailablePriorRunIsOptional)) {
+    return {
+      applicable: true,
+      passed: true,
+      scope: 'leader_handoff_usage',
+      taskType,
+      phase,
+      usedOriginalInfo: true,
+      matchedSignals: [],
+      sourceCount: 0,
+      priorRunCount: 0,
+      unavailablePriorRunCount: unavailablePriorRuns.length,
+      skippedUnavailablePriorLayer: true,
+      issues: []
+    };
+  }
   if (!priorRuns.length && (unavailablePriorRuns.length || workflowLeaderPriorLayerUnavailable(parent, leaderJob))) {
     return {
       applicable: true,
@@ -14300,13 +14316,58 @@ function workflowPriorCompletedRuns(parent = {}, children = [], targetLayer = 1)
   return sortWorkflowChildren(parent, children)
     .filter((child) => child.status === 'completed')
     .filter((child) => !isWorkflowLeaderTask(workflowTaskName(child)))
+    .filter((child) => !workflowOptionalUnavailablePriorRun(parent, child, targetLayer))
     .filter((child) => workflowDispatchLayer(parent, child) < targetLayer)
     .map((child) => workflowCompletedRunHandoff(parent, child))
     .slice(0, 10);
 }
 
+function workflowDataUnavailableOutput(child = {}) {
+  if (workflowTaskName(child) !== 'data_analysis') return false;
+  const output = child.output && typeof child.output === 'object' ? child.output : {};
+  const runtime = output.runtime && typeof output.runtime === 'object' ? output.runtime : {};
+  const report = output.report && typeof output.report === 'object' ? output.report : {};
+  const text = workflowOutputText(child);
+  return String(runtime.workflow || '').trim().toLowerCase() === 'workflow_data_unavailable_packet'
+    || String(runtime.mode || '').trim().toLowerCase() === 'data_unavailable_packet'
+    || /data layer skipped|no analytics\/data context|no ga4|分析コンテキストが未接続|データ層をスキップ/i.test([
+      output.summary,
+      report.summary,
+      report.nextAction,
+      text
+    ].filter(Boolean).join(' '));
+}
+
+function workflowUnavailablePriorRunIsOptional(run = {}) {
+  const reason = String(run.reason || run.unavailableReason || run.status || '').trim().toLowerCase();
+  return run.optional === true
+    || reason === 'no_analytics_context'
+    || reason === 'data_unavailable'
+    || reason === 'skipped_no_data_context';
+}
+
 function workflowOptionalUnavailablePriorRun(parent = {}, child = {}, targetLayer = 1) {
-  return null;
+  if (!child || isWorkflowLeaderTask(workflowTaskName(child))) return null;
+  if (String(child.status || '').trim().toLowerCase() !== 'completed') return null;
+  const layer = workflowDispatchLayer(parent, child);
+  if (layer >= Math.max(1, Number(targetLayer || 1) || 1)) return null;
+  if (!workflowDataUnavailableOutput(child)) return null;
+  const output = child.output && typeof child.output === 'object' ? child.output : {};
+  const report = output.report && typeof output.report === 'object' ? output.report : {};
+  return {
+    jobId: child.id || null,
+    taskType: workflowTaskName(child),
+    agentId: child.assignedAgentId || null,
+    agentName: child.workflowAgentName || null,
+    sequencePhase: workflowSequencePhaseForJob(child) || null,
+    layer,
+    status: 'skipped',
+    optional: true,
+    reason: 'no_analytics_context',
+    summary: String(output.summary || report.summary || 'Data context was not attached; data layer skipped.').slice(0, 1000),
+    nextAction: String(report.nextAction || report.next_action || '').slice(0, 1000),
+    completedAt: child.completedAt || null
+  };
 }
 
 function workflowPriorUnavailableRuns(parent = {}, children = [], targetLayer = 1) {
@@ -15624,11 +15685,11 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
   const recoveredQueued = [];
   const retriedRecoveredSweep = [];
   const staleRecoveredSweepJobs = typeof storage.listStaleCompletionSweepJobs === 'function'
-    ? (await storage.listStaleCompletionSweepJobs({
+    ? await storage.listStaleCompletionSweepJobs({
         limit,
         maxAgeMs: workflowDispatchMaxAgeMs(env),
         minAgeMs: completionQueueRecoveryStaleMs(env)
-      })).filter((job) => String(job?.dispatch?.completionQueueRecoveredAt || '').trim())
+      })
     : [];
   for (const staleRecoveredJob of staleRecoveredSweepJobs) {
     const retriedJob = typeof storage.mutateJobAndAgent === 'function'
@@ -15636,7 +15697,6 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
           const draftJob = draft.jobs.find((item) => item.id === staleRecoveredJob.id);
           if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
           if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'completion_sweep_running') return null;
-          if (!String(draftJob.dispatch?.completionQueueRecoveredAt || '').trim()) return null;
           const attempts = Number(draftJob.dispatch?.attempts || 0) + 1;
           if (attempts > maxDispatchRetriesForJob(draftJob)) return null;
           const at = nowIso();
@@ -15650,7 +15710,7 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
           draftJob.dispatch = {
             ...(draftJob.dispatch || {}),
             completionStatus: 'leader_auto_retry_queued',
-            recoveredSweepTimedOutAt: at,
+            completionSweepSoftTimedOutAt: at,
             attempts,
             retryable: true,
             nextRetryAt: null,
@@ -15658,7 +15718,7 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
           };
           draftJob.logs = [
             ...(draftJob.logs || []),
-            `stale queue recovery sweep did not finish; requeued for safe retry (${at})`
+            `stale completion sweep did not finish; requeued for safe retry (${at})`
           ];
           return cloneJob(draftJob);
         })
@@ -15666,7 +15726,6 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
           const draftJob = draft.jobs.find((item) => item.id === staleRecoveredJob.id);
           if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
           if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'completion_sweep_running') return null;
-          if (!String(draftJob.dispatch?.completionQueueRecoveredAt || '').trim()) return null;
           const attempts = Number(draftJob.dispatch?.attempts || 0) + 1;
           if (attempts > maxDispatchRetriesForJob(draftJob)) return null;
           const at = nowIso();
@@ -15680,7 +15739,7 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
           draftJob.dispatch = {
             ...(draftJob.dispatch || {}),
             completionStatus: 'leader_auto_retry_queued',
-            recoveredSweepTimedOutAt: at,
+            completionSweepSoftTimedOutAt: at,
             attempts,
             retryable: true,
             nextRetryAt: null,
@@ -15688,13 +15747,13 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
           };
           draftJob.logs = [
             ...(draftJob.logs || []),
-            `stale queue recovery sweep did not finish; requeued for safe retry (${at})`
+            `stale completion sweep did not finish; requeued for safe retry (${at})`
           ];
           return cloneJob(draftJob);
         });
     if (retriedJob) {
       retriedRecoveredSweep.push(retriedJob.id);
-      await touchEvent(storage, 'RETRY', `${retriedJob.taskType}/${retriedJob.id.slice(0, 6)} stale queue recovery sweep requeued`);
+      await touchEvent(storage, 'RETRY', `${retriedJob.taskType}/${retriedJob.id.slice(0, 6)} stale completion sweep requeued`);
       if (retriedJob.workflowParentId) await reconcileWorkflowParent(storage, retriedJob.workflowParentId);
     }
   }
