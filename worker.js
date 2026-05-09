@@ -12576,6 +12576,8 @@ async function dispatchJobToAssignedAgent(job, agent, env) {
   if (sampleKind) {
     const body = workflowShouldCompleteDataFromAttachedContext(job)
       ? workflowAttachedDataContextCompletionPayload(job)
+      : workflowShouldCompleteResearchFromPriorSourcePacket(job)
+        ? workflowPriorSourceResearchCompletionPayload(job)
       : workflowShouldCompleteDataUnavailable(job)
         ? workflowDataUnavailableCompletionPayload(job)
         : await runBuiltInAgent(sampleKind, payload, env);
@@ -15759,6 +15761,162 @@ function workflowShouldCompleteDataFromAttachedContext(job = {}) {
     && workflowAttachedDataContextsForJob(job).length > 0;
 }
 
+function workflowPriorSourcePacketSourcesForJob(job = {}) {
+  const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
+    ? job.input._broker.workflow
+    : {};
+  const handoff = workflow.leaderHandoff && typeof workflow.leaderHandoff === 'object' ? workflow.leaderHandoff : {};
+  const priorRuns = [
+    ...(Array.isArray(handoff.priorRuns) ? handoff.priorRuns : []),
+    ...(Array.isArray(handoff.priorDeliverables) ? handoff.priorDeliverables : [])
+  ].filter((run) => run && typeof run === 'object');
+  const sources = [];
+  const seen = new Set();
+  const pushSource = (source = {}, fallbackTitle = '') => {
+    if (!source) return;
+    const rawUrl = typeof source === 'string'
+      ? source
+      : (source.url || source.link || source.source || source.query || '');
+    const normalizedUrl = workflowNormalizeCandidateUrl(rawUrl) || workflowClipText(rawUrl, 240);
+    const title = workflowClipText(
+      typeof source === 'string' ? fallbackTitle : (source.title || source.name || fallbackTitle || 'Prior specialist source'),
+      180
+    );
+    const snippet = workflowClipText(
+      typeof source === 'string' ? '' : (source.snippet || source.description || source.summary || ''),
+      260
+    );
+    const key = [normalizedUrl, title, snippet].join('|').toLowerCase();
+    if (!normalizedUrl && !title && !snippet) return;
+    if (seen.has(key)) return;
+    seen.add(key);
+    sources.push({
+      title: title || 'Prior specialist source',
+      url: normalizedUrl,
+      snippet,
+      action: 'prior_source_collection',
+      provider: 'leader_handoff'
+    });
+  };
+  for (const run of priorRuns) {
+    const label = workflowClipText(run.taskType || run.workflowTask || 'prior specialist', 80);
+    for (const source of Array.isArray(run.webSources) ? run.webSources : []) pushSource(source, label);
+    const digest = run.structuredDigest && typeof run.structuredDigest === 'object' ? run.structuredDigest : {};
+    for (const source of Array.isArray(digest.sources) ? digest.sources : []) pushSource(source, label);
+    for (const signal of Array.isArray(run.requiredUsageSignals) ? run.requiredUsageSignals : []) {
+      for (const url of workflowExtractSourceUrls(signal, 3)) pushSource(url, label);
+    }
+    for (const url of workflowExtractSourceUrls(run.summary || run.reportSummary || '', 3)) pushSource(url, label);
+  }
+  return sources.slice(0, 8);
+}
+
+function workflowShouldCompleteResearchFromPriorSourcePacket(job = {}) {
+  const task = workflowTaskName(job);
+  if (!['research', 'teardown', 'competitor_teardown', 'validation', 'diligence'].includes(task)) return false;
+  if (!workflowJobRequiresSearch(job)) return false;
+  const attempts = Math.max(
+    Number(job?.dispatch?.attempts || 0) || 0,
+    Number(job?.dispatch?.completionSweepAttempts || 0) || 0,
+    Math.max(0, (Number(job?.dispatch?.completionQueueAttempts || 0) || 0) - 1)
+  );
+  if (attempts < 1) return false;
+  return workflowPriorSourcePacketSourcesForJob(job).length > 0;
+}
+
+function workflowPriorSourceResearchCompletionPayload(job = {}) {
+  const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
+    ? job.input._broker.workflow
+    : {};
+  const sources = workflowPriorSourcePacketSourcesForJob(job);
+  const textForLanguage = [workflow.objective, workflow.originalPrompt, job.originalPrompt, job.prompt].join('\n');
+  const isJapanese = /[\u3040-\u30ff\u3400-\u9fff]/u.test(textForLanguage);
+  const objective = workflowClipText(workflow.objective || workflow.originalPrompt || job.prompt || 'Research', 520);
+  const summary = isJapanese
+    ? `既存の上流ソース${sources.length}件から、source-limited research packetを作成しました。`
+    : `Created a source-limited research packet from ${sources.length} upstream source(s).`;
+  const nextAction = isJapanese
+    ? 'Planning/Preparation はこの上流ソースpacketを使い、追加の公開検索が未完了であることを明示したまま進めてください。'
+    : 'Planning/Preparation should use this upstream source packet while explicitly stating that additional public search did not complete.';
+  const bullets = isJapanese
+    ? [
+        `使用ソース: ${sources.map((source) => source.title || source.url).filter(Boolean).slice(0, 4).join(' / ')}`,
+        'Brave/OpenAI検索生成がこのretry内で完了しなかったため、既に確定したdata_analysis/connector contextを根拠にしています。',
+        '競合・市場の最新事実は未確認として扱い、公開・投稿・広告実行は承認後に限定してください。'
+      ]
+    : [
+        `Sources used: ${sources.map((source) => source.title || source.url).filter(Boolean).slice(0, 4).join(' / ')}`,
+        'Brave/OpenAI search generation did not complete in this retry, so this uses the already confirmed data_analysis/connector context.',
+        'Treat current competitor and market facts as unverified, and keep posting/publishing/ad execution approval-gated.'
+      ];
+  const markdown = [
+    isJapanese ? '# Source-limited research packet' : '# Source-limited Research Packet',
+    '',
+    '## Objective',
+    objective,
+    '',
+    isJapanese ? '## Used upstream sources' : '## Used Upstream Sources',
+    ...sources.map((source) => `- ${[source.title, source.url, source.snippet].filter(Boolean).join(' | ')}`),
+    '',
+    isJapanese ? '## Limits' : '## Limits',
+    ...(isJapanese
+      ? [
+          '- 追加の公開検索生成は完了していません。',
+          '- GA4/Search Console/App context 由来の測定・URL・優先チャネルを上流根拠として使います。',
+          '- 最新の競合・市場断定は避け、仮説としてPlanningへ渡します。'
+        ]
+      : [
+          '- Additional public search generation did not complete.',
+          '- Use GA4/Search Console/App context measurements, URLs, and priority channels as upstream evidence.',
+          '- Avoid definitive current competitor or market claims; pass them as hypotheses to Planning.'
+        ]),
+    '',
+    isJapanese ? '## Next action' : '## Next Action',
+    nextAction
+  ].join('\n');
+  return {
+    accepted: true,
+    status: 'completed',
+    summary,
+    report: {
+      summary,
+      bullets,
+      nextAction,
+      confidence: 'medium',
+      web_sources: sources,
+      assumptions: isJapanese
+        ? ['追加公開検索は未完了。上流data_analysis/connector contextのみを根拠にする。']
+        : ['Additional public search did not complete. This uses only upstream data_analysis/connector context.'],
+      workstreams: ['Source-limited research handoff', 'Planning input preservation', 'Approval-gated execution'],
+      process: [
+        'SOURCE_RETRY_CHECK (completed): Search-required generation had already been retried.',
+        'PRIOR_SOURCE_PACKET (completed): Prior specialist sources were converted into a durable research packet.',
+        'HANDOFF (completed): Downstream agents must preserve source limits and assumptions.'
+      ],
+      runtime: {
+        workflow: 'prior_source_research_packet',
+        mode: 'source_limited_research_packet',
+        source_count: sources.length
+      }
+    },
+    files: [
+      {
+        name: 'source-limited-research-packet.md',
+        type: 'text/markdown',
+        content: markdown
+      }
+    ],
+    usage: {
+      api_cost: 0,
+      total_cost_basis: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0
+    },
+    return_targets: ['chat', 'api']
+  };
+}
+
 function workflowAttachedDataContextCompletionPayload(job = {}) {
   const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
     ? job.input._broker.workflow
@@ -16096,6 +16254,31 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
       }
       await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} attached data-context completion rejected`);
       return { ok: false, mode: 'rejected', jobId: locked.id, error: 'attached data-context completion rejected' };
+    }
+    if (workflowShouldCompleteResearchFromPriorSourcePacket(locked)) {
+      const completedJob = await completeWorkflowDataPacketJob(
+        storage,
+        locked,
+        agent,
+        workflowPriorSourceResearchCompletionPayload(locked),
+        completionSource,
+        'research layer completed from prior source-limited packet after search retry'
+      );
+      if (completedJob) {
+        await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} completed by ${eventLabel}: prior source research packet`);
+        if (locked.workflowParentId) {
+          await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
+          await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`, {
+            maxTargets: 8,
+            awaitDispatch: true,
+            refresh: false
+          });
+          await reconcileWorkflowParent(storage, locked.workflowParentId);
+        }
+        return { ok: true, mode: 'completed', jobId: locked.id, job: completedJob };
+      }
+      await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} prior source research completion rejected`);
+      return { ok: false, mode: 'rejected', jobId: locked.id, error: 'prior source research completion rejected' };
     }
     if (workflowShouldCompleteDataUnavailable(locked)) {
       const completedJob = await completeWorkflowDataUnavailableJob(storage, locked, agent, completionSource);

@@ -60,6 +60,8 @@ assert.ok(workerSource.includes('function workflowCompletionRecoveryMinAgeMs'), 
 assert.ok(workerSource.includes('function workflowAttachedDataContextCompletionPayload'), 'attached GA4/Search Console/app context should complete as a durable data packet instead of hanging in queue generation.');
 assert.ok(workerSource.includes('prior specialist deliverable'), 'data context packets should instruct downstream agents to use upstream data.');
 assert.ok(workerSource.includes('&& !workflowJobRequiresSearch(job)'), 'data-unavailable shortcut must not bypass search-required data/research jobs.');
+assert.ok(workerSource.includes('function workflowShouldCompleteResearchFromPriorSourcePacket'), 'search-required research should not retry forever when a prior source packet is already available.');
+assert.ok(workerSource.includes('prior_source_research_packet'), 'prior source research packet should preserve source limits for downstream agents.');
 assert.ok(workerSource.includes('Built-in agent generation exception:'), 'built-in workflow exceptions should fail/retry the job directly instead of leaving it locked until a sweep timeout.');
 assert.ok(workerSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
 assert.ok(workerSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');
