@@ -4726,6 +4726,25 @@ function normalizeAgentReportPayload(payload = {}, reportCandidate = null) {
   return report;
 }
 
+function topLevelAgentReportCandidate(body = {}) {
+  if (!body || typeof body !== 'object') return { summary: 'No report provided.' };
+  if (body.report && typeof body.report === 'object') return body.report;
+  if (body.output && typeof body.output === 'object') return body.output;
+  const hasReportLikeTopLevel = [
+    body.summary,
+    body.report_summary,
+    body.reportSummary,
+    body.answer,
+    body.recommendation,
+    body.file_markdown,
+    body.markdown,
+    body.deliverableMarkdown,
+    body.deliverable_markdown,
+    Array.isArray(body.bullets) && body.bullets.length
+  ].some(Boolean);
+  return hasReportLikeTopLevel ? body : { summary: body.summary || 'No report provided.' };
+}
+
 function normalizeCallbackPayload(body = {}) {
   const payload = body && typeof body === 'object' ? body : {};
   const status = String(payload.status || (payload.failure_reason || payload.error ? 'failed' : 'completed')).trim().toLowerCase();
@@ -11917,6 +11936,41 @@ async function reconcileWorkflowParent(storage, parentJobId) {
         };
       }
     }
+    let concreteArtifactRevalidated = 0;
+    for (const child of children) {
+      if (String(child.status || '').trim().toLowerCase() !== 'completed') continue;
+      const artifactFailure = workflowConcreteArtifactFailureReason(child);
+      if (!artifactFailure) continue;
+      const failedAt = nowIso();
+      const attempts = Number(child.dispatch?.attempts || 0) + 1;
+      const maxRetries = Math.max(maxDispatchRetriesForJob(child), 3);
+      child.status = 'failed';
+      child.completedAt = null;
+      child.failedAt = failedAt;
+      child.timedOutAt = null;
+      child.failureReason = artifactFailure;
+      child.failureCategory = 'missing_required_deliverable';
+      child.deliveryQuality = null;
+      if (child.billingReservation && !child.billingReservation?.releasedAt) {
+        releaseBillingReservationInState(state, child);
+      }
+      child.dispatch = {
+        ...(child.dispatch || {}),
+        completionStatus: 'failed',
+        completedAt: null,
+        retryable: attempts < maxRetries,
+        attempts,
+        maxRetries,
+        nextRetryAt: attempts < maxRetries ? computeNextRetryAt(attempts) : null,
+        artifactRevalidatedAt: failedAt
+      };
+      child.logs = [
+        ...(child.logs || []),
+        artifactFailure,
+        `completed child revalidated as failed: missing required concrete deliverable (${failedAt})`
+      ];
+      concreteArtifactRevalidated += 1;
+    }
     expectedTotal = children.length;
     const childRuns = workflowChildSnapshot(children);
     const agentChildren = workflowAgentRunChildren(children);
@@ -11939,7 +11993,11 @@ async function reconcileWorkflowParent(storage, parentJobId) {
       internalCheckpointRunCount: internalChildren.length,
       agentStatusCounts: workflowStatusCounts(visibleAgentChildren),
       internalStatusCounts: workflowStatusCounts(internalChildren),
-      statusCounts: workflowStatusCounts(children, plannedRunCount)
+      statusCounts: workflowStatusCounts(children, plannedRunCount),
+      ...(concreteArtifactRevalidated ? {
+        concreteArtifactRevalidatedAt: nowIso(),
+        concreteArtifactRevalidatedCount: concreteArtifactRevalidated
+      } : {})
     };
     const leaderSequence = workflowLeaderSequence(parent);
     if (leaderSequence?.enabled) {
@@ -12263,6 +12321,9 @@ function buildDispatchPayload(job, agent) {
   return {
     job_id: job.id,
     task_type: job.taskType,
+    workflow_task: job.workflowTask || job.taskType,
+    workflowTask: job.workflowTask || job.taskType,
+    dispatch_task_type: job.taskType,
     prompt,
     additional_prompt: additionalPrompt,
     additionalPrompt,
@@ -12393,14 +12454,28 @@ function buildDispatchHeaders(agent) {
 function normalizeDispatchResponse(responseBody = {}) {
   const body = responseBody && typeof responseBody === 'object' ? responseBody : {};
   const status = String(body.status || '').trim().toLowerCase();
-  const report = normalizeAgentReportPayload(body, body.report || body.output || { summary: body.summary || 'No report provided.' });
+  const report = normalizeAgentReportPayload(body, topLevelAgentReportCandidate(body));
+  const synthesizedFileMarkdown = String(
+    body.file_markdown
+    || body.markdown
+    || body.deliverableMarkdown
+    || body.deliverable_markdown
+    || report.file_markdown
+    || report.markdown
+    || report.deliverableMarkdown
+    || report.deliverable_markdown
+    || ''
+  ).trim();
+  const files = Array.isArray(body.files)
+    ? body.files
+    : (synthesizedFileMarkdown ? [{ name: `${String(body.task_type || body.taskType || 'delivery').slice(0, 80)}.md`, content: synthesizedFileMarkdown }] : []);
   const blocked = isBlockedAgentResultStatus(status);
   const failed = status === 'failed' || Boolean(body.error || body.failure_reason || body.failureReason);
   const failureReason = body.failure_reason
     || body.failureReason
     || body.error
     || (failed ? (report.summary || body.summary || 'Agent failed without a detailed reason.') : null);
-  const hasArtifacts = Boolean(body.report || body.output || body.summary || (Array.isArray(body.files) && body.files.length));
+  const hasArtifacts = Boolean(body.report || body.output || body.summary || synthesizedFileMarkdown || files.length);
   const accepted = !failed && (body.accepted === true || blocked || status === 'accepted' || status === 'queued' || status === 'running' || status === 'dispatched');
   const completed = !failed && !blocked && (status === 'completed' || ((!status || status === 'ok' || status === 'success') && hasArtifacts));
   return {
@@ -12410,7 +12485,7 @@ function normalizeDispatchResponse(responseBody = {}) {
     completed,
     status: failed ? 'failed' : (blocked ? 'blocked' : (completed ? 'completed' : (status || (accepted ? 'accepted' : 'unknown')))),
     report,
-    files: Array.isArray(body.files) ? body.files : [],
+    files,
     returnTargets: body.return_targets || body.returnTargets || ['api'],
     usage: normalizeUsageForBilling(body.usage, 100),
     failureReason,
@@ -12471,19 +12546,25 @@ function workflowBuiltInFailureRetryMeta(env = {}, job = {}, failureMeta = {}) {
     : Number(job?.dispatch?.attempts || 0) + 1;
   const qualityRetryCategory = [
     'missing_required_sources',
+    'missing_required_deliverable',
     'dispatch_timeout',
     'dispatch_queue_timeout',
     'dispatch_http_5xx',
     'dispatch_error'
   ].includes(category);
   const qualitySourceRetry = workflowQualitySourceTask(job) && qualityRetryCategory;
+  const concreteArtifactRetry = Boolean(job?.workflowParentId)
+    && workflowTaskRequiresConcreteSpecialistArtifact(job?.workflowTask || job?.taskType)
+    && category === 'missing_required_deliverable';
   const leaderControlRetry = workflowLeaderControlTask(job) && qualityRetryCategory;
   const maxRetries = qualitySourceRetry
     ? Math.max(maxDispatchRetriesForJob(job), workflowSourceCollectionMaxRetries(env))
+    : concreteArtifactRetry
+      ? Math.max(maxDispatchRetriesForJob(job), 3)
     : leaderControlRetry
       ? workflowLeaderControlMaxRetries(env, job)
     : (Number.isFinite(Number(failureMeta.maxRetries)) ? Number(failureMeta.maxRetries) : maxDispatchRetriesForJob(job));
-  const retryable = Boolean((qualitySourceRetry || leaderControlRetry || failureMeta.retryable) && attempts < maxRetries);
+  const retryable = Boolean((qualitySourceRetry || concreteArtifactRetry || leaderControlRetry || failureMeta.retryable) && attempts < maxRetries);
   return {
     attempts,
     maxRetries,
@@ -12759,6 +12840,36 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
             maxRetries: sourceRetryMeta.maxRetries
           };
           draftJob.logs.push(sourceProofFailure, 'failed before completion: missing search execution proof');
+          return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
+        }
+        const concreteArtifactFailure = workflowConcreteArtifactFailureReason(draftJob);
+        if (concreteArtifactFailure) {
+          const failureMeta = {
+            category: 'missing_required_deliverable',
+            retryable: true,
+            attempts: Number(draftJob?.dispatch?.attempts || 0) + 1,
+            maxRetries: Math.max(maxDispatchRetriesForJob(draftJob), 3)
+          };
+          const retryMeta = workflowBuiltInFailureRetryMeta(env, draftJob, failureMeta);
+          draftJob.status = 'failed';
+          draftJob.completedAt = null;
+          draftJob.failedAt = nowIso();
+          draftJob.failureReason = concreteArtifactFailure;
+          draftJob.failureCategory = 'missing_required_deliverable';
+          draftJob.actualBilling = null;
+          draftJob.deliveryQuality = null;
+          if (draftJob.billingReservation && !draftJob.billingReservation?.releasedAt) {
+            releaseBillingReservationInState(draft, draftJob);
+          }
+          draftJob.dispatch = {
+            ...(draftJob.dispatch || {}),
+            completionStatus: 'failed',
+            retryable: retryMeta.retryable,
+            attempts: retryMeta.attempts,
+            nextRetryAt: retryMeta.nextRetryAt,
+            maxRetries: retryMeta.maxRetries
+          };
+          draftJob.logs.push(concreteArtifactFailure, 'failed before completion: missing required concrete deliverable');
           return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
         }
         const authorityRequest = syncJobAuthorityRequest(draftJob, draftAgent);
@@ -13246,6 +13357,106 @@ function workflowSearchCompletionFailureReason(job = {}, report = {}) {
   if (!sources.length) return 'Search-required workflow run did not attach any web_sources, so it cannot be completed.';
   if (!workflowSearchSourcesHaveExecutionProof(sources)) {
     return 'Search-required workflow run attached source URLs without search execution proof. Include the search query, search action, or search provider from the source collection step.';
+  }
+  return '';
+}
+
+function workflowTaskRequiresConcreteSpecialistArtifact(taskType = '') {
+  const task = String(taskType || '').trim().toLowerCase();
+  return [
+    'media_planner',
+    'growth',
+    'seo_gap',
+    'writing',
+    'writer',
+    'landing',
+    'list_creator',
+    'cold_email',
+    'directory_submission',
+    'x_post',
+    'reddit',
+    'indie_hackers',
+    'acquisition_automation'
+  ].includes(task);
+}
+
+function workflowConcreteArtifactText(job = {}) {
+  const output = job?.output && typeof job.output === 'object' ? job.output : {};
+  const report = output.report && typeof output.report === 'object' ? output.report : {};
+  const files = Array.isArray(output.files) ? output.files : [];
+  return [
+    output.summary,
+    output.file_markdown,
+    output.deliverableMarkdown,
+    output.deliverable_markdown,
+    report.summary,
+    report.answer,
+    report.recommendation,
+    report.file_markdown,
+    report.markdown,
+    report.deliverableMarkdown,
+    report.deliverable_markdown,
+    ...(Array.isArray(report.bullets) ? report.bullets : []),
+    report.nextAction || report.next_action,
+    ...files.map((file) => `${file?.name || ''}\n${file?.content || ''}`)
+  ].map((value) => typeof value === 'string' ? value : JSON.stringify(value || '')).join('\n');
+}
+
+function workflowConcreteArtifactFailureReason(job = {}) {
+  const task = workflowTaskName(job);
+  if (!workflowTaskRequiresConcreteSpecialistArtifact(task)) return '';
+  const output = job?.output && typeof job.output === 'object' ? job.output : {};
+  const files = Array.isArray(output.files) ? output.files : [];
+  const report = output.report && typeof output.report === 'object' ? output.report : {};
+  const markdownText = [
+    output.file_markdown,
+    output.deliverableMarkdown,
+    output.deliverable_markdown,
+    report.file_markdown,
+    report.markdown,
+    report.deliverableMarkdown,
+    report.deliverable_markdown
+  ].filter((value) => typeof value === 'string' && value.trim()).join('\n\n');
+  const text = workflowConcreteArtifactText(job);
+  const fileText = [
+    markdownText,
+    ...files.map((file) => String(file?.content || ''))
+  ].join('\n\n');
+  if (/prior_handoff_specialist_packet|prior handoff packet|handoff packet|durable packet|Generation exceeded the retry budget|生成が長引いた|上流handoffの事実/i.test(text)) {
+    return `${task} returned only a generic handoff packet, not the concrete deliverable required for this specialist.`;
+  }
+  if (!files.length || fileText.trim().length < 300) {
+    return `${task} did not attach a substantial deliverable file.`;
+  }
+  if (task === 'list_creator') {
+    const urls = [...new Set((text.match(/https?:\/\/[^\s)\]>"]+/g) || []).map((url) => url.replace(/[.,;:]+$/g, '').toLowerCase()))];
+    const rowSignals = (text.match(/\n\s*\|/g) || []).length + (text.match(/\n\s*[-*]\s+\S.{20,}/g) || []).length;
+    if (/BLOCKED_MISSING_SOURCE_ROWS/i.test(text)) return 'list_creator reported missing source rows, so it cannot be completed as a delivered list.';
+    if (urls.length < 2 || rowSignals < 2) return 'list_creator did not deliver reviewable lead/source rows with concrete public URLs.';
+  }
+  if (task === 'seo_gap') {
+    const requiredSignals = [
+      /H1|hero|見出し|ファーストビュー/i,
+      /meta\s*title|meta\s*description|メタ/i,
+      /keyword|query|検索意図|クエリ/i,
+      /internal link|内部リンク|FAQ|schema/i,
+      /draft|article|section|rewrite|記事|本文|構成/i
+    ].filter((pattern) => pattern.test(text)).length;
+    if (requiredSignals < 3) return 'seo_gap did not deliver page/article-ready SEO sections such as H1, meta, keyword intent, FAQ/internal links, or draft structure.';
+  }
+  if (['writing', 'writer', 'landing'].includes(task)) {
+    const copySignals = [
+      /headline|hero|H1|見出し|ファーストビュー/i,
+      /CTA|call to action|登録|問い合わせ|トライアル/i,
+      /draft|copy|本文|投稿文|メール文|caption|原稿/i,
+      /proof|objection|FAQ|信頼|反論|根拠/i
+    ].filter((pattern) => pattern.test(text)).length;
+    if (copySignals < 3) return `${task} did not deliver usable copy sections such as headline/hero, CTA, body draft, proof, or objections.`;
+  }
+  if (['x_post', 'reddit', 'indie_hackers', 'cold_email', 'directory_submission', 'acquisition_automation'].includes(task)) {
+    if (!/exact|approved|draft|post|本文|投稿|送信|submission|directory|件名|subject|CTA/i.test(text)) {
+      return `${task} did not deliver an exact approval-ready action draft.`;
+    }
   }
   return '';
 }
@@ -15919,6 +16130,7 @@ function workflowShouldCompleteFromPriorHandoffPacket(job = {}) {
     'indie_hackers',
     'acquisition_automation'
   ].includes(task)) return false;
+  if (workflowTaskRequiresConcreteSpecialistArtifact(task)) return false;
   if (workflowJobRequiresSearch(job)) return false;
   const attempts = Math.max(
     Number(job?.dispatch?.attempts || 0) || 0,
@@ -17916,17 +18128,31 @@ async function completeJobFromAgentResult(storage, jobId, agentId, payload = {},
     const completionAt = nowIso();
     const outputReport = normalizeAgentReportPayload(
       payload,
-      payload.report || payload.output || { summary: payload.summary || 'No report provided.' }
+      topLevelAgentReportCandidate(payload)
     );
     const explicitAuthorityRequest = authorityRequestFromReport(outputReport);
     const usage = usageWithObservedJobTokens(job, payload?.usage, outputReport);
+    const payloadFileMarkdown = String(
+      payload.file_markdown
+      || payload.markdown
+      || payload.deliverableMarkdown
+      || payload.deliverable_markdown
+      || outputReport.file_markdown
+      || outputReport.markdown
+      || outputReport.deliverableMarkdown
+      || outputReport.deliverable_markdown
+      || ''
+    ).trim();
+    const payloadFiles = Array.isArray(payload.files)
+      ? payload.files
+      : (payloadFileMarkdown ? [{ name: `${String(workflowTaskName(job) || job.taskType || 'delivery').slice(0, 80)}.md`, content: payloadFileMarkdown }] : []);
     let targetStatus = isBlockedAgentResultStatus(meta.targetStatus || payload.status) ? 'blocked' : 'completed';
     job.assignedAgentId = agent.id;
     job.startedAt = job.startedAt || completionAt;
     job.lastCallbackAt = meta.source === 'callback' ? completionAt : (job.lastCallbackAt || null);
     job.output = {
       report: outputReport,
-      files: Array.isArray(payload.files) ? payload.files : [],
+      files: payloadFiles,
       returnTargets: payload.return_targets || payload.returnTargets || ['chat', 'api', 'webhook']
     };
     appendWorkflowOriginalInfoUsage(job);
@@ -17956,6 +18182,44 @@ async function completeJobFromAgentResult(storage, jobId, agentId, payload = {},
         nextRetryAt: null
       };
       job.logs = [...(job.logs || []), sourceProofFailure, 'failed before completion: missing search execution proof'];
+      if (meta.source) job.logs.push(`completion source=${meta.source}`);
+      return { ok: true, mode: 'failed', job: cloneJob(job), billing: null, workflowParentId: job.workflowParentId || null };
+    }
+    const concreteArtifactFailure = targetStatus === 'completed' ? workflowConcreteArtifactFailureReason(job) : '';
+    if (concreteArtifactFailure) {
+      const failureMeta = {
+        category: 'missing_required_deliverable',
+        retryable: true,
+        attempts: Number(job?.dispatch?.attempts || 0) + 1,
+        maxRetries: Math.max(maxDispatchRetriesForJob(job), 3)
+      };
+      const retryMeta = workflowBuiltInFailureRetryMeta({}, job, failureMeta);
+      targetStatus = 'failed';
+      job.status = 'failed';
+      job.completedAt = null;
+      job.failedAt = completionAt;
+      job.timedOutAt = null;
+      job.failureReason = concreteArtifactFailure;
+      job.failureCategory = 'missing_required_deliverable';
+      job.usage = usage;
+      job.actualBilling = null;
+      job.deliveryQuality = null;
+      if (job.billingReservation && !job.billingReservation?.releasedAt) {
+        releaseBillingReservationInState(state, job);
+      }
+      job.dispatch = {
+        ...(job.dispatch || {}),
+        externalJobId: meta.externalJobId || job.dispatch?.externalJobId || null,
+        completionSource: meta.source || job.dispatch?.completionSource || null,
+        completionStatus: 'failed',
+        completedAt: null,
+        lastCallbackAt: meta.source === 'callback' ? completionAt : (job.dispatch?.lastCallbackAt || null),
+        retryable: retryMeta.retryable,
+        attempts: retryMeta.attempts,
+        maxRetries: retryMeta.maxRetries,
+        nextRetryAt: retryMeta.nextRetryAt
+      };
+      job.logs = [...(job.logs || []), concreteArtifactFailure, 'failed before completion: missing required concrete deliverable'];
       if (meta.source) job.logs.push(`completion source=${meta.source}`);
       return { ok: true, mode: 'failed', job: cloneJob(job), billing: null, workflowParentId: job.workflowParentId || null };
     }
