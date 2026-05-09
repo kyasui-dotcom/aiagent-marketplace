@@ -14690,6 +14690,8 @@ function workflowBlockingQualityGateBeforeLayer(parent = {}, children = [], laye
     if (workflowDispatchLayer(parent, child) >= targetLayer) continue;
     const status = String(child.status || '').trim().toLowerCase();
     if (['failed', 'timed_out'].includes(status)) {
+      const optionalUnavailable = workflowOptionalUnavailablePriorRun(parent, child, targetLayer);
+      if (optionalUnavailable && workflowUnavailablePriorRunIsOptional(optionalUnavailable)) continue;
       return {
         type: 'prior_layer_unavailable',
         childId: child.id,
