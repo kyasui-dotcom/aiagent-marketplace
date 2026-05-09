@@ -93,6 +93,14 @@ test.describe('parameterized production-like order scenario', () => {
         timeout: liveMode ? 60_000 : 30_000
       });
       const created = await createResponse.json().catch(() => ({}));
+      if (createResponse.status() === 402 && String(created?.code || '').toLowerCase() === 'payment_method_missing') {
+        throw new Error([
+          'Order scenario E2E reached the production billing gate before creating the order.',
+          'Use a funded E2E account, for example `npm run qa:e2e:order -- --email <funded-email>`,',
+          'or validate a user-created order with `npm run qa:e2e:order -- --order-id <order-id>`.',
+          `Billing response: ${JSON.stringify(created).slice(0, 1000)}`
+        ].join(' '));
+      }
       expect(createResponse.status(), `create scenario order failed: ${JSON.stringify(created).slice(0, 1000)}`).toBe(201);
       orderId = String(created.workflow_job_id || created.job_id || created.job?.id || '').trim();
       expect(orderId, `create scenario response must expose order id: ${JSON.stringify(created).slice(0, 1000)}`).not.toHaveLength(0);

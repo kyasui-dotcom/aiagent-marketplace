@@ -47,6 +47,10 @@ for (let index = 2; index < process.argv.length; index += 1) {
     cliEnv.E2E_ORDER_PROMPT = process.argv[++index] || '';
     continue;
   }
+  if (arg === '--email') {
+    cliEnv.E2E_AUTH_EMAIL = process.argv[++index] || '';
+    continue;
+  }
   if (arg === '--accept-waiting') {
     cliEnv.E2E_ORDER_ACCEPT_WAITING = '1';
     continue;
@@ -85,6 +89,7 @@ if (liveMode && !env.E2E_AUTH_SECRET && !env.E2E_EMAIL_AUTH_SECRET) {
 console.log(`Order scenario E2E target: ${env.E2E_BASE_URL || 'managed local server'}`);
 if (env.E2E_ORDER_ID) console.log(`Observing existing order: ${env.E2E_ORDER_ID}`);
 else console.log('Creating a new order from E2E_ORDER_PROMPT/E2E_ORDER_PROMPT_FILE or the default CMO scenario.');
+console.log(`Authenticated E2E email: ${env.E2E_AUTH_EMAIL}`);
 
 const child = spawn(process.execPath, [
   playwrightCli,
