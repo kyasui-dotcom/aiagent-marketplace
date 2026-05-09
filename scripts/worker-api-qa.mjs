@@ -54,6 +54,8 @@ assert.ok(!workerSource.includes("skipped: 'openai_workflow_enabled'"), 'schedul
 assert.ok(workerSource.includes('clearJobAuthorityRequest(cloned)'), 'public job views must suppress stale authority requests on failed or timed-out jobs.');
 assert.ok(workerSource.includes('const COMPLETION_SWEEP_STALE_MS = 15 * 60 * 1000'), 'built-in workflow completion sweep should not time out research/data generation after only a few minutes.');
 assert.ok(workerSource.includes('function workflowBuiltInFailureRetryMeta'), 'built-in workflow generation failures should preserve retry metadata for quality-critical research/data layers.');
+assert.ok(workerSource.includes('function workflowLeaderControlTask'), 'leader checkpoint/final-summary control jobs should have explicit retry handling.');
+assert.ok(workerSource.includes('function workflowCompletionRecoveryMinAgeMs'), 'leader control jobs should not be recovered as stale before their generation budget expires.');
 assert.ok(workerSource.includes('Built-in agent generation exception:'), 'built-in workflow exceptions should fail/retry the job directly instead of leaving it locked until a sweep timeout.');
 
 const env = {

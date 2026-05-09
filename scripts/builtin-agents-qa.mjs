@@ -1450,6 +1450,33 @@ const mergedXExecutionOutput = buildAgentTeamDeliveryOutput({
 const mergedXCandidate = mergedXExecutionOutput.files.find((file) => file.content_type === 'social_post_pack');
 assert.equal(mergedXCandidate?.draft_defaults?.postText, cmoWorkflowXPayload.files[0].draft_defaults.postText);
 
+const cmoCheckpointPacket = await runBuiltInAgent('cmo_leader', {
+  prompt: 'CMO checkpoint should release the next layer from prior evidence without reopening generation.',
+  input: {
+    _broker: {
+      workflow: {
+        sequencePhase: 'checkpoint',
+        checkpointLayer: 1,
+        requiredBeforeLayer: 2,
+        leaderHandoff: {
+          priorRuns: [
+            {
+              taskType: 'data_analysis',
+              status: 'completed',
+              summary: 'Data layer skipped because no analytics context was attached.',
+              bullets: ['Use research next; no GA4/Search Console source is available.']
+            }
+          ]
+        }
+      }
+    }
+  }
+}, { OPENAI_API_KEY: 'sk-test-should-not-be-needed-for-checkpoint' });
+assert.equal(cmoCheckpointPacket.runtime?.workflow, 'workflow_leader_packet', 'CMO checkpoint should complete from a leader packet by default instead of waiting on OpenAI generation.');
+assert.equal(cmoCheckpointPacket.runtime?.provider, 'built_in');
+assert.ok(cmoCheckpointPacket.files?.[0]?.content?.includes('Execution status'), 'CMO checkpoint packet should still carry prior-run status.');
+assert.ok(cmoCheckpointPacket.files?.[0]?.content?.includes('Data layer skipped'), 'CMO checkpoint packet should still carry prior-run evidence.');
+
 const failedLeaderWorkflowOutput = buildAgentTeamDeliveryOutput({
   id: 'qa-failed-parent',
   status: 'failed',

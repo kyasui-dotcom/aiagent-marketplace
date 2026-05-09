@@ -4810,6 +4810,16 @@ function completionQueueRecoveryStaleMs(env = {}) {
   return Number.isFinite(configured) && configured > 0 ? configured : COMPLETION_QUEUE_RECOVERY_STALE_MS;
 }
 
+function workflowCompletionRecoveryMinAgeMs(env = {}, job = {}) {
+  const base = completionQueueRecoveryStaleMs(env);
+  if (!workflowLeaderControlTask(job)) return base;
+  const configured = Number(env?.WORKFLOW_LEADER_CONTROL_RECOVERY_STALE_MS || env?.WORKFLOW_LEADER_CHECKPOINT_RECOVERY_STALE_MS || 0);
+  if (Number.isFinite(configured) && configured > 0) return Math.max(base, configured);
+  const openAiBudget = Number(env?.BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS || env?.BUILTIN_OPENAI_TIMEOUT_MS || 45000);
+  const safeBudget = Number.isFinite(openAiBudget) && openAiBudget > 0 ? openAiBudget : 45000;
+  return Math.max(base, Math.min(5 * 60 * 1000, safeBudget * 2 + 30000));
+}
+
 function workflowDispatchQueue(env = {}) {
   const queue = env?.WORKFLOW_DISPATCH_QUEUE;
   return queue && typeof queue.send === 'function' ? queue : null;
@@ -4855,10 +4865,26 @@ function workflowSourceCollectionMaxRetries(env = {}) {
   return Number.isFinite(configured) && configured > 0 ? Math.min(50, Math.max(1, configured)) : 10;
 }
 
+function workflowLeaderControlTask(job = {}) {
+  const phase = workflowSequencePhaseForJob(job);
+  return Boolean(job?.workflowParentId)
+    && isWorkflowLeaderTask(workflowTaskName(job))
+    && ['checkpoint', 'final_summary'].includes(phase);
+}
+
+function workflowLeaderControlMaxRetries(env = {}, job = {}) {
+  if (!workflowLeaderControlTask(job)) return maxDispatchRetriesForJob(job);
+  const configured = Number(env?.WORKFLOW_LEADER_CONTROL_MAX_RETRIES || env?.WORKFLOW_LEADER_CHECKPOINT_MAX_RETRIES || 0);
+  const fallback = 5;
+  return Number.isFinite(configured) && configured > 0
+    ? Math.min(10, Math.max(1, configured))
+    : Math.max(maxDispatchRetriesForJob(job), fallback);
+}
+
 function workflowCompletionRetryLimitForJob(env = {}, job = {}) {
-  return workflowQualitySourceTask(job)
-    ? Math.max(maxDispatchRetriesForJob(job), workflowSourceCollectionMaxRetries(env))
-    : maxDispatchRetriesForJob(job);
+  if (workflowQualitySourceTask(job)) return Math.max(maxDispatchRetriesForJob(job), workflowSourceCollectionMaxRetries(env));
+  if (workflowLeaderControlTask(job)) return workflowLeaderControlMaxRetries(env, job);
+  return maxDispatchRetriesForJob(job);
 }
 
 function shouldAutoRetryWorkflowChild(parent = null, job = {}) {
@@ -12437,10 +12463,13 @@ function workflowBuiltInFailureRetryMeta(env = {}, job = {}, failureMeta = {}) {
     'dispatch_error'
   ].includes(category);
   const qualitySourceRetry = workflowQualitySourceTask(job) && qualityRetryCategory;
+  const leaderControlRetry = workflowLeaderControlTask(job) && qualityRetryCategory;
   const maxRetries = qualitySourceRetry
     ? Math.max(maxDispatchRetriesForJob(job), workflowSourceCollectionMaxRetries(env))
+    : leaderControlRetry
+      ? workflowLeaderControlMaxRetries(env, job)
     : (Number.isFinite(Number(failureMeta.maxRetries)) ? Number(failureMeta.maxRetries) : maxDispatchRetriesForJob(job));
-  const retryable = Boolean((qualitySourceRetry || failureMeta.retryable) && attempts < maxRetries);
+  const retryable = Boolean((qualitySourceRetry || leaderControlRetry || failureMeta.retryable) && attempts < maxRetries);
   return {
     attempts,
     maxRetries,
@@ -16080,6 +16109,12 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
     if (approvalPause.paused) {
       skipped.approval_waiting_retry_paused = (skipped.approval_waiting_retry_paused || 0) + 1;
       if (staleRecoveredJob.workflowParentId) await reconcileWorkflowParent(storage, staleRecoveredJob.workflowParentId);
+      continue;
+    }
+    const recoveryRequestedAt = Date.parse(String(staleRecoveredJob.dispatch?.completionSweepRequestedAt || staleRecoveredJob.startedAt || ''));
+    const recoveryMinAgeMs = workflowCompletionRecoveryMinAgeMs(env, staleRecoveredJob);
+    if (Number.isFinite(recoveryRequestedAt) && Date.now() - recoveryRequestedAt < recoveryMinAgeMs) {
+      skipped.waiting_for_generation_budget = (skipped.waiting_for_generation_budget || 0) + 1;
       continue;
     }
     const retriedJob = typeof storage.mutateJobAndAgent === 'function'
