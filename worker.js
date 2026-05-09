@@ -14431,7 +14431,11 @@ function workflowLeaderPriorLayerUnavailable(parent = {}, leaderJob = {}) {
   if (!priorLayerRuns.length) return false;
   const completedPrior = priorLayerRuns.some((child) => String(child.status || '').trim().toLowerCase() === 'completed');
   if (completedPrior) return false;
-  return priorLayerRuns.every((child) => Boolean(workflowOptionalUnavailablePriorRun(parent, child, checkpointLayer + 1)));
+  const optionalUnavailablePrior = priorLayerRuns
+    .map((child) => workflowOptionalUnavailablePriorRun(parent, child, checkpointLayer + 1))
+    .filter(Boolean);
+  if (optionalUnavailablePrior.length && optionalUnavailablePrior.length === priorLayerRuns.length) return false;
+  return true;
 }
 
 function workflowLeaderHandoff(parent = {}, leader = null, children = [], targetLayer = 1) {
