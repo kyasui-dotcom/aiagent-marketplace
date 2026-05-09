@@ -2970,6 +2970,13 @@ const manualProgressWaits = [];
 const manualProgressPoll = await request(`/api/jobs/${manualParentId}`, {}, { waitUntilPromises: manualProgressWaits, env: qaSearchEnv });
 assert.equal(manualProgressPoll.status, 200);
 assert.equal(manualProgressWaits.length, 1, 'progress polling should schedule queued built-in children as one dispatch batch');
+const manualProgressKickState = await qaStorage.getState();
+const manualProgressKickChild = manualProgressKickState.jobs.find((job) => job.id === manualChildAId);
+assert.equal(
+  ['dispatch_scheduled', 'dispatch_in_progress', 'completion_sweep_running', 'completed'].includes(String(manualProgressKickChild?.dispatch?.completionStatus || '')),
+  true,
+  'progress polling should synchronously mark a ready child as dispatch_scheduled before returning stale queued state'
+);
 await Promise.allSettled(manualProgressWaits);
 const manualProgressAfter = await request(`/api/jobs/${manualParentId}`, {}, { env: qaSearchEnv });
 assert.equal(manualProgressAfter.status, 200);

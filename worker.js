@@ -20467,18 +20467,17 @@ async function handleGetJob(storage, request, env, jobId, ctx = null) {
         await refreshWorkflowLeaderHandoffForJobId(storage, job.id);
         await reconcileWorkflowParent(storage, job.id);
       }
-      return scheduleProgressDispatchesForJobId(storage, env, null, job.id, 'progress poll', {
+      return scheduleProgressDispatchesForJobId(storage, env, waitUntil, job.id, 'progress poll', {
         maxTargets: 8,
-        awaitDispatch: true
+        awaitDispatch: !waitUntil
       });
     })();
-    if (waitUntil) {
-      waitUntil(progressWork.catch((error) => touchEvent(storage, 'FAILED', `progress poll exception ${String(error?.message || error).slice(0, 120)}`)));
-    } else {
-      const scheduled = await progressWork;
-      if (job.jobKind === 'workflow' || scheduled?.scheduled) {
-        job = await loadJob() || job;
-      }
+    const scheduled = await progressWork.catch(async (error) => {
+      await touchEvent(storage, 'FAILED', `progress poll exception ${String(error?.message || error).slice(0, 120)}`);
+      return null;
+    });
+    if (job.jobKind === 'workflow' || scheduled?.scheduled) {
+      job = await loadJob() || job;
     }
   }
   if (current.apiKey?.id) await recordOrderApiKeyUsage(storage, current, request);
