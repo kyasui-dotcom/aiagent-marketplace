@@ -14080,6 +14080,22 @@ function workflowLeaderOutputQualityReview(parent = {}, leaderJob = {}) {
       issues: []
     };
   }
+  if (!priorRuns.length && workflowLeaderPriorLayerOptionalOnly(parent, leaderJob)) {
+    return {
+      applicable: true,
+      passed: true,
+      scope: 'leader_handoff_usage',
+      taskType,
+      phase,
+      usedOriginalInfo: true,
+      matchedSignals: [],
+      sourceCount: 0,
+      priorRunCount: 0,
+      unavailablePriorRunCount: 1,
+      skippedUnavailablePriorLayer: true,
+      issues: []
+    };
+  }
   if (!priorRuns.length && (unavailablePriorRuns.length || workflowLeaderPriorLayerUnavailable(parent, leaderJob))) {
     return {
       applicable: true,
@@ -14418,6 +14434,7 @@ function workflowPriorUnavailableRuns(parent = {}, children = [], targetLayer = 
 }
 
 function workflowLeaderPriorLayerUnavailable(parent = {}, leaderJob = {}) {
+  if (workflowLeaderPriorLayerOptionalOnly(parent, leaderJob)) return false;
   const phase = workflowSequencePhaseForJob(leaderJob);
   if (phase !== 'checkpoint') return false;
   const workflow = leaderJob?.input?._broker?.workflow && typeof leaderJob.input._broker.workflow === 'object'
@@ -14431,11 +14448,26 @@ function workflowLeaderPriorLayerUnavailable(parent = {}, leaderJob = {}) {
   if (!priorLayerRuns.length) return false;
   const completedPrior = priorLayerRuns.some((child) => String(child.status || '').trim().toLowerCase() === 'completed');
   if (completedPrior) return false;
+  return true;
+}
+
+function workflowLeaderPriorLayerOptionalOnly(parent = {}, leaderJob = {}) {
+  const phase = workflowSequencePhaseForJob(leaderJob);
+  if (phase !== 'checkpoint') return false;
+  const workflow = leaderJob?.input?._broker?.workflow && typeof leaderJob.input._broker.workflow === 'object'
+    ? leaderJob.input._broker.workflow
+    : {};
+  const checkpointLayer = Math.max(1, Number(workflow.checkpointLayer || workflow.afterLayer || 1) || 1);
+  const childRuns = Array.isArray(parent?.workflow?.childRuns) ? parent.workflow.childRuns : [];
+  const priorLayerRuns = childRuns
+    .filter((child) => !isWorkflowLeaderTask(workflowTaskName(child)))
+    .filter((child) => workflowDispatchLayer(parent, child) <= checkpointLayer);
+  if (!priorLayerRuns.length) return false;
+  if (priorLayerRuns.some((child) => String(child.status || '').trim().toLowerCase() === 'completed')) return false;
   const optionalUnavailablePrior = priorLayerRuns
     .map((child) => workflowOptionalUnavailablePriorRun(parent, child, checkpointLayer + 1))
     .filter(Boolean);
-  if (optionalUnavailablePrior.length && optionalUnavailablePrior.length === priorLayerRuns.length) return false;
-  return true;
+  return optionalUnavailablePrior.length > 0 && optionalUnavailablePrior.length === priorLayerRuns.length;
 }
 
 function workflowLeaderHandoff(parent = {}, leader = null, children = [], targetLayer = 1) {
