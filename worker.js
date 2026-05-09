@@ -11585,11 +11585,12 @@ function buildWorkflowParentJob(body, input, plan, options = {}) {
   const promptOptimization = options.promptOptimization || null;
   const executionPrompt = promptOptimization?.optimized ? promptOptimization.prompt : body.prompt;
   const originalPrompt = promptOptimization?.optimized ? promptOptimization.originalPrompt : body.prompt;
+  const clientOrderId = clientOrderIdFromCreateBody(body);
   const agentTeamName = plan.plannedTasks.includes('cmo_leader')
     ? 'CMO Growth Team'
     : 'Agent Team';
   return {
-    id: crypto.randomUUID(),
+    id: clientOrderId || crypto.randomUUID(),
     jobKind: 'workflow',
     parentAgentId: body.parent_agent_id,
     taskType: plan.plannedTasks[0] || inferTaskType(body.task_type, body.prompt),
@@ -17288,9 +17289,11 @@ async function performSingleJobCreate(storage, env, current, body, options = {})
   const optimizationLog = promptOptimization.optimized
     ? `prompt optimized mode=${promptOptimization.mode} originalChars=${promptOptimization.originalChars} optimizedChars=${promptOptimization.optimizedChars} outputLanguage=${promptOptimization.outputLanguageCode}`
     : null;
+  const clientOrderId = body.workflow_parent_id ? '' : clientOrderIdFromCreateBody(body);
   const input = {
     ...inputSourceBase,
     ...(chatSessionId && !inputSourceBase.session_id && !inputSourceBase.sessionId ? { session_id: chatSessionId } : {}),
+    ...(clientOrderId && !inputSourceBase.client_order_id && !inputSourceBase.clientOrderId ? { client_order_id: clientOrderId } : {}),
     ...(promptOptimizationMeta && !inputSourceBase.output_language && !inputSourceBase.outputLanguage
       ? { output_language: promptOptimization.outputLanguageCode }
       : {}),
@@ -17299,6 +17302,7 @@ async function performSingleJobCreate(storage, env, current, body, options = {})
       requester,
       billingMode,
       ...(chatSessionId ? { chatSessionId } : {}),
+      ...(clientOrderId ? { clientOrderId } : {}),
       ...(body.workflow_tag_hints || body.workflowTagHints ? { workflowTagHints: normalizeAgentTags(body.workflow_tag_hints || body.workflowTagHints, { max: 16 }) } : {}),
       ...(promptOptimizationMeta ? { promptOptimization: promptOptimizationMeta } : {}),
       ...(followupConversation ? { conversation: followupConversation } : {})
@@ -17317,7 +17321,7 @@ async function performSingleJobCreate(storage, env, current, body, options = {})
   }
   if (!picked) {
     const failedJob = {
-      id: crypto.randomUUID(),
+      id: clientOrderId || crypto.randomUUID(),
       jobKind: body.workflow_parent_id ? 'workflow_child' : 'job',
       parentAgentId: body.parent_agent_id,
       taskType,
@@ -17407,7 +17411,7 @@ async function performSingleJobCreate(storage, env, current, body, options = {})
       };
   const estimatedBilling = estimateBilling(picked.agent, estimatedUsage);
   const job = {
-    id: crypto.randomUUID(),
+    id: clientOrderId || crypto.randomUUID(),
     jobKind: body.workflow_parent_id ? 'workflow_child' : 'job',
     parentAgentId: body.parent_agent_id,
     taskType,
@@ -17624,6 +17628,52 @@ function jobSessionMatchesCreateBody(job = {}, body = {}) {
   return jobSessionId === requestedSessionId;
 }
 
+function normalizeClientOrderId(value = '') {
+  const id = String(value || '').trim();
+  if (!id || id.length > 96) return '';
+  return /^[A-Za-z0-9][A-Za-z0-9_-]{7,95}$/.test(id) ? id : '';
+}
+
+function clientOrderIdFromCreateBody(body = {}) {
+  const input = body?.input && typeof body.input === 'object' ? body.input : {};
+  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
+  return normalizeClientOrderId(
+    body?.client_order_id
+    || body?.clientOrderId
+    || input.client_order_id
+    || input.clientOrderId
+    || broker.clientOrderId
+    || broker.client_order_id
+    || ''
+  );
+}
+
+function persistedJobForClientOrderId(state = {}, body = {}) {
+  const clientOrderId = clientOrderIdFromCreateBody(body);
+  if (!clientOrderId) return null;
+  const jobs = Array.isArray(state?.jobs) ? state.jobs : [];
+  return jobs.find((job) => String(job?.id || '').trim() === clientOrderId) || null;
+}
+
+function createJobResponseFromPersistedJob(job = {}, options = {}) {
+  const isWorkflow = job.jobKind === 'workflow' || Boolean(job.workflow);
+  return {
+    ok: true,
+    idempotent: options.idempotent === true,
+    recovered: options.recovered === true,
+    code: options.code || (options.recovered ? 'order_create_recovered' : 'order_create_idempotent'),
+    warning: options.warning || undefined,
+    status: job.status || 'queued',
+    mode: isWorkflow ? 'workflow' : (job.status || 'queued'),
+    ...(isWorkflow ? { workflow_job_id: job.id } : { job_id: job.id }),
+    child_runs: isWorkflow && Array.isArray(job.workflow?.childRuns) ? job.workflow.childRuns : undefined,
+    planned_task_types: isWorkflow && Array.isArray(job.workflow?.plannedTasks) ? job.workflow.plannedTasks : undefined,
+    dispatch_status: job.dispatch?.completionStatus || job.status || null,
+    order_strategy_resolved: isWorkflow ? 'multi' : 'single',
+    selection_mode: job.selectionMode || (isWorkflow ? 'multi' : undefined)
+  };
+}
+
 function recentPersistedJobForCreateBody(state = {}, current = {}, body = {}, options = {}) {
   const maxAgeMs = Number(options.maxAgeMs || 5 * 60 * 1000);
   const nowMs = Date.now();
@@ -17631,6 +17681,7 @@ function recentPersistedJobForCreateBody(state = {}, current = {}, body = {}, op
   const requestedWorkflowParent = String(body?.workflow_parent_id || body?.workflowParentId || '').trim();
   const requestedStrategy = normalizeOrderStrategy(body?.order_strategy || body?.orderStrategy || body?.execution_mode || body?.executionMode);
   const requestedSessionId = String(body?.session_id || body?.sessionId || body?.input?.session_id || body?.input?.sessionId || body?.input?._broker?.chatSessionId || body?.input?._broker?.workflow?.chatSessionId || '').trim();
+  const requestedClientOrderId = clientOrderIdFromCreateBody(body);
   const preferWorkflow = !requestedWorkflowParent && requestedStrategy !== 'single';
   const jobs = Array.isArray(state?.jobs) ? state.jobs : [];
   return jobs
@@ -17639,10 +17690,11 @@ function recentPersistedJobForCreateBody(state = {}, current = {}, body = {}, op
       if (requestedParent && String(job.parentAgentId || '') !== requestedParent) return false;
       if (requestedWorkflowParent && String(job.workflowParentId || '') !== requestedWorkflowParent) return false;
       if (preferWorkflow && requestedStrategy === 'multi' && job.jobKind !== 'workflow') return false;
+      if (!jobRequesterMatchesCurrent(job, current)) return false;
+      const clientOrderMatches = requestedClientOrderId && String(job.id || '').trim() === requestedClientOrderId;
       const promptMatches = jobPromptMatchesCreateBody(job, body);
       const sessionMatches = jobSessionMatchesCreateBody(job, body);
-      if (!promptMatches && !(requestedSessionId && sessionMatches)) return false;
-      if (!jobRequesterMatchesCurrent(job, current)) return false;
+      if (!clientOrderMatches && !promptMatches && !(requestedSessionId && sessionMatches)) return false;
       const createdMs = Date.parse(job.createdAt || job.created_at || '');
       if (!Number.isFinite(createdMs) || nowMs - createdMs > maxAgeMs) return false;
       return true;
@@ -17685,18 +17737,11 @@ async function recoverCreateJobException(storage, current, body, error) {
       : 'order create exception before recovery', meta);
   } catch {}
   if (recoveredJob?.id) {
-    const isWorkflow = recoveredJob.jobKind === 'workflow';
-    return json({
-      ok: true,
+    return json(createJobResponseFromPersistedJob(recoveredJob, {
       recovered: true,
-      warning: 'Order was accepted, but the create response failed after persistence. CAIt recovered the persisted order instead of asking you to resubmit.',
       code: 'order_create_recovered',
-      status: recoveredJob.status || 'queued',
-      mode: isWorkflow ? 'workflow' : (recoveredJob.status || 'queued'),
-      ...(isWorkflow ? { workflow_job_id: recoveredJob.id } : { job_id: recoveredJob.id }),
-      dispatch_status: recoveredJob.dispatch?.completionStatus || recoveredJob.status || null,
-      order_strategy_resolved: isWorkflow ? 'multi' : 'single'
-    }, 202);
+      warning: 'Order was accepted, but the create response failed after persistence. CAIt recovered the persisted order instead of asking you to resubmit.'
+    }), 202);
   }
   return json({
     error: 'Order create failed before dispatch.',
@@ -17781,6 +17826,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
   const inputBase = body.input && typeof body.input === 'object' ? body.input : {};
   const inputSourceBase = mergeProtectedPromptSourceIntoInput(inputBase, promptOptimization);
   const chatSessionId = String(body.session_id || body.sessionId || inputSourceBase.session_id || inputSourceBase.sessionId || '').trim().slice(0, 160);
+  const clientOrderId = clientOrderIdFromCreateBody(body);
   const promptOptimizationMeta = promptOptimization.optimized ? promptOptimization.metadata : null;
   const workflowPrimary = String(plan.plannedTasks?.[0] || taskType || '').trim().toLowerCase();
   const workflowPseudoParent = {
@@ -17809,6 +17855,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
   const parentInput = {
     ...inputSourceBase,
     ...(chatSessionId && !inputSourceBase.session_id && !inputSourceBase.sessionId ? { session_id: chatSessionId } : {}),
+    ...(clientOrderId && !inputSourceBase.client_order_id && !inputSourceBase.clientOrderId ? { client_order_id: clientOrderId } : {}),
     ...(promptOptimizationMeta && !inputSourceBase.output_language && !inputSourceBase.outputLanguage
       ? { output_language: promptOptimization.outputLanguageCode }
       : {}),
@@ -17817,6 +17864,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
       requester,
       billingMode,
       ...(chatSessionId ? { chatSessionId } : {}),
+      ...(clientOrderId ? { clientOrderId } : {}),
       workflow: {
         ...workflowSharedMeta,
         sequencePhase: 'initial'
@@ -18644,7 +18692,25 @@ async function handleCreateJob(storage, request, env, ctx = null) {
     }
     const requestedStrategy = normalizeOrderStrategy(body.order_strategy || body.orderStrategy || body.execution_mode || body.executionMode);
     const asyncDispatch = body.async_dispatch === true || body.asyncDispatch === true || body.respond_async === true || body.respondAsync === true;
-    const state = requestedStrategy !== 'single' ? await storage.getState() : null;
+    const clientOrderId = clientOrderIdFromCreateBody(body);
+    const state = requestedStrategy !== 'single' || clientOrderId ? await storage.getState() : null;
+    if (clientOrderId && state) {
+      const existingClientOrder = persistedJobForClientOrderId(state, body);
+      if (existingClientOrder?.id) {
+        if (!jobRequesterMatchesCurrent(existingClientOrder, current)) {
+          await touchUsage();
+          return json({
+            error: 'Client order id is already used by another requester.',
+            code: 'client_order_id_conflict'
+          }, 409);
+        }
+        await touchUsage();
+        return json(createJobResponseFromPersistedJob(existingClientOrder, {
+          idempotent: true,
+          code: 'order_create_idempotent'
+        }), 202);
+      }
+    }
     let resolved = resolveOrderStrategy(state?.agents || [], body, requestedStrategy);
     resolved = await maybeRefineWorkflowPlanWithLeaderLlm(state?.agents || [], body, resolved, env);
     if (resolved?.error) {

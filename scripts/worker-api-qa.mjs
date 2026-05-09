@@ -57,6 +57,9 @@ assert.ok(workerSource.includes('function workflowBuiltInFailureRetryMeta'), 'bu
 assert.ok(workerSource.includes('function workflowLeaderControlTask'), 'leader checkpoint/final-summary control jobs should have explicit retry handling.');
 assert.ok(workerSource.includes('function workflowCompletionRecoveryMinAgeMs'), 'leader control jobs should not be recovered as stale before their generation budget expires.');
 assert.ok(workerSource.includes('Built-in agent generation exception:'), 'built-in workflow exceptions should fail/retry the job directly instead of leaving it locked until a sweep timeout.');
+assert.ok(workerSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
+assert.ok(workerSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');
+assert.ok(workerSource.includes('persistedJobForClientOrderId'), 'order create should check for an existing client order before creating a new job.');
 
 const env = {
   APP_VERSION: '0.2.0-test',
@@ -4400,6 +4403,71 @@ try {
   const providerSettingsAfter = await request('/api/settings', {}, { sessionCookie: aliceSession });
   assert.equal(providerSettingsAfter.status, 200);
   assert.ok(Number(providerSettingsAfter.body.account?.payout?.pendingBalance || 0) > providerPendingBefore);
+
+  const idempotentSinglePayload = {
+    parent_agent_id: 'qa-idempotency',
+    task_type: 'research',
+    order_strategy: 'single',
+    prompt: 'Research client order id idempotency for a single QA order.',
+    skip_intake: true,
+    client_order_id: 'qa_client_order_single_1',
+    input: {
+      client_order_id: 'qa_client_order_single_1',
+      _broker: {
+        clientOrderId: 'qa_client_order_single_1'
+      }
+    }
+  };
+  const idempotentSingleFirst = await request('/api/jobs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(idempotentSinglePayload)
+  });
+  assert.equal(idempotentSingleFirst.status, 201);
+  assert.equal(idempotentSingleFirst.body.job_id, idempotentSinglePayload.client_order_id);
+  const idempotentSingleSecond = await request('/api/jobs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(idempotentSinglePayload)
+  });
+  assert.equal(idempotentSingleSecond.status, 202);
+  assert.equal(idempotentSingleSecond.body.code, 'order_create_idempotent');
+  assert.equal(idempotentSingleSecond.body.idempotent, true);
+  assert.equal(idempotentSingleSecond.body.job_id, idempotentSingleFirst.body.job_id);
+
+  const idempotentWorkflowPayload = {
+    parent_agent_id: 'qa-idempotency',
+    task_type: 'cmo_leader',
+    order_strategy: 'multi',
+    prompt: 'CMO leader: verify client order id idempotency for a workflow QA order with growth, media planning, and SEO preparation.',
+    session_id: 'qa-client-order-workflow-session',
+    skip_intake: true,
+    budget_cap: 500,
+    async_dispatch: true,
+    client_order_id: 'qa_client_order_workflow_1',
+    input: {
+      client_order_id: 'qa_client_order_workflow_1',
+      _broker: {
+        clientOrderId: 'qa_client_order_workflow_1'
+      }
+    }
+  };
+  const idempotentWorkflowFirst = await request('/api/jobs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(idempotentWorkflowPayload)
+  });
+  assert.equal(idempotentWorkflowFirst.status, 201);
+  assert.equal(idempotentWorkflowFirst.body.workflow_job_id, idempotentWorkflowPayload.client_order_id);
+  const idempotentWorkflowSecond = await request('/api/jobs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(idempotentWorkflowPayload)
+  });
+  assert.equal(idempotentWorkflowSecond.status, 202);
+  assert.equal(idempotentWorkflowSecond.body.code, 'order_create_idempotent');
+  assert.equal(idempotentWorkflowSecond.body.idempotent, true);
+  assert.equal(idempotentWorkflowSecond.body.workflow_job_id, idempotentWorkflowFirst.body.workflow_job_id);
 
   const recoveredSingleOrder = await request('/api/jobs', {
     method: 'POST',

@@ -4258,6 +4258,43 @@ function sleep(ms = 0) {
   return new Promise((resolve) => window.setTimeout(resolve, Math.max(0, Number(ms || 0))));
 }
 
+function makeClientOrderId() {
+  try {
+    const generated = window.crypto?.randomUUID?.();
+    if (generated) return generated;
+  } catch {}
+  return `client_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizeClientOrderId(value = '') {
+  return String(value || '').trim();
+}
+
+function clientOrderIdFromOrderCreate(source = {}) {
+  const input = source?.input && typeof source.input === 'object' ? source.input : {};
+  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
+  return normalizeClientOrderId(
+    source?.client_order_id
+    || source?.clientOrderId
+    || input.client_order_id
+    || input.clientOrderId
+    || broker.clientOrderId
+    || broker.client_order_id
+    || ''
+  );
+}
+
+function orderCreateRequestBody(payload = {}) {
+  const {
+    _caitRecoveryStartedAt,
+    _cait_recovery_started_at,
+    _caitRecoveryNoticeShown,
+    _caitRecoveryRetried,
+    ...body
+  } = payload || {};
+  return JSON.stringify(body);
+}
+
 function normalizeRecoveryText(value = '') {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }
@@ -4295,6 +4332,8 @@ function recoveryCandidate(job = {}, payload = {}) {
   if (!job?.id) return false;
   const parentAgent = String(payload?.parent_agent_id || '').trim();
   if (parentAgent && String(job.parentAgentId || '') !== parentAgent) return false;
+  const requestedClientOrderId = clientOrderIdFromOrderCreate(payload);
+  if (requestedClientOrderId && String(job.id || '').trim() === requestedClientOrderId) return true;
   const createdMs = Date.parse(job.createdAt || job.created_at || '');
   if (!Number.isFinite(createdMs) || Date.now() - createdMs > 10 * 60 * 1000) return false;
   const recoveryStartedRaw = payload?._caitRecoveryStartedAt || payload?._cait_recovery_started_at || 0;
@@ -4310,23 +4349,22 @@ function recoveryCandidate(job = {}, payload = {}) {
 
 function createdPayloadFromRecoveredJob(job = {}) {
   const isWorkflow = job?.jobKind === 'workflow' || Boolean(job?.workflow);
+  const workflow = job?.workflow && typeof job.workflow === 'object' ? job.workflow : null;
+  const childRuns = Array.isArray(workflow?.childRuns) ? workflow.childRuns : [];
   return {
     ok: true,
     recovered: true,
+    code: 'client_order_create_recovered',
     status: job.status || 'queued',
     mode: isWorkflow ? 'workflow' : (job.status || 'queued'),
     ...(isWorkflow ? { workflow_job_id: job.id } : { job_id: job.id }),
-    workflow: job.workflow || undefined,
+    child_runs: childRuns,
+    workflow: workflow || undefined,
     routing_reason: 'Recovered from order history after the create response failed.'
   };
 }
 
-async function recoverAcceptedOrderAfterCreateError(payload = {}, error = null) {
-  const status = Number(error?.status || 0);
-  const message = String(error?.message || error || '').toLowerCase();
-  const shouldTry = status >= 500 || /failed to fetch|networkerror|load failed|network request failed/.test(message);
-  if (!shouldTry) return null;
-  appendTextMessage('system', 'The create response failed, but the order may already be saved. Checking history before retrying.');
+async function findRecoveredOrderCreatePayload(payload = {}) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (attempt) await sleep(900 * attempt);
     try {
@@ -4345,6 +4383,37 @@ async function recoverAcceptedOrderAfterCreateError(payload = {}, error = null) 
       }
     } catch {}
   }
+  return null;
+}
+
+async function recoverAcceptedOrderAfterCreateError(payload = {}, error = null) {
+  const status = Number(error?.status || 0);
+  const message = String(error?.message || error || '').toLowerCase();
+  const shouldTry = status >= 500 || /failed to fetch|networkerror|load failed|network request failed/.test(message);
+  if (!shouldTry) return null;
+  if (!payload._caitRecoveryNoticeShown) {
+    payload._caitRecoveryNoticeShown = true;
+    appendTextMessage('system', 'The create response failed, so I am checking whether the order was saved before retrying the same request.');
+  }
+  payload._caitRecoveryStartedAt = payload._caitRecoveryStartedAt || Date.now();
+  const recoveredBeforeRetry = await findRecoveredOrderCreatePayload(payload);
+  if (recoveredBeforeRetry) return recoveredBeforeRetry;
+  const clientOrderId = clientOrderIdFromOrderCreate(payload);
+  if (!payload._caitRecoveryRetried && clientOrderId) {
+    payload._caitRecoveryRetried = true;
+    appendTextMessage('system', 'No saved order was found yet. Retrying the same idempotent order request once.');
+    try {
+      return await api('/api/jobs', {
+        method: 'POST',
+        body: orderCreateRequestBody(payload)
+      });
+    } catch (retryError) {
+      const recoveredAfterRetry = await findRecoveredOrderCreatePayload(payload);
+      if (recoveredAfterRetry) return recoveredAfterRetry;
+      throw retryError;
+    }
+  }
+  appendTextMessage('system', 'No saved order was found after the failed create response. The order was not accepted; retry is safe.');
   return null;
 }
 
@@ -5758,9 +5827,18 @@ async function sendOrder() {
     const followupToJobId = String(acceptedDraft.followupToJobId || acceptedDraft.followup_to_job_id || acceptedDraft.input?._broker?.conversation?.followupToJobId || '').trim();
     if (followupToJobId) payload.followup_to_job_id = followupToJobId;
     payload.session_id = chatSessionId;
+    const clientOrderId = clientOrderIdFromOrderCreate(payload) || makeClientOrderId();
+    payload.client_order_id = clientOrderId;
+    payload.clientOrderId = clientOrderId;
     payload.input = {
       ...(payload.input || {}),
-      session_id: chatSessionId
+      session_id: chatSessionId,
+      client_order_id: clientOrderId,
+      _broker: {
+        ...((payload.input && typeof payload.input === 'object' && payload.input._broker && typeof payload.input._broker === 'object') ? payload.input._broker : {}),
+        clientOrderId,
+        clientOrderPreparedAt: new Date().toISOString()
+      }
     };
     rememberPendingRecoveryPayload(payload);
     appendTextMessage('system', 'Sending order. I will keep polling and post progress here.');
@@ -5778,7 +5856,7 @@ async function sendOrder() {
     try {
       created = await api('/api/jobs', {
         method: 'POST',
-        body: JSON.stringify(payload)
+        body: orderCreateRequestBody(payload)
       });
     } catch (error) {
       const recovered = await recoverAcceptedOrderAfterCreateError(payload, error);

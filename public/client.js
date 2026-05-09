@@ -1020,6 +1020,39 @@ function orderCreateRecoverySessionId(source = {}) {
   ).trim();
 }
 
+function makeClientOrderId() {
+  try {
+    const generated = window.crypto?.randomUUID?.();
+    if (generated) return generated;
+  } catch {}
+  return `client_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function clientOrderIdFromOrderCreate(source = {}) {
+  const input = source?.input && typeof source.input === 'object' ? source.input : {};
+  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
+  return String(
+    source?.client_order_id
+    || source?.clientOrderId
+    || input.client_order_id
+    || input.clientOrderId
+    || broker.clientOrderId
+    || broker.client_order_id
+    || ''
+  ).trim();
+}
+
+function orderCreateRequestBody(payload = {}) {
+  const {
+    _caitRecoveryStartedAt,
+    _cait_recovery_started_at,
+    _caitRecoveryNoticeShown,
+    _caitRecoveryRetried,
+    ...body
+  } = payload || {};
+  return JSON.stringify(body);
+}
+
 function normalizeOrderCreateRecoveryText(value = '') {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }
@@ -1050,6 +1083,8 @@ function orderCreateRecoveryCandidate(job = {}, payload = {}) {
   if (!job?.id) return false;
   const parentAgent = String(payload?.parent_agent_id || '').trim();
   if (parentAgent && String(job.parentAgentId || '') !== parentAgent) return false;
+  const requestedClientOrderId = clientOrderIdFromOrderCreate(payload);
+  if (requestedClientOrderId && String(job.id || '').trim() === requestedClientOrderId) return true;
   const createdMs = Date.parse(job.createdAt || job.created_at || '');
   if (!Number.isFinite(createdMs) || Date.now() - createdMs > 10 * 60 * 1000) return false;
   const promptMatches = orderCreateRecoveryPromptMatches(job, payload);
@@ -1225,6 +1260,7 @@ async function recoverAcceptedOrderAfterCreateError(payload = {}, options = {}) 
     || Number(options.error?.status || 0) >= 500
     || String(options.error?.data?.code || '') === 'order_create_failed';
   if (!shouldTry) return null;
+  payload._caitRecoveryStartedAt = payload._caitRecoveryStartedAt || Date.now();
   updateWorkChatStatusCard(
     ja ? '受付状況を確認しています。' : 'Checking order acceptance.',
     ja
@@ -1258,6 +1294,47 @@ async function recoverAcceptedOrderAfterCreateError(payload = {}, options = {}) 
         return createdPayloadFromRecoveredJob(recovered);
       }
     } catch {}
+  }
+  const clientOrderId = clientOrderIdFromOrderCreate(payload);
+  if (!payload._caitRecoveryRetried && clientOrderId) {
+    payload._caitRecoveryRetried = true;
+    updateWorkChatStatusCard(
+      ja ? '同じ受付IDで再送しています。' : 'Retrying the same order request.',
+      ja
+        ? '保存済みオーダーがまだ見つからないため、同じ受付IDで一度だけ安全に再送しています。'
+        : 'No saved order was found yet, so CAIt is retrying the same idempotent order request once.',
+      'info'
+    );
+    if (els.runCreateStatus) {
+      els.runCreateStatus.textContent = ja
+        ? '同じ受付IDで再送しています。\n\n重複注文にならないよう、一度だけ安全に再送しています。'
+        : 'Retrying the same order request.\n\nUsing the same client order ID so this cannot create a duplicate order.';
+      els.runCreateStatus.className = 'detail-box action-card info compact-card';
+    }
+    try {
+      return await api('/api/jobs', {
+        method: 'POST',
+        body: orderCreateRequestBody(payload)
+      });
+    } catch (retryError) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        if (attempt) await waitForNetworkRetry(800 * attempt);
+        try {
+          const result = await api(`/api/jobs?limit=20&visitor_id=${encodeURIComponent(visitorId())}`, {
+            preserveAuthOn401: true
+          });
+          const jobs = Array.isArray(result?.jobs) ? result.jobs : [];
+          const recovered = jobs
+            .filter((job) => orderCreateRecoveryCandidate(job, payload))
+            .sort((left, right) => String(right?.createdAt || '').localeCompare(String(left?.createdAt || '')))[0] || null;
+          if (recovered?.id) {
+            mergeProgressJobIntoSnapshot(recovered);
+            return createdPayloadFromRecoveredJob(recovered);
+          }
+        } catch {}
+      }
+      throw retryError;
+    }
   }
   return null;
 }
@@ -25527,6 +25604,24 @@ async function createAndOptionallyRunJob() {
       visitor_id: visitorId(),
       async_dispatch: true
     };
+    const clientOrderId = clientOrderIdFromOrderCreate(payload) || makeClientOrderId();
+    const payloadInput = payload.input && typeof payload.input === 'object' && !Array.isArray(payload.input)
+      ? payload.input
+      : {};
+    const payloadBroker = payloadInput._broker && typeof payloadInput._broker === 'object' && !Array.isArray(payloadInput._broker)
+      ? payloadInput._broker
+      : {};
+    payload.client_order_id = clientOrderId;
+    payload.clientOrderId = clientOrderId;
+    payload.input = {
+      ...payloadInput,
+      client_order_id: clientOrderId,
+      _broker: {
+        ...payloadBroker,
+        clientOrderId,
+        clientOrderPreparedAt: new Date().toISOString()
+      }
+    };
     dispatchInFlightKey = compactChatText([
       payload.session_id || payload.sessionId || '',
       payload.parent_agent_id || '',
@@ -25588,7 +25683,7 @@ async function createAndOptionallyRunJob() {
     });
     stopAcceptanceProgress = startOpenChatAcceptanceProgress(payload.prompt, { ja: sendingJa });
     flash(sendingJa ? '発注を送信中です。' : 'Sending order request...', 'info');
-    created = await api('/api/jobs', { method: 'POST', body: JSON.stringify(payload) });
+    created = await api('/api/jobs', { method: 'POST', body: orderCreateRequestBody(payload) });
   } catch (error) {
     stopAcceptanceProgress();
     const recovered = await recoverAcceptedOrderAfterCreateError(payload, { error, ja: sendingJa });

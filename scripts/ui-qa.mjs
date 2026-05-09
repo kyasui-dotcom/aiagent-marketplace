@@ -652,6 +652,12 @@ assert.ok(chatJs.includes('isNonOrderConversationIntentText'), 'Chat should keep
 assert.ok(chatJs.includes('const matchesTracked = state.trackedOrderIds.has(safeId)'), 'Chat backfill should only auto-deliver explicitly tracked orders or active recovery candidates.');
 assert.ok(chatJs.includes('if (!matchesTracked && !matchesRecovery) continue;'), 'Chat backfill should not dump every historical chatux job into a new chat.');
 assert.ok(chatJs.includes('_caitRecoveryStartedAt'), 'Chat recovery matching should ignore older same-session jobs from before the current send attempt.');
+assert.ok(chatJs.includes('client_order_id'), 'Chat order create should include a client order id for idempotent recovery.');
+assert.ok(chatJs.includes('orderCreateRequestBody(payload)'), 'Chat order create should strip local recovery markers before POSTing.');
+assert.ok(chatJs.includes('Retrying the same idempotent order request once'), 'Chat recovery should safely retry the same idempotent create request once.');
+assert.ok(clientJs.includes('client_order_id'), 'Open Chat order create should include a client order id for idempotent recovery.');
+assert.ok(clientJs.includes('orderCreateRequestBody(payload)'), 'Open Chat order create should strip local recovery markers before POSTing.');
+assert.ok(clientJs.includes('same idempotent order request once'), 'Open Chat recovery should safely retry the same idempotent create request once.');
 assert.ok(chatJs.includes('includeHistoricalTracked'), 'Chat backfill should ignore historical tracked orders while a current order is attached.');
 assert.ok(chatJs.includes('renderTerminalDeliveries: false'), 'Chat startup should not render historical terminal deliveries automatically.');
 assert.ok(!chatJs.includes("String(job?.parentAgentId || '').trim() === 'chatux'"), 'Chat startup recovery should not match all historical chatux parent jobs.');
