@@ -59,6 +59,9 @@ async function main() {
     const envExample = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
     assert.ok(envExample.includes('SESSION_SECRET='));
     assert.ok(envExample.includes('Hosted runtime must use Cloudflare bindings.'));
+    assert.ok(envExample.includes('ADMIN_DASHBOARD_LOGINS=yasuikunihiro@gmail.com,e2e@aiagent-marketplace.net'), 'E2E auth account should stay admin so production order E2E can pass billing gate.');
+    const wranglerConfig = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
+    assert.ok(wranglerConfig.includes('"ADMIN_DASHBOARD_LOGINS": "yasuikunihiro@gmail.com,e2e@aiagent-marketplace.net"'), 'Cloudflare deploy vars should mark the E2E auth account as admin/test billing.');
 
     const deploymentDoc = readFileSync(new URL('../DEPLOYMENT.md', import.meta.url), 'utf8');
     assert.ok(deploymentDoc.includes('Cloudflare Workers + D1'));

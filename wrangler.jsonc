@@ -28,7 +28,7 @@
     "WORKFLOW_ORCHESTRATION_STALE_MS": "60000",
     "WORKFLOW_ORCHESTRATION_BLOCKED_MS": "600000",
     "QUEUED_DISPATCH_SWEEP_LIMIT": "12",
-    "ADMIN_DASHBOARD_LOGINS": "yasuikunihiro@gmail.com",
+    "ADMIN_DASHBOARD_LOGINS": "yasuikunihiro@gmail.com,e2e@aiagent-marketplace.net",
     "FEEDBACK_EMAIL_TO": "support@aiagent-marketplace.net",
     "FEEDBACK_EMAIL_DELIVERY_TO": "yasuikunihiro@gmail.com",
     "FEEDBACK_EMAIL_FROM": "support@aiagent-marketplace.net"
