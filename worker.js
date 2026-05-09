@@ -20255,6 +20255,12 @@ export default {
         await sweepTimedOutJobs(storage, {
           eventSource: 'cron'
         });
+        await runWorkflowTimeoutRetrySweep(storage, env, {
+          source: 'minute-cron',
+          cron,
+          limit: Math.min(5, Number(env?.WORKFLOW_TIMEOUT_RETRY_SWEEP_LIMIT || 5) || 5),
+          waitUntil: (promise) => ctx.waitUntil(promise)
+        });
         await runWorkflowOrchestrationWatchdog(storage, env, {
           source: 'minute-cron',
           cron,
