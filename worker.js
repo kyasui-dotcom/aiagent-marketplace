@@ -15597,6 +15597,70 @@ async function scheduleProgressDispatchForJobId(storage, env, waitUntil, jobId, 
   };
 }
 
+function workflowShouldCompleteDataUnavailable(job = {}) {
+  return workflowTaskName(job) === 'data_analysis'
+    && workflowSequencePhaseForJob(job) === 'data'
+    && !workflowJobHasAttachedDataContext(job);
+}
+
+function workflowDataUnavailableCompletionPayload(job = {}) {
+  const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
+    ? job.input._broker.workflow
+    : {};
+  const objective = workflowClipText(workflow.objective || workflow.originalPrompt || job.prompt || 'Data analysis', 360);
+  const summary = 'Data layer skipped because no analytics/data context is attached; assumptions are explicit.';
+  const nextAction = 'Proceed to research, planning, and preparation with the no-data assumption. Rerun only the data layer after GA4/Search Console or exported analytics context is attached.';
+  const bullets = [
+    'No GA4, Search Console, internal event, billing, or order-data context is attached to this run.',
+    'No measured funnel, query, acquisition channel, or conversion-rate metrics were invented.',
+    'Downstream agents should use public research, competitor/channel evidence, and the user-stated goal.'
+  ];
+  const markdown = [
+    '# Data layer skip packet',
+    '',
+    '## Objective',
+    objective,
+    '',
+    '## Source status',
+    ...bullets.map((item) => `- ${item}`),
+    '',
+    '## Next action',
+    nextAction
+  ].join('\n');
+  return {
+    accepted: true,
+    status: 'completed',
+    summary,
+    report: {
+      summary,
+      bullets,
+      nextAction,
+      confidence: 'medium',
+      web_sources: [],
+      assumptions: bullets,
+      process: [
+        'DATA_CONTEXT_CHECK (0ms, completed): No analytics/data app context attached.',
+        'HANDOFF (0ms, completed): Proceeding without invented metrics.'
+      ]
+    },
+    files: [
+      {
+        name: 'data-layer-skip-packet.md',
+        type: 'text/markdown',
+        content: markdown
+      }
+    ],
+    usage: {
+      api_cost: 0,
+      total_cost_basis: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0
+    },
+    return_targets: ['chat', 'api']
+  };
+}
+
 async function runBuiltInAgentWithWorkflowQueueGuard(sampleKind, payload, env, job = {}, sourceTimeoutMs = 30000) {
   if (!workflowQualitySourceTask(job)) return runBuiltInAgent(sampleKind, payload, env);
   const timeoutMs = workflowQueueGenerationTimeoutMs(env, sourceTimeoutMs);
@@ -15682,14 +15746,16 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
         return { updated: 1 };
       });
     }
-    const payload = buildCompactBuiltInDispatchPayload(effectiveLocked, agent);
     const sourceTimeoutMs = workflowQueueSourceCollectionTimeoutMs(env);
     const generationEnv = {
       ...env,
       WORKFLOW_SOURCE_COLLECTION_TIMEOUT_MS: String(sourceTimeoutMs),
       WORKFLOW_RESEARCH_SOURCE_TIMEOUT_MS: String(sourceTimeoutMs)
     };
-    const body = await runBuiltInAgentWithWorkflowQueueGuard(sampleKind, payload, generationEnv, effectiveLocked, sourceTimeoutMs);
+    const payload = buildCompactBuiltInDispatchPayload(effectiveLocked, agent);
+    const body = workflowShouldCompleteDataUnavailable(effectiveLocked)
+      ? workflowDataUnavailableCompletionPayload(effectiveLocked)
+      : await runBuiltInAgentWithWorkflowQueueGuard(sampleKind, payload, generationEnv, effectiveLocked, sourceTimeoutMs);
     const normalized = normalizeDispatchResponse(body);
     if (normalized.failed) {
       const failureReason = normalized.failureReason || 'Built-in agent generation failed';
