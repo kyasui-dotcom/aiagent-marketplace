@@ -15851,7 +15851,33 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
           if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'completion_sweep_running') return null;
           const attempts = Number(draftJob.dispatch?.attempts || 0) + 1;
           const retryLimit = workflowCompletionRetryLimitForJob(env, draftJob);
-          if (attempts > retryLimit) return null;
+          if (attempts > retryLimit) {
+            const at = nowIso();
+            const sourceFailure = workflowQualitySourceTask(draftJob);
+            draftJob.status = 'failed';
+            draftJob.failedAt = at;
+            draftJob.timedOutAt = draftJob.timedOutAt || at;
+            draftJob.failureReason = sourceFailure
+              ? `Source collection did not return a durable source packet after ${retryLimit} queue attempt(s). No fallback content was used.`
+              : `Workflow dispatch queue generation did not finish after ${retryLimit} queue attempt(s).`;
+            draftJob.failureCategory = sourceFailure ? 'missing_required_sources' : 'dispatch_queue_timeout';
+            if (draftJob.billingReservation && !draftJob.billingSettlement?.settledAt && !draftJob.billingReservation?.releasedAt) {
+              releaseBillingReservationInState(draft, draftJob);
+            }
+            draftJob.dispatch = {
+              ...(draftJob.dispatch || {}),
+              completionStatus: sourceFailure ? 'source_collection_exhausted' : 'completion_sweep_exhausted',
+              attempts,
+              retryable: false,
+              nextRetryAt: null,
+              maxRetries: retryLimit
+            };
+            draftJob.logs = [
+              ...(draftJob.logs || []),
+              draftJob.failureReason
+            ];
+            return cloneJob(draftJob);
+          }
           const at = nowIso();
           draftJob.status = 'queued';
           draftJob.startedAt = null;
@@ -15881,7 +15907,33 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
           if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'completion_sweep_running') return null;
           const attempts = Number(draftJob.dispatch?.attempts || 0) + 1;
           const retryLimit = workflowCompletionRetryLimitForJob(env, draftJob);
-          if (attempts > retryLimit) return null;
+          if (attempts > retryLimit) {
+            const at = nowIso();
+            const sourceFailure = workflowQualitySourceTask(draftJob);
+            draftJob.status = 'failed';
+            draftJob.failedAt = at;
+            draftJob.timedOutAt = draftJob.timedOutAt || at;
+            draftJob.failureReason = sourceFailure
+              ? `Source collection did not return a durable source packet after ${retryLimit} queue attempt(s). No fallback content was used.`
+              : `Workflow dispatch queue generation did not finish after ${retryLimit} queue attempt(s).`;
+            draftJob.failureCategory = sourceFailure ? 'missing_required_sources' : 'dispatch_queue_timeout';
+            if (draftJob.billingReservation && !draftJob.billingSettlement?.settledAt && !draftJob.billingReservation?.releasedAt) {
+              releaseBillingReservationInState(draft, draftJob);
+            }
+            draftJob.dispatch = {
+              ...(draftJob.dispatch || {}),
+              completionStatus: sourceFailure ? 'source_collection_exhausted' : 'completion_sweep_exhausted',
+              attempts,
+              retryable: false,
+              nextRetryAt: null,
+              maxRetries: retryLimit
+            };
+            draftJob.logs = [
+              ...(draftJob.logs || []),
+              draftJob.failureReason
+            ];
+            return cloneJob(draftJob);
+          }
           const at = nowIso();
           draftJob.status = 'queued';
           draftJob.startedAt = null;
@@ -15906,8 +15958,13 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
           return cloneJob(draftJob);
         });
     if (retriedJob) {
-      retriedRecoveredSweep.push(retriedJob.id);
-      await touchEvent(storage, 'RETRY', `${retriedJob.taskType}/${retriedJob.id.slice(0, 6)} stale completion sweep requeued`);
+      if (isTerminalJobStatus(retriedJob.status)) {
+        expired.push(retriedJob.id);
+        await touchEvent(storage, 'FAILED', `${retriedJob.taskType}/${retriedJob.id.slice(0, 6)} stale completion sweep exhausted`);
+      } else {
+        retriedRecoveredSweep.push(retriedJob.id);
+        await touchEvent(storage, 'RETRY', `${retriedJob.taskType}/${retriedJob.id.slice(0, 6)} stale completion sweep requeued`);
+      }
       if (retriedJob.workflowParentId) await reconcileWorkflowParent(storage, retriedJob.workflowParentId);
     }
   }
