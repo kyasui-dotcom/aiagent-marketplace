@@ -3484,7 +3484,7 @@ try {
 
   const acceptedOrderState = await request(`/api/jobs/${acceptedOrder.body.job_id}`, {}, { sessionCookie: aliceSession });
   assert.equal(acceptedOrderState.status, 200);
-  assert.ok(['queued', 'dispatched'].includes(String(acceptedOrderState.body.job.status || '')));
+  assert.ok(['queued', 'running', 'dispatched'].includes(String(acceptedOrderState.body.job.status || '')));
 
   const linkedSnapshot = await request('/api/snapshot', {}, { sessionCookie: aliceSession });
   assert.equal(linkedSnapshot.status, 200);

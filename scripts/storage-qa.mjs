@@ -91,6 +91,42 @@ const terminalJob = afterTerminalMerge.jobs.find((job) => job.id === 'terminal-c
 assert.equal(terminalJob.status, 'completed', 'completed job must not be overwritten by a later stale timeout mutation');
 assert.ok(terminalJob.logs.includes('stale timeout mutation'), 'diagnostic logs can merge without changing terminal success');
 
+const sweepLockedJob = {
+  id: 'active-dispatch-job',
+  parentAgentId: 'qa',
+  taskType: 'research',
+  prompt: 'active dispatch should not regress',
+  input: {},
+  priority: 'normal',
+  status: 'running',
+  createdAt: '2026-04-25T10:00:00.000Z',
+  startedAt: '2026-04-25T10:01:00.000Z',
+  dispatch: {
+    completionStatus: 'completion_sweep_running',
+    completionSweepRequestedAt: '2026-04-25T10:02:00.000Z'
+  },
+  logs: ['queue consumer locked this job']
+};
+await storage.replaceState({
+  ...(await storage.getState()),
+  jobs: [sweepLockedJob]
+});
+await storage.replaceState({
+  ...(await storage.getState()),
+  jobs: [{
+    ...sweepLockedJob,
+    dispatch: {
+      completionStatus: 'completion_queued',
+      completionQueueRequestedAt: '2026-04-25T10:03:00.000Z'
+    },
+    logs: ['late queue write']
+  }]
+});
+const afterDispatchRegressionMerge = await storage.getState();
+const activeDispatchJob = afterDispatchRegressionMerge.jobs.find((job) => job.id === 'active-dispatch-job');
+assert.equal(activeDispatchJob.dispatch.completionStatus, 'completion_sweep_running', 'late completion_queued writes must not regress an active sweep lock');
+assert.ok(activeDispatchJob.logs.includes('late queue write'), 'late queue diagnostics should merge without reverting dispatch progress');
+
 const recoverState = {
   accounts: [],
   jobs: [{
