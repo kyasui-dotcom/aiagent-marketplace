@@ -5848,7 +5848,7 @@ function startPolling(orderId) {
       const job = result.job && typeof result.job === 'object' ? { ...result.job, id: result.job.id || orderId } : { id: orderId };
       const key = `${job.status}|${job.completedAt || ''}|${job.failedAt || ''}|${job.failureReason || ''}|${JSON.stringify(job.workflow?.agentStatusCounts || job.workflow?.statusCounts || {})}|${workflowCurrentLocationLabel(job)}`;
       const phaseKey = workflowCurrentPhaseKey(job);
-      maybeRenderAuthorityNotice(job, { label: 'Approval required' });
+      const approvalWaiting = authorityNeedsApproval(authorityRequestFromJob(job));
       showProgressNarrator(progressNarratorTextForJob(job), progressNarratorOptionsForJob(job));
       if (key !== lastKey) {
         lastKey = key;
@@ -5859,6 +5859,14 @@ function startPolling(orderId) {
         lastPhaseKey = phaseKey;
         const phaseMap = shouldRenderPhaseMap ? workflowPhaseProgressMapHtml(job) : '';
         if (phaseMap) appendMessage('assistant', phaseMap, { tone: 'info', label: 'Progress map' });
+      }
+      maybeRenderAuthorityNotice(job, { label: 'Approval required' });
+      if (approvalWaiting && String(job.status || '').trim().toLowerCase() === 'blocked') {
+        window.clearInterval(state.polling);
+        state.polling = null;
+        updateComposerMode();
+        startDeliveryBackfillLoop({ maxRuns: 12, renderTerminalDeliveries: false });
+        return;
       }
       if (isTerminalStatus(job.status)) {
         window.clearInterval(state.polling);

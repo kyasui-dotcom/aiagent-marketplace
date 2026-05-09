@@ -4309,6 +4309,7 @@ function authorityBlockReasonFromRequest(request = null, fallback = 'External ex
 
 function markJobBlockedForAuthority(job = {}, request = null, fallback = 'External execution is blocked waiting for connector approval.') {
   const reason = authorityBlockReasonFromRequest(request, fallback);
+  const logLine = `blocked waiting for authority approval: ${reason}`;
   job.status = 'blocked';
   job.completedAt = null;
   job.failedAt = null;
@@ -4324,11 +4325,57 @@ function markJobBlockedForAuthority(job = {}, request = null, fallback = 'Extern
     nextRetryAt: null,
     completedAt: null
   };
-  job.logs = [
-    ...(job.logs || []),
-    `blocked waiting for authority approval: ${reason}`
-  ];
+  job.logs = (job.logs || []).includes(logLine)
+    ? (job.logs || [])
+    : [...(job.logs || []), logLine];
   return job;
+}
+
+function workflowParentAuthorityRequest(parent = {}) {
+  const request = authorityRequestFromReport(parent?.output?.report);
+  if (!authorityRequestRequiresApproval(request)) return null;
+  const source = String(request?.source || request?.reason_code || request?.reasonCode || '').trim().toLowerCase();
+  if (source === 'leader_execution_approval') return null;
+  const missingConnectors = authorityStringList(
+    request?.missing_connectors || request?.missingConnectors || request?.connectors,
+    8,
+    60
+  );
+  const missingCapabilities = authorityStringList(
+    request?.missing_connector_capabilities || request?.missingConnectorCapabilities || request?.capabilities,
+    16,
+    120
+  );
+  const googleSources = authorityStringList(
+    request?.required_google_sources || request?.requiredGoogleSources || request?.google_source_types || request?.googleSourceTypes,
+    8,
+    60
+  );
+  const explicitSelection = authorityBool(
+    request?.required_channel_selection
+      || request?.requiredChannelSelection
+      || request?.required_repository_selection
+      || request?.requiredRepositorySelection
+      || request?.required_account_selection
+      || request?.requiredAccountSelection
+  );
+  const writeCapabilities = missingCapabilities.filter((item) => (
+    /(post|publish|send|write|submit|create|update|delete|calendar|gmail|email|x\.post|github\.write)/i.test(String(item || ''))
+    && !/^google\.read_/i.test(String(item || ''))
+  ));
+  const sourceReadCapabilities = missingCapabilities.filter((item) => (
+    /^(google|github)\.read_/i.test(String(item || ''))
+    || /^read_/i.test(String(item || ''))
+  ));
+  const sourceConnectors = missingConnectors.filter((item) => (
+    /^(google|ga4|gsc|search_console|google_analytics|analytics|drive|search|web_search|brave)$/i.test(String(item || ''))
+  ));
+  return googleSources.length
+    || sourceReadCapabilities.length
+    || (sourceConnectors.length && sourceConnectors.length === missingConnectors.length && !writeCapabilities.length)
+    || (explicitSelection && !writeCapabilities.length)
+    ? request
+    : null;
 }
 
 function shouldBlockCompletedJobForAuthorityRequest(job = {}, request = null) {
@@ -11999,6 +12046,11 @@ async function reconcileWorkflowParent(storage, parentJobId) {
       if (finalSummaryJobId && finalSummaryStatus !== 'completed') {
         parent.output = buildAgentTeamDeliveryOutput(parent, children);
         syncJobAuthorityRequest(parent);
+        const authorityRequest = workflowParentAuthorityRequest(parent);
+        if (authorityRequest) {
+          markJobBlockedForAuthority(parent, authorityRequest, 'Workflow is blocked waiting for connector approval before retrying specialist runs.');
+          return cloneJob(parent);
+        }
         const blockedParentStatus = workflowBlockedParentStatus(parent, children, blockingChildren);
         parent.status = blockedParentStatus
           || (children.some((item) => active.has(item.status)) || blocked.length ? 'running' : 'queued');
@@ -12023,6 +12075,11 @@ async function reconcileWorkflowParent(storage, parentJobId) {
     parent.output = buildAgentTeamDeliveryOutput(parent, children);
     const explicitParentAuthorityRequest = authorityRequestFromReport(parent.output?.report);
     const parentAuthorityRequest = syncJobAuthorityRequest(parent);
+    const workflowAuthorityRequest = workflowParentAuthorityRequest(parent);
+    if (workflowAuthorityRequest) {
+      markJobBlockedForAuthority(parent, workflowAuthorityRequest, 'Workflow is blocked waiting for connector approval before retrying specialist runs.');
+      return cloneJob(parent);
+    }
     if (!children.length) {
       parent.status = 'failed';
       parent.failedAt = nowIso();
@@ -14803,6 +14860,7 @@ function pickProgressDispatchTargets(state, jobId, options = {}) {
       parentOrJob,
       state.jobs.filter((item) => item.workflowParentId === parentOrJob.id)
     );
+    if (workflowParentAuthorityRequest(parentOrJob)) return [];
     const leaderSequence = workflowLeaderSequence(parentOrJob);
     const leaderChildren = children.filter((child) => isWorkflowLeaderTask(workflowTaskName(child)));
     const pendingLeader = leaderChildren.find((child) => !workflowChildIsTerminal(child) && String(child.status || '').toLowerCase() !== 'blocked');
@@ -14850,6 +14908,7 @@ function pickProgressDispatchTargets(state, jobId, options = {}) {
     return targets;
   }
   const agent = state.agents.find((item) => item.id === parentOrJob.assignedAgentId);
+  if (workflowParentAuthorityRequest(parentOrJob)) return [];
   if (!canAutoScheduleAsyncDispatch(parentOrJob, agent)) return [];
   if (dispatchScheduleIsFreshForAgent(parentOrJob, agent, now)) return [];
   return [{ job: parentOrJob, agent, parentJobId: parentOrJob.workflowParentId || null, workflowLeaderHandoff: null }];
@@ -15980,6 +16039,12 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
       })
     : [];
   for (const staleRecoveredJob of staleRecoveredSweepJobs) {
+    const approvalPause = await pauseWorkflowChildDispatchForParentAuthority(storage, staleRecoveredJob);
+    if (approvalPause.paused) {
+      skipped.approval_waiting_retry_paused = (skipped.approval_waiting_retry_paused || 0) + 1;
+      if (staleRecoveredJob.workflowParentId) await reconcileWorkflowParent(storage, staleRecoveredJob.workflowParentId);
+      continue;
+    }
     const retriedJob = typeof storage.mutateJobAndAgent === 'function'
       ? await storage.mutateJobAndAgent(staleRecoveredJob.id, staleRecoveredJob.assignedAgentId, (draft) => {
           const draftJob = draft.jobs.find((item) => item.id === staleRecoveredJob.id);
@@ -16112,6 +16177,12 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
       })
     : [];
   for (const staleJob of staleSweepJobs) {
+    const approvalPause = await pauseWorkflowChildDispatchForParentAuthority(storage, staleJob);
+    if (approvalPause.paused) {
+      skipped.approval_waiting_retry_paused = (skipped.approval_waiting_retry_paused || 0) + 1;
+      if (staleJob.workflowParentId) await reconcileWorkflowParent(storage, staleJob.workflowParentId);
+      continue;
+    }
     const expiredJob = typeof storage.mutateJobAndAgent === 'function'
       ? await storage.mutateJobAndAgent(staleJob.id, staleJob.assignedAgentId, (draft) => {
           const draftJob = draft.jobs.find((item) => item.id === staleJob.id);
@@ -16158,6 +16229,12 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
     : [];
   for (const staleQueuedJob of staleQueuedJobs) {
     if (completed.length >= limit) break;
+    const approvalPause = await pauseWorkflowChildDispatchForParentAuthority(storage, staleQueuedJob);
+    if (approvalPause.paused) {
+      skipped.approval_waiting_retry_paused = (skipped.approval_waiting_retry_paused || 0) + 1;
+      if (staleQueuedJob.workflowParentId) await reconcileWorkflowParent(storage, staleQueuedJob.workflowParentId);
+      continue;
+    }
     const agent = typeof storage.getAgentById === 'function'
       ? await storage.getAgentById(staleQueuedJob.assignedAgentId)
       : null;
@@ -16235,6 +16312,12 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
   const jobs = candidates.length || typeof storage.listScheduledWorkflowJobs === 'function' ? candidates : await fallbackCandidates();
   for (const job of jobs) {
     if (completed.length >= limit) break;
+    const approvalPause = await pauseWorkflowChildDispatchForParentAuthority(storage, job);
+    if (approvalPause.paused) {
+      skipped.approval_waiting_retry_paused = (skipped.approval_waiting_retry_paused || 0) + 1;
+      if (job.workflowParentId) await reconcileWorkflowParent(storage, job.workflowParentId);
+      continue;
+    }
     const useQueue = Boolean(workflowDispatchQueue(env)) && options.forceDirectExecution !== true;
     const agent = typeof storage.getAgentById === 'function'
       ? await storage.getAgentById(job.assignedAgentId)
@@ -16418,6 +16501,16 @@ async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
     return { ok: false, mode: 'missing_agent' };
   }
   if (isTerminalJobStatus(job.status)) return { ok: true, mode: 'terminal' };
+  const approvalPause = await pauseWorkflowChildDispatchForParentAuthority(storage, job, { agentId });
+  if (approvalPause.paused) {
+    await touchEvent(storage, 'RUNNING', `${job.taskType}/${job.id.slice(0, 6)} retry paused while parent waits for approval`, {
+      kind: 'dispatch_paused_for_parent_authority',
+      jobId: job.id,
+      parentJobId: job.workflowParentId || null
+    });
+    if (job.workflowParentId) await reconcileWorkflowParent(storage, job.workflowParentId);
+    return { ok: true, mode: 'parent_authority_wait' };
+  }
   const sampleKind = String(message.sampleKind || message.sample_kind || '').trim().toLowerCase() || builtInWorkflowKindForJob(job, agent);
   if (!sampleKind) {
     await failJob(storage, jobId, 'Workflow dispatch queue consumer could not identify a built-in agent kind.', ['queue consumer failed before generation: built-in kind missing'], {
@@ -16647,9 +16740,57 @@ function workflowWatchdogParentSnapshot(state = {}, parentId = '') {
 }
 
 function workflowWatchdogApprovalBlocked(parent = {}, children = []) {
-  const parentAuthorityRequest = authorityRequestFromReport(parent.output?.report);
-  if (authorityRequestRequiresApproval(parentAuthorityRequest)) return true;
+  if (workflowParentAuthorityRequest(parent)) return true;
   return children.some((child) => workflowChildIsApprovalBlockedTerminal(child));
+}
+
+async function pauseWorkflowChildDispatchForParentAuthority(storage, childJob = {}, options = {}) {
+  const jobId = String(childJob?.id || options.jobId || '').trim();
+  const agentId = String(childJob?.assignedAgentId || options.agentId || '').trim();
+  const parentId = String(childJob?.workflowParentId || options.parentJobId || '').trim();
+  if (!jobId || !parentId) return { paused: false, reason: 'job_or_parent_missing' };
+  let parent = null;
+  if (typeof storage.getJobById === 'function') parent = await storage.getJobById(parentId);
+  if (!parent && typeof storage.getState === 'function') {
+    const state = await storage.getState();
+    parent = (Array.isArray(state?.jobs) ? state.jobs : []).find((item) => item.id === parentId) || null;
+  }
+  const authorityRequest = workflowParentAuthorityRequest(parent);
+  if (!authorityRequest) return { paused: false, reason: 'parent_not_waiting_for_authority' };
+  const pauseReason = authorityBlockReasonFromRequest(authorityRequest, 'Parent workflow is waiting for connector approval.');
+  const pauseDispatch = (draft) => {
+    const draftJob = Array.isArray(draft?.jobs) ? draft.jobs.find((item) => item.id === jobId) : null;
+    if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
+    if (String(draftJob.workflowParentId || '') !== parentId) return null;
+    const at = nowIso();
+    const logLine = `paused retry while parent waits for authority approval: ${pauseReason}`;
+    draftJob.status = 'queued';
+    draftJob.claimedAt = null;
+    draftJob.dispatchedAt = null;
+    draftJob.startedAt = null;
+    draftJob.completedAt = null;
+    draftJob.failedAt = null;
+    draftJob.timedOutAt = null;
+    draftJob.failureReason = null;
+    draftJob.failureCategory = null;
+    draftJob.dispatch = {
+      ...(draftJob.dispatch || {}),
+      completionStatus: 'approval_waiting_retry_paused',
+      retryable: false,
+      nextRetryAt: null,
+      approvalPausedAt: at,
+      approvalPauseReason: pauseReason
+    };
+    draftJob.logs = (draftJob.logs || []).includes(logLine)
+      ? (draftJob.logs || [])
+      : [...(draftJob.logs || []), logLine];
+    return cloneJob(draftJob);
+  };
+  const paused = typeof storage.mutateJobAndAgent === 'function' && agentId
+    ? await storage.mutateJobAndAgent(jobId, agentId, pauseDispatch)
+    : await storage.mutate(pauseDispatch);
+  if (!paused) return { paused: false, reason: 'pause_rejected', request: authorityRequest };
+  return { paused: true, job: paused, parent, request: authorityRequest };
 }
 
 function workflowBlockedNeedsReconciliation(job = {}) {

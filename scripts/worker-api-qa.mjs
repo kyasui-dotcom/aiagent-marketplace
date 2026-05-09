@@ -2647,6 +2647,107 @@ const manualProgressAfter = await request(`/api/jobs/${manualParentId}`, {}, { e
 assert.equal(manualProgressAfter.status, 200);
 assert.ok(manualProgressAfter.body.job.workflow.statusCounts.completed >= 1, 'poll-triggered dispatch should complete at least one ready built-in child');
 
+const authorityParentId = 'qa-authority-parent';
+const authorityLeaderId = 'qa-authority-leader';
+const authorityChildId = 'qa-authority-child';
+await qaStorage.mutate(async (draft) => {
+  const at = nowIso();
+  draft.jobs.unshift(
+    {
+      id: authorityParentId,
+      jobKind: 'workflow',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      prompt: 'manual approval waiting workflow qa',
+      input: {},
+      priority: 'normal',
+      status: 'running',
+      createdAt: at,
+      logs: ['manual approval qa parent'],
+      workflow: {
+        strategy: 'multi_agent',
+        plannedTasks: ['cmo_leader', 'research'],
+        childRuns: []
+      },
+      output: {
+        summary: 'Approval required before retrying research.',
+        report: {
+          summary: 'Approval required before retrying research.',
+          authority_request: {
+            reason: 'Google analytics context must be approved before retrying source collection.',
+            missing_connectors: ['google'],
+            missing_connector_capabilities: ['google.read_ga4', 'google.read_gsc'],
+            required_google_sources: ['ga4', 'gsc'],
+            source: 'agent_delivery'
+          }
+        },
+        files: []
+      }
+    },
+    {
+      id: authorityLeaderId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      workflowTask: 'cmo_leader',
+      workflowAgentName: 'CMO Team Leader',
+      prompt: 'manual approval leader checkpoint',
+      input: { _broker: { workflow: { sequencePhase: 'checkpoint', checkpointLayer: 1, requiredBeforeLayer: 2 } } },
+      priority: 'normal',
+      status: 'completed',
+      assignedAgentId: 'agent_cmo_leader_01',
+      createdAt: at,
+      startedAt: at,
+      completedAt: at,
+      workflowParentId: authorityParentId,
+      output: {
+        summary: 'Google analytics context must be approved before retrying source collection.',
+        report: {
+          summary: 'Google analytics context must be approved before retrying source collection.',
+          authority_request: {
+            reason: 'Google analytics context must be approved before retrying source collection.',
+            missing_connectors: ['google'],
+            missing_connector_capabilities: ['google.read_ga4', 'google.read_gsc'],
+            required_google_sources: ['ga4', 'gsc'],
+            source: 'agent_delivery'
+          }
+        },
+        files: []
+      },
+      logs: ['manual approval qa leader']
+    },
+    {
+      id: authorityChildId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'research',
+      workflowTask: 'research',
+      workflowAgentName: 'Research Agent',
+      prompt: 'manual approval child',
+      input: {},
+      priority: 'normal',
+      status: 'queued',
+      assignedAgentId: 'agent_research_01',
+      createdAt: at,
+      workflowParentId: authorityParentId,
+      logs: ['manual approval qa child']
+    }
+  );
+});
+const authorityProgressWaits = [];
+const authorityProgressPoll = await request(`/api/jobs/${authorityParentId}`, {}, { waitUntilPromises: authorityProgressWaits, env: qaSearchEnv });
+assert.equal(authorityProgressPoll.status, 200);
+await Promise.allSettled(authorityProgressWaits);
+const authorityProgressAfter = await request(`/api/jobs/${authorityParentId}`, {}, { env: qaSearchEnv });
+assert.equal(authorityProgressAfter.status, 200);
+assert.equal(authorityProgressAfter.body.job.status, 'blocked', 'workflow parent should stop progress dispatch while an authority request is waiting');
+assert.equal(authorityProgressAfter.body.job.dispatch?.completionStatus, 'blocked_waiting_for_approval', 'workflow parent should persist approval wait instead of retrying children');
+assert.equal(authorityProgressAfter.body.job.output?.report?.authority_request?.missing_connector_capabilities?.includes('google.read_ga4'), true, 'approval-blocked parent should keep the Google authority request visible');
+const authorityRawState = await qaStorage.getState();
+const authorityRawChild = authorityRawState.jobs.find((job) => job.id === authorityChildId);
+assert.equal(authorityRawChild?.status, 'queued', 'authority-blocked workflow should leave child ready but unscheduled for later resume');
+assert.notEqual(authorityRawChild?.dispatch?.completionStatus, 'dispatch_scheduled', 'authority-blocked workflow should not retry/schedule child dispatch');
+
 const staleWorkflowParentId = 'qa-stale-workflow-parent';
 const staleWorkflowChildId = 'qa-stale-workflow-child';
 await qaStorage.mutate(async (draft) => {
