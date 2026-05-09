@@ -229,6 +229,11 @@ export function chatEngineBuildJobPayload(draft = {}, options = {}) {
     selected_agent_name: selectedAgentName,
     prompt: String(draft.prompt || '').trim(),
     order_strategy: draft.resolvedOrderStrategy || draft.resolved_order_strategy || draft.order_strategy || 'single',
+    ...(
+      Array.isArray(draft.workflowPlannedTasks || draft.workflow_planned_tasks)
+        ? { workflow_planned_tasks: (draft.workflowPlannedTasks || draft.workflow_planned_tasks).map((item) => String(item || '').trim()).filter(Boolean).slice(0, 12) }
+        : {}
+    ),
     async_dispatch: options.asyncDispatch !== false,
     skip_intake: options.skipIntake === true || draft.intakeChecked === true || draft.intakeAnswered === true,
     visitor_id: options.visitorId || draft.visitor_id || '',

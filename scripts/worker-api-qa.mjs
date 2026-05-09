@@ -800,6 +800,55 @@ assert.ok(
   'ambiguous CMO execution should include a checkpoint before final action phase'
 );
 
+const preservedRetryTasks = ['cmo_leader', 'research', 'seo_gap'];
+const preservedRetryWaits = [];
+const preservedRetryWorkflow = await request('/api/jobs', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    parent_agent_id: 'qa-runner',
+    task_type: 'cmo_leader',
+    prompt: 'Retry the previous order exactly. The text mentions X, Reddit, and directory execution, but retry must not create a new plan.',
+    order_strategy: 'multi',
+    async_dispatch: true,
+    skip_intake: true,
+    budget_cap: 500,
+    workflow_planned_tasks: preservedRetryTasks,
+    input: {
+      _broker: {
+        activeLeaderLocked: true,
+        activeLeader: { taskType: 'cmo_leader', label: 'CMO Leader' },
+        conversationOwner: { type: 'leader', taskType: 'cmo_leader', label: 'CMO Leader' },
+        retry: {
+          sourceOrderId: 'qa-prior-workflow',
+          preservePrompt: true,
+          preservePlan: true,
+          plannedTasks: preservedRetryTasks
+        }
+      }
+    }
+  })
+}, { waitUntilPromises: preservedRetryWaits, env: qaSearchEnv });
+assert.equal(preservedRetryWorkflow.status, 201);
+assert.deepEqual(
+  preservedRetryWorkflow.body.routing_planned_task_types,
+  preservedRetryTasks,
+  'workflow retry should keep the source order planned tasks instead of expanding from the retry prompt'
+);
+await Promise.allSettled(preservedRetryWaits);
+const preservedRetryState = await request(`/api/jobs/${preservedRetryWorkflow.body.workflow_job_id}`, {}, { env: qaSearchEnv });
+assert.equal(preservedRetryState.status, 200);
+assert.deepEqual(
+  preservedRetryState.body.job.workflow.plannedTasks,
+  preservedRetryTasks,
+  'persisted workflow retry should keep the exact previous plan'
+);
+assert.equal(
+  preservedRetryState.body.job.workflow.plannedTasks.some((task) => ['x_post', 'reddit', 'directory_submission'].includes(task)),
+  false,
+  'workflow retry should not add action agents that were not in the previous plan'
+);
+
 const qaStorage = createD1LikeStorage(env.MY_BINDING, { allowInMemory: true, stateCacheTtlMs: 0 });
 await qaStorage.mutate(async (draft) => {
   draft.jobs.push(

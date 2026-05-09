@@ -499,7 +499,7 @@ assert.ok(deliveryManagerJs.includes('isLeaderDelivery'), 'Delivery Manager shou
 assert.ok(deliveryManagerJs.includes('delivery-work-group'), 'Delivery Manager should render work items as dropdown groups.');
 assert.ok(!deliveryManagerJs.includes('local delivery samples'), 'Delivery Manager should not depend on local delivery sample payloads.');
 
-assert.ok(chatJs.includes("from './chat-engine.js?v=20260508c'"), 'Chat JS should use root-relative shared chat engine import.');
+assert.ok(chatJs.includes("from './chat-engine.js?v=20260509a'"), 'Chat JS should use root-relative shared chat engine import.');
 assert.ok(chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should use root-relative delivery action import.');
 assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260508e'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
 assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
@@ -556,10 +556,17 @@ assert.ok(chatJs.includes('function suggestLeaderChangeIfNeeded'), 'Chat should 
 assert.ok(chatJs.includes('data-chat-action="keep-leader"'), 'Chat should offer a keep-current-leader action when a different leader is suggested.');
 assert.ok(chatJs.includes('data-chat-action="switch-leader"'), 'Chat should offer an explicit switch-leader action instead of automatically changing the leader.');
 assert.ok(chatJs.includes('leaderChangeRequested'), 'Chat should mark explicit user leader-change requests separately from automatic reclassification.');
-assert.ok(chatJs.includes("chat-engine.js?v=20260508c"), 'Chat should cache-bust the chat engine when leader-lock payload fields change.');
+assert.ok(chatJs.includes("chat-engine.js?v=20260509a"), 'Chat should cache-bust the chat engine when retry payload fields change.');
+assert.ok(chatJs.includes('function retryDraftFromJob'), 'Chat should prepare retries from the previous persisted order.');
+assert.ok(chatJs.includes('preservePrompt: true'), 'Retry drafts should preserve the previous order prompt instead of redrafting from the retry message.');
+assert.ok(chatJs.includes('preservePlan: plannedTasks.length > 0'), 'Retry drafts should mark previous workflow plans for preservation.');
+assert.ok(chatJs.includes('workflowPlannedTasks: plannedTasks'), 'Retry drafts should carry previous workflow planned tasks.');
 assert.ok(chatEngine.includes('active_leader_locked'), 'Chat engine should send active leader lock state in prepare and job payloads.');
 assert.ok(chatEngine.includes('fallbackLeaderLocked'), 'Chat engine should ignore unlocked active leader fallbacks when deriving the conversation owner.');
+assert.ok(chatEngine.includes('workflow_planned_tasks'), 'Chat engine should send preserved workflow planned tasks when retrying a workflow order.');
 assert.ok(worker.includes('function applyActiveLeaderLockToOrderBody'), 'Worker should enforce locked chat leader routing server-side.');
+assert.ok(worker.includes('function workflowPlannedTasksFromOrderBody'), 'Worker should read preserved workflow plans from retry order payloads.');
+assert.ok(worker.includes('preservePlannedTasks'), 'Worker should bypass workflow plan expansion when retrying with a preserved plan.');
 assert.ok(chatJs.includes('function showAppListPanel'), 'Chat should expose app list modal.');
 assert.ok(chatJs.includes('registeredApps: []'), 'Chat should keep registered marketplace apps in state.');
 assert.ok(chatJs.includes('const CHATUX_CATALOG_PAGE_SIZE = 10'), 'Workers and apps should initially load only ten catalog rows.');

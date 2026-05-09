@@ -11085,16 +11085,19 @@ function planWorkflowSelections(agents, taskType, prompt, options = {}) {
   const selectedAgentId = String(options.selectedAgentId || '').trim();
   const selectedAgentTaskType = normalizeTaskTypes([options.selectedAgentTaskType || taskType])[0] || '';
   const defaultMaxTasks = options.maxTasks || (primaryTask === 'cmo_leader' ? 14 : largeTeam ? 10 : leaderTeam ? 10 : 3);
+  const preservePlannedTasks = options.preservePlannedTasks === true && Array.isArray(options.plannedTasks) && options.plannedTasks.length;
   let plannedTasks = Array.isArray(options.plannedTasks) && options.plannedTasks.length
     ? normalizeTaskTypes(options.plannedTasks)
     : inferTaskSequence(taskType, prompt, {
         maxTasks: defaultMaxTasks,
         expand: options.expand !== false
       });
-  plannedTasks = ensureLeaderWorkflowActionTasks(plannedTasks, primaryTask, prompt, {
-    maxTasks: defaultMaxTasks,
-    maxExternalResearchTasks: options.maxExternalResearchTasks
-  });
+  if (!preservePlannedTasks) {
+    plannedTasks = ensureLeaderWorkflowActionTasks(plannedTasks, primaryTask, prompt, {
+      maxTasks: defaultMaxTasks,
+      maxExternalResearchTasks: options.maxExternalResearchTasks
+    });
+  }
   const tagHintsByTask = options.tagHintsByTask && typeof options.tagHintsByTask === 'object' ? options.tagHintsByTask : {};
   const selections = [];
   const usedAgentIds = new Set();
@@ -11373,6 +11376,12 @@ async function planLeaderWorkflowWithOpenAi(agents = [], body = {}, fallbackPlan
 
 async function maybeRefineWorkflowPlanWithLeaderLlm(agents = [], body = {}, resolved = {}, env = {}, options = {}) {
   if (resolved?.strategy !== 'multi' || !resolved?.plan?.plannedTasks?.length) return resolved;
+  if (workflowPlannedTasksFromOrderBody(body).length) {
+    return {
+      ...resolved,
+      reason: `${resolved.reason} Retry preserved the previous workflow plan.`
+    };
+  }
   const primaryTask = String(resolved.plan.plannedTasks[0] || '').trim().toLowerCase();
   if (!isWorkflowLeaderTask(primaryTask)) return resolved;
   if (options.recurring && String(env?.LEADER_PLANNER_RECURRING_LLM || '').trim().toLowerCase() !== 'true') return resolved;
@@ -11427,6 +11436,32 @@ async function maybeRefineWorkflowPlanWithLeaderLlm(agents = [], body = {}, reso
 
 const AUTO_WORKFLOW_SUPPORT_TASKS = new Set(['research', 'summary', 'debug', 'automation']);
 
+function workflowPlannedTasksFromOrderBody(body = {}) {
+  const brokerRetry = body?.input?._broker?.retry && typeof body.input._broker.retry === 'object'
+    ? body.input._broker.retry
+    : {};
+  const brokerWorkflow = body?.input?._broker?.workflow && typeof body.input._broker.workflow === 'object'
+    ? body.input._broker.workflow
+    : {};
+  const raw = body.workflow_planned_tasks
+    || body.workflowPlannedTasks
+    || brokerRetry.plannedTasks
+    || brokerRetry.planned_tasks
+    || [];
+  const planned = Array.isArray(raw)
+    ? raw.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+    : [];
+  const preservePlan = body.preserve_workflow_plan === true
+    || body.preserveWorkflowPlan === true
+    || brokerRetry.preservePlan === true
+    || brokerRetry.preserve_plan === true;
+  if (preservePlan && planned.length) return planned.slice(0, 12);
+  const workflowRaw = brokerWorkflow.retryPlannedTasks || brokerWorkflow.retry_planned_tasks || [];
+  return Array.isArray(workflowRaw)
+    ? workflowRaw.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean).slice(0, 12)
+    : [];
+}
+
 function isAutoWorkflowSpecialtyTask(taskType = '') {
   const task = String(taskType || '').trim().toLowerCase();
   return Boolean(task && !AUTO_WORKFLOW_SUPPORT_TASKS.has(task));
@@ -11437,10 +11472,12 @@ function resolveOrderStrategy(agents, body = {}, strategy = 'auto') {
   const selectedAgentId = selectedAgentIdFromOrderBody(body);
   const selectedAgentTaskType = selectedAgentTaskTypeFromOrderBody({ ...body, task_type: taskType });
   const selectedIsLeader = selectedAgentId && selectedAgentIsLeader(agents, { ...body, task_type: selectedAgentTaskType || taskType });
+  const preservedPlannedTasks = workflowPlannedTasksFromOrderBody(body);
   const workflowSelectionOptions = {
     budgetCap: body.budget_cap || 0,
     selectedAgentId,
-    selectedAgentTaskType: selectedAgentTaskType || taskType
+    selectedAgentTaskType: selectedAgentTaskType || taskType,
+    ...(preservedPlannedTasks.length ? { plannedTasks: preservedPlannedTasks, preservePlannedTasks: true, expand: true } : {})
   };
   const repoBackedCodeIntent = ['code', 'debug', 'ops', 'automation'].includes(String(taskType || '').trim().toLowerCase())
     && /(github|git hub|repo|repository|pull request|\bpr\b|branch|commit|diff|issue|bug|debug|fix|修正|直して|デバッグ|リポジトリ|プルリク|ブランチ|コミット|差分)/i.test(String(body.prompt || ''));

@@ -6,7 +6,7 @@ import {
   chatEngineBuildPrepareOrderPayload,
   chatEngineDraftBrief,
   chatEngineIsNeedsInputResponse
-} from './chat-engine.js?v=20260508c';
+} from './chat-engine.js?v=20260509a';
 import {
   deliveryExecutionPromptPresentation,
   extractSocialPostTextFromDeliveryContent
@@ -5299,24 +5299,39 @@ function addChatAdjustmentToDraft(prompt = '') {
 }
 
 function retryDraftFromJob(job = {}) {
-  const taskType = String(job.taskType || job.workflowTask || 'research').trim().toLowerCase() || 'research';
-  const route = String(job.input?.order_strategy || job.orderStrategy || (job.workflow ? 'auto' : 'single')).trim().toLowerCase() || 'auto';
-  const broker = job.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
   const workflow = job.workflow && typeof job.workflow === 'object'
     ? job.workflow
-    : (broker.workflow && typeof broker.workflow === 'object' ? broker.workflow : {});
+    : (job.input?._broker?.workflow && typeof job.input._broker.workflow === 'object' ? job.input._broker.workflow : {});
+  const plannedTasks = Array.isArray(workflow.plannedTasks)
+    ? workflow.plannedTasks.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+    : [];
+  const taskType = String(plannedTasks[0] || job.taskType || job.workflowTask || 'research').trim().toLowerCase() || 'research';
+  const route = String(
+    job.orderStrategy
+    || job.order_strategy
+    || job.input?.order_strategy
+    || job.input?.orderStrategy
+    || (job.jobKind === 'workflow' || job.workflow ? 'multi' : 'single')
+  ).trim().toLowerCase() || 'auto';
+  const broker = job.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
+  const previousInput = job.input && typeof job.input === 'object' ? job.input : {};
+  const previousPrompt = String(job.originalPrompt || workflow.objective || job.prompt || '').trim();
   const promptCandidates = [
+    previousInput.original_prompt,
+    previousInput.originalPrompt,
+    broker?.workflow?.originalPrompt,
+    broker?.workflow?.objective,
+    job.originalPrompt,
     workflow.originalPrompt,
     workflow.objective,
-    job.originalPrompt,
     job.prompt,
-    job.input?.original_prompt,
-    job.input?.originalPrompt
   ].map((item) => String(item || '').trim()).filter(Boolean);
   const originalPrompt = promptCandidates.find((item) => !/^(?:retry|redo|rerun|再実行|リトライ|やり直し)$/i.test(item))
     || promptCandidates[0]
     || '';
-  const prompt = isStructuredOrderBriefText(job.prompt)
+  const prompt = previousPrompt
+    ? previousPrompt
+    : isStructuredOrderBriefText(job.prompt)
     ? String(job.prompt || '').trim()
     : draftBrief(originalPrompt || job.prompt || '', {
         taskType,
@@ -5324,8 +5339,18 @@ function retryDraftFromJob(job = {}) {
         reason: `Retry prepared from order ${String(job.id || '').slice(0, 8)}.`
       }, { ja: looksJapanese(originalPrompt || job.prompt || '') });
   const owner = broker.conversationOwner || broker.activeLeader || {};
-  const ownerTaskType = String(owner.taskType || owner.task_type || '').trim().toLowerCase();
+  const ownerTaskType = String(owner.taskType || owner.task_type || (taskType.endsWith('_leader') ? taskType : '')).trim().toLowerCase();
   const ownerLabel = String(owner.label || owner.name || '').trim();
+  const previousConnectorContexts = Array.isArray(broker.connectorContexts)
+    ? broker.connectorContexts.slice(0, 8)
+    : Array.isArray(previousInput.connectorContexts)
+      ? previousInput.connectorContexts.slice(0, 8)
+      : [];
+  const previousAppContexts = Array.isArray(broker.appContexts)
+    ? broker.appContexts.slice(0, 8)
+    : Array.isArray(previousInput.appContexts)
+      ? previousInput.appContexts.slice(0, 8)
+      : [];
   return {
     taskType,
     task_type: taskType,
@@ -5338,15 +5363,32 @@ function retryDraftFromJob(job = {}) {
     intakeAnswered: true,
     activeLeaderTaskType: ownerTaskType,
     activeLeaderName: ownerLabel,
+    activeLeaderLocked: Boolean(ownerTaskType),
+    active_leader_locked: Boolean(ownerTaskType),
     conversationOwner: ownerTaskType ? { type: 'leader', taskType: ownerTaskType, label: ownerLabel || taskLabel(ownerTaskType) } : undefined,
+    workflowPlannedTasks: plannedTasks,
+    workflow_planned_tasks: plannedTasks,
     input: {
+      ...(previousConnectorContexts.length ? { connectorContexts: previousConnectorContexts } : {}),
+      ...(previousAppContexts.length ? { appContexts: previousAppContexts } : {}),
       _broker: {
+        ...(previousConnectorContexts.length ? { connectorContexts: previousConnectorContexts } : {}),
+        ...(previousAppContexts.length ? { appContexts: previousAppContexts } : {}),
         retryOfOrderId: String(job.id || '').trim(),
         retryOfStatus: String(job.status || '').trim(),
         retryPreparedAt: new Date().toISOString(),
+        retry: {
+          sourceOrderId: String(job.id || '').trim(),
+          sourceStatus: String(job.status || '').trim(),
+          preservePrompt: true,
+          preservePlan: plannedTasks.length > 0,
+          plannedTasks,
+          preparedAt: new Date().toISOString()
+        },
         ...(ownerTaskType ? {
           conversationOwner: { type: 'leader', taskType: ownerTaskType, label: ownerLabel || taskLabel(ownerTaskType) },
-          activeLeader: { taskType: ownerTaskType, label: ownerLabel || taskLabel(ownerTaskType) }
+          activeLeader: { taskType: ownerTaskType, label: ownerLabel || taskLabel(ownerTaskType) },
+          activeLeaderLocked: true
         } : {})
       }
     },
@@ -5363,8 +5405,22 @@ async function prepareRetryFromOrder(orderId = '') {
     if (!job?.id) throw new Error('Order was not found.');
     renderDeliveryOnce(job, { force: true });
     state.draft = retryDraftFromJob(job);
-    const lockedOwner = lockedLeaderOwnerForPrompt(state.draft.originalPrompt || state.draft.prompt);
-    if (lockedOwner) state.draft = withLeaderOwner(state.draft, lockedOwner);
+    const retryOwner = state.draft.conversationOwner?.type === 'leader'
+      ? leaderOwner(state.draft.conversationOwner.taskType, `Preserved from retry source order ${String(job.id || '').slice(0, 8)}.`)
+      : null;
+    if (retryOwner) {
+      state.activeLeader = {
+        taskType: retryOwner.taskType,
+        label: retryOwner.label,
+        reason: retryOwner.reason
+      };
+      state.activeLeaderLocked = true;
+      state.draft = withLeaderOwner(state.draft, retryOwner);
+      renderActiveLeaderStatus();
+    } else {
+      const lockedOwner = lockedLeaderOwnerForPrompt(state.draft.originalPrompt || state.draft.prompt);
+      if (lockedOwner) state.draft = withLeaderOwner(state.draft, lockedOwner);
+    }
     setConversationOwnerFromPrepared(state.draft, { sample: state.draft.originalPrompt || state.draft.prompt });
     state.draftRevision += 1;
     appendTextMessage('assistant', chatText(
