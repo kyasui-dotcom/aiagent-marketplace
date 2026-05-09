@@ -127,6 +127,47 @@ const activeDispatchJob = afterDispatchRegressionMerge.jobs.find((job) => job.id
 assert.equal(activeDispatchJob.dispatch.completionStatus, 'completion_sweep_running', 'late completion_queued writes must not regress an active sweep lock');
 assert.ok(activeDispatchJob.logs.includes('late queue write'), 'late queue diagnostics should merge without reverting dispatch progress');
 
+const retryQueuedJob = {
+  id: 'retry-queued-job',
+  parentAgentId: 'qa',
+  taskType: 'cmo_leader',
+  prompt: 'retry queued job should advance to scheduled dispatch',
+  input: {},
+  priority: 'normal',
+  status: 'queued',
+  createdAt: '2026-04-25T10:00:00.000Z',
+  dispatch: {
+    completionStatus: 'leader_auto_retry_queued',
+    attempts: 1,
+    maxRetries: 2
+  },
+  logs: ['retry queued']
+};
+await storage.replaceState({
+  ...(await storage.getState()),
+  jobs: [retryQueuedJob]
+});
+await storage.replaceState({
+  ...(await storage.getState()),
+  jobs: [{
+    ...retryQueuedJob,
+    status: 'running',
+    startedAt: '2026-04-25T10:04:00.000Z',
+    dispatch: {
+      ...retryQueuedJob.dispatch,
+      completionStatus: 'dispatch_scheduled',
+      dispatchRequestedAt: '2026-04-25T10:04:00.000Z',
+      scheduleAttempts: 1
+    },
+    logs: ['retry dispatch scheduled']
+  }]
+});
+const afterRetryScheduleMerge = await storage.getState();
+const retryScheduledJob = afterRetryScheduleMerge.jobs.find((job) => job.id === 'retry-queued-job');
+assert.equal(retryScheduledJob.status, 'running', 'retry-queued workflow jobs should advance to running when dispatch is scheduled');
+assert.equal(retryScheduledJob.dispatch.completionStatus, 'dispatch_scheduled', 'leader_auto_retry_queued must not block a fresh dispatch_scheduled transition');
+assert.ok(retryScheduledJob.logs.includes('retry dispatch scheduled'), 'retry schedule diagnostics should merge');
+
 const recoverState = {
   accounts: [],
   jobs: [{
