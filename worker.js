@@ -4775,6 +4775,13 @@ function workflowQueueSourceCollectionTimeoutMs(env = {}) {
     : 30000;
 }
 
+function workflowQueueGenerationTimeoutMs(env = {}, sourceTimeoutMs = 30000) {
+  const configured = Number(env?.WORKFLOW_QUEUE_GENERATION_TIMEOUT_MS || env?.WORKFLOW_DISPATCH_QUEUE_GENERATION_TIMEOUT_MS || 0);
+  if (Number.isFinite(configured) && configured > 0) return Math.max(8000, Math.min(55000, configured));
+  const sourceBudget = Number(sourceTimeoutMs) || 30000;
+  return Math.max(12000, Math.min(55000, sourceBudget + 8000));
+}
+
 function jobWithinDispatchAge(job = {}, env = {}, now = Date.now()) {
   const activeAt = Math.max(
     Date.parse(String(job.dispatch?.completionSweepRequestedAt || '')) || 0,
@@ -15590,6 +15597,52 @@ async function scheduleProgressDispatchForJobId(storage, env, waitUntil, jobId, 
   };
 }
 
+async function runBuiltInAgentWithWorkflowQueueGuard(sampleKind, payload, env, job = {}, sourceTimeoutMs = 30000) {
+  if (!workflowQualitySourceTask(job)) return runBuiltInAgent(sampleKind, payload, env);
+  const timeoutMs = workflowQueueGenerationTimeoutMs(env, sourceTimeoutMs);
+  let timer = null;
+  try {
+    return await Promise.race([
+      runBuiltInAgent(sampleKind, payload, env),
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          const failureReason = `Source collection failed before generation. missing_required_search_sources: workflow queue generation exceeded ${timeoutMs}ms before returning a source packet.`;
+          resolve({
+            accepted: true,
+            status: 'failed',
+            failed: true,
+            summary: failureReason,
+            failure_reason: failureReason,
+            report: {
+              summary: failureReason,
+              bullets: [
+                'The workflow queue did not receive a source-backed research packet before the queue safety budget.',
+                'This run was not completed from fallback content.'
+              ],
+              nextAction: 'Retry the same research run and keep waiting for source collection.',
+              confidence: 'low',
+              web_sources: []
+            },
+            files: [],
+            usage: { api_cost: 0, total_cost_basis: 0 },
+            return_targets: ['chat', 'api'],
+            runtime: {
+              mode: 'failed',
+              provider: 'none',
+              workflow: 'missing_required_search_sources',
+              failure_reason: failureReason,
+              search_provider: 'brave',
+              web_sources: []
+            }
+          });
+        }, timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, sampleKind, options = {}) {
   const eventLabel = options.eventLabel || 'scheduled built-in sweep';
   const completionSource = options.completionSource || 'built-in-workflow-scheduled-sweep';
@@ -15636,7 +15689,7 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
       WORKFLOW_SOURCE_COLLECTION_TIMEOUT_MS: String(sourceTimeoutMs),
       WORKFLOW_RESEARCH_SOURCE_TIMEOUT_MS: String(sourceTimeoutMs)
     };
-    const body = await runBuiltInAgent(sampleKind, payload, generationEnv);
+    const body = await runBuiltInAgentWithWorkflowQueueGuard(sampleKind, payload, generationEnv, effectiveLocked, sourceTimeoutMs);
     const normalized = normalizeDispatchResponse(body);
     if (normalized.failed) {
       const failureReason = normalized.failureReason || 'Built-in agent generation failed';
