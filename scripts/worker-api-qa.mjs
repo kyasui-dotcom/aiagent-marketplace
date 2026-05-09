@@ -64,6 +64,8 @@ assert.ok(workerSource.includes('function workflowShouldCompleteResearchFromPrio
 assert.ok(workerSource.includes('prior_source_research_packet'), 'prior source research packet should preserve source limits for downstream agents.');
 assert.ok(workerSource.includes('function workflowShouldCompleteFromPriorHandoffPacket'), 'planning/preparation/action specialists should recover from generation timeouts when prior handoff evidence is available.');
 assert.ok(workerSource.includes('prior_handoff_specialist_packet'), 'prior handoff specialist packet should preserve upstream evidence and approval boundaries.');
+assert.ok(workerSource.includes('function workflowShouldCompleteLeaderFinalFromPriorHandoffPacket'), 'leader final summary should recover from generation timeouts when specialist handoff evidence is available.');
+assert.ok(workerSource.includes('prior_handoff_leader_final_packet'), 'leader final handoff packet should integrate upstream specialist outputs into the delivery.');
 assert.ok(workerSource.includes('Built-in agent generation exception:'), 'built-in workflow exceptions should fail/retry the job directly instead of leaving it locked until a sweep timeout.');
 assert.ok(workerSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
 assert.ok(workerSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');

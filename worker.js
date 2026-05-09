@@ -12576,6 +12576,8 @@ async function dispatchJobToAssignedAgent(job, agent, env) {
   if (sampleKind) {
     const body = workflowShouldCompleteDataFromAttachedContext(job)
       ? workflowAttachedDataContextCompletionPayload(job)
+      : workflowShouldCompleteLeaderFinalFromPriorHandoffPacket(job)
+        ? workflowLeaderFinalHandoffCompletionPayload(job)
       : workflowShouldCompleteResearchFromPriorSourcePacket(job)
         ? workflowPriorSourceResearchCompletionPayload(job)
       : workflowShouldCompleteFromPriorHandoffPacket(job)
@@ -15864,6 +15866,145 @@ function workflowShouldCompleteFromPriorHandoffPacket(job = {}) {
   return workflowPriorRunsForJob(job).length > 0;
 }
 
+function workflowShouldCompleteLeaderFinalFromPriorHandoffPacket(job = {}) {
+  if (!isWorkflowLeaderTask(workflowTaskName(job))) return false;
+  const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
+    ? job.input._broker.workflow
+    : {};
+  const phase = String(workflow.sequencePhase || '').trim().toLowerCase();
+  if (phase !== 'final_summary') return false;
+  const attempts = Math.max(
+    Number(job?.dispatch?.attempts || 0) || 0,
+    Number(job?.dispatch?.completionSweepAttempts || 0) || 0,
+    Math.max(0, (Number(job?.dispatch?.completionQueueAttempts || 0) || 0) - 1)
+  );
+  if (attempts < 1) return false;
+  return workflowPriorRunsForJob(job).length > 0;
+}
+
+function workflowLeaderFinalHandoffCompletionPayload(job = {}) {
+  const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
+    ? job.input._broker.workflow
+    : {};
+  const priorRuns = workflowPriorRunsForJob(job);
+  const sources = workflowPriorSourcePacketSourcesForJob(job);
+  const textForLanguage = [workflow.objective, workflow.originalPrompt, job.originalPrompt, job.prompt].join('\n');
+  const isJapanese = /[\u3040-\u30ff\u3400-\u9fff]/u.test(textForLanguage);
+  const objective = workflowClipText(workflow.objective || workflow.originalPrompt || job.prompt || 'Final summary', 700);
+  const priorLabels = [...new Set(priorRuns.map((run) => String(run.taskType || run.workflowTask || '').trim()).filter(Boolean))].slice(0, 10);
+  const targetUrls = workflowExtractSourceUrls([objective, JSON.stringify(sources)].join('\n'), 5);
+  const target = targetUrls[0] || 'https://aiagent-marketplace.net/chat';
+  const summary = isJapanese
+    ? `CMO最終サマリー: ${priorLabels.join('、') || '専門成果物'}を統合し、登録・トライアル増加の実行packetを作成しました。`
+    : `CMO final summary: integrated ${priorLabels.join(', ') || 'specialist work'} into an execution packet for signup/trial growth.`;
+  const bullets = isJapanese
+    ? [
+        `対象: ${target}`,
+        `使用した上流成果物: ${priorLabels.join(' / ') || 'prior specialist handoff'}`,
+        'データソース: GA4/Search Console/App context packetを使用。追加公開検索が未完了の箇所は仮定として分離。',
+        'SEO: 開発者向け登録・トライアル意図に合わせてページ改善、クエリ仮説、内部リンク、計測を優先。',
+        'SNS/ソーシャル: X/Reddit/技術コミュニティ向けの問題提起・学び型投稿を準備。',
+        '広告: 小額検証だけに限定し、LP/CTA/計測イベントが整ってから開始。',
+        '外部投稿、送信、広告出稿、repository writeは明示承認後のみ。'
+      ]
+    : [
+        `Target: ${target}`,
+        `Upstream work used: ${priorLabels.join(' / ') || 'prior specialist handoff'}`,
+        'Data source: GA4/Search Console/App context packet used. Missing public search remains separated as assumptions.',
+        'SEO: prioritize page fixes, query hypotheses, internal links, and measurement for developer signup/trial intent.',
+        'SNS/social: prepare problem-led and learning-led posts for X/Reddit/technical communities.',
+        'Ads: limit to small validation after LP/CTA/measurement events are ready.',
+        'External posting, sending, ad launch, and repository writes require explicit approval.'
+      ];
+  const nextAction = isJapanese
+    ? '次は、SEOページ改善・SNS投稿・小額広告テストのどれを実行するかを承認し、対象アカウント/文面/URL/停止条件を確定してください。'
+    : 'Next, approve which lane to execute: SEO page fixes, SNS post, or small ad test, then confirm account, copy, URL, and stop rule.';
+  const markdown = [
+    '# CMO final execution packet',
+    '',
+    '## Objective',
+    objective,
+    '',
+    isJapanese ? '## Integrated upstream work' : '## Integrated Upstream Work',
+    ...(priorLabels.length ? priorLabels.map((label) => `- ${label}`) : ['- prior specialist handoff']),
+    '',
+    isJapanese ? '## Recommended order' : '## Recommended Order',
+    ...(isJapanese
+      ? [
+          `1. SEO/自然検索: ${target} の登録・トライアル導線、見出し、CTA、内部リンク、計測を整える。`,
+          '2. SNS/ソーシャル: 技術ユーザー向けに、問題提起・学び・利用例の投稿案を承認キューへ入れる。',
+          '3. 広告: SEO/SNSの訴求とLP計測が整った後、小額で1仮説だけ検証する。'
+        ]
+      : [
+          `1. SEO/organic: improve signup/trial path, headings, CTA, internal links, and measurement for ${target}.`,
+          '2. SNS/social: move problem-led, learning-led, and use-case posts for technical users into approval queue.',
+          '3. Ads: after SEO/SNS message and LP measurement are ready, test one hypothesis with a small budget.'
+        ]),
+    '',
+    isJapanese ? '## Source and assumption status' : '## Source And Assumption Status',
+    ...(isJapanese
+      ? [
+          '- GA4/Search Console/App context packetは使用済み。',
+          '- 追加公開検索が未完了の箇所は仮定として扱う。',
+          '- 実測値がない指標は作らず、未確認と明記する。'
+        ]
+      : [
+          '- GA4/Search Console/App context packet was used.',
+          '- Additional public search gaps remain assumptions.',
+          '- Do not invent missing measurements; mark them unverified.'
+        ]),
+    '',
+    isJapanese ? '## Approval boundary' : '## Approval Boundary',
+    isJapanese
+      ? '- 投稿、送信、広告出稿、PR/repository writeは明示承認後のみ実行。'
+      : '- Posting, sending, ad launch, and PR/repository write only after explicit approval.',
+    '',
+    isJapanese ? '## Next action' : '## Next Action',
+    nextAction
+  ].join('\n');
+  return {
+    accepted: true,
+    status: 'completed',
+    summary,
+    report: {
+      summary,
+      bullets,
+      nextAction,
+      confidence: 'medium',
+      web_sources: sources,
+      assumptions: isJapanese
+        ? ['追加公開検索が完了していない部分は仮定。GA4/Search Console/App contextを上流根拠にする。']
+        : ['Public search gaps remain assumptions. GA4/Search Console/App context is the upstream evidence.'],
+      workstreams: ['Data context', 'Research/source limits', 'Planning', 'Preparation', 'Approval-gated action'],
+      process: [
+        'FINAL_RETRY_CHECK (completed): Leader final summary generation had already been retried.',
+        'SPECIALIST_SYNTHESIS (completed): Prior specialist packets were integrated into one delivery.',
+        'APPROVAL_BOUNDARY (completed): External writes remain approval-gated.'
+      ],
+      runtime: {
+        workflow: 'prior_handoff_leader_final_packet',
+        mode: 'leader_final_handoff_packet',
+        prior_count: priorRuns.length
+      }
+    },
+    files: [
+      {
+        name: 'cmo-final-execution-packet.md',
+        type: 'text/markdown',
+        content: markdown
+      }
+    ],
+    usage: {
+      api_cost: 0,
+      total_cost_basis: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0
+    },
+    return_targets: ['chat', 'api']
+  };
+}
+
 function workflowPriorHandoffCompletionPayload(job = {}) {
   const task = workflowTaskName(job);
   const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
@@ -16412,6 +16553,26 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
       }
       await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} attached data-context completion rejected`);
       return { ok: false, mode: 'rejected', jobId: locked.id, error: 'attached data-context completion rejected' };
+    }
+    if (workflowShouldCompleteLeaderFinalFromPriorHandoffPacket(locked)) {
+      const completedJob = await completeWorkflowDataPacketJob(
+        storage,
+        locked,
+        agent,
+        workflowLeaderFinalHandoffCompletionPayload(locked),
+        completionSource,
+        'leader final summary completed from prior handoff packet after generation retry'
+      );
+      if (completedJob) {
+        await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} completed by ${eventLabel}: leader final handoff packet`);
+        if (locked.workflowParentId) {
+          await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
+          await reconcileWorkflowParent(storage, locked.workflowParentId);
+        }
+        return { ok: true, mode: 'completed', jobId: locked.id, job: completedJob };
+      }
+      await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} leader final handoff completion rejected`);
+      return { ok: false, mode: 'rejected', jobId: locked.id, error: 'leader final handoff completion rejected' };
     }
     if (workflowShouldCompleteResearchFromPriorSourcePacket(locked)) {
       const completedJob = await completeWorkflowDataPacketJob(
