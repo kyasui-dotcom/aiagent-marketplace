@@ -5436,11 +5436,67 @@ async function prepareRetryFromOrder(orderId = '') {
   }
 }
 
+function retryCommandText(prompt = '') {
+  const compact = String(prompt || '').replace(/[?？!！。.,、\s]+$/g, '').trim();
+  return /^(retry|redo|rerun|run again|try again|リトライ|再実行|やり直し|もう一回|もう一度)$/i.test(compact);
+}
+
+async function retryTargetJobForCommand() {
+  const ids = [...new Set([
+    state.orderId,
+    state.followupTargetOrderId,
+    ...Array.from(state.trackedOrderIds || []).reverse()
+  ].map((item) => String(item || '').trim()).filter(Boolean))];
+  let firstKnown = null;
+  for (const id of ids) {
+    try {
+      const job = await fetchVisibleJob(id);
+      if (!job?.id) continue;
+      if (!firstKnown) firstKnown = job;
+      if (isTerminalStatus(job.status)) return job;
+    } catch {}
+  }
+  try {
+    const jobs = await refreshRecentJobs({ force: true });
+    const terminal = (Array.isArray(jobs) ? jobs : []).find((job) => job?.id && isTerminalStatus(job.status));
+    if (terminal) return terminal;
+    return firstKnown || (Array.isArray(jobs) ? jobs.find((job) => job?.id) : null) || null;
+  } catch {
+    return firstKnown;
+  }
+}
+
+async function handleRetryCommand(prompt = '') {
+  if (!retryCommandText(prompt)) return false;
+  const job = await retryTargetJobForCommand();
+  if (!job?.id) {
+    appendTextMessage('assistant', chatText(
+      'I could not find an order to retry. Open an order from history first, then press Prepare retry.',
+      'リトライ対象のオーダーが見つかりません。先に履歴から対象オーダーを開いてから Prepare retry を押してください。',
+      prompt
+    ), { tone: 'warn', label: 'Retry' });
+    return true;
+  }
+  if (!isTerminalStatus(job.status)) {
+    appendTextMessage('assistant', chatText(
+      `Order ${job.id.slice(0, 8)} is still ${statusLabel(job)}. I did not create a retry draft while the order is active.`,
+      `オーダー ${job.id.slice(0, 8)} はまだ ${statusLabel(job)} です。進行中のためリトライドラフトは作成していません。`,
+      prompt
+    ), { tone: 'warn', label: 'Retry' });
+    maybeRenderAuthorityNotice(job, { label: 'Approval required' });
+    startPolling(job.id);
+    return true;
+  }
+  await prepareRetryFromOrder(job.id);
+  return true;
+}
+
 function activeOrderFollowupAllowedText(prompt = '') {
   const text = String(prompt || '').trim();
   if (!text || !state.orderId || state.draft || state.pendingIntake) return false;
   const compact = text.replace(/[?？!！。.,、\s]+$/g, '').trim();
   if (/^(send|send order|発注|注文|実行)$/i.test(compact)) return false;
+  if (retryCommandText(compact)) return false;
   if (/^(status|help|状況|現状|今どこ|何待ち|ヘルプ)$/i.test(compact)) return false;
   if (/^(pause|hold|stop|later|not now|cancel|一旦保留|いったん保留|保留|あとで|後で|ストップ|止めて|中断|キャンセル|やめる)$/i.test(compact)) return false;
   return true;
@@ -6312,6 +6368,8 @@ els.composer.addEventListener('submit', async (event) => {
       await sendOrder();
     } else if (handlePromptInjectionInput(prompt)) {
       // blocked before intent classification, draft adjustment, or dispatch prep
+    } else if (await handleRetryCommand(prompt)) {
+      // prepared an exact retry draft from the latest terminal order
     } else if (handleNonOrderConversation(prompt)) {
       // handled as chat, not a work order
     } else if (activeOrderFollowupAllowedText(prompt) && await prepareFollowupForRunningOrder(prompt)) {

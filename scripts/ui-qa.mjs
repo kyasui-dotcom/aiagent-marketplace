@@ -558,6 +558,9 @@ assert.ok(chatJs.includes('data-chat-action="switch-leader"'), 'Chat should offe
 assert.ok(chatJs.includes('leaderChangeRequested'), 'Chat should mark explicit user leader-change requests separately from automatic reclassification.');
 assert.ok(chatJs.includes("chat-engine.js?v=20260509a"), 'Chat should cache-bust the chat engine when retry payload fields change.');
 assert.ok(chatJs.includes('function retryDraftFromJob'), 'Chat should prepare retries from the previous persisted order.');
+assert.ok(chatJs.includes('function handleRetryCommand'), 'Chat should treat typed retry commands as explicit retry preparation instead of a new order.');
+assert.ok(chatJs.includes('retryCommandText(compact)'), 'Chat should prevent typed retry commands from becoming running-order followups.');
+assert.ok(chatJs.indexOf('await handleRetryCommand(prompt)') < chatJs.indexOf('activeOrderFollowupAllowedText(prompt)'), 'Typed retry should be handled before active-order followup routing.');
 assert.ok(chatJs.includes('preservePrompt: true'), 'Retry drafts should preserve the previous order prompt instead of redrafting from the retry message.');
 assert.ok(chatJs.includes('preservePlan: plannedTasks.length > 0'), 'Retry drafts should mark previous workflow plans for preservation.');
 assert.ok(chatJs.includes('workflowPlannedTasks: plannedTasks'), 'Retry drafts should carry previous workflow planned tasks.');
