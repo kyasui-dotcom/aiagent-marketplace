@@ -14343,30 +14343,70 @@ function workflowUnavailablePriorRunIsOptional(run = {}) {
   return run.optional === true
     || reason === 'no_analytics_context'
     || reason === 'data_unavailable'
+    || reason === 'data_timeout_no_analytics_context'
     || reason === 'skipped_no_data_context';
+}
+
+function workflowJobHasAttachedDataContext(job = {}) {
+  const broker = job?.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
+  const contexts = [
+    ...(Array.isArray(broker.appContexts) ? broker.appContexts : []),
+    ...(Array.isArray(broker.connectorContexts) ? broker.connectorContexts : [])
+  ].filter((context) => context && typeof context === 'object');
+  if (!contexts.length) return false;
+  return contexts.some((context) => {
+    if (Array.isArray(context.metrics) && context.metrics.length) return true;
+    const raw = context.raw_context && typeof context.raw_context === 'object'
+      ? context.raw_context
+      : (context.rawContext && typeof context.rawContext === 'object' ? context.rawContext : {});
+    const text = workflowFlattenTextParts([
+      context.source_app,
+      context.sourceApp,
+      context.title,
+      context.summary,
+      raw.connector_provider,
+      raw.provider,
+      raw.connector_type,
+      raw.connectorType,
+      raw.connector_services,
+      raw.connectorServices,
+      raw.googleGa4Property,
+      raw.googleSearchConsoleSite,
+      raw.googleReportSources,
+      raw.googleReportLoaded
+    ]).join(' ').toLowerCase();
+    return /(analytics|google analytics|ga4|search console|\bgsc\b|conversion|funnel|cohort|acquisition|traffic|query|event|billing|orders?|stripe|dataset|spreadsheet|sheet|csv|metric)/i.test(text);
+  });
 }
 
 function workflowOptionalUnavailablePriorRun(parent = {}, child = {}, targetLayer = 1) {
   if (!child || isWorkflowLeaderTask(workflowTaskName(child))) return null;
-  if (String(child.status || '').trim().toLowerCase() !== 'completed') return null;
+  const taskType = workflowTaskName(child);
+  const status = String(child.status || '').trim().toLowerCase();
   const layer = workflowDispatchLayer(parent, child);
   if (layer >= Math.max(1, Number(targetLayer || 1) || 1)) return null;
-  if (!workflowDataUnavailableOutput(child)) return null;
+  const completedDataUnavailable = status === 'completed' && workflowDataUnavailableOutput(child);
+  const timedOutDataWithoutContext = taskType === 'data_analysis'
+    && ['failed', 'timed_out'].includes(status)
+    && !workflowJobHasAttachedDataContext(child);
+  if (!completedDataUnavailable && !timedOutDataWithoutContext) return null;
   const output = child.output && typeof child.output === 'object' ? child.output : {};
   const report = output.report && typeof output.report === 'object' ? output.report : {};
+  const reason = timedOutDataWithoutContext ? 'data_timeout_no_analytics_context' : 'no_analytics_context';
   return {
     jobId: child.id || null,
-    taskType: workflowTaskName(child),
+    taskType,
     agentId: child.assignedAgentId || null,
     agentName: child.workflowAgentName || null,
     sequencePhase: workflowSequencePhaseForJob(child) || null,
     layer,
     status: 'skipped',
     optional: true,
-    reason: 'no_analytics_context',
-    summary: String(output.summary || report.summary || 'Data context was not attached; data layer skipped.').slice(0, 1000),
+    reason,
+    summary: String(output.summary || report.summary || child.failureReason || 'Data context was not attached; data layer skipped.').slice(0, 1000),
     nextAction: String(report.nextAction || report.next_action || '').slice(0, 1000),
-    completedAt: child.completedAt || null
+    completedAt: child.completedAt || null,
+    failedAt: child.failedAt || child.timedOutAt || null
   };
 }
 
