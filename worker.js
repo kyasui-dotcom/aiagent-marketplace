@@ -4801,6 +4801,12 @@ function workflowSourceCollectionMaxRetries(env = {}) {
   return Number.isFinite(configured) && configured > 0 ? Math.min(50, Math.max(1, configured)) : 10;
 }
 
+function workflowCompletionRetryLimitForJob(env = {}, job = {}) {
+  return workflowQualitySourceTask(job)
+    ? Math.max(maxDispatchRetriesForJob(job), workflowSourceCollectionMaxRetries(env))
+    : maxDispatchRetriesForJob(job);
+}
+
 function shouldAutoRetryWorkflowChild(parent = null, job = {}) {
   if (!parent || parent.jobKind !== 'workflow' || !job?.workflowParentId) return false;
   const status = String(job.status || '').trim().toLowerCase();
@@ -15449,6 +15455,7 @@ async function refreshWorkflowLeaderHandoffForJobId(storage, jobId) {
 
 async function markDispatchScheduled(storage, jobId, agentId, reason = 'dispatch scheduled', options = {}) {
   const at = nowIso();
+  const env = options.env || {};
   const mutateScheduled = async (state) => {
     const job = state.jobs.find((item) => item.id === jobId);
     const agent = state.agents.find((item) => item.id === agentId);
@@ -15490,7 +15497,7 @@ async function markDispatchScheduled(storage, jobId, agentId, reason = 'dispatch
       scheduleAttempts,
       retryable: true,
       nextRetryAt: null,
-      maxRetries: maxDispatchRetriesForJob(job)
+      maxRetries: workflowCompletionRetryLimitForJob(env, job)
     };
     if (workflowLeaderHandoffForDispatch && job.workflowParentId && !isWorkflowLeaderTask(workflowTaskName(job))) {
       const input = job.input && typeof job.input === 'object' ? { ...job.input } : {};
@@ -15530,6 +15537,7 @@ async function scheduleProgressDispatchesForJobId(storage, env, waitUntil, jobId
   const dispatchPromises = [];
   for (const target of targets) {
     const marked = await markDispatchScheduled(storage, target.job.id, target.agent.id, reason, {
+      env,
       workflowLeaderHandoff: target.workflowLeaderHandoff || null
     });
     if (!marked.scheduled) continue;
@@ -15789,7 +15797,8 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
           if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
           if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'completion_sweep_running') return null;
           const attempts = Number(draftJob.dispatch?.attempts || 0) + 1;
-          if (attempts > maxDispatchRetriesForJob(draftJob)) return null;
+          const retryLimit = workflowCompletionRetryLimitForJob(env, draftJob);
+          if (attempts > retryLimit) return null;
           const at = nowIso();
           draftJob.status = 'queued';
           draftJob.startedAt = null;
@@ -15805,7 +15814,7 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
             attempts,
             retryable: true,
             nextRetryAt: null,
-            maxRetries: maxDispatchRetriesForJob(draftJob)
+            maxRetries: retryLimit
           };
           draftJob.logs = [
             ...(draftJob.logs || []),
@@ -15818,7 +15827,8 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
           if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
           if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'completion_sweep_running') return null;
           const attempts = Number(draftJob.dispatch?.attempts || 0) + 1;
-          if (attempts > maxDispatchRetriesForJob(draftJob)) return null;
+          const retryLimit = workflowCompletionRetryLimitForJob(env, draftJob);
+          if (attempts > retryLimit) return null;
           const at = nowIso();
           draftJob.status = 'queued';
           draftJob.startedAt = null;
@@ -15834,7 +15844,7 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
             attempts,
             retryable: true,
             nextRetryAt: null,
-            maxRetries: maxDispatchRetriesForJob(draftJob)
+            maxRetries: retryLimit
           };
           draftJob.logs = [
             ...(draftJob.logs || []),
