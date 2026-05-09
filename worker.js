@@ -4720,6 +4720,7 @@ const BUILT_IN_DISPATCH_SCHEDULE_STALE_MS = 8 * 60 * 1000;
 const DISPATCH_SCHEDULE_TIMEOUT_MS = 10 * 60 * 1000;
 const COMPLETION_SWEEP_STALE_MS = 15 * 60 * 1000;
 const COMPLETION_QUEUE_STALE_MS = 2 * 60 * 1000;
+const COMPLETION_QUEUE_RECOVERY_STALE_MS = 90 * 1000;
 const DEFAULT_WORKFLOW_DISPATCH_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function dispatchScheduleIsFresh(job, now = Date.now(), staleMs = DISPATCH_SCHEDULE_STALE_MS) {
@@ -4755,6 +4756,11 @@ function completionSweepStaleMs(env = {}) {
 function completionQueueStaleMs(env = {}) {
   const configured = Number(env?.WORKFLOW_COMPLETION_QUEUE_STALE_MS || env?.WORKFLOW_DISPATCH_QUEUE_STALE_MS || 0);
   return Number.isFinite(configured) && configured > 0 ? configured : COMPLETION_QUEUE_STALE_MS;
+}
+
+function completionQueueRecoveryStaleMs(env = {}) {
+  const configured = Number(env?.WORKFLOW_COMPLETION_QUEUE_RECOVERY_STALE_MS || 0);
+  return Number.isFinite(configured) && configured > 0 ? configured : COMPLETION_QUEUE_RECOVERY_STALE_MS;
 }
 
 function workflowDispatchQueue(env = {}) {
@@ -15616,6 +15622,82 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
   let state = null;
   const expired = [];
   const recoveredQueued = [];
+  const retriedRecoveredSweep = [];
+  const staleRecoveredSweepJobs = typeof storage.listStaleCompletionSweepJobs === 'function'
+    ? (await storage.listStaleCompletionSweepJobs({
+        limit,
+        maxAgeMs: workflowDispatchMaxAgeMs(env),
+        minAgeMs: completionQueueRecoveryStaleMs(env)
+      })).filter((job) => String(job?.dispatch?.completionQueueRecoveredAt || '').trim())
+    : [];
+  for (const staleRecoveredJob of staleRecoveredSweepJobs) {
+    const retriedJob = typeof storage.mutateJobAndAgent === 'function'
+      ? await storage.mutateJobAndAgent(staleRecoveredJob.id, staleRecoveredJob.assignedAgentId, (draft) => {
+          const draftJob = draft.jobs.find((item) => item.id === staleRecoveredJob.id);
+          if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
+          if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'completion_sweep_running') return null;
+          if (!String(draftJob.dispatch?.completionQueueRecoveredAt || '').trim()) return null;
+          const attempts = Number(draftJob.dispatch?.attempts || 0) + 1;
+          if (attempts > maxDispatchRetriesForJob(draftJob)) return null;
+          const at = nowIso();
+          draftJob.status = 'queued';
+          draftJob.startedAt = null;
+          draftJob.completedAt = null;
+          draftJob.failedAt = null;
+          draftJob.timedOutAt = null;
+          draftJob.failureReason = null;
+          draftJob.failureCategory = null;
+          draftJob.dispatch = {
+            ...(draftJob.dispatch || {}),
+            completionStatus: 'leader_auto_retry_queued',
+            recoveredSweepTimedOutAt: at,
+            attempts,
+            retryable: true,
+            nextRetryAt: null,
+            maxRetries: maxDispatchRetriesForJob(draftJob)
+          };
+          draftJob.logs = [
+            ...(draftJob.logs || []),
+            `stale queue recovery sweep did not finish; requeued for safe retry (${at})`
+          ];
+          return cloneJob(draftJob);
+        })
+      : await storage.mutate(async (draft) => {
+          const draftJob = draft.jobs.find((item) => item.id === staleRecoveredJob.id);
+          if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
+          if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'completion_sweep_running') return null;
+          if (!String(draftJob.dispatch?.completionQueueRecoveredAt || '').trim()) return null;
+          const attempts = Number(draftJob.dispatch?.attempts || 0) + 1;
+          if (attempts > maxDispatchRetriesForJob(draftJob)) return null;
+          const at = nowIso();
+          draftJob.status = 'queued';
+          draftJob.startedAt = null;
+          draftJob.completedAt = null;
+          draftJob.failedAt = null;
+          draftJob.timedOutAt = null;
+          draftJob.failureReason = null;
+          draftJob.failureCategory = null;
+          draftJob.dispatch = {
+            ...(draftJob.dispatch || {}),
+            completionStatus: 'leader_auto_retry_queued',
+            recoveredSweepTimedOutAt: at,
+            attempts,
+            retryable: true,
+            nextRetryAt: null,
+            maxRetries: maxDispatchRetriesForJob(draftJob)
+          };
+          draftJob.logs = [
+            ...(draftJob.logs || []),
+            `stale queue recovery sweep did not finish; requeued for safe retry (${at})`
+          ];
+          return cloneJob(draftJob);
+        });
+    if (retriedJob) {
+      retriedRecoveredSweep.push(retriedJob.id);
+      await touchEvent(storage, 'RETRY', `${retriedJob.taskType}/${retriedJob.id.slice(0, 6)} stale queue recovery sweep requeued`);
+      if (retriedJob.workflowParentId) await reconcileWorkflowParent(storage, retriedJob.workflowParentId);
+    }
+  }
   const staleSweepJobs = typeof storage.listStaleCompletionSweepJobs === 'function'
     ? await storage.listStaleCompletionSweepJobs({
         limit,
@@ -15832,7 +15914,7 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
       }
     }
   }
-  return { ok: true, completed_count: completed.length, queued_count: queued.length, job_ids: completed, queued_job_ids: queued, scanned_count: jobs.length, skipped, expired_count: expired.length, expired_job_ids: expired, recovered_queued_count: recoveredQueued.length, recovered_queued_job_ids: recoveredQueued };
+  return { ok: true, completed_count: completed.length, queued_count: queued.length, job_ids: completed, queued_job_ids: queued, scanned_count: jobs.length, skipped, expired_count: expired.length, expired_job_ids: expired, recovered_queued_count: recoveredQueued.length, recovered_queued_job_ids: recoveredQueued, retried_recovered_sweep_count: retriedRecoveredSweep.length, retried_recovered_sweep_job_ids: retriedRecoveredSweep };
 }
 
 async function verifyInternalCronRequest(request, env, cron = '') {

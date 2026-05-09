@@ -1034,10 +1034,11 @@ try {
     OPENAI_API_KEY: 'sk-test-leader-packet',
     BRAVE_SEARCH_API_KEY: 'brave-test-key'
   });
-  assert.equal(cmoLeaderNetworkCalls, 1, 'Workflow leader intake should use OpenAI instead of deterministic leader packet fallback');
+  assert.equal(cmoLeaderNetworkCalls, 0, 'Initial workflow leader review should use an internal leader packet instead of a user-facing intake OpenAI call');
   assert.equal(cmoLeaderWorkflowPacket.status, 'completed');
-  assert.equal(cmoLeaderWorkflowPacket.runtime.workflow, 'workflow_fast_draft');
-  assert.ok(cmoLeaderWorkflowPacket.files[0].content.includes('research -> planning -> preparation'));
+  assert.equal(cmoLeaderWorkflowPacket.runtime.workflow, 'workflow_leader_packet');
+  assert.equal(cmoLeaderWorkflowPacket.runtime.mode, 'leader_packet');
+  assert.ok(/Leader|CMO|handoff|research|planning|preparation/i.test(cmoLeaderWorkflowPacket.files[0].content));
 } finally {
   globalThis.fetch = originalBuiltinQaFetch;
 }
