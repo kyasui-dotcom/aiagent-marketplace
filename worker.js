@@ -4768,6 +4768,13 @@ function workflowDispatchQueue(env = {}) {
   return queue && typeof queue.send === 'function' ? queue : null;
 }
 
+function workflowQueueSourceCollectionTimeoutMs(env = {}) {
+  const configured = Number(env?.WORKFLOW_QUEUE_SOURCE_COLLECTION_TIMEOUT_MS || env?.WORKFLOW_SOURCE_COLLECTION_QUEUE_TIMEOUT_MS || 0);
+  return Number.isFinite(configured) && configured > 0
+    ? Math.max(5000, Math.min(45000, configured))
+    : 30000;
+}
+
 function jobWithinDispatchAge(job = {}, env = {}, now = Date.now()) {
   const activeAt = Math.max(
     Date.parse(String(job.dispatch?.completionSweepRequestedAt || '')) || 0,
@@ -15615,7 +15622,13 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
       });
     }
     const payload = buildCompactBuiltInDispatchPayload(effectiveLocked, agent);
-    const body = await runBuiltInAgent(sampleKind, payload, env);
+    const sourceTimeoutMs = workflowQueueSourceCollectionTimeoutMs(env);
+    const generationEnv = {
+      ...env,
+      WORKFLOW_SOURCE_COLLECTION_TIMEOUT_MS: String(sourceTimeoutMs),
+      WORKFLOW_RESEARCH_SOURCE_TIMEOUT_MS: String(sourceTimeoutMs)
+    };
+    const body = await runBuiltInAgent(sampleKind, payload, generationEnv);
     const normalized = normalizeDispatchResponse(body);
     if (normalized.failed) {
       const failureReason = normalized.failureReason || 'Built-in agent generation failed';
