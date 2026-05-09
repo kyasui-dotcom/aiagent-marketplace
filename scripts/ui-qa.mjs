@@ -166,6 +166,10 @@ assert.ok(clientJs.includes("if (requested.length) url.searchParams.set('capabil
 assert.ok(clientJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
 assert.ok(chatJs.includes('googleAuthorityConnectGroups'), 'Chat Google approval should connect every requested Google source in one OAuth popup.');
 assert.ok(chatJs.includes('Connect GA4 + Search Console'), 'Chat Google approval should label combined GA4/Search Console requests clearly.');
+assert.ok(chatJs.includes('function xConnectLinkHtml'), 'Chat X connector links should be centralized for approval cards and action cards.');
+assert.ok(chatJs.includes('data-chat-oauth-popup="x"'), 'Chat X connector approval should open OAuth in a popup and keep the current order attached.');
+assert.ok(chatJs.includes('Resume X approval'), 'X authority cards should expose a functional resume action after the connector is ready.');
+assert.ok(!chatJs.includes('href="${escapeHtml(openWorkHref)}"'), 'Open chat approval must not be a no-op anchor back to the same card.');
 assert.ok(chatJs.includes('Progress check temporarily failed'), 'Chat progress polling should retry transient 503-style failures instead of stopping the order.');
 assert.ok(chatJs.includes('answerSaysAnalyticsAvailable'), 'Chat intake should detect when the user says GA4/Search Console is available.');
 assert.ok(chatJs.includes('openAnalyticsConsoleForIntake'), 'Chat intake should open Analytics Console before dispatch when analytics data is available.');
@@ -738,6 +742,8 @@ assert.ok(worker.includes('authBaseUrl: baseUrl(request, env)'), 'Worker auth st
 assert.ok(worker.includes('GOOGLE_OAUTH_SCOPE_GROUPS'), 'Worker Google OAuth should use explicit scope groups.');
 assert.ok(worker.includes('googleOAuthScopeGroupsFromUrl'), 'Worker Google OAuth should derive scopes from requested capabilities.');
 assert.ok(worker.includes('googleScopedOAuthScope'), 'Worker Google connector links should build the smallest requested scope set.');
+assert.ok(worker.includes('googleGrantedCapabilities'), 'Auth status should expose granted Google capabilities for OAuth prompt suppression.');
+assert.ok(chatJs.includes('googleAuthorityMissingGroups'), 'Chat approval UI should request only Google scope groups that are still missing.');
 assert.ok(worker.includes("googleAccessToken: persistentGoogleConnector ? '' : token.access_token"), 'Worker should keep Google access tokens out of browser session cookies when a persistent connector is available.');
 assert.ok(worker.includes("githubOAuthScope(env, action = 'login', capabilities = [])"), 'Worker GitHub OAuth should only request repo scope when a repo capability is requested.');
 assert.ok(/async function handleGoogleAuthStart[\s\S]{0,600}existingSession\?\.user && action === 'login'/.test(worker), 'Worker Google analytics connect should still start OAuth when an existing chat session needs connector scopes.');

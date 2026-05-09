@@ -2447,6 +2447,23 @@ function googleCapabilitiesForGroups(groups = []) {
   return capabilities;
 }
 
+function authGrantedGoogleCapabilities() {
+  return new Set(listValues(state.auth?.googleGrantedCapabilities || state.auth?.google_granted_capabilities).map((item) => String(item || '').trim().toLowerCase()));
+}
+
+function googleGroupAlreadyGranted(group = '') {
+  const normalized = String(group || '').trim().toLowerCase();
+  const capabilities = authGrantedGoogleCapabilities();
+  if (normalized === 'ga4') return capabilities.has('google.read_ga4');
+  if (normalized === 'gsc') return capabilities.has('google.read_gsc');
+  return false;
+}
+
+function googleAuthorityMissingGroups(request = null, preferredGroup = '') {
+  return googleAuthorityConnectGroups(request, preferredGroup)
+    .filter((group) => !googleGroupAlreadyGranted(group));
+}
+
 function googleConnectLabelForGroups(groups = []) {
   const normalized = Array.isArray(groups) ? groups : [];
   if (normalized.includes('ga4') && normalized.includes('gsc')) return 'Connect GA4 + Search Console';
@@ -2491,7 +2508,7 @@ function googleAuthHrefForAuthority(request = null, group = '') {
   saveChatOAuthReturnState(`google_${groupKey}_approval`);
   const url = new URL('/auth/google', window.location.origin);
   url.searchParams.set('action', 'analytics_connect');
-  url.searchParams.set('return_to', currentChatReturnPath({ oauthPopup: true }));
+  url.searchParams.set('return_to', currentChatReturnPath({ oauthPopup: true, oauthProvider: 'google' }));
   url.searchParams.set('login_source', `chatux_${groupKey}_approval`);
   url.searchParams.set('visitor_id', state.visitorId);
   url.searchParams.set('scope_group', groups.join(','));
@@ -2628,7 +2645,7 @@ function xPostConnectHint() {
   if (state.auth?.xLinked || state.auth?.xAuthorized) {
     return '<span class="chat-hint">Connected X account will be checked before posting.</span>';
   }
-  return `<a class="ghost-btn inline-btn file-action" href="${escapeHtml(xAuthHref())}">Connect X</a>`;
+  return xConnectLinkHtml('Connect X', 'ghost');
 }
 
 function xClientOpsHandoffUrl(jobId = '', draft = {}) {
@@ -2729,7 +2746,7 @@ function currentChatReturnPath(options = {}) {
     for (const [key, value] of current.searchParams.entries()) {
       if (['auth_error'].includes(key)) continue;
       if (options.includeRestoreParams === false && ['cait_restore_chat', 'cait_chat_session_id', 'cait_order_id'].includes(key)) continue;
-      if (['cait_oauth_popup'].includes(key)) continue;
+      if (['cait_oauth_popup', 'cait_oauth_provider'].includes(key)) continue;
       url.searchParams.append(key, value);
     }
     url.hash = current.hash || '';
@@ -2744,6 +2761,7 @@ function currentChatReturnPath(options = {}) {
     if (orderId) url.searchParams.set('cait_order_id', orderId);
   }
   if (options.oauthPopup === true) url.searchParams.set('cait_oauth_popup', '1');
+  if (options.oauthProvider) url.searchParams.set('cait_oauth_provider', String(options.oauthProvider || '').trim());
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
@@ -3976,7 +3994,7 @@ function showInfoPanel() {
     `<span class="utility-meta">${escapeHtml(login || 'Not signed in')}</span>`,
     `<span>X connector: ${escapeHtml(xState)}</span>`,
     '</div><div class="utility-actions">',
-    auth.loggedIn || login ? `${adminAction}<a class="ghost-btn file-action" href="${escapeHtml(xAuthHref())}">Connect X</a><button class="ghost-btn file-action" type="button" data-chat-logout>Sign out</button>` : `<a class="ghost-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in</a>`,
+    auth.loggedIn || login ? `${adminAction}${xConnectLinkHtml('Connect X', 'ghost')}<button class="ghost-btn file-action" type="button" data-chat-logout>Sign out</button>` : `<a class="ghost-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in</a>`,
     '</div></div>',
     '<div class="utility-row"><div class="utility-main"><strong>Resources</strong><span class="utility-meta">Docs, terms, privacy, and help.</span></div><div class="utility-actions"><a class="ghost-btn file-action" href="/help.html">Help</a><a class="ghost-btn file-action" href="/resources.html">Resources</a></div></div>',
     '</div>'
@@ -4076,22 +4094,35 @@ function renderAuthorityRequest(job = {}) {
   const reason = String(authority.reason || authority.message || authority.summary || job.failureReason || 'External action requires approval before execution.').trim();
   const xNeeded = required.some((item) => /(^x$|x\.post|twitter|tweet)/i.test(item));
   const googleNeeded = required.some((item) => /^google\.|^google$/i.test(item)) || googleSources.length > 0;
-  const approvalAnchor = job.id ? `approval-${String(job.id).replace(/[^a-z0-9_-]/gi, '')}` : 'chatThread';
-  const openWorkHref = `#${approvalAnchor}`;
+  const safeJobId = String(job.id || state.orderId || '').trim();
+  const approvalAnchor = safeJobId ? `approval-${safeJobId.replace(/[^a-z0-9_-]/gi, '')}` : 'chatThread';
   const actionLinks = [];
   if (xNeeded && !state.auth?.loggedIn) {
     actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in</a>`);
   } else if (xNeeded && !state.auth?.xLinked && !state.auth?.xAuthorized && state.auth?.xConfigured !== false && state.auth?.xTokenEncryptionConfigured !== false) {
-    actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(xAuthHref())}">Connect X</a>`);
+    actionLinks.push(xConnectLinkHtml('Connect X', 'primary'));
+  } else if (xNeeded && safeJobId) {
+    actionLinks.push(`<button class="primary-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(safeJobId)}">Resume X approval</button>`);
   }
   if (googleNeeded && !state.auth?.loggedIn) {
     actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in with Google</a>`);
   } else if (googleNeeded) {
     const nextGoogleGroup = googleSources.includes('ga4') ? 'ga4' : (googleSources.includes('gsc') ? 'gsc' : (missingCapabilities.includes('google.read_gsc') ? 'gsc' : 'ga4'));
-    const googleGroups = googleAuthorityConnectGroups(authority, nextGoogleGroup);
-    actionLinks.push(`<a class="primary-btn inline-btn file-action" data-chat-oauth-popup="google" href="${escapeHtml(googleAuthHrefForAuthority(authority, nextGoogleGroup))}">${escapeHtml(googleConnectLabelForGroups(googleGroups))}</a>`);
+    const googleGroups = googleAuthorityMissingGroups(authority, nextGoogleGroup);
+    if (googleGroups.length) {
+      const googleAuthority = {
+        ...(authority || {}),
+        required_google_sources: googleGroups,
+        missing_connector_capabilities: googleCapabilitiesForGroups(googleGroups)
+      };
+      actionLinks.push(`<a class="primary-btn inline-btn file-action" data-chat-oauth-popup="google" href="${escapeHtml(googleAuthHrefForAuthority(googleAuthority, googleGroups[0]))}">${escapeHtml(googleConnectLabelForGroups(googleGroups))}</a>`);
+    } else if (safeJobId) {
+      actionLinks.push(`<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(safeJobId)}">Check status</button>`);
+    }
   }
-  actionLinks.push(`<a class="ghost-btn inline-btn file-action" href="${escapeHtml(openWorkHref)}">Open chat approval</a>`);
+  if (safeJobId && !actionLinks.some((html) => html.includes('data-chat-order-open='))) {
+    actionLinks.push(`<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(safeJobId)}">Open chat approval</button>`);
+  }
   return [
     `<div class="approval-card" id="${escapeHtml(approvalAnchor)}">`,
     '<strong>Step 1: 承認が必要です / Action approval required</strong>',
@@ -5983,7 +6014,7 @@ async function postXDraftFromChat(jobId = '', postText = '') {
       appendMessage('assistant', [
         'X is not connected yet.',
         '',
-        `<a class="primary-btn inline-btn file-action" href="${escapeHtml(xAuthHref())}">Connect X</a>`,
+        xConnectLinkHtml('Connect X', 'primary'),
         '<span class="chat-hint">After connecting, return here and press Post to X again. The draft will stay in this chat.</span>'
       ].join('\n'), { tone: 'warn', label: 'X action' });
       return;
@@ -6151,12 +6182,17 @@ function loginHref(provider) {
   return `${url.pathname}${url.search}`;
 }
 
-function xAuthHref() {
+function xAuthHref(options = {}) {
   const url = new URL('/auth/x', window.location.origin);
-  url.searchParams.set('return_to', currentChatReturnPath());
+  url.searchParams.set('return_to', currentChatReturnPath(options.oauthPopup ? { oauthPopup: true, oauthProvider: 'x' } : {}));
   url.searchParams.set('login_source', 'chatux');
   url.searchParams.set('visitor_id', state.visitorId);
   return `${url.pathname}${url.search}`;
+}
+
+function xConnectLinkHtml(label = 'Connect X', style = 'ghost') {
+  const buttonClass = style === 'primary' ? 'primary-btn' : 'ghost-btn';
+  return `<a class="${buttonClass} inline-btn file-action" data-chat-oauth-popup="x" href="${escapeHtml(xAuthHref({ oauthPopup: true }))}">${escapeHtml(label || 'Connect X')}</a>`;
 }
 
 async function signOut() {
@@ -6374,17 +6410,19 @@ function openChatOAuthPopup(href = '', label = 'Google connection') {
 
 async function handleOAuthPopupReturnMessage(data = {}) {
   const status = String(data.status || '').trim().toLowerCase();
+  const provider = String(data.provider || '').trim().toLowerCase();
+  const connectorLabel = provider === 'x' ? 'X' : 'Google';
   if (status === 'error') {
     appendTextMessage('assistant', chatText(
-      `Google connection did not complete: ${data.error || 'auth_failed'}`,
-      `Google接続が完了しませんでした: ${data.error || 'auth_failed'}`,
+      `${connectorLabel} connection did not complete: ${data.error || 'auth_failed'}`,
+      `${connectorLabel}接続が完了しませんでした: ${data.error || 'auth_failed'}`,
       state.chatMessages[0]?.body || state.conversationLanguage
     ), { tone: 'error', label: 'Connector' });
     return;
   }
   appendTextMessage('system', chatText(
-    'Google connection finished. Checking this order again from the original chat.',
-    'Google接続が完了しました。元のチャットでこのオーダーを再確認します。',
+    `${connectorLabel} connection finished. Checking this order again from the original chat.`,
+    `${connectorLabel}接続が完了しました。元のチャットでこのオーダーを再確認します。`,
     state.chatMessages[0]?.body || state.conversationLanguage
   ), { label: 'Connector' });
   state.authorityNoticeKeys.clear();
@@ -6412,10 +6450,12 @@ function handleChatOAuthPopupReturn() {
   }
   if (url.searchParams.get('cait_oauth_popup') !== '1') return false;
   const error = String(url.searchParams.get('auth_error') || '').trim();
+  const provider = String(url.searchParams.get('cait_oauth_provider') || 'google').trim().toLowerCase();
+  const connectorLabel = provider === 'x' ? 'X' : 'Google';
   try {
     window.opener?.postMessage({
       type: 'cait-oauth-return',
-      provider: 'google',
+      provider,
       status: error ? 'error' : 'ok',
       error,
       sessionId: String(url.searchParams.get('cait_chat_session_id') || '').trim(),
@@ -6423,12 +6463,12 @@ function handleChatOAuthPopupReturn() {
     }, window.location.origin);
   } catch {}
   document.body.innerHTML = [
-    '<main class="chatux-shell" aria-label="Google connection complete">',
+    `<main class="chatux-shell" aria-label="${escapeHtml(connectorLabel)} connection complete">`,
     '<section class="chatux-panel">',
     '<div class="chatux-thread">',
     '<article class="message system">',
     '<div class="message-meta">Connector</div>',
-    `<div class="message-body">${escapeHtml(error ? `Google connection failed: ${error}` : 'Google connection completed. Return to the original chat window.')}</div>`,
+    `<div class="message-body">${escapeHtml(error ? `${connectorLabel} connection failed: ${error}` : `${connectorLabel} connection completed. Return to the original chat window.`)}</div>`,
     '</article>',
     '</div>',
     '</section>',

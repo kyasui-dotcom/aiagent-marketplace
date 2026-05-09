@@ -4941,6 +4941,17 @@ async function authStatus(request, env) {
   const googleAuthorized = Boolean(current?.googleAuthorized);
   const xAuthorized = Boolean(current?.xAuthorized);
   const identityLogins = identityLoginsForCurrent(current);
+  const googleConnector = googleConnectorForAccount(current?.account);
+  const googleGrantedScopes = [...googleConnectorScopeSet({
+    scopes: [
+      session?.googleScopes,
+      googleConnector?.scopes
+    ].filter(Boolean).join(' ')
+  })];
+  const googleGrantedCapabilities = googleOAuthCapabilitiesFromGroups(
+    ['ga4', 'gsc', 'drive', 'docs', 'sheets', 'presentations', 'calendar_read', 'calendar_write', 'gmail_read', 'gmail_send']
+      .filter((group) => !missingGoogleScopeGroups({ connected: true, scopes: googleGrantedScopes.join(' ') }, [group]).length)
+  );
   return {
     loggedIn,
     authProvider: current?.authProvider || 'guest',
@@ -4955,6 +4966,8 @@ async function authStatus(request, env) {
     githubRequestedScope: githubOAuthScope(env),
     xRequestedScope: xOAuthScopeLabel(),
     githubGrantedScopes: githubGrantedScopes(session),
+    googleGrantedScopes,
+    googleGrantedCapabilities,
     privateRepoImportEnabled: githubPrivateRepoImportEnabled(env),
     githubAppInstallations: githubAppInstallationsFromSession(session).length,
     githubAppRepoCount: githubAppReposFromSession(session).length,
@@ -15723,7 +15736,7 @@ async function scheduleProgressDispatchesForJobId(storage, env, waitUntil, jobId
   if (!jobId) return { scheduled: false, scheduled_count: 0, reason: 'job_id_missing', jobs: [] };
   const awaitDispatch = options.awaitDispatch !== false;
   if (options.refresh !== false) await refreshWorkflowLeaderHandoffForJobId(storage, jobId);
-  const state = await storage.getState();
+  const state = typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState();
   const targets = pickProgressDispatchTargets(state, jobId, { maxTargets: options.maxTargets || 1 });
   if (!targets.length) return { scheduled: false, scheduled_count: 0, reason: 'no_dispatch_target', jobs: [] };
   const scheduled = [];
@@ -17515,7 +17528,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
   const scheduled = [];
   const scheduledJobIds = new Set();
   for (let i = 0; i < limit; i += 1) {
-    const state = await storage.getState();
+    const state = typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState();
     const candidates = state.jobs
       .filter((job) => ['queued', 'running'].includes(String(job.status || '').toLowerCase()))
       .filter((job) => jobWithinDispatchAge(job, env))

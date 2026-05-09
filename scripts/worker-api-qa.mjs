@@ -3,7 +3,7 @@ import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import worker from '../worker.js';
 import { createD1LikeStorage } from '../lib/storage.js';
-import { buildAgentTeamDeliveryOutput, nowIso } from '../lib/shared.js';
+import { buildAgentTeamDeliveryOutput, nowIso, orderPreflightForAgent } from '../lib/shared.js';
 import { E2E_DEFAULT_ORDER_PROMPT, assertOrderScenarioQuality, buildOrderScenarioPayload } from './e2e-order-scenario.mjs';
 
 const workerSource = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
@@ -72,6 +72,40 @@ assert.ok(workerSource.includes('order_create_idempotent'), 'order create should
 assert.ok(workerSource.includes('persistedJobForClientOrderId'), 'order create should check for an existing client order before creating a new job.');
 assert.ok(workerSource.includes('direct completion sweep recovered this job'), 'repeatedly unstarted workflow queue dispatches should recover by direct sweep instead of timing out.');
 assert.ok(!workerSource.includes('Built-in workflow dispatch queue was requested repeatedly but did not start execution.'), 'workflow queue non-starts must no longer fail the order before recovery.');
+assert.ok(workerSource.includes('googleGrantedCapabilities'), 'auth status should expose granted Google capabilities so chat does not repeat OAuth prompts.');
+assert.ok(/async function scheduleProgressDispatchesForJobId[\s\S]{0,500}getFreshState/.test(workerSource), 'workflow progress dispatch target selection should read fresh storage after leader completion.');
+assert.ok(/async function runQueuedBuiltInDispatchSweep[\s\S]{0,500}getFreshState/.test(workerSource), 'cron queued dispatch sweep should not choose targets from stale storage cache.');
+
+const ga4SessionPreflight = orderPreflightForAgent(
+  {
+    id: 'qa-ga4-session-agent',
+    taskTypes: ['data_analysis'],
+    metadata: { requiredConnectorCapabilities: ['google.read_ga4'] }
+  },
+  {
+    googleAuthorized: true,
+    session: { googleScopes: 'openid email profile https://www.googleapis.com/auth/analytics.readonly' }
+  },
+  null,
+  { prompt: 'Use GA4 data for growth analysis.' }
+);
+assert.equal(ga4SessionPreflight.ok, true, 'session-only Google OAuth scopes should satisfy GA4 preflight without asking for OAuth again');
+
+const gscSessionPreflight = orderPreflightForAgent(
+  {
+    id: 'qa-gsc-session-agent',
+    taskTypes: ['data_analysis'],
+    metadata: { requiredConnectorCapabilities: ['google.read_gsc'] }
+  },
+  {
+    googleAuthorized: true,
+    session: { googleScopes: 'openid email profile https://www.googleapis.com/auth/analytics.readonly' }
+  },
+  null,
+  { prompt: 'Use Search Console data for growth analysis.' }
+);
+assert.equal(gscSessionPreflight.ok, false, 'GA4-only OAuth should not be mistaken for Search Console access');
+assert.deepEqual(gscSessionPreflight.missing_connector_capabilities, ['google.read_gsc'], 'preflight should ask only for the missing Search Console capability');
 
 const env = {
   APP_VERSION: '0.2.0-test',
@@ -436,6 +470,11 @@ const loggedInGoogleSearchConsoleConnect = await request('/auth/google?action=an
 assert.equal(loggedInGoogleSearchConsoleConnect.status, 302);
 assert.ok(String(loggedInGoogleSearchConsoleConnect.headers.location || '').includes('webmasters.readonly'), 'Search Console connect should request Search Console scope.');
 assert.ok(!String(loggedInGoogleSearchConsoleConnect.headers.location || '').includes('analytics.readonly'), 'Search Console connect should not request GA4 scope.');
+
+const loggedInGoogleAllAnalyticsConnect = await request('/auth/google?action=analytics_connect&scope_group=ga4,gsc&return_to=%2Fchat', {}, { sessionCookie: daveSession });
+assert.equal(loggedInGoogleAllAnalyticsConnect.status, 302);
+assert.ok(String(loggedInGoogleAllAnalyticsConnect.headers.location || '').includes('analytics.readonly'), 'Combined analytics connect should request GA4 scope.');
+assert.ok(String(loggedInGoogleAllAnalyticsConnect.headers.location || '').includes('webmasters.readonly'), 'Combined analytics connect should request Search Console scope in the same OAuth pass.');
 
 const loggedInGoogleConnect = await request('/auth/google?mode=connect&return_to=%2Fchat', {}, { sessionCookie: daveSession });
 assert.equal(loggedInGoogleConnect.status, 302);
