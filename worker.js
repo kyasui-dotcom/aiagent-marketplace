@@ -15710,6 +15710,32 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
   const eventLabel = options.eventLabel || 'scheduled built-in sweep';
   const completionSource = options.completionSource || 'built-in-workflow-scheduled-sweep';
   try {
+    if (workflowShouldCompleteDataUnavailable(locked)) {
+      const normalized = normalizeDispatchResponse(workflowDataUnavailableCompletionPayload(locked));
+      normalized.usage = usageWithObservedJobTokens(locked, normalized.usage, normalized.report);
+      const result = await completeJobFromAgentResult(storage, locked.id, agent.id, {
+        report: normalized.report,
+        files: normalized.files,
+        usage: normalized.usage,
+        returnTargets: normalized.returnTargets
+      }, { source: completionSource });
+      if (result?.ok) {
+        await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} skipped by ${eventLabel}: no analytics/data context`);
+        await recordBillingOutcome(storage, result.job, result.billing, completionSource);
+        if (locked.workflowParentId) {
+          await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
+          await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`, {
+            maxTargets: 8,
+            awaitDispatch: true,
+            refresh: false
+          });
+          await reconcileWorkflowParent(storage, locked.workflowParentId);
+        }
+        return { ok: true, mode: result.mode, jobId: locked.id, job: result.job };
+      }
+      await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} data-unavailable completion rejected: ${String(result?.error || 'unknown').slice(0, 120)}`);
+      return { ok: false, mode: 'rejected', jobId: locked.id, error: result?.error || 'unknown' };
+    }
     let effectiveLocked = locked;
     if (locked?.workflowParentId && !isWorkflowLeaderTask(workflowTaskName(locked))) {
       await storage.mutate(async (state) => {
