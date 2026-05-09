@@ -1887,7 +1887,7 @@ function progressNarratorTextForJob(job = {}) {
   const phase = String(current?.sequencePhase || current?.sequence_phase || '').trim().toLowerCase();
   const agent = workflowChildDisplayLabel(current || {});
   const status = String(current?.status || job.status || '').trim().toLowerCase();
-  if (phase === 'initial') return `${agent || 'Leader'} is reading the order and deciding the next handoff.`;
+  if (phase === 'initial') return `${agent || 'Leader'} is reviewing the order and preparing the next handoff.`;
   if (phase === 'data') return `${agent || 'Data agent'} is checking the available metrics before research moves on.`;
   if (phase === 'research') return `${agent || 'Research agent'} is gathering source-backed context for the plan.`;
   if (phase === 'planning') return `${agent || 'Planner'} is turning the inputs into a channel and execution plan.`;
@@ -1956,7 +1956,7 @@ function visibleWorkflowChildRuns(childRuns = [], options = {}) {
 function workflowPhaseLabel(phase = '') {
   const safe = String(phase || '').trim().toLowerCase();
   const labels = {
-    initial: 'Leader intake',
+    initial: 'Leader review',
     data: 'Data',
     research: 'Research',
     planning: 'Planning',
@@ -1988,15 +1988,21 @@ function workflowCurrentChildRun(job = {}) {
   const childRuns = createdOrderChildRuns(job);
   if (!childRuns.length) return '';
   const active = childRuns
-    .filter((child) => ['running', 'claimed', 'dispatched', 'queued', 'blocked'].includes(String(child.status || '').trim().toLowerCase()))
+    .filter((child) => ['running', 'claimed', 'dispatched'].includes(String(child.status || '').trim().toLowerCase()))
     .sort((left, right) => (
       workflowChildStatusRank(left.status) - workflowChildStatusRank(right.status)
       || workflowPhaseRank(left.sequencePhase || left.sequence_phase) - workflowPhaseRank(right.sequencePhase || right.sequence_phase)
     ));
+  const queued = childRuns
+    .filter((child) => String(child.status || '').trim().toLowerCase() === 'queued')
+    .sort((left, right) => workflowPhaseRank(left.sequencePhase || left.sequence_phase) - workflowPhaseRank(right.sequencePhase || right.sequence_phase));
+  const blockedOrFailed = childRuns
+    .filter((child) => ['blocked', 'failed', 'timed_out'].includes(String(child.status || '').trim().toLowerCase()))
+    .sort((left, right) => workflowPhaseRank(left.sequencePhase || left.sequence_phase) - workflowPhaseRank(right.sequencePhase || right.sequence_phase));
   const completed = childRuns
     .filter((child) => String(child.status || '').trim().toLowerCase() === 'completed')
     .sort((left, right) => workflowPhaseRank(right.sequencePhase || right.sequence_phase) - workflowPhaseRank(left.sequencePhase || left.sequence_phase));
-  return active[0] || completed[0] || null;
+  return active[0] || queued[0] || blockedOrFailed[0] || completed[0] || null;
 }
 
 function workflowCurrentLocationLabel(job = {}) {
@@ -5702,12 +5708,12 @@ async function sendOrder() {
     ].filter(Boolean).join('\n'), { tone: 'ok', label: actorLabel });
     if (state.orderId) {
       showProgressNarrator(chatText(
-        'Order accepted. The leader will release later agent layers after each checkpoint.',
-        'オーダーを受け付けました。以降のエージェント層は checkpoint ごとに leader が解放します。',
+        'Order accepted. The leader will review the brief and release later agent layers after each checkpoint.',
+        'オーダーを受け付けました。leader が依頼内容を確認し、以降のエージェント層は checkpoint ごとに解放します。',
         acceptedDraft.originalPrompt || payload.prompt
       ), {
         key: state.orderId,
-        phase: 'Leader intake',
+        phase: 'Leader review',
         status: created.status || created.mode || 'created',
         steps: ['Initial layer only', 'Checkpoint-driven handoff', 'Approval before external writes']
       });

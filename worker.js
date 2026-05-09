@@ -4719,6 +4719,7 @@ const DISPATCH_SCHEDULE_STALE_MS = 90_000;
 const BUILT_IN_DISPATCH_SCHEDULE_STALE_MS = 8 * 60 * 1000;
 const DISPATCH_SCHEDULE_TIMEOUT_MS = 10 * 60 * 1000;
 const COMPLETION_SWEEP_STALE_MS = 15 * 60 * 1000;
+const COMPLETION_QUEUE_STALE_MS = 2 * 60 * 1000;
 const DEFAULT_WORKFLOW_DISPATCH_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function dispatchScheduleIsFresh(job, now = Date.now(), staleMs = DISPATCH_SCHEDULE_STALE_MS) {
@@ -4749,6 +4750,11 @@ function workflowDispatchMaxAgeMs(env = {}) {
 function completionSweepStaleMs(env = {}) {
   const configured = Number(env?.WORKFLOW_COMPLETION_SWEEP_STALE_MS || 0);
   return Number.isFinite(configured) && configured > 0 ? configured : COMPLETION_SWEEP_STALE_MS;
+}
+
+function completionQueueStaleMs(env = {}) {
+  const configured = Number(env?.WORKFLOW_COMPLETION_QUEUE_STALE_MS || env?.WORKFLOW_DISPATCH_QUEUE_STALE_MS || 0);
+  return Number.isFinite(configured) && configured > 0 ? configured : COMPLETION_QUEUE_STALE_MS;
 }
 
 function workflowDispatchQueue(env = {}) {
@@ -15609,6 +15615,7 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
   const skipped = {};
   let state = null;
   const expired = [];
+  const recoveredQueued = [];
   const staleSweepJobs = typeof storage.listStaleCompletionSweepJobs === 'function'
     ? await storage.listStaleCompletionSweepJobs({
         limit,
@@ -15652,6 +15659,66 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
       expired.push(expiredJob.id);
       await touchEvent(storage, 'FAILED', `${expiredJob.taskType}/${expiredJob.id.slice(0, 6)} completion sweep timed out`);
       if (expiredJob.workflowParentId) await reconcileWorkflowParent(storage, expiredJob.workflowParentId);
+    }
+  }
+  const staleQueuedJobs = typeof storage.listStaleCompletionQueuedJobs === 'function'
+    ? await storage.listStaleCompletionQueuedJobs({
+        limit,
+        maxAgeMs: workflowDispatchMaxAgeMs(env),
+        minAgeMs: completionQueueStaleMs(env)
+      })
+    : [];
+  for (const staleQueuedJob of staleQueuedJobs) {
+    if (completed.length >= limit) break;
+    const agent = typeof storage.getAgentById === 'function'
+      ? await storage.getAgentById(staleQueuedJob.assignedAgentId)
+      : null;
+    const sampleKind = builtInWorkflowKindForJob(staleQueuedJob, agent);
+    if (!agent) {
+      skipped.stale_queued_missing_agent = (skipped.stale_queued_missing_agent || 0) + 1;
+      continue;
+    }
+    if (!sampleKind) {
+      skipped.stale_queued_not_builtin = (skipped.stale_queued_not_builtin || 0) + 1;
+      continue;
+    }
+    const lockStaleQueuedJob = async (draft) => {
+      const draftJob = draft.jobs.find((item) => item.id === staleQueuedJob.id);
+      if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
+      if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'completion_queued') return null;
+      const at = nowIso();
+      draftJob.status = 'running';
+      draftJob.startedAt = draftJob.startedAt || at;
+      draftJob.dispatch = {
+        ...(draftJob.dispatch || {}),
+        completionStatus: 'completion_sweep_running',
+        completionSweepRequestedAt: at,
+        completionSweepAttempts: Number(draftJob.dispatch?.completionSweepAttempts || 0) + 1,
+        completionQueueRecoveredAt: at,
+        retryable: false,
+        nextRetryAt: null
+      };
+      draftJob.logs = [
+        ...(draftJob.logs || []),
+        'stale workflow dispatch queue entry recovered by direct completion sweep'
+      ];
+      return cloneJob(draftJob);
+    };
+    const locked = typeof storage.mutateJobAndAgent === 'function'
+      ? await storage.mutateJobAndAgent(staleQueuedJob.id, agent.id, lockStaleQueuedJob)
+      : await storage.mutate(lockStaleQueuedJob);
+    if (!locked) {
+      skipped.stale_queued_lock_rejected = (skipped.stale_queued_lock_rejected || 0) + 1;
+      continue;
+    }
+    recoveredQueued.push(locked.id);
+    await touchEvent(storage, 'RUNNING', `${locked.taskType}/${locked.id.slice(0, 6)} stale workflow dispatch queue recovered by direct sweep`);
+    const result = await runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, sampleKind, {
+      eventLabel: 'stale workflow dispatch queue recovery',
+      completionSource: 'workflow-dispatch-queue-recovery'
+    });
+    if (result?.ok && ['completed', 'failed', 'blocked'].includes(String(result.mode || ''))) {
+      completed.push(locked.id);
     }
   }
   const candidates = typeof storage.listScheduledWorkflowJobs === 'function'
@@ -15765,7 +15832,7 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
       }
     }
   }
-  return { ok: true, completed_count: completed.length, queued_count: queued.length, job_ids: completed, queued_job_ids: queued, scanned_count: jobs.length, skipped, expired_count: expired.length, expired_job_ids: expired };
+  return { ok: true, completed_count: completed.length, queued_count: queued.length, job_ids: completed, queued_job_ids: queued, scanned_count: jobs.length, skipped, expired_count: expired.length, expired_job_ids: expired, recovered_queued_count: recoveredQueued.length, recovered_queued_job_ids: recoveredQueued };
 }
 
 async function verifyInternalCronRequest(request, env, cron = '') {
@@ -15989,6 +16056,18 @@ async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
     const latest = typeof storage.getJobById === 'function' ? await storage.getJobById(jobId) : null;
     await touchEvent(storage, 'RUNNING', `${job.taskType}/${job.id.slice(0, 6)} workflow dispatch queue skipped job_status=${String(latest?.status || job.status || 'unknown').slice(0, 40)} completion_status=${String(latest?.dispatch?.completionStatus || job.dispatch?.completionStatus || 'unknown').slice(0, 80)}`);
     return { ok: true, mode: 'not_ready_or_already_running' };
+  }
+  const persistedLocked = typeof storage.getJobById === 'function' ? await storage.getJobById(jobId) : locked;
+  if (
+    persistedLocked
+    && String(persistedLocked.dispatch?.completionStatus || '').trim().toLowerCase() !== 'completion_sweep_running'
+  ) {
+    await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} workflow dispatch queue lock did not persist; retrying queue message`);
+    return {
+      ok: true,
+      mode: 'lock_not_persisted',
+      retryDelaySeconds: Math.max(30, Math.min(180, Math.ceil(completionQueueStaleMs(env) / 1000)))
+    };
   }
   await touchEvent(storage, 'RUNNING', `${locked.taskType}/${locked.id.slice(0, 6)} workflow dispatch queue generation started`);
   return runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, sampleKind, {
@@ -20005,7 +20084,7 @@ export default {
     for (const message of batch?.messages || []) {
       try {
         const result = await processWorkflowDispatchQueueMessage(storage, env, message?.body || {});
-        if (result?.mode === 'already_running_fresh' && typeof message?.retry === 'function') {
+        if (['already_running_fresh', 'lock_not_persisted'].includes(String(result?.mode || '')) && typeof message?.retry === 'function') {
           message.retry({ delaySeconds: result.retryDelaySeconds || 180 });
         } else if (typeof message?.ack === 'function') {
           message.ack();

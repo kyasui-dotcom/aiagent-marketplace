@@ -1805,6 +1805,7 @@ const queueDispatchParentId = 'qa-queue-dispatch-parent';
 const queueMessages = [];
 const queueEnv = {
   ...qaSearchEnv,
+  SCHEDULED_BUILTIN_COMPLETION_SWEEP_LIMIT: '10',
   WORKFLOW_DISPATCH_QUEUE: {
     async send(body, options) {
       queueMessages.push({ body, options });
@@ -1895,6 +1896,73 @@ assert.notEqual(
   String(queueDispatchCompletedChild?.dispatch?.completionStatus || ''),
   'completion_queued',
   `workflow dispatch queue consumer should move queued jobs out of completion_queued; events=${queueDispatchCompletedState.events.slice(-10).map((event) => event.message).join(' | ')}`
+);
+
+const lostQueueChildId = 'qa-lost-queue-child';
+const lostQueueParentId = 'qa-lost-queue-parent';
+await qaStorage.mutate(async (draft) => {
+  const early = '1970-01-01T00:00:00.000Z';
+  draft.jobs.push(
+    {
+      id: lostQueueParentId,
+      jobKind: 'workflow',
+      parentAgentId: 'qa-runner',
+      taskType: 'research_team_leader',
+      prompt: 'lost queue workflow parent',
+      status: 'running',
+      createdAt: nowIso(),
+      startedAt: nowIso(),
+      workflow: {
+        plannedTasks: ['research'],
+        childRuns: []
+      },
+      logs: []
+    },
+    {
+      id: lostQueueChildId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'research',
+      workflowTask: 'research',
+      workflowAgentName: 'Research Agent',
+      prompt: 'stale completion_queued workflow child should be recovered by cron',
+      status: 'running',
+      assignedAgentId: 'agent_research_01',
+      workflowParentId: lostQueueParentId,
+      createdAt: nowIso(),
+      startedAt: early,
+      input: { _broker: { workflow: { sequencePhase: 'research', forceWebSearch: true, webSearchRequiredReason: 'leader_research_layer' } } },
+      dispatch: {
+        completionStatus: 'completion_queued',
+        firstDispatchRequestedAt: early,
+        dispatchRequestedAt: early,
+        completionQueueRequestedAt: early,
+        completionQueueAttempts: 1,
+        scheduleAttempts: 1,
+        retryable: false,
+        maxRetries: 2
+      },
+      logs: ['lost queue child']
+    }
+  );
+});
+const lostQueueWaits = [];
+await worker.scheduled({ cron: '* * * * *', scheduledTime: Date.now() }, queueEnv, {
+  waitUntil: (promise) => lostQueueWaits.push(Promise.resolve(promise))
+});
+for (let waitIndex = 0; waitIndex < lostQueueWaits.length; waitIndex += 1) {
+  await lostQueueWaits[waitIndex];
+}
+const lostQueueState = await qaStorage.getState();
+const lostQueueChild = lostQueueState.jobs.find((job) => job.id === lostQueueChildId);
+assert.notEqual(
+  String(lostQueueChild?.dispatch?.completionStatus || ''),
+  'completion_queued',
+  `minute cron should recover stale completion_queued workflow children when a queue message is lost or acked without durable completion; child=${JSON.stringify({ status: lostQueueChild?.status, dispatch: lostQueueChild?.dispatch, logs: lostQueueChild?.logs })}; events=${lostQueueState.events.slice(-20).map((event) => event.message).join(' | ')}`
+);
+assert.ok(
+  lostQueueState.events.some((event) => String(event.message || '').includes('stale workflow dispatch queue recovered')),
+  'stale completion_queued recovery should leave an observable event'
 );
 
 const watchdogReleaseParentId = 'qa-watchdog-release-parent';
