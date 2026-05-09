@@ -170,6 +170,7 @@ assert.ok(chatJs.includes('function xConnectLinkHtml'), 'Chat X connector links 
 assert.ok(chatJs.includes('data-chat-oauth-popup="x"'), 'Chat X connector approval should open OAuth in a popup and keep the current order attached.');
 assert.ok(chatJs.includes('Resume X approval'), 'X authority cards should expose a functional resume action after the connector is ready.');
 assert.ok(!chatJs.includes('href="${escapeHtml(openWorkHref)}"'), 'Open chat approval must not be a no-op anchor back to the same card.');
+assert.ok(chatJs.includes("source === 'leader_execution_approval' && status !== 'blocked'"), 'Future leader execution approval hints should not render as active chat approvals before the workflow is blocked.');
 assert.ok(chatJs.includes('Progress check temporarily failed'), 'Chat progress polling should retry transient 503-style failures instead of stopping the order.');
 assert.ok(chatJs.includes('answerSaysAnalyticsAvailable'), 'Chat intake should detect when the user says GA4/Search Console is available.');
 assert.ok(chatJs.includes('openAnalyticsConsoleForIntake'), 'Chat intake should open Analytics Console before dispatch when analytics data is available.');

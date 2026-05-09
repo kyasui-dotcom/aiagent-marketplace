@@ -2501,6 +2501,14 @@ function authorityNeedsApproval(request = null) {
   );
 }
 
+function authorityRequestIsActionableForJob(job = {}, request = null) {
+  if (!authorityNeedsApproval(request)) return false;
+  const source = String(request?.source || request?.reason_code || request?.reasonCode || '').trim().toLowerCase();
+  const status = String(job?.status || '').trim().toLowerCase();
+  if (source === 'leader_execution_approval' && status !== 'blocked') return false;
+  return true;
+}
+
 function googleAuthHrefForAuthority(request = null, group = '') {
   const groups = googleAuthorityConnectGroups(request, group);
   const groupKey = groups.join('_') || 'ga4';
@@ -2518,7 +2526,7 @@ function googleAuthHrefForAuthority(request = null, group = '') {
 
 function authorityNoticeKey(job = {}) {
   const request = authorityRequestFromJob(job);
-  if (!authorityNeedsApproval(request)) return '';
+  if (!authorityRequestIsActionableForJob(job, request)) return '';
   const missingConnectors = listValues(request.missing_connectors || request.missingConnectors || request.connectors);
   const missingCapabilities = listValues(request.missing_connector_capabilities || request.missingConnectorCapabilities || request.capabilities);
   const googleSources = googleIncludeGroupsFromAuthority(request);
@@ -4086,7 +4094,7 @@ async function reuseAiAgent(id = '') {
 function renderAuthorityRequest(job = {}) {
   if (['failed', 'timed_out'].includes(String(job.status || '').trim().toLowerCase())) return '';
   const authority = authorityRequestFromJob(job);
-  if (!authorityNeedsApproval(authority)) return '';
+  if (!authorityRequestIsActionableForJob(job, authority)) return '';
   const missingConnectors = listValues(authority.missing_connectors || authority.missingConnectors || authority.connectors);
   const missingCapabilities = listValues(authority.missing_connector_capabilities || authority.missingConnectorCapabilities || authority.capabilities);
   const googleSources = googleIncludeGroupsFromAuthority(authority);
