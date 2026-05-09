@@ -127,6 +127,33 @@ const activeDispatchJob = afterDispatchRegressionMerge.jobs.find((job) => job.id
 assert.equal(activeDispatchJob.dispatch.completionStatus, 'completion_sweep_running', 'late completion_queued writes must not regress an active sweep lock');
 assert.ok(activeDispatchJob.logs.includes('late queue write'), 'late queue diagnostics should merge without reverting dispatch progress');
 
+await storage.replaceState({
+  ...(await storage.getState()),
+  jobs: [sweepLockedJob]
+});
+await storage.replaceState({
+  ...(await storage.getState()),
+  jobs: [{
+    ...sweepLockedJob,
+    status: 'queued',
+    startedAt: null,
+    dispatch: {
+      ...sweepLockedJob.dispatch,
+      completionStatus: 'leader_auto_retry_queued',
+      completionSweepSoftTimedOutAt: '2026-04-25T10:04:00.000Z',
+      attempts: 1,
+      retryable: true,
+      nextRetryAt: null
+    },
+    logs: ['soft timeout retry queued']
+  }]
+});
+const afterSoftRetryMerge = await storage.getState();
+const softRetryJob = afterSoftRetryMerge.jobs.find((job) => job.id === 'active-dispatch-job');
+assert.equal(softRetryJob.status, 'queued', 'stale completion_sweep_running jobs should be able to move back to queued for safe retry');
+assert.equal(softRetryJob.dispatch.completionStatus, 'leader_auto_retry_queued', 'soft timeout retry must not be treated as an invalid dispatch regression');
+assert.ok(softRetryJob.logs.includes('soft timeout retry queued'), 'soft timeout retry diagnostics should merge');
+
 const retryQueuedJob = {
   id: 'retry-queued-job',
   parentAgentId: 'qa',
