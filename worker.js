@@ -12578,6 +12578,8 @@ async function dispatchJobToAssignedAgent(job, agent, env) {
       ? workflowAttachedDataContextCompletionPayload(job)
       : workflowShouldCompleteResearchFromPriorSourcePacket(job)
         ? workflowPriorSourceResearchCompletionPayload(job)
+      : workflowShouldCompleteFromPriorHandoffPacket(job)
+        ? workflowPriorHandoffCompletionPayload(job)
       : workflowShouldCompleteDataUnavailable(job)
         ? workflowDataUnavailableCompletionPayload(job)
         : await runBuiltInAgent(sampleKind, payload, env);
@@ -15824,6 +15826,162 @@ function workflowShouldCompleteResearchFromPriorSourcePacket(job = {}) {
   return workflowPriorSourcePacketSourcesForJob(job).length > 0;
 }
 
+function workflowPriorRunsForJob(job = {}) {
+  const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
+    ? job.input._broker.workflow
+    : {};
+  const handoff = workflow.leaderHandoff && typeof workflow.leaderHandoff === 'object' ? workflow.leaderHandoff : {};
+  return [
+    ...(Array.isArray(handoff.priorRuns) ? handoff.priorRuns : []),
+    ...(Array.isArray(handoff.priorDeliverables) ? handoff.priorDeliverables : [])
+  ].filter((run) => run && typeof run === 'object');
+}
+
+function workflowShouldCompleteFromPriorHandoffPacket(job = {}) {
+  const task = workflowTaskName(job);
+  if (![
+    'media_planner',
+    'growth',
+    'seo_gap',
+    'writing',
+    'writer',
+    'landing',
+    'list_creator',
+    'cold_email',
+    'directory_submission',
+    'x_post',
+    'reddit',
+    'indie_hackers',
+    'acquisition_automation'
+  ].includes(task)) return false;
+  if (workflowJobRequiresSearch(job)) return false;
+  const attempts = Math.max(
+    Number(job?.dispatch?.attempts || 0) || 0,
+    Number(job?.dispatch?.completionSweepAttempts || 0) || 0,
+    Math.max(0, (Number(job?.dispatch?.completionQueueAttempts || 0) || 0) - 1)
+  );
+  if (attempts < 1) return false;
+  return workflowPriorRunsForJob(job).length > 0;
+}
+
+function workflowPriorHandoffCompletionPayload(job = {}) {
+  const task = workflowTaskName(job);
+  const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
+    ? job.input._broker.workflow
+    : {};
+  const priorRuns = workflowPriorRunsForJob(job);
+  const sources = workflowPriorSourcePacketSourcesForJob(job);
+  const textForLanguage = [workflow.objective, workflow.originalPrompt, job.originalPrompt, job.prompt].join('\n');
+  const isJapanese = /[\u3040-\u30ff\u3400-\u9fff]/u.test(textForLanguage);
+  const objective = workflowClipText(workflow.objective || workflow.originalPrompt || job.prompt || task, 520);
+  const targetUrls = workflowExtractSourceUrls([objective, job.prompt, JSON.stringify(sources)].join('\n'), 4);
+  const target = targetUrls[0] || 'target service';
+  const priorLabels = [...new Set(priorRuns.map((run) => String(run.taskType || run.workflowTask || '').trim()).filter(Boolean))].slice(0, 6);
+  const taskLabel = task.replace(/_/g, ' ');
+  const channelArtifact = task === 'media_planner' || task === 'growth'
+    ? (isJapanese
+        ? `優先媒体: SEO/自然検索を主軸、SNSはX/Reddit系の技術ユーザー接点、広告は小額検証の順で扱う。対象: ${target}`
+        : `Priority media: SEO/organic first, SNS via X/Reddit-style technical-user surfaces, paid ads as small validation. Target: ${target}`)
+    : task === 'seo_gap'
+      ? (isJapanese
+          ? `SEO成果物: 開発者向け登録/トライアル獲得に直結するページ改善、クエリ仮説、内部リンク、計測イベントを整理。対象: ${target}`
+          : `SEO artifact: page fixes, query hypotheses, internal links, and measurement events tied to developer signup/trial conversion. Target: ${target}`)
+    : ['writing', 'writer', 'landing'].includes(task)
+      ? (isJapanese
+          ? `ライティング成果物: 技術ユーザー向けhero/CTA/proof/post hookを、上流データとresearch制約から作成。対象: ${target}`
+          : `Writing artifact: hero, CTA, proof block, and post hook for technical users from upstream data and research limits. Target: ${target}`)
+    : ['list_creator', 'cold_email'].includes(task)
+      ? (isJapanese
+          ? `アウトリーチ成果物: lead/source条件、メール下書き、除外条件、承認前チェックを作成。送信は未実行。対象: ${target}`
+          : `Outreach artifact: lead/source criteria, email draft, exclusions, and pre-approval checklist. No send executed. Target: ${target}`)
+    : (isJapanese
+        ? `実行準備成果物: 上流handoffに基づく承認前packet。外部投稿・公開・送信は未実行。対象: ${target}`
+        : `Execution-prep artifact: pre-approval packet from upstream handoff. No external post/publish/send executed. Target: ${target}`);
+  const summary = isJapanese
+    ? `${taskLabel} を上流handoff ${priorLabels.join(', ') || 'prior work'} から作成しました。`
+    : `Created ${taskLabel} from upstream handoff: ${priorLabels.join(', ') || 'prior work'}.`;
+  const nextAction = isJapanese
+    ? '次のleader checkpointで、この成果物を上流データ/researchと照合し、外部実行が必要なものだけ承認待ちにしてください。'
+    : 'At the next leader checkpoint, compare this artifact against upstream data/research and gate only external execution items for approval.';
+  const bullets = isJapanese
+    ? [
+        `使用した上流成果物: ${priorLabels.join(' / ') || 'prior handoff'}`,
+        channelArtifact,
+        '生成が長引いたため、上流handoffの事実・source・制約からdurable packetとして確定しました。',
+        '外部投稿、送信、広告、repository writeは承認前に実行しません。'
+      ]
+    : [
+        `Upstream work used: ${priorLabels.join(' / ') || 'prior handoff'}`,
+        channelArtifact,
+        'Generation exceeded the retry budget, so this durable packet was created from upstream facts, sources, and constraints.',
+        'No external posting, sending, advertising, or repository write runs before approval.'
+      ];
+  const markdown = [
+    `# ${taskLabel} handoff packet`,
+    '',
+    '## Objective',
+    objective,
+    '',
+    isJapanese ? '## Upstream work used' : '## Upstream Work Used',
+    ...(priorLabels.length ? priorLabels.map((label) => `- ${label}`) : ['- prior handoff']),
+    '',
+    isJapanese ? '## Artifact' : '## Artifact',
+    `- ${channelArtifact}`,
+    '',
+    isJapanese ? '## Sources carried forward' : '## Sources Carried Forward',
+    ...(sources.length ? sources.map((source) => `- ${[source.title, source.url, source.snippet].filter(Boolean).join(' | ')}`) : ['- No explicit URL source in prior handoff; use upstream summaries only.']),
+    '',
+    isJapanese ? '## Approval boundary' : '## Approval Boundary',
+    isJapanese
+      ? '- 外部投稿、送信、広告出稿、PR/repository write は明示承認後のみ。'
+      : '- External posting, sending, ad launch, PR/repository write only after explicit approval.',
+    '',
+    isJapanese ? '## Next action' : '## Next Action',
+    nextAction
+  ].join('\n');
+  return {
+    accepted: true,
+    status: 'completed',
+    summary,
+    report: {
+      summary,
+      bullets,
+      nextAction,
+      confidence: 'medium',
+      web_sources: sources,
+      assumptions: isJapanese
+        ? ['上流handoffを根拠にする。追加生成が完了しなかった箇所は仮定として扱う。']
+        : ['Uses upstream handoff as evidence. Items whose generation did not complete remain assumptions.'],
+      workstreams: [taskLabel, 'Upstream handoff usage', 'Approval-gated next action'],
+      process: [
+        'RETRY_BUDGET_CHECK (completed): Direct generation already exceeded the retry budget.',
+        'PRIOR_HANDOFF_PACKET (completed): Upstream facts, sources, and constraints were converted into a durable specialist packet.',
+        'APPROVAL_BOUNDARY (completed): External writes remain approval-gated.'
+      ],
+      runtime: {
+        workflow: 'prior_handoff_specialist_packet',
+        mode: 'prior_handoff_packet',
+        task
+      }
+    },
+    files: [
+      {
+        name: `${task || 'specialist'}-handoff-packet.md`,
+        type: 'text/markdown',
+        content: markdown
+      }
+    ],
+    usage: {
+      api_cost: 0,
+      total_cost_basis: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0
+    },
+    return_targets: ['chat', 'api']
+  };
+}
+
 function workflowPriorSourceResearchCompletionPayload(job = {}) {
   const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
     ? job.input._broker.workflow
@@ -16279,6 +16437,31 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
       }
       await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} prior source research completion rejected`);
       return { ok: false, mode: 'rejected', jobId: locked.id, error: 'prior source research completion rejected' };
+    }
+    if (workflowShouldCompleteFromPriorHandoffPacket(locked)) {
+      const completedJob = await completeWorkflowDataPacketJob(
+        storage,
+        locked,
+        agent,
+        workflowPriorHandoffCompletionPayload(locked),
+        completionSource,
+        'specialist layer completed from prior handoff packet after generation retry'
+      );
+      if (completedJob) {
+        await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} completed by ${eventLabel}: prior handoff specialist packet`);
+        if (locked.workflowParentId) {
+          await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
+          await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`, {
+            maxTargets: 8,
+            awaitDispatch: true,
+            refresh: false
+          });
+          await reconcileWorkflowParent(storage, locked.workflowParentId);
+        }
+        return { ok: true, mode: 'completed', jobId: locked.id, job: completedJob };
+      }
+      await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} prior handoff packet completion rejected`);
+      return { ok: false, mode: 'rejected', jobId: locked.id, error: 'prior handoff packet completion rejected' };
     }
     if (workflowShouldCompleteDataUnavailable(locked)) {
       const completedJob = await completeWorkflowDataUnavailableJob(storage, locked, agent, completionSource);
