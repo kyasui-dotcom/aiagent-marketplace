@@ -4771,15 +4771,15 @@ function workflowDispatchQueue(env = {}) {
 function workflowQueueSourceCollectionTimeoutMs(env = {}) {
   const configured = Number(env?.WORKFLOW_QUEUE_SOURCE_COLLECTION_TIMEOUT_MS || env?.WORKFLOW_SOURCE_COLLECTION_QUEUE_TIMEOUT_MS || 0);
   return Number.isFinite(configured) && configured > 0
-    ? Math.max(5000, Math.min(45000, configured))
-    : 30000;
+    ? Math.max(5000, Math.min(25000, configured))
+    : 20000;
 }
 
 function workflowQueueGenerationTimeoutMs(env = {}, sourceTimeoutMs = 30000) {
   const configured = Number(env?.WORKFLOW_QUEUE_GENERATION_TIMEOUT_MS || env?.WORKFLOW_DISPATCH_QUEUE_GENERATION_TIMEOUT_MS || 0);
-  if (Number.isFinite(configured) && configured > 0) return Math.max(8000, Math.min(55000, configured));
+  if (Number.isFinite(configured) && configured > 0) return Math.max(8000, Math.min(28000, configured));
   const sourceBudget = Number(sourceTimeoutMs) || 30000;
-  return Math.max(12000, Math.min(55000, sourceBudget + 8000));
+  return Math.max(10000, Math.min(28000, sourceBudget + 4000));
 }
 
 function jobWithinDispatchAge(job = {}, env = {}, now = Date.now()) {
