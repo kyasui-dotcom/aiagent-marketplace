@@ -15191,6 +15191,8 @@ async function refreshWorkflowLeaderHandoffForJobId(storage, jobId) {
         const checkpointJob = checkpointJobId ? children.find((child) => child.id === checkpointJobId) || null : null;
         if (!checkpointJob) continue;
         const checkpointStatus = workflowCheckpointStatus(checkpoint, checkpointJob);
+        const afterLayer = Math.max(1, Number(checkpoint.afterLayer || checkpoint.checkpointLayer || 1) || 1);
+        const beforeLayer = Math.max(2, Number(checkpoint.beforeLayer || checkpoint.requiredBeforeLayer || (afterLayer + 1)) || (afterLayer + 1));
         if (checkpointStatus === 'completed') {
           const leaderQualityFailure = workflowLeaderQualityGateFailed(parent, checkpointJob);
           if (leaderQualityFailure) {
@@ -15252,9 +15254,57 @@ async function refreshWorkflowLeaderHandoffForJobId(storage, jobId) {
           }
           continue;
         }
-        if (checkpointStatus === 'queued') continue;
-        const afterLayer = Math.max(1, Number(checkpoint.afterLayer || checkpoint.checkpointLayer || 1) || 1);
-        const beforeLayer = Math.max(2, Number(checkpoint.beforeLayer || checkpoint.requiredBeforeLayer || (afterLayer + 1)) || (afterLayer + 1));
+        if (checkpointStatus === 'queued') {
+          const checkpointJobStatus = String(checkpointJob.status || '').trim().toLowerCase();
+          const checkpointCompletion = String(checkpointJob.dispatch?.completionStatus || '').trim().toLowerCase();
+          if (
+            checkpointJobStatus === 'blocked'
+            && checkpointCompletion === 'leader_checkpoint_blocked'
+            && checkpointJob.failureCategory !== 'leader_quality_gate_failed'
+          ) {
+            const sourceLeader = completedWorkflowLeader(parent, children.filter((child) => child.id !== checkpointJob.id));
+            if (sourceLeader) {
+              const handoff = workflowLeaderHandoff(parent, sourceLeader, children, beforeLayer);
+              const input = checkpointJob.input && typeof checkpointJob.input === 'object' ? { ...checkpointJob.input } : {};
+              const broker = input._broker && typeof input._broker === 'object' ? { ...input._broker } : {};
+              const workflow = broker.workflow && typeof broker.workflow === 'object' ? { ...broker.workflow } : {};
+              workflow.leaderHandoff = workflow.leaderHandoff || handoff;
+              workflow.sequencePhase = 'checkpoint';
+              workflow.checkpointLayer = afterLayer;
+              workflow.requiredBeforeLayer = beforeLayer;
+              workflow.checkpointLabel = checkpoint.label || workflow.checkpointLabel || `${workflowLayerLabel(workflowPrimaryTask(parent), afterLayer)}_to_${workflowLayerLabel(workflowPrimaryTask(parent), beforeLayer)}`;
+              if (checkpoint.requiresUserApprovalBeforeAction) workflow.requiresUserApprovalBeforeAction = true;
+              if (!workflow.leaderActionProtocol && (workflow.leaderHandoff || handoff)?.actionProtocol) {
+                workflow.leaderActionProtocol = (workflow.leaderHandoff || handoff).actionProtocol;
+              }
+              broker.workflow = workflow;
+              input._broker = broker;
+              checkpointJob.input = input;
+              applyWorkflowHandoffPromptContextToJob(checkpointJob);
+              checkpointJob.status = 'queued';
+              checkpointJob.startedAt = null;
+              checkpointJob.completedAt = null;
+              checkpointJob.failedAt = null;
+              checkpointJob.timedOutAt = null;
+              checkpointJob.failureReason = null;
+              checkpointJob.failureCategory = null;
+              checkpointJob.dispatch = {
+                ...(checkpointJob.dispatch || {}),
+                completionStatus: 'leader_checkpoint_queued',
+                retryable: true,
+                nextRetryAt: null,
+                dispatchRequestedAt: null,
+                maxRetries: maxDispatchRetriesForJob(checkpointJob)
+              };
+              const repairLog = `leader checkpoint repaired to queued from persisted checkpoint state before layer-${beforeLayer} from ${sourceLeader.id.slice(0, 6)}`;
+              checkpointJob.logs = (checkpointJob.logs || []).some((line) => String(line || '') === repairLog)
+                ? checkpointJob.logs
+                : [...(checkpointJob.logs || []), repairLog];
+              updated += 1;
+            }
+          }
+          continue;
+        }
         const priorLayerChildren = children
           .filter((child) => !isWorkflowLeaderTask(workflowTaskName(child)))
           .filter((child) => workflowDispatchLayer(parent, child) <= afterLayer);

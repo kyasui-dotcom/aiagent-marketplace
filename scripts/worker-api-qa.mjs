@@ -2240,6 +2240,141 @@ assert.notEqual(
   'stale checkpoint should not remain in the initial blocked gate after watchdog reconciliation'
 );
 
+const queuedCheckpointRepairParentId = 'qa-queued-checkpoint-repair-parent';
+const queuedCheckpointRepairLeaderId = 'qa-queued-checkpoint-repair-leader';
+const queuedCheckpointRepairPlanId = 'qa-queued-checkpoint-repair-plan';
+const queuedCheckpointRepairCheckpointId = 'qa-queued-checkpoint-repair-checkpoint';
+const queuedCheckpointRepairPreparationId = 'qa-queued-checkpoint-repair-preparation';
+await qaStorage.mutate(async (draft) => {
+  const early = '1999-01-02T00:00:00.000Z';
+  draft.jobs.push(
+    {
+      id: queuedCheckpointRepairParentId,
+      jobKind: 'workflow',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      prompt: 'repair checkpoint row that was marked queued in workflow but remained blocked in child row',
+      status: 'running',
+      createdAt: early,
+      startedAt: early,
+      workflow: {
+        plannedTasks: ['cmo_leader', 'media_planner', 'seo_gap'],
+        childRuns: [],
+        leaderSequence: {
+          enabled: true,
+          status: 'pending',
+          checkpointLayer: 3,
+          requiredBeforeLayer: 4,
+          checkpoints: [
+            { jobId: queuedCheckpointRepairCheckpointId, afterLayer: 3, beforeLayer: 4, status: 'queued', queuedAt: early }
+          ]
+        }
+      },
+      logs: ['queued checkpoint repair qa parent']
+    },
+    {
+      id: queuedCheckpointRepairLeaderId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      workflowTask: 'cmo_leader',
+      workflowAgentName: 'CMO Team Leader',
+      prompt: 'initial leader completed',
+      status: 'completed',
+      assignedAgentId: 'agent_cmo_leader_01',
+      workflowParentId: queuedCheckpointRepairParentId,
+      createdAt: early,
+      completedAt: early,
+      input: { _broker: { workflow: { sequencePhase: 'initial' } } },
+      output: {
+        summary: 'Leader has enough context to continue.',
+        report: { summary: 'Leader has enough context to continue.', bullets: ['planning complete'], nextAction: 'Run checkpoint.' },
+        files: []
+      },
+      logs: ['queued checkpoint repair leader completed']
+    },
+    {
+      id: queuedCheckpointRepairPlanId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'media_planner',
+      workflowTask: 'media_planner',
+      workflowAgentName: 'Media Planner Agent',
+      prompt: 'planning completed',
+      status: 'completed',
+      assignedAgentId: 'agent_media_planner_01',
+      workflowParentId: queuedCheckpointRepairParentId,
+      createdAt: early,
+      completedAt: early,
+      input: { _broker: { workflow: { sequencePhase: 'planning', dispatchLayer: 3 } } },
+      output: {
+        summary: 'Media planner selected SEO and developer social as primary lanes.',
+        report: {
+          summary: 'Media planner selected SEO and developer social as primary lanes.',
+          bullets: ['SEO lane', 'developer social lane'],
+          nextAction: 'Prepare SEO artifacts.',
+          web_sources: [{ title: 'Planner source', url: 'https://example.test/planner', snippet: 'developer social lane' }]
+        },
+        files: [{ name: 'media-plan.md', content: 'SEO and developer social lanes are ready for preparation.' }]
+      },
+      logs: ['queued checkpoint repair planning completed']
+    },
+    {
+      id: queuedCheckpointRepairCheckpointId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      workflowTask: 'cmo_leader',
+      workflowAgentName: 'CMO Team Leader',
+      prompt: 'checkpoint child row was not persisted as queued',
+      status: 'blocked',
+      assignedAgentId: 'agent_cmo_leader_01',
+      workflowParentId: queuedCheckpointRepairParentId,
+      createdAt: early,
+      input: { _broker: { workflow: { sequencePhase: 'checkpoint', checkpointLayer: 3, requiredBeforeLayer: 4 } } },
+      dispatch: { completionStatus: 'leader_checkpoint_blocked', retryable: false, nextRetryAt: null },
+      logs: ['leader checkpoint queued after layer-3 completion before layer-4 from qa-lea']
+    },
+    {
+      id: queuedCheckpointRepairPreparationId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'seo_gap',
+      workflowTask: 'seo_gap',
+      workflowAgentName: 'SEO Agent',
+      prompt: 'preparation waits for checkpoint',
+      status: 'blocked',
+      assignedAgentId: 'agent_seogap_01',
+      workflowParentId: queuedCheckpointRepairParentId,
+      createdAt: early,
+      input: { _broker: { workflow: { sequencePhase: 'preparation', adaptivePending: true, adaptivePendingLayer: 4 } } },
+      dispatch: { completionStatus: 'leader_adaptive_pending', retryable: false, nextRetryAt: null },
+      logs: ['adaptive candidate held until leader checkpoint releases layer-4']
+    }
+  );
+});
+const queuedCheckpointRepairWaits = [];
+await request(`/api/jobs/${queuedCheckpointRepairParentId}`, {}, { waitUntilPromises: queuedCheckpointRepairWaits, env: qaSearchEnv });
+for (let waitIndex = 0; waitIndex < queuedCheckpointRepairWaits.length; waitIndex += 1) {
+  await queuedCheckpointRepairWaits[waitIndex].catch(() => {});
+}
+const queuedCheckpointRepairState = await qaStorage.getState();
+const queuedCheckpointRepairCheckpoint = queuedCheckpointRepairState.jobs.find((job) => job.id === queuedCheckpointRepairCheckpointId);
+assert.notEqual(
+  String(queuedCheckpointRepairCheckpoint?.status || '').toLowerCase(),
+  'blocked',
+  `queued checkpoint repair should move child row out of blocked; child=${JSON.stringify({ status: queuedCheckpointRepairCheckpoint?.status, dispatch: queuedCheckpointRepairCheckpoint?.dispatch, logs: queuedCheckpointRepairCheckpoint?.logs })}`
+);
+assert.notEqual(
+  String(queuedCheckpointRepairCheckpoint?.dispatch?.completionStatus || '').toLowerCase(),
+  'leader_checkpoint_blocked',
+  'queued checkpoint repair should not leave dispatch status at leader_checkpoint_blocked'
+);
+assert.ok(
+  (queuedCheckpointRepairCheckpoint?.logs || []).some((line) => /repaired to queued from persisted checkpoint state/.test(String(line || ''))),
+  'queued checkpoint repair should leave a durable repair log'
+);
+
 async function completeAsyncWorkflowSpecialists(phase, nextAction) {
   await qaStorage.mutate(async (draft) => {
     for (const job of draft.jobs) {
