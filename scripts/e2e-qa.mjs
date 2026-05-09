@@ -9,6 +9,7 @@ const scripts = packageJson.scripts || {};
 assert.equal(scripts['qa:e2e-contract'], 'node scripts/e2e-qa.mjs');
 assert.ok(String(scripts['qa:e2e'] || '').includes('playwright test -c playwright.config.js'));
 assert.ok(String(scripts['qa:e2e:live'] || '').includes('scripts/e2e-live.mjs'));
+assert.ok(String(scripts['qa:e2e:order'] || '').includes('scripts/e2e-order-scenario-runner.mjs'), 'E2E must include a parameterized real-order scenario runner');
 assert.ok(packageJson.devDependencies?.['@playwright/test'], '@playwright/test must be declared for reproducible E2E installs');
 
 const configPath = join(root, 'playwright.config.js');
@@ -37,6 +38,8 @@ assert.ok(specSource.includes('/api/health'), 'E2E must cover health');
 assert.ok(specSource.includes('/api/ready'), 'E2E must cover readiness');
 assert.ok(specSource.includes('/api/agents'), 'E2E must cover agent supply');
 assert.ok(specSource.includes('/api/jobs'), 'E2E must cover order creation/readback');
+assert.ok(specSource.includes('E2E_ORDER_ID'), 'E2E must be able to observe a user-created production order instead of duplicating manual tests');
+assert.ok(specSource.includes('assertOrderScenarioQuality'), 'E2E must validate order delivery quality, not only create/read status');
 assert.ok(specSource.includes('#chatThread'), 'E2E must cover Chat rendering');
 assert.ok(specSource.includes('#promptInput'), 'E2E must cover Chat input');
 assert.ok(/Send order|SEND ORDER/.test(specSource), 'E2E must assert the chat-to-order phase boundary');

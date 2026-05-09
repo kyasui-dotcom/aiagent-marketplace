@@ -16391,7 +16391,7 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
       if (job.workflowParentId) await reconcileWorkflowParent(storage, job.workflowParentId);
       continue;
     }
-    const useQueue = Boolean(workflowDispatchQueue(env)) && options.forceDirectExecution !== true;
+    const queueConfigured = Boolean(workflowDispatchQueue(env)) && options.forceDirectExecution !== true;
     const agent = typeof storage.getAgentById === 'function'
       ? await storage.getAgentById(job.assignedAgentId)
       : ((state?.agents || []).find((item) => item.id === job.assignedAgentId) || null);
@@ -16410,7 +16410,8 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
       if (String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase() !== 'dispatch_scheduled') return null;
       const attempts = Number(draftJob.dispatch?.completionSweepAttempts || 0);
       const queueAttempts = Number(draftJob.dispatch?.completionQueueAttempts || 0);
-      if (!useQueue && attempts >= 1) {
+      const useQueueForThisAttempt = queueConfigured && queueAttempts < 3;
+      if (!useQueueForThisAttempt && attempts >= 1) {
         draftJob.status = 'timed_out';
         draftJob.timedOutAt = nowIso();
         draftJob.failureReason = 'Built-in scheduled completion sweep already retried once.';
@@ -16423,32 +16424,25 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
         };
         return null;
       }
-      if (useQueue && queueAttempts >= 3) {
-        draftJob.status = 'timed_out';
-        draftJob.timedOutAt = nowIso();
-        draftJob.failureReason = 'Built-in workflow dispatch queue was requested repeatedly but did not start execution.';
-        draftJob.failureCategory = 'dispatch_queue_timeout';
-        draftJob.dispatch = {
-          ...(draftJob.dispatch || {}),
-          completionStatus: 'completion_queue_exhausted',
-          retryable: false,
-          nextRetryAt: null
-        };
-        return null;
-      }
       const at = nowIso();
       draftJob.dispatch = {
         ...(draftJob.dispatch || {}),
-        completionStatus: useQueue ? 'completion_queued' : 'completion_sweep_running',
-        ...(useQueue
+        completionStatus: useQueueForThisAttempt ? 'completion_queued' : 'completion_sweep_running',
+        ...(useQueueForThisAttempt
           ? { completionQueueRequestedAt: at, completionQueueAttempts: queueAttempts + 1 }
-          : { completionSweepRequestedAt: at, completionSweepAttempts: attempts + 1 }),
+          : {
+              completionSweepRequestedAt: at,
+              completionSweepAttempts: attempts + 1,
+              ...(queueConfigured && queueAttempts >= 3 ? { completionQueueRecoveredAt: at } : {})
+            }),
         retryable: false,
         nextRetryAt: null
       };
-      draftJob.logs = [...(draftJob.logs || []), useQueue
+      draftJob.logs = [...(draftJob.logs || []), useQueueForThisAttempt
         ? 'built-in completion queued for workflow dispatch consumer'
-        : 'built-in completion sweep locked this job to prevent duplicate OpenAI execution'];
+        : (queueConfigured && queueAttempts >= 3
+            ? 'workflow dispatch queue did not start after repeated requests; direct completion sweep recovered this job'
+            : 'built-in completion sweep locked this job to prevent duplicate OpenAI execution')];
       return cloneJob(draftJob);
     };
     const locked = typeof storage.mutateJobAndAgent === 'function'
@@ -16458,7 +16452,8 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
       skipped.lock_rejected = (skipped.lock_rejected || 0) + 1;
       continue;
     }
-    if (useQueue) {
+    const lockedCompletionStatus = String(locked?.dispatch?.completionStatus || '').trim().toLowerCase();
+    if (lockedCompletionStatus === 'completion_queued') {
       const enqueued = await enqueueBuiltInWorkflowCompletion(storage, env, locked, agent, sampleKind, { source: options.source || 'completion-sweep' });
       if (enqueued.ok) queued.push(locked.id);
       continue;

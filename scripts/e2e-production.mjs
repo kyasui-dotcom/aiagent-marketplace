@@ -61,7 +61,7 @@ const defaultGroups = [
   ['e2e/app-local-data.spec.js', 'e2e/app-uiux.spec.js', 'e2e/chat-app-context-continuity.spec.js'],
   ['e2e/chat-workspace.spec.js'],
   ['e2e/chat-leader-handoff.spec.js', 'e2e/leader-matrix.spec.js'],
-  ['e2e/mcp.spec.js', 'e2e/production-chat.spec.js']
+  ['e2e/mcp.spec.js', 'e2e/production-chat.spec.js', 'e2e/order-scenario.spec.js']
 ];
 
 function hasExplicitSpecArgs(args = []) {

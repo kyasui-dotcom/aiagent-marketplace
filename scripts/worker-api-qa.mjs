@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import worker from '../worker.js';
 import { createD1LikeStorage } from '../lib/storage.js';
 import { buildAgentTeamDeliveryOutput, nowIso } from '../lib/shared.js';
+import { E2E_DEFAULT_ORDER_PROMPT, assertOrderScenarioQuality, buildOrderScenarioPayload } from './e2e-order-scenario.mjs';
 
 const workerSource = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
 const deliveryActionContractSource = readFileSync(new URL('../public/delivery-action-contract.js', import.meta.url), 'utf8');
@@ -60,6 +61,8 @@ assert.ok(workerSource.includes('Built-in agent generation exception:'), 'built-
 assert.ok(workerSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
 assert.ok(workerSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');
 assert.ok(workerSource.includes('persistedJobForClientOrderId'), 'order create should check for an existing client order before creating a new job.');
+assert.ok(workerSource.includes('direct completion sweep recovered this job'), 'repeatedly unstarted workflow queue dispatches should recover by direct sweep instead of timing out.');
+assert.ok(!workerSource.includes('Built-in workflow dispatch queue was requested repeatedly but did not start execution.'), 'workflow queue non-starts must no longer fail the order before recovery.');
 
 const env = {
   APP_VERSION: '0.2.0-test',
@@ -140,6 +143,11 @@ function workerApiQaOpenAiStructuredOutput(schemaName = '') {
       `# QA ${kind || 'agent'} delivery`,
       '',
       artifact,
+      '',
+      '## 日本語納品品質',
+      '- GA4 / Search Console の接続・利用状況を明示し、未接続の場合は仮定を分ける。',
+      '- 自然検索・SEO、SNS・ソーシャル、広告の各チャネルで、開発者向け登録・トライアル獲得の具体策を出す。',
+      '- 外部投稿、広告配信、送信、PR作成などは承認後にのみ実行する。',
       '',
       '| Owner | Objective | Artifact | Metric | Stop rule | Approval owner |',
       '| --- | --- | --- | --- | --- | --- |',
@@ -727,15 +735,10 @@ const asyncWorkflowWaits = [];
 const asyncWorkflow = await request('/api/jobs', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({
-    parent_agent_id: 'qa-runner',
-    task_type: 'cmo_leader',
-    prompt: 'Build an organic acquisition plan, inspect the funnel, then plan and do actions with an X post and directory submission after approval.',
-    order_strategy: 'multi',
-    async_dispatch: true,
-    skip_intake: true,
-    budget_cap: 500
-  })
+  body: JSON.stringify(buildOrderScenarioPayload({
+    parentAgentId: 'qa-runner',
+    clientOrderId: 'qa_worker_cmo_user_order'
+  }))
 }, { waitUntilPromises: asyncWorkflowWaits, env: qaSearchEnv });
 assert.equal(asyncWorkflow.status, 201);
 assert.equal(asyncWorkflow.body.mode, 'workflow');
@@ -2019,6 +2022,78 @@ assert.ok(
   'stale completion_queued recovery should leave an observable event'
 );
 
+const exhaustedQueueChildId = 'qa-exhausted-queue-child';
+const exhaustedQueueParentId = 'qa-exhausted-queue-parent';
+await qaStorage.mutate(async (draft) => {
+  const early = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+  draft.jobs.push(
+    {
+      id: exhaustedQueueParentId,
+      jobKind: 'workflow',
+      parentAgentId: 'qa-runner',
+      taskType: 'research_team_leader',
+      prompt: 'queue attempt exhaustion workflow parent',
+      status: 'running',
+      createdAt: early,
+      startedAt: early,
+      workflow: {
+        plannedTasks: ['research'],
+        childRuns: []
+      },
+      logs: []
+    },
+    {
+      id: exhaustedQueueChildId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'research',
+      workflowTask: 'research',
+      workflowAgentName: 'Research Agent',
+      prompt: 'dispatch_scheduled workflow child should recover directly after repeated queue requests',
+      status: 'running',
+      assignedAgentId: 'agent_research_01',
+      workflowParentId: exhaustedQueueParentId,
+      createdAt: early,
+      startedAt: early,
+      input: { _broker: { workflow: { sequencePhase: 'research', forceWebSearch: true, webSearchRequiredReason: 'leader_research_layer' } } },
+      dispatch: {
+        completionStatus: 'dispatch_scheduled',
+        firstDispatchRequestedAt: early,
+        dispatchRequestedAt: early,
+        completionQueueRequestedAt: early,
+        completionQueueAttempts: 3,
+        scheduleAttempts: 3,
+        retryable: true,
+        maxRetries: 10
+      },
+      logs: ['queue attempt exhaustion child']
+    }
+  );
+});
+const exhaustedQueueWaits = [];
+await worker.scheduled({ cron: '* * * * *', scheduledTime: Date.now() }, queueEnv, {
+  waitUntil: (promise) => exhaustedQueueWaits.push(Promise.resolve(promise))
+});
+for (let waitIndex = 0; waitIndex < exhaustedQueueWaits.length; waitIndex += 1) {
+  await exhaustedQueueWaits[waitIndex];
+}
+const exhaustedQueueState = await qaStorage.getState();
+const exhaustedQueueChild = exhaustedQueueState.jobs.find((job) => job.id === exhaustedQueueChildId);
+assert.notEqual(
+  String(exhaustedQueueChild?.dispatch?.completionStatus || ''),
+  'completion_queue_exhausted',
+  `repeated queue requests should direct-recover instead of exhausting; child=${JSON.stringify({ status: exhaustedQueueChild?.status, dispatch: exhaustedQueueChild?.dispatch, failureReason: exhaustedQueueChild?.failureReason, logs: exhaustedQueueChild?.logs })}`
+);
+assert.equal(
+  ['failed', 'timed_out'].includes(String(exhaustedQueueChild?.status || '').toLowerCase()),
+  false,
+  `repeated queue requests must not fail the child before direct recovery; child=${JSON.stringify({ status: exhaustedQueueChild?.status, dispatch: exhaustedQueueChild?.dispatch, failureReason: exhaustedQueueChild?.failureReason })}`
+);
+assert.ok(
+  (exhaustedQueueChild?.logs || []).some((line) => /direct completion sweep recovered/.test(String(line || ''))),
+  `direct recovery should leave a durable child log; logs=${(exhaustedQueueChild?.logs || []).join(' | ')}`
+);
+
 const watchdogReleaseParentId = 'qa-watchdog-release-parent';
 const watchdogReleaseLeaderId = 'qa-watchdog-release-leader';
 const watchdogReleaseResearchId = 'qa-watchdog-release-research';
@@ -2391,6 +2466,11 @@ assert.equal(
 );
 assert.equal(asyncFinalSummaryState.body.job.output?.report?.leaderPhase, 'final_summary', 'workflow output should promote the final leader summary');
 assert.ok(asyncFinalSummaryState.body.job.output?.files?.[0]?.content_type, 'workflow output should surface an explicit execution candidate file when a specialist packet exists');
+assertOrderScenarioQuality(asyncFinalSummaryState.body.job, {
+  prompt: E2E_DEFAULT_ORDER_PROMPT,
+  requireCompleted: true,
+  minDeliveryChars: 700
+});
 
 const checkpointOnlyAgentTeamOutput = buildAgentTeamDeliveryOutput({
   workflow: {
