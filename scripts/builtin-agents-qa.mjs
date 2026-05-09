@@ -1335,6 +1335,45 @@ try {
   globalThis.fetch = originalBuiltinQaFetch;
 }
 
+let budgetedSourceOpenAiCalls = 0;
+globalThis.fetch = async (input, init) => {
+  const url = String(input?.url || input || '');
+  if (url.includes('api.search.brave.com')) {
+    return new Promise(() => {});
+  }
+  if (url === 'https://api.openai.com/v1/responses') {
+    budgetedSourceOpenAiCalls += 1;
+    return new Response(JSON.stringify({ output_text: '{}' }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  return originalBuiltinQaFetch(input, init);
+};
+try {
+  const startedAt = Date.now();
+  const sourceTimeoutPayload = await runBuiltInAgent('research', {
+    prompt: 'Find current competitors for an AI agent marketplace.',
+    input: {
+      _broker: {
+        workflow: {
+          primaryTask: 'cmo_leader',
+          sequencePhase: 'research'
+        }
+      }
+    }
+  }, {
+    OPENAI_API_KEY: 'sk-test-source-timeout',
+    BRAVE_SEARCH_API_KEY: 'brave-test-key',
+    WORKFLOW_SOURCE_COLLECTION_TIMEOUT_MS: '5000',
+    BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS: '5000'
+  });
+  assert.ok(Date.now() - startedAt < 7000, 'Search-required workflow research should respect the source collection budget');
+  assert.equal(budgetedSourceOpenAiCalls, 0, 'Search-required workflow research should not call OpenAI when source collection times out');
+  assert.equal(sourceTimeoutPayload.status, 'failed');
+  assert.equal(sourceTimeoutPayload.runtime.workflow, 'missing_required_search_sources');
+  assert.ok(sourceTimeoutPayload.runtime.failure_reason.includes('exceeded workflow budget'));
+} finally {
+  globalThis.fetch = originalBuiltinQaFetch;
+}
+
 const cmoWorkflowXPayload = sampleAgentPayload('x_post', {
   ...cmoWorkflowSpecialistInput,
   input: {
