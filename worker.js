@@ -12574,7 +12574,11 @@ async function dispatchJobToAssignedAgent(job, agent, env) {
   const payload = buildDispatchPayload(job, agent);
   const sampleKind = builtInWorkflowKindForJob(job, agent);
   if (sampleKind) {
-    const body = await runBuiltInAgent(sampleKind, payload, env);
+    const body = workflowShouldCompleteDataFromAttachedContext(job)
+      ? workflowAttachedDataContextCompletionPayload(job)
+      : workflowShouldCompleteDataUnavailable(job)
+        ? workflowDataUnavailableCompletionPayload(job)
+        : await runBuiltInAgent(sampleKind, payload, env);
     const normalized = normalizeDispatchResponse(body);
     if (normalized.failed) {
       return { ok: false, endpoint, failureReason: normalized.failureReason || 'Built-in agent generation failed', statusCode: 502, responseBody: body };
@@ -15725,7 +15729,172 @@ async function scheduleProgressDispatchForJobId(storage, env, waitUntil, jobId, 
 
 function workflowShouldCompleteDataUnavailable(job = {}) {
   return workflowTaskName(job) === 'data_analysis'
+    && !workflowJobRequiresSearch(job)
     && !workflowJobHasAttachedDataContext(job);
+}
+
+function workflowAttachedDataContextsForJob(job = {}) {
+  const broker = job?.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
+  const contexts = [
+    ...(Array.isArray(broker.appContexts) ? broker.appContexts : []),
+    ...(Array.isArray(broker.connectorContexts) ? broker.connectorContexts : [])
+  ].filter((context) => context && typeof context === 'object');
+  const seen = new Set();
+  return contexts.filter((context) => {
+    const key = [
+      context.id,
+      context.source_app || context.sourceApp,
+      context.title,
+      context.summary
+    ].map((item) => String(item || '').trim()).filter(Boolean).join('|').slice(0, 500);
+    if (key && seen.has(key)) return false;
+    if (key) seen.add(key);
+    return true;
+  }).slice(0, 6);
+}
+
+function workflowShouldCompleteDataFromAttachedContext(job = {}) {
+  return workflowTaskName(job) === 'data_analysis'
+    && workflowJobHasAttachedDataContext(job)
+    && workflowAttachedDataContextsForJob(job).length > 0;
+}
+
+function workflowAttachedDataContextCompletionPayload(job = {}) {
+  const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
+    ? job.input._broker.workflow
+    : {};
+  const contexts = compactWorkflowAppContextsForDispatch(workflowAttachedDataContextsForJob(job));
+  const textForLanguage = [
+    workflow.objective,
+    workflow.originalPrompt,
+    job.originalPrompt,
+    job.prompt
+  ].join('\n');
+  const isJapanese = /[\u3040-\u30ff\u3400-\u9fff]/u.test(textForLanguage);
+  const objective = workflowClipText(workflow.objective || workflow.originalPrompt || job.prompt || 'Data analysis', 420);
+  const metrics = contexts.flatMap((context) => (Array.isArray(context.metrics) ? context.metrics : [])
+    .map((metric) => {
+      if (typeof metric === 'string') return workflowClipText(metric, 260);
+      return [metric?.label, metric?.value].map((item) => workflowClipText(item, 180)).filter(Boolean).join(': ');
+    })).filter(Boolean).slice(0, 18);
+  const facts = contexts.flatMap((context) => Array.isArray(context.facts) ? context.facts : []).filter(Boolean).slice(0, 18);
+  const sourceRows = contexts.map((context) => {
+    const rawText = workflowFlattenTextParts(context).join(' ');
+    const services = [
+      /ga4|google analytics|analytics/i.test(rawText) ? 'GA4' : '',
+      /gsc|search console/i.test(rawText) ? 'Search Console' : ''
+    ].filter(Boolean).join(' + ') || 'attached data context';
+    return {
+      label: workflowClipText(context.source_app_label || context.source_app || 'Attached data context', 120),
+      title: workflowClipText(context.title || context.summary || 'Data context', 180),
+      services
+    };
+  });
+  const sourceUrls = [];
+  for (const context of workflowAttachedDataContextsForJob(job)) {
+    const raw = context.raw_context && typeof context.raw_context === 'object'
+      ? context.raw_context
+      : (context.rawContext && typeof context.rawContext === 'object' ? context.rawContext : {});
+    for (const value of [raw.googleSearchConsoleSite, raw.siteUrl, raw.site, raw.url, context.url]) {
+      const url = workflowNormalizeCandidateUrl(value);
+      if (url && !sourceUrls.includes(url)) sourceUrls.push(url);
+    }
+  }
+  const summary = isJapanese
+    ? `添付済みデータコンテキスト${contexts.length}件をデータ層の正式な入力として確定しました。`
+    : `Confirmed ${contexts.length} attached data context record(s) as the data-layer source packet.`;
+  const bullets = isJapanese
+    ? [
+        `データソース: ${sourceRows.map((row) => `${row.label} (${row.services})`).join(' / ') || 'attached context'}`,
+        metrics.length ? `利用可能な指標: ${metrics.slice(0, 5).join(' / ')}` : '数値指標がない項目は未確認として扱います。',
+        facts.length ? `利用可能な事実: ${facts.slice(0, 4).join(' / ')}` : 'データコンテキストのsummaryを上流事実として扱います。',
+        '下流エージェントはこのパケットを prior specialist deliverable として使い、実測値がない部分を作らないでください。'
+      ]
+    : [
+        `Data sources: ${sourceRows.map((row) => `${row.label} (${row.services})`).join(' / ') || 'attached context'}`,
+        metrics.length ? `Available metrics: ${metrics.slice(0, 5).join(' / ')}` : 'Fields without metric values remain unverified.',
+        facts.length ? `Available facts: ${facts.slice(0, 4).join(' / ')}` : 'Use context summaries as upstream facts.',
+        'Downstream agents must use this packet as a prior specialist deliverable and must not invent missing measurements.'
+      ];
+  const nextAction = isJapanese
+    ? 'Research、Planning、Preparation はこのGA4/Search Console/App contextパケットを前提に進め、指標がない箇所は公開調査と仮定を分けて扱ってください。'
+    : 'Research, Planning, and Preparation should use this GA4/Search Console/App context packet and separate public research from unmeasured assumptions.';
+  const markdown = [
+    isJapanese ? '# データコンテキストパケット' : '# Data context packet',
+    '',
+    '## Objective',
+    objective,
+    '',
+    isJapanese ? '## Source status' : '## Source status',
+    ...sourceRows.map((row) => `- ${row.label}: ${row.title} (${row.services})`),
+    '',
+    isJapanese ? '## Metrics / signals' : '## Metrics / signals',
+    ...(metrics.length ? metrics.map((item) => `- ${item}`) : ['- No concrete metric values were attached; do not invent them.']),
+    '',
+    isJapanese ? '## Facts' : '## Facts',
+    ...(facts.length ? facts.map((item) => `- ${item}`) : contexts.map((context) => `- ${workflowClipText(context.summary || context.title || 'Attached context summary available.', 320)}`)),
+    '',
+    isJapanese ? '## Required usage signals for downstream agents' : '## Required usage signals for downstream agents',
+    ...(isJapanese
+      ? [
+          '- この data_analysis パケットを leader handoff の prior specialist deliverable として参照する。',
+          '- GA4/Search Console/App context 由来の情報と、公開検索・リサーチ由来の情報を分ける。',
+          '- 不足指標は「未確認」と明記し、外部実行は承認後に限定する。'
+        ]
+      : [
+          '- Reference this data_analysis packet as a prior specialist deliverable in leader handoff.',
+          '- Separate GA4/Search Console/App context facts from public search or research facts.',
+          '- Mark missing metrics as unverified and keep external execution approval-gated.'
+        ]),
+    '',
+    isJapanese ? '## Next action' : '## Next action',
+    nextAction
+  ].join('\n');
+  return {
+    accepted: true,
+    status: 'completed',
+    summary,
+    report: {
+      summary,
+      bullets,
+      nextAction,
+      confidence: metrics.length || facts.length ? 'high' : 'medium',
+      data_sources: sourceRows,
+      web_sources: sourceUrls.map((url) => ({
+        title: 'Attached Search Console / analytics context URL',
+        url,
+        snippet: 'Source URL carried by the attached server-side data context.',
+        action: 'app_context'
+      })),
+      metrics,
+      facts,
+      process: [
+        'DATA_CONTEXT_CHECK (completed): Attached app/connector context was present.',
+        'DATA_PACKET (completed): Metrics, facts, and missing measurements were separated for downstream use.',
+        'HANDOFF (completed): Downstream agents must cite and use this packet.'
+      ],
+      runtime: {
+        workflow: 'attached_data_context_packet',
+        mode: 'data_context_packet',
+        context_count: contexts.length
+      }
+    },
+    files: [
+      {
+        name: 'data-context-packet.md',
+        type: 'text/markdown',
+        content: markdown
+      }
+    ],
+    usage: {
+      api_cost: 0,
+      total_cost_basis: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0
+    },
+    return_targets: ['chat', 'api']
+  };
 }
 
 function workflowDataUnavailableCompletionPayload(job = {}) {
@@ -15786,8 +15955,7 @@ function workflowDataUnavailableCompletionPayload(job = {}) {
   };
 }
 
-async function completeWorkflowDataUnavailableJob(storage, locked, agent, completionSource = 'workflow-dispatch-queue') {
-  const payload = workflowDataUnavailableCompletionPayload(locked);
+async function completeWorkflowDataPacketJob(storage, locked, agent, payload, completionSource = 'workflow-dispatch-queue', logLine = 'data layer packet completed') {
   const report = normalizeAgentReportPayload(payload, payload.report || { summary: payload.summary });
   const usage = usageWithObservedJobTokens(locked, payload.usage, report);
   const completeDraft = (draft) => {
@@ -15829,7 +15997,7 @@ async function completeWorkflowDataUnavailableJob(storage, locked, agent, comple
     };
     job.logs = [
       ...(job.logs || []),
-      'data layer skipped: no analytics/data context attached',
+      logLine,
       `completion source=${completionSource}`
     ];
     return cloneJob(job);
@@ -15837,6 +16005,28 @@ async function completeWorkflowDataUnavailableJob(storage, locked, agent, comple
   return typeof storage.mutateJobAndAgent === 'function'
     ? storage.mutateJobAndAgent(locked.id, agent.id, completeDraft)
     : storage.mutate(completeDraft);
+}
+
+async function completeWorkflowAttachedDataContextJob(storage, locked, agent, completionSource = 'workflow-dispatch-queue') {
+  return completeWorkflowDataPacketJob(
+    storage,
+    locked,
+    agent,
+    workflowAttachedDataContextCompletionPayload(locked),
+    completionSource,
+    'data layer completed from attached analytics/app context packet'
+  );
+}
+
+async function completeWorkflowDataUnavailableJob(storage, locked, agent, completionSource = 'workflow-dispatch-queue') {
+  return completeWorkflowDataPacketJob(
+    storage,
+    locked,
+    agent,
+    workflowDataUnavailableCompletionPayload(locked),
+    completionSource,
+    'data layer skipped: no analytics/data context attached'
+  );
 }
 
 async function runBuiltInAgentWithWorkflowQueueGuard(sampleKind, payload, env, job = {}, sourceTimeoutMs = 30000) {
@@ -15889,6 +16079,24 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
   const eventLabel = options.eventLabel || 'scheduled built-in sweep';
   const completionSource = options.completionSource || 'built-in-workflow-scheduled-sweep';
   try {
+    if (workflowShouldCompleteDataFromAttachedContext(locked)) {
+      const completedJob = await completeWorkflowAttachedDataContextJob(storage, locked, agent, completionSource);
+      if (completedJob) {
+        await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} completed by ${eventLabel}: attached data context packet`);
+        if (locked.workflowParentId) {
+          await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
+          await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`, {
+            maxTargets: 8,
+            awaitDispatch: true,
+            refresh: false
+          });
+          await reconcileWorkflowParent(storage, locked.workflowParentId);
+        }
+        return { ok: true, mode: 'completed', jobId: locked.id, job: completedJob };
+      }
+      await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} attached data-context completion rejected`);
+      return { ok: false, mode: 'rejected', jobId: locked.id, error: 'attached data-context completion rejected' };
+    }
     if (workflowShouldCompleteDataUnavailable(locked)) {
       const completedJob = await completeWorkflowDataUnavailableJob(storage, locked, agent, completionSource);
       if (completedJob) {

@@ -57,6 +57,9 @@ assert.ok(workerSource.includes('const COMPLETION_SWEEP_STALE_MS = 15 * 60 * 100
 assert.ok(workerSource.includes('function workflowBuiltInFailureRetryMeta'), 'built-in workflow generation failures should preserve retry metadata for quality-critical research/data layers.');
 assert.ok(workerSource.includes('function workflowLeaderControlTask'), 'leader checkpoint/final-summary control jobs should have explicit retry handling.');
 assert.ok(workerSource.includes('function workflowCompletionRecoveryMinAgeMs'), 'leader control jobs should not be recovered as stale before their generation budget expires.');
+assert.ok(workerSource.includes('function workflowAttachedDataContextCompletionPayload'), 'attached GA4/Search Console/app context should complete as a durable data packet instead of hanging in queue generation.');
+assert.ok(workerSource.includes('prior specialist deliverable'), 'data context packets should instruct downstream agents to use upstream data.');
+assert.ok(workerSource.includes('&& !workflowJobRequiresSearch(job)'), 'data-unavailable shortcut must not bypass search-required data/research jobs.');
 assert.ok(workerSource.includes('Built-in agent generation exception:'), 'built-in workflow exceptions should fail/retry the job directly instead of leaving it locked until a sweep timeout.');
 assert.ok(workerSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
 assert.ok(workerSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');
@@ -762,6 +765,12 @@ const asyncDataRun = asyncWorkflowFirstState.body.job.workflow.childRuns.find((r
 const asyncResearchRun = asyncWorkflowFirstState.body.job.workflow.childRuns.find((run) => run.sequencePhase === 'research' && ['research', 'teardown', 'validation'].includes(run.taskType));
 const asyncPlanningRun = asyncWorkflowFirstState.body.job.workflow.childRuns.find((run) => run.sequencePhase === 'planning');
 assert.equal(asyncDataRun?.sequencePhase, 'data', 'CMO data analysis should run in the dedicated data phase');
+assert.equal(asyncDataRun?.status, 'completed', 'attached GA4/Search Console app context should complete the data layer as a source packet');
+const asyncDataJob = await request(`/api/jobs/${asyncDataRun.id}`, {}, { env: qaSearchEnv });
+assert.equal(asyncDataJob.status, 200);
+const asyncDataOutputText = JSON.stringify(asyncDataJob.body.job?.output || {});
+assert.match(asyncDataOutputText, /attached_data_context_packet|data-context-packet|データコンテキスト/i, 'data layer should persist an attached-context packet output');
+assert.match(asyncDataOutputText, /prior specialist deliverable|GA4|Search Console/i, 'data packet should tell downstream agents to use the attached analytics context');
 assert.ok(asyncResearchRun, 'CMO workflow should keep one market research phase separate from data');
 assert.ok(asyncPlanningRun && ['media_planner', 'growth'].includes(asyncPlanningRun.taskType), 'CMO workflow should schedule one planning specialist');
 assert.ok(asyncWorkflowTaskOrder.indexOf('data_analysis') < asyncWorkflowTaskOrder.indexOf(asyncResearchRun.taskType), 'CMO data layer should precede the research layer');

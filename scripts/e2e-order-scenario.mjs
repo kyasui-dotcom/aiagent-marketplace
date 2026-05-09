@@ -200,6 +200,11 @@ function assertTextIncludesAny(text, alternatives, message) {
   assert.ok(alternatives.some((term) => haystack.includes(String(term).toLowerCase())), message);
 }
 
+function assertTextMatchesAny(text, patterns, message) {
+  const haystack = String(text || '');
+  assert.ok(patterns.some((pattern) => pattern.test(haystack)), message);
+}
+
 function promptHas(prompt, pattern) {
   return pattern.test(String(prompt || ''));
 }
@@ -301,6 +306,35 @@ export function assertOrderScenarioQuality(job = {}, options = {}) {
   }
   if (promptHas(prompt, /Search Console|サーチコンソール|GSC/i)) {
     assertTextIncludesAny(deliveryText, ['Search Console', 'GSC', 'サーチコンソール'], 'delivery must state Search Console/GSC source status or use');
+  }
+  const completedTaskTypes = new Set(runs
+    .filter((run) => String(run?.status || '').toLowerCase() === 'completed')
+    .map((run) => String(run?.taskType || run?.task_type || '').trim())
+    .filter(Boolean));
+  const completedPhases = new Set(runs
+    .filter((run) => String(run?.status || '').toLowerCase() === 'completed')
+    .map((run) => String(run?.sequencePhase || run?.phase || '').trim().toLowerCase())
+    .filter(Boolean));
+  const completedDownstreamWork = ['planning', 'preparation', 'action', 'checkpoint', 'final_summary']
+    .some((phase) => completedPhases.has(phase));
+  if (completedTaskTypes.has('data_analysis') && completedDownstreamWork) {
+    assertTextMatchesAny(
+      deliveryText,
+      [/データソース|接続データ|実測|指標|測定|コンテキスト/u, /\bdata source\b|\bsource status\b|\bmeasured\b|\bmetrics?\b|\bdata context\b/i],
+      'delivery must show that downstream work used the upstream data_analysis packet'
+    );
+    assertTextMatchesAny(
+      deliveryText,
+      [/未確認|仮定|不足|実測値がない/u, /\bunverified\b|\bassumption\b|\bmissing metric\b|\bnot measured\b/i],
+      'delivery must separate measured data from assumptions when using upstream analytics context'
+    );
+  }
+  if (completedTaskTypes.has('research') && completedDownstreamWork) {
+    assertTextMatchesAny(
+      deliveryText,
+      [/リサーチ|調査|出典|根拠|公開情報/u, /\bresearch\b|\bevidence\b|\bsource\b|\bpublic\b/i],
+      'delivery must show that downstream work used upstream research evidence'
+    );
   }
   if (promptHas(prompt, /SEO|自然検索|organic/i)) {
     assertTextIncludesAny(deliveryText, ['SEO', '自然検索', 'organic'], 'delivery must include concrete SEO/organic search work');
