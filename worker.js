@@ -20935,12 +20935,16 @@ async function handleGetJob(storage, request, env, jobId, ctx = null) {
         awaitDispatch: !waitUntil
       });
     })();
-    const scheduled = await progressWork.catch(async (error) => {
-      await touchEvent(storage, 'FAILED', `progress poll exception ${String(error?.message || error).slice(0, 120)}`);
-      return null;
-    });
-    if (job.jobKind === 'workflow' || scheduled?.scheduled) {
-      job = await loadJob() || job;
+    if (waitUntil && storage.kind === 'd1') {
+      waitUntil(progressWork.catch((error) => touchEvent(storage, 'FAILED', `progress poll exception ${String(error?.message || error).slice(0, 120)}`)));
+    } else {
+      const scheduled = await progressWork.catch(async (error) => {
+        await touchEvent(storage, 'FAILED', `progress poll exception ${String(error?.message || error).slice(0, 120)}`);
+        return null;
+      });
+      if (job.jobKind === 'workflow' || scheduled?.scheduled) {
+        job = await loadJob() || job;
+      }
     }
   }
   if (current.apiKey?.id) await recordOrderApiKeyUsage(storage, current, request);
