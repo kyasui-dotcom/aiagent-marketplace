@@ -13085,10 +13085,26 @@ async function dispatchJobToAssignedAgent(job, agent, env) {
   return { ok: true, endpoint: dispatchEndpoint, normalized, statusCode: response.status, responseBody: body };
 }
 
-async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, options = {}) {
+async function loadDispatchJobAndAgent(storage, jobId, agentId) {
+  if (
+    typeof storage?.getJobById === 'function'
+    && typeof storage?.getAgentById === 'function'
+  ) {
+    const [job, agent] = await Promise.all([
+      storage.getJobById(jobId),
+      storage.getAgentById(agentId)
+    ]);
+    return { job, agent };
+  }
   const state = await storage.getState();
-  const job = state.jobs.find((item) => item.id === jobId);
-  const agent = state.agents.find((item) => item.id === agentId);
+  return {
+    job: state.jobs.find((item) => item.id === jobId),
+    agent: state.agents.find((item) => item.id === agentId)
+  };
+}
+
+async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, options = {}) {
+  const { job, agent } = await loadDispatchJobAndAgent(storage, jobId, agentId);
   if (!job) return { error: 'Job not found', statusCode: 404 };
   if (!agent) return { error: 'Agent not found', statusCode: 404 };
   if (isTerminalJobStatus(job.status)) return { ok: true, mode: job.status, job: cloneJob(job) };
@@ -13138,7 +13154,7 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
   const dispatchAgent = locked?.agent || agent;
   try {
     const dispatch = await dispatchJobToAssignedAgent(dispatchJob, dispatchAgent, env);
-    const final = await storage.mutate(async (draft) => {
+    const mutateDispatchResult = async (draft) => {
       const draftJob = draft.jobs.find((item) => item.id === dispatchJob.id);
       const draftAgent = draft.agents.find((item) => item.id === dispatchAgent.id);
       if (!draftJob) return { error: 'Job disappeared during dispatch', statusCode: 500 };
@@ -13274,7 +13290,15 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
 
       draftJob.logs.push(`dispatch accepted by ${dispatchAgent.id} status=${dispatch.normalized.status}`);
       return { ok: true, mode: 'dispatched', job: cloneJob(draftJob) };
-    });
+    };
+    const canUseTargetedDispatchResult = dispatch?.ok
+      && dispatch?.normalized?.accepted
+      && !dispatch?.normalized?.completed
+      && !dispatch?.normalized?.blocked
+      && typeof storage.mutateJobAndAgent === 'function';
+    const final = canUseTargetedDispatchResult
+      ? await storage.mutateJobAndAgent(dispatchJob.id, dispatchAgent.id, mutateDispatchResult)
+      : await storage.mutate(mutateDispatchResult);
 
     if (final.error) return { error: final.error, statusCode: final.statusCode || 500 };
     if (final.mode === 'completed') {
