@@ -357,7 +357,7 @@ textarea {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .message.user .message-meta {

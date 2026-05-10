@@ -137,7 +137,7 @@ assert.ok(siteMapHtml.includes('href="/legal-notice.html"'), 'Site map HTML shou
 assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat composer.');
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
-assert.ok(chatHtml.includes('/chat.css?v=20260510a'), 'Chat page should load root chat CSS, not /chatux assets.');
+assert.ok(chatHtml.includes('/chat.css?v=20260510b'), 'Chat page should load root chat CSS, not /chatux assets.');
 assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260510a"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
@@ -550,6 +550,7 @@ assert.ok(chatJs.includes('data-progress-narrator-stream'), 'Chat progress shoul
 assert.ok(chatJs.includes('function syncProgressNarratorAnimation'), 'Chat progress should animate narrator text independently of poll responses.');
 assert.ok(chatJs.includes('function stopLiveProgressNarrator'), 'Chat progress should stop the narrator stream when live order status tracking stops.');
 assert.ok(chatJs.includes('liveProgressStoppedOrderIds'), 'Chat progress should remember intentionally stopped orders so backfill does not restart polling loops.');
+assert.ok(chatCss.includes('.message-meta') && chatCss.includes('text-transform: none'), 'Chat message labels should preserve CAIt casing instead of rendering CAIT.');
 assert.ok(chatJs.includes('function threadIsNearBottom'), 'Chat should only auto-scroll progress updates when the reader is already near the latest message.');
 assert.ok(chatJs.includes('includeAdaptivePending: true'), 'Agent maps should show adaptive planned later layers instead of hiding all future action work.');
 assert.ok(chatJs.includes('function leaderTextHasCmoSignal'), 'Chat intake routing should identify signup/channel/growth requests as CMO work.');
