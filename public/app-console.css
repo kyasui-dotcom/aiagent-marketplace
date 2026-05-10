@@ -948,7 +948,15 @@ a.detail-card span {
   min-width: 76px;
 }
 
-.delivery-search-row input {
+.delivery-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(132px, .42fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.delivery-search-row input,
+.delivery-search-row select {
   width: 100%;
   min-height: 40px;
   padding: 10px 12px;
@@ -1512,6 +1520,10 @@ a.detail-card span {
 
   .delivery-title-field input {
     font-size: 28px;
+  }
+
+  .delivery-search-row {
+    grid-template-columns: 1fr;
   }
 
   .delivery-list-head,

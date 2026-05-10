@@ -6,6 +6,7 @@ let selectedFileIndex = 0;
 let filter = 'all';
 let activeTab = 'overview';
 let searchText = '';
+let sortMode = 'newest';
 let importedContext = null;
 const expandedWorkIds = new Set();
 
@@ -34,6 +35,7 @@ const els = {
     context: document.getElementById('contextPanel')
   },
   deliverySearchInput: document.getElementById('deliverySearchInput'),
+  deliverySortSelect: document.getElementById('deliverySortSelect'),
   deliveryInboxMeta: document.getElementById('deliveryInboxMeta'),
   deliveryList: document.getElementById('deliveryList'),
   fileTable: document.getElementById('fileTable'),
@@ -84,6 +86,7 @@ function deliverySearchBlob(delivery = {}) {
     delivery.workTitle,
     delivery.taskType,
     delivery.nextAction,
+    delivery.updatedAt,
     ...(delivery.files || []).map((file) => `${file.name} ${file.type}`)
   ].join('\n').toLowerCase();
 }
@@ -98,9 +101,12 @@ function filteredDeliveries() {
   if (filter === 'blocked') list = list.filter((item) => isWaitingStatus(item.status));
   if (filter === 'files') list = list.filter((item) => (item.files || []).length);
   if (filter === 'reusable') list = list.filter((item) => item.summary || (item.files || []).length);
-  const query = searchText.trim().toLowerCase();
-  if (query) list = list.filter((item) => deliverySearchBlob(item).includes(query));
-  return list;
+  const queryTokens = searchText.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (queryTokens.length) list = list.filter((item) => {
+    const blob = deliverySearchBlob(item);
+    return queryTokens.every((token) => blob.includes(token));
+  });
+  return sortDeliveries(list);
 }
 
 function statusClass(value = '') {
@@ -139,6 +145,60 @@ function normalizedDate(value = '') {
     hour: 'numeric',
     minute: '2-digit'
   }).format(new Date(timestamp));
+}
+
+function deliveryTimestamp(delivery = {}) {
+  const timestamp = Date.parse(delivery.updatedAt || delivery.completedAt || delivery.createdAt || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function statusSortRank(value = '') {
+  const safe = String(value || '').trim().toLowerCase();
+  if (safe === 'completed') return 0;
+  if (/blocked|waiting|failed|timed_out/.test(safe)) return 1;
+  if (/running|claimed|dispatched/.test(safe)) return 2;
+  if (/queued/.test(safe)) return 3;
+  return 4;
+}
+
+function sortModeLabel(value = sortMode) {
+  return {
+    newest: 'newest first',
+    oldest: 'oldest first',
+    status: 'status',
+    files: 'most files',
+    title: 'title A-Z'
+  }[value] || 'newest first';
+}
+
+function compareDeliveries(left = {}, right = {}, mode = sortMode) {
+  if (mode === 'oldest') {
+    const timeDiff = deliveryTimestamp(left) - deliveryTimestamp(right);
+    if (timeDiff) return timeDiff;
+  } else if (mode === 'status') {
+    const statusDiff = statusSortRank(left.status) - statusSortRank(right.status);
+    if (statusDiff) return statusDiff;
+    const timeDiff = deliveryTimestamp(right) - deliveryTimestamp(left);
+    if (timeDiff) return timeDiff;
+  } else if (mode === 'files') {
+    const fileDiff = (right.files || []).length - (left.files || []).length;
+    if (fileDiff) return fileDiff;
+    const timeDiff = deliveryTimestamp(right) - deliveryTimestamp(left);
+    if (timeDiff) return timeDiff;
+  } else if (mode === 'title') {
+    const titleDiff = String(left.title || left.workTitle || '').localeCompare(String(right.title || right.workTitle || ''), undefined, { sensitivity: 'base' });
+    if (titleDiff) return titleDiff;
+  } else {
+    const timeDiff = deliveryTimestamp(right) - deliveryTimestamp(left);
+    if (timeDiff) return timeDiff;
+  }
+  const rankDiff = deliverySortRank(left) - deliverySortRank(right);
+  if (rankDiff) return rankDiff;
+  return String(right.id || '').localeCompare(String(left.id || ''));
+}
+
+function sortDeliveries(list = []) {
+  return [...list].sort((left, right) => compareDeliveries(left, right));
 }
 
 function isLeaderDelivery(delivery = {}) {
@@ -304,7 +364,7 @@ async function refreshDeliveries() {
     if (!response.ok) throw new Error(`jobs ${response.status}`);
     const data = await response.json();
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
-    deliveries = jobs.map(normalizeJobDelivery).filter((item) => item.id);
+    deliveries = sortDeliveries(jobs.map(normalizeJobDelivery).filter((item) => item.id));
     selectedId = deliveries[0]?.id || '';
     selectedFileIndex = 0;
   } catch {
@@ -410,7 +470,40 @@ function renderCounts() {
   els.reusableCount.textContent = deliveries.filter((item) => item.summary || (item.files || []).length).length;
   const visible = filteredDeliveries().length;
   const workCount = groupedDeliveries(filteredDeliveries()).length;
-  els.deliveryInboxMeta.textContent = `${workCount} work item${workCount === 1 ? '' : 's'}, ${visible} run${visible === 1 ? '' : 's'} shown.`;
+  const searchSuffix = searchText.trim() ? ` Search: "${compact(searchText.trim(), 32)}".` : '';
+  els.deliveryInboxMeta.textContent = `${workCount} work item${workCount === 1 ? '' : 's'}, ${visible} run${visible === 1 ? '' : 's'} shown. Sorted ${sortModeLabel()}.${searchSuffix}`;
+}
+
+function groupTimestamp(group = {}) {
+  return Math.max(...(group.items || []).map(deliveryTimestamp), deliveryTimestamp(group));
+}
+
+function groupFileCount(group = {}) {
+  return (group.items || []).reduce((sum, item) => sum + (item.files || []).length, 0);
+}
+
+function compareDeliveryGroups(left = {}, right = {}) {
+  if (sortMode === 'oldest') {
+    const timeDiff = groupTimestamp(left) - groupTimestamp(right);
+    if (timeDiff) return timeDiff;
+  } else if (sortMode === 'status') {
+    const statusDiff = statusSortRank(groupStatus(left)) - statusSortRank(groupStatus(right));
+    if (statusDiff) return statusDiff;
+    const timeDiff = groupTimestamp(right) - groupTimestamp(left);
+    if (timeDiff) return timeDiff;
+  } else if (sortMode === 'files') {
+    const fileDiff = groupFileCount(right) - groupFileCount(left);
+    if (fileDiff) return fileDiff;
+    const timeDiff = groupTimestamp(right) - groupTimestamp(left);
+    if (timeDiff) return timeDiff;
+  } else if (sortMode === 'title') {
+    const titleDiff = String(left.title || '').localeCompare(String(right.title || ''), undefined, { sensitivity: 'base' });
+    if (titleDiff) return titleDiff;
+  } else {
+    const timeDiff = groupTimestamp(right) - groupTimestamp(left);
+    if (timeDiff) return timeDiff;
+  }
+  return String(right.id || '').localeCompare(String(left.id || ''));
 }
 
 function groupedDeliveries(list = filteredDeliveries()) {
@@ -434,13 +527,9 @@ function groupedDeliveries(list = filteredDeliveries()) {
   return [...byWork.values()]
     .map((group) => ({
       ...group,
-      items: group.items.sort((left, right) => {
-        const rankDiff = deliverySortRank(left) - deliverySortRank(right);
-        if (rankDiff) return rankDiff;
-        return String(right.updatedAt || right.id || '').localeCompare(String(left.updatedAt || left.id || ''));
-      })
+      items: group.items.sort((left, right) => compareDeliveries(left, right))
     }))
-    .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
+    .sort(compareDeliveryGroups);
 }
 
 function groupStatus(group = {}) {
@@ -462,11 +551,11 @@ function groupSummary(group = {}) {
 
 function renderList() {
   const list = filteredDeliveries();
-  if (!list.some((item) => item.id === selectedId) && list[0]) {
-    selectedId = list[0].id;
+  const groups = groupedDeliveries(list);
+  if (!list.some((item) => item.id === selectedId) && groups[0]?.items?.[0]) {
+    selectedId = groups[0].items[0].id;
     selectedFileIndex = 0;
   }
-  const groups = groupedDeliveries(list);
   els.deliveryList.innerHTML = groups.length ? groups.map((group) => {
     const groupOpen = expandedWorkIds.has(group.id) || group.items.some((item) => item.id === selectedId);
     const files = group.items.reduce((sum, item) => sum + (item.files || []).length, 0);
@@ -645,6 +734,16 @@ els.tabButtons.forEach((button) => {
 
 els.deliverySearchInput.addEventListener('input', () => {
   searchText = els.deliverySearchInput.value;
+  render();
+});
+
+els.deliverySortSelect.addEventListener('change', () => {
+  saveEditor();
+  sortMode = String(els.deliverySortSelect.value || 'newest');
+  deliveries = sortDeliveries(deliveries);
+  const groups = groupedDeliveries(filteredDeliveries());
+  selectedId = groups[0]?.items?.[0]?.id || filteredDeliveries()[0]?.id || selectedId;
+  selectedFileIndex = 0;
   render();
 });
 

@@ -313,8 +313,9 @@ assert.ok(leadOpsHtml.includes('id="leadAllNavCount"'), 'Lead Ops side navigatio
 assert.ok(deliveryManagerHtml.includes('Deliveries'), 'Deliveries should be a first-class CAIt feature page.');
 assert.ok(deliveryManagerHtml.includes('href="/chat"'), 'Deliveries should link back to chat.');
 assert.ok(deliveryManagerHtml.includes('id="downloadSelectedBtn"'), 'Delivery Manager should expose downloadable delivery files.');
-assert.ok(deliveryManagerHtml.includes('/delivery-manager.js?v=20260505d'), 'Delivery Manager should load the app-context receiving controller.');
+assert.ok(deliveryManagerHtml.includes('/delivery-manager.js?v=20260510a'), 'Delivery Manager should load the app-context receiving controller.');
 assert.ok(deliveryManagerHtml.includes('id="deliverySearchInput"'), 'Delivery Manager should expose delivery search.');
+assert.ok(deliveryManagerHtml.includes('id="deliverySortSelect"'), 'Delivery Manager should expose delivery sorting.');
 assert.ok(deliveryManagerHtml.includes('data-tab="files"'), 'Delivery Manager should expose file and context tabs.');
 assert.ok(deliveryManagerHtml.includes('id="readinessList"'), 'Delivery Manager should show follow-up context readiness.');
 

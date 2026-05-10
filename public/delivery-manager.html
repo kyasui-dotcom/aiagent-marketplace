@@ -9,7 +9,7 @@
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/app-console.css?v=20260505c" />
-  <script type="module" src="/delivery-manager.js?v=20260505d"></script>
+  <script type="module" src="/delivery-manager.js?v=20260510a"></script>
 </head>
 <body>
   <main class="app-console-shell delivery-shell" aria-label="CAIt Deliveries">
@@ -41,6 +41,14 @@
           <div class="delivery-search-row">
             <label class="sr-only" for="deliverySearchInput">Search deliveries</label>
             <input id="deliverySearchInput" type="search" placeholder="Search deliveries, agents, files..." autocomplete="off" />
+            <label class="sr-only" for="deliverySortSelect">Sort deliveries</label>
+            <select id="deliverySortSelect" aria-label="Sort deliveries">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="status">Status</option>
+              <option value="files">Most files</option>
+              <option value="title">Title A-Z</option>
+            </select>
           </div>
 
           <div class="delivery-filter-tabs" aria-label="Delivery filters">
