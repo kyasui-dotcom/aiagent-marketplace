@@ -9,6 +9,7 @@ import { E2E_DEFAULT_ORDER_PROMPT, assertOrderScenarioQuality, buildOrderScenari
 const workerSource = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
 const deliveryActionContractSource = readFileSync(new URL('../public/delivery-action-contract.js', import.meta.url), 'utf8');
 const builtInAgentsSource = readFileSync(new URL('../lib/builtin-agents.js', import.meta.url), 'utf8');
+const storageSource = readFileSync(new URL('../lib/storage.js', import.meta.url), 'utf8');
 assert.ok(workerSource.includes('function builtInWorkflowKindForJob'), 'workflow built-in jobs should resolve kind from the child workflow task');
 assert.ok(workerSource.includes("if (!agentKind) return '';"), 'external workflow agents must not be rerouted through built-in sample execution');
 assert.ok(workerSource.includes('BUILT_IN_KINDS.includes(taskKind)'), 'workflow child task kind must be allowed to override the assigned leader sample kind');
@@ -80,7 +81,7 @@ assert.ok(!workerSource.includes(`kind: '${forbiddenAgentRunKind}'`), 'built-in 
 assert.ok(!workerSource.includes('function acceptBuiltInEndpointDispatchForProviderQueue'), 'Worker dispatch must not branch into a built-in-specific provider queue path.');
 assert.ok(!workerSource.includes('enqueueBuiltInAgentProviderRun'), 'Worker dispatch must not enqueue built-in-specific provider runs.');
 assert.ok(workerSource.includes('accepted_endpoint_recovered_count'), 'cron dispatch sweep should report recovery for stale accepted endpoint dispatches.');
-assert.ok(readFileSync(new URL('../lib/storage.js', import.meta.url), 'utf8').includes("['accepted'].includes(safe)"), 'D1 job merge must preserve accepted endpoint dispatch state.');
+assert.ok(storageSource.includes("['accepted'].includes(safe)"), 'D1 job merge must preserve accepted endpoint dispatch state.');
 assert.ok(workerSource.includes("options.dispatchMode !== 'direct' && Boolean(workflowDispatchQueue(env))"), 'production progress dispatch should prefer the queue when a queue binding is configured.');
 assert.ok(workerSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
 assert.ok(workerSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');
@@ -104,6 +105,9 @@ assert.ok(workerSource.includes('const DISPATCH_IN_PROGRESS_STALE_MS = 3 * 60 * 
 assert.ok(workerSource.includes("completionStatus === 'dispatch_in_progress'"), 'stale dispatch_in_progress jobs should be eligible for endpoint redispatch.');
 assert.ok(workerSource.includes("'dispatch_scheduled', 'dispatch_in_progress', 'timed_out'"), 'dispatch locks should allow stale dispatch_in_progress jobs to be relocked for endpoint retry.');
 assert.ok(workerSource.includes('stale endpoint dispatch lock recovered for retry'), 'stale dispatch_in_progress recovery must be marked so D1 merge accepts dispatch_scheduled.');
+assert.ok(storageSource.includes('function jobStatusIsTerminalForMerge'), 'D1 job merge must treat completed jobs as terminal, not only failed/timed_out jobs.');
+assert.ok(storageSource.includes('const existingCompletedBlocksStaleActive = existingCompleted'), 'D1 job merge must preserve completed endpoint results against stale active dispatch writes.');
+assert.ok(storageSource.includes('const incomingRetryMutation = existingRecoverableTerminal'), 'D1 job merge retry handling must not allow active writes to reopen completed jobs.');
 assert.ok(workerSource.includes('function workflowTaskRequiresConcreteSpecialistArtifact'), 'quality-sensitive specialist tasks should declare concrete artifact requirements.');
 assert.ok(workerSource.includes('if (workflowTaskRequiresConcreteSpecialistArtifact(task)) return false;'), 'SEO, writing, list, and action specialists must not complete from a generic prior-handoff packet.');
 assert.ok(workerSource.includes('completionBlocking: false'), 'incomplete specialist artifacts should surface as quality warnings without blocking workflow completion.');
@@ -966,6 +970,41 @@ assert.equal(
 );
 
 const qaStorage = createD1LikeStorage(env.MY_BINDING, { allowInMemory: true, stateCacheTtlMs: 0 });
+const mergeGuardStorage = createD1LikeStorage(null, { allowInMemory: true, stateCacheTtlMs: 0 });
+const mergeGuardJobId = `qa-completed-merge-guard-${Date.now()}`;
+const mergeGuardStartedAt = nowIso();
+const mergeGuardCompletedAt = new Date(Date.now() + 1000).toISOString();
+await mergeGuardStorage.upsertJobs([{
+  id: mergeGuardJobId,
+  taskType: 'qa_merge_guard',
+  status: 'running',
+  createdAt: mergeGuardStartedAt,
+  startedAt: mergeGuardStartedAt,
+  dispatch: { completionStatus: 'dispatch_scheduled', attempts: 1 },
+  logs: ['scheduled before completion']
+}]);
+await mergeGuardStorage.upsertJobs([{
+  id: mergeGuardJobId,
+  taskType: 'qa_merge_guard',
+  status: 'completed',
+  createdAt: mergeGuardStartedAt,
+  startedAt: mergeGuardStartedAt,
+  completedAt: mergeGuardCompletedAt,
+  dispatch: { completionStatus: 'completed', attempts: 1 },
+  logs: ['completed by endpoint dispatch']
+}]);
+await mergeGuardStorage.upsertJobs([{
+  id: mergeGuardJobId,
+  taskType: 'qa_merge_guard',
+  status: 'running',
+  createdAt: mergeGuardStartedAt,
+  startedAt: new Date(Date.now() + 2000).toISOString(),
+  dispatch: { completionStatus: 'dispatch_scheduled', attempts: 2 },
+  logs: ['stale scheduled rewrite after completion']
+}]);
+const mergeGuardJob = await mergeGuardStorage.getJobById(mergeGuardJobId);
+assert.equal(mergeGuardJob.status, 'completed', 'completed endpoint dispatch results must not be overwritten by stale active dispatch rewrites');
+assert.equal(mergeGuardJob.dispatch?.completionStatus, 'completed', 'completed endpoint dispatch status must remain completed after stale rewrites');
 await qaStorage.mutate(async (draft) => {
   draft.jobs.push(
     {
