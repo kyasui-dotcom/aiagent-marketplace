@@ -4880,6 +4880,7 @@ function computeNextRetryAt(attempts, baseTime = Date.now()) {
 const DISPATCH_SCHEDULE_STALE_MS = 90_000;
 const BUILT_IN_DISPATCH_SCHEDULE_STALE_MS = 8 * 60 * 1000;
 const DISPATCH_SCHEDULE_TIMEOUT_MS = 10 * 60 * 1000;
+const DISPATCH_IN_PROGRESS_STALE_MS = 3 * 60 * 1000;
 const COMPLETION_SWEEP_STALE_MS = 15 * 60 * 1000;
 const COMPLETION_QUEUE_STALE_MS = 2 * 60 * 1000;
 const COMPLETION_QUEUE_RECOVERY_STALE_MS = 90 * 1000;
@@ -4902,7 +4903,11 @@ function dispatchExecutionIsFresh(job = {}, agent = null, now = Date.now()) {
   if (status !== 'dispatch_in_progress') return false;
   const at = Date.parse(String(job?.dispatch?.dispatchInProgressAt || job?.dispatch?.lastAttemptAt || job?.dispatch?.dispatchRequestedAt || ''));
   const deadlineMs = effectiveTimeoutDeadlineMs(job, agent) || DISPATCH_SCHEDULE_TIMEOUT_MS;
-  return Number.isFinite(at) && now - at < Math.max(DISPATCH_SCHEDULE_STALE_MS, deadlineMs);
+  const inProgressDeadlineMs = Math.min(
+    Math.max(DISPATCH_SCHEDULE_STALE_MS, deadlineMs),
+    DISPATCH_IN_PROGRESS_STALE_MS
+  );
+  return Number.isFinite(at) && now - at < inProgressDeadlineMs;
 }
 
 function workflowDispatchMaxAgeMs(env = {}) {
@@ -13036,7 +13041,7 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
       return { ok: true, mode: 'running', job: cloneJob(draftJob), skippedInProgress: true };
     }
     const completionStatus = String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase();
-    if (completionStatus && !['dispatch_scheduled', 'timed_out', 'failed', 'retry_queued', 'leader_auto_retry_queued', 'leader_checkpoint_queued', 'leader_final_summary_queued', 'leader_adaptive_queued'].includes(completionStatus)) {
+    if (completionStatus && !['dispatch_scheduled', 'dispatch_in_progress', 'timed_out', 'failed', 'retry_queued', 'leader_auto_retry_queued', 'leader_checkpoint_queued', 'leader_final_summary_queued', 'leader_adaptive_queued'].includes(completionStatus)) {
       return { ok: true, mode: draftJob.status || completionStatus, job: cloneJob(draftJob), skippedLocked: true };
     }
     const at = nowIso();
@@ -13238,8 +13243,11 @@ function canAutoScheduleAsyncDispatch(job, agent) {
     const staleScheduledDispatch = status === 'running'
       && completionStatus === 'dispatch_scheduled'
       && !dispatchScheduleIsFreshForAgent(job, agent);
-    if (staleScheduledDispatch && Number(job.dispatch?.scheduleAttempts || 0) >= maxDispatchRetriesForJob(job)) return false;
-    if (!staleScheduledDispatch) return false;
+    const staleInProgressDispatch = status === 'running'
+      && completionStatus === 'dispatch_in_progress'
+      && !dispatchExecutionIsFresh(job, agent);
+    if ((staleScheduledDispatch || staleInProgressDispatch) && Number(job.dispatch?.scheduleAttempts || 0) >= maxDispatchRetriesForJob(job)) return false;
+    if (!staleScheduledDispatch && !staleInProgressDispatch) return false;
   }
   if (!job.assignedAgentId || job.assignedAgentId !== agent.id) return false;
   if (!resolveAgentJobEndpoint(agent)) return false;

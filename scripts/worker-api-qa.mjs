@@ -69,6 +69,9 @@ assert.ok(!workerSource.includes('Built-in workflow dispatch queue was requested
 assert.ok(workerSource.includes('googleGrantedCapabilities'), 'auth status should expose granted Google capabilities so chat does not repeat OAuth prompts.');
 assert.ok(/async function scheduleProgressDispatchesForJobId[\s\S]{0,500}getFreshState/.test(workerSource), 'workflow progress dispatch target selection should read fresh storage after leader completion.');
 assert.ok(/async function runQueuedBuiltInDispatchSweep[\s\S]{0,500}getFreshState/.test(workerSource), 'cron queued dispatch sweep should not choose targets from stale storage cache.');
+assert.ok(workerSource.includes('const DISPATCH_IN_PROGRESS_STALE_MS = 3 * 60 * 1000'), 'endpoint dispatch in-progress locks should be recoverable quickly when waitUntil loses the response.');
+assert.ok(workerSource.includes("completionStatus === 'dispatch_in_progress'"), 'stale dispatch_in_progress jobs should be eligible for endpoint redispatch.');
+assert.ok(workerSource.includes("'dispatch_scheduled', 'dispatch_in_progress', 'timed_out'"), 'dispatch locks should allow stale dispatch_in_progress jobs to be relocked for endpoint retry.');
 assert.ok(workerSource.includes('function workflowTaskRequiresConcreteSpecialistArtifact'), 'quality-sensitive specialist tasks should declare concrete artifact requirements.');
 assert.ok(workerSource.includes('if (workflowTaskRequiresConcreteSpecialistArtifact(task)) return false;'), 'SEO, writing, list, and action specialists must not complete from a generic prior-handoff packet.');
 assert.ok(workerSource.includes('completionBlocking: false'), 'incomplete specialist artifacts should surface as quality warnings without blocking workflow completion.');
