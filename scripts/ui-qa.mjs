@@ -253,8 +253,8 @@ assert.ok(loginJs.includes("parsed.pathname === '/chat.html'"), 'Login should no
 assert.ok(loginJs.includes("parsed.pathname === '/admin.html'"), 'Login should normalize /admin.html to /admin.');
 assert.ok(adminHtml.includes('<main class="admin-shell" aria-label="CAIt admin dashboard">'), 'Admin should render a dedicated dashboard shell.');
 assert.ok(adminHtml.includes('CAIt Admin'), 'Admin page should be branded as CAIt Admin.');
-assert.ok(adminHtml.includes('/admin.css?v=20260510b'), 'Admin should load the current dashboard stylesheet.');
-assert.ok(adminHtml.includes('type="module" src="/admin.js?v=20260510b"'), 'Admin should load the dashboard controller.');
+assert.ok(adminHtml.includes('/admin.css?v=20260510c'), 'Admin should load the current dashboard stylesheet.');
+assert.ok(adminHtml.includes('type="module" src="/admin.js?v=20260510c"'), 'Admin should load the dashboard controller.');
 assert.ok(adminHtml.includes('id="adminRegistrationsMetric"'), 'Admin should show member registration counts.');
 assert.ok(adminHtml.includes('id="accountsTable"'), 'Admin should include a user/account table.');
 assert.ok(adminHtml.includes('id="downloadAccountsBtn"'), 'Admin should provide account CSV download.');

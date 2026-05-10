@@ -284,15 +284,13 @@ function renderOrders(orders = []) {
       '<div class="admin-order-run">',
       '<span>',
       `<strong>${escapeHtml(order.workflowTask || order.taskType || 'work')}</strong>`,
-      `<small>${escapeHtml(order.workflowAgentName || order.parentAgentId || order.id || '-')}</small>`,
+      `<small>${escapeHtml(order.workflowAgentName || order.parentAgentId || order.id || '-')} / ${escapeHtml(relativeDate(order.updatedAt || order.createdAt))}</small>`,
       '</span>',
       `<span class="status-pill ${statusClass(order.status)}">${escapeHtml(order.status || '-')}</span>`,
-      `<span>${escapeHtml(relativeDate(order.updatedAt || order.createdAt))}</span>`,
-      `<span>${escapeHtml(order.actualBilling ? number(order.actualBilling.total) : '-')}</span>`,
       '</div>'
     ].join('')).join('');
     return [
-      `<details class="admin-order-group"><summary><span><strong>${escapeHtml(compact(group.title, 96))}</strong><small>${escapeHtml(group.id)}</small></span><span class="status-pill ${statusClass(status)}">${escapeHtml(status)}</span></summary><div class="admin-order-runs">${runs}</div></details>`,
+      `<details class="admin-order-group"><summary><span><strong>${escapeHtml(compact(group.title, 96))}</strong><small>${escapeHtml(group.id)}</small></span></summary><div class="admin-order-runs">${runs}</div></details>`,
       `<strong>${escapeHtml(group.requesterLogin || '-')}</strong><small>${escapeHtml(orderGroupSummary(group))}</small>`,
       `<span class="status-pill ${statusClass(status)}">${escapeHtml(status)}</span><small>${number(group.items.length)} runs / ${escapeHtml(relativeDate(group.updatedAt))}</small>`,
       `<strong>${escapeHtml(totalCost ? number(totalCost) : '-')}</strong><small>${escapeHtml(group.items[0]?.billingMode || '-')}</small>`

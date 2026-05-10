@@ -237,10 +237,8 @@
 
 .admin-order-group summary {
   cursor: pointer;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: block;
   align-items: center;
-  gap: 10px;
   list-style: none;
 }
 
@@ -277,11 +275,17 @@
 
 .admin-order-run {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.admin-order-run .status-pill {
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .admin-order-run strong,
