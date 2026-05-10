@@ -16333,9 +16333,7 @@ async function markDispatchScheduled(storage, jobId, agentId, reason = 'dispatch
     job.dispatch = {
       ...previousDispatch,
       firstDispatchRequestedAt,
-      dispatchRequestedAt: previousCompletionStatus === 'dispatch_scheduled'
-        ? (previousDispatch.dispatchRequestedAt || firstDispatchRequestedAt)
-        : at,
+      dispatchRequestedAt: at,
       completionStatus: 'dispatch_scheduled',
       scheduleAttempts,
       retryable: true,
@@ -17815,6 +17813,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
   const limit = Math.max(1, Math.min(20, Number(options.limit || 12) || 12));
   const scheduled = [];
   const scheduledJobIds = new Set();
+  const scheduledRootJobIds = new Set();
   const skippedRootJobIds = new Set();
   if (
     storage?.kind === 'd1'
@@ -17856,7 +17855,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
       .slice(0, limit);
     for (const candidate of lightCandidates) {
       const rootJobId = String(candidate.workflowParentId || candidate.id || '').trim();
-      if (!rootJobId || skippedRootJobIds.has(rootJobId) || scheduledJobIds.has(candidate.id)) continue;
+      if (!rootJobId || skippedRootJobIds.has(rootJobId) || scheduledRootJobIds.has(rootJobId) || scheduledJobIds.has(candidate.id)) continue;
       const agent = await storage.getAgentById(candidate.assignedAgentId);
       if (!agent) {
         skippedRootJobIds.add(rootJobId);
@@ -17877,6 +17876,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
         continue;
       }
       scheduledJobIds.add(marked.job.id);
+      scheduledRootJobIds.add(rootJobId);
       scheduled.push(marked.job.id);
       await touchEvent(storage, 'RUNNING', `${marked.agent.name} scheduled ${marked.job.taskType}/${marked.job.id.slice(0, 6)}`, {
         kind: 'dispatch_scheduled',
@@ -17912,7 +17912,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
       });
       for (const rootJobId of queuedRootIds) {
         if (scheduled.length >= limit) break;
-        if (!rootJobId || skippedRootJobIds.has(rootJobId)) continue;
+        if (!rootJobId || skippedRootJobIds.has(rootJobId) || scheduledRootJobIds.has(rootJobId)) continue;
         const result = await scheduleProgressDispatchesForJobId(storage, env, options.waitUntil, rootJobId, options.reason || 'cron dispatch sweep', {
           maxTargets: Math.max(1, limit - scheduled.length),
           refresh: true
@@ -17929,6 +17929,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
           scheduledJobIds.add(scheduledJobId);
           scheduled.push(scheduledJobId);
         }
+        if (scheduledIds.length) scheduledRootJobIds.add(rootJobId);
       }
     }
     if (scheduled.length < limit) {
@@ -17941,7 +17942,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
         if (scheduled.length >= limit) break;
         if (!candidate?.id || scheduledJobIds.has(candidate.id)) continue;
         const rootJobId = String(candidate.workflowParentId || candidate.id || '').trim();
-        if (!rootJobId || skippedRootJobIds.has(rootJobId)) continue;
+        if (!rootJobId || skippedRootJobIds.has(rootJobId) || scheduledRootJobIds.has(rootJobId)) continue;
         const agent = await storage.getAgentById(candidate.assignedAgentId);
         if (!agent) {
           skippedRootJobIds.add(rootJobId);
@@ -17987,6 +17988,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
           });
         }
         scheduledJobIds.add(candidate.id);
+        scheduledRootJobIds.add(rootJobId);
         scheduled.push(candidate.id);
         await touchEvent(storage, 'RUNNING', `${agent.name || agent.id} requeued accepted ${candidate.taskType}/${candidate.id.slice(0, 6)} for built-in provider run`, {
           kind: 'built_in_agent_run_requeued',

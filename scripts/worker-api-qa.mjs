@@ -92,6 +92,10 @@ assert.ok(workerSource.includes('if (workflowTaskRequiresConcreteSpecialistArtif
 assert.ok(workerSource.includes('completionBlocking: false'), 'incomplete specialist artifacts should surface as quality warnings without blocking workflow completion.');
 assert.ok(workerSource.includes('quality warning: missing required concrete deliverable'), 'reconcile should revalidate already-completed specialist children and surface missing-deliverable warnings.');
 assert.ok(builtInAgentsSource.includes('workflowCanCompleteFromSearchSourcePacket(kind, body, source)'), 'workflow research should complete from Brave/source packets instead of entering slower draft generation.');
+assert.ok(builtInAgentsSource.includes('fetchResearchPageSignal'), 'research source packets should fetch top result pages when possible instead of returning raw search rows only.');
+assert.ok(builtInAgentsSource.includes('Research memo with search evidence'), 'research source packets should be delivered as synthesized research memos.');
+assert.ok(builtInAgentsSource.includes('research_findings'), 'research source packets should expose structured findings for downstream handoff.');
+assert.ok(builtInAgentsSource.includes('word-count range'), 'research synthesis should preserve SEO-style word-count signals when page fetch succeeds.');
 
 const ga4SessionPreflight = orderPreflightForAgent(
   {
