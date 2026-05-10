@@ -286,7 +286,7 @@ assert.ok(builtInAgentSource.includes('task_aligned_findings'), 'Search-required
 assert.ok(builtInAgentSource.includes('BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS'), 'Workflow built-in run timeout must be configurable');
 assert.ok(builtInAgentSource.includes("normalizedKind.endsWith('_leader')"), 'Leader workflow planning should not spend the first dispatch on web search');
 assert.ok(builtInAgentSource.includes('Promise.race'), 'OpenAI calls should have an explicit timeout race, not only AbortController');
-assert.ok(builtInAgentSource.includes('workflow_fast_generation_failed'), 'Workflow built-in runs should fail instead of returning fallback output if OpenAI exceeds the latency budget');
+assert.ok(builtInAgentSource.includes('workflow_specialist_artifact_recovery'), 'Workflow specialist endpoints should return concrete artifacts from leader-owned prior work when OpenAI exceeds the latency budget.');
 assert.ok(!builtInAgentSource.includes('workflow_fast_fallback'), 'Workflow built-in runs must not return fallback output when generation fails');
 
 function builtInSeedManifest(seed = {}) {
@@ -1081,6 +1081,61 @@ try {
   assert.equal(cmoDataNoContextPacket.runtime.workflow, 'workflow_data_unavailable_packet');
   assert.equal(cmoDataNoContextPacket.runtime.mode, 'data_unavailable_packet');
   assert.match(cmoDataNoContextPacket.files[0].content, /No GA4|no analytics\/data context|Data layer skip/i);
+} finally {
+  globalThis.fetch = originalBuiltinQaFetch;
+}
+
+let specialistRecoveryOpenAiCalls = 0;
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input.url;
+  if (url === 'https://api.openai.com/v1/responses') {
+    specialistRecoveryOpenAiCalls += 1;
+    throw new Error('OpenAI request timed out after 45000ms');
+  }
+  return originalBuiltinQaFetch(input, init);
+};
+try {
+  const recoveredSeoArtifact = await runBuiltInAgent('seo_gap', {
+    prompt: 'Task: seo_gap Goal: build the SEO page packet for https://aiagent-marketplace.net/chat using prior research.',
+    output_language: 'English',
+    input: {
+      _broker: {
+        workflow: {
+          primaryTask: 'cmo_leader',
+          sequencePhase: 'preparation',
+          objective: 'Grow developer signups and trials for https://aiagent-marketplace.net/chat.',
+          leaderHandoff: {
+            handoffOwner: 'leader',
+            priorRuns: [
+              {
+                taskType: 'research',
+                summary: 'Search intent is comparison, execution proof, and approval safety.',
+                webSources: [
+                  {
+                    title: 'AI agent marketplace comparison',
+                    url: 'https://example.com/agent-marketplace-comparison',
+                    snippet: 'Competitors emphasize proof, integrations, and trust.'
+                  }
+                ]
+              },
+              {
+                taskType: 'media_planner',
+                summary: 'Prioritize owned SEO page first, then social distribution.'
+              }
+            ]
+          }
+        }
+      }
+    }
+  }, {
+    OPENAI_API_KEY: 'sk-test-specialist-recovery',
+    BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS: '5000'
+  });
+  assert.equal(specialistRecoveryOpenAiCalls, 1, 'specialist recovery QA should exercise the OpenAI draft failure path once');
+  assert.equal(recoveredSeoArtifact.status, 'completed');
+  assert.equal(recoveredSeoArtifact.runtime.workflow, 'workflow_specialist_artifact_recovery');
+  assert.match(recoveredSeoArtifact.files[0].content, /H1|Meta title|Keyword and intent|Internal links|CTA/i);
+  assert.ok(!/handoff packet|durable packet|Generation exceeded the retry budget/i.test(recoveredSeoArtifact.files[0].content), 'recovered specialist output must be a concrete artifact, not a generic handoff packet');
 } finally {
   globalThis.fetch = originalBuiltinQaFetch;
 }
