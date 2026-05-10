@@ -16217,6 +16217,7 @@ async function markDispatchScheduled(storage, jobId, agentId, reason = 'dispatch
     const previousCompletionStatus = String(previousDispatch.completionStatus || '').trim().toLowerCase();
     const firstDispatchRequestedAt = previousDispatch.firstDispatchRequestedAt || previousDispatch.dispatchRequestedAt || at;
     const scheduleAttempts = Number(previousDispatch.scheduleAttempts || 0) + 1;
+    const recoveringStaleInProgressDispatch = previousCompletionStatus === 'dispatch_in_progress';
     job.dispatch = {
       ...previousDispatch,
       firstDispatchRequestedAt,
@@ -16227,7 +16228,8 @@ async function markDispatchScheduled(storage, jobId, agentId, reason = 'dispatch
       scheduleAttempts,
       retryable: true,
       nextRetryAt: null,
-      maxRetries: workflowCompletionRetryLimitForJob(env, job)
+      maxRetries: workflowCompletionRetryLimitForJob(env, job),
+      ...(recoveringStaleInProgressDispatch ? { endpointDispatchRecoveredAt: at } : {})
     };
     if (workflowLeaderHandoffForDispatch && job.workflowParentId && !isWorkflowLeaderTask(workflowTaskName(job))) {
       const input = job.input && typeof job.input === 'object' ? { ...job.input } : {};
@@ -16247,6 +16249,7 @@ async function markDispatchScheduled(storage, jobId, agentId, reason = 'dispatch
       ...(workflowLeaderHandoffForDispatch && job.workflowParentId && !isWorkflowLeaderTask(workflowTaskName(job))
         ? [`leader handoff attached from ${workflowLeaderHandoffForDispatch.leaderTaskType}/${String(workflowLeaderHandoffForDispatch.leaderJobId || '').slice(0, 6)}`]
         : []),
+      ...(recoveringStaleInProgressDispatch ? ['stale endpoint dispatch lock recovered for retry'] : []),
       `${reason}; dispatch scheduled for ${agent.id}`
     ];
     return { scheduled: true, job: cloneJob(job), agent: publicAgent(agent) };
