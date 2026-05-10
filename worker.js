@@ -17056,6 +17056,37 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
         return { updated: 1 };
       });
     }
+    if (effectiveLocked.workflowParentId && !workflowQualitySourceTask(effectiveLocked)) {
+      const payload = buildCompactBuiltInDispatchPayload(effectiveLocked, agent);
+      const deterministicPayload = workflowDeterministicCompletionPayload(
+        sampleKind,
+        payload,
+        'Non-source workflow layer completed deterministically to keep the order moving to terminal state.',
+        0
+      );
+      const completedJob = await completeWorkflowDataPacketJob(
+        storage,
+        effectiveLocked,
+        agent,
+        deterministicPayload,
+        completionSource,
+        'non-source workflow layer completed deterministically'
+      );
+      if (completedJob) {
+        await touchEvent(storage, 'COMPLETED', `${effectiveLocked.taskType}/${effectiveLocked.id.slice(0, 6)} completed by ${eventLabel}: deterministic non-source layer`);
+        await refreshWorkflowLeaderHandoffForJobId(storage, effectiveLocked.workflowParentId);
+        await scheduleProgressDispatchesForJobId(storage, env, null, effectiveLocked.workflowParentId, `${eventLabel} handoff`, {
+          maxTargets: 8,
+          awaitDispatch: true,
+          refresh: false
+        });
+        await reconcileWorkflowParent(storage, effectiveLocked.workflowParentId);
+        return { ok: true, mode: 'completed', jobId: effectiveLocked.id, job: completedJob };
+      }
+      await touchEvent(storage, 'FAILED', `${effectiveLocked.taskType}/${effectiveLocked.id.slice(0, 6)} deterministic non-source completion rejected`);
+      await reconcileWorkflowParent(storage, effectiveLocked.workflowParentId);
+      return { ok: false, mode: 'rejected', jobId: effectiveLocked.id, error: 'deterministic non-source completion rejected' };
+    }
     const sourceTimeoutMs = workflowQueueSourceCollectionTimeoutMs(env);
     const generationEnv = {
       ...env,
@@ -17065,13 +17096,6 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
     const payload = buildCompactBuiltInDispatchPayload(effectiveLocked, agent);
     const body = workflowShouldCompleteDataUnavailable(effectiveLocked)
       ? workflowDataUnavailableCompletionPayload(effectiveLocked)
-      : (effectiveLocked.workflowParentId && !workflowQualitySourceTask(effectiveLocked))
-        ? workflowDeterministicCompletionPayload(
-            sampleKind,
-            payload,
-            'Non-source workflow layer completed deterministically to keep the order moving to terminal state.',
-            0
-          )
       : await runBuiltInAgentWithWorkflowQueueGuard(sampleKind, payload, generationEnv, effectiveLocked, sourceTimeoutMs);
     const normalized = normalizeDispatchResponse(body);
     if (normalized.failed) {
