@@ -16847,6 +16847,31 @@ function workflowDeterministicCompletionPayload(sampleKind, payload, reason = ''
   };
 }
 
+async function completeWorkflowNonSourceDeterministicJob(storage, job, agent, sampleKind, options = {}) {
+  const eventLabel = options.eventLabel || 'workflow dispatch queue';
+  const completionSource = options.completionSource || 'workflow-dispatch-queue';
+  const reason = options.reason || 'Non-source workflow layer completed deterministically by the Worker completion monitor to keep the order moving to terminal state.';
+  const logLine = options.logLine || 'non-source workflow layer completed deterministically';
+  const payload = buildCompactBuiltInDispatchPayload(job, agent);
+  const deterministicPayload = workflowDeterministicCompletionPayload(sampleKind, payload, reason, 0);
+  const completedJob = await completeWorkflowDataPacketJob(
+    storage,
+    job,
+    agent,
+    deterministicPayload,
+    completionSource,
+    logLine
+  );
+  if (completedJob) {
+    await touchEvent(storage, 'COMPLETED', `${job.taskType}/${job.id.slice(0, 6)} completed by ${eventLabel}: deterministic non-source layer`);
+    if (job.workflowParentId) await reconcileWorkflowParent(storage, job.workflowParentId);
+    return { ok: true, mode: 'completed', jobId: job.id, job: completedJob };
+  }
+  await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} deterministic non-source completion rejected`);
+  if (job.workflowParentId) await reconcileWorkflowParent(storage, job.workflowParentId);
+  return { ok: false, mode: 'rejected', jobId: job.id, error: 'deterministic non-source completion rejected' };
+}
+
 async function runBuiltInAgentWithWorkflowQueueGuard(sampleKind, payload, env, job = {}, sourceTimeoutMs = 30000) {
   const timeoutMs = workflowQueueGenerationTimeoutMs(env, sourceTimeoutMs);
   let timer = null;
@@ -17057,35 +17082,27 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
       });
     }
     if (effectiveLocked.workflowParentId && !workflowQualitySourceTask(effectiveLocked)) {
-      const payload = buildCompactBuiltInDispatchPayload(effectiveLocked, agent);
-      const deterministicPayload = workflowDeterministicCompletionPayload(
-        sampleKind,
-        payload,
-        'Non-source workflow layer completed deterministically to keep the order moving to terminal state.',
-        0
-      );
-      const completedJob = await completeWorkflowDataPacketJob(
+      const result = await completeWorkflowNonSourceDeterministicJob(
         storage,
         effectiveLocked,
         agent,
-        deterministicPayload,
-        completionSource,
-        'non-source workflow layer completed deterministically'
+        sampleKind,
+        {
+          eventLabel,
+          completionSource,
+          reason: 'Non-source workflow layer completed deterministically to keep the order moving to terminal state.',
+          logLine: 'non-source workflow layer completed deterministically'
+        }
       );
-      if (completedJob) {
-        await touchEvent(storage, 'COMPLETED', `${effectiveLocked.taskType}/${effectiveLocked.id.slice(0, 6)} completed by ${eventLabel}: deterministic non-source layer`);
+      if (result?.mode === 'completed') {
         await refreshWorkflowLeaderHandoffForJobId(storage, effectiveLocked.workflowParentId);
         await scheduleProgressDispatchesForJobId(storage, env, null, effectiveLocked.workflowParentId, `${eventLabel} handoff`, {
           maxTargets: 8,
           awaitDispatch: true,
           refresh: false
         });
-        await reconcileWorkflowParent(storage, effectiveLocked.workflowParentId);
-        return { ok: true, mode: 'completed', jobId: effectiveLocked.id, job: completedJob };
       }
-      await touchEvent(storage, 'FAILED', `${effectiveLocked.taskType}/${effectiveLocked.id.slice(0, 6)} deterministic non-source completion rejected`);
-      await reconcileWorkflowParent(storage, effectiveLocked.workflowParentId);
-      return { ok: false, mode: 'rejected', jobId: effectiveLocked.id, error: 'deterministic non-source completion rejected' };
+      return result;
     }
     const sourceTimeoutMs = workflowQueueSourceCollectionTimeoutMs(env);
     const generationEnv = {
@@ -17266,6 +17283,24 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
       skipped.waiting_for_generation_budget = (skipped.waiting_for_generation_budget || 0) + 1;
       continue;
     }
+    if (staleRecoveredJob.workflowParentId && !workflowQualitySourceTask(staleRecoveredJob)) {
+      const agent = typeof storage.getAgentById === 'function'
+        ? await storage.getAgentById(staleRecoveredJob.assignedAgentId)
+        : null;
+      const sampleKind = builtInWorkflowKindForJob(staleRecoveredJob, agent);
+      if (agent && sampleKind) {
+        const result = await completeWorkflowNonSourceDeterministicJob(storage, staleRecoveredJob, agent, sampleKind, {
+          eventLabel: 'stale workflow completion recovery',
+          completionSource: 'workflow-dispatch-stale-recovery',
+          reason: 'A non-source workflow layer was recovered from a stale completion sweep and completed deterministically by the Worker completion monitor.',
+          logLine: 'non-source workflow layer completed by stale completion recovery'
+        });
+        if (result?.mode === 'completed') {
+          completed.push(staleRecoveredJob.id);
+          continue;
+        }
+      }
+    }
     const retriedJob = typeof storage.mutateJobAndAgent === 'function'
       ? await storage.mutateJobAndAgent(staleRecoveredJob.id, staleRecoveredJob.assignedAgentId, (draft) => {
           const draftJob = draft.jobs.find((item) => item.id === staleRecoveredJob.id);
@@ -17403,6 +17438,24 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
       skipped.approval_waiting_retry_paused = (skipped.approval_waiting_retry_paused || 0) + 1;
       if (staleJob.workflowParentId) await reconcileWorkflowParent(storage, staleJob.workflowParentId);
       continue;
+    }
+    if (staleJob.workflowParentId && !workflowQualitySourceTask(staleJob)) {
+      const agent = typeof storage.getAgentById === 'function'
+        ? await storage.getAgentById(staleJob.assignedAgentId)
+        : null;
+      const sampleKind = builtInWorkflowKindForJob(staleJob, agent);
+      if (agent && sampleKind) {
+        const result = await completeWorkflowNonSourceDeterministicJob(storage, staleJob, agent, sampleKind, {
+          eventLabel: 'stale workflow completion timeout recovery',
+          completionSource: 'workflow-dispatch-timeout-recovery',
+          reason: 'A non-source workflow layer reached the stale sweep timeout and was completed deterministically instead of failing the workflow.',
+          logLine: 'non-source workflow layer completed by stale timeout recovery'
+        });
+        if (result?.mode === 'completed') {
+          completed.push(staleJob.id);
+          continue;
+        }
+      }
     }
     const expiredJob = typeof storage.mutateJobAndAgent === 'function'
       ? await storage.mutateJobAndAgent(staleJob.id, staleJob.assignedAgentId, (draft) => {
@@ -17736,6 +17789,14 @@ async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
       source: 'workflow-dispatch-queue'
     });
     return { ok: false, mode: 'missing_builtin_kind' };
+  }
+  if (job.workflowParentId && !workflowQualitySourceTask(job)) {
+    return completeWorkflowNonSourceDeterministicJob(storage, job, agent, sampleKind, {
+      eventLabel: 'workflow dispatch queue',
+      completionSource: 'workflow-dispatch-queue',
+      reason: 'Non-source workflow layer completed directly by the queue consumer so the order can continue to the next layer.',
+      logLine: 'non-source workflow layer completed directly by workflow dispatch queue consumer'
+    });
   }
   const currentCompletionStatus = String(job.dispatch?.completionStatus || '').trim().toLowerCase();
   if (currentCompletionStatus === 'completion_sweep_running') {
