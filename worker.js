@@ -17887,9 +17887,13 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
         jobIds: scheduled
       });
     }
-    return { ok: true, scheduled_count: scheduled.length, job_ids: scheduled, mode: 'd1_light_dispatch_sweep' };
+    if (scheduled.length >= limit) {
+      return { ok: true, scheduled_count: scheduled.length, job_ids: scheduled, mode: 'd1_light_dispatch_sweep' };
+    }
+    // D1 targeted queries above recover already-marked dispatch locks. Plain queued
+    // workflow children still need the normal parent gate so later layers cannot jump ahead.
   }
-  for (let i = 0; i < limit; i += 1) {
+  for (let i = scheduled.length; i < limit; i += 1) {
     const state = typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState();
     const candidates = state.jobs
       .filter((job) => ['queued', 'running'].includes(String(job.status || '').toLowerCase()))

@@ -22,7 +22,7 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function gotoWithRetry(page, url, options = {}, attempts = liveMode ? 3 : 1) {
+async function gotoWithRetry(page, url, options = {}, attempts = liveMode ? 5 : 1) {
   let lastError = null;
   const gotoOptions = {
     ...options,
@@ -34,15 +34,15 @@ async function gotoWithRetry(page, url, options = {}, attempts = liveMode ? 3 : 
     } catch (error) {
       lastError = error;
       const message = String(error?.message || error);
-      const retryable = /ERR_ABORTED|ERR_NETWORK|ERR_CONNECTION|Timeout|frame was detached|navigation/i.test(message);
+      const retryable = /ERR_ABORTED|ERR_NETWORK|ERR_CONNECTION|Timeout|frame was detached|navigation|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT/i.test(message);
       if (!retryable || attempt >= attempts) throw error;
-      await delay(500 * attempt);
+      await delay(Math.min(5_000, 1_000 * attempt));
     }
   }
   throw lastError;
 }
 
-async function verifyAuthWithRequest(page, url, attempts = liveMode ? 3 : 1) {
+async function verifyAuthWithRequest(page, url, attempts = liveMode ? 5 : 1) {
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -64,9 +64,9 @@ async function verifyAuthWithRequest(page, url, attempts = liveMode ? 3 : 1) {
     } catch (error) {
       lastError = error;
       const message = String(error?.message || error);
-      const retryable = /ERR_ABORTED|ERR_NETWORK|ERR_CONNECTION|Timeout|frame was detached|navigation|ECONNRESET|ETIMEDOUT/i.test(message);
+      const retryable = /ERR_ABORTED|ERR_NETWORK|ERR_CONNECTION|Timeout|frame was detached|navigation|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT/i.test(message);
       if (!retryable || attempt >= attempts) throw error;
-      await delay(500 * attempt);
+      await delay(Math.min(5_000, 1_000 * attempt));
     }
   }
   throw lastError;

@@ -74,7 +74,8 @@ assert.ok(workerSource.includes('external_agent_dispatch_contract'), 'completion
 assert.ok(!workerSource.includes('Built-in workflow dispatch queue was requested repeatedly but did not start execution.'), 'workflow queue non-starts must no longer fail the order before recovery.');
 assert.ok(workerSource.includes('googleGrantedCapabilities'), 'auth status should expose granted Google capabilities so chat does not repeat OAuth prompts.');
 assert.ok(/async function scheduleProgressDispatchesForJobId[\s\S]{0,500}getFreshState/.test(workerSource), 'workflow progress dispatch target selection should read fresh storage after leader completion.');
-assert.ok(/async function runQueuedBuiltInDispatchSweep[\s\S]{0,900}listStaleDispatchInProgressJobs/.test(workerSource), 'cron queued dispatch sweep should use targeted D1 queries instead of loading the full state.');
+assert.ok(/async function runQueuedBuiltInDispatchSweep[\s\S]{0,900}listStaleDispatchInProgressJobs/.test(workerSource), 'cron queued dispatch sweep should recover stale D1 dispatch locks with targeted queries.');
+assert.ok(workerSource.includes('for (let i = scheduled.length; i < limit; i += 1)'), 'cron queued dispatch sweep must fall through to the workflow gate for plain queued children.');
 assert.ok(workerSource.includes('const DISPATCH_IN_PROGRESS_STALE_MS = 3 * 60 * 1000'), 'endpoint dispatch in-progress locks should be recoverable quickly when waitUntil loses the response.');
 assert.ok(workerSource.includes("completionStatus === 'dispatch_in_progress'"), 'stale dispatch_in_progress jobs should be eligible for endpoint redispatch.');
 assert.ok(workerSource.includes("'dispatch_scheduled', 'dispatch_in_progress', 'timed_out'"), 'dispatch locks should allow stale dispatch_in_progress jobs to be relocked for endpoint retry.');
