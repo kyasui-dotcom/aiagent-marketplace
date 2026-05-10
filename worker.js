@@ -19795,7 +19795,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
   const needsLeaderSequenceProgress = workflowLeaderSequenceNeedsProgress(finalParent || {});
   let scheduled = null;
   if (options.asyncDispatch) {
-    const schedulePromise = scheduleProgressDispatchesForJobId(storage, env, options.waitUntil, parentJob.id, 'async workflow create', {
+    scheduled = await scheduleProgressDispatchesForJobId(storage, env, options.waitUntil, parentJob.id, 'async workflow create', {
       maxTargets: 8,
       awaitDispatch: false
     }).catch(async (error) => {
@@ -19807,9 +19807,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
       } catch {}
       return { scheduled: false, error: String(error?.message || error || '') };
     });
-    if (typeof options.waitUntil === 'function') options.waitUntil(schedulePromise);
-    else schedulePromise.catch(() => {});
-    scheduled = { scheduled: true, async: true };
+    scheduled = { ...(scheduled || {}), async: true };
   } else if (needsLeaderSequenceProgress) {
     scheduled = await scheduleProgressDispatchesForJobId(storage, env, options.waitUntil, parentJob.id, 'leader sequence workflow create', {
       maxTargets: 8,
