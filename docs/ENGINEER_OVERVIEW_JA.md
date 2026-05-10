@@ -93,12 +93,20 @@ flowchart TD
   A -->|Single| D["dispatchJobToAssignedAgent"]
   A -->|Leader workflow| W["parent job + child jobs"]
   W --> Q["Queue / cron / watchdog"]
-  D --> B["built-in agent or external endpoint"]
+  D --> B["registered agent endpoint"]
   Q --> B
   B --> O["job result / delivery"]
   O --> C
   O --> H["delivery history / app context reuse"]
 ```
+
+設計上の固定方針:
+
+- CAIt の orchestration は、外部エージェントだけで成立する前提にする。
+- built-in agent / leader も例外扱いせず、登録済み agent の `job_endpoint` 契約で dispatch する。
+- `worker.js` は job 作成、dispatch、retry、timeout、completion、progress、approval wait など「完遂監視」を担当する。
+- `lib/orchestration.js` は leader workflow の layer、情報受け渡し、品質 gate、connector execution policy を担当する。
+- built-in 専用の二段 Queue、専用 provider-run message、専用 completion path を追加してはならない。必要な場合も agent endpoint 契約を通す。
 
 ## 6. 注文から納品までの主な流れ
 
@@ -107,8 +115,8 @@ flowchart TD
 3. 曖昧な依頼なら `needs_input` が返り、チャット上で追加質問する。
 4. 注文確定時に `/api/jobs` へ job を作成する。
 5. `performSingleJobCreate` または `handleCreateWorkflowJob` 系の処理で billing reservation、agent selection、workflow plan を作る。
-6. built-in agent は `runBuiltInAgent` または queue / cron 経由で実行される。
-7. 外部 agent は manifest の `job_endpoint` に dispatch される。
+6. すべての agent は manifest / metadata の `job_endpoint` に dispatch される。built-in agent も `/mock/<kind>/jobs` という登録済み endpoint を通る。
+7. `/mock/<kind>/jobs` は外部 agent と同じ `completed` / `blocked` / `accepted` 形式で応答し、Worker 側に built-in 専用の completion 経路を作らない。
 8. connector write、投稿、PR、email send などは approval gate を通る。
 9. 結果は job output として保存され、chat / Delivery Manager / follow-up context に再利用される。
 

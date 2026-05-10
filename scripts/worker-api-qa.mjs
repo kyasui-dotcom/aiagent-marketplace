@@ -58,17 +58,17 @@ assert.ok(workerSource.includes('function workflowBuiltInFailureRetryMeta'), 'wo
 assert.ok(workerSource.includes('function workflowLeaderControlTask'), 'leader checkpoint/final-summary control jobs should have explicit retry handling.');
 assert.ok(workerSource.includes('function workflowCompletionRecoveryMinAgeMs'), 'leader control jobs should not be recovered as stale before their generation budget expires.');
 assert.ok(!/async function dispatchJobToAssignedAgent[\s\S]{0,1500}runBuiltInAgent/.test(workerSource), 'generic dispatch must not call the built-in runner directly.');
-assert.ok(workerSource.includes("legacy built-in queue message converted to endpoint dispatch"), 'legacy built-in queue messages should be converted back to endpoint dispatch.');
 assert.ok(workerSource.includes('prior specialist deliverable'), 'data context packets should instruct downstream agents to use upstream data.');
 assert.ok(workerSource.includes('&& !workflowJobRequiresSearch(job)'), 'data-unavailable shortcut must not bypass search-required data/research jobs.');
-assert.ok(workerSource.includes('dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId)'), 'legacy queue consumer should use the normal endpoint dispatcher.');
+assert.ok(/dispatchExistingJobToAssignedAgent\(storage,\s*env,\s*jobId,\s*agentId/.test(workerSource), 'endpoint queue consumer should use the normal endpoint dispatcher.');
 assert.ok(workerSource.includes("kind: 'endpoint_dispatch'"), 'workflow progress should queue normal endpoint dispatch work instead of draining every layer in one Worker request.');
 assert.ok(workerSource.includes("if (kind === 'endpoint_dispatch')"), 'queue consumer should process provider endpoint dispatch messages one job at a time.');
-assert.ok(workerSource.includes("kind: 'built_in_agent_run'"), 'built-in agent endpoints should accept like providers and complete through a separate provider-run message.');
-assert.ok(workerSource.includes("source: 'built-in-agent-provider'"), 'built-in provider completion should use the same callback-style completion path as external agents.');
-assert.ok(workerSource.includes('function acceptBuiltInEndpointDispatchForProviderQueue'), 'Cloudflare Queue dispatch should not self-fetch built-in endpoints; it should accept and queue the provider run directly.');
-assert.ok(/async function acceptBuiltInEndpointDispatchForProviderQueue[\s\S]*const queued = await enqueueBuiltInAgentProviderRun[\s\S]*const accepted = typeof storage\.mutateJobAndAgent/.test(workerSource), 'built-in endpoint dispatch must enqueue the provider run before persisting accepted state.');
-assert.ok(readFileSync(new URL('../lib/storage.js', import.meta.url), 'utf8').includes("['accepted'].includes(safe)"), 'D1 job merge must preserve accepted provider dispatch state.');
+const forbiddenAgentRunKind = ['built', 'in', 'agent', 'run'].join('_');
+assert.ok(!workerSource.includes(`kind: '${forbiddenAgentRunKind}'`), 'built-in agents must not use a second internal queue message; they must follow the same endpoint dispatch contract as registered external agents.');
+assert.ok(!workerSource.includes('function acceptBuiltInEndpointDispatchForProviderQueue'), 'Worker dispatch must not branch into a built-in-specific provider queue path.');
+assert.ok(!workerSource.includes('enqueueBuiltInAgentProviderRun'), 'Worker dispatch must not enqueue built-in-specific provider runs.');
+assert.ok(workerSource.includes('accepted_endpoint_recovered_count'), 'cron dispatch sweep should report recovery for stale accepted endpoint dispatches.');
+assert.ok(readFileSync(new URL('../lib/storage.js', import.meta.url), 'utf8').includes("['accepted'].includes(safe)"), 'D1 job merge must preserve accepted endpoint dispatch state.');
 assert.ok(workerSource.includes("options.dispatchMode !== 'direct' && Boolean(workflowDispatchQueue(env))"), 'production progress dispatch should prefer the queue when a queue binding is configured.');
 assert.ok(workerSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
 assert.ok(workerSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');
@@ -77,10 +77,10 @@ assert.ok(workerSource.includes('external_agent_dispatch_contract'), 'completion
 assert.ok(!workerSource.includes('Built-in workflow dispatch queue was requested repeatedly but did not start execution.'), 'workflow queue non-starts must no longer fail the order before recovery.');
 assert.ok(workerSource.includes('googleGrantedCapabilities'), 'auth status should expose granted Google capabilities so chat does not repeat OAuth prompts.');
 assert.ok(/async function scheduleProgressDispatchesForJobId[\s\S]{0,500}getFreshState/.test(workerSource), 'workflow progress dispatch target selection should read fresh storage after leader completion.');
-assert.ok(/async function runQueuedBuiltInDispatchSweep[\s\S]{0,900}listStaleDispatchInProgressJobs/.test(workerSource), 'cron queued dispatch sweep should recover stale D1 dispatch locks with targeted queries.');
+assert.ok(/async function runQueuedEndpointDispatchSweep[\s\S]{0,900}listStaleDispatchInProgressJobs/.test(workerSource), 'cron queued dispatch sweep should recover stale D1 dispatch locks with targeted queries.');
 assert.ok(workerSource.includes('listQueuedWorkflowDispatchRoots'), 'cron queued dispatch sweep must target plain queued workflow roots without a full-state scan.');
-assert.ok(workerSource.includes('listAcceptedBuiltInProviderJobs'), 'cron queued dispatch sweep must recover accepted built-in provider runs when the provider-run message is lost.');
-assert.ok(workerSource.includes('accepted provider run requeued'), 'accepted built-in provider recovery should leave an auditable job log.');
+assert.ok(workerSource.includes('listAcceptedEndpointDispatchJobs'), 'cron queued dispatch sweep must recover stale accepted endpoint dispatches.');
+assert.ok(workerSource.includes('legacy accepted endpoint dispatch recovered'), 'accepted endpoint recovery should leave an auditable job log.');
 assert.ok(workerSource.includes('loadWorkflowDispatchState(jobId)'), 'workflow progress dispatch should load only the parent workflow and assigned agents when available.');
 assert.ok(workerSource.includes("['queued', 'pending'].includes(String(leaderSequence?.status"), 'completed checkpoint rows must release adaptive children even if leader sequence status stayed pending.');
 assert.ok(workerSource.includes('const DISPATCH_IN_PROGRESS_STALE_MS = 3 * 60 * 1000'), 'endpoint dispatch in-progress locks should be recoverable quickly when waitUntil loses the response.');
@@ -2018,7 +2018,8 @@ for (let waitIndex = 0; waitIndex < queueDispatchWaits.length; waitIndex += 1) {
 }
 const queueDispatchQueuedState = await qaStorage.getState();
 const queueDispatchQueuedChild = queueDispatchQueuedState.jobs.find((job) => job.id === queueDispatchChildId);
-assert.equal(queueMessages.filter((message) => String(message?.body?.kind || '') === 'built_in_workflow_completion').length, 0, 'cron should not enqueue built-in workflow completion messages when endpoint dispatch is available');
+const forbiddenWorkflowCompletionKind = ['built', 'in', 'workflow', 'completion'].join('_');
+assert.equal(queueMessages.filter((message) => String(message?.body?.kind || '') === forbiddenWorkflowCompletionKind).length, 0, 'cron should not enqueue legacy workflow completion messages when endpoint dispatch is available');
 assert.equal(queueMessages.filter((message) => String(message?.body?.kind || '') === 'endpoint_dispatch').length, 1, 'cron should enqueue normal endpoint dispatch work one job at a time');
 assert.notEqual(
   String(queueDispatchQueuedChild?.dispatch?.completionStatus || ''),
@@ -2026,22 +2027,19 @@ assert.notEqual(
   'workflow dispatch child should not be moved into the legacy completion queue'
 );
 let queueAcked = false;
+const queuedEndpointMessage = queueMessages.find((message) => String(message?.body?.kind || '') === 'endpoint_dispatch');
+assert.ok(queuedEndpointMessage, 'endpoint dispatch queue message should be available for queue consumer QA');
 await worker.queue({
   messages: [
     {
-      body: {
-        kind: 'built_in_workflow_completion',
-        jobId: queueDispatchChildId,
-        agentId: 'agent_research_01',
-        sampleKind: 'research'
-      },
+      body: queuedEndpointMessage.body,
       ack() {
         queueAcked = true;
       }
     }
   ]
 }, queueEnv, { waitUntil() {} });
-assert.equal(queueAcked, true, 'legacy workflow dispatch queue consumer should ack processed messages');
+assert.equal(queueAcked, true, 'endpoint dispatch queue consumer should ack processed messages');
 const queueDispatchCompletedState = await qaStorage.getState();
 const queueDispatchCompletedChild = queueDispatchCompletedState.jobs.find((job) => job.id === queueDispatchChildId);
 assert.ok(
@@ -2051,7 +2049,7 @@ assert.ok(
 assert.notEqual(
   String(queueDispatchCompletedChild?.dispatch?.completionStatus || ''),
   'completion_queued',
-  `legacy workflow dispatch queue consumer should not put jobs back into completion_queued; events=${queueDispatchCompletedState.events.slice(-10).map((event) => event.message).join(' | ')}`
+  `endpoint dispatch queue consumer should not put jobs back into completion_queued; events=${queueDispatchCompletedState.events.slice(-10).map((event) => event.message).join(' | ')}`
 );
 
 const lostQueueChildId = 'qa-lost-queue-child';

@@ -4970,26 +4970,6 @@ function builtInAgentExternalJobId(kind = '', jobId = '') {
   return `built-in:${safeKind}:${safeJobId}`;
 }
 
-async function enqueueBuiltInAgentProviderRun(env = {}, kind = '', payload = {}, options = {}) {
-  const queue = workflowDispatchQueue(env);
-  const normalizedKind = String(kind || options.kind || '').trim().toLowerCase();
-  const jobId = String(payload?.job_id || payload?.jobId || options.jobId || '').trim();
-  const agentId = String(payload?.assigned_agent_id || payload?.assignedAgentId || options.agentId || '').trim();
-  if (!queue) return { ok: false, reason: 'queue_not_configured' };
-  if (!normalizedKind || !BUILT_IN_KINDS.includes(normalizedKind)) return { ok: false, reason: 'built_in_kind_missing' };
-  if (!jobId || !agentId) return { ok: false, reason: 'job_or_agent_missing' };
-  await queue.send({
-    kind: 'built_in_agent_run',
-    builtInKind: normalizedKind,
-    jobId,
-    agentId,
-    source: options.source || 'built-in-agent-endpoint',
-    externalJobId: options.externalJobId || builtInAgentExternalJobId(normalizedKind, jobId),
-    queuedAt: nowIso()
-  }, { contentType: 'json' });
-  return { ok: true, jobId, agentId, builtInKind: normalizedKind };
-}
-
 function workflowQueueSourceCollectionTimeoutMs(env = {}) {
   const configured = Number(env?.WORKFLOW_QUEUE_SOURCE_COLLECTION_TIMEOUT_MS || env?.WORKFLOW_SOURCE_COLLECTION_QUEUE_TIMEOUT_MS || 0);
   return Number.isFinite(configured) && configured > 0
@@ -17308,7 +17288,7 @@ async function completeWorkflowDataUnavailableJob(storage, locked, agent, comple
   );
 }
 
-async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) {
+async function recoverWorkflowEndpointDispatchJobs(storage, env, options = {}) {
   const requestedLegacyLimit = Math.max(1, Number(env?.LEGACY_WORKFLOW_DISPATCH_RECOVERY_LIMIT || 500) || 500);
   const legacyLimit = Math.max(50, Math.min(1000, requestedLegacyLimit));
   const legacyRecovered = [];
@@ -17405,7 +17385,7 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
       await touchEvent(storage, 'FAILED', `${String(candidate?.taskType || 'job')}/${String(candidate?.id || '').slice(0, 6)} endpoint dispatch recovery exception ${String(error?.message || error).slice(0, 120)}`);
     }
   }
-  const dispatchSweep = await runQueuedBuiltInDispatchSweep(storage, env, {
+  const dispatchSweep = await runQueuedEndpointDispatchSweep(storage, env, {
     source: options.source || 'legacy-completion-sweep',
     cron: options.cron || '',
     limit: options.limit || env?.QUEUED_DISPATCH_SWEEP_LIMIT || 8,
@@ -17453,7 +17433,7 @@ async function handleInternalWorkflowCompletionSweep(request, env) {
   const cron = String(body.cron || request.headers.get('x-cait-cron') || '').trim();
   if (!(await verifyInternalCronRequest(request, env, cron))) return json({ error: 'Not found' }, 404);
   const storage = runtimeStorage(env);
-  const result = await completeScheduledBuiltInWorkflowJobs(storage, env, {
+  const result = await recoverWorkflowEndpointDispatchJobs(storage, env, {
     source: 'internal-cron-fetch',
     cron,
     limit: Number(body.limit || env?.SCHEDULED_BUILTIN_COMPLETION_SWEEP_LIMIT || 2) || 2
@@ -17462,7 +17442,7 @@ async function handleInternalWorkflowCompletionSweep(request, env) {
 }
 
 async function runMinuteWorkflowCompletionSweep(storage, env, cron = '', scheduledTime = Date.now()) {
-  const dispatchSweep = await completeScheduledBuiltInWorkflowJobs(storage, env, {
+  const dispatchSweep = await recoverWorkflowEndpointDispatchJobs(storage, env, {
     source: 'minute-cron-endpoint-dispatch',
     cron,
     limit: Math.min(8, Number(env?.QUEUED_DISPATCH_SWEEP_LIMIT || 8) || 8)
@@ -17476,223 +17456,9 @@ async function runMinuteWorkflowCompletionSweep(storage, env, cron = '', schedul
   };
 }
 
-async function completeBuiltInAgentProviderRun(storage, env, body = {}) {
-  const message = body && typeof body === 'object' ? body : {};
-  const kind = String(message.builtInKind || message.built_in_kind || message.sampleKind || message.sample_kind || '').trim().toLowerCase();
-  const jobId = String(message.jobId || message.job_id || '').trim();
-  const agentId = String(message.agentId || message.agent_id || '').trim();
-  const externalJobId = String(message.externalJobId || message.external_job_id || builtInAgentExternalJobId(kind, jobId)).trim();
-  if (!kind || !BUILT_IN_KINDS.includes(kind)) return { ok: false, mode: 'invalid', error: 'Missing or invalid built-in kind' };
-  if (!jobId || !agentId) return { ok: false, mode: 'invalid', error: 'Missing jobId or agentId' };
-  const job = typeof storage.getJobById === 'function' ? await storage.getJobById(jobId) : null;
-  const agent = typeof storage.getAgentById === 'function' ? await storage.getAgentById(agentId) : null;
-  if (!job) return { ok: false, mode: 'missing_job' };
-  if (!agent) {
-    await failJob(storage, jobId, 'Built-in agent provider queue could not find the assigned agent.', ['provider queue failed before generation: assigned agent missing'], {
-      failureStatus: 'failed',
-      failureCategory: 'missing_agent',
-      retryable: false,
-      source: 'built-in-agent-provider'
-    });
-    return { ok: false, mode: 'missing_agent' };
-  }
-  if (isTerminalJobStatus(job.status)) return { ok: true, mode: 'terminal' };
-  await touchEvent(storage, 'RUNNING', `${agent.name || agent.id} provider runtime started ${job.taskType}/${job.id.slice(0, 6)}`, {
-    kind: 'built_in_agent_run_started',
-    jobId,
-    parentJobId: job.workflowParentId || null,
-    builtInKind: kind
-  });
-
-  let agentResult;
-  try {
-    const providerRunEnv = {
-      ...env,
-      WORKFLOW_SOURCE_COLLECTION_TIMEOUT_MS: String(workflowQueueSourceCollectionTimeoutMs(env)),
-      WORKFLOW_RESEARCH_PAGE_FETCH_MAX: String(env?.WORKFLOW_RESEARCH_PAGE_FETCH_MAX || 3),
-      WORKFLOW_RESEARCH_PAGE_FETCH_TIMEOUT_MS: String(env?.WORKFLOW_RESEARCH_PAGE_FETCH_TIMEOUT_MS || 3500)
-    };
-    agentResult = await runBuiltInAgent(kind, buildDispatchPayload(job, agent), providerRunEnv);
-  } catch (error) {
-    const failureMeta = workflowBuiltInFailureRetryMeta(env, job, {
-      category: 'dispatch_error',
-      retryable: true,
-      attempts: Number(job.dispatch?.attempts || 0) + 1
-    });
-    const failed = await failJob(storage, jobId, `Built-in ${kind} provider runtime failed: ${String(error?.message || error).slice(0, 300)}`, [
-      `built-in provider exception for ${agent.id}`
-    ], {
-      failureStatus: 'failed',
-      failureCategory: 'dispatch_error',
-      retryable: failureMeta.retryable,
-      attempts: failureMeta.attempts,
-      nextRetryAt: failureMeta.nextRetryAt,
-      maxRetries: failureMeta.maxRetries,
-      source: 'built-in-agent-provider',
-      externalJobId
-    });
-    await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} built-in provider runtime failed`);
-    if (failed?.workflowParentId || job.workflowParentId) await reconcileWorkflowParent(storage, failed?.workflowParentId || job.workflowParentId);
-    return { ok: true, mode: 'failed', job: failed };
-  }
-
-  const normalized = normalizeDispatchResponse(agentResult);
-  if (normalized.failed || (!normalized.completed && !normalized.blocked)) {
-    const reason = normalized.failureReason || 'Built-in provider runtime did not return a completed or blocked result.';
-    const baseFailureMeta = buildDispatchFailureMeta(job, normalized.statusCode || 200, reason);
-    const failureMeta = workflowBuiltInFailureRetryMeta(env, job, baseFailureMeta);
-    const failed = await failJob(storage, jobId, reason, [
-      `built-in provider result failed for ${agent.id}`,
-      `retryable=${failureMeta.retryable}`
-    ], {
-      failureStatus: 'failed',
-      failureCategory: baseFailureMeta.category,
-      retryable: failureMeta.retryable,
-      attempts: failureMeta.attempts,
-      nextRetryAt: failureMeta.nextRetryAt,
-      maxRetries: failureMeta.maxRetries,
-      source: 'built-in-agent-provider',
-      externalJobId
-    });
-    await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} built-in provider result failed`);
-    if (failed?.workflowParentId || job.workflowParentId) await reconcileWorkflowParent(storage, failed?.workflowParentId || job.workflowParentId);
-    return { ok: true, mode: 'failed', job: failed };
-  }
-
-  const completion = await completeJobFromAgentResult(storage, jobId, agentId, {
-    status: normalized.blocked ? 'blocked' : 'completed',
-    report: normalized.report,
-    files: normalized.files,
-    usage: normalized.usage,
-    return_targets: normalized.returnTargets
-  }, {
-    source: 'built-in-agent-provider',
-    externalJobId: normalized.externalJobId || externalJobId,
-    targetStatus: normalized.blocked ? 'blocked' : 'completed'
-  });
-  if (completion.error) {
-    await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} built-in provider completion failed: ${String(completion.error).slice(0, 120)}`);
-    return { ok: false, mode: 'completion_error', error: completion.error, statusCode: completion.statusCode || 500 };
-  }
-  if (completion.mode === 'completed') {
-    await touchEvent(storage, 'COMPLETED', `${job.taskType}/${job.id.slice(0, 6)} completed by built-in provider`, {
-      kind: 'built_in_agent_run_completed',
-      jobId,
-      parentJobId: completion.job?.workflowParentId || job.workflowParentId || null,
-      builtInKind: kind
-    });
-    if (completion.billing) await recordBillingOutcome(storage, completion.job, completion.billing, 'built-in-agent-provider');
-  } else if (completion.mode === 'blocked') {
-    await touchEvent(storage, 'RUNNING', `${job.taskType}/${job.id.slice(0, 6)} blocked by built-in provider`);
-  } else if (completion.mode === 'failed') {
-    await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} failed by built-in provider: ${String(completion.job?.failureReason || '').slice(0, 120)}`);
-  }
-
-  const workflowParentId = completion.job?.workflowParentId || job.workflowParentId || null;
-  if (workflowParentId) {
-    await reconcileWorkflowParent(storage, workflowParentId);
-    if (completion.mode === 'completed') {
-      await refreshWorkflowLeaderHandoffForJobId(storage, workflowParentId);
-      const queueNextDispatch = Boolean(workflowDispatchQueue(env));
-      await scheduleProgressDispatchesForJobId(storage, env, null, workflowParentId, 'built-in provider handoff', {
-        maxTargets: 8,
-        awaitDispatch: !queueNextDispatch,
-        dispatchMode: queueNextDispatch ? 'queue' : 'direct'
-      });
-      await reconcileWorkflowParent(storage, workflowParentId);
-    }
-  }
-  return { ok: true, mode: completion.mode, job: completion.job };
-}
-
-async function acceptBuiltInEndpointDispatchForProviderQueue(storage, env, jobId = '', agentId = '', message = {}) {
-  if (!workflowDispatchQueue(env)) return null;
-  const { job, agent } = await loadDispatchJobAndAgent(storage, jobId, agentId);
-  if (!job || !agent) return null;
-  const builtInKind = builtInWorkflowKindForJob(job, agent);
-  if (!builtInKind || !BUILT_IN_KINDS.includes(builtInKind)) return null;
-  if (isTerminalJobStatus(job.status)) return { ok: true, mode: job.status, job: cloneJob(job) };
-  const currentStatus = String(job.status || '').trim().toLowerCase();
-  const currentCompletionStatus = String(job.dispatch?.completionStatus || '').trim().toLowerCase();
-  if (currentStatus === 'dispatched' && currentCompletionStatus === 'accepted') {
-    const queued = await enqueueBuiltInAgentProviderRun(env, builtInKind, {
-      job_id: jobId,
-      assigned_agent_id: agentId
-    }, {
-      source: message.source || 'endpoint-dispatch-accepted-recovery',
-      externalJobId: builtInAgentExternalJobId(builtInKind, jobId)
-    }).catch((error) => ({ ok: false, reason: String(error?.message || error) }));
-    if (!queued?.ok) return { ok: false, mode: 'provider_queue_failed', error: queued?.reason || 'built-in provider queue send failed', job: cloneJob(job) };
-    await touchEvent(storage, 'RUNNING', `${agent.name || agentId} requeued ${job.taskType}/${job.id.slice(0, 6)} for built-in provider run`, {
-      kind: 'built_in_agent_run_requeued',
-      jobId,
-      parentJobId: job.workflowParentId || null,
-      builtInKind
-    });
-    return { ok: true, mode: 'dispatched', job: cloneJob(job), recoveredAccepted: true };
-  }
-  const externalJobId = builtInAgentExternalJobId(builtInKind, jobId);
-  const queued = await enqueueBuiltInAgentProviderRun(env, builtInKind, {
-    job_id: jobId,
-    assigned_agent_id: agentId
-  }, {
-    source: message.source || 'endpoint-dispatch-queue',
-    externalJobId
-  }).catch((error) => ({ ok: false, reason: String(error?.message || error) }));
-  if (!queued?.ok) {
-    return { ok: false, mode: 'provider_queue_failed', error: queued?.reason || 'built-in provider queue send failed', job: cloneJob(job) };
-  }
-  const accepted = typeof storage.mutateJobAndAgent === 'function'
-    ? await storage.mutateJobAndAgent(jobId, agentId, (draft) => {
-        const draftJob = draft.jobs.find((item) => item.id === jobId);
-        const draftAgent = draft.agents.find((item) => item.id === agentId);
-        if (!draftJob) return { error: 'Job disappeared before built-in provider queue accept', statusCode: 500 };
-        if (!draftAgent) return { error: 'Agent disappeared before built-in provider queue accept', statusCode: 500 };
-        if (isTerminalJobStatus(draftJob.status)) return { ok: true, mode: draftJob.status, job: cloneJob(draftJob), skippedTerminal: true };
-        if (String(draftJob.status || '').trim().toLowerCase() === 'blocked') return { ok: true, mode: 'blocked', job: cloneJob(draftJob), skippedBlocked: true };
-        const at = nowIso();
-        draftJob.status = 'dispatched';
-        draftJob.dispatchedAt = at;
-        draftJob.startedAt = draftJob.startedAt || at;
-        draftJob.dispatch = {
-          ...(draftJob.dispatch || {}),
-          endpoint: resolveAgentJobEndpoint(draftAgent),
-          statusCode: 202,
-          externalJobId,
-          responseStatus: 'accepted',
-          lastAttemptAt: at,
-          attempts: Number(draftJob.dispatch?.attempts || 0) + 1,
-          retryable: false,
-          nextRetryAt: null,
-          completionStatus: 'accepted',
-          providerQueueAcceptedAt: at
-        };
-        draftJob.logs = [
-          ...(draftJob.logs || []),
-          `accepted by built-in provider queue for ${draftAgent.id}`
-        ];
-        return { ok: true, mode: 'dispatched', job: cloneJob(draftJob), agent: publicAgent(draftAgent) };
-      })
-    : null;
-  if (!accepted || accepted.error) return accepted || null;
-  if (accepted.mode === 'dispatched') {
-    await touchEvent(storage, 'RUNNING', `${accepted.agent?.name || agent.name || agentId} queued ${job.taskType}/${job.id.slice(0, 6)} for built-in provider run`, {
-      kind: 'built_in_agent_run_queued',
-      jobId,
-      parentJobId: job.workflowParentId || null,
-      builtInKind
-    });
-  }
-  if (job.workflowParentId) await reconcileWorkflowParent(storage, job.workflowParentId);
-  return accepted;
-}
-
 async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
   const message = body && typeof body === 'object' ? body : {};
   const kind = String(message.kind || message.type || '').trim();
-  if (kind === 'built_in_agent_run') {
-    return completeBuiltInAgentProviderRun(storage, env, message);
-  }
   if (kind === 'endpoint_dispatch') {
     const jobId = String(message.jobId || message.job_id || '').trim();
     const agentId = String(message.agentId || message.agent_id || '').trim();
@@ -17716,8 +17482,7 @@ async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
       return { ok: true, mode: 'parent_authority_wait' };
       }
     }
-    const builtInQueuedDispatch = await acceptBuiltInEndpointDispatchForProviderQueue(storage, env, jobId, agentId, message);
-    const dispatch = builtInQueuedDispatch || await dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, {
+    const dispatch = await dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, {
       source: message.source || 'endpoint-dispatch-queue',
       nextDispatchMode: 'queue'
     });
@@ -17734,92 +17499,13 @@ async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
       dispatch
     };
   }
-  if (kind !== 'built_in_workflow_completion') return { ok: true, mode: 'ignored' };
-  const jobId = String(message.jobId || message.job_id || '').trim();
-  const agentId = String(message.agentId || message.agent_id || '').trim();
-  if (!jobId || !agentId) return { ok: false, mode: 'invalid', error: 'Missing jobId or agentId' };
-  const job = typeof storage.getJobById === 'function' ? await storage.getJobById(jobId) : null;
-  const agent = typeof storage.getAgentById === 'function' ? await storage.getAgentById(agentId) : null;
-  if (!job) return { ok: false, mode: 'missing_job' };
-  if (!agent) {
-    await failJob(storage, jobId, 'Workflow dispatch queue consumer could not find the assigned agent.', ['queue consumer failed before generation: assigned agent missing'], {
-      failureStatus: 'failed',
-      failureCategory: 'missing_agent',
-      retryable: false,
-      source: 'workflow-dispatch-queue'
-    });
-    return { ok: false, mode: 'missing_agent' };
-  }
-  if (isTerminalJobStatus(job.status)) return { ok: true, mode: 'terminal' };
-  const approvalPause = await pauseWorkflowChildDispatchForParentAuthority(storage, job, { agentId });
-  if (approvalPause.paused) {
-    await touchEvent(storage, 'RUNNING', `${job.taskType}/${job.id.slice(0, 6)} retry paused while parent waits for approval`, {
-      kind: 'dispatch_paused_for_parent_authority',
-      jobId: job.id,
-      parentJobId: job.workflowParentId || null
-    });
-    if (job.workflowParentId) await reconcileWorkflowParent(storage, job.workflowParentId);
-    return { ok: true, mode: 'parent_authority_wait' };
-  }
-  const resetForEndpointDispatch = typeof storage.mutateJobAndAgent === 'function'
-    ? await storage.mutateJobAndAgent(jobId, agentId, (draft) => {
-        const draftJob = draft.jobs.find((item) => item.id === jobId);
-        if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
-        const completionStatus = String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase();
-        if (!['completion_queued', 'completion_sweep_running', 'dispatch_scheduled', 'retry_queued'].includes(completionStatus)) return cloneJob(draftJob);
-        draftJob.status = 'queued';
-        draftJob.startedAt = null;
-        draftJob.dispatch = {
-          ...(draftJob.dispatch || {}),
-          completionStatus: 'dispatch_scheduled',
-          retryable: true,
-          nextRetryAt: null,
-          endpointDispatchRecoveredAt: nowIso()
-        };
-        draftJob.logs = [...(draftJob.logs || []), 'legacy built-in queue message converted to endpoint dispatch'];
-        return cloneJob(draftJob);
-      })
-    : await storage.mutate((draft) => {
-        const draftJob = draft.jobs.find((item) => item.id === jobId);
-        if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
-        const completionStatus = String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase();
-        if (!['completion_queued', 'completion_sweep_running', 'dispatch_scheduled', 'retry_queued'].includes(completionStatus)) return cloneJob(draftJob);
-        draftJob.status = 'queued';
-        draftJob.startedAt = null;
-        draftJob.dispatch = {
-          ...(draftJob.dispatch || {}),
-          completionStatus: 'dispatch_scheduled',
-          retryable: true,
-          nextRetryAt: null,
-          endpointDispatchRecoveredAt: nowIso()
-        };
-        draftJob.logs = [...(draftJob.logs || []), 'legacy built-in queue message converted to endpoint dispatch'];
-        return cloneJob(draftJob);
-      });
-  if (workflowDispatchQueue(env)) {
-    const queuedJob = resetForEndpointDispatch || job;
-    await enqueueEndpointDispatch(env, queuedJob, agent, {
-      workflowParentId: queuedJob.workflowParentId || null,
-      source: message.source || 'legacy-built-in-queue-recovery'
-    });
-    return {
-      ok: true,
-      mode: 'endpoint_dispatch_queued',
-      reset: Boolean(resetForEndpointDispatch)
-    };
-  }
-  const endpointDispatch = await dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId);
-  return {
-    ok: !endpointDispatch?.error,
-    mode: 'endpoint_dispatch',
-    reset: Boolean(resetForEndpointDispatch),
-    dispatch: endpointDispatch
-  };
+  return { ok: true, mode: 'ignored' };
 }
 
-async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
+async function runQueuedEndpointDispatchSweep(storage, env, options = {}) {
   const limit = Math.max(1, Math.min(20, Number(options.limit || 12) || 12));
   const scheduled = [];
+  const acceptedRecovered = [];
   const scheduledJobIds = new Set();
   const scheduledRootJobIds = new Set();
   const skippedRootJobIds = new Set();
@@ -17828,7 +17514,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
     && typeof storage.listScheduledWorkflowJobs === 'function'
     && typeof storage.listStaleDispatchInProgressJobs === 'function'
     && typeof storage.listQueuedWorkflowDispatchRoots === 'function'
-    && typeof storage.listAcceptedBuiltInProviderJobs === 'function'
+    && typeof storage.listAcceptedEndpointDispatchJobs === 'function'
     && typeof storage.getAgentById === 'function'
   ) {
     const scheduledCandidates = await storage.listScheduledWorkflowJobs({
@@ -17908,7 +17594,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
       }
     }
     if (scheduled.length) {
-      await touchEvent(storage, 'RUNNING', `queued built-in dispatch sweep scheduled ${scheduled.length} job(s)`, {
+      await touchEvent(storage, 'RUNNING', `queued endpoint dispatch sweep scheduled ${scheduled.length} job(s)`, {
         kind: 'queued_dispatch_sweep',
         jobIds: scheduled
       });
@@ -17940,76 +17626,81 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
         if (scheduledIds.length) scheduledRootJobIds.add(rootJobId);
       }
     }
-    if (scheduled.length < limit) {
-      const acceptedCandidates = await storage.listAcceptedBuiltInProviderJobs({
-        limit: Math.max(1, limit - scheduled.length),
+    {
+      const acceptedRecoveryLimit = Math.max(1, Math.min(4, Number(env?.ACCEPTED_ENDPOINT_RECOVERY_LIMIT || 2) || 2));
+      const acceptedTime = (job = {}) => Date.parse(String(
+        job?.dispatch?.providerQueueAcceptedAt
+        || job?.dispatch?.lastAttemptAt
+        || job?.dispatchedAt
+        || job?.startedAt
+        || job?.createdAt
+        || ''
+      )) || 0;
+      const acceptedCandidates = await storage.listAcceptedEndpointDispatchJobs({
+        limit: Math.max(limit, acceptedRecoveryLimit * 4),
         maxAgeMs: workflowDispatchMaxAgeMs(env),
         minAgeMs: DISPATCH_IN_PROGRESS_STALE_MS
       });
-      for (const candidate of acceptedCandidates) {
-        if (scheduled.length >= limit) break;
+      for (const candidate of acceptedCandidates.sort((left, right) => acceptedTime(right) - acceptedTime(left))) {
+        if (acceptedRecovered.length >= acceptedRecoveryLimit) break;
         if (!candidate?.id || scheduledJobIds.has(candidate.id)) continue;
         const rootJobId = String(candidate.workflowParentId || candidate.id || '').trim();
-        if (!rootJobId || skippedRootJobIds.has(rootJobId) || scheduledRootJobIds.has(rootJobId)) continue;
+        if (!rootJobId || skippedRootJobIds.has(rootJobId)) continue;
         const agent = await storage.getAgentById(candidate.assignedAgentId);
         if (!agent) {
           skippedRootJobIds.add(rootJobId);
           continue;
         }
-        const builtInKind = builtInWorkflowKindForJob(candidate, agent);
-        if (!builtInKind || !BUILT_IN_KINDS.includes(builtInKind)) {
+        const reset = typeof storage.mutateJobAndAgent === 'function'
+          ? await storage.mutateJobAndAgent(candidate.id, agent.id, (draft) => {
+              const draftJob = draft.jobs.find((item) => item.id === candidate.id);
+              const draftAgent = draft.agents.find((item) => item.id === agent.id);
+              if (!draftJob || !draftAgent || isTerminalJobStatus(draftJob.status)) return null;
+              draftJob.status = 'running';
+              draftJob.startedAt = draftJob.startedAt || nowIso();
+              draftJob.dispatch = {
+                ...(draftJob.dispatch || {}),
+                completionStatus: 'dispatch_scheduled',
+                retryable: true,
+                nextRetryAt: null,
+                endpointDispatchRecoveredAt: nowIso(),
+                acceptedEndpointRecoveredAt: nowIso()
+              };
+              draftJob.logs = [
+                ...(draftJob.logs || []),
+                `legacy accepted endpoint dispatch recovered for ${draftAgent.id}`
+              ];
+              return cloneJob(draftJob);
+            })
+          : null;
+        if (!reset) {
           skippedRootJobIds.add(rootJobId);
-          continue;
-        }
-        const requeued = await enqueueBuiltInAgentProviderRun(env, builtInKind, {
-          job_id: candidate.id,
-          assigned_agent_id: agent.id
-        }, {
-          source: options.reason || 'accepted-provider-run-recovery',
-          externalJobId: candidate.dispatch?.externalJobId || builtInAgentExternalJobId(builtInKind, candidate.id)
-        }).catch((error) => ({ ok: false, reason: String(error?.message || error) }));
-        if (!requeued?.ok) {
-          skippedRootJobIds.add(rootJobId);
-          await touchEvent(storage, 'FAILED', `${candidate.taskType}/${candidate.id.slice(0, 6)} accepted provider run requeue failed ${String(requeued?.reason || '').slice(0, 120)}`, {
-            kind: 'built_in_agent_run_requeue_failed',
+          await touchEvent(storage, 'FAILED', `${candidate.taskType}/${candidate.id.slice(0, 6)} accepted endpoint recovery failed`, {
+            kind: 'accepted_endpoint_recovery_failed',
             jobId: candidate.id,
             parentJobId: candidate.workflowParentId || null
           });
           continue;
         }
-        if (typeof storage.mutateJobAndAgent === 'function') {
-          await storage.mutateJobAndAgent(candidate.id, agent.id, (draft) => {
-            const draftJob = draft.jobs.find((item) => item.id === candidate.id);
-            if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
-            draftJob.dispatch = {
-              ...(draftJob.dispatch || {}),
-              providerQueueRequeuedAt: nowIso(),
-              providerQueueRequeueAttempts: Number(draftJob.dispatch?.providerQueueRequeueAttempts || 0) + 1,
-              retryable: true,
-              nextRetryAt: null
-            };
-            draftJob.logs = [
-              ...(draftJob.logs || []),
-              `accepted provider run requeued for ${agent.id}`
-            ];
-            return cloneJob(draftJob);
-          });
-        }
+        await enqueueEndpointDispatch(env, reset, agent, {
+          workflowParentId: reset.workflowParentId || rootJobId,
+          source: options.reason || 'accepted-endpoint-recovery'
+        });
         scheduledJobIds.add(candidate.id);
         scheduledRootJobIds.add(rootJobId);
+        acceptedRecovered.push(candidate.id);
         scheduled.push(candidate.id);
-        await touchEvent(storage, 'RUNNING', `${agent.name || agent.id} requeued accepted ${candidate.taskType}/${candidate.id.slice(0, 6)} for built-in provider run`, {
-          kind: 'built_in_agent_run_requeued',
+        await touchEvent(storage, 'RUNNING', `${agent.name || agent.id} recovered accepted ${candidate.taskType}/${candidate.id.slice(0, 6)} as normal endpoint dispatch`, {
+          kind: 'accepted_endpoint_recovered',
           jobId: candidate.id,
-          parentJobId: candidate.workflowParentId || null,
-          builtInKind
+          parentJobId: candidate.workflowParentId || null
         });
       }
     }
     if (scheduled.length >= limit) {
-      return { ok: true, scheduled_count: scheduled.length, job_ids: scheduled, mode: 'd1_light_dispatch_sweep' };
+      return { ok: true, scheduled_count: scheduled.length, job_ids: scheduled, accepted_endpoint_recovered_count: acceptedRecovered.length, accepted_endpoint_recovered_job_ids: acceptedRecovered, mode: 'd1_light_dispatch_sweep' };
     }
-    return { ok: true, scheduled_count: scheduled.length, job_ids: scheduled, mode: 'd1_light_dispatch_sweep' };
+    return { ok: true, scheduled_count: scheduled.length, job_ids: scheduled, accepted_endpoint_recovered_count: acceptedRecovered.length, accepted_endpoint_recovered_job_ids: acceptedRecovered, mode: 'd1_light_dispatch_sweep' };
   }
   for (let i = 0; i < limit; i += 1) {
     const state = typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState();
@@ -18049,7 +17740,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
     }
   }
   if (scheduled.length) {
-    await touchEvent(storage, 'RUNNING', `queued built-in dispatch sweep scheduled ${scheduled.length} job(s)`, {
+    await touchEvent(storage, 'RUNNING', `queued endpoint dispatch sweep scheduled ${scheduled.length} job(s)`, {
       kind: 'queued_dispatch_sweep',
       jobIds: scheduled
     });
@@ -21571,21 +21262,6 @@ export default {
           if (!(await canUseBuiltInAgentJobRoute(request, env, storage, builtInKind))) return json({ error: 'Not found' }, 404);
           const body = await parseBody(request).catch((error) => ({ __error: error.message }));
           if (body.__error) return json({ error: body.__error }, 400);
-          const queuedProviderRun = await enqueueBuiltInAgentProviderRun(env, builtInKind, body, {
-            source: 'built-in-agent-job-endpoint'
-          }).catch((error) => ({ ok: false, reason: String(error?.message || error) }));
-          if (queuedProviderRun?.ok) {
-            return json({
-              accepted: true,
-              status: 'accepted',
-              external_job_id: builtInAgentExternalJobId(builtInKind, body.job_id || body.jobId),
-              runtime: {
-                mode: 'queued_provider_agent',
-                provider: 'built-in',
-                queue: 'workflow_dispatch'
-              }
-            }, 202);
-          }
           try {
             return json(await runBuiltInAgent(builtInKind, body, env));
           } catch (error) {
@@ -22287,7 +21963,7 @@ export default {
           reason: 'minute cron orchestration watchdog dispatch',
           waitUntil: (promise) => ctx.waitUntil(promise)
         });
-        await runQueuedBuiltInDispatchSweep(storage, env, {
+        await runQueuedEndpointDispatchSweep(storage, env, {
           source: 'minute-cron',
           cron,
           limit: Math.min(8, Number(env?.QUEUED_DISPATCH_SWEEP_LIMIT || 8) || 8),
@@ -22298,7 +21974,7 @@ export default {
       return;
     }
     ctx.waitUntil((async () => {
-      await completeScheduledBuiltInWorkflowJobs(storage, env, {
+      await recoverWorkflowEndpointDispatchJobs(storage, env, {
         source: 'cron',
         cron,
         limit: Number(env?.SCHEDULED_BUILTIN_COMPLETION_SWEEP_LIMIT || 10) || 10
@@ -22321,7 +21997,7 @@ export default {
         reason: 'cron orchestration watchdog dispatch',
         waitUntil: (promise) => ctx.waitUntil(promise)
       });
-      await runQueuedBuiltInDispatchSweep(storage, env, {
+      await runQueuedEndpointDispatchSweep(storage, env, {
         source: 'cron',
         cron,
         limit: Number(env?.QUEUED_DISPATCH_SWEEP_LIMIT || 12) || 12,
