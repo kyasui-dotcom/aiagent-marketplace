@@ -17506,7 +17506,13 @@ async function completeBuiltInAgentProviderRun(storage, env, body = {}) {
 
   let agentResult;
   try {
-    agentResult = await runBuiltInAgent(kind, buildDispatchPayload(job, agent), env);
+    const providerRunEnv = {
+      ...env,
+      WORKFLOW_SOURCE_COLLECTION_TIMEOUT_MS: String(workflowQueueSourceCollectionTimeoutMs(env)),
+      WORKFLOW_RESEARCH_PAGE_FETCH_MAX: String(env?.WORKFLOW_RESEARCH_PAGE_FETCH_MAX || 3),
+      WORKFLOW_RESEARCH_PAGE_FETCH_TIMEOUT_MS: String(env?.WORKFLOW_RESEARCH_PAGE_FETCH_TIMEOUT_MS || 3500)
+    };
+    agentResult = await runBuiltInAgent(kind, buildDispatchPayload(job, agent), providerRunEnv);
   } catch (error) {
     const failureMeta = workflowBuiltInFailureRetryMeta(env, job, {
       category: 'dispatch_error',
