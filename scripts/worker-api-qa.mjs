@@ -8,6 +8,7 @@ import { E2E_DEFAULT_ORDER_PROMPT, assertOrderScenarioQuality, buildOrderScenari
 
 const workerSource = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
 const deliveryActionContractSource = readFileSync(new URL('../public/delivery-action-contract.js', import.meta.url), 'utf8');
+const builtInAgentsSource = readFileSync(new URL('../lib/builtin-agents.js', import.meta.url), 'utf8');
 assert.ok(workerSource.includes('function builtInWorkflowKindForJob'), 'workflow built-in jobs should resolve kind from the child workflow task');
 assert.ok(workerSource.includes("if (!agentKind) return '';"), 'external workflow agents must not be rerouted through built-in sample execution');
 assert.ok(workerSource.includes('BUILT_IN_KINDS.includes(taskKind)'), 'workflow child task kind must be allowed to override the assigned leader sample kind');
@@ -89,6 +90,7 @@ assert.ok(workerSource.includes('function workflowTaskRequiresConcreteSpecialist
 assert.ok(workerSource.includes('if (workflowTaskRequiresConcreteSpecialistArtifact(task)) return false;'), 'SEO, writing, list, and action specialists must not complete from a generic prior-handoff packet.');
 assert.ok(workerSource.includes('completionBlocking: false'), 'incomplete specialist artifacts should surface as quality warnings without blocking workflow completion.');
 assert.ok(workerSource.includes('quality warning: missing required concrete deliverable'), 'reconcile should revalidate already-completed specialist children and surface missing-deliverable warnings.');
+assert.ok(builtInAgentsSource.includes('workflowCanCompleteFromSearchSourcePacket(kind, body, source)'), 'workflow research should complete from Brave/source packets instead of entering slower draft generation.');
 
 const ga4SessionPreflight = orderPreflightForAgent(
   {
