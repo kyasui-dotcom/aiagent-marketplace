@@ -143,8 +143,84 @@ function statusClass(status = '') {
   const value = String(status || '').toLowerCase();
   if (['completed', 'ready', 'verified', 'resolved', 'live', 'active'].includes(value)) return 'ok';
   if (['failed', 'timed_out', 'blocked', 'rejected', 'error'].includes(value)) return 'error';
-  if (['queued', 'claimed', 'running', 'dispatched', 'reviewing', 'pending'].includes(value)) return 'warn';
+  if (['queued', 'claimed', 'running', 'dispatched', 'reviewing', 'pending', 'waiting'].includes(value)) return 'warn';
   return '';
+}
+
+function isWaitingOrderStatus(status = '') {
+  return /queued|claimed|running|dispatched|blocked|failed|timed_out|waiting/i.test(String(status || ''));
+}
+
+function orderTimestamp(order = {}) {
+  const timestamp = Date.parse(order.updatedAt || order.completedAt || order.failedAt || order.timedOutAt || order.createdAt || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function isLeaderOrder(order = {}) {
+  return /_leader$/i.test(String(order.workflowTask || order.taskType || order.workflowAgentName || ''));
+}
+
+function orderSortRank(order = {}) {
+  if (order.jobKind === 'workflow') return 0;
+  if (isLeaderOrder(order)) return 1;
+  if (isWaitingOrderStatus(order.status) && order.status !== 'completed') return 2;
+  if (order.status === 'completed') return 3;
+  return 4;
+}
+
+function compareOrders(left = {}, right = {}) {
+  const timeDiff = orderTimestamp(right) - orderTimestamp(left);
+  if (timeDiff) return timeDiff;
+  const rankDiff = orderSortRank(left) - orderSortRank(right);
+  if (rankDiff) return rankDiff;
+  return String(right.id || '').localeCompare(String(left.id || ''));
+}
+
+function orderGroupStatus(group = {}) {
+  const statuses = (group.items || []).map((item) => String(item.status || '').toLowerCase());
+  if (statuses.some((status) => /running|claimed|dispatched/.test(status))) return 'running';
+  if (statuses.some((status) => /queued/.test(status))) return 'queued';
+  if (statuses.some((status) => /blocked|failed|timed_out|waiting/.test(status))) return 'waiting';
+  if (statuses.length && statuses.every((status) => status === 'completed')) return 'completed';
+  return statuses[0] || 'unknown';
+}
+
+function orderGroupSummary(group = {}) {
+  const completed = (group.items || []).filter((item) => item.status === 'completed').length;
+  const waiting = (group.items || []).filter((item) => isWaitingOrderStatus(item.status) && item.status !== 'completed').length;
+  const leader = (group.items || []).find(isLeaderOrder);
+  const requester = group.requesterLogin || '-';
+  const leaderLabel = leader ? `Leader: ${leader.workflowAgentName || leader.taskType}` : 'Leader not in page';
+  return `${leaderLabel} / requester ${requester} / ${completed} completed / ${waiting} waiting`;
+}
+
+function groupedOrders(orders = []) {
+  const byWork = new Map();
+  for (const order of Array.isArray(orders) ? orders : []) {
+    const workId = String(order.workId || order.workflowParentId || order.id || '').trim();
+    if (!workId) continue;
+    if (!byWork.has(workId)) {
+      byWork.set(workId, {
+        id: workId,
+        title: order.workTitle || order.originalPrompt || order.prompt || `Order ${workId.slice(0, 8)}`,
+        requesterLogin: order.requesterLogin || '',
+        updatedAt: order.updatedAt || order.createdAt || '',
+        items: []
+      });
+    }
+    const group = byWork.get(workId);
+    group.items.push(order);
+    if (!group.requesterLogin && order.requesterLogin) group.requesterLogin = order.requesterLogin;
+    if (String(order.updatedAt || order.createdAt || '').localeCompare(String(group.updatedAt || '')) > 0) group.updatedAt = order.updatedAt || order.createdAt || group.updatedAt;
+    if (order.jobKind === 'workflow') group.title = order.workTitle || order.originalPrompt || order.prompt || group.title;
+  }
+  return [...byWork.values()]
+    .map((group) => ({ ...group, items: group.items.sort(compareOrders) }))
+    .sort((left, right) => {
+      const timeDiff = Math.max(...left.items.map(orderTimestamp)) - Math.max(...right.items.map(orderTimestamp));
+      if (timeDiff) return -timeDiff;
+      return String(right.id || '').localeCompare(String(left.id || ''));
+    });
 }
 
 function tableHtml(headers = [], rows = [], emptyText = 'No records yet.') {
@@ -200,13 +276,29 @@ function renderAccounts(accounts = []) {
 }
 
 function renderOrders(orders = []) {
-  const rows = orders.slice(0, 30).map((order) => [
-    `<strong>${escapeHtml(order.taskType || 'work')}</strong><small>${escapeHtml(order.id || '-')}</small>`,
-    `<strong>${escapeHtml(order.requesterLogin || '-')}</strong><small>${escapeHtml(compact(order.prompt || order.deliverySummary || '-', 90))}</small>`,
-    `<span class="status-pill ${statusClass(order.status)}">${escapeHtml(order.status || '-')}</span><small>${escapeHtml(relativeDate(order.createdAt))}</small>`,
-    `<strong>${escapeHtml(order.actualBilling ? number(order.actualBilling.total) : '-')}</strong><small>${escapeHtml(order.billingMode || '-')}</small>`
-  ]);
-  setText(els.ordersCountLabel, `${number(orders.length)} orders`);
+  const groups = groupedOrders(orders).slice(0, 30);
+  const rows = groups.map((group) => {
+    const status = orderGroupStatus(group);
+    const totalCost = group.items.reduce((sum, item) => sum + Number(item.actualBilling?.total || 0), 0);
+    const runs = group.items.map((order) => [
+      '<div class="admin-order-run">',
+      '<span>',
+      `<strong>${escapeHtml(order.workflowTask || order.taskType || 'work')}</strong>`,
+      `<small>${escapeHtml(order.workflowAgentName || order.parentAgentId || order.id || '-')}</small>`,
+      '</span>',
+      `<span class="status-pill ${statusClass(order.status)}">${escapeHtml(order.status || '-')}</span>`,
+      `<span>${escapeHtml(relativeDate(order.updatedAt || order.createdAt))}</span>`,
+      `<span>${escapeHtml(order.actualBilling ? number(order.actualBilling.total) : '-')}</span>`,
+      '</div>'
+    ].join('')).join('');
+    return [
+      `<details class="admin-order-group"><summary><span><strong>${escapeHtml(compact(group.title, 96))}</strong><small>${escapeHtml(group.id)}</small></span><span class="status-pill ${statusClass(status)}">${escapeHtml(status)}</span></summary><div class="admin-order-runs">${runs}</div></details>`,
+      `<strong>${escapeHtml(group.requesterLogin || '-')}</strong><small>${escapeHtml(orderGroupSummary(group))}</small>`,
+      `<span class="status-pill ${statusClass(status)}">${escapeHtml(status)}</span><small>${number(group.items.length)} runs / ${escapeHtml(relativeDate(group.updatedAt))}</small>`,
+      `<strong>${escapeHtml(totalCost ? number(totalCost) : '-')}</strong><small>${escapeHtml(group.items[0]?.billingMode || '-')}</small>`
+    ];
+  });
+  setText(els.ordersCountLabel, `${number(groups.length)} orders / ${number(orders.length)} runs`);
   if (els.ordersTable) {
     els.ordersTable.innerHTML = tableHtml(['Order', 'Requester', 'Status', 'Cost'], rows, 'No orders yet.');
   }
@@ -303,7 +395,8 @@ async function loadAdminDashboard() {
   if (els.refreshBtn) els.refreshBtn.disabled = true;
   showGate('Loading admin dashboard.', 'Checking your session and platform admin permissions.');
   try {
-    const auth = await api('/auth/status');
+    const snapshot = await api('/api/admin/dashboard');
+    const auth = snapshot.auth || {};
     state.auth = auth;
     const login = auth.login || auth.user?.login || auth.user?.email || '';
     setText(els.authStatus, auth.loggedIn ? `Signed in as ${login || 'account'}` : 'Not signed in');
@@ -316,7 +409,7 @@ async function loadAdminDashboard() {
       showGate('Admin access required.', 'This account is signed in, but it is not listed in ADMIN_DASHBOARD_LOGINS.', { error: true });
       return;
     }
-    render(await api('/api/snapshot'));
+    render(snapshot);
   } catch (error) {
     showGate('Admin dashboard failed to load.', error?.message || 'Unknown error', { error: true });
   } finally {

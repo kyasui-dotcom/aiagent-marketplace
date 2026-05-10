@@ -253,8 +253,8 @@ assert.ok(loginJs.includes("parsed.pathname === '/chat.html'"), 'Login should no
 assert.ok(loginJs.includes("parsed.pathname === '/admin.html'"), 'Login should normalize /admin.html to /admin.');
 assert.ok(adminHtml.includes('<main class="admin-shell" aria-label="CAIt admin dashboard">'), 'Admin should render a dedicated dashboard shell.');
 assert.ok(adminHtml.includes('CAIt Admin'), 'Admin page should be branded as CAIt Admin.');
-assert.ok(adminHtml.includes('/admin.css?v=20260501a'), 'Admin should load the current dashboard stylesheet.');
-assert.ok(adminHtml.includes('type="module" src="/admin.js?v=20260501b"'), 'Admin should load the dashboard controller.');
+assert.ok(adminHtml.includes('/admin.css?v=20260510b'), 'Admin should load the current dashboard stylesheet.');
+assert.ok(adminHtml.includes('type="module" src="/admin.js?v=20260510b"'), 'Admin should load the dashboard controller.');
 assert.ok(adminHtml.includes('id="adminRegistrationsMetric"'), 'Admin should show member registration counts.');
 assert.ok(adminHtml.includes('id="accountsTable"'), 'Admin should include a user/account table.');
 assert.ok(adminHtml.includes('id="downloadAccountsBtn"'), 'Admin should provide account CSV download.');
@@ -696,10 +696,13 @@ assert.ok(!chatCss.includes('radial-gradient'));
 assert.ok(adminCss.includes('.admin-shell'), 'Admin CSS should style the dashboard shell.');
 assert.ok(adminCss.includes('.metric-grid'), 'Admin CSS should style member-count metrics.');
 assert.ok(adminCss.includes('.admin-accounts-grid'), 'Admin CSS should style the accounts table.');
+assert.ok(adminCss.includes('.admin-gate[hidden]'), 'Admin CSS should hide gate panels when the hidden attribute is set.');
+assert.ok(adminCss.includes('.admin-order-group'), 'Admin CSS should support grouped order rows.');
 assert.ok(!adminCss.includes('radial-gradient'));
 
-assert.ok(adminJs.includes("await api('/auth/status'"), 'Admin should check auth status before loading dashboard data.');
-assert.ok(adminJs.includes("await api('/api/snapshot'"), 'Admin should reuse the admin dashboard snapshot payload.');
+assert.ok(adminJs.includes("await api('/api/admin/dashboard'"), 'Admin should use the dedicated lightweight dashboard payload.');
+assert.ok(adminJs.includes('const auth = snapshot.auth || {}'), 'Admin should read auth from the dashboard payload.');
+assert.ok(adminJs.includes('function groupedOrders'), 'Admin should group order runs by work order.');
 assert.ok(adminJs.includes('auth.isPlatformAdmin'), 'Admin should require platform admin access.');
 assert.ok(adminJs.includes('function downloadAccountsCsv'), 'Admin should support downloading member account data.');
 assert.ok(adminJs.includes('adminRegistrationsMetric'), 'Admin JS should render registration metrics.');

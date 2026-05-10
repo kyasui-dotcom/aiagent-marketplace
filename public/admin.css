@@ -98,6 +98,11 @@
   color: var(--muted);
 }
 
+.admin-gate[hidden],
+.admin-dashboard[hidden] {
+  display: none;
+}
+
 .admin-gate strong {
   color: var(--ink);
 }
@@ -223,6 +228,66 @@
 
 .admin-orders-grid .admin-row {
   grid-template-columns: minmax(150px, 0.9fr) minmax(190px, 1.4fr) minmax(120px, 0.7fr) minmax(130px, 0.7fr);
+}
+
+.admin-order-group {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-order-group summary {
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  list-style: none;
+}
+
+.admin-order-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-order-group summary::before {
+  content: "+";
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  float: left;
+  margin-right: 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.admin-order-group[open] summary::before {
+  content: "-";
+}
+
+.admin-order-runs {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.admin-order-run {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-order-run strong,
+.admin-order-run small {
+  margin: 0;
+  font-size: 12px;
 }
 
 .admin-chats-grid .admin-row {

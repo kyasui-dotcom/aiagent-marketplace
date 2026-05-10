@@ -29,6 +29,9 @@ const env = {
 const originalLeaderWorkflowQaFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input?.url;
+  if (String(url || '').startsWith('https://example.test/mock/')) {
+    return worker.fetch(new Request(url, init), env, { waitUntil() {} });
+  }
   if (String(url || '') === 'https://api.openai.com/v1/responses') {
     const requestBody = JSON.parse(String(init?.body || '{}'));
     const schemaName = String(requestBody?.text?.format?.name || '').trim().toLowerCase();

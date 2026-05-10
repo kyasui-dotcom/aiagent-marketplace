@@ -86,6 +86,33 @@ function createLocalQueueBinding(envProvider) {
   };
 }
 
+function installLocalTestFetchMocks() {
+  if (process.env.MOCK_BRAVE_SEARCH !== '1' || globalThis.__aiagent2LocalTestFetchMocksInstalled) return;
+  globalThis.__aiagent2LocalTestFetchMocksInstalled = true;
+  const originalFetch = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input?.url;
+    if (String(url || '').startsWith('https://api.search.brave.com/')) {
+      return new Response(JSON.stringify({
+        web: {
+          results: [
+            {
+              title: 'CAIt AI agent marketplace',
+              url: 'https://aiagent-marketplace.net/chat',
+              description: 'Local E2E source fixture for CAIt growth, SEO, social, and developer signup analysis.',
+              extra_snippets: [
+                'Developer and technical users evaluate AI agent workflows, connector approval, and delivery quality before signup.',
+                'Organic search, social proof posts, and approval-gated outbound actions are the priority test lanes.'
+              ]
+            }
+          ]
+        }
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return originalFetch(input, init);
+  };
+}
+
 async function bootstrapInMemoryState() {
   if (!process.env.BOOTSTRAP_STATE_JSON) return;
   const storage = createD1LikeStorage(null, { allowInMemory: runtimeAllowsInMemoryStorage() });
@@ -103,6 +130,7 @@ function buildWorkerEnv() {
     ALLOW_OPEN_WRITE_API: defaultTestFlag('ALLOW_OPEN_WRITE_API', '1'),
     ALLOW_GUEST_RUN_READ_API: defaultTestFlag('ALLOW_GUEST_RUN_READ_API', '1'),
     ALLOW_DEV_API: defaultTestFlag('ALLOW_DEV_API', '1'),
+    BASE_URL: process.env.BASE_URL || `http://${process.env.HOST || '127.0.0.1'}:${process.env.PORT || 4323}`,
     MY_BINDING: null,
     DB: null,
     ASSETS: createStaticAssetsBinding()
@@ -185,6 +213,7 @@ function handleLocalEvents(req, res) {
   return true;
 }
 
+installLocalTestFetchMocks();
 await bootstrapInMemoryState();
 
 const env = buildWorkerEnv();

@@ -11,14 +11,13 @@ const deliveryActionContractSource = readFileSync(new URL('../public/delivery-ac
 assert.ok(workerSource.includes('function builtInWorkflowKindForJob'), 'workflow built-in jobs should resolve kind from the child workflow task');
 assert.ok(workerSource.includes("if (!agentKind) return '';"), 'external workflow agents must not be rerouted through built-in sample execution');
 assert.ok(workerSource.includes('BUILT_IN_KINDS.includes(taskKind)'), 'workflow child task kind must be allowed to override the assigned leader sample kind');
-assert.ok(workerSource.includes('function shouldRunBuiltInWorkflowThroughAgentRunner'), 'workflow built-in jobs should be able to use the real built-in runner');
+assert.ok(workerSource.includes('function dispatchJobToAssignedAgent'), 'workflow jobs should dispatch through the generic provider endpoint path');
 assert.ok(workerSource.includes('function braveSearchConfiguredForWorkflow'), 'Brave search configuration should stay available for search-required workflow jobs');
-assert.ok(workerSource.includes('workflowJobRequiresSearch(job)'), 'only search-required workflow jobs should be forced through the search-capable runner');
+assert.ok(workerSource.includes('workflowJobRequiresSearch(job)'), 'search-required workflow jobs should preserve source-quality gates');
 assert.ok(!workerSource.includes('|| braveSearchConfiguredForWorkflow(env)'), 'Brave configuration alone must not force every workflow child through search');
 assert.ok(workerSource.includes('workflow.forceWebSearch === true'), 'search-required workflow jobs must not be completed by deterministic templates');
-assert.ok(workerSource.includes('function workflowShouldUseOpenAiByDefault'), 'high-context leader workflows should be able to opt into the real built-in runner by default');
-assert.ok(workerSource.includes("workflowPrimaryTaskForJob(job) === 'cmo_leader'"), 'CMO workflow children must use the real built-in runner when OpenAI is configured so research handoff is synthesized');
-assert.ok(workerSource.includes('openAiConfiguredForBuiltInWorkflow(env) && workflowShouldUseOpenAiByDefault(job)'), 'CMO workflow should not fall back to deterministic templates when OpenAI is configured');
+assert.ok(workerSource.includes('resolveDispatchEndpointUrl(endpoint, env)'), 'relative built-in endpoints should be resolved before generic dispatch');
+assert.ok(workerSource.includes('canUseBuiltInAgentJobRoute'), 'built-in agent endpoints should be protected by the same token-style provider contract in public production');
 assert.ok(workerSource.includes("from './lib/orchestration.js'"), 'workflow routing should use the shared orchestration module');
 assert.ok(workerSource.includes('leaderTaskLayer(primary, task)'), 'leader layer routing should not be hardcoded inside worker.js');
 assert.ok(workerSource.includes('WORKFLOW HANDOFF CONTEXT'), 'workflow handoff must remain available as prompt context');
@@ -54,23 +53,18 @@ assert.ok(workerSource.includes('workflow_orchestration_stalled'), 'watchdog sho
 assert.ok(!workerSource.includes("skipped: 'openai_workflow_enabled'"), 'scheduled built-in completion sweep must recover OpenAI-backed workflow jobs instead of skipping them.');
 assert.ok(workerSource.includes('clearJobAuthorityRequest(cloned)'), 'public job views must suppress stale authority requests on failed or timed-out jobs.');
 assert.ok(workerSource.includes('const COMPLETION_SWEEP_STALE_MS = 15 * 60 * 1000'), 'built-in workflow completion sweep should not time out research/data generation after only a few minutes.');
-assert.ok(workerSource.includes('function workflowBuiltInFailureRetryMeta'), 'built-in workflow generation failures should preserve retry metadata for quality-critical research/data layers.');
+assert.ok(workerSource.includes('function workflowBuiltInFailureRetryMeta'), 'workflow failures should preserve retry metadata for quality-critical research/data layers.');
 assert.ok(workerSource.includes('function workflowLeaderControlTask'), 'leader checkpoint/final-summary control jobs should have explicit retry handling.');
 assert.ok(workerSource.includes('function workflowCompletionRecoveryMinAgeMs'), 'leader control jobs should not be recovered as stale before their generation budget expires.');
-assert.ok(workerSource.includes('function workflowAttachedDataContextCompletionPayload'), 'attached GA4/Search Console/app context should complete as a durable data packet instead of hanging in queue generation.');
+assert.ok(!/async function dispatchJobToAssignedAgent[\s\S]{0,1500}runBuiltInAgent/.test(workerSource), 'generic dispatch must not call the built-in runner directly.');
+assert.ok(workerSource.includes("legacy built-in queue message converted to endpoint dispatch"), 'legacy built-in queue messages should be converted back to endpoint dispatch.');
 assert.ok(workerSource.includes('prior specialist deliverable'), 'data context packets should instruct downstream agents to use upstream data.');
 assert.ok(workerSource.includes('&& !workflowJobRequiresSearch(job)'), 'data-unavailable shortcut must not bypass search-required data/research jobs.');
-assert.ok(workerSource.includes('function workflowShouldCompleteResearchFromPriorSourcePacket'), 'search-required research should not retry forever when a prior source packet is already available.');
-assert.ok(workerSource.includes('prior_source_research_packet'), 'prior source research packet should preserve source limits for downstream agents.');
-assert.ok(workerSource.includes('function workflowShouldCompleteFromPriorHandoffPacket'), 'planning/preparation/action specialists should recover from generation timeouts when prior handoff evidence is available.');
-assert.ok(workerSource.includes('prior_handoff_specialist_packet'), 'prior handoff specialist packet should preserve upstream evidence and approval boundaries.');
-assert.ok(workerSource.includes('function workflowShouldCompleteLeaderFinalFromPriorHandoffPacket'), 'leader final summary should recover from generation timeouts when specialist handoff evidence is available.');
-assert.ok(workerSource.includes('prior_handoff_leader_final_packet'), 'leader final handoff packet should integrate upstream specialist outputs into the delivery.');
-assert.ok(workerSource.includes('Built-in agent generation exception:'), 'built-in workflow exceptions should fail/retry the job directly instead of leaving it locked until a sweep timeout.');
+assert.ok(workerSource.includes('dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId)'), 'legacy queue consumer should use the normal endpoint dispatcher.');
 assert.ok(workerSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
 assert.ok(workerSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');
 assert.ok(workerSource.includes('persistedJobForClientOrderId'), 'order create should check for an existing client order before creating a new job.');
-assert.ok(workerSource.includes('direct completion sweep recovered this job'), 'repeatedly unstarted workflow queue dispatches should recover by direct sweep instead of timing out.');
+assert.ok(workerSource.includes('external_agent_dispatch_contract'), 'completion sweeps should recover via endpoint dispatch instead of Worker-side generation.');
 assert.ok(!workerSource.includes('Built-in workflow dispatch queue was requested repeatedly but did not start execution.'), 'workflow queue non-starts must no longer fail the order before recovery.');
 assert.ok(workerSource.includes('googleGrantedCapabilities'), 'auth status should expose granted Google capabilities so chat does not repeat OAuth prompts.');
 assert.ok(/async function scheduleProgressDispatchesForJobId[\s\S]{0,500}getFreshState/.test(workerSource), 'workflow progress dispatch target selection should read fresh storage after leader completion.');
@@ -143,6 +137,7 @@ const env = {
 };
 
 const originalWorkerApiQaFetch = globalThis.fetch;
+let workerApiQaSelfFetchEnv = env;
 function workerApiQaOpenAiStructuredOutput(schemaName = '') {
   const name = String(schemaName || '').trim().toLowerCase();
   if (name.endsWith('_plan')) {
@@ -213,6 +208,9 @@ function workerApiQaOpenAiStructuredOutput(schemaName = '') {
 
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input?.url;
+  if (String(url || '').startsWith('https://example.test/mock/')) {
+    return worker.fetch(new Request(url, init), workerApiQaSelfFetchEnv, { waitUntil() {} });
+  }
   if (String(url || '') === 'https://api.openai.com/v1/responses') {
     const requestBody = JSON.parse(String(init?.body || '{}'));
     const schemaName = requestBody?.text?.format?.name || '';
@@ -309,6 +307,7 @@ const qaSearchEnv = {
   BRAVE_SEARCH_API_KEY: 'brave-worker-api-qa',
   OPENAI_API_KEY: 'sk-test-worker-qa'
 };
+workerApiQaSelfFetchEnv = qaSearchEnv;
 
 const SESSION_COOKIE = 'aiagent2_session';
 const textEncoder = new TextEncoder();
@@ -389,7 +388,15 @@ async function request(path, init = {}, options = {}) {
   const ctx = Array.isArray(options.waitUntilPromises)
     ? { waitUntil: (promise) => options.waitUntilPromises.push(Promise.resolve(promise)) }
     : undefined;
-  const res = await worker.fetch(new Request(`https://example.test${path}`, { ...init, headers }), targetEnv, ctx);
+  const previousSelfFetchEnv = workerApiQaSelfFetchEnv;
+  workerApiQaSelfFetchEnv = targetEnv;
+  const restoreSelfFetchEnv = !Array.isArray(options.waitUntilPromises);
+  let res;
+  try {
+    res = await worker.fetch(new Request(`https://example.test${path}`, { ...init, headers }), targetEnv, ctx);
+  } finally {
+    if (restoreSelfFetchEnv) workerApiQaSelfFetchEnv = previousSelfFetchEnv;
+  }
   const text = await res.text();
   const responseHeaders = Object.fromEntries(res.headers.entries());
   let body = text;
@@ -818,8 +825,8 @@ assert.equal(asyncDataRun?.status, 'completed', 'attached GA4/Search Console app
 const asyncDataJob = await request(`/api/jobs/${asyncDataRun.id}`, {}, { env: qaSearchEnv });
 assert.equal(asyncDataJob.status, 200);
 const asyncDataOutputText = JSON.stringify(asyncDataJob.body.job?.output || {});
-assert.match(asyncDataOutputText, /attached_data_context_packet|data-context-packet|データコンテキスト/i, 'data layer should persist an attached-context packet output');
-assert.match(asyncDataOutputText, /prior specialist deliverable|GA4|Search Console/i, 'data packet should tell downstream agents to use the attached analytics context');
+assert.match(asyncDataOutputText, /Funnel contract|GA4|Search Console/i, 'data layer should persist the agent-generated analytics/funnel packet output');
+assert.doesNotMatch(asyncDataOutputText, /attached_data_context_packet|app-context-data-analysis-shortcut/i, 'data layer should not use Worker-side attached-context shortcut output');
 assert.ok(asyncResearchRun, 'CMO workflow should keep one market research phase separate from data');
 assert.ok(asyncPlanningRun && ['media_planner', 'growth'].includes(asyncPlanningRun.taskType), 'CMO workflow should schedule one planning specialist');
 assert.ok(asyncWorkflowTaskOrder.indexOf('data_analysis') < asyncWorkflowTaskOrder.indexOf(asyncResearchRun.taskType), 'CMO data layer should precede the research layer');
@@ -1748,6 +1755,7 @@ await qaStorage.mutate(async (draft) => {
   );
 });
 const cronGateWaits = [];
+workerApiQaSelfFetchEnv = qaSearchEnv;
 await worker.scheduled({ cron: '*/15 * * * *', scheduledTime: Date.now() }, qaSearchEnv, {
   waitUntil: (promise) => cronGateWaits.push(Promise.resolve(promise))
 });
@@ -1811,6 +1819,7 @@ await qaStorage.mutate(async (draft) => {
   );
 });
 const scheduledRecoveryWaits = [];
+workerApiQaSelfFetchEnv = qaSearchEnv;
 await worker.scheduled({ cron: '*/15 * * * *', scheduledTime: Date.now() }, qaSearchEnv, {
   waitUntil: (promise) => scheduledRecoveryWaits.push(Promise.resolve(promise))
 });
@@ -1822,7 +1831,7 @@ const scheduledRecoveryChild = scheduledRecoveryState.jobs.find((job) => job.id 
 assert.notEqual(
   scheduledRecoveryChild?.status,
   'running',
-  'cron completion sweep should recover a stale OpenAI-backed dispatch_scheduled workflow child using firstDispatchRequestedAt even after later progress reschedules'
+  `cron completion sweep should recover a stale dispatch_scheduled workflow child through endpoint dispatch; child=${JSON.stringify({ status: scheduledRecoveryChild?.status, dispatch: scheduledRecoveryChild?.dispatch, failureReason: scheduledRecoveryChild?.failureReason, logs: scheduledRecoveryChild?.logs })}`
 );
 assert.notEqual(
   String(scheduledRecoveryChild?.dispatch?.completionStatus || '').toLowerCase(),
@@ -1886,10 +1895,12 @@ globalThis.fetch = async (input, init) => {
 };
 try {
   const minuteFallbackWaits = [];
-  await worker.scheduled({ cron: '* * * * *', scheduledTime: Date.now() }, {
+  const minuteFallbackEnv = {
     ...qaSearchEnv,
     WORKFLOW_COMPLETION_SWEEP_INTERNAL_FETCH_ENABLED: 'true'
-  }, {
+  };
+  workerApiQaSelfFetchEnv = minuteFallbackEnv;
+  await worker.scheduled({ cron: '* * * * *', scheduledTime: Date.now() }, minuteFallbackEnv, {
     waitUntil: (promise) => minuteFallbackWaits.push(Promise.resolve(promise))
   });
   for (let waitIndex = 0; waitIndex < minuteFallbackWaits.length; waitIndex += 1) {
@@ -1903,16 +1914,16 @@ const minuteFallbackChild = minuteFallbackState.jobs.find((job) => job.id === mi
 assert.notEqual(
   minuteFallbackChild?.status,
   'running',
-  'minute cron should directly recover stale dispatch_scheduled jobs when the internal self-fetch fails'
+  'minute cron should recover stale dispatch_scheduled jobs through endpoint dispatch'
 );
 assert.notEqual(
   String(minuteFallbackChild?.dispatch?.completionStatus || '').toLowerCase(),
   'dispatch_scheduled',
-  'minute cron direct fallback must move stale scheduled workflow children out of dispatch_scheduled'
+  'minute cron endpoint dispatch recovery must move stale scheduled workflow children out of dispatch_scheduled'
 );
 assert.ok(
-  minuteFallbackState.events.some((event) => /direct fallback/.test(String(event.message || ''))),
-  'minute cron fallback should leave an observable event when the internal fetch fails'
+  (minuteFallbackChild?.logs || []).some((line) => /endpoint dispatch|dispatched to/.test(String(line || ''))),
+  'minute cron endpoint recovery should leave an observable child log'
 );
 
 const queueDispatchChildId = 'qa-queue-dispatch-child';
@@ -1952,7 +1963,7 @@ await qaStorage.mutate(async (draft) => {
       taskType: 'research',
       workflowTask: 'research',
       workflowAgentName: 'Research Agent',
-      prompt: 'queue-backed workflow child should be generated by queue consumer, not cron',
+      prompt: 'workflow child should be dispatched to its agent endpoint by cron, not generated by Worker queue code',
       status: 'running',
       assignedAgentId: 'agent_research_01',
       workflowParentId: queueDispatchParentId,
@@ -1972,6 +1983,7 @@ await qaStorage.mutate(async (draft) => {
   );
 });
 const queueDispatchWaits = [];
+workerApiQaSelfFetchEnv = queueEnv;
 await worker.scheduled({ cron: '* * * * *', scheduledTime: Date.now() }, queueEnv, {
   waitUntil: (promise) => queueDispatchWaits.push(Promise.resolve(promise))
 });
@@ -1980,37 +1992,39 @@ for (let waitIndex = 0; waitIndex < queueDispatchWaits.length; waitIndex += 1) {
 }
 const queueDispatchQueuedState = await qaStorage.getState();
 const queueDispatchQueuedChild = queueDispatchQueuedState.jobs.find((job) => job.id === queueDispatchChildId);
-assert.equal(queueMessages.length >= 1, true, 'cron should enqueue stale built-in workflow jobs when a workflow dispatch queue is configured');
-const queueDispatchMessage = queueMessages.find((message) => message?.body?.jobId === queueDispatchChildId);
-assert.ok(queueDispatchMessage, 'cron should enqueue the stale built-in workflow child under test');
-assert.equal(queueDispatchMessage.body.kind, 'built_in_workflow_completion', 'workflow dispatch queue message should carry the expected kind');
-assert.equal(
+assert.equal(queueMessages.length, 0, 'cron should not enqueue built-in workflow completion messages when endpoint dispatch is available');
+assert.notEqual(
   String(queueDispatchQueuedChild?.dispatch?.completionStatus || ''),
   'completion_queued',
-  'queued workflow dispatch child should not start OpenAI generation inside cron'
+  'workflow dispatch child should not be moved into the legacy completion queue'
 );
 let queueAcked = false;
 await worker.queue({
   messages: [
     {
-      body: queueDispatchMessage.body,
+      body: {
+        kind: 'built_in_workflow_completion',
+        jobId: queueDispatchChildId,
+        agentId: 'agent_research_01',
+        sampleKind: 'research'
+      },
       ack() {
         queueAcked = true;
       }
     }
   ]
 }, queueEnv, { waitUntil() {} });
-assert.equal(queueAcked, true, 'workflow dispatch queue consumer should ack processed messages');
+assert.equal(queueAcked, true, 'legacy workflow dispatch queue consumer should ack processed messages');
 const queueDispatchCompletedState = await qaStorage.getState();
 const queueDispatchCompletedChild = queueDispatchCompletedState.jobs.find((job) => job.id === queueDispatchChildId);
 assert.ok(
-  queueDispatchCompletedState.events.some((event) => String(event.message || '').includes(`${queueDispatchChildId.slice(0, 6)}`) || String(event.message || '').includes('queue generation')),
-  `queue dispatch should leave an observable event; events=${queueDispatchCompletedState.events.slice(-8).map((event) => event.message).join(' | ')}`
+  (queueDispatchCompletedChild?.logs || []).some((line) => /endpoint dispatch|dispatched to/.test(String(line || ''))),
+  `endpoint dispatch should leave an observable child log; logs=${(queueDispatchCompletedChild?.logs || []).join(' | ')}`
 );
 assert.notEqual(
   String(queueDispatchCompletedChild?.dispatch?.completionStatus || ''),
   'completion_queued',
-  `workflow dispatch queue consumer should move queued jobs out of completion_queued; events=${queueDispatchCompletedState.events.slice(-10).map((event) => event.message).join(' | ')}`
+  `legacy workflow dispatch queue consumer should not put jobs back into completion_queued; events=${queueDispatchCompletedState.events.slice(-10).map((event) => event.message).join(' | ')}`
 );
 
 const lostQueueChildId = 'qa-lost-queue-child';
@@ -2062,6 +2076,7 @@ await qaStorage.mutate(async (draft) => {
   );
 });
 const lostQueueWaits = [];
+workerApiQaSelfFetchEnv = queueEnv;
 await worker.scheduled({ cron: '* * * * *', scheduledTime: Date.now() }, queueEnv, {
   waitUntil: (promise) => lostQueueWaits.push(Promise.resolve(promise))
 });
@@ -2076,8 +2091,8 @@ assert.notEqual(
   `minute cron should recover stale completion_queued workflow children when a queue message is lost or acked without durable completion; child=${JSON.stringify({ status: lostQueueChild?.status, dispatch: lostQueueChild?.dispatch, logs: lostQueueChild?.logs })}; events=${lostQueueState.events.slice(-20).map((event) => event.message).join(' | ')}`
 );
 assert.ok(
-  lostQueueState.events.some((event) => String(event.message || '').includes('stale workflow dispatch queue recovered')),
-  'stale completion_queued recovery should leave an observable event'
+  (lostQueueChild?.logs || []).some((line) => /endpoint dispatch|dispatched to/.test(String(line || ''))),
+  'stale completion_queued recovery should leave an observable endpoint-dispatch log'
 );
 
 const exhaustedQueueChildId = 'qa-exhausted-queue-child';
@@ -2129,6 +2144,7 @@ await qaStorage.mutate(async (draft) => {
   );
 });
 const exhaustedQueueWaits = [];
+workerApiQaSelfFetchEnv = queueEnv;
 await worker.scheduled({ cron: '* * * * *', scheduledTime: Date.now() }, queueEnv, {
   waitUntil: (promise) => exhaustedQueueWaits.push(Promise.resolve(promise))
 });
@@ -2148,8 +2164,8 @@ assert.equal(
   `repeated queue requests must not fail the child before direct recovery; child=${JSON.stringify({ status: exhaustedQueueChild?.status, dispatch: exhaustedQueueChild?.dispatch, failureReason: exhaustedQueueChild?.failureReason })}`
 );
 assert.ok(
-  (exhaustedQueueChild?.logs || []).some((line) => /direct completion sweep recovered/.test(String(line || ''))),
-  `direct recovery should leave a durable child log; logs=${(exhaustedQueueChild?.logs || []).join(' | ')}`
+  (exhaustedQueueChild?.logs || []).some((line) => /endpoint dispatch|dispatched to/.test(String(line || ''))),
+  `endpoint recovery should leave a durable child log; logs=${(exhaustedQueueChild?.logs || []).join(' | ')}`
 );
 
 const watchdogReleaseParentId = 'qa-watchdog-release-parent';
@@ -2265,6 +2281,7 @@ await qaStorage.mutate(async (draft) => {
   );
 });
 const watchdogWaits = [];
+workerApiQaSelfFetchEnv = qaSearchEnv;
 await worker.scheduled({ cron: '*/15 * * * *', scheduledTime: Date.now() }, qaSearchEnv, {
   waitUntil: (promise) => watchdogWaits.push(Promise.resolve(promise))
 });
@@ -3032,7 +3049,7 @@ assert.equal(manualProgressWaits.length, 1, 'progress polling should schedule qu
 const manualProgressKickState = await qaStorage.getState();
 const manualProgressKickChild = manualProgressKickState.jobs.find((job) => job.id === manualChildAId);
 assert.equal(
-  ['dispatch_scheduled', 'dispatch_in_progress', 'completion_sweep_running', 'completed'].includes(String(manualProgressKickChild?.dispatch?.completionStatus || '')),
+  ['dispatch_scheduled', 'dispatch_in_progress', 'completed'].includes(String(manualProgressKickChild?.dispatch?.completionStatus || '')),
   true,
   'progress polling should synchronously mark a ready child as dispatch_scheduled before returning stale queued state'
 );
