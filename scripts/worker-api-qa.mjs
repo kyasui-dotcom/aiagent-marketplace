@@ -55,6 +55,8 @@ assert.ok(!workerSource.includes('app-context-research-shortcut'), 'research mus
 assert.ok(workerSource.includes('Leader planner failed before order creation, so CAIt kept the deterministic team plan'), 'leader planner failures should not turn order creation into a 503 when a deterministic team plan exists.');
 assert.ok(workerSource.includes('oauthCallbackCurrentContext'), 'OAuth callbacks should use account-scoped session context instead of full-state reads.');
 assert.ok(workerSource.includes('workflowBlockingQualityGateBeforeLayer'), 'workflow dispatch should not release downstream layers after prior handoff/search quality gates fail');
+assert.ok(workerSource.includes('function workflowFailedPriorLayerShouldWarnNotBlock'), 'leader-released later layers should not get stuck only because one optional prior preparation artifact failed after another artifact completed.');
+assert.ok(workerSource.includes('workflowLayerWasLeaderActivated(parent'), 'non-blocking prior-layer failure handling must be tied to explicit leader activation, not generic auto-progression.');
 assert.ok(workerSource.includes('consideredRootJobIds'), 'cron dispatch sweep must dedupe workflow children by parent and avoid direct child execution');
 assert.ok(workerSource.includes('ORCHESTRATION_WATCHDOG_POLICY'), 'workflow orchestration watchdog policy should be shared through lib/orchestration.js');
 assert.ok(workerSource.includes('function runWorkflowOrchestrationWatchdog'), 'cron should have a workflow watchdog that reconciles and safely advances stale parents');
