@@ -17275,8 +17275,16 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
             return cloneJob(draftJob);
           });
       if (!reset) continue;
-      const dispatch = await dispatchExistingJobToAssignedAgent(storage, env, reset.id, reset.assignedAgentId);
-      if (!dispatch?.error) legacyRecovered.push(reset.id);
+      if (workflowDispatchQueue(env)) {
+        await enqueueEndpointDispatch(env, reset, { id: reset.assignedAgentId }, {
+          workflowParentId: reset.workflowParentId || null,
+          source: options.source || 'legacy-completion-sweep'
+        });
+        legacyRecovered.push(reset.id);
+      } else {
+        const dispatch = await dispatchExistingJobToAssignedAgent(storage, env, reset.id, reset.assignedAgentId);
+        if (!dispatch?.error) legacyRecovered.push(reset.id);
+      }
     } catch (error) {
       await touchEvent(storage, 'FAILED', `${String(candidate?.taskType || 'job')}/${String(candidate?.id || '').slice(0, 6)} endpoint dispatch recovery exception ${String(error?.message || error).slice(0, 120)}`);
     }
@@ -17444,6 +17452,18 @@ async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
         draftJob.logs = [...(draftJob.logs || []), 'legacy built-in queue message converted to endpoint dispatch'];
         return cloneJob(draftJob);
       });
+  if (workflowDispatchQueue(env)) {
+    const queuedJob = resetForEndpointDispatch || job;
+    await enqueueEndpointDispatch(env, queuedJob, agent, {
+      workflowParentId: queuedJob.workflowParentId || null,
+      source: message.source || 'legacy-built-in-queue-recovery'
+    });
+    return {
+      ok: true,
+      mode: 'endpoint_dispatch_queued',
+      reset: Boolean(resetForEndpointDispatch)
+    };
+  }
   const endpointDispatch = await dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId);
   return {
     ok: !endpointDispatch?.error,
