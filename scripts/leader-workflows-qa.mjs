@@ -210,7 +210,8 @@ const cases = [
     prompt: 'CMO leader: analyze channels, competitors, and signup conversion, then plan and do actions by preparing an X post and directory submission after approval.',
     minChildren: 8,
     expectedStatus: 'blocked',
-    expectedBlockedCapability: 'x.post'
+    expectedBlockedCapability: 'x.post',
+    injectGlobalSearchFlags: true
   }
 ];
 
@@ -224,7 +225,19 @@ for (const testCase of cases) {
       prompt: testCase.prompt,
       order_strategy: 'multi',
       skip_intake: true,
-      budget_cap: 500
+      budget_cap: 500,
+      ...(testCase.injectGlobalSearchFlags ? {
+        input: {
+          _broker: {
+            workflow: {
+              forceWebSearch: true,
+              requiresWebSearch: true,
+              searchRequired: true,
+              webSearchRequiredReason: 'global_user_quality_flag'
+            }
+          }
+        }
+      } : {})
     })
   });
   assert.equal(created.status, 201, `${testCase.taskType} should create successfully`);
@@ -266,6 +279,8 @@ for (const testCase of cases) {
   const initialLeader = rawChildren.find((item) => item.taskType === testCase.taskType && item.input?._broker?.workflow?.sequencePhase === 'initial');
   assert.ok(initialLeader, `${testCase.taskType} should create an initial leader run`);
   assert.notEqual(initialLeader?.input?._broker?.workflow?.forceWebSearch, true, `${testCase.taskType} initial leader run should not browse`);
+  assert.notEqual(initialLeader?.input?._broker?.workflow?.requiresWebSearch, true, `${testCase.taskType} initial leader run should not inherit global search requirements`);
+  assert.notEqual(initialLeader?.input?._broker?.workflow?.searchRequired, true, `${testCase.taskType} initial leader run should not inherit global search requirements`);
   assert.equal(initialLeader?.input?._broker?.workflow?.leaderControlContract?.version, 'leader-control/v1', `${testCase.taskType} initial leader input should include leader contract`);
   const finalSummaryLeader = rawChildren.find((item) => item.taskType === testCase.taskType && item.input?._broker?.workflow?.sequencePhase === 'final_summary');
   assert.ok(finalSummaryLeader, `${testCase.taskType} should create a final summary leader run`);
@@ -309,6 +324,22 @@ for (const testCase of cases) {
   assert.ok(
     nonResearchChildren.every((item) => item.input?._broker?.workflow?.forceWebSearch !== true),
     `${testCase.taskType} downstream workflow children should not force web search`
+  );
+  const searchFlagLeaks = rawChildren.filter((item) => {
+    const workflow = item.input?._broker?.workflow || {};
+    if (
+      item.taskType !== testCase.taskType
+      && workflow.forceWebSearch === true
+      && workflow.webSearchRequiredReason === 'leader_research_layer'
+      && workflow.requiresWebSearch !== true
+      && workflow.searchRequired !== true
+    ) return false;
+    return workflow.forceWebSearch === true || workflow.requiresWebSearch === true || workflow.searchRequired === true;
+  });
+  assert.deepEqual(
+    searchFlagLeaks.map((item) => ({ taskType: item.taskType, phase: item.input?._broker?.workflow?.sequencePhase })),
+    [],
+    `${testCase.taskType} should not leak global search-required flags into leader/planning/preparation/action layers`
   );
   if (testCase.taskType === 'cmo_leader') {
     assert.ok(researchLayerChildren.length >= 1, 'cmo_leader should create search/research-layer specialist children');

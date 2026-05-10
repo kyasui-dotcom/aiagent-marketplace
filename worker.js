@@ -12999,7 +12999,14 @@ function workflowJobRequiresSearch(job = {}) {
   const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
     ? job.input._broker.workflow
     : {};
-  return workflow.forceWebSearch === true || workflow.requiresWebSearch === true || workflow.searchRequired === true;
+  const explicit = workflow.forceWebSearch === true || workflow.requiresWebSearch === true || workflow.searchRequired === true;
+  if (!explicit) return false;
+  const task = workflowTaskName(job) || workflowPrimaryTaskForJob(job);
+  const primaryTask = workflowPrimaryTaskForJob(job);
+  const phase = String(workflow.sequencePhase || '').trim().toLowerCase();
+  return workflow.forceWebSearch === true
+    || phase === 'research'
+    || leaderTaskUsesWebSearch(primaryTask, task);
 }
 
 function workflowPrimaryTaskForJob(job = {}) {
@@ -13011,6 +13018,17 @@ function workflowPrimaryTaskForJob(job = {}) {
 
 function workflowShouldUseOpenAiByDefault(job = {}) {
   return workflowPrimaryTaskForJob(job) === 'cmo_leader';
+}
+
+function workflowMetaWithoutGlobalSearchFlags(workflow = {}) {
+  const clean = workflow && typeof workflow === 'object' ? { ...workflow } : {};
+  delete clean.forceWebSearch;
+  delete clean.requiresWebSearch;
+  delete clean.searchRequired;
+  delete clean.webSearchRequiredReason;
+  delete clean.requiresSourceCollection;
+  delete clean.sourceCollectionRequiredReason;
+  return clean;
 }
 
 function shouldRunBuiltInWorkflowThroughAgentRunner(env = {}, job = {}) {
@@ -18890,9 +18908,10 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
   const workflowBase = brokerBase.workflow && typeof brokerBase.workflow === 'object'
     ? brokerBase.workflow
     : {};
+  const workflowBaseForSharedMeta = workflowMetaWithoutGlobalSearchFlags(workflowBase);
   const workflowObjective = String(promptOptimization?.originalPrompt || body.prompt || '').trim();
   const workflowSharedMeta = {
-    ...workflowBase,
+    ...workflowBaseForSharedMeta,
     primaryTask: workflowPrimary,
     ...(workflowObjective ? { objective: workflowObjective, originalPrompt: workflowObjective } : {}),
     plannedTasks: Array.isArray(plan.plannedTasks) ? plan.plannedTasks.slice(0, 12) : [workflowPrimary],
@@ -18946,7 +18965,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
       ? childInputBase._broker
       : {};
     const childWorkflowBase = childBrokerBase.workflow && typeof childBrokerBase.workflow === 'object'
-      ? childBrokerBase.workflow
+      ? workflowMetaWithoutGlobalSearchFlags(childBrokerBase.workflow)
       : {};
     return {
       ...childInputBase,

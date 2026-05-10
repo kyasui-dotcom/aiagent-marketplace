@@ -1028,7 +1028,8 @@ try {
         workflow: {
           primaryTask: 'cmo_leader',
           sequencePhase: 'initial',
-          plannedTasks: ['cmo_leader', 'research', 'media_planner', 'seo_gap']
+          plannedTasks: ['cmo_leader', 'research', 'media_planner', 'seo_gap'],
+          requiresWebSearch: true
         }
       }
     }
