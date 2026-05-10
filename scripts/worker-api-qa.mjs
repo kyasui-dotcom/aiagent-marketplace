@@ -48,6 +48,8 @@ assert.ok(workerSource.includes('compactWorkflowInputForEndpointDispatch'), 'wor
 assert.ok(!workerSource.includes('compactWorkflowInputForBuiltInDispatch'), 'workflow dispatch compaction must be endpoint-contract based, not built-in-agent special casing.');
 assert.ok(workerSource.includes('function invokeSameWorkerAgentEndpoint'), 'same-worker agent endpoints should run through the endpoint contract without HTTP self-fetch from queue consumers.');
 assert.ok(workerSource.includes('sameWorkerAgentJobEndpointKind(endpoint, env)'), 'same-worker endpoint invocation should be restricted to registered local agent job endpoints.');
+assert.ok(workerSource.includes("const canUseTargetedDispatchResult = dispatch?.ok\n      && typeof storage.mutateJobAndAgent === 'function'"), 'completed endpoint dispatch results should persist through targeted job/agent mutation instead of loading full production state.');
+assert.ok(workerSource.includes('if (!isBillableJob(job))'), 'test-mode billing outcomes should not force a full-state billing settlement during queue completion.');
 assert.ok(!workerSource.includes('app-context-data-analysis-shortcut'), 'data_analysis must not complete through simulated attached-context shortcut fallback.');
 assert.ok(!workerSource.includes('app-context-research-shortcut'), 'research must not complete through simulated attached-context shortcut fallback.');
 assert.ok(workerSource.includes('Leader planner failed before order creation, so CAIt kept the deterministic team plan'), 'leader planner failures should not turn order creation into a 503 when a deterministic team plan exists.');

@@ -8040,6 +8040,14 @@ function settleAgentEarnings(job, agent, billing) {
 
 async function recordBillingOutcome(storage, job, billing, source) {
   if (!job || !billing) return;
+  if (!isBillableJob(job)) {
+    await touchEvent(storage, 'BILLED_TEST', `test mode api=${billing.apiCost} total=${billing.total}`, {
+      jobId: job.id,
+      source,
+      billingMode: billingModeFromJob(job)
+    });
+    return;
+  }
   let settlement = null;
   await storage.mutate(async (draft) => {
     const draftJob = draft.jobs.find((item) => item.id === job.id);
@@ -8054,16 +8062,8 @@ async function recordBillingOutcome(storage, job, billing, source) {
       funding: settlement
     };
   }
-  if (isBillableJob(job)) {
-    await touchEvent(storage, 'BILLED', `api=${billing.apiCost} total=${billing.total}`);
-    await appendBillingAudit(storage, job, job.actualBilling || billing, { source, funding: settlement });
-    return;
-  }
-  await touchEvent(storage, 'BILLED_TEST', `test mode api=${billing.apiCost} total=${billing.total}`, {
-    jobId: job.id,
-    source,
-    billingMode: billingModeFromJob(job)
-  });
+  await touchEvent(storage, 'BILLED', `api=${billing.apiCost} total=${billing.total}`);
+  await appendBillingAudit(storage, job, job.actualBilling || billing, { source, funding: settlement });
 }
 
 async function fetchGithubManifestCandidate(sessionToken, owner, repo, branch, candidatePath) {
@@ -13392,9 +13392,6 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
       return { ok: true, mode: 'dispatched', job: cloneJob(draftJob) };
     };
     const canUseTargetedDispatchResult = dispatch?.ok
-      && dispatch?.normalized?.accepted
-      && !dispatch?.normalized?.completed
-      && !dispatch?.normalized?.blocked
       && typeof storage.mutateJobAndAgent === 'function';
     const final = canUseTargetedDispatchResult
       ? await storage.mutateJobAndAgent(dispatchJob.id, dispatchAgent.id, mutateDispatchResult)
