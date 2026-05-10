@@ -77,6 +77,8 @@ assert.ok(cmoLeaderSource.includes('CMO_WORKFLOW_RESEARCH_LAYER_TASKS'), 'CMO wo
 assert.ok(builtInAgentEntrySource.includes('function sanitizeSearchQuery'), 'Brave search queries should be sanitized before source collection.');
 assert.ok(builtInAgentEntrySource.includes("replace(/[…]/g"), 'Brave search queries should not be clipped with an ellipsis that can make the API reject q.');
 assert.ok(builtInAgentEntrySource.includes('(?:delivery|handoff|packet)'), 'Brave search queries should strip internal delivery/handoff file names before querying.');
+assert.ok(builtInAgentEntrySource.includes("if (response.status === 422) continue;"), 'Brave 422 responses should retry with simpler request parameters before failing source collection.');
+assert.ok(builtInAgentEntrySource.includes("country: 'ALL'"), 'Brave source collection should fall back to an ALL-country query when localized parameters are rejected.');
 assert.deepEqual(CMO_WORKFLOW_DATA_LAYER_TASKS, ['data_analysis']);
 assert.deepEqual(CMO_WORKFLOW_RESEARCH_LAYER_TASKS, ['research', 'teardown', 'validation']);
 assert.deepEqual(CMO_WORKFLOW_PLANNING_LAYER_TASKS, ['media_planner', 'growth']);
