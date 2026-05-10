@@ -1013,6 +1013,58 @@ const autoRetriedChild = autoRetryState.jobs.find((job) => job.id === 'qa-workfl
 assert.ok(['queued', 'running', 'completed'].includes(String(autoRetriedChild?.status || '')), 'auto-retried workflow child should leave timed_out status');
 assert.ok(Number(autoRetriedChild.dispatch.attempts || 0) >= 1);
 
+await qaStorage.mutate(async (draft) => {
+  draft.jobs.push(
+    {
+      id: 'qa-workflow-auto-retry-prep-parent',
+      jobKind: 'workflow',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      prompt: 'auto retry failed preparation child',
+      status: 'running',
+      createdAt: nowIso(),
+      startedAt: nowIso(),
+      workflow: {
+        plannedTasks: ['cmo_leader', 'research', 'media_planner', 'seo_gap'],
+        childRuns: []
+      },
+      logs: []
+    },
+    {
+      id: 'qa-workflow-auto-retry-prep-child',
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'seo_gap',
+      workflowTask: 'seo_gap',
+      workflowAgentName: 'SEO Agent',
+      prompt: 'retryable preparation timeout should be retried by leader sweep',
+      status: 'failed',
+      assignedAgentId: 'agent_seogap_01',
+      workflowParentId: 'qa-workflow-auto-retry-prep-parent',
+      createdAt: nowIso(),
+      startedAt: nowIso(),
+      failedAt: nowIso(),
+      failureCategory: 'dispatch_timeout',
+      failureReason: 'OpenAI request timed out after 45000ms',
+      dispatch: { attempts: 0, retryable: true, maxRetries: 2, nextRetryAt: new Date(Date.now() - 1000).toISOString() },
+      input: { _broker: { workflow: { sequencePhase: 'preparation' } } },
+      logs: ['qa failed preparation workflow child']
+    }
+  );
+});
+const autoRetryPrepSweep = await request('/api/dev/timeout-sweep', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ retry_limit: 1 })
+}, { env: qaSearchEnv });
+assert.equal(autoRetryPrepSweep.status, 200);
+assert.equal(autoRetryPrepSweep.body.retry.retried_count, 1, 'leader timeout sweep should retry retryable dispatch failures beyond the research layer');
+assert.ok(autoRetryPrepSweep.body.retry.job_ids.includes('qa-workflow-auto-retry-prep-child'));
+const autoRetryPrepState = await qaStorage.getState();
+const autoRetriedPrepChild = autoRetryPrepState.jobs.find((job) => job.id === 'qa-workflow-auto-retry-prep-child');
+assert.ok(['queued', 'running', 'completed'].includes(String(autoRetriedPrepChild?.status || '')), 'auto-retried preparation child should leave failed status');
+assert.ok(Number(autoRetriedPrepChild.dispatch.attempts || 0) >= 1);
+
 const asyncRawState = await qaStorage.getState();
 const asyncCheckpointLeader = asyncRawState.jobs.find((job) => (
   job.workflowParentId === asyncWorkflow.body.workflow_job_id

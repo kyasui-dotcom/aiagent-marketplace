@@ -5113,9 +5113,13 @@ function workflowCompletionRetryLimitForJob(env = {}, job = {}) {
 function shouldAutoRetryWorkflowChild(parent = null, job = {}) {
   if (!parent || parent.jobKind !== 'workflow' || !job?.workflowParentId) return false;
   const status = String(job.status || '').trim().toLowerCase();
+  const failureCategory = String(job.failureCategory || '').trim().toLowerCase();
   const sourceCollectionFailure = status === 'failed'
-    && String(job.failureCategory || '').trim().toLowerCase() === 'missing_required_sources';
-  if (status !== 'timed_out' && !sourceCollectionFailure) return false;
+    && failureCategory === 'missing_required_sources';
+  const retryableDispatchFailure = status === 'failed'
+    && job.dispatch?.retryable === true
+    && ['dispatch_timeout', 'dispatch_http_5xx', 'dispatch_error'].includes(failureCategory);
+  if (status !== 'timed_out' && !sourceCollectionFailure && !retryableDispatchFailure) return false;
   if (!canRetryJob(job)) return false;
   const nextRetryAt = Date.parse(String(job.dispatch?.nextRetryAt || ''));
   if (Number.isFinite(nextRetryAt) && Date.now() < nextRetryAt) return false;
@@ -5124,6 +5128,7 @@ function shouldAutoRetryWorkflowChild(parent = null, job = {}) {
   const task = String(job.workflowTask || job.taskType || '').trim().toLowerCase();
   if (isWorkflowLeaderTask(task)) return true;
   const layer = workflowDispatchLayer(parent, job);
+  if (retryableDispatchFailure) return layer >= 1;
   return layer <= 2;
 }
 
@@ -18156,7 +18161,11 @@ async function runWorkflowTimeoutRetrySweep(storage, env, options = {}) {
       const parent = draft.jobs.find((item) => item.id === draftJob.workflowParentId && item.jobKind === 'workflow');
       if (!shouldAutoRetryWorkflowChild(parent, draftJob)) return null;
       const sourceCollectionRetry = String(draftJob.failureCategory || '').trim().toLowerCase() === 'missing_required_sources';
-      const retryReason = sourceCollectionRetry ? 'source collection workflow child' : 'timed-out workflow child';
+      const retryReason = sourceCollectionRetry
+        ? 'source collection workflow child'
+        : (String(draftJob.failureCategory || '').trim().toLowerCase() === 'dispatch_timeout'
+          ? 'timed-out endpoint workflow child'
+          : 'retryable workflow child');
       const maxRetries = sourceCollectionRetry ? workflowSourceCollectionMaxRetries(env) : maxDispatchRetriesForJob(draftJob);
       draftJob.status = 'queued';
       draftJob.failedAt = null;
