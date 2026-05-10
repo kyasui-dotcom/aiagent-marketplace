@@ -4964,6 +4964,32 @@ async function enqueueEndpointDispatch(env = {}, job = {}, agent = {}, options =
   return { ok: true, jobId, agentId };
 }
 
+function builtInAgentExternalJobId(kind = '', jobId = '') {
+  const safeKind = String(kind || 'agent').trim().toLowerCase().replace(/[^a-z0-9_:-]+/g, '_') || 'agent';
+  const safeJobId = String(jobId || crypto.randomUUID()).trim().slice(0, 64);
+  return `built-in:${safeKind}:${safeJobId}`;
+}
+
+async function enqueueBuiltInAgentProviderRun(env = {}, kind = '', payload = {}, options = {}) {
+  const queue = workflowDispatchQueue(env);
+  const normalizedKind = String(kind || options.kind || '').trim().toLowerCase();
+  const jobId = String(payload?.job_id || payload?.jobId || options.jobId || '').trim();
+  const agentId = String(payload?.assigned_agent_id || payload?.assignedAgentId || options.agentId || '').trim();
+  if (!queue) return { ok: false, reason: 'queue_not_configured' };
+  if (!normalizedKind || !BUILT_IN_KINDS.includes(normalizedKind)) return { ok: false, reason: 'built_in_kind_missing' };
+  if (!jobId || !agentId) return { ok: false, reason: 'job_or_agent_missing' };
+  await queue.send({
+    kind: 'built_in_agent_run',
+    builtInKind: normalizedKind,
+    jobId,
+    agentId,
+    source: options.source || 'built-in-agent-endpoint',
+    externalJobId: options.externalJobId || builtInAgentExternalJobId(normalizedKind, jobId),
+    queuedAt: nowIso()
+  }, { contentType: 'json' });
+  return { ok: true, jobId, agentId, builtInKind: normalizedKind };
+}
+
 function workflowQueueSourceCollectionTimeoutMs(env = {}) {
   const configured = Number(env?.WORKFLOW_QUEUE_SOURCE_COLLECTION_TIMEOUT_MS || env?.WORKFLOW_SOURCE_COLLECTION_QUEUE_TIMEOUT_MS || 0);
   return Number.isFinite(configured) && configured > 0
@@ -12528,18 +12554,42 @@ async function reconcileWorkflowParent(storage, parentJobId) {
       if (finalSummaryJobId && finalSummaryStatus !== 'completed') {
         parent.output = buildAgentTeamDeliveryOutput(parent, children);
         syncJobAuthorityRequest(parent);
+        if (workflowLeaderChildIsApprovalBlockedTerminal(finalSummaryJob)) {
+          const finalAuthorityRequest = authorityRequestFromReport(finalSummaryJob.output?.report)
+            || authorityRequestFromReport(parent.output?.report)
+            || null;
+          parent.workflow = {
+            ...(parent.workflow || {}),
+            leaderSequence: {
+              ...leaderSequence,
+              finalSummaryStatus: 'blocked',
+              finalSummaryBlockedAt: nowIso()
+            }
+          };
+          markJobBlockedForAuthority(
+            parent,
+            finalAuthorityRequest,
+            finalSummaryJob.failureReason || 'Workflow is blocked waiting for connector approval before final delivery can continue.'
+          );
+          return cloneJob(parent);
+        }
         const authorityRequest = workflowParentAuthorityRequest(parent);
         if (authorityRequest) {
           markJobBlockedForAuthority(parent, authorityRequest, 'Workflow is blocked waiting for connector approval before retrying specialist runs.');
           return cloneJob(parent);
         }
         const blockedParentStatus = workflowBlockedParentStatus(parent, children, blockingChildren);
-        parent.status = blockedParentStatus
-          || (children.some((item) => active.has(item.status)) || blocked.length ? 'running' : 'queued');
+        const hasActiveChildren = children.some((item) => active.has(item.status));
+        const hasQueuedChildren = queued.length > 0;
+        const finalBlockedParentStatus = blockedParentStatus
+          || (!hasActiveChildren && !hasQueuedChildren && blocked.length ? 'blocked' : null);
+        parent.status = finalBlockedParentStatus || (hasActiveChildren ? 'running' : 'queued');
         parent.completedAt = null;
         parent.failedAt = null;
         parent.failureReason = blockingChildren.length
           ? (blockingChildren[0]?.failureReason || blockingChildren[0]?.output?.summary || 'Workflow is blocked by a required specialist run.')
+          : finalSummaryStatus === 'blocked'
+            ? (finalSummaryJob?.failureReason || finalSummaryJob?.output?.summary || 'Workflow is blocked before final leader summary can complete.')
           : null;
         if (parent.status === 'blocked') {
           parent.failureCategory = 'blocked_waiting_for_approval';
@@ -13095,6 +13145,9 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
       if (isTerminalJobStatus(draftJob.status)) {
         return { ok: true, mode: draftJob.status, job: cloneJob(draftJob), skippedTerminal: true };
       }
+      if (String(draftJob.status || '').trim().toLowerCase() === 'blocked') {
+        return { ok: true, mode: 'blocked', job: cloneJob(draftJob), skippedBlocked: true };
+      }
       if (!dispatch.ok) {
         const failureMeta = buildDispatchFailureMeta(draftJob, dispatch.statusCode, dispatch.failureReason);
         const sourceRetryMeta = failureMeta.category === 'missing_required_sources'
@@ -13367,7 +13420,7 @@ function workflowChildIsBlockingProgress(child = {}) {
 function workflowChildIsApprovalBlockedTerminal(child = {}) {
   const status = String(child?.status || '').trim().toLowerCase();
   if (status !== 'blocked') return false;
-  if (isWorkflowLeaderTask(workflowTaskName(child))) return false;
+  if (isWorkflowLeaderTask(workflowTaskName(child))) return workflowLeaderChildIsApprovalBlockedTerminal(child);
   const authorityRequest = authorityRequestFromReport(child.output?.report);
   const authoritySource = String(authorityRequest?.source || '').trim().toLowerCase();
   if (authoritySource === 'search_connector_required') return false;
@@ -13395,6 +13448,20 @@ function workflowChildIsApprovalBlockedTerminal(child = {}) {
     || child.dispatch?.completionStatus === 'blocked_waiting_for_approval'
     || authorityRequestRequiresApproval(authorityRequest);
   return Boolean(approvalBlocked && (phase === 'action' || actionTask));
+}
+
+function workflowLeaderChildIsApprovalBlockedTerminal(child = {}) {
+  const status = String(child?.status || '').trim().toLowerCase();
+  if (status !== 'blocked') return false;
+  if (!isWorkflowLeaderTask(workflowTaskName(child))) return false;
+  const phase = workflowSequencePhaseForJob(child);
+  if (!['checkpoint', 'final_summary'].includes(phase)) return false;
+  const authorityRequest = authorityRequestFromReport(child.output?.report);
+  return Boolean(
+    child.failureCategory === 'blocked_waiting_for_approval'
+    || child.dispatch?.completionStatus === 'blocked_waiting_for_approval'
+    || authorityRequestRequiresApproval(authorityRequest)
+  );
 }
 
 function workflowChildIsTerminalForProgress(child = {}) {
@@ -17383,13 +17450,145 @@ async function runMinuteWorkflowCompletionSweep(storage, env, cron = '', schedul
   };
 }
 
+async function completeBuiltInAgentProviderRun(storage, env, body = {}) {
+  const message = body && typeof body === 'object' ? body : {};
+  const kind = String(message.builtInKind || message.built_in_kind || message.sampleKind || message.sample_kind || '').trim().toLowerCase();
+  const jobId = String(message.jobId || message.job_id || '').trim();
+  const agentId = String(message.agentId || message.agent_id || '').trim();
+  const externalJobId = String(message.externalJobId || message.external_job_id || builtInAgentExternalJobId(kind, jobId)).trim();
+  if (!kind || !BUILT_IN_KINDS.includes(kind)) return { ok: false, mode: 'invalid', error: 'Missing or invalid built-in kind' };
+  if (!jobId || !agentId) return { ok: false, mode: 'invalid', error: 'Missing jobId or agentId' };
+  const job = typeof storage.getJobById === 'function' ? await storage.getJobById(jobId) : null;
+  const agent = typeof storage.getAgentById === 'function' ? await storage.getAgentById(agentId) : null;
+  if (!job) return { ok: false, mode: 'missing_job' };
+  if (!agent) {
+    await failJob(storage, jobId, 'Built-in agent provider queue could not find the assigned agent.', ['provider queue failed before generation: assigned agent missing'], {
+      failureStatus: 'failed',
+      failureCategory: 'missing_agent',
+      retryable: false,
+      source: 'built-in-agent-provider'
+    });
+    return { ok: false, mode: 'missing_agent' };
+  }
+  if (isTerminalJobStatus(job.status)) return { ok: true, mode: 'terminal' };
+  await touchEvent(storage, 'RUNNING', `${agent.name || agent.id} provider runtime started ${job.taskType}/${job.id.slice(0, 6)}`, {
+    kind: 'built_in_agent_run_started',
+    jobId,
+    parentJobId: job.workflowParentId || null,
+    builtInKind: kind
+  });
+
+  let agentResult;
+  try {
+    agentResult = await runBuiltInAgent(kind, buildDispatchPayload(job, agent), env);
+  } catch (error) {
+    const failureMeta = workflowBuiltInFailureRetryMeta(env, job, {
+      category: 'dispatch_error',
+      retryable: true,
+      attempts: Number(job.dispatch?.attempts || 0) + 1
+    });
+    const failed = await failJob(storage, jobId, `Built-in ${kind} provider runtime failed: ${String(error?.message || error).slice(0, 300)}`, [
+      `built-in provider exception for ${agent.id}`
+    ], {
+      failureStatus: 'failed',
+      failureCategory: 'dispatch_error',
+      retryable: failureMeta.retryable,
+      attempts: failureMeta.attempts,
+      nextRetryAt: failureMeta.nextRetryAt,
+      maxRetries: failureMeta.maxRetries,
+      source: 'built-in-agent-provider',
+      externalJobId
+    });
+    await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} built-in provider runtime failed`);
+    if (failed?.workflowParentId || job.workflowParentId) await reconcileWorkflowParent(storage, failed?.workflowParentId || job.workflowParentId);
+    return { ok: true, mode: 'failed', job: failed };
+  }
+
+  const normalized = normalizeDispatchResponse(agentResult);
+  if (normalized.failed || (!normalized.completed && !normalized.blocked)) {
+    const reason = normalized.failureReason || 'Built-in provider runtime did not return a completed or blocked result.';
+    const baseFailureMeta = buildDispatchFailureMeta(job, normalized.statusCode || 200, reason);
+    const failureMeta = workflowBuiltInFailureRetryMeta(env, job, baseFailureMeta);
+    const failed = await failJob(storage, jobId, reason, [
+      `built-in provider result failed for ${agent.id}`,
+      `retryable=${failureMeta.retryable}`
+    ], {
+      failureStatus: 'failed',
+      failureCategory: baseFailureMeta.category,
+      retryable: failureMeta.retryable,
+      attempts: failureMeta.attempts,
+      nextRetryAt: failureMeta.nextRetryAt,
+      maxRetries: failureMeta.maxRetries,
+      source: 'built-in-agent-provider',
+      externalJobId
+    });
+    await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} built-in provider result failed`);
+    if (failed?.workflowParentId || job.workflowParentId) await reconcileWorkflowParent(storage, failed?.workflowParentId || job.workflowParentId);
+    return { ok: true, mode: 'failed', job: failed };
+  }
+
+  const completion = await completeJobFromAgentResult(storage, jobId, agentId, {
+    status: normalized.blocked ? 'blocked' : 'completed',
+    report: normalized.report,
+    files: normalized.files,
+    usage: normalized.usage,
+    return_targets: normalized.returnTargets
+  }, {
+    source: 'built-in-agent-provider',
+    externalJobId: normalized.externalJobId || externalJobId,
+    targetStatus: normalized.blocked ? 'blocked' : 'completed'
+  });
+  if (completion.error) {
+    await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} built-in provider completion failed: ${String(completion.error).slice(0, 120)}`);
+    return { ok: false, mode: 'completion_error', error: completion.error, statusCode: completion.statusCode || 500 };
+  }
+  if (completion.mode === 'completed') {
+    await touchEvent(storage, 'COMPLETED', `${job.taskType}/${job.id.slice(0, 6)} completed by built-in provider`, {
+      kind: 'built_in_agent_run_completed',
+      jobId,
+      parentJobId: completion.job?.workflowParentId || job.workflowParentId || null,
+      builtInKind: kind
+    });
+    if (completion.billing) await recordBillingOutcome(storage, completion.job, completion.billing, 'built-in-agent-provider');
+  } else if (completion.mode === 'blocked') {
+    await touchEvent(storage, 'RUNNING', `${job.taskType}/${job.id.slice(0, 6)} blocked by built-in provider`);
+  } else if (completion.mode === 'failed') {
+    await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} failed by built-in provider: ${String(completion.job?.failureReason || '').slice(0, 120)}`);
+  }
+
+  const workflowParentId = completion.job?.workflowParentId || job.workflowParentId || null;
+  if (workflowParentId) {
+    await reconcileWorkflowParent(storage, workflowParentId);
+    if (completion.mode === 'completed') {
+      await refreshWorkflowLeaderHandoffForJobId(storage, workflowParentId);
+      const queueNextDispatch = Boolean(workflowDispatchQueue(env));
+      await scheduleProgressDispatchesForJobId(storage, env, null, workflowParentId, 'built-in provider handoff', {
+        maxTargets: 8,
+        awaitDispatch: !queueNextDispatch,
+        dispatchMode: queueNextDispatch ? 'queue' : 'direct'
+      });
+      await reconcileWorkflowParent(storage, workflowParentId);
+    }
+  }
+  return { ok: true, mode: completion.mode, job: completion.job };
+}
+
 async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
   const message = body && typeof body === 'object' ? body : {};
   const kind = String(message.kind || message.type || '').trim();
+  if (kind === 'built_in_agent_run') {
+    return completeBuiltInAgentProviderRun(storage, env, message);
+  }
   if (kind === 'endpoint_dispatch') {
     const jobId = String(message.jobId || message.job_id || '').trim();
     const agentId = String(message.agentId || message.agent_id || '').trim();
     if (!jobId || !agentId) return { ok: false, mode: 'invalid', error: 'Missing jobId or agentId' };
+    await touchEvent(storage, 'RUNNING', `endpoint dispatch queue received ${jobId.slice(0, 6)}`, {
+      kind: 'endpoint_dispatch_received',
+      jobId,
+      agentId,
+      parentJobId: message.workflowParentId || message.workflow_parent_id || null
+    });
     const approvalPauseJob = typeof storage.getJobById === 'function' ? await storage.getJobById(jobId) : null;
     if (approvalPauseJob?.workflowParentId) {
       const approvalPause = await pauseWorkflowChildDispatchForParentAuthority(storage, approvalPauseJob, { agentId });
@@ -17406,6 +17605,13 @@ async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
     const dispatch = await dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, {
       source: message.source || 'endpoint-dispatch-queue',
       nextDispatchMode: 'queue'
+    });
+    await touchEvent(storage, dispatch?.error ? 'FAILED' : 'RUNNING', `endpoint dispatch queue processed ${jobId.slice(0, 6)} mode=${dispatch?.mode || 'unknown'}`, {
+      kind: 'endpoint_dispatch_processed',
+      jobId,
+      agentId,
+      parentJobId: message.workflowParentId || message.workflow_parent_id || null,
+      mode: dispatch?.mode || null
     });
     return {
       ok: !dispatch?.error,
@@ -20693,6 +20899,9 @@ async function handleRetryDispatch(storage, request, env) {
       const draftJob = draft.jobs.find((item) => item.id === jobId);
       const draftAgent = draft.agents.find((item) => item.id === agent.id);
       if (!draftJob) return { error: 'Job not found', statusCode: 404 };
+      if (String(draftJob.status || '').trim().toLowerCase() === 'blocked') {
+        return { ok: true, mode: 'blocked', job: cloneJob(draftJob), skippedBlocked: true };
+      }
       if (!dispatch.ok) {
         const failureMeta = buildDispatchFailureMeta(draftJob, dispatch.statusCode, dispatch.failureReason);
         const sourceRetryMeta = failureMeta.category === 'missing_required_sources'
@@ -21147,6 +21356,21 @@ export default {
           if (!(await canUseBuiltInAgentJobRoute(request, env, storage, builtInKind))) return json({ error: 'Not found' }, 404);
           const body = await parseBody(request).catch((error) => ({ __error: error.message }));
           if (body.__error) return json({ error: body.__error }, 400);
+          const queuedProviderRun = await enqueueBuiltInAgentProviderRun(env, builtInKind, body, {
+            source: 'built-in-agent-job-endpoint'
+          }).catch((error) => ({ ok: false, reason: String(error?.message || error) }));
+          if (queuedProviderRun?.ok) {
+            return json({
+              accepted: true,
+              status: 'accepted',
+              external_job_id: builtInAgentExternalJobId(builtInKind, body.job_id || body.jobId),
+              runtime: {
+                mode: 'queued_provider_agent',
+                provider: 'built-in',
+                queue: 'workflow_dispatch'
+              }
+            }, 202);
+          }
           try {
             return json(await runBuiltInAgent(builtInKind, body, env));
           } catch (error) {
