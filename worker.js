@@ -17597,6 +17597,74 @@ async function completeBuiltInAgentProviderRun(storage, env, body = {}) {
   return { ok: true, mode: completion.mode, job: completion.job };
 }
 
+async function acceptBuiltInEndpointDispatchForProviderQueue(storage, env, jobId = '', agentId = '', message = {}) {
+  if (!workflowDispatchQueue(env)) return null;
+  const { job, agent } = await loadDispatchJobAndAgent(storage, jobId, agentId);
+  if (!job || !agent) return null;
+  const builtInKind = builtInWorkflowKindForJob(job, agent);
+  if (!builtInKind || !BUILT_IN_KINDS.includes(builtInKind)) return null;
+  if (isTerminalJobStatus(job.status)) return { ok: true, mode: job.status, job: cloneJob(job) };
+  const currentStatus = String(job.status || '').trim().toLowerCase();
+  const currentCompletionStatus = String(job.dispatch?.completionStatus || '').trim().toLowerCase();
+  if (currentStatus === 'dispatched' && currentCompletionStatus === 'accepted') {
+    return { ok: true, mode: 'accepted', job: cloneJob(job), skippedAccepted: true };
+  }
+  const externalJobId = builtInAgentExternalJobId(builtInKind, jobId);
+  const accepted = typeof storage.mutateJobAndAgent === 'function'
+    ? await storage.mutateJobAndAgent(jobId, agentId, (draft) => {
+        const draftJob = draft.jobs.find((item) => item.id === jobId);
+        const draftAgent = draft.agents.find((item) => item.id === agentId);
+        if (!draftJob) return { error: 'Job disappeared before built-in provider queue accept', statusCode: 500 };
+        if (!draftAgent) return { error: 'Agent disappeared before built-in provider queue accept', statusCode: 500 };
+        if (isTerminalJobStatus(draftJob.status)) return { ok: true, mode: draftJob.status, job: cloneJob(draftJob), skippedTerminal: true };
+        if (String(draftJob.status || '').trim().toLowerCase() === 'blocked') return { ok: true, mode: 'blocked', job: cloneJob(draftJob), skippedBlocked: true };
+        const at = nowIso();
+        draftJob.status = 'dispatched';
+        draftJob.dispatchedAt = at;
+        draftJob.startedAt = draftJob.startedAt || at;
+        draftJob.dispatch = {
+          ...(draftJob.dispatch || {}),
+          endpoint: resolveAgentJobEndpoint(draftAgent),
+          statusCode: 202,
+          externalJobId,
+          responseStatus: 'accepted',
+          lastAttemptAt: at,
+          attempts: Number(draftJob.dispatch?.attempts || 0) + 1,
+          retryable: false,
+          nextRetryAt: null,
+          completionStatus: 'accepted',
+          providerQueueAcceptedAt: at
+        };
+        draftJob.logs = [
+          ...(draftJob.logs || []),
+          `accepted by built-in provider queue for ${draftAgent.id}`
+        ];
+        return { ok: true, mode: 'dispatched', job: cloneJob(draftJob), agent: publicAgent(draftAgent) };
+      })
+    : null;
+  if (!accepted || accepted.error) return accepted || null;
+  if (accepted.mode === 'dispatched') {
+    const queued = await enqueueBuiltInAgentProviderRun(env, builtInKind, {
+      job_id: jobId,
+      assigned_agent_id: agentId
+    }, {
+      source: message.source || 'endpoint-dispatch-queue',
+      externalJobId
+    });
+    if (!queued?.ok) {
+      return { ok: false, mode: 'provider_queue_failed', error: queued?.reason || 'built-in provider queue send failed', job: accepted.job };
+    }
+    await touchEvent(storage, 'RUNNING', `${accepted.agent?.name || agent.name || agentId} queued ${job.taskType}/${job.id.slice(0, 6)} for built-in provider run`, {
+      kind: 'built_in_agent_run_queued',
+      jobId,
+      parentJobId: job.workflowParentId || null,
+      builtInKind
+    });
+  }
+  if (job.workflowParentId) await reconcileWorkflowParent(storage, job.workflowParentId);
+  return accepted;
+}
+
 async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
   const message = body && typeof body === 'object' ? body : {};
   const kind = String(message.kind || message.type || '').trim();
@@ -17621,12 +17689,13 @@ async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
           kind: 'dispatch_paused_for_parent_authority',
           jobId: approvalPauseJob.id,
           parentJobId: approvalPauseJob.workflowParentId || null
-        });
-        await reconcileWorkflowParent(storage, approvalPauseJob.workflowParentId);
-        return { ok: true, mode: 'parent_authority_wait' };
+      });
+      await reconcileWorkflowParent(storage, approvalPauseJob.workflowParentId);
+      return { ok: true, mode: 'parent_authority_wait' };
       }
     }
-    const dispatch = await dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, {
+    const builtInQueuedDispatch = await acceptBuiltInEndpointDispatchForProviderQueue(storage, env, jobId, agentId, message);
+    const dispatch = builtInQueuedDispatch || await dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, {
       source: message.source || 'endpoint-dispatch-queue',
       nextDispatchMode: 'queue'
     });
