@@ -4945,6 +4945,23 @@ function workflowDispatchQueue(env = {}) {
   return queue && typeof queue.send === 'function' ? queue : null;
 }
 
+async function enqueueEndpointDispatch(env = {}, job = {}, agent = {}, options = {}) {
+  const queue = workflowDispatchQueue(env);
+  const jobId = String(job?.id || options.jobId || '').trim();
+  const agentId = String(agent?.id || options.agentId || '').trim();
+  if (!queue) return { ok: false, reason: 'queue_not_configured' };
+  if (!jobId || !agentId) return { ok: false, reason: 'job_or_agent_missing' };
+  await queue.send({
+    kind: 'endpoint_dispatch',
+    jobId,
+    agentId,
+    workflowParentId: job?.workflowParentId || options.workflowParentId || null,
+    source: options.source || 'endpoint-dispatch-queue',
+    queuedAt: nowIso()
+  }, { contentType: 'json' });
+  return { ok: true, jobId, agentId };
+}
+
 function workflowQueueSourceCollectionTimeoutMs(env = {}) {
   const configured = Number(env?.WORKFLOW_QUEUE_SOURCE_COLLECTION_TIMEOUT_MS || env?.WORKFLOW_SOURCE_COLLECTION_QUEUE_TIMEOUT_MS || 0);
   return Number.isFinite(configured) && configured > 0
@@ -13016,7 +13033,7 @@ async function dispatchJobToAssignedAgent(job, agent, env) {
   return { ok: true, endpoint: dispatchEndpoint, normalized, statusCode: response.status, responseBody: body };
 }
 
-async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) {
+async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, options = {}) {
   const state = await storage.getState();
   const job = state.jobs.find((item) => item.id === jobId);
   const agent = state.agents.find((item) => item.id === agentId);
@@ -13219,9 +13236,11 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
       await reconcileWorkflowParent(storage, dispatchJob.workflowParentId);
       if (final.mode === 'completed') {
         await refreshWorkflowLeaderHandoffForJobId(storage, dispatchJob.workflowParentId);
+        const queueNextDispatch = Boolean(workflowDispatchQueue(env));
         await scheduleProgressDispatchesForJobId(storage, env, null, dispatchJob.workflowParentId, 'leader workflow handoff', {
           maxTargets: 8,
-          awaitDispatch: true
+          awaitDispatch: !queueNextDispatch,
+          dispatchMode: queueNextDispatch ? 'queue' : (options.nextDispatchMode || 'direct')
         });
         await reconcileWorkflowParent(storage, dispatchJob.workflowParentId);
       }
@@ -16268,6 +16287,7 @@ async function scheduleProgressDispatchesForJobId(storage, env, waitUntil, jobId
   if (!targets.length) return { scheduled: false, scheduled_count: 0, reason: 'no_dispatch_target', jobs: [] };
   const scheduled = [];
   const dispatchPromises = [];
+  const queueDispatch = options.dispatchMode !== 'direct' && Boolean(workflowDispatchQueue(env));
   for (const target of targets) {
     const marked = await markDispatchScheduled(storage, target.job.id, target.agent.id, reason, {
       env,
@@ -16285,6 +16305,22 @@ async function scheduleProgressDispatchesForJobId(storage, env, waitUntil, jobId
         await reconcileWorkflowParent(storage, marked.job.workflowParentId);
       } catch (error) {
         await touchEvent(storage, 'FAILED', `${marked.job.taskType}/${marked.job.id.slice(0, 6)} pre-dispatch reconcile exception ${String(error?.message || error).slice(0, 120)}`);
+      }
+    }
+    if (queueDispatch) {
+      try {
+        await enqueueEndpointDispatch(env, marked.job, marked.agent, {
+          workflowParentId: marked.job.workflowParentId || target.parentJobId || null,
+          source: reason
+        });
+        await touchEvent(storage, 'RUNNING', `${marked.agent.name} queued ${marked.job.taskType}/${marked.job.id.slice(0, 6)} for endpoint dispatch`, {
+          kind: 'endpoint_dispatch_queued',
+          jobId: marked.job.id,
+          parentJobId: marked.job.workflowParentId || target.parentJobId || null
+        });
+        continue;
+      } catch (error) {
+        await touchEvent(storage, 'FAILED', `${marked.job.taskType}/${marked.job.id.slice(0, 6)} endpoint dispatch queue send failed ${String(error?.message || error).slice(0, 120)}`);
       }
     }
     dispatchPromises.push(dispatchExistingJobToAssignedAgent(storage, env, marked.job.id, marked.agent.id)
@@ -16343,6 +16379,18 @@ async function scheduleInitialWorkflowDispatchFromChildren(storage, env, waitUnt
     jobId: marked.job.id,
     parentJobId: marked.job.workflowParentId || parentJob.id || null
   });
+  if (workflowDispatchQueue(env)) {
+    await enqueueEndpointDispatch(env, marked.job, marked.agent, {
+      workflowParentId: marked.job.workflowParentId || parentJob.id || null,
+      source: reason
+    });
+    await touchEvent(storage, 'RUNNING', `${marked.agent.name} queued ${marked.job.taskType}/${marked.job.id.slice(0, 6)} for endpoint dispatch`, {
+      kind: 'endpoint_dispatch_queued',
+      jobId: marked.job.id,
+      parentJobId: marked.job.workflowParentId || parentJob.id || null
+    });
+    return { scheduled: true, scheduled_count: 1, jobs: [marked.job], agents: [marked.agent] };
+  }
   const dispatchPromise = dispatchExistingJobToAssignedAgent(storage, env, marked.job.id, marked.agent.id)
     .catch((error) => touchEvent(storage, 'FAILED', `${marked.job.taskType}/${marked.job.id.slice(0, 6)} initial dispatch exception ${String(error?.message || error).slice(0, 120)}`));
   if (typeof waitUntil === 'function') waitUntil(dispatchPromise);
@@ -16392,6 +16440,18 @@ async function scheduleNextWorkflowDispatchLightweight(storage, env, waitUntil, 
     jobId: result.job.id,
     parentJobId: result.job.workflowParentId || parentId
   });
+  if (workflowDispatchQueue(env)) {
+    await enqueueEndpointDispatch(env, result.job, agent, {
+      workflowParentId: result.job.workflowParentId || parentId,
+      source: reason
+    });
+    await touchEvent(storage, 'RUNNING', `${agent.name} queued ${result.job.taskType}/${result.job.id.slice(0, 6)} for endpoint dispatch`, {
+      kind: 'endpoint_dispatch_queued',
+      jobId: result.job.id,
+      parentJobId: result.job.workflowParentId || parentId
+    });
+    return { scheduled: true, scheduled_count: 1, jobs: [result.job], agents: [agent] };
+  }
   const dispatchPromise = dispatchExistingJobToAssignedAgent(storage, env, result.job.id, agent.id)
     .catch((error) => touchEvent(storage, 'FAILED', `${result.job.taskType}/${result.job.id.slice(0, 6)} lightweight dispatch exception ${String(error?.message || error).slice(0, 120)}`));
   if (typeof waitUntil === 'function') waitUntil(dispatchPromise);
@@ -17173,7 +17233,7 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
   const legacyCandidates = (Array.isArray(legacyState?.jobs) ? legacyState.jobs : [])
     .filter((job) => ['queued', 'running'].includes(String(job?.status || '').trim().toLowerCase()))
     .filter((job) => job?.assignedAgentId)
-    .filter((job) => ['completion_queued', 'completion_sweep_running', 'dispatch_scheduled'].includes(String(job?.dispatch?.completionStatus || '').trim().toLowerCase()))
+    .filter((job) => ['completion_queued', 'completion_sweep_running'].includes(String(job?.dispatch?.completionStatus || '').trim().toLowerCase()))
     .sort((a, b) => legacyDispatchSortMs(a) - legacyDispatchSortMs(b))
     .slice(0, legacyLimit);
   for (const candidate of legacyCandidates) {
@@ -17295,6 +17355,33 @@ async function runMinuteWorkflowCompletionSweep(storage, env, cron = '', schedul
 async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
   const message = body && typeof body === 'object' ? body : {};
   const kind = String(message.kind || message.type || '').trim();
+  if (kind === 'endpoint_dispatch') {
+    const jobId = String(message.jobId || message.job_id || '').trim();
+    const agentId = String(message.agentId || message.agent_id || '').trim();
+    if (!jobId || !agentId) return { ok: false, mode: 'invalid', error: 'Missing jobId or agentId' };
+    const approvalPauseJob = typeof storage.getJobById === 'function' ? await storage.getJobById(jobId) : null;
+    if (approvalPauseJob?.workflowParentId) {
+      const approvalPause = await pauseWorkflowChildDispatchForParentAuthority(storage, approvalPauseJob, { agentId });
+      if (approvalPause.paused) {
+        await touchEvent(storage, 'RUNNING', `${approvalPauseJob.taskType}/${approvalPauseJob.id.slice(0, 6)} endpoint dispatch queue paused while parent waits for approval`, {
+          kind: 'dispatch_paused_for_parent_authority',
+          jobId: approvalPauseJob.id,
+          parentJobId: approvalPauseJob.workflowParentId || null
+        });
+        await reconcileWorkflowParent(storage, approvalPauseJob.workflowParentId);
+        return { ok: true, mode: 'parent_authority_wait' };
+      }
+    }
+    const dispatch = await dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, {
+      source: message.source || 'endpoint-dispatch-queue',
+      nextDispatchMode: 'queue'
+    });
+    return {
+      ok: !dispatch?.error,
+      mode: dispatch?.mode || 'endpoint_dispatch',
+      dispatch
+    };
+  }
   if (kind !== 'built_in_workflow_completion') return { ok: true, mode: 'ignored' };
   const jobId = String(message.jobId || message.job_id || '').trim();
   const agentId = String(message.agentId || message.agent_id || '').trim();

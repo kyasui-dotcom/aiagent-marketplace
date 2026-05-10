@@ -61,6 +61,9 @@ assert.ok(workerSource.includes("legacy built-in queue message converted to endp
 assert.ok(workerSource.includes('prior specialist deliverable'), 'data context packets should instruct downstream agents to use upstream data.');
 assert.ok(workerSource.includes('&& !workflowJobRequiresSearch(job)'), 'data-unavailable shortcut must not bypass search-required data/research jobs.');
 assert.ok(workerSource.includes('dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId)'), 'legacy queue consumer should use the normal endpoint dispatcher.');
+assert.ok(workerSource.includes("kind: 'endpoint_dispatch'"), 'workflow progress should queue normal endpoint dispatch work instead of draining every layer in one Worker request.');
+assert.ok(workerSource.includes("if (kind === 'endpoint_dispatch')"), 'queue consumer should process provider endpoint dispatch messages one job at a time.');
+assert.ok(workerSource.includes("options.dispatchMode !== 'direct' && Boolean(workflowDispatchQueue(env))"), 'production progress dispatch should prefer the queue when a queue binding is configured.');
 assert.ok(workerSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
 assert.ok(workerSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');
 assert.ok(workerSource.includes('persistedJobForClientOrderId'), 'order create should check for an existing client order before creating a new job.');
@@ -1813,8 +1816,8 @@ await qaStorage.mutate(async (draft) => {
       dispatch: {
         completionStatus: 'dispatch_scheduled',
         firstDispatchRequestedAt: early,
-        dispatchRequestedAt: recent,
-        scheduleAttempts: 2,
+        dispatchRequestedAt: early,
+        scheduleAttempts: 1,
         retryable: true,
         maxRetries: 2
       },
@@ -1880,8 +1883,8 @@ await qaStorage.mutate(async (draft) => {
       dispatch: {
         completionStatus: 'dispatch_scheduled',
         firstDispatchRequestedAt: early,
-        dispatchRequestedAt: recent,
-        scheduleAttempts: 2,
+        dispatchRequestedAt: early,
+        scheduleAttempts: 1,
         retryable: true,
         maxRetries: 2
       },
@@ -1996,7 +1999,8 @@ for (let waitIndex = 0; waitIndex < queueDispatchWaits.length; waitIndex += 1) {
 }
 const queueDispatchQueuedState = await qaStorage.getState();
 const queueDispatchQueuedChild = queueDispatchQueuedState.jobs.find((job) => job.id === queueDispatchChildId);
-assert.equal(queueMessages.length, 0, 'cron should not enqueue built-in workflow completion messages when endpoint dispatch is available');
+assert.equal(queueMessages.filter((message) => String(message?.body?.kind || '') === 'built_in_workflow_completion').length, 0, 'cron should not enqueue built-in workflow completion messages when endpoint dispatch is available');
+assert.equal(queueMessages.filter((message) => String(message?.body?.kind || '') === 'endpoint_dispatch').length, 1, 'cron should enqueue normal endpoint dispatch work one job at a time');
 assert.notEqual(
   String(queueDispatchQueuedChild?.dispatch?.completionStatus || ''),
   'completion_queued',
