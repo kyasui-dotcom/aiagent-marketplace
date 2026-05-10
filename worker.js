@@ -4192,6 +4192,50 @@ async function visibleJobsForRequestFast(storage, current, env, request = null) 
     pagination
   };
 }
+function sanitizeDeliveryItemForViewer(item = {}) {
+  if (!item?.id) return null;
+  return {
+    id: String(item.id || ''),
+    ownerLogin: String(item.ownerLogin || ''),
+    surface: String(item.surface || ''),
+    itemType: String(item.itemType || ''),
+    status: String(item.status || ''),
+    title: String(item.title || ''),
+    summary: String(item.summary || ''),
+    body: String(item.body || ''),
+    metadata: item.metadata && typeof item.metadata === 'object' ? item.metadata : {},
+    source: item.source && typeof item.source === 'object' ? item.source : {},
+    jobId: String(item.jobId || ''),
+    workflowParentId: String(item.workflowParentId || ''),
+    workflowTask: String(item.workflowTask || ''),
+    workflowAgentName: String(item.workflowAgentName || ''),
+    createdAt: String(item.createdAt || ''),
+    updatedAt: String(item.updatedAt || '')
+  };
+}
+async function visibleDeliveryItemsForRequestFast(storage, current, env, request = null) {
+  const url = new URL(request?.url || 'https://example.test/');
+  const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit') || 100) || 100));
+  const surface = String(url.searchParams.get('surface') || '').trim().toLowerCase();
+  const jobId = String(url.searchParams.get('job_id') || url.searchParams.get('order_id') || '').trim();
+  const ownerLogins = identityLoginsForCurrent(current);
+  const admin = canViewAdminDashboard(current, env);
+  if (typeof storage.listDeliveryItems === 'function') {
+    const items = await storage.listDeliveryItems({ admin, ownerLogins, surface, jobId, limit });
+    return {
+      items: (Array.isArray(items) ? items : []).map(sanitizeDeliveryItemForViewer).filter(Boolean),
+      pagination: { limit, offset: 0 }
+    };
+  }
+  const state = await storage.getState();
+  const visibleJobs = visibleJobsForRequest(state, current, env, request);
+  const items = visibleJobs
+    .flatMap((job) => Array.isArray(job?.deliveryItems) ? job.deliveryItems : [])
+    .filter((item) => !surface || String(item?.surface || '').trim().toLowerCase() === surface)
+    .filter((item) => !jobId || String(item?.jobId || '') === jobId || String(item?.workflowParentId || '') === jobId)
+    .slice(0, limit);
+  return { items: items.map(sanitizeDeliveryItemForViewer).filter(Boolean), pagination: { limit, offset: 0 } };
+}
 function visibleBillingAuditsForRequest(state, current, env, jobs = null) {
   const visibleJobs = Array.isArray(jobs) ? jobs : visibleJobsForRequest(state, current, env);
   return billingAuditsForJobIds(state.events, visibleJobs.map((job) => job.id));
@@ -21751,6 +21795,13 @@ export default {
     }
     if (apiRouteMatches(url.pathname, request.method, 'APP_CONTEXT_DETAIL', 'GET')) {
       return handleGetAppContext(storage, request, env, decodeURIComponent(url.pathname.split('/')[3] || ''));
+    }
+    if (apiRouteMatches(url.pathname, request.method, 'DELIVERY_ITEMS', 'GET')) {
+      const current = await currentOrderRequesterContext(storage, request, env);
+      if (!current.user && current.apiKeyStatus === 'invalid') return json({ error: 'Invalid API key' }, 401);
+      const result = await visibleDeliveryItemsForRequestFast(storage, current, env, request);
+      if (current.apiKey?.id) await recordOrderApiKeyUsage(storage, current, request);
+      return json({ ok: true, items: result.items, pagination: result.pagination });
     }
     if (/^\/api\/apps\/[^/]+\/verify$/.test(url.pathname) && request.method === 'POST') {
       return handleVerifyApp(storage, request, env, url.pathname.split('/')[3] || '');

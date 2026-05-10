@@ -293,7 +293,7 @@ assert.ok(analyticsHtml.includes('id="analyticsQueriesCount"'), 'Analytics Conso
 assert.ok(publisherHtml.includes('Publisher & Approval'), 'Publisher and Approval Studio should be a first-class app page.');
 assert.ok(publisherHtml.includes('href="/apps.html"'), 'Publisher Studio should link back to the apps hub.');
 assert.ok(publisherHtml.includes('id="approvalTable"'), 'Publisher Studio should include an approval queue.');
-assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260507b'), 'Publisher Studio should load the app-context receiving controller.');
+assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260511a'), 'Publisher Studio should load the app-context receiving controller.');
 assert.ok(publisherHtml.includes('id="publisherStepApproval"'), 'Publisher Studio should show approval progress before handoff.');
 assert.ok(publisherHtml.includes('id="connectGithubBtn"'), 'Publisher Studio should expose GitHub connection.');
 assert.ok(publisherHtml.includes('id="repoSelect"'), 'Publisher Studio should expose repository selection.');
@@ -302,7 +302,7 @@ assert.ok(publisherHtml.includes('id="publisherDestinationCount"'), 'Publisher S
 assert.ok(leadOpsHtml.includes('Lead Ops'), 'Lead Ops should be a first-class app page.');
 assert.ok(leadOpsHtml.includes('href="/apps.html"'), 'Lead Ops should link back to the apps hub.');
 assert.ok(leadOpsHtml.includes('id="sendLeadContextBtn"'), 'Lead Ops should send context to CAIt.');
-assert.ok(leadOpsHtml.includes('/lead-ops.js?v=20260507d'), 'Lead Ops should load the app-context receiving controller.');
+assert.ok(leadOpsHtml.includes('/lead-ops.js?v=20260511a'), 'Lead Ops should load the app-context receiving controller.');
 assert.ok(leadOpsHtml.includes('id="approveLeadBtn"'), 'Lead Ops should provide a direct approval action.');
 assert.ok(leadOpsHtml.includes('id="scheduleLeadBtn"'), 'Lead Ops should provide scheduled outreach planning.');
 assert.ok(leadOpsHtml.includes('id="triggerLeadBtn"'), 'Lead Ops should provide event-triggered outreach planning.');
@@ -365,10 +365,12 @@ assert.ok(!analyticsJs.includes("source_app: 'publisher_approval_studio'"), 'Ana
 assert.ok(!analyticsJs.includes("source_app: 'lead_ops_console'"), 'Analytics Console JS should not contain Lead Ops app logic.');
 assert.ok(!analyticsJs.includes("source_app: 'delivery_manager'"), 'Analytics Console JS should not contain Delivery Manager app logic.');
 assert.ok(publisherJs.includes("source_app: 'publisher_approval_studio'"), 'Publisher app logic should stay in publisher-approval.js.');
+assert.ok(publisherJs.includes('/api/delivery-items?surface=publisher'), 'Publisher should load normalized publisher delivery items from the SaaS DB.');
 assert.ok(!publisherJs.includes("source_app: 'analytics_console'"), 'Publisher JS should not contain Analytics app logic.');
 assert.ok(!publisherJs.includes("source_app: 'lead_ops_console'"), 'Publisher JS should not contain Lead Ops app logic.');
 assert.ok(!publisherJs.includes("source_app: 'delivery_manager'"), 'Publisher JS should not contain Delivery Manager app logic.');
 assert.ok(leadOpsJs.includes("source_app: 'lead_ops_console'"), 'Lead Ops app logic should stay in lead-ops.js.');
+assert.ok(leadOpsJs.includes('/api/delivery-items?surface=lead'), 'Lead Ops should load normalized lead/email delivery items from the SaaS DB.');
 assert.ok(!leadOpsJs.includes("source_app: 'analytics_console'"), 'Lead Ops JS should not contain Analytics app logic.');
 assert.ok(!leadOpsJs.includes("source_app: 'publisher_approval_studio'"), 'Lead Ops JS should not contain Publisher app logic.');
 assert.ok(!leadOpsJs.includes("source_app: 'delivery_manager'"), 'Lead Ops JS should not contain Delivery Manager app logic.');

@@ -241,6 +241,51 @@ function applyInboundContext(context = null) {
   if (target && [...els.leaderSelect.options].some((option) => option.value === target)) els.leaderSelect.value = target;
 }
 
+function leadFromDeliveryItem(item = {}, index = 0) {
+  const metadata = item.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+  const itemType = String(item.itemType || '').toLowerCase();
+  const isEmail = /email|outreach/.test(itemType);
+  return {
+    id: String(item.id || `delivery-lead-${index + 1}`),
+    company: String(metadata.company || metadata.company_name || metadata.lead || item.title || `Delivery lead ${index + 1}`),
+    segment: String(metadata.segment || metadata.persona || item.workflowTask || 'Saved CAIt delivery item'),
+    contact: String(firstText(metadata.contact, metadata.recipient, metadata.email, metadata.contact_path) || ''),
+    evidenceUrl: String(firstText(metadata.evidence_url, metadata.source_url, metadata.url, item.source?.job_id ? `/delivery-manager.html?order_id=${item.source.job_id}` : '') || ''),
+    fit: String(metadata.fit || metadata.why_fit || item.summary || ''),
+    status: String(item.status || (isEmail ? 'draft' : 'review')).replace(/needs_review/i, 'review'),
+    owner: String(item.workflowAgentName || metadata.owner || 'CAIt'),
+    nextAction: String(metadata.next_action || item.summary || 'Review this saved delivery item before outreach.'),
+    channel: normalizeChannel(metadata.channel || (isEmail ? 'email' : '')),
+    consent: String(metadata.consent || metadata.consent_basis || 'needs_review'),
+    sendMode: normalizeSendMode(metadata.send_mode || metadata.execution_mode || ''),
+    scheduleAt: String(metadata.schedule_at || metadata.scheduled_at || ''),
+    triggerEvent: String(metadata.trigger_event || 'none'),
+    triggerCondition: String(metadata.trigger_condition || ''),
+    senderEmail: String(metadata.sender_email || metadata.from || ''),
+    replyToEmail: String(metadata.reply_to_email || metadata.replyTo || ''),
+    subject: String(metadata.subject || (isEmail ? item.title : '')),
+    body: String(isEmail ? (item.body || '') : '')
+  };
+}
+
+async function loadLeadDeliveryItems() {
+  try {
+    const payload = await apiJson('/api/delivery-items?surface=lead&limit=100');
+    const imported = (Array.isArray(payload.items) ? payload.items : [])
+      .map(leadFromDeliveryItem)
+      .filter((lead) => lead.company || lead.body || lead.fit);
+    if (!imported.length) return;
+    const existing = new Set(leads.map((lead) => String(lead.id || '')));
+    leads = [
+      ...leads,
+      ...imported.filter((lead) => !existing.has(String(lead.id || '')))
+    ];
+    if (!selectedId && leads[0]) selectedId = leads[0].id;
+  } catch {
+    // Logged-out users or empty workspaces simply have no saved lead items.
+  }
+}
+
 function saveEditor() {
   const lead = selectedLead();
   if (!lead) return;
@@ -685,6 +730,7 @@ els.copyLeadContextBtn.addEventListener('click', async () => {
 async function bootstrap() {
   await refreshAuthSnapshot();
   applyInboundContext(await fetchCaitAppContextFromUrl());
+  await loadLeadDeliveryItems();
   render();
 }
 

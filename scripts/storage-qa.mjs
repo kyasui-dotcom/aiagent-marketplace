@@ -253,6 +253,7 @@ function createCountingDb() {
           if (sql.startsWith('SELECT * FROM agents WHERE id IN')) return emptyResults;
           if (sql.startsWith('SELECT * FROM agents ORDER BY')) return recordSelect('agents');
           if (sql.startsWith('SELECT * FROM jobs ORDER BY')) return recordSelect('jobs');
+          if (sql.startsWith('SELECT * FROM delivery_items ORDER BY')) return recordSelect('delivery_items');
           if (sql.startsWith('SELECT * FROM events ORDER BY')) return recordSelect('events');
           if (sql.startsWith('SELECT * FROM accounts ORDER BY')) return recordSelect('accounts');
           if (sql.startsWith('SELECT * FROM feedback_reports ORDER BY')) return recordSelect('feedback_reports');
@@ -301,7 +302,7 @@ function createVersionMatchedLegacyDb() {
             if (table === 'chat_transcripts') return { results: [{ name: 'id' }] };
             return emptyResults;
           }
-          if (/SELECT \* FROM (agents|jobs|events|accounts|feedback_reports|chat_transcripts|recurring_orders|email_deliveries|exact_match_actions|app_settings) ORDER BY/.test(sql)) {
+          if (/SELECT \* FROM (agents|jobs|delivery_items|events|accounts|feedback_reports|chat_transcripts|app_contexts|recurring_orders|email_deliveries|exact_match_actions|app_settings) ORDER BY/.test(sql)) {
             return emptyResults;
           }
           return emptyResults;
@@ -372,7 +373,7 @@ function createSeedRepairDb() {
           if (sql.startsWith('SELECT * FROM agents ORDER BY')) {
             return { results: [...agentsRows] };
           }
-          if (/SELECT \* FROM (jobs|events|accounts|feedback_reports|chat_transcripts|recurring_orders|email_deliveries|exact_match_actions|app_settings) ORDER BY/.test(sql)) {
+          if (/SELECT \* FROM (jobs|delivery_items|events|accounts|feedback_reports|chat_transcripts|app_contexts|recurring_orders|email_deliveries|exact_match_actions|app_settings) ORDER BY/.test(sql)) {
             return { results: [] };
           }
           return { results: [] };
@@ -459,6 +460,30 @@ assert.equal(mergedParent.status, 'running');
 assert.ok(Array.isArray(mergedParent.logs) && mergedParent.logs.includes('parent started'));
 assert.ok(Array.isArray(mergedParent.logs) && mergedParent.logs.includes('stale queued snapshot'));
 
+const deliveryItemStorage = createD1LikeStorage(null, { allowInMemory: true });
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-seo-delivery',
+  parentAgentId: 'qa',
+  taskType: 'seo_gap',
+  prompt: 'seo article',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'seo_gap',
+  workflowAgentName: 'SEO AGENT',
+  output: {
+    report: { summary: 'SEO article ready' },
+    files: [{ name: 'seo-agent-delivery.md', type: 'text/markdown', content: '# SEO article\n\nTitle: AI agent marketplace guide\n\nMeta description: Source-backed guide.\n\nBody.' }]
+  },
+  createdAt: '2026-04-26T08:20:00.000Z',
+  completedAt: '2026-04-26T08:21:00.000Z'
+}]);
+const publisherItems = await deliveryItemStorage.listDeliveryItems({ surface: 'publisher', ownerLogins: ['owner@example.com'] });
+assert.equal(publisherItems.length, 1);
+assert.equal(publisherItems[0].surface, 'publisher');
+assert.equal(publisherItems[0].itemType, 'seo_article');
+assert.equal(publisherItems[0].metadata.meta_description, 'Source-backed guide.');
+
 function createConcurrentJobsDb() {
   const jobsRows = [];
   return {
@@ -479,7 +504,7 @@ function createConcurrentJobsDb() {
           if (sql.startsWith('SELECT * FROM jobs ORDER BY')) {
             return { results: [...jobsRows] };
           }
-          if (/SELECT \* FROM (agents|events|accounts|feedback_reports|chat_transcripts|recurring_orders|email_deliveries|exact_match_actions|app_settings) ORDER BY/.test(sql)) {
+          if (/SELECT \* FROM (agents|delivery_items|events|accounts|feedback_reports|chat_transcripts|app_contexts|recurring_orders|email_deliveries|exact_match_actions|app_settings) ORDER BY/.test(sql)) {
             return { results: [] };
           }
           if (sql.startsWith('SELECT * FROM agents WHERE id IN')) return { results: [] };
@@ -490,7 +515,7 @@ function createConcurrentJobsDb() {
           return null;
         },
         async run() {
-          if (sql.startsWith('INSERT OR REPLACE INTO jobs')) {
+          if (sql.startsWith('INSERT OR REPLACE INTO jobs') || sql.startsWith('INSERT INTO jobs')) {
             const row = {
               id: bound[0],
               parent_agent_id: bound[1],

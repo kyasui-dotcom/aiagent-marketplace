@@ -224,6 +224,7 @@ for (const route of [
   API_ROUTES.CONNECTORS_X_POST,
   API_ROUTES.DELIVERIES_EXECUTE,
   API_ROUTES.DELIVERIES_SCHEDULE,
+  API_ROUTES.DELIVERY_ITEMS,
   API_ROUTES.APP_CONTEXTS
 ]) {
   assert.ok(workerRoutes.has(route), `Worker should expose ${route}`);
@@ -241,6 +242,7 @@ const methodAwareRouteKeys = [
   'GITHUB_CREATE_EXECUTOR_PR',
   'DELIVERIES_EXECUTE',
   'DELIVERIES_SCHEDULE',
+  'DELIVERY_ITEMS',
   'APP_CONTEXTS',
   'APP_CONTEXT_DETAIL'
 ];

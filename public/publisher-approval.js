@@ -371,6 +371,44 @@ function contextItemFromArtifact(artifact = {}, index = 0) {
   };
 }
 
+function contextItemFromDeliveryItem(item = {}, index = 0) {
+  const metadata = item.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+  return contextItemFromArtifact({
+    id: item.id || `delivery-item-${index + 1}`,
+    type: item.itemType || metadata.item_type || 'publish_asset',
+    title: item.title || metadata.title || `Delivery item ${index + 1}`,
+    slug: metadata.slug || metadata.path || metadata.target_path || '',
+    meta: metadata.meta_description || metadata.description || item.summary || '',
+    body: item.body || item.summary || '',
+    status: String(item.status || 'needs_review').replace(/_/g, ' '),
+    owner: item.workflowAgentName || metadata.owner || 'CAIt',
+    destination: metadata.destination || metadata.target || '',
+    market: metadata.market || metadata.region || '',
+    locale: metadata.locale || metadata.language || '',
+    risk: metadata.risk || metadata.blocker || 'Review this delivery item before external publishing.',
+    source_job_id: item.jobId,
+    source_delivery_item_id: item.id
+  }, index);
+}
+
+async function loadPublisherDeliveryItems() {
+  try {
+    const payload = await apiJson('/api/delivery-items?surface=publisher&limit=100');
+    const imported = (Array.isArray(payload.items) ? payload.items : [])
+      .map(contextItemFromDeliveryItem)
+      .filter((item) => item.title || item.body);
+    if (!imported.length) return;
+    const existing = new Set(items.map((item) => String(item.id || '')));
+    items = [
+      ...items,
+      ...imported.filter((item) => !existing.has(String(item.id || '')))
+    ];
+    if (!selectedId && items[0]) selectedId = items[0].id;
+  } catch {
+    // Logged-out users or empty workspaces simply have no saved publisher items.
+  }
+}
+
 function applyInboundContext(context = null) {
   if (!context) return;
   importedContext = context;
@@ -725,6 +763,7 @@ els.copyPacketBtn.addEventListener('click', async () => {
 async function bootstrap() {
   await refreshAuthSnapshot();
   applyInboundContext(await fetchCaitAppContextFromUrl());
+  await loadPublisherDeliveryItems();
   render();
   void refreshGithubRepos({ silent: true });
 }
