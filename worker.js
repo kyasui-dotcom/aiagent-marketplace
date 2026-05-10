@@ -17217,7 +17217,6 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
   const requestedLegacyLimit = Math.max(1, Number(env?.LEGACY_WORKFLOW_DISPATCH_RECOVERY_LIMIT || 500) || 500);
   const legacyLimit = Math.max(50, Math.min(1000, requestedLegacyLimit));
   const legacyRecovered = [];
-  const legacyState = typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState();
   const legacyDispatchSortMs = (job = {}) => {
     const ms = Date.parse(String(
       job?.dispatch?.firstDispatchRequestedAt
@@ -17230,12 +17229,34 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
     ));
     return Number.isFinite(ms) ? ms : Number.MAX_SAFE_INTEGER;
   };
-  const legacyCandidates = (Array.isArray(legacyState?.jobs) ? legacyState.jobs : [])
-    .filter((job) => ['queued', 'running'].includes(String(job?.status || '').trim().toLowerCase()))
-    .filter((job) => job?.assignedAgentId)
-    .filter((job) => ['completion_queued', 'completion_sweep_running'].includes(String(job?.dispatch?.completionStatus || '').trim().toLowerCase()))
-    .sort((a, b) => legacyDispatchSortMs(a) - legacyDispatchSortMs(b))
-    .slice(0, legacyLimit);
+  const legacyCandidates = (
+    typeof storage.listStaleCompletionQueuedJobs === 'function'
+    && typeof storage.listStaleCompletionSweepJobs === 'function'
+  )
+    ? [
+        ...(await storage.listStaleCompletionQueuedJobs({
+          limit: legacyLimit,
+          maxAgeMs: workflowDispatchMaxAgeMs(env),
+          minAgeMs: completionQueueRecoveryStaleMs(env)
+        })),
+        ...(await storage.listStaleCompletionSweepJobs({
+          limit: legacyLimit,
+          maxAgeMs: workflowDispatchMaxAgeMs(env),
+          minAgeMs: completionQueueRecoveryStaleMs(env)
+        }))
+      ]
+        .filter((job, index, all) => job?.id && all.findIndex((item) => item?.id === job.id) === index)
+        .filter((job) => job?.assignedAgentId)
+        .sort((a, b) => legacyDispatchSortMs(a) - legacyDispatchSortMs(b))
+        .slice(0, legacyLimit)
+    : (Array.isArray((typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState())?.jobs)
+        ? (typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState()).jobs
+        : [])
+        .filter((job) => ['queued', 'running'].includes(String(job?.status || '').trim().toLowerCase()))
+        .filter((job) => job?.assignedAgentId)
+        .filter((job) => ['completion_queued', 'completion_sweep_running'].includes(String(job?.dispatch?.completionStatus || '').trim().toLowerCase()))
+        .sort((a, b) => legacyDispatchSortMs(a) - legacyDispatchSortMs(b))
+        .slice(0, legacyLimit);
   for (const candidate of legacyCandidates) {
     try {
       const approvalPause = await pauseWorkflowChildDispatchForParentAuthority(storage, candidate);
@@ -17478,6 +17499,95 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
   const scheduled = [];
   const scheduledJobIds = new Set();
   const skippedRootJobIds = new Set();
+  if (
+    storage?.kind === 'd1'
+    && typeof storage.listScheduledWorkflowJobs === 'function'
+    && typeof storage.listStaleDispatchInProgressJobs === 'function'
+    && typeof storage.getAgentById === 'function'
+  ) {
+    const scheduledCandidates = await storage.listScheduledWorkflowJobs({
+      limit,
+      maxAgeMs: workflowDispatchMaxAgeMs(env),
+      minAgeMs: DISPATCH_SCHEDULE_STALE_MS
+    });
+    const inProgressCandidates = await storage.listStaleDispatchInProgressJobs({
+      limit,
+      maxAgeMs: workflowDispatchMaxAgeMs(env),
+      minAgeMs: DISPATCH_IN_PROGRESS_STALE_MS
+    });
+    const lightCandidates = [...scheduledCandidates, ...inProgressCandidates]
+      .filter((job, index, all) => job?.id && all.findIndex((item) => item?.id === job.id) === index)
+      .sort((left, right) => String(
+        left?.dispatch?.dispatchInProgressAt
+        || left?.dispatch?.lastAttemptAt
+        || left?.dispatch?.firstDispatchRequestedAt
+        || left?.dispatch?.dispatchRequestedAt
+        || left?.startedAt
+        || left?.createdAt
+        || ''
+      ).localeCompare(String(
+        right?.dispatch?.dispatchInProgressAt
+        || right?.dispatch?.lastAttemptAt
+        || right?.dispatch?.firstDispatchRequestedAt
+        || right?.dispatch?.dispatchRequestedAt
+        || right?.startedAt
+        || right?.createdAt
+        || ''
+      )))
+      .slice(0, limit);
+    for (const candidate of lightCandidates) {
+      const rootJobId = String(candidate.workflowParentId || candidate.id || '').trim();
+      if (!rootJobId || skippedRootJobIds.has(rootJobId) || scheduledJobIds.has(candidate.id)) continue;
+      const agent = await storage.getAgentById(candidate.assignedAgentId);
+      if (!agent) {
+        skippedRootJobIds.add(rootJobId);
+        continue;
+      }
+      const approvalPause = await pauseWorkflowChildDispatchForParentAuthority(storage, candidate);
+      if (approvalPause.paused) {
+        skippedRootJobIds.add(rootJobId);
+        if (candidate.workflowParentId) await reconcileWorkflowParent(storage, candidate.workflowParentId);
+        continue;
+      }
+      const marked = await markDispatchScheduled(storage, candidate.id, agent.id, options.reason || 'cron dispatch sweep', {
+        env,
+        workflowLeaderHandoff: null
+      });
+      if (!marked?.scheduled) {
+        skippedRootJobIds.add(rootJobId);
+        continue;
+      }
+      scheduledJobIds.add(marked.job.id);
+      scheduled.push(marked.job.id);
+      await touchEvent(storage, 'RUNNING', `${marked.agent.name} scheduled ${marked.job.taskType}/${marked.job.id.slice(0, 6)}`, {
+        kind: 'dispatch_scheduled',
+        jobId: marked.job.id,
+        parentJobId: marked.job.workflowParentId || rootJobId
+      });
+      if (workflowDispatchQueue(env)) {
+        await enqueueEndpointDispatch(env, marked.job, marked.agent, {
+          workflowParentId: marked.job.workflowParentId || rootJobId,
+          source: options.reason || 'cron dispatch sweep'
+        });
+        await touchEvent(storage, 'RUNNING', `${marked.agent.name} queued ${marked.job.taskType}/${marked.job.id.slice(0, 6)} for endpoint dispatch`, {
+          kind: 'endpoint_dispatch_queued',
+          jobId: marked.job.id,
+          parentJobId: marked.job.workflowParentId || rootJobId
+        });
+      } else {
+        const dispatch = await dispatchExistingJobToAssignedAgent(storage, env, marked.job.id, marked.agent.id)
+          .catch((error) => ({ error: String(error?.message || error) }));
+        if (dispatch?.error) await touchEvent(storage, 'FAILED', `${marked.job.taskType}/${marked.job.id.slice(0, 6)} light dispatch sweep failed ${String(dispatch.error).slice(0, 120)}`);
+      }
+    }
+    if (scheduled.length) {
+      await touchEvent(storage, 'RUNNING', `queued built-in dispatch sweep scheduled ${scheduled.length} job(s)`, {
+        kind: 'queued_dispatch_sweep',
+        jobIds: scheduled
+      });
+    }
+    return { ok: true, scheduled_count: scheduled.length, job_ids: scheduled, mode: 'd1_light_dispatch_sweep' };
+  }
   for (let i = 0; i < limit; i += 1) {
     const state = typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState();
     const candidates = state.jobs
