@@ -78,6 +78,8 @@ assert.ok(workerSource.includes('googleGrantedCapabilities'), 'auth status shoul
 assert.ok(/async function scheduleProgressDispatchesForJobId[\s\S]{0,500}getFreshState/.test(workerSource), 'workflow progress dispatch target selection should read fresh storage after leader completion.');
 assert.ok(/async function runQueuedBuiltInDispatchSweep[\s\S]{0,900}listStaleDispatchInProgressJobs/.test(workerSource), 'cron queued dispatch sweep should recover stale D1 dispatch locks with targeted queries.');
 assert.ok(workerSource.includes('listQueuedWorkflowDispatchRoots'), 'cron queued dispatch sweep must target plain queued workflow roots without a full-state scan.');
+assert.ok(workerSource.includes('listAcceptedBuiltInProviderJobs'), 'cron queued dispatch sweep must recover accepted built-in provider runs when the provider-run message is lost.');
+assert.ok(workerSource.includes('accepted provider run requeued'), 'accepted built-in provider recovery should leave an auditable job log.');
 assert.ok(workerSource.includes('loadWorkflowDispatchState(jobId)'), 'workflow progress dispatch should load only the parent workflow and assigned agents when available.');
 assert.ok(workerSource.includes('const DISPATCH_IN_PROGRESS_STALE_MS = 3 * 60 * 1000'), 'endpoint dispatch in-progress locks should be recoverable quickly when waitUntil loses the response.');
 assert.ok(workerSource.includes("completionStatus === 'dispatch_in_progress'"), 'stale dispatch_in_progress jobs should be eligible for endpoint redispatch.');

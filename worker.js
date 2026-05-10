@@ -17821,6 +17821,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
     && typeof storage.listScheduledWorkflowJobs === 'function'
     && typeof storage.listStaleDispatchInProgressJobs === 'function'
     && typeof storage.listQueuedWorkflowDispatchRoots === 'function'
+    && typeof storage.listAcceptedBuiltInProviderJobs === 'function'
     && typeof storage.getAgentById === 'function'
   ) {
     const scheduledCandidates = await storage.listScheduledWorkflowJobs({
@@ -17928,6 +17929,71 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
           scheduledJobIds.add(scheduledJobId);
           scheduled.push(scheduledJobId);
         }
+      }
+    }
+    if (scheduled.length < limit) {
+      const acceptedCandidates = await storage.listAcceptedBuiltInProviderJobs({
+        limit: Math.max(1, limit - scheduled.length),
+        maxAgeMs: workflowDispatchMaxAgeMs(env),
+        minAgeMs: DISPATCH_IN_PROGRESS_STALE_MS
+      });
+      for (const candidate of acceptedCandidates) {
+        if (scheduled.length >= limit) break;
+        if (!candidate?.id || scheduledJobIds.has(candidate.id)) continue;
+        const rootJobId = String(candidate.workflowParentId || candidate.id || '').trim();
+        if (!rootJobId || skippedRootJobIds.has(rootJobId)) continue;
+        const agent = await storage.getAgentById(candidate.assignedAgentId);
+        if (!agent) {
+          skippedRootJobIds.add(rootJobId);
+          continue;
+        }
+        const builtInKind = builtInWorkflowKindForJob(candidate, agent);
+        if (!builtInKind || !BUILT_IN_KINDS.includes(builtInKind)) {
+          skippedRootJobIds.add(rootJobId);
+          continue;
+        }
+        const requeued = await enqueueBuiltInAgentProviderRun(env, builtInKind, {
+          job_id: candidate.id,
+          assigned_agent_id: agent.id
+        }, {
+          source: options.reason || 'accepted-provider-run-recovery',
+          externalJobId: candidate.dispatch?.externalJobId || builtInAgentExternalJobId(builtInKind, candidate.id)
+        }).catch((error) => ({ ok: false, reason: String(error?.message || error) }));
+        if (!requeued?.ok) {
+          skippedRootJobIds.add(rootJobId);
+          await touchEvent(storage, 'FAILED', `${candidate.taskType}/${candidate.id.slice(0, 6)} accepted provider run requeue failed ${String(requeued?.reason || '').slice(0, 120)}`, {
+            kind: 'built_in_agent_run_requeue_failed',
+            jobId: candidate.id,
+            parentJobId: candidate.workflowParentId || null
+          });
+          continue;
+        }
+        if (typeof storage.mutateJobAndAgent === 'function') {
+          await storage.mutateJobAndAgent(candidate.id, agent.id, (draft) => {
+            const draftJob = draft.jobs.find((item) => item.id === candidate.id);
+            if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
+            draftJob.dispatch = {
+              ...(draftJob.dispatch || {}),
+              providerQueueRequeuedAt: nowIso(),
+              providerQueueRequeueAttempts: Number(draftJob.dispatch?.providerQueueRequeueAttempts || 0) + 1,
+              retryable: true,
+              nextRetryAt: null
+            };
+            draftJob.logs = [
+              ...(draftJob.logs || []),
+              `accepted provider run requeued for ${agent.id}`
+            ];
+            return cloneJob(draftJob);
+          });
+        }
+        scheduledJobIds.add(candidate.id);
+        scheduled.push(candidate.id);
+        await touchEvent(storage, 'RUNNING', `${agent.name || agent.id} requeued accepted ${candidate.taskType}/${candidate.id.slice(0, 6)} for built-in provider run`, {
+          kind: 'built_in_agent_run_requeued',
+          jobId: candidate.id,
+          parentJobId: candidate.workflowParentId || null,
+          builtInKind
+        });
       }
     }
     if (scheduled.length >= limit) {
