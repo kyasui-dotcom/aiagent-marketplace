@@ -17938,6 +17938,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
   const limit = Math.max(1, Math.min(20, Number(options.limit || 12) || 12));
   const scheduled = [];
   const scheduledJobIds = new Set();
+  const skippedRootJobIds = new Set();
   for (let i = 0; i < limit; i += 1) {
     const state = typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState();
     const candidates = state.jobs
@@ -17949,7 +17950,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
     const consideredRootJobIds = new Set();
     for (const candidate of candidates) {
       const rootJobId = String(candidate.workflowParentId || candidate.id || '').trim();
-      if (!rootJobId || consideredRootJobIds.has(rootJobId)) continue;
+      if (!rootJobId || consideredRootJobIds.has(rootJobId) || skippedRootJobIds.has(rootJobId)) continue;
       consideredRootJobIds.add(rootJobId);
       const target = pickProgressDispatchTarget(state, rootJobId);
       if (target && !scheduledJobIds.has(target.job.id)) {
@@ -17962,7 +17963,10 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
       maxTargets: Math.max(1, limit - scheduled.length),
       refresh: false
     });
-    if (!result?.scheduled) break;
+    if (!result?.scheduled) {
+      skippedRootJobIds.add(picked.rootJobId);
+      continue;
+    }
     const scheduledIds = Array.isArray(result.jobs) && result.jobs.length
       ? result.jobs.map((job) => job?.id).filter(Boolean)
       : [result.job?.id || picked.targetJobId || picked.candidate.id].filter(Boolean);
