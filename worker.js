@@ -13391,8 +13391,7 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
       draftJob.logs.push(`dispatch accepted by ${dispatchAgent.id} status=${dispatch.normalized.status}`);
       return { ok: true, mode: 'dispatched', job: cloneJob(draftJob) };
     };
-    const canUseTargetedDispatchResult = dispatch?.ok
-      && typeof storage.mutateJobAndAgent === 'function';
+    const canUseTargetedDispatchResult = typeof storage.mutateJobAndAgent === 'function';
     const final = canUseTargetedDispatchResult
       ? await storage.mutateJobAndAgent(dispatchJob.id, dispatchAgent.id, mutateDispatchResult)
       : await storage.mutate(mutateDispatchResult);

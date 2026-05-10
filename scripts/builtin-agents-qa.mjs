@@ -74,6 +74,9 @@ assert.ok(!orchestrationSource.includes('CMO_WORKFLOW_'), 'CMO workflow content 
 assert.ok(!orchestrationSource.includes('cmoAgentActionContract'), 'CMO action contracts should live in cmo-leader.js, not the shared orchestration connector');
 assert.ok(cmoLeaderSource.includes('CMO_AGENT_ACTION_CONTRACTS'), 'CMO action contracts should live in the CMO leader definition');
 assert.ok(cmoLeaderSource.includes('CMO_WORKFLOW_RESEARCH_LAYER_TASKS'), 'CMO workflow layer constants should live in the CMO leader definition');
+assert.ok(builtInAgentEntrySource.includes('function sanitizeSearchQuery'), 'Brave search queries should be sanitized before source collection.');
+assert.ok(builtInAgentEntrySource.includes("replace(/[…]/g"), 'Brave search queries should not be clipped with an ellipsis that can make the API reject q.');
+assert.ok(builtInAgentEntrySource.includes('(?:delivery|handoff|packet)'), 'Brave search queries should strip internal delivery/handoff file names before querying.');
 assert.deepEqual(CMO_WORKFLOW_DATA_LAYER_TASKS, ['data_analysis']);
 assert.deepEqual(CMO_WORKFLOW_RESEARCH_LAYER_TASKS, ['research', 'teardown', 'validation']);
 assert.deepEqual(CMO_WORKFLOW_PLANNING_LAYER_TASKS, ['media_planner', 'growth']);
