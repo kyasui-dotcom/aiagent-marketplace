@@ -125,6 +125,10 @@ assert.ok(builtInAgentsSource.includes('Task-aligned research interpretation'), 
 assert.ok(builtInAgentsSource.includes('task_aligned_findings'), 'research source packets should expose task-aligned findings for downstream handoff.');
 assert.ok(builtInAgentsSource.includes('researchContentPatterns'), 'research synthesis should summarize common content patterns, not only source URLs.');
 assert.ok(builtInAgentsSource.includes('word-count range'), 'research synthesis should preserve SEO-style word-count signals when page fetch succeeds.');
+assert.ok(builtInAgentsSource.includes('buildResearchThreeCAnalysis'), 'research synthesis must produce 3C analysis from Brave evidence.');
+assert.ok(builtInAgentsSource.includes('openAiResearch3CSynthesis'), 'research source packets should use OpenAI to convert Brave evidence into 3C analysis when available.');
+assert.ok(builtInAgentsSource.includes('workflow_research_3c_synthesis_packet'), 'OpenAI-backed workflow research should expose a 3C synthesis runtime.');
+assert.ok(builtInAgentsSource.includes('SNS/Social'), 'research synthesis must include social/SNS-specific interpretation when requested.');
 
 const ga4SessionPreflight = orderPreflightForAgent(
   {

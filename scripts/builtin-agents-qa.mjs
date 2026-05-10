@@ -1333,6 +1333,8 @@ try {
   assert.equal(cmoDynamicPayload.status, 'completed');
   assert.equal(cmoDynamicPayload.runtime.workflow, 'workflow_research_synthesis_packet');
   assert.ok(cmoDynamicPayload.files[0].content.includes('Task-aligned research interpretation'), 'Research delivery should include task-aligned interpretation, not only sources');
+  assert.ok(/3C analysis|3C分析/i.test(cmoDynamicPayload.files[0].content), 'Research delivery should include 3C analysis, not only task-aligned findings');
+  assert.ok(cmoDynamicPayload.report.research_findings.three_c_analysis, 'Research findings should expose structured 3C analysis for leader handoff');
   assert.ok(cmoDynamicPayload.files[0].content.includes('Top-content patterns'), 'Research delivery should summarize top content patterns for downstream agents');
   assert.ok(cmoDynamicPayload.report.research_findings.task_aligned_findings.some((item) => item.lens === 'seo_serp'), 'SEO requests should produce an SEO/SERP task finding');
   assert.ok(/one page to win|required sections|target depth/i.test(cmoDynamicPayload.report.research_findings.task_aligned_findings.map((item) => item.finding).join(' ')), 'SEO research finding should describe how downstream SEO/writing should use top-result depth and structure');
@@ -1375,14 +1377,15 @@ globalThis.fetch = async (input, init) => {
     assert.ok(!('tools' in request), 'Brave-grounded OpenAI requests should not invoke OpenAI web_search when Brave is preferred');
     const payload = JSON.parse(String(request.input?.[1]?.content || '{}'));
     assert.equal(payload.request.web_sources[0].url, 'https://example.com/brave-competitor');
-    assert.equal(payload.web_sources[0].url, 'https://example.com/brave-competitor');
+    assert.equal(payload.brave_sources[0].url, 'https://example.com/brave-competitor');
+    assert.ok(payload.required_analysis.some((item) => /3C analysis/i.test(item)), 'OpenAI synthesis payload should explicitly ask for 3C analysis.');
     return new Response(JSON.stringify({
       output_text: JSON.stringify({
         summary: 'Research summary ready',
         report_summary: 'Research delivery',
         bullets: ['Used Brave-grounded sources.'],
         next_action: 'Proceed with the source-backed recommendation.',
-        file_markdown: '# Research delivery\n\n## Answer first\nUse the Brave-grounded sources first.',
+        file_markdown: '# Research delivery\n\n## 3C analysis\n- Company: Use the Brave-grounded sources first.\n- Customer: compare proof and adoption path.\n- Competitor: source-backed alternatives.\n- Market: current market evidence.',
         confidence: 'medium',
         authority_request: null
       })
@@ -1408,12 +1411,14 @@ try {
     BRAVE_SEARCH_API_KEY: 'brave-test-key',
     BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS: '5000'
   });
-  assert.equal(bravePreferredOpenAiCalls, 0, 'Search-required workflow research should not call OpenAI after Brave source collection');
-  assert.equal(bravePreferredPayload.runtime.provider, 'brave');
-  assert.equal(bravePreferredPayload.runtime.workflow, 'workflow_research_synthesis_packet');
+  assert.equal(bravePreferredOpenAiCalls, 1, 'Search-required workflow research should call OpenAI once to convert Brave sources into 3C analysis');
+  assert.equal(bravePreferredPayload.runtime.provider, 'openai');
+  assert.equal(bravePreferredPayload.runtime.workflow, 'workflow_research_3c_synthesis_packet');
   assert.equal(bravePreferredPayload.runtime.search_provider, 'brave');
+  assert.equal(bravePreferredPayload.report.openai_3c_synthesis.status, 'completed');
   assert.equal(bravePreferredPayload.report.web_sources[0].url, 'https://example.com/brave-competitor');
   assert.ok(bravePreferredPayload.files[0].content.includes('https://example.com/brave-competitor'));
+  assert.ok(/3C analysis/i.test(bravePreferredPayload.files[0].content), 'OpenAI-backed research should preserve visible 3C analysis');
 } finally {
   globalThis.fetch = originalBuiltinQaFetch;
 }
