@@ -44,8 +44,8 @@ assert.ok(workerSource.includes('function workflowAppContextOriginalSignals'), '
 assert.ok(workerSource.includes('compactWorkflowAppContextsForDispatch'), 'attached app contexts should be passed into built-in dispatch instead of shortcut-completing data/research.');
 assert.ok(!workerSource.includes('app-context-data-analysis-shortcut'), 'data_analysis must not complete through simulated attached-context shortcut fallback.');
 assert.ok(!workerSource.includes('app-context-research-shortcut'), 'research must not complete through simulated attached-context shortcut fallback.');
-assert.ok(workerSource.includes('leader_planner_unavailable'), 'leader planner failures should stop order creation instead of silently using deterministic fallback.');
-assert.ok(workerSource.includes('deterministic fallback is disabled for quality'), 'leader planner fallback must be explicitly disabled for quality-sensitive orders.');
+assert.ok(workerSource.includes('Leader planner failed before order creation, so CAIt kept the deterministic team plan'), 'leader planner failures should not turn order creation into a 503 when a deterministic team plan exists.');
+assert.ok(workerSource.includes('oauthCallbackCurrentContext'), 'OAuth callbacks should use account-scoped session context instead of full-state reads.');
 assert.ok(workerSource.includes('workflowBlockingQualityGateBeforeLayer'), 'workflow dispatch should not release downstream layers after prior handoff/search quality gates fail');
 assert.ok(workerSource.includes('consideredRootJobIds'), 'cron dispatch sweep must dedupe workflow children by parent and avoid direct child execution');
 assert.ok(workerSource.includes('ORCHESTRATION_WATCHDOG_POLICY'), 'workflow orchestration watchdog policy should be shared through lib/orchestration.js');

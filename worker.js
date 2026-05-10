@@ -3387,6 +3387,54 @@ async function currentUserContext(request, env, options = {}) {
     xAuthorized: xLinked
   };
 }
+
+async function oauthCallbackCurrentContext(storage, request, env, session = null) {
+  const existingSession = session || await getSession(request, env);
+  if (!existingSession?.user?.login && !existingSession?.accountLogin) {
+    return { session: null, user: null, login: '', authProvider: 'guest' };
+  }
+  if (sessionAuthProvider(existingSession) === 'e2e') {
+    return {
+      session: existingSession,
+      user: existingSession.user || null,
+      login: existingSession.accountLogin || existingSession.user?.login || '',
+      authProvider: 'e2e',
+      account: null,
+      githubIdentity: null,
+      googleIdentity: null,
+      githubLinked: false,
+      googleLinked: false,
+      xLinked: false,
+      githubAuthorized: false,
+      googleAuthorized: false,
+      xAuthorized: false
+    };
+  }
+  const login = String(existingSession.accountLogin || existingSession.user?.login || '').trim().toLowerCase();
+  const account = login && typeof storage.getAccountByLogin === 'function'
+    ? await storage.getAccountByLogin(login)
+    : null;
+  const githubAuthorized = Boolean(sessionHasGithubOauth(existingSession) || sessionHasGithubApp(existingSession) || accountHasGithubConnector(account));
+  const googleAuthorized = Boolean(sessionHasGoogleOauth(existingSession) || accountHasGoogleConnector(account));
+  const githubIdentity = accountIdentityForProvider(account, 'github') || existingSession.githubIdentity || null;
+  const googleIdentity = accountIdentityForProvider(account, 'google') || existingSession.googleIdentity || null;
+  const xLinked = accountHasXConnector(account);
+  return {
+    session: existingSession,
+    user: accountUserFromSettings(account) || existingSession.user,
+    login: account?.login || login,
+    authProvider: sessionAuthProvider(existingSession),
+    account,
+    githubIdentity,
+    googleIdentity,
+    githubLinked: Boolean(githubAuthorized || githubIdentity),
+    googleLinked: Boolean(googleAuthorized || googleIdentity),
+    xLinked,
+    githubAuthorized,
+    googleAuthorized,
+    xAuthorized: xLinked
+  };
+}
 function accountUserFromSettings(account) {
   if (!account?.login) return null;
   return {
@@ -8511,7 +8559,7 @@ async function handleGithubAppCallback(request, env) {
     const linkedSession = await buildGithubAppSession(request, env, code, installationId);
     let session = linkedSession;
     if (shouldLinkOAuthCallback(cookieState, existingSession)) {
-      const current = await currentUserContext(request, env);
+      const current = await oauthCallbackCurrentContext(storage, request, env, existingSession);
       if (!current?.login) {
         return redirectWithCookies(authFailureRedirectPath(request, env, 'login_required_for_link', cookieState), [oauthState.cookie]);
       }
@@ -8628,7 +8676,7 @@ async function handleAuthCallback(request, env) {
     const githubIdentity = githubUserRecord(user);
     let session;
     if (shouldLinkOAuthCallback(cookieState, existingSession)) {
-      const current = await currentUserContext(request, env);
+      const current = await oauthCallbackCurrentContext(storage, request, env, existingSession);
       if (!current?.login) {
         return redirectWithCookies(authFailureRedirectPath(request, env, 'login_required_for_link', cookieState), [oauthState.cookie]);
       }
@@ -8755,7 +8803,7 @@ async function handleGoogleAuthCallback(request, env) {
     const googleIdentity = googleUserRecord(user);
     let session;
     if (shouldLinkOAuthCallback(cookieState, existingSession)) {
-      const current = await currentUserContext(request, env);
+      const current = await oauthCallbackCurrentContext(storage, request, env, existingSession);
       if (!current?.login) {
         return redirectWithCookies(authFailureRedirectPath(request, env, 'login_required_for_link', cookieState), [oauthState.cookie]);
       }
@@ -11460,9 +11508,6 @@ async function maybeRefineWorkflowPlanWithLeaderLlm(agents = [], body = {}, reso
   if (refined?.plannerError) {
     return {
       ...resolved,
-      error: 'Leader planner failed before order creation. Retry rather than falling back to a weaker deterministic plan.',
-      code: 'leader_planner_unavailable',
-      statusCode: refined.plannerStatusCode || 503,
       planner_error: refined.plannerError,
       plan: {
         ...(resolved.plan || {}),
@@ -11473,7 +11518,7 @@ async function maybeRefineWorkflowPlanWithLeaderLlm(agents = [], body = {}, reso
           checkedAt: nowIso()
         }
       },
-      reason: `${resolved.reason} Leader planner failed and deterministic fallback is disabled for quality.`
+      reason: `${resolved.reason} Leader planner failed before order creation, so CAIt kept the deterministic team plan and will let the leader adapt after the order starts.`
     };
   }
   if (!refined?.plannedTasks?.length) {
