@@ -10,6 +10,20 @@ let sortMode = 'newest';
 let importedContext = null;
 const expandedWorkIds = new Set();
 
+function requestedDeliveryIdFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    return String(
+      url.searchParams.get('order_id')
+      || url.searchParams.get('job_id')
+      || url.searchParams.get('delivery_id')
+      || ''
+    ).trim();
+  } catch {
+    return '';
+  }
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   let timeoutId = null;
@@ -201,6 +215,15 @@ function sortDeliveries(list = []) {
   return [...list].sort((left, right) => compareDeliveries(left, right));
 }
 
+function upsertDelivery(delivery = null) {
+  if (!delivery?.id) return false;
+  deliveries = sortDeliveries([
+    delivery,
+    ...deliveries.filter((item) => String(item.id || '') !== String(delivery.id || ''))
+  ]);
+  return true;
+}
+
 function isLeaderDelivery(delivery = {}) {
   return /_leader$/i.test(String(delivery.taskType || delivery.workflowTask || delivery.agentName || ''));
 }
@@ -359,13 +382,20 @@ function applyInboundContext(context = null) {
 
 async function refreshDeliveries() {
   els.refreshDeliveriesBtn.textContent = 'Refreshing';
+  const requestedId = requestedDeliveryIdFromUrl();
   try {
     const response = await fetchWithTimeout('/api/jobs?limit=40', { credentials: 'same-origin' }, 10000);
     if (!response.ok) throw new Error(`jobs ${response.status}`);
     const data = await response.json();
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
     deliveries = sortDeliveries(jobs.map(normalizeJobDelivery).filter((item) => item.id));
-    selectedId = deliveries[0]?.id || '';
+    if (requestedId && !deliveries.some((item) => item.id === requestedId)) {
+      const direct = await fetchDeliveryJobById(requestedId).catch(() => null);
+      if (direct?.id) upsertDelivery(direct);
+    }
+    selectedId = deliveries.some((item) => item.id === requestedId) ? requestedId : (deliveries[0]?.id || '');
+    const selected = selectedDelivery();
+    if (requestedId && selected?.workId) expandedWorkIds.add(selected.workId);
     selectedFileIndex = 0;
   } catch {
     deliveries = [];
@@ -375,6 +405,18 @@ async function refreshDeliveries() {
     els.refreshDeliveriesBtn.textContent = 'Refresh';
     render();
   }
+}
+
+async function fetchDeliveryJobById(id = '') {
+  const safeId = String(id || '').trim();
+  if (!safeId) return null;
+  const response = await fetchWithTimeout(`/api/jobs/${encodeURIComponent(safeId)}`, {
+    credentials: 'same-origin'
+  }, 10000);
+  if (!response.ok) throw new Error(`job ${response.status}`);
+  const data = await response.json();
+  const job = data?.job && typeof data.job === 'object' ? data.job : null;
+  return job ? normalizeJobDelivery(job) : null;
 }
 
 function saveEditor() {

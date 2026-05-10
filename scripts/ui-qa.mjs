@@ -313,11 +313,13 @@ assert.ok(leadOpsHtml.includes('id="leadAllNavCount"'), 'Lead Ops side navigatio
 assert.ok(deliveryManagerHtml.includes('Deliveries'), 'Deliveries should be a first-class CAIt feature page.');
 assert.ok(deliveryManagerHtml.includes('href="/chat"'), 'Deliveries should link back to chat.');
 assert.ok(deliveryManagerHtml.includes('id="downloadSelectedBtn"'), 'Delivery Manager should expose downloadable delivery files.');
-assert.ok(deliveryManagerHtml.includes('/delivery-manager.js?v=20260510a'), 'Delivery Manager should load the app-context receiving controller.');
+assert.ok(deliveryManagerHtml.includes('/delivery-manager.js?v=20260511a'), 'Delivery Manager should load the app-context receiving controller.');
 assert.ok(deliveryManagerHtml.includes('id="deliverySearchInput"'), 'Delivery Manager should expose delivery search.');
 assert.ok(deliveryManagerHtml.includes('id="deliverySortSelect"'), 'Delivery Manager should expose delivery sorting.');
 assert.ok(deliveryManagerHtml.includes('data-tab="files"'), 'Delivery Manager should expose file and context tabs.');
 assert.ok(deliveryManagerHtml.includes('id="readinessList"'), 'Delivery Manager should show follow-up context readiness.');
+assert.ok(deliveryManagerJs.includes('requestedDeliveryIdFromUrl'), 'Delivery Manager should support direct order/job/deep-linked delivery loading.');
+assert.ok(deliveryManagerJs.includes('/api/jobs/${encodeURIComponent(safeId)}'), 'Delivery Manager should fetch a deep-linked delivery by job id when it is outside the latest list.');
 
 const builtInAppEntries = [
   {
