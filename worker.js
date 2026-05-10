@@ -18810,13 +18810,72 @@ function recentPersistedJobForCreateBody(state = {}, current = {}, body = {}, op
     })[0] || null;
 }
 
+function requestedFollowupJobIdFromCreateBody(body = {}) {
+  const brokerConversation = body?.input?._broker?.conversation && typeof body.input._broker.conversation === 'object'
+    ? body.input._broker.conversation
+    : {};
+  return String(
+    body?.followup_to_job_id
+    || body?.followupToJobId
+    || brokerConversation.followupToJobId
+    || brokerConversation.followup_to_job_id
+    || ''
+  ).trim();
+}
+
+async function loadOrderCreatePlanningState(storage, current = {}, body = {}) {
+  if (typeof storage.listAgents !== 'function' || typeof storage.getAccountByLogin !== 'function' || typeof storage.getJobById !== 'function') {
+    return storage.getState();
+  }
+  const clientOrderId = clientOrderIdFromCreateBody(body);
+  const followupJobId = requestedFollowupJobIdFromCreateBody(body);
+  const [agents, account, clientOrderJob, followupJob] = await Promise.all([
+    storage.listAgents({ limit: 500 }),
+    current?.login ? storage.getAccountByLogin(current.login) : Promise.resolve(null),
+    clientOrderId ? storage.getJobById(clientOrderId) : Promise.resolve(null),
+    followupJobId && followupJobId !== clientOrderId ? storage.getJobById(followupJobId) : Promise.resolve(null)
+  ]);
+  const jobs = [];
+  for (const job of [clientOrderJob, followupJob]) {
+    if (job?.id && !jobs.some((item) => item.id === job.id)) jobs.push(job);
+  }
+  return {
+    agents: Array.isArray(agents) ? agents : [],
+    accounts: account ? [account] : [],
+    jobs,
+    apps: [],
+    events: [],
+    feedbackReports: [],
+    chatTranscripts: [],
+    appContexts: [],
+    recurringOrders: [],
+    emailDeliveries: [],
+    exactMatchActions: [],
+    appSettings: []
+  };
+}
+
 async function recoverCreateJobException(storage, current, body, error) {
   let recoveredJob = null;
-  try {
-    const state = await storage.getState();
-    recoveredJob = recentPersistedJobForCreateBody(state, current, body);
-  } catch {}
-  if (!recoveredJob?.id && typeof storage.getFreshState === 'function') {
+  const clientOrderId = clientOrderIdFromCreateBody(body);
+  if (clientOrderId && typeof storage.getJobById === 'function') {
+    try {
+      recoveredJob = await storage.getJobById(clientOrderId);
+    } catch {}
+  }
+  if (!recoveredJob?.id) {
+    try {
+      const state = await loadOrderCreatePlanningState(storage, current, body);
+      recoveredJob = recentPersistedJobForCreateBody(state, current, body);
+    } catch {}
+  }
+  if (!recoveredJob?.id && storage?.kind !== 'd1') {
+    try {
+      const state = await storage.getState();
+      recoveredJob = recentPersistedJobForCreateBody(state, current, body);
+    } catch {}
+  }
+  if (!recoveredJob?.id && typeof storage.getFreshState === 'function' && typeof storage.getJobById !== 'function') {
     try {
       const freshState = await storage.getFreshState();
       recoveredJob = recentPersistedJobForCreateBody(freshState, current, body);
@@ -19795,7 +19854,9 @@ async function handleCreateJob(storage, request, env, ctx = null) {
     const requestedStrategy = normalizeOrderStrategy(body.order_strategy || body.orderStrategy || body.execution_mode || body.executionMode);
     const asyncDispatch = body.async_dispatch === true || body.asyncDispatch === true || body.respond_async === true || body.respondAsync === true;
     const clientOrderId = clientOrderIdFromCreateBody(body);
-    const state = requestedStrategy !== 'single' || clientOrderId ? await storage.getState() : null;
+    const state = requestedStrategy !== 'single' || clientOrderId
+      ? await loadOrderCreatePlanningState(storage, current, body)
+      : null;
     if (clientOrderId && state) {
       const existingClientOrder = persistedJobForClientOrderId(state, body);
       if (existingClientOrder?.id) {
