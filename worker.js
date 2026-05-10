@@ -16101,6 +16101,60 @@ async function scheduleInitialWorkflowDispatchFromChildren(storage, env, waitUnt
   return { scheduled: true, scheduled_count: 1, jobs: [marked.job], agents: [marked.agent] };
 }
 
+async function scheduleNextWorkflowDispatchLightweight(storage, env, waitUntil, parentJobId, reason = 'workflow completion handoff', options = {}) {
+  const parentId = String(parentJobId || '').trim();
+  if (!parentId) return { scheduled: false, scheduled_count: 0, reason: 'parent_missing' };
+  if (options.refresh !== false) await refreshWorkflowLeaderHandoffForJobId(storage, parentId);
+  const mutateWorkflow = typeof storage.mutateWorkflow === 'function'
+    ? (mutator) => storage.mutateWorkflow(parentId, mutator)
+    : (mutator) => storage.mutate(mutator);
+  const result = await mutateWorkflow(async (state) => {
+    const parent = state.jobs.find((item) => item.id === parentId && item.jobKind === 'workflow') || null;
+    if (!parent || workflowParentAuthorityRequest(parent)) return { scheduled: false, reason: parent ? 'parent_authority_wait' : 'parent_missing' };
+    const children = sortWorkflowChildren(parent, state.jobs.filter((item) => item.workflowParentId === parent.id));
+    const queued = children.filter((child) => String(child?.status || '').trim().toLowerCase() === 'queued' && child.assignedAgentId);
+    const target = queued.find((child) => isWorkflowLeaderTask(workflowTaskName(child))) || queued[0] || null;
+    if (!target) return { scheduled: false, reason: 'no_queued_child' };
+    const at = nowIso();
+    const previousDispatch = target.dispatch && typeof target.dispatch === 'object' ? target.dispatch : {};
+    const firstDispatchRequestedAt = previousDispatch.firstDispatchRequestedAt || previousDispatch.dispatchRequestedAt || at;
+    target.status = 'running';
+    target.startedAt = target.startedAt || at;
+    target.failureReason = null;
+    target.failureCategory = null;
+    target.dispatch = {
+      ...previousDispatch,
+      firstDispatchRequestedAt,
+      dispatchRequestedAt: at,
+      completionStatus: 'dispatch_scheduled',
+      scheduleAttempts: Number(previousDispatch.scheduleAttempts || 0) + 1,
+      retryable: true,
+      nextRetryAt: null,
+      maxRetries: workflowCompletionRetryLimitForJob(env, target)
+    };
+    target.logs = [...(target.logs || []), `${reason}; lightweight dispatch scheduled`];
+    return { scheduled: true, job: cloneJob(target), agentId: target.assignedAgentId };
+  });
+  if (!result?.scheduled || !result.job?.id || !result.agentId) return { scheduled: false, scheduled_count: 0, reason: result?.reason || 'lightweight_mark_rejected' };
+  const agent = typeof storage.getAgentById === 'function' ? await storage.getAgentById(result.agentId) : null;
+  if (!agent) return { scheduled: false, scheduled_count: 0, reason: 'agent_missing_after_lightweight_mark', jobs: [result.job] };
+  await touchEvent(storage, 'RUNNING', `${agent.name} scheduled ${result.job.taskType}/${result.job.id.slice(0, 6)}`, {
+    kind: 'dispatch_scheduled',
+    jobId: result.job.id,
+    parentJobId: result.job.workflowParentId || parentId
+  });
+  const queuedSampleKind = builtInWorkflowKindForJob(result.job, agent);
+  if (queuedSampleKind && workflowDispatchQueue(env)) {
+    await enqueueBuiltInWorkflowCompletion(storage, env, result.job, agent, queuedSampleKind, { source: reason });
+  } else {
+    const dispatchPromise = dispatchExistingJobToAssignedAgent(storage, env, result.job.id, agent.id)
+      .catch((error) => touchEvent(storage, 'FAILED', `${result.job.taskType}/${result.job.id.slice(0, 6)} lightweight dispatch exception ${String(error?.message || error).slice(0, 120)}`));
+    if (typeof waitUntil === 'function') waitUntil(dispatchPromise);
+    else void dispatchPromise;
+  }
+  return { scheduled: true, scheduled_count: 1, jobs: [result.job], agents: [agent] };
+}
+
 function workflowShouldCompleteDataUnavailable(job = {}) {
   return workflowTaskName(job) === 'data_analysis'
     && !workflowJobRequiresSearch(job)
@@ -16905,9 +16959,7 @@ async function completeWorkflowNonSourceDeterministicJob(storage, job, agent, sa
       await reconcileWorkflowParent(storage, job.workflowParentId);
       if (options.env && options.scheduleNext !== false) {
         try {
-          await scheduleProgressDispatchesForJobId(storage, options.env, null, job.workflowParentId, options.nextDispatchReason || `${eventLabel} handoff`, {
-            maxTargets: options.maxTargets || 8,
-            awaitDispatch: true,
+          await scheduleNextWorkflowDispatchLightweight(storage, options.env, null, job.workflowParentId, options.nextDispatchReason || `${eventLabel} handoff`, {
             refresh: options.refreshNext !== false
           });
         } catch (error) {
