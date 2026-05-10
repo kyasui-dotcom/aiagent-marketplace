@@ -94,6 +94,7 @@ assert.ok(/async function runQueuedEndpointDispatchSweep[\s\S]{0,900}listStaleDi
 assert.ok(workerSource.includes('listQueuedWorkflowDispatchRoots'), 'cron queued dispatch sweep must target plain queued workflow roots without a full-state scan.');
 assert.ok(workerSource.includes('listAcceptedEndpointDispatchJobs'), 'cron queued dispatch sweep must recover stale accepted endpoint dispatches.');
 assert.ok(workerSource.includes('listRetryableWorkflowChildren'), 'cron retry sweep must target active retryable workflow children instead of being starved by old failed jobs.');
+assert.ok(workerSource.includes("source: 'progress-poll'"), 'job progress polling should trigger retry sweeps so live orders do not wait only for cron.');
 assert.ok(workerSource.includes('legacy accepted endpoint dispatch recovered'), 'accepted endpoint recovery should leave an auditable job log.');
 assert.ok(workerSource.includes('loadWorkflowDispatchState(jobId)'), 'workflow progress dispatch should load only the parent workflow and assigned agents when available.');
 assert.ok(workerSource.includes("['queued', 'pending'].includes(String(leaderSequence?.status"), 'completed checkpoint rows must release adaptive children even if leader sequence status stayed pending.');

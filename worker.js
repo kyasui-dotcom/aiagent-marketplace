@@ -20890,6 +20890,11 @@ async function handleGetJob(storage, request, env, jobId, ctx = null) {
       if (job.jobKind === 'workflow') {
         await refreshWorkflowLeaderHandoffForJobId(storage, job.id);
         await reconcileWorkflowParent(storage, job.id);
+        await runWorkflowTimeoutRetrySweep(storage, env, {
+          source: 'progress-poll',
+          limit: Math.min(4, Number(env?.WORKFLOW_TIMEOUT_RETRY_SWEEP_LIMIT || 4) || 4),
+          waitUntil
+        });
       }
       return scheduleProgressDispatchesForJobId(storage, env, waitUntil, job.id, 'progress poll', {
         maxTargets: 8,
