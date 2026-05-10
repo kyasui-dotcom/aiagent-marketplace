@@ -17047,12 +17047,7 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
       if (completedJob) {
         await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} completed by ${eventLabel}: attached data context packet`);
         if (locked.workflowParentId) {
-          await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
-          await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`, {
-            maxTargets: 8,
-            awaitDispatch: true,
-            refresh: false
-          });
+          await scheduleNextWorkflowDispatchLightweight(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`);
           await reconcileWorkflowParent(storage, locked.workflowParentId);
         }
         return { ok: true, mode: 'completed', jobId: locked.id, job: completedJob };
@@ -17092,12 +17087,7 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
       if (completedJob) {
         await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} completed by ${eventLabel}: prior source research packet`);
         if (locked.workflowParentId) {
-          await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
-          await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`, {
-            maxTargets: 8,
-            awaitDispatch: true,
-            refresh: false
-          });
+          await scheduleNextWorkflowDispatchLightweight(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`);
           await reconcileWorkflowParent(storage, locked.workflowParentId);
         }
         return { ok: true, mode: 'completed', jobId: locked.id, job: completedJob };
@@ -17117,12 +17107,7 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
       if (completedJob) {
         await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} completed by ${eventLabel}: prior handoff specialist packet`);
         if (locked.workflowParentId) {
-          await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
-          await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`, {
-            maxTargets: 8,
-            awaitDispatch: true,
-            refresh: false
-          });
+          await scheduleNextWorkflowDispatchLightweight(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`);
           await reconcileWorkflowParent(storage, locked.workflowParentId);
         }
         return { ok: true, mode: 'completed', jobId: locked.id, job: completedJob };
@@ -17135,12 +17120,7 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
       if (completedJob) {
         await touchEvent(storage, 'COMPLETED', `${locked.taskType}/${locked.id.slice(0, 6)} skipped by ${eventLabel}: no analytics/data context`);
         if (locked.workflowParentId) {
-          await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
-          await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`, {
-            maxTargets: 8,
-            awaitDispatch: true,
-            refresh: false
-          });
+          await scheduleNextWorkflowDispatchLightweight(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`);
           await reconcileWorkflowParent(storage, locked.workflowParentId);
         }
         return { ok: true, mode: 'completed', jobId: locked.id, job: completedJob };
@@ -17197,12 +17177,7 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
         }
       );
       if (result?.mode === 'completed') {
-        await refreshWorkflowLeaderHandoffForJobId(storage, effectiveLocked.workflowParentId);
-        await scheduleProgressDispatchesForJobId(storage, env, null, effectiveLocked.workflowParentId, `${eventLabel} handoff`, {
-          maxTargets: 8,
-          awaitDispatch: true,
-          refresh: false
-        });
+        await scheduleNextWorkflowDispatchLightweight(storage, env, null, effectiveLocked.workflowParentId, `${eventLabel} handoff`);
       }
       return result;
     }
@@ -17251,12 +17226,7 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
         await recordBillingOutcome(storage, result.job, result.billing, completionSource);
       }
       if (locked.workflowParentId && result.mode === 'completed') {
-        await refreshWorkflowLeaderHandoffForJobId(storage, locked.workflowParentId);
-        await scheduleProgressDispatchesForJobId(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`, {
-          maxTargets: 8,
-          awaitDispatch: true,
-          refresh: false
-        });
+        await scheduleNextWorkflowDispatchLightweight(storage, env, null, locked.workflowParentId, `${eventLabel} handoff`);
         await reconcileWorkflowParent(storage, locked.workflowParentId);
       } else if (locked.workflowParentId) {
         await reconcileWorkflowParent(storage, locked.workflowParentId);
