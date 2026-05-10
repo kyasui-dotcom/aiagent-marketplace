@@ -13207,7 +13207,9 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
   const { job, agent } = await loadDispatchJobAndAgent(storage, jobId, agentId);
   if (!job) return { error: 'Job not found', statusCode: 404 };
   if (!agent) return { error: 'Agent not found', statusCode: 404 };
-  if (isTerminalJobStatus(job.status)) return { ok: true, mode: job.status, job: cloneJob(job) };
+  if (isTerminalJobStatus(job.status) && !workflowChildIsAdaptivePending(job)) {
+    return { ok: true, mode: job.status, job: cloneJob(job) };
+  }
   if (!resolveAgentJobEndpoint(agent)) {
     return { ok: true, mode: 'queued', job: cloneJob(job) };
   }
@@ -13219,7 +13221,7 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
     const draftAgent = draft.agents.find((item) => item.id === agent.id);
     if (!draftJob) return { error: 'Job disappeared before dispatch lock', statusCode: 500 };
     if (!draftAgent) return { error: 'Agent disappeared before dispatch lock', statusCode: 500 };
-    if (isTerminalJobStatus(draftJob.status)) {
+    if (isTerminalJobStatus(draftJob.status) && !workflowChildIsAdaptivePending(draftJob)) {
       return { ok: true, mode: draftJob.status, job: cloneJob(draftJob), skippedTerminal: true };
     }
     if (dispatchExecutionIsFresh(draftJob, draftAgent)) {

@@ -71,6 +71,8 @@ assert.ok(workerSource.includes('&& !workflowJobRequiresSearch(job)'), 'data-una
 assert.ok(/dispatchExistingJobToAssignedAgent\(storage,\s*env,\s*jobId,\s*agentId/.test(workerSource), 'endpoint queue consumer should use the normal endpoint dispatcher.');
 assert.ok(workerSource.includes("kind: 'endpoint_dispatch'"), 'workflow progress should queue normal endpoint dispatch work instead of draining every layer in one Worker request.');
 assert.ok(workerSource.includes("if (kind === 'endpoint_dispatch')"), 'queue consumer should process provider endpoint dispatch messages one job at a time.');
+assert.ok(workerSource.includes('isTerminalJobStatus(job.status) && !workflowChildIsAdaptivePending(job)'), 'endpoint dispatch should not treat adaptive-pending blocked children as terminal because queue reads can race with leader release.');
+assert.ok(workerSource.includes('isTerminalJobStatus(draftJob.status) && !workflowChildIsAdaptivePending(draftJob)'), 'endpoint dispatch lock should re-check adaptive-pending blocked children against fresh storage before skipping.');
 const forbiddenAgentRunKind = ['built', 'in', 'agent', 'run'].join('_');
 assert.ok(!workerSource.includes(`kind: '${forbiddenAgentRunKind}'`), 'built-in agents must not use a second internal queue message; they must follow the same endpoint dispatch contract as registered external agents.');
 assert.ok(!workerSource.includes('function acceptBuiltInEndpointDispatchForProviderQueue'), 'Worker dispatch must not branch into a built-in-specific provider queue path.');
