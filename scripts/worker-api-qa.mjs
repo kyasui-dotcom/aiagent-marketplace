@@ -66,6 +66,8 @@ assert.ok(workerSource.includes("if (kind === 'endpoint_dispatch')"), 'queue con
 assert.ok(workerSource.includes("kind: 'built_in_agent_run'"), 'built-in agent endpoints should accept like providers and complete through a separate provider-run message.');
 assert.ok(workerSource.includes("source: 'built-in-agent-provider'"), 'built-in provider completion should use the same callback-style completion path as external agents.');
 assert.ok(workerSource.includes('function acceptBuiltInEndpointDispatchForProviderQueue'), 'Cloudflare Queue dispatch should not self-fetch built-in endpoints; it should accept and queue the provider run directly.');
+assert.ok(/async function acceptBuiltInEndpointDispatchForProviderQueue[\s\S]*const queued = await enqueueBuiltInAgentProviderRun[\s\S]*const accepted = typeof storage\.mutateJobAndAgent/.test(workerSource), 'built-in endpoint dispatch must enqueue the provider run before persisting accepted state.');
+assert.ok(readFileSync(new URL('../lib/storage.js', import.meta.url), 'utf8').includes("['accepted'].includes(safe)"), 'D1 job merge must preserve accepted provider dispatch state.');
 assert.ok(workerSource.includes("options.dispatchMode !== 'direct' && Boolean(workflowDispatchQueue(env))"), 'production progress dispatch should prefer the queue when a queue binding is configured.');
 assert.ok(workerSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
 assert.ok(workerSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');

@@ -17609,9 +17609,33 @@ async function acceptBuiltInEndpointDispatchForProviderQueue(storage, env, jobId
   const currentStatus = String(job.status || '').trim().toLowerCase();
   const currentCompletionStatus = String(job.dispatch?.completionStatus || '').trim().toLowerCase();
   if (currentStatus === 'dispatched' && currentCompletionStatus === 'accepted') {
-    return { ok: true, mode: 'accepted', job: cloneJob(job), skippedAccepted: true };
+    const queued = await enqueueBuiltInAgentProviderRun(env, builtInKind, {
+      job_id: jobId,
+      assigned_agent_id: agentId
+    }, {
+      source: message.source || 'endpoint-dispatch-accepted-recovery',
+      externalJobId: builtInAgentExternalJobId(builtInKind, jobId)
+    }).catch((error) => ({ ok: false, reason: String(error?.message || error) }));
+    if (!queued?.ok) return { ok: false, mode: 'provider_queue_failed', error: queued?.reason || 'built-in provider queue send failed', job: cloneJob(job) };
+    await touchEvent(storage, 'RUNNING', `${agent.name || agentId} requeued ${job.taskType}/${job.id.slice(0, 6)} for built-in provider run`, {
+      kind: 'built_in_agent_run_requeued',
+      jobId,
+      parentJobId: job.workflowParentId || null,
+      builtInKind
+    });
+    return { ok: true, mode: 'dispatched', job: cloneJob(job), recoveredAccepted: true };
   }
   const externalJobId = builtInAgentExternalJobId(builtInKind, jobId);
+  const queued = await enqueueBuiltInAgentProviderRun(env, builtInKind, {
+    job_id: jobId,
+    assigned_agent_id: agentId
+  }, {
+    source: message.source || 'endpoint-dispatch-queue',
+    externalJobId
+  }).catch((error) => ({ ok: false, reason: String(error?.message || error) }));
+  if (!queued?.ok) {
+    return { ok: false, mode: 'provider_queue_failed', error: queued?.reason || 'built-in provider queue send failed', job: cloneJob(job) };
+  }
   const accepted = typeof storage.mutateJobAndAgent === 'function'
     ? await storage.mutateJobAndAgent(jobId, agentId, (draft) => {
         const draftJob = draft.jobs.find((item) => item.id === jobId);
@@ -17646,16 +17670,6 @@ async function acceptBuiltInEndpointDispatchForProviderQueue(storage, env, jobId
     : null;
   if (!accepted || accepted.error) return accepted || null;
   if (accepted.mode === 'dispatched') {
-    const queued = await enqueueBuiltInAgentProviderRun(env, builtInKind, {
-      job_id: jobId,
-      assigned_agent_id: agentId
-    }, {
-      source: message.source || 'endpoint-dispatch-queue',
-      externalJobId
-    });
-    if (!queued?.ok) {
-      return { ok: false, mode: 'provider_queue_failed', error: queued?.reason || 'built-in provider queue send failed', job: accepted.job };
-    }
     await touchEvent(storage, 'RUNNING', `${accepted.agent?.name || agent.name || agentId} queued ${job.taskType}/${job.id.slice(0, 6)} for built-in provider run`, {
       kind: 'built_in_agent_run_queued',
       jobId,
