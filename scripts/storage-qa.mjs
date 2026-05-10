@@ -478,6 +478,23 @@ await deliveryItemStorage.upsertJobs([{
   createdAt: '2026-04-26T08:20:00.000Z',
   completedAt: '2026-04-26T08:21:00.000Z'
 }]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-leader-package',
+  parentAgentId: 'qa',
+  taskType: 'cmo_leader',
+  prompt: 'leader package',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'cmo_leader',
+  workflowAgentName: 'CMO TEAM LEADER',
+  output: {
+    report: { summary: 'Integrated delivery' },
+    files: [{ name: 'leader-package.md', type: 'text/markdown', content: '# Integrated delivery\n\nSEO article and social post summary.' }]
+  },
+  createdAt: '2026-04-26T08:22:00.000Z',
+  completedAt: '2026-04-26T08:23:00.000Z'
+}]);
 const publisherItems = await deliveryItemStorage.listDeliveryItems({ surface: 'publisher', ownerLogins: ['owner@example.com'] });
 assert.equal(publisherItems.length, 1);
 assert.equal(publisherItems[0].surface, 'publisher');
