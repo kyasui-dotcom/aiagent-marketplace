@@ -16818,43 +16818,50 @@ async function completeWorkflowDataUnavailableJob(storage, locked, agent, comple
   );
 }
 
+function workflowDeterministicCompletionPayload(sampleKind, payload, reason = '', timeoutMs = 0) {
+  const safePayload = sampleAgentPayload(sampleKind, payload);
+  const report = safePayload.report && typeof safePayload.report === 'object' ? { ...safePayload.report } : {};
+  const process = Array.isArray(report.process) ? report.process.slice() : [];
+  const safeReason = String(reason || 'CAIt completed this non-source workflow layer from the built-in workflow template so the order can continue.').trim();
+  process.push(`WORKFLOW_COMPLETION_GUARD (${timeoutMs || 0}ms, completed): ${safeReason}`);
+  return {
+    ...safePayload,
+    accepted: true,
+    status: 'completed',
+    report: {
+      ...report,
+      process,
+      assumptions: [
+        ...(Array.isArray(report.assumptions) ? report.assumptions : []),
+        safeReason
+      ]
+    },
+    runtime: {
+      ...(safePayload.runtime || {}),
+      mode: 'workflow_deterministic_completion',
+      provider: safePayload.runtime?.provider || 'built_in',
+      workflow: 'non_source_layer_completion',
+      completion_guard_reason: safeReason,
+      completion_guard_timeout_ms: timeoutMs || 0
+    }
+  };
+}
+
 async function runBuiltInAgentWithWorkflowQueueGuard(sampleKind, payload, env, job = {}, sourceTimeoutMs = 30000) {
   const timeoutMs = workflowQueueGenerationTimeoutMs(env, sourceTimeoutMs);
   let timer = null;
-  const safetyCompletionPayload = (reason) => {
-    const safePayload = sampleAgentPayload(sampleKind, payload);
-    const report = safePayload.report && typeof safePayload.report === 'object' ? { ...safePayload.report } : {};
-    const process = Array.isArray(report.process) ? report.process.slice() : [];
-    process.push(`WORKFLOW_QUEUE_GUARD (${timeoutMs}ms, completed): ${reason}`);
-    return {
-      ...safePayload,
-      accepted: true,
-      status: 'completed',
-      report: {
-        ...report,
-        process,
-        assumptions: [
-          ...(Array.isArray(report.assumptions) ? report.assumptions : []),
-          'Generation provider did not return inside the workflow queue budget; CAIt completed this layer from the built-in workflow template so the order can continue.'
-        ]
-      },
-      runtime: {
-        ...(safePayload.runtime || {}),
-        mode: 'workflow_queue_safety_completion',
-        provider: safePayload.runtime?.provider || 'built_in',
-        workflow: 'queue_timeboxed_completion',
-        queue_guard_reason: reason,
-        queue_guard_timeout_ms: timeoutMs
-      }
-    };
-  };
   if (!workflowQualitySourceTask(job)) {
     try {
       return await Promise.race([
         runBuiltInAgent(sampleKind, payload, env),
         new Promise((resolve) => {
           timer = setTimeout(() => {
-            resolve(safetyCompletionPayload(`OpenAI/built-in generation exceeded ${timeoutMs}ms before returning a workflow packet.`));
+            resolve(workflowDeterministicCompletionPayload(
+              sampleKind,
+              payload,
+              `OpenAI/built-in generation exceeded ${timeoutMs}ms before returning a workflow packet.`,
+              timeoutMs
+            ));
           }, timeoutMs);
         })
       ]);
@@ -17058,6 +17065,13 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
     const payload = buildCompactBuiltInDispatchPayload(effectiveLocked, agent);
     const body = workflowShouldCompleteDataUnavailable(effectiveLocked)
       ? workflowDataUnavailableCompletionPayload(effectiveLocked)
+      : (effectiveLocked.workflowParentId && !workflowQualitySourceTask(effectiveLocked))
+        ? workflowDeterministicCompletionPayload(
+            sampleKind,
+            payload,
+            'Non-source workflow layer completed deterministically to keep the order moving to terminal state.',
+            0
+          )
       : await runBuiltInAgentWithWorkflowQueueGuard(sampleKind, payload, generationEnv, effectiveLocked, sourceTimeoutMs);
     const normalized = normalizeDispatchResponse(body);
     if (normalized.failed) {
