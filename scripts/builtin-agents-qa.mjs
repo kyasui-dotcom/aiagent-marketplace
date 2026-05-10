@@ -124,7 +124,7 @@ assert.equal(leaderTaskLayer('cpo_leader', 'writing'), 3, 'CPO writing should be
 assert.equal(leaderTaskPhase('cpo_leader', 'writing'), 'action', 'CPO writing should be labeled as action handoff work.');
 assert.ok(leaderTaskRequiresSourceCollection('cfo_leader', 'data_analysis'), 'CFO data analysis should be evidence/source collection work.');
 assert.ok(leaderTaskRequiresSourceCollection('legal_leader', 'diligence'), 'Legal diligence should be evidence/source collection work.');
-assert.equal(leaderTaskUsesWebSearch('cfo_leader', 'data_analysis'), true, 'Finance data analysis should require source collection/search in leader workflows.');
+assert.equal(leaderTaskUsesWebSearch('cfo_leader', 'data_analysis'), false, 'Finance data analysis should not hard-require web search when no data source is attached.');
 assert.ok(builtInAgentEntrySource.includes("leaderTaskPhase('cmo_leader', normalizedKind)"), 'CMO specialist runtime phase must use the shared leader profile instead of hardcoded task buckets');
 for (const kind of ['media_planner', 'list_creator', 'writing', 'writer', 'instagram', 'citation_ops']) {
   assert.notEqual(cmoAgentActionContractForKind(kind).action, cmoAgentActionContractForKind('growth').action, `${kind} must not fall back to the generic growth action contract`);
@@ -272,8 +272,8 @@ assert.equal(
 );
 assert.equal(
   builtInShouldUseWebSearchForKind('media_planner', { input: { _broker: { workflow: { sequencePhase: 'planning', forceWebSearch: true } } } }),
-  true,
-  'Explicitly forced data-collection specialists must use web search even when their phase is not named research'
+  false,
+  'Workflow search-required flags must not leak into planning specialists'
 );
 assert.ok(builtInAgentSource.includes('Supporting work products'), 'Leader final deliveries should include supporting work product tables');
 assert.ok(builtInAgentSource.includes('target URL/path, H1 or title, section outline, CTA copy'), 'Growth operator output must include executable artifact packets');
@@ -408,7 +408,7 @@ assert.equal(builtInShouldUseWebSearchForKind('research', { prompt: 'What is the
 assert.equal(builtInShouldUseWebSearchForKind('code', {
   prompt: 'Review the implementation plan.',
   input: { _broker: { workflow: { sequencePhase: 'research', forceWebSearch: true, webSearchRequiredReason: 'leader_research_layer' } } }
-}), true);
+}), false);
 assert.ok(!englishResearch.files[0].content.includes('市場比較の要点を抽出'));
 assert.ok(!englishResearch.files[0].content.includes('Extract the key comparison points'));
 
@@ -1165,11 +1165,12 @@ try {
     BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS: '5000'
   });
   assert.equal(genericCmoOpenAiCalls, 1, 'CMO workflow QA should exercise the OpenAI draft path');
-  assert.equal(openAiGenericResearchFailure.status, 'failed');
-  assert.equal(openAiGenericResearchFailure.runtime.provider, 'none');
-  assert.equal(openAiGenericResearchFailure.runtime.workflow, 'quality_gate_failed');
-  assert.ok(openAiGenericResearchFailure.failure_reason.includes('generic_template_left_in_cmo_workflow_delivery'));
-  assert.equal(openAiGenericResearchFailure.files.length, 0);
+  assert.equal(openAiGenericResearchFailure.status, 'completed');
+  assert.equal(openAiGenericResearchFailure.runtime.provider, 'openai');
+  assert.equal(openAiGenericResearchFailure.runtime.quality_gate?.completion_blocking, false);
+  assert.ok(openAiGenericResearchFailure.runtime.quality_gate?.issues.includes('generic_template_left_in_cmo_workflow_delivery'));
+  assert.ok(openAiGenericResearchFailure.report.quality_warnings.includes('generic_template_left_in_cmo_workflow_delivery'));
+  assert.ok(openAiGenericResearchFailure.files.length > 0);
 } finally {
   globalThis.fetch = originalBuiltinQaFetch;
 }
@@ -1382,7 +1383,9 @@ try {
       _broker: {
         workflow: {
           primaryTask: 'cmo_leader',
-          sequencePhase: 'research'
+          sequencePhase: 'research',
+          forceWebSearch: true,
+          webSearchRequiredReason: 'leader_research_layer'
         }
       }
     }
