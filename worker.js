@@ -16064,6 +16064,43 @@ async function scheduleProgressDispatchForJobId(storage, env, waitUntil, jobId, 
   };
 }
 
+async function scheduleInitialWorkflowDispatchFromChildren(storage, env, waitUntil, parentJob, childJobs = [], reason = 'async workflow create') {
+  const children = sortWorkflowChildren(parentJob, Array.isArray(childJobs) ? childJobs : []);
+  const initialLeader = children.find((child) => (
+    String(child?.status || '').trim().toLowerCase() === 'queued'
+    && isWorkflowLeaderTask(workflowTaskName(child))
+    && child.assignedAgentId
+  ));
+  const firstQueued = initialLeader || children.find((child) => (
+    String(child?.status || '').trim().toLowerCase() === 'queued'
+    && child.assignedAgentId
+  ));
+  if (!firstQueued) return { scheduled: false, scheduled_count: 0, reason: 'no_initial_child' };
+  const agent = typeof storage.getAgentById === 'function'
+    ? await storage.getAgentById(firstQueued.assignedAgentId)
+    : null;
+  if (!agent || !canAutoScheduleAsyncDispatch(firstQueued, agent)) {
+    return { scheduled: false, scheduled_count: 0, reason: agent ? 'initial_child_not_eligible' : 'initial_child_agent_missing' };
+  }
+  const marked = await markDispatchScheduled(storage, firstQueued.id, agent.id, reason, { env });
+  if (!marked?.scheduled) return { scheduled: false, scheduled_count: 0, reason: marked?.reason || 'initial_child_mark_rejected' };
+  await touchEvent(storage, 'RUNNING', `${marked.agent.name} scheduled ${marked.job.taskType}/${marked.job.id.slice(0, 6)}`, {
+    kind: 'dispatch_scheduled',
+    jobId: marked.job.id,
+    parentJobId: marked.job.workflowParentId || parentJob.id || null
+  });
+  const queuedSampleKind = builtInWorkflowKindForJob(marked.job, marked.agent);
+  if (queuedSampleKind && workflowDispatchQueue(env)) {
+    await enqueueBuiltInWorkflowCompletion(storage, env, marked.job, marked.agent, queuedSampleKind, { source: reason });
+  } else {
+    const dispatchPromise = dispatchExistingJobToAssignedAgent(storage, env, marked.job.id, marked.agent.id)
+      .catch((error) => touchEvent(storage, 'FAILED', `${marked.job.taskType}/${marked.job.id.slice(0, 6)} initial dispatch exception ${String(error?.message || error).slice(0, 120)}`));
+    if (typeof waitUntil === 'function') waitUntil(dispatchPromise);
+    else void dispatchPromise;
+  }
+  return { scheduled: true, scheduled_count: 1, jobs: [marked.job], agents: [marked.agent] };
+}
+
 function workflowShouldCompleteDataUnavailable(job = {}) {
   return workflowTaskName(job) === 'data_analysis'
     && !workflowJobRequiresSearch(job)
@@ -19795,10 +19832,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
   const needsLeaderSequenceProgress = workflowLeaderSequenceNeedsProgress(finalParent || {});
   let scheduled = null;
   if (options.asyncDispatch) {
-    scheduled = await scheduleProgressDispatchesForJobId(storage, env, options.waitUntil, parentJob.id, 'async workflow create', {
-      maxTargets: 8,
-      awaitDispatch: false
-    }).catch(async (error) => {
+    scheduled = await scheduleInitialWorkflowDispatchFromChildren(storage, env, options.waitUntil, parentJob, childJobs, 'async workflow create').catch(async (error) => {
       try {
         await touchEvent(storage, 'FAILED', `workflow ${parentJob.id.slice(0, 6)} async dispatch scheduling failed`, {
           workflowJobId: parentJob.id,
@@ -19807,6 +19841,19 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
       } catch {}
       return { scheduled: false, error: String(error?.message || error || '') };
     });
+    if (!scheduled?.scheduled && typeof options.waitUntil === 'function') {
+      options.waitUntil(scheduleProgressDispatchesForJobId(storage, env, options.waitUntil, parentJob.id, 'async workflow create fallback', {
+        maxTargets: 8,
+        awaitDispatch: false
+      }).catch(async (error) => {
+        try {
+          await touchEvent(storage, 'FAILED', `workflow ${parentJob.id.slice(0, 6)} async dispatch fallback failed`, {
+            workflowJobId: parentJob.id,
+            message: String(error?.message || error || '').slice(0, 500)
+          });
+        } catch {}
+      }));
+    }
     scheduled = { ...(scheduled || {}), async: true };
   } else if (needsLeaderSequenceProgress) {
     scheduled = await scheduleProgressDispatchesForJobId(storage, env, options.waitUntil, parentJob.id, 'leader sequence workflow create', {
