@@ -11993,40 +11993,14 @@ async function reconcileWorkflowParent(storage, parentJobId) {
         };
       }
     }
-    let concreteArtifactRevalidated = 0;
+    let concreteArtifactWarnings = 0;
     for (const child of children) {
       if (String(child.status || '').trim().toLowerCase() !== 'completed') continue;
       const artifactFailure = workflowConcreteArtifactFailureReason(child);
       if (!artifactFailure) continue;
-      const failedAt = nowIso();
-      const attempts = Number(child.dispatch?.attempts || 0) + 1;
-      const maxRetries = Math.max(maxDispatchRetriesForJob(child), 3);
-      child.status = 'failed';
-      child.completedAt = null;
-      child.failedAt = failedAt;
-      child.timedOutAt = null;
-      child.failureReason = artifactFailure;
-      child.failureCategory = 'missing_required_deliverable';
-      child.deliveryQuality = null;
-      if (child.billingReservation && !child.billingReservation?.releasedAt) {
-        releaseBillingReservationInState(state, child);
+      if (recordWorkflowConcreteArtifactWarning(child, artifactFailure, nowIso())) {
+        concreteArtifactWarnings += 1;
       }
-      child.dispatch = {
-        ...(child.dispatch || {}),
-        completionStatus: 'failed',
-        completedAt: null,
-        retryable: attempts < maxRetries,
-        attempts,
-        maxRetries,
-        nextRetryAt: attempts < maxRetries ? computeNextRetryAt(attempts) : null,
-        artifactRevalidatedAt: failedAt
-      };
-      child.logs = [
-        ...(child.logs || []),
-        artifactFailure,
-        `completed child revalidated as failed: missing required concrete deliverable (${failedAt})`
-      ];
-      concreteArtifactRevalidated += 1;
     }
     expectedTotal = children.length;
     const childRuns = workflowChildSnapshot(children);
@@ -12051,9 +12025,9 @@ async function reconcileWorkflowParent(storage, parentJobId) {
       agentStatusCounts: workflowStatusCounts(visibleAgentChildren),
       internalStatusCounts: workflowStatusCounts(internalChildren),
       statusCounts: workflowStatusCounts(children, plannedRunCount),
-      ...(concreteArtifactRevalidated ? {
-        concreteArtifactRevalidatedAt: nowIso(),
-        concreteArtifactRevalidatedCount: concreteArtifactRevalidated
+      ...(concreteArtifactWarnings ? {
+        concreteArtifactWarningAt: nowIso(),
+        concreteArtifactWarningCount: concreteArtifactWarnings
       } : {})
     };
     const leaderSequence = workflowLeaderSequence(parent);
@@ -12899,36 +12873,7 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
           draftJob.logs.push(sourceProofFailure, 'failed before completion: missing search execution proof');
           return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
         }
-        const concreteArtifactFailure = workflowConcreteArtifactFailureReason(draftJob);
-        if (concreteArtifactFailure) {
-          const failureMeta = {
-            category: 'missing_required_deliverable',
-            retryable: true,
-            attempts: Number(draftJob?.dispatch?.attempts || 0) + 1,
-            maxRetries: Math.max(maxDispatchRetriesForJob(draftJob), 3)
-          };
-          const retryMeta = workflowBuiltInFailureRetryMeta(env, draftJob, failureMeta);
-          draftJob.status = 'failed';
-          draftJob.completedAt = null;
-          draftJob.failedAt = nowIso();
-          draftJob.failureReason = concreteArtifactFailure;
-          draftJob.failureCategory = 'missing_required_deliverable';
-          draftJob.actualBilling = null;
-          draftJob.deliveryQuality = null;
-          if (draftJob.billingReservation && !draftJob.billingReservation?.releasedAt) {
-            releaseBillingReservationInState(draft, draftJob);
-          }
-          draftJob.dispatch = {
-            ...(draftJob.dispatch || {}),
-            completionStatus: 'failed',
-            retryable: retryMeta.retryable,
-            attempts: retryMeta.attempts,
-            nextRetryAt: retryMeta.nextRetryAt,
-            maxRetries: retryMeta.maxRetries
-          };
-          draftJob.logs.push(concreteArtifactFailure, 'failed before completion: missing required concrete deliverable');
-          return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
-        }
+        const concreteArtifactWarning = workflowConcreteArtifactFailureReason(draftJob);
         const authorityRequest = syncJobAuthorityRequest(draftJob, draftAgent);
         if (shouldBlockCompletedJobForAuthorityRequest(draftJob, authorityRequest || explicitAuthorityRequest)) {
           markJobBlockedForAuthority(draftJob, authorityRequest || explicitAuthorityRequest, 'External execution is blocked waiting for connector approval.');
@@ -12942,6 +12887,9 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId) 
           version: 'delivery-quality/v1',
           checkedAt: draftJob.completedAt
         };
+        if (concreteArtifactWarning) {
+          recordWorkflowConcreteArtifactWarning(draftJob, concreteArtifactWarning, draftJob.completedAt);
+        }
         draftJob.logs.push(`completed by dispatch response from ${dispatchAgent.id}`, billingLogLine(draftJob, billing), `delivery quality score=${draftJob.deliveryQuality.score}`);
         settleAgentEarnings(draftJob, draftAgent, billing);
         return { ok: true, mode: 'completed', job: cloneJob(draftJob), billing };
@@ -13516,6 +13464,29 @@ function workflowConcreteArtifactFailureReason(job = {}) {
     }
   }
   return '';
+}
+
+function recordWorkflowConcreteArtifactWarning(job = {}, reason = '', checkedAt = nowIso()) {
+  const text = String(reason || '').trim();
+  if (!job || !text) return false;
+  const existing = job.deliveryQuality && typeof job.deliveryQuality === 'object'
+    ? job.deliveryQuality
+    : {};
+  const existingIssues = Array.isArray(existing.issues) ? existing.issues.map((item) => String(item || '').trim()).filter(Boolean) : [];
+  const issues = existingIssues.includes(text) ? existingIssues : [...existingIssues, text];
+  job.deliveryQuality = {
+    ...existing,
+    score: Number.isFinite(Number(existing.score)) ? Number(existing.score) : deliveryQualityScoreForJob(job),
+    version: existing.version || 'delivery-quality/v1',
+    checkedAt: existing.checkedAt || checkedAt,
+    issues,
+    completionBlocking: false
+  };
+  const warningLine = `quality warning: missing required concrete deliverable (${checkedAt})`;
+  job.logs = Array.isArray(job.logs) && job.logs.includes(warningLine)
+    ? job.logs
+    : [...(Array.isArray(job.logs) ? job.logs : []), text, warningLine];
+  return true;
 }
 
 function workflowSourceSignalStrings(sources = []) {
@@ -18463,44 +18434,7 @@ async function completeJobFromAgentResult(storage, jobId, agentId, payload = {},
       if (meta.source) job.logs.push(`completion source=${meta.source}`);
       return { ok: true, mode: 'failed', job: cloneJob(job), billing: null, workflowParentId: job.workflowParentId || null };
     }
-    const concreteArtifactFailure = targetStatus === 'completed' ? workflowConcreteArtifactFailureReason(job) : '';
-    if (concreteArtifactFailure) {
-      const failureMeta = {
-        category: 'missing_required_deliverable',
-        retryable: true,
-        attempts: Number(job?.dispatch?.attempts || 0) + 1,
-        maxRetries: Math.max(maxDispatchRetriesForJob(job), 3)
-      };
-      const retryMeta = workflowBuiltInFailureRetryMeta({}, job, failureMeta);
-      targetStatus = 'failed';
-      job.status = 'failed';
-      job.completedAt = null;
-      job.failedAt = completionAt;
-      job.timedOutAt = null;
-      job.failureReason = concreteArtifactFailure;
-      job.failureCategory = 'missing_required_deliverable';
-      job.usage = usage;
-      job.actualBilling = null;
-      job.deliveryQuality = null;
-      if (job.billingReservation && !job.billingReservation?.releasedAt) {
-        releaseBillingReservationInState(state, job);
-      }
-      job.dispatch = {
-        ...(job.dispatch || {}),
-        externalJobId: meta.externalJobId || job.dispatch?.externalJobId || null,
-        completionSource: meta.source || job.dispatch?.completionSource || null,
-        completionStatus: 'failed',
-        completedAt: null,
-        lastCallbackAt: meta.source === 'callback' ? completionAt : (job.dispatch?.lastCallbackAt || null),
-        retryable: retryMeta.retryable,
-        attempts: retryMeta.attempts,
-        maxRetries: retryMeta.maxRetries,
-        nextRetryAt: retryMeta.nextRetryAt
-      };
-      job.logs = [...(job.logs || []), concreteArtifactFailure, 'failed before completion: missing required concrete deliverable'];
-      if (meta.source) job.logs.push(`completion source=${meta.source}`);
-      return { ok: true, mode: 'failed', job: cloneJob(job), billing: null, workflowParentId: job.workflowParentId || null };
-    }
+    const concreteArtifactWarning = targetStatus === 'completed' ? workflowConcreteArtifactFailureReason(job) : '';
     const authorityRequest = syncJobAuthorityRequest(job, agent);
     if (targetStatus === 'completed' && shouldBlockCompletedJobForAuthorityRequest(job, authorityRequest || explicitAuthorityRequest)) {
       targetStatus = 'blocked';
@@ -18523,6 +18457,9 @@ async function completeJobFromAgentResult(storage, jobId, agentId, payload = {},
           checkedAt: completionAt
         }
       : null;
+    if (targetStatus === 'completed' && concreteArtifactWarning) {
+      recordWorkflowConcreteArtifactWarning(job, concreteArtifactWarning, completionAt);
+    }
     job.dispatch = {
       ...(job.dispatch || {}),
       externalJobId: meta.externalJobId || job.dispatch?.externalJobId || null,

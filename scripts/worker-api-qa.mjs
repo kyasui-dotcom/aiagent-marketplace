@@ -77,8 +77,8 @@ assert.ok(/async function scheduleProgressDispatchesForJobId[\s\S]{0,500}getFres
 assert.ok(/async function runQueuedBuiltInDispatchSweep[\s\S]{0,500}getFreshState/.test(workerSource), 'cron queued dispatch sweep should not choose targets from stale storage cache.');
 assert.ok(workerSource.includes('function workflowTaskRequiresConcreteSpecialistArtifact'), 'quality-sensitive specialist tasks should declare concrete artifact requirements.');
 assert.ok(workerSource.includes('if (workflowTaskRequiresConcreteSpecialistArtifact(task)) return false;'), 'SEO, writing, list, and action specialists must not complete from a generic prior-handoff packet.');
-assert.ok(workerSource.includes('missing_required_deliverable'), 'incomplete specialist artifacts should fail visibly instead of being marked completed.');
-assert.ok(workerSource.includes('completed child revalidated as failed: missing required concrete deliverable'), 'reconcile should revalidate already-completed specialist children and surface missing deliverables.');
+assert.ok(workerSource.includes('completionBlocking: false'), 'incomplete specialist artifacts should surface as quality warnings without blocking workflow completion.');
+assert.ok(workerSource.includes('quality warning: missing required concrete deliverable'), 'reconcile should revalidate already-completed specialist children and surface missing-deliverable warnings.');
 
 const ga4SessionPreflight = orderPreflightForAgent(
   {
