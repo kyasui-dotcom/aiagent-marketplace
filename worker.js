@@ -16375,7 +16375,9 @@ async function scheduleProgressDispatchesForJobId(storage, env, waitUntil, jobId
   if (!jobId) return { scheduled: false, scheduled_count: 0, reason: 'job_id_missing', jobs: [] };
   const awaitDispatch = options.awaitDispatch !== false;
   if (options.refresh !== false) await refreshWorkflowLeaderHandoffForJobId(storage, jobId);
-  const state = typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState();
+  const state = typeof storage.loadWorkflowDispatchState === 'function'
+    ? await storage.loadWorkflowDispatchState(jobId)
+    : (typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState());
   const targets = pickProgressDispatchTargets(state, jobId, { maxTargets: options.maxTargets || 1 });
   if (!targets.length) return { scheduled: false, scheduled_count: 0, reason: 'no_dispatch_target', jobs: [] };
   const scheduled = [];
@@ -17804,6 +17806,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
     storage?.kind === 'd1'
     && typeof storage.listScheduledWorkflowJobs === 'function'
     && typeof storage.listStaleDispatchInProgressJobs === 'function'
+    && typeof storage.listQueuedWorkflowDispatchRoots === 'function'
     && typeof storage.getAgentById === 'function'
   ) {
     const scheduledCandidates = await storage.listScheduledWorkflowJobs({
@@ -17887,13 +17890,38 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
         jobIds: scheduled
       });
     }
+    if (scheduled.length < limit) {
+      const queuedRootIds = await storage.listQueuedWorkflowDispatchRoots({
+        limit: Math.max(1, limit - scheduled.length),
+        maxAgeMs: workflowDispatchMaxAgeMs(env)
+      });
+      for (const rootJobId of queuedRootIds) {
+        if (scheduled.length >= limit) break;
+        if (!rootJobId || skippedRootJobIds.has(rootJobId)) continue;
+        const result = await scheduleProgressDispatchesForJobId(storage, env, options.waitUntil, rootJobId, options.reason || 'cron dispatch sweep', {
+          maxTargets: Math.max(1, limit - scheduled.length),
+          refresh: true
+        });
+        if (!result?.scheduled) {
+          skippedRootJobIds.add(rootJobId);
+          continue;
+        }
+        const scheduledIds = Array.isArray(result.jobs) && result.jobs.length
+          ? result.jobs.map((job) => job?.id).filter(Boolean)
+          : [result.job?.id].filter(Boolean);
+        for (const scheduledJobId of scheduledIds) {
+          if (!scheduledJobId || scheduledJobIds.has(scheduledJobId)) continue;
+          scheduledJobIds.add(scheduledJobId);
+          scheduled.push(scheduledJobId);
+        }
+      }
+    }
     if (scheduled.length >= limit) {
       return { ok: true, scheduled_count: scheduled.length, job_ids: scheduled, mode: 'd1_light_dispatch_sweep' };
     }
-    // D1 targeted queries above recover already-marked dispatch locks. Plain queued
-    // workflow children still need the normal parent gate so later layers cannot jump ahead.
+    return { ok: true, scheduled_count: scheduled.length, job_ids: scheduled, mode: 'd1_light_dispatch_sweep' };
   }
-  for (let i = scheduled.length; i < limit; i += 1) {
+  for (let i = 0; i < limit; i += 1) {
     const state = typeof storage.getFreshState === 'function' ? await storage.getFreshState() : await storage.getState();
     const candidates = state.jobs
       .filter((job) => ['queued', 'running'].includes(String(job.status || '').toLowerCase()))
