@@ -4869,7 +4869,9 @@ function normalizeCallbackPayload(body = {}) {
 }
 
 function maxDispatchRetriesForJob(job) {
-  return Math.max(0, Number(job?.dispatch?.maxRetries ?? 2));
+  const configured = Math.max(0, Number(job?.dispatch?.maxRetries ?? 2));
+  if (job?.jobKind === 'workflow_child' || job?.workflowParentId) return Math.max(configured, 5);
+  return configured;
 }
 
 function computeNextRetryAt(attempts, baseTime = Date.now()) {
