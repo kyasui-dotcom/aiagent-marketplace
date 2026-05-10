@@ -95,6 +95,9 @@ assert.ok(builtInAgentsSource.includes('workflowCanCompleteFromSearchSourcePacke
 assert.ok(builtInAgentsSource.includes('fetchResearchPageSignal'), 'research source packets should fetch top result pages when possible instead of returning raw search rows only.');
 assert.ok(builtInAgentsSource.includes('Research memo with search evidence'), 'research source packets should be delivered as synthesized research memos.');
 assert.ok(builtInAgentsSource.includes('research_findings'), 'research source packets should expose structured findings for downstream handoff.');
+assert.ok(builtInAgentsSource.includes('Task-aligned research interpretation'), 'research source packets should turn search rows into task-aligned research conclusions.');
+assert.ok(builtInAgentsSource.includes('task_aligned_findings'), 'research source packets should expose task-aligned findings for downstream handoff.');
+assert.ok(builtInAgentsSource.includes('researchContentPatterns'), 'research synthesis should summarize common content patterns, not only source URLs.');
 assert.ok(builtInAgentsSource.includes('word-count range'), 'research synthesis should preserve SEO-style word-count signals when page fetch succeeds.');
 
 const ga4SessionPreflight = orderPreflightForAgent(
