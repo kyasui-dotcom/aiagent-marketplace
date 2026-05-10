@@ -11,7 +11,6 @@ import {
   CMO_WORKFLOW_RESEARCH_LAYER_TASKS
 } from './lib/builtin-agents/agents/cmo-leader.js';
 import {
-  ORCHESTRATION_WATCHDOG_POLICY,
   leaderControlContractForTask,
   leaderActionLayerStart,
   leaderSourceCollectionLayerTasks,
@@ -85,6 +84,19 @@ const BUILT_IN_JOB_TIMEOUT_FLOOR_MS = 10 * 60 * 1000;
 const WORKFLOW_CHILD_TIMEOUT_FLOOR_MS = 15 * 60 * 1000;
 const WORKFLOW_ACTION_CHILD_TIMEOUT_FLOOR_MS = 30 * 60 * 1000;
 const WORKFLOW_PARENT_TIMEOUT_FLOOR_MS = 45 * 60 * 1000;
+const ORCHESTRATION_WATCHDOG_POLICY = Object.freeze({
+  version: 'workflow-watchdog/v2',
+  staleAfterMs: 60 * 1000,
+  blockedAfterMs: 10 * 60 * 1000,
+  maxParentsPerSweep: 20,
+  maxDispatchTargetsPerParent: 10,
+  actions: Object.freeze([
+    'reconcile_parent',
+    'refresh_leader_handoff',
+    'schedule_safe_dispatch',
+    'surface_visible_blocker'
+  ])
+});
 let generatedSessionSecret = '';
 const rateLimitBuckets = new Map();
 
@@ -16807,9 +16819,49 @@ async function completeWorkflowDataUnavailableJob(storage, locked, agent, comple
 }
 
 async function runBuiltInAgentWithWorkflowQueueGuard(sampleKind, payload, env, job = {}, sourceTimeoutMs = 30000) {
-  if (!workflowQualitySourceTask(job)) return runBuiltInAgent(sampleKind, payload, env);
   const timeoutMs = workflowQueueGenerationTimeoutMs(env, sourceTimeoutMs);
   let timer = null;
+  const safetyCompletionPayload = (reason) => {
+    const safePayload = sampleAgentPayload(sampleKind, payload);
+    const report = safePayload.report && typeof safePayload.report === 'object' ? { ...safePayload.report } : {};
+    const process = Array.isArray(report.process) ? report.process.slice() : [];
+    process.push(`WORKFLOW_QUEUE_GUARD (${timeoutMs}ms, completed): ${reason}`);
+    return {
+      ...safePayload,
+      accepted: true,
+      status: 'completed',
+      report: {
+        ...report,
+        process,
+        assumptions: [
+          ...(Array.isArray(report.assumptions) ? report.assumptions : []),
+          'Generation provider did not return inside the workflow queue budget; CAIt completed this layer from the built-in workflow template so the order can continue.'
+        ]
+      },
+      runtime: {
+        ...(safePayload.runtime || {}),
+        mode: 'workflow_queue_safety_completion',
+        provider: safePayload.runtime?.provider || 'built_in',
+        workflow: 'queue_timeboxed_completion',
+        queue_guard_reason: reason,
+        queue_guard_timeout_ms: timeoutMs
+      }
+    };
+  };
+  if (!workflowQualitySourceTask(job)) {
+    try {
+      return await Promise.race([
+        runBuiltInAgent(sampleKind, payload, env),
+        new Promise((resolve) => {
+          timer = setTimeout(() => {
+            resolve(safetyCompletionPayload(`OpenAI/built-in generation exceeded ${timeoutMs}ms before returning a workflow packet.`));
+          }, timeoutMs);
+        })
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
   try {
     return await Promise.race([
       runBuiltInAgent(sampleKind, payload, env),
@@ -17022,6 +17074,7 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
         maxRetries: retryMeta.maxRetries
       });
       await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} failed by ${eventLabel}`);
+      if (locked.workflowParentId) await reconcileWorkflowParent(storage, locked.workflowParentId);
       return { ok: true, mode: 'failed', jobId: locked.id };
     }
     normalized.usage = usageWithObservedJobTokens(locked, normalized.usage, normalized.report);
@@ -17054,6 +17107,7 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
       return { ok: true, mode: result.mode, jobId: locked.id, job: result.job };
     }
     await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} ${eventLabel} rejected: ${String(result?.error || 'unknown').slice(0, 120)}`);
+    if (locked.workflowParentId) await reconcileWorkflowParent(storage, locked.workflowParentId);
     return { ok: false, mode: 'rejected', jobId: locked.id, error: result?.error || 'unknown' };
   } catch (error) {
     const failureReason = `Built-in agent generation exception: ${String(error?.message || error).slice(0, 260)}`;
@@ -17069,6 +17123,7 @@ async function runLockedBuiltInWorkflowCompletion(storage, env, locked, agent, s
       maxRetries: retryMeta.maxRetries
     });
     await touchEvent(storage, 'FAILED', `${locked.taskType}/${locked.id.slice(0, 6)} ${eventLabel} exception ${String(error?.message || error).slice(0, 120)}`);
+    if (locked.workflowParentId) await reconcileWorkflowParent(storage, locked.workflowParentId);
     return { ok: true, mode: 'failed', jobId: locked.id, error: String(error?.message || error) };
   }
 }
