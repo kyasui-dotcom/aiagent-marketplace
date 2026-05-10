@@ -16864,7 +16864,20 @@ async function completeWorkflowNonSourceDeterministicJob(storage, job, agent, sa
   );
   if (completedJob) {
     await touchEvent(storage, 'COMPLETED', `${job.taskType}/${job.id.slice(0, 6)} completed by ${eventLabel}: deterministic non-source layer`);
-    if (job.workflowParentId) await reconcileWorkflowParent(storage, job.workflowParentId);
+    if (job.workflowParentId) {
+      await reconcileWorkflowParent(storage, job.workflowParentId);
+      if (options.env && options.scheduleNext !== false) {
+        try {
+          await scheduleProgressDispatchesForJobId(storage, options.env, null, job.workflowParentId, options.nextDispatchReason || `${eventLabel} handoff`, {
+            maxTargets: options.maxTargets || 8,
+            awaitDispatch: true,
+            refresh: options.refreshNext !== false
+          });
+        } catch (error) {
+          await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} post-completion dispatch scheduling exception ${String(error?.message || error).slice(0, 120)}`);
+        }
+      }
+    }
     return { ok: true, mode: 'completed', jobId: job.id, job: completedJob };
   }
   await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} deterministic non-source completion rejected`);
@@ -17292,6 +17305,7 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
         const result = await completeWorkflowNonSourceDeterministicJob(storage, staleRecoveredJob, agent, sampleKind, {
           eventLabel: 'stale workflow completion recovery',
           completionSource: 'workflow-dispatch-stale-recovery',
+          env,
           reason: 'A non-source workflow layer was recovered from a stale completion sweep and completed deterministically by the Worker completion monitor.',
           logLine: 'non-source workflow layer completed by stale completion recovery'
         });
@@ -17448,6 +17462,7 @@ async function completeScheduledBuiltInWorkflowJobs(storage, env, options = {}) 
         const result = await completeWorkflowNonSourceDeterministicJob(storage, staleJob, agent, sampleKind, {
           eventLabel: 'stale workflow completion timeout recovery',
           completionSource: 'workflow-dispatch-timeout-recovery',
+          env,
           reason: 'A non-source workflow layer reached the stale sweep timeout and was completed deterministically instead of failing the workflow.',
           logLine: 'non-source workflow layer completed by stale timeout recovery'
         });
@@ -17794,6 +17809,7 @@ async function processWorkflowDispatchQueueMessage(storage, env, body = {}) {
     return completeWorkflowNonSourceDeterministicJob(storage, job, agent, sampleKind, {
       eventLabel: 'workflow dispatch queue',
       completionSource: 'workflow-dispatch-queue',
+      env,
       reason: 'Non-source workflow layer completed directly by the queue consumer so the order can continue to the next layer.',
       logLine: 'non-source workflow layer completed directly by workflow dispatch queue consumer'
     });
