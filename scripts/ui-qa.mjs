@@ -137,8 +137,8 @@ assert.ok(siteMapHtml.includes('href="/legal-notice.html"'), 'Site map HTML shou
 assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat composer.');
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
-assert.ok(chatHtml.includes('/chat.css?v=20260508a'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260508q"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('/chat.css?v=20260510a'), 'Chat page should load root chat CSS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260510a"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -548,6 +548,8 @@ assert.ok(chatJs.includes('workflowCurrentLocationLabel'), 'Chat progress should
 assert.ok(chatJs.includes('function workflowPhaseProgressMapHtml'), 'Chat should render a progress map when the workflow phase changes.');
 assert.ok(chatJs.includes('data-progress-narrator-stream'), 'Chat progress should render a live text activity stream during running orders.');
 assert.ok(chatJs.includes('function syncProgressNarratorAnimation'), 'Chat progress should animate narrator text independently of poll responses.');
+assert.ok(chatJs.includes('function stopLiveProgressNarrator'), 'Chat progress should stop the narrator stream when live order status tracking stops.');
+assert.ok(chatJs.includes('liveProgressStoppedOrderIds'), 'Chat progress should remember intentionally stopped orders so backfill does not restart polling loops.');
 assert.ok(chatJs.includes('function threadIsNearBottom'), 'Chat should only auto-scroll progress updates when the reader is already near the latest message.');
 assert.ok(chatJs.includes('includeAdaptivePending: true'), 'Agent maps should show adaptive planned later layers instead of hiding all future action work.');
 assert.ok(chatJs.includes('function leaderTextHasCmoSignal'), 'Chat intake routing should identify signup/channel/growth requests as CMO work.');
@@ -653,6 +655,8 @@ assert.ok(chatCss.includes('.restored-order-card'), 'Chat CSS should style resto
 assert.ok(chatJs.includes('recentJobsApiPath'), 'Recent chat/order history should come from the server job API.');
 assert.ok(chatJs.includes('CHATUX_PROGRESS_MAX_POLLS'), 'Chat polling should have an explicit long-running order limit.');
 assert.ok(chatJs.includes('Live progress polling reached its limit'), 'Chat polling pause copy should explain the background history fallback.');
+assert.ok(chatJs.includes("status: 'paused'"), 'Chat polling limit should freeze the progress narrator instead of animating forever.');
+assert.ok(chatCss.includes('.progress-narrator.ok .progress-narrator-caret'), 'Chat CSS should stop the narrator caret animation when progress is done or paused.');
 assert.ok(chatJs.includes('isNonOrderConversationIntentText'), 'Chat should keep pause/status/help messages out of order dispatch.');
 assert.ok(chatJs.includes('const matchesTracked = state.trackedOrderIds.has(safeId)'), 'Chat backfill should only auto-deliver explicitly tracked orders or active recovery candidates.');
 assert.ok(chatJs.includes('if (!matchesTracked && !matchesRecovery) continue;'), 'Chat backfill should not dump every historical chatux job into a new chat.');

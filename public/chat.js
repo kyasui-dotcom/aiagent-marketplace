@@ -166,6 +166,7 @@ const state = {
   progressNarratorKey: '',
   progressNarratorTimer: null,
   progressNarratorTimerArticle: null,
+  liveProgressStoppedOrderIds: new Set(),
   followupTargetOrderId: '',
   deliveryBackfill: null,
   oauthPopupMonitor: null,
@@ -544,6 +545,7 @@ function applyRestoredChatSnapshot(snapshot = {}, request = {}) {
   state.polling = null;
   state.progressNarratorArticle = null;
   state.progressNarratorKey = '';
+  state.liveProgressStoppedOrderIds.clear();
   state.currentChatSessionId = session?.id || String(snapshot.currentChatSessionId || request.sessionId || '').trim();
   state.chatMessages = (Array.isArray(session?.messages) ? session.messages : []).slice(-80);
   state.lastTranscriptPrompt = '';
@@ -723,6 +725,7 @@ function startNewChatSession() {
   state.orderId = '';
   state.progressNarratorArticle = null;
   state.progressNarratorKey = '';
+  state.liveProgressStoppedOrderIds.clear();
   state.authorityNoticeKeys.clear();
   deliveryFileStore.clear();
   appTransferStore.clear();
@@ -741,6 +744,7 @@ function loadChatSession(sessionId = '') {
   state.polling = null;
   state.progressNarratorArticle = null;
   state.progressNarratorKey = '';
+  state.liveProgressStoppedOrderIds.clear();
   state.currentChatSessionId = session.id;
   state.chatMessages = (Array.isArray(session.messages) ? session.messages : []).slice(-80);
   state.lastTranscriptPrompt = '';
@@ -1895,6 +1899,34 @@ function showProgressNarrator(text = '', options = {}) {
   updateProgressNarratorArticle(state.progressNarratorArticle, text, options);
   if (shouldScroll) scrollThread({ force: true });
   return state.progressNarratorArticle;
+}
+
+function stopLiveProgressNarrator(text = '', options = {}) {
+  const article = state.progressNarratorArticle && state.progressNarratorArticle.isConnected
+    ? state.progressNarratorArticle
+    : null;
+  const key = String(options.key || '').trim();
+  if (key) state.progressNarratorKey = key;
+  if (!article) {
+    stopProgressNarratorAnimation();
+    state.progressNarratorArticle = null;
+    state.progressNarratorKey = '';
+    return null;
+  }
+  const textNode = article.querySelector('[data-progress-narrator-text]');
+  const finalText = String(text || textNode?.textContent || 'Progress stopped.').trim();
+  updateProgressNarratorArticle(article, finalText, { ...options, done: true });
+  return article;
+}
+
+function markLiveProgressStopped(orderId = '') {
+  const safeId = String(orderId || state.orderId || '').trim();
+  if (safeId) state.liveProgressStoppedOrderIds.add(safeId);
+}
+
+function resumeLiveProgress(orderId = '') {
+  const safeId = String(orderId || state.orderId || '').trim();
+  if (safeId) state.liveProgressStoppedOrderIds.delete(safeId);
 }
 
 function progressNarratorTextForJob(job = {}) {
@@ -4228,6 +4260,9 @@ function renderDeliveryOnce(job = {}, options = {}) {
   if (!safeId || !isTerminalStatus(job.status)) return false;
   if (state.deliveredOrderIds.has(safeId) && !options.force) return false;
   rememberTrackedOrder(safeId);
+  if (safeId === state.orderId || state.progressNarratorKey === safeId) {
+    stopLiveProgressNarrator(progressNarratorTextForJob(job), progressNarratorOptionsForJob(job));
+  }
   renderDelivery(job);
   markOrderDelivered(safeId);
   return true;
@@ -4264,7 +4299,7 @@ async function backfillChatDeliveries(options = {}) {
     if (isTerminalStatus(job.status)) {
       if (options.renderTerminalDeliveries === false && !matchesRecovery) continue;
       if (renderDeliveryOnce(job, { force: options.force === true })) delivered += 1;
-    } else if (!state.polling && safeId === state.orderId) {
+    } else if (!state.polling && safeId === state.orderId && !state.liveProgressStoppedOrderIds.has(safeId)) {
       maybeRenderAuthorityNotice(job, { label: 'Approval required' });
       startPolling(safeId);
     } else {
@@ -5607,6 +5642,7 @@ async function handleRetryCommand(prompt = '') {
       prompt
     ), { tone: 'warn', label: 'Retry' });
     maybeRenderAuthorityNotice(job, { label: 'Approval required' });
+    resumeLiveProgress(job.id);
     startPolling(job.id);
     return true;
   }
@@ -5919,11 +5955,22 @@ async function sendOrder() {
       appendTextMessage('assistant', 'Recovered the saved order after the create response failed. Switching to progress tracking.', { tone: 'ok', label: actorLabel });
     }
     if (isNeedsInputResponse(created)) {
+      stopLiveProgressNarrator(chatText(
+        'Order dispatch paused because CAIt needs one more answer before creating the live order.',
+        'ライブオーダー作成前に追加確認が必要なため、送信進行表示を停止しました。',
+        state.draft?.originalPrompt || payload.prompt
+      ), {
+        key: `sending:${chatSessionId}`,
+        phase: 'Intake',
+        status: 'waiting',
+        steps: ['Answer the intake question', 'Then send order']
+      });
       startIntake(created, state.draft?.originalPrompt || payload.prompt);
       return;
     }
     state.orderId = extractOrderId(created);
     if (state.orderId) {
+      resumeLiveProgress(state.orderId);
       rememberTrackedOrder(state.orderId);
       clearPendingRecoveryPayload(payload);
       const session = currentChatSessionPayload();
@@ -5965,9 +6012,30 @@ async function sendOrder() {
     const agentMap = initialAgentMapHtml(created, payload.prompt || '');
     if (agentMap) appendMessage('assistant', agentMap, { tone: 'info', label: 'Agent map' });
     if (state.orderId) startPolling(state.orderId);
-    else startDeliveryBackfillLoop({ maxRuns: 60 });
+    else {
+      stopLiveProgressNarrator(chatText(
+        'Order creation returned without a live order ID, so live progress tracking stopped.',
+        'オーダーIDが返らなかったため、ライブ進捗表示を停止しました。',
+        acceptedDraft.originalPrompt || payload.prompt
+      ), {
+        key: `sending:${chatSessionId}`,
+        phase: 'Dispatch',
+        status: 'stopped',
+        steps: ['No live order ID returned', 'History backfill active']
+      });
+      startDeliveryBackfillLoop({ maxRuns: 60 });
+    }
     state.pendingAppContext = null;
   } catch (error) {
+    stopLiveProgressNarrator(chatText(
+      'Order creation stopped before live progress could start.',
+      'ライブ進捗開始前にオーダー作成が停止しました。',
+      state.draft?.originalPrompt || state.conversationLanguage
+    ), {
+      phase: 'Dispatch',
+      status: 'stopped',
+      steps: [String(error?.message || 'Order failed.').slice(0, 140)]
+    });
     appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Waiting' });
   } finally {
     setBusy(false);
@@ -6108,6 +6176,15 @@ function startPolling(orderId) {
       if (approvalWaiting && String(job.status || '').trim().toLowerCase() === 'blocked') {
         window.clearInterval(state.polling);
         state.polling = null;
+        markLiveProgressStopped(orderId);
+        stopLiveProgressNarrator(progressNarratorTextForJob(job), {
+          ...progressNarratorOptionsForJob(job),
+          status: 'waiting for approval',
+          steps: [
+            'User approval or connector action required',
+            workflowCurrentLocationLabel(job)
+          ].filter(Boolean)
+        });
         updateComposerMode();
         startDeliveryBackfillLoop({ maxRuns: 12, renderTerminalDeliveries: false });
         return;
@@ -6118,10 +6195,22 @@ function startPolling(orderId) {
         showProgressNarrator(progressNarratorTextForJob(job), { ...progressNarratorOptionsForJob(job), done: true });
         updateComposerMode();
         renderDeliveryOnce(job);
+        return;
       }
       if (pollCount >= CHATUX_PROGRESS_MAX_POLLS) {
         window.clearInterval(state.polling);
         state.polling = null;
+        markLiveProgressStopped(orderId);
+        stopLiveProgressNarrator(chatText(
+          'Live progress polling paused. Background order-history checks will keep watching this order.',
+          'ライブ進捗確認を停止しました。履歴チェックでこのオーダーの監視は継続します。',
+          state.chatMessages[0]?.body || state.conversationLanguage
+        ), {
+          key: String(orderId || state.orderId || 'progress'),
+          phase: 'Progress',
+          status: 'paused',
+          steps: ['No new order created', 'Ask for status or press Check status to resume']
+        });
         updateComposerMode();
         if (!state.progressPollLimitNotifiedOrderIds.has(orderId)) {
           state.progressPollLimitNotifiedOrderIds.add(orderId);
@@ -6158,8 +6247,9 @@ function startPolling(orderId) {
       state.polling = null;
       updateComposerMode();
       if (transient) {
+        markLiveProgressStopped(orderId);
         appendTextMessage('system', `Live progress checks are still failing${status ? ` (${status})` : ''}, so I switched to background order-history checks. The order remains attached.`);
-        showProgressNarrator(chatText(
+        stopLiveProgressNarrator(chatText(
           'Live polling paused, but background history checks are still watching this order.',
           'ライブ進捗確認は一時停止しましたが、履歴チェックでこのオーダーを追跡し続けます。',
           state.chatMessages[0]?.body || state.conversationLanguage
@@ -6172,6 +6262,17 @@ function startPolling(orderId) {
         startDeliveryBackfillLoop({ maxRuns: 60 });
         return;
       }
+      markLiveProgressStopped(orderId);
+      stopLiveProgressNarrator(chatText(
+        'Progress tracking stopped because the order status check failed.',
+        'オーダーステータス確認に失敗したため、進捗表示を停止しました。',
+        state.chatMessages[0]?.body || state.conversationLanguage
+      ), {
+        key: String(orderId || state.orderId || 'progress'),
+        phase: 'Progress',
+        status: 'stopped',
+        steps: [String(error?.message || 'Progress check failed.').slice(0, 140)]
+      });
       appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Progress stopped' });
       appendTextMessage('system', 'I will keep checking order history and post the delivery here if the work completes.');
       startDeliveryBackfillLoop({ maxRuns: 60 });
@@ -6269,6 +6370,7 @@ function resetChat() {
   state.oauthPopupMonitor = null;
   state.progressNarratorArticle = null;
   state.progressNarratorKey = '';
+  state.liveProgressStoppedOrderIds.clear();
   state.followupTargetOrderId = '';
   state.pendingAppContext = null;
   startNewChatSession();
@@ -6390,7 +6492,10 @@ function startOAuthPopupMonitor(popup = null) {
           .then((job) => {
             maybeRenderAuthorityNotice(job, { label: 'Approval required' });
             if (isTerminalStatus(job.status)) renderDeliveryOnce(job, { force: true });
-            else startPolling(job.id || state.orderId);
+            else {
+              resumeLiveProgress(job.id || state.orderId);
+              startPolling(job.id || state.orderId);
+            }
           })
           .catch(() => startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false }));
       }
@@ -6440,7 +6545,10 @@ async function handleOAuthPopupReturnMessage(data = {}) {
       const job = await fetchVisibleJob(state.orderId);
       maybeRenderAuthorityNotice(job, { label: 'Approval required' });
       if (isTerminalStatus(job.status)) renderDeliveryOnce(job, { force: true });
-      else startPolling(job.id || state.orderId);
+      else {
+        resumeLiveProgress(job.id || state.orderId);
+        startPolling(job.id || state.orderId);
+      }
     } catch {
       startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
     }
@@ -6749,6 +6857,7 @@ els.chatThread.addEventListener('click', async (event) => {
         renderDeliveryOnce(job, { force: true });
       } else {
         appendTextMessage('system', `Order ${job.id.slice(0, 8)}: ${statusLabel(job)}\n\nProgress tracking resumed in this chat.`, { label: 'Progress' });
+        resumeLiveProgress(job.id);
         startPolling(job.id);
       }
     } catch (error) {
