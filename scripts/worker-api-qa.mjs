@@ -77,6 +77,9 @@ assert.ok(workerSource.includes('external_agent_dispatch_contract'), 'completion
 assert.ok(!workerSource.includes('Built-in workflow dispatch queue was requested repeatedly but did not start execution.'), 'workflow queue non-starts must no longer fail the order before recovery.');
 assert.ok(workerSource.includes('googleGrantedCapabilities'), 'auth status should expose granted Google capabilities so chat does not repeat OAuth prompts.');
 assert.ok(/async function scheduleProgressDispatchesForJobId[\s\S]{0,500}getFreshState/.test(workerSource), 'workflow progress dispatch target selection should read fresh storage after leader completion.');
+assert.ok(workerSource.includes('function builtInAgentIdCandidatesForKind'), 'built-in agent endpoint auth should use targeted agent id candidates.');
+assert.ok(/async function canUseBuiltInAgentJobRoute[\s\S]{0,900}getAgentById/.test(workerSource), 'built-in agent endpoint auth must use targeted getAgentById instead of loading all production jobs.');
+assert.ok(!/async function canUseBuiltInAgentJobRoute[\s\S]{0,1200}getFreshState/.test(workerSource), 'built-in agent endpoint auth must not call getFreshState in production-sized D1 databases.');
 assert.ok(/async function runQueuedEndpointDispatchSweep[\s\S]{0,900}listStaleDispatchInProgressJobs/.test(workerSource), 'cron queued dispatch sweep should recover stale D1 dispatch locks with targeted queries.');
 assert.ok(workerSource.includes('listQueuedWorkflowDispatchRoots'), 'cron queued dispatch sweep must target plain queued workflow roots without a full-state scan.');
 assert.ok(workerSource.includes('listAcceptedEndpointDispatchJobs'), 'cron queued dispatch sweep must recover stale accepted endpoint dispatches.');

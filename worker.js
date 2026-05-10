@@ -3890,24 +3890,83 @@ function canUseBuiltInMockJobRoute(env) {
   const policy = runtimePolicy(env);
   return policy.devApiEnabled || policy.releaseStage !== 'public';
 }
+
+function builtInAgentIdCandidatesForKind(kind = '') {
+  const normalized = String(kind || '').trim().toLowerCase();
+  const explicit = {
+    prompt_brushup: 'agent_prompt_brushup_01',
+    research: 'agent_research_01',
+    writer: 'agent_writer_01',
+    code: 'agent_code_01',
+    pricing: 'agent_pricing_01',
+    teardown: 'agent_teardown_01',
+    landing: 'agent_landing_01',
+    validation: 'agent_validation_01',
+    growth: 'agent_growth_01',
+    acquisition_automation: 'agent_acquisition_automation_01',
+    media_planner: 'agent_media_planner_01',
+    list_creator: 'agent_list_creator_01',
+    directory_submission: 'agent_directory_submission_01',
+    citation_ops: 'agent_citation_ops_01',
+    research_team_leader: 'agent_research_team_leader_01',
+    build_team_leader: 'agent_build_team_leader_01',
+    cmo_leader: 'agent_cmo_leader_01',
+    cto_leader: 'agent_cto_leader_01',
+    cpo_leader: 'agent_cpo_leader_01',
+    cfo_leader: 'agent_cfo_leader_01',
+    legal_leader: 'agent_legal_leader_01',
+    secretary_leader: 'agent_secretary_leader_01',
+    inbox_triage: 'agent_inbox_triage_01',
+    reply_draft: 'agent_reply_draft_01',
+    schedule_coordination: 'agent_schedule_coordination_01',
+    follow_up: 'agent_follow_up_01',
+    meeting_prep: 'agent_meeting_prep_01',
+    meeting_notes: 'agent_meeting_notes_01',
+    instagram: 'agent_instagram_launch_01',
+    x_post: 'agent_x_launch_01',
+    email_ops: 'agent_email_ops_01',
+    cold_email: 'agent_cold_email_01',
+    reddit: 'agent_reddit_launch_01',
+    indie_hackers: 'agent_indie_hackers_launch_01',
+    data_analysis: 'agent_data_analysis_01',
+    seo_gap: 'agent_seogap_01',
+    hiring: 'agent_hiring_01',
+    diligence: 'agent_diligence_01'
+  };
+  return [...new Set([
+    explicit[normalized],
+    `agent_${normalized}_01`
+  ].filter(Boolean))];
+}
+
+function agentRecordMatchesBuiltInKind(agent = {}, kind = '') {
+  const normalizedKind = String(kind || '').trim().toLowerCase();
+  const manifestKind = String(
+    agent?.metadata?.category
+    || agent?.metadata?.manifest?.metadata?.category
+    || agent?.metadata?.manifest?.category
+    || ''
+  ).trim().toLowerCase();
+  return sampleKindFromAgent(agent) === normalizedKind || manifestKind === normalizedKind;
+}
+
 async function canUseBuiltInAgentJobRoute(request, env, storage, kind = '') {
   if (canUseBuiltInMockJobRoute(env)) return true;
   const provided = extractAgentToken(request);
   if (!provided) return false;
   const normalizedKind = String(kind || '').trim().toLowerCase();
-  const state = typeof storage?.getFreshState === 'function'
-    ? await storage.getFreshState()
-    : (typeof storage?.getState === 'function' ? await storage.getState() : {});
+  if (typeof storage?.getAgentById === 'function') {
+    for (const agentId of builtInAgentIdCandidatesForKind(normalizedKind)) {
+      const agent = await storage.getAgentById(agentId);
+      if (agentRecordMatchesBuiltInKind(agent, normalizedKind)) {
+        return Boolean(agent?.token && secretEquals(provided, agent.token));
+      }
+    }
+    return false;
+  }
+  const state = typeof storage?.getState === 'function' ? await storage.getState() : {};
   const agents = Array.isArray(state?.agents) ? state.agents : [];
-  const agent = agents.find((item) => {
-    const manifestKind = String(
-      item?.metadata?.category
-      || item?.metadata?.manifest?.metadata?.category
-      || item?.metadata?.manifest?.category
-      || ''
-    ).trim().toLowerCase();
-    return sampleKindFromAgent(item) === normalizedKind || manifestKind === normalizedKind;
-  });
+  const agent = agents.find((item) => agentRecordMatchesBuiltInKind(item, normalizedKind));
   return Boolean(agent?.token && secretEquals(provided, agent.token));
 }
 function rateLimitClientKey(request) {
