@@ -93,6 +93,7 @@ assert.ok(!/async function canUseBuiltInAgentJobRoute[\s\S]{0,1200}getFreshState
 assert.ok(/async function runQueuedEndpointDispatchSweep[\s\S]{0,900}listStaleDispatchInProgressJobs/.test(workerSource), 'cron queued dispatch sweep should recover stale D1 dispatch locks with targeted queries.');
 assert.ok(workerSource.includes('listQueuedWorkflowDispatchRoots'), 'cron queued dispatch sweep must target plain queued workflow roots without a full-state scan.');
 assert.ok(workerSource.includes('listAcceptedEndpointDispatchJobs'), 'cron queued dispatch sweep must recover stale accepted endpoint dispatches.');
+assert.ok(workerSource.includes('listRetryableWorkflowChildren'), 'cron retry sweep must target active retryable workflow children instead of being starved by old failed jobs.');
 assert.ok(workerSource.includes('legacy accepted endpoint dispatch recovered'), 'accepted endpoint recovery should leave an auditable job log.');
 assert.ok(workerSource.includes('loadWorkflowDispatchState(jobId)'), 'workflow progress dispatch should load only the parent workflow and assigned agents when available.');
 assert.ok(workerSource.includes("['queued', 'pending'].includes(String(leaderSequence?.status"), 'completed checkpoint rows must release adaptive children even if leader sequence status stayed pending.');

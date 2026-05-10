@@ -18141,25 +18141,46 @@ async function runWorkflowTimeoutRetrySweep(storage, env, options = {}) {
   const waitUntil = typeof options.waitUntil === 'function' ? options.waitUntil : null;
   const retried = [];
   for (let i = 0; i < limit; i += 1) {
-    const state = await storage.getState();
-    const candidate = state.jobs
+    const targetedCandidates = typeof storage.listRetryableWorkflowChildren === 'function'
+      ? await storage.listRetryableWorkflowChildren({
+        limit: Math.max(limit * 4, 12),
+        maxAgeMs: workflowDispatchMaxAgeMs(env)
+      })
+      : null;
+    const state = targetedCandidates ? null : await storage.getState();
+    const candidates = targetedCandidates || state.jobs
       .filter((job) => ['timed_out', 'failed'].includes(String(job.status || '').trim().toLowerCase()))
       .filter((job) => job.workflowParentId)
-      .sort((a, b) => String(a.timedOutAt || a.failedAt || a.createdAt || '').localeCompare(String(b.timedOutAt || b.failedAt || b.createdAt || '')))
-      .find((job) => {
-        const parent = state.jobs.find((item) => item.id === job.workflowParentId && item.jobKind === 'workflow');
-        return shouldAutoRetryWorkflowChild(parent, job)
-          && state.agents.some((item) => item.id === job.assignedAgentId);
-      });
+      .sort((a, b) => String(a.timedOutAt || a.failedAt || a.createdAt || '').localeCompare(String(b.timedOutAt || b.failedAt || b.createdAt || '')));
+    let candidate = null;
+    let parentForCandidate = null;
+    for (const job of candidates) {
+      const parent = targetedCandidates
+        ? (typeof storage.getJobById === 'function' ? await storage.getJobById(job.workflowParentId) : null)
+        : state.jobs.find((item) => item.id === job.workflowParentId && item.jobKind === 'workflow');
+      if (!shouldAutoRetryWorkflowChild(parent, job)) continue;
+      const hasAgent = targetedCandidates
+        ? Boolean(typeof storage.getAgentById === 'function' ? await storage.getAgentById(job.assignedAgentId) : null)
+        : state.agents.some((item) => item.id === job.assignedAgentId);
+      if (!hasAgent) continue;
+      candidate = job;
+      parentForCandidate = parent;
+      break;
+    }
     if (!candidate) break;
-    const agent = state.agents.find((item) => item.id === candidate.assignedAgentId);
+    const agent = targetedCandidates
+      ? await storage.getAgentById(candidate.assignedAgentId)
+      : state.agents.find((item) => item.id === candidate.assignedAgentId);
     if (!agent) break;
     const attempts = Number(candidate.dispatch?.attempts || 0) + 1;
-    const queued = await storage.mutate(async (draft) => {
+    const mutateRetry = typeof storage.mutateWorkflow === 'function' && candidate.workflowParentId
+      ? (mutator) => storage.mutateWorkflow(candidate.workflowParentId, mutator)
+      : (mutator) => storage.mutate(mutator);
+    const queued = await mutateRetry(async (draft) => {
       const draftJob = draft.jobs.find((item) => item.id === candidate.id);
       if (!draftJob) return null;
       const parent = draft.jobs.find((item) => item.id === draftJob.workflowParentId && item.jobKind === 'workflow');
-      if (!shouldAutoRetryWorkflowChild(parent, draftJob)) return null;
+      if (!shouldAutoRetryWorkflowChild(parent || parentForCandidate, draftJob)) return null;
       const sourceCollectionRetry = String(draftJob.failureCategory || '').trim().toLowerCase() === 'missing_required_sources';
       const retryReason = sourceCollectionRetry
         ? 'source collection workflow child'
