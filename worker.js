@@ -17945,7 +17945,7 @@ async function runQueuedBuiltInDispatchSweep(storage, env, options = {}) {
       .filter((job) => ['queued', 'running'].includes(String(job.status || '').toLowerCase()))
       .filter((job) => jobWithinDispatchAge(job, env))
       .filter((job) => job.jobKind === 'workflow' || job.workflowParentId || (job.assignedAgentId && !job.workflowParentId))
-      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
     let picked = null;
     const consideredRootJobIds = new Set();
     for (const candidate of candidates) {
