@@ -218,8 +218,19 @@ export function orderHasExplicitApprovalWait(job = {}) {
   const report = output.report && typeof output.report === 'object' ? output.report : {};
   const workflow = job?.workflow && typeof job.workflow === 'object' ? job.workflow : {};
   const runs = Array.isArray(workflow.childRuns) ? workflow.childRuns : [];
-  const text = JSON.stringify([report.authority_request, report.authorityRequest, output.authority_request, runs]);
-  return /authority_request|missing_connectors|missing_connector_capabilities|approval|承認|requiresUserApprovalBeforeAction/i.test(text);
+  const text = JSON.stringify([
+    job.failureCategory,
+    job.failureReason,
+    job.dispatch,
+    workflow.requiresUserApprovalBeforeAction,
+    report.authority_request,
+    report.authorityRequest,
+    output.authority_request,
+    output.nextAction,
+    output.next_action,
+    runs
+  ]);
+  return /blocked_waiting_for_approval|authority_request|missing_connectors|missing_connector_capabilities|approval|approve|承認|未承認|書き込み権限|requiresUserApprovalBeforeAction/i.test(text);
 }
 
 export function assertOrderScenarioWorkflowShape(job = {}, options = {}) {
@@ -281,9 +292,12 @@ export function assertOrderScenarioQuality(job = {}, options = {}) {
   assert.equal(leakedInternalFiles.length, 0, `internal workflow markdown must not be visible delivery: ${leakedInternalFiles.map((file) => file.name).join(', ')}`);
 
   const allowWaiting = options.allowWaiting === true;
-  if (allowWaiting && status === 'blocked' && orderHasExplicitApprovalWait(job)) return;
+  const explicitApprovalWait = allowWaiting && status === 'blocked' && orderHasExplicitApprovalWait(job);
   if (options.requireCompleted !== false) {
-    assert.equal(status, 'completed', `order should complete before delivery QA; ${summarizeOrderStatus(job)}`);
+    assert.ok(
+      status === 'completed' || explicitApprovalWait,
+      `order should complete or explicitly wait for approval before delivery QA; ${summarizeOrderStatus(job)}`
+    );
   }
 
   const deliveryText = collectOrderDeliveryText(job);

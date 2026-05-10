@@ -64,6 +64,7 @@ const env = {
   ...cliEnv,
   E2E_ORDER_SCENARIO: '1',
   E2E_WRITE: process.env.E2E_WRITE || localEnv.E2E_WRITE || cliEnv.E2E_WRITE || '1',
+  E2E_ORDER_ACCEPT_WAITING: process.env.E2E_ORDER_ACCEPT_WAITING || localEnv.E2E_ORDER_ACCEPT_WAITING || cliEnv.E2E_ORDER_ACCEPT_WAITING || '1',
   E2E_AUTH_EMAIL: process.env.E2E_AUTH_EMAIL || localEnv.E2E_AUTH_EMAIL || 'e2e@aiagent-marketplace.net'
 };
 

@@ -111,6 +111,8 @@ assert.ok(storageSource.includes('const incomingRetryMutation = existingRecovera
 assert.ok(storageSource.includes('ON CONFLICT(id) DO UPDATE SET'), 'D1 job upsert must use guarded UPSERT instead of unconditional INSERT OR REPLACE.');
 assert.ok(storageSource.includes("lower(jobs.status) = 'completed'"), 'D1 job upsert must guard completed rows at SQL write time against cross-isolate stale writes.');
 assert.ok(storageSource.includes("lower(excluded.status) IN ('queued','claimed','running','dispatched')"), 'D1 job upsert guard must specifically reject stale active-status rewrites over completed rows.');
+assert.ok(storageSource.includes('function jobIsApprovalBlockedForStorage'), 'D1 job serialization must normalize approval-blocked jobs to blocked status.');
+assert.ok(storageSource.includes("jobIsApprovalBlockedForStorage(job) ? 'blocked'"), 'D1 must not persist running rows with blocked_waiting_for_approval metadata.');
 assert.ok(workerSource.includes('function workflowTaskRequiresConcreteSpecialistArtifact'), 'quality-sensitive specialist tasks should declare concrete artifact requirements.');
 assert.ok(workerSource.includes('if (workflowTaskRequiresConcreteSpecialistArtifact(task)) return false;'), 'SEO, writing, list, and action specialists must not complete from a generic prior-handoff packet.');
 assert.ok(workerSource.includes('completionBlocking: false'), 'incomplete specialist artifacts should surface as quality warnings without blocking workflow completion.');
