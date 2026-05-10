@@ -12355,6 +12355,7 @@ async function reconcileWorkflowParent(storage, parentJobId) {
     const running = children.filter((item) => item.status === 'claimed' || item.status === 'running' || item.status === 'dispatched');
     const blocked = children.filter((item) => item.status === 'blocked');
     const blockingChildren = children.filter(workflowChildIsBlockingProgress);
+    const adaptivePendingChildren = blocked.filter(workflowChildIsAdaptivePending);
     parent.workflow = {
       ...(parent.workflow || {}),
       childJobIds: children.map((item) => item.id),
@@ -12581,14 +12582,15 @@ async function reconcileWorkflowParent(storage, parentJobId) {
         const blockedParentStatus = workflowBlockedParentStatus(parent, children, blockingChildren);
         const hasActiveChildren = children.some((item) => active.has(item.status));
         const hasQueuedChildren = queued.length > 0;
+        const hasAdaptivePendingChildren = adaptivePendingChildren.length > 0;
         const finalBlockedParentStatus = blockedParentStatus
-          || (!hasActiveChildren && !hasQueuedChildren && blocked.length ? 'blocked' : null);
-        parent.status = finalBlockedParentStatus || (hasActiveChildren ? 'running' : 'queued');
+          || (!hasActiveChildren && !hasQueuedChildren && blockingChildren.length ? 'blocked' : null);
+        parent.status = finalBlockedParentStatus || (hasActiveChildren || hasQueuedChildren || hasAdaptivePendingChildren ? 'running' : 'queued');
         parent.completedAt = null;
         parent.failedAt = null;
         parent.failureReason = blockingChildren.length
           ? (blockingChildren[0]?.failureReason || blockingChildren[0]?.output?.summary || 'Workflow is blocked by a required specialist run.')
-          : finalSummaryStatus === 'blocked'
+          : finalSummaryStatus === 'blocked' && !hasAdaptivePendingChildren
             ? (finalSummaryJob?.failureReason || finalSummaryJob?.output?.summary || 'Workflow is blocked before final leader summary can complete.')
           : null;
         if (parent.status === 'blocked') {
