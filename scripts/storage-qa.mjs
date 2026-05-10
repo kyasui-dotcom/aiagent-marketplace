@@ -281,7 +281,7 @@ const cachedStorage = createD1LikeStorage(countingDb, { stateCacheTtlMs: 5000 })
 await cachedStorage.getState();
 await cachedStorage.getState();
 assert.equal(countingDb.selectCounts.get('agents') || 0, 1);
-assert.equal(countingDb.selectCounts.get('jobs') || 0, 1);
+assert.equal(countingDb.selectCounts.get('jobs') || 0, 2);
 assert.equal(countingDb.selectCounts.get('chat_transcripts') || 0, 1);
 
 const storageInitVersion = storageSource.match(/const STORAGE_INIT_VERSION = '([^']+)'/)?.[1] || '';
@@ -473,7 +473,7 @@ await deliveryItemStorage.upsertJobs([{
   workflowAgentName: 'SEO AGENT',
   output: {
     report: { summary: 'SEO article ready' },
-    files: [{ name: 'seo-agent-delivery.md', type: 'text/markdown', content: '# SEO article\n\nTitle: AI agent marketplace guide\n\nMeta description: Source-backed guide.\n\nBody.' }]
+    files: [{ name: 'seo-agent-delivery.md', type: 'text/markdown', content: '# SEO article\n\nTitle: AI agent marketplace guide\n\nMeta description: Source-backed guide.\n\nLeader checkpointで確認する本文。' }]
   },
   createdAt: '2026-04-26T08:20:00.000Z',
   completedAt: '2026-04-26T08:21:00.000Z'
