@@ -272,6 +272,8 @@ for (const testCase of cases) {
   }
   assert.ok(String(job.output?.summary || '').trim(), `${testCase.taskType} should produce a final summary`);
   assert.equal(job.workflow?.leaderActionProtocol?.leaderControlContract?.role, 'agent_selection_handoff_review_synthesis', `${testCase.taskType} should carry the programmed leader control contract`);
+  assert.equal(job.workflow?.leaderActionProtocol?.leaderControlContract?.handoffOwner, 'leader', `${testCase.taskType} should keep leader-owned handoff in the control contract`);
+  assert.equal(job.workflow?.leaderActionProtocol?.leaderControlContract?.orchestrationRole, 'sequence_and_quality_gate_only', `${testCase.taskType} orchestration should only enforce sequence and quality gates`);
   assert.ok(job.workflow?.leaderActionProtocol?.leaderControlContract?.controlLoop?.includes('review'), `${testCase.taskType} leader contract should require review`);
 
   const rawState = await storage.getState();
@@ -380,6 +382,10 @@ for (const testCase of cases) {
     assert.ok(
       planningLayerChildren.concat(preparationLayerChildren, actionLayerChildren).some((item) => Array.isArray(item.input?._broker?.workflow?.leaderHandoff?.structuredHandoffDigest) && item.input._broker.workflow.leaderHandoff.structuredHandoffDigest.length > 0),
       'cmo_leader leaderHandoff should carry structured digest objects between layers'
+    );
+    assert.ok(
+      planningLayerChildren.concat(preparationLayerChildren, actionLayerChildren).some((item) => item.input?._broker?.workflow?.leaderHandoff?.handoffOwner === 'leader'),
+      'cmo_leader downstream leaderHandoff should be explicitly leader-owned'
     );
     assert.ok(
       preparationLayerChildren.concat(actionLayerChildren).some((item) => /Prior deliverable markdown excerpt|```markdown/.test(additionalPromptFor(item))),

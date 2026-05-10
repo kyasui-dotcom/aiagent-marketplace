@@ -36,12 +36,18 @@ assert.ok(
   'handoff prompt context should reference prior delivery files without injecting raw markdown'
 );
 assert.ok(workerSource.includes('workflow-handoff/v2'), 'workflow handoff should carry an explicit versioned handoff contract');
+assert.ok(workerSource.includes("handoffOwner: 'leader'"), 'workflow handoff should be explicitly owned by the leader, not orchestration.');
+assert.ok(workerSource.includes('leader remains handoff owner'), 'downstream handoff prompt should state that orchestration only preserves durable state while the leader owns handoff.');
 assert.ok(workerSource.includes('workflow-execution-program/v1'), 'workflow handoff should carry explicit programmatic process state');
 assert.ok(workerSource.includes('PRIOR SPECIALIST DELIVERABLES (mandatory context)'), 'downstream prompts should mark prior specialist deliverables as mandatory context');
 assert.ok(workerSource.includes('prior_layer_unavailable'), 'workflow dispatch should block downstream layers when a prior data/research layer fails or times out.');
 assert.ok(workerSource.includes('Treat this as a blocker for quality'), 'workflow handoff prompt should not tell downstream agents to proceed from unavailable prior work.');
 assert.ok(workerSource.includes('function workflowAppContextOriginalSignals'), 'leader quality gates should accept attached app context evidence when a data child has no prior run output.');
 assert.ok(workerSource.includes('compactWorkflowAppContextsForDispatch'), 'attached app contexts should be passed into built-in dispatch instead of shortcut-completing data/research.');
+assert.ok(workerSource.includes('compactWorkflowInputForEndpointDispatch'), 'workflow endpoint dispatch should compact duplicated app/connector context before handing work to an agent endpoint.');
+assert.ok(!workerSource.includes('compactWorkflowInputForBuiltInDispatch'), 'workflow dispatch compaction must be endpoint-contract based, not built-in-agent special casing.');
+assert.ok(workerSource.includes('function invokeSameWorkerAgentEndpoint'), 'same-worker agent endpoints should run through the endpoint contract without HTTP self-fetch from queue consumers.');
+assert.ok(workerSource.includes('sameWorkerAgentJobEndpointKind(endpoint, env)'), 'same-worker endpoint invocation should be restricted to registered local agent job endpoints.');
 assert.ok(!workerSource.includes('app-context-data-analysis-shortcut'), 'data_analysis must not complete through simulated attached-context shortcut fallback.');
 assert.ok(!workerSource.includes('app-context-research-shortcut'), 'research must not complete through simulated attached-context shortcut fallback.');
 assert.ok(workerSource.includes('Leader planner failed before order creation, so CAIt kept the deterministic team plan'), 'leader planner failures should not turn order creation into a 503 when a deterministic team plan exists.');
@@ -2023,14 +2029,15 @@ const queueDispatchQueuedState = await qaStorage.getState();
 const queueDispatchQueuedChild = queueDispatchQueuedState.jobs.find((job) => job.id === queueDispatchChildId);
 const forbiddenWorkflowCompletionKind = ['built', 'in', 'workflow', 'completion'].join('_');
 assert.equal(queueMessages.filter((message) => String(message?.body?.kind || '') === forbiddenWorkflowCompletionKind).length, 0, 'cron should not enqueue legacy workflow completion messages when endpoint dispatch is available');
-assert.equal(queueMessages.filter((message) => String(message?.body?.kind || '') === 'endpoint_dispatch').length, 1, 'cron should enqueue normal endpoint dispatch work one job at a time');
+const endpointDispatchMessages = queueMessages.filter((message) => String(message?.body?.kind || '') === 'endpoint_dispatch');
+assert.equal(endpointDispatchMessages.filter((message) => String(message?.body?.jobId || '') === queueDispatchChildId).length, 1, 'cron should enqueue the target child through normal endpoint dispatch exactly once');
 assert.notEqual(
   String(queueDispatchQueuedChild?.dispatch?.completionStatus || ''),
   'completion_queued',
   'workflow dispatch child should not be moved into the legacy completion queue'
 );
 let queueAcked = false;
-const queuedEndpointMessage = queueMessages.find((message) => String(message?.body?.kind || '') === 'endpoint_dispatch');
+const queuedEndpointMessage = endpointDispatchMessages.find((message) => String(message?.body?.jobId || '') === queueDispatchChildId);
 assert.ok(queuedEndpointMessage, 'endpoint dispatch queue message should be available for queue consumer QA');
 await worker.queue({
   messages: [
@@ -2636,6 +2643,16 @@ assert.equal(
   planningWithPriorResearch.input?._broker?.workflow?.leaderHandoff?.handoffContract?.version,
   'workflow-handoff/v2',
   'planning-layer handoff should carry a versioned contract'
+);
+assert.equal(
+  planningWithPriorResearch.input?._broker?.workflow?.leaderHandoff?.handoffOwner,
+  'leader',
+  'planning-layer handoff should be owned by the leader'
+);
+assert.equal(
+  planningWithPriorResearch.input?._broker?.workflow?.leaderHandoff?.handoffContract?.owner,
+  'leader',
+  'versioned handoff contract should identify leader ownership'
 );
 assert.ok(
   Array.isArray(planningWithPriorResearch.input?._broker?.workflow?.leaderHandoff?.priorDeliverables)
