@@ -15768,7 +15768,7 @@ async function refreshWorkflowLeaderHandoffForJobId(storage, jobId) {
           }
         }
       }
-      if (leaderSequence?.status === 'queued' && checkpointStatus === 'completed') {
+      if (['queued', 'pending'].includes(String(leaderSequence?.status || '').trim().toLowerCase()) && checkpointStatus === 'completed') {
         const leaderQualityFailure = workflowLeaderQualityGateFailed(parent, checkpointJob);
         if (leaderQualityFailure) {
           const blockedAt = nowIso();

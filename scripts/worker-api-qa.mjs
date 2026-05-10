@@ -82,6 +82,7 @@ assert.ok(workerSource.includes('listQueuedWorkflowDispatchRoots'), 'cron queued
 assert.ok(workerSource.includes('listAcceptedBuiltInProviderJobs'), 'cron queued dispatch sweep must recover accepted built-in provider runs when the provider-run message is lost.');
 assert.ok(workerSource.includes('accepted provider run requeued'), 'accepted built-in provider recovery should leave an auditable job log.');
 assert.ok(workerSource.includes('loadWorkflowDispatchState(jobId)'), 'workflow progress dispatch should load only the parent workflow and assigned agents when available.');
+assert.ok(workerSource.includes("['queued', 'pending'].includes(String(leaderSequence?.status"), 'completed checkpoint rows must release adaptive children even if leader sequence status stayed pending.');
 assert.ok(workerSource.includes('const DISPATCH_IN_PROGRESS_STALE_MS = 3 * 60 * 1000'), 'endpoint dispatch in-progress locks should be recoverable quickly when waitUntil loses the response.');
 assert.ok(workerSource.includes("completionStatus === 'dispatch_in_progress'"), 'stale dispatch_in_progress jobs should be eligible for endpoint redispatch.');
 assert.ok(workerSource.includes("'dispatch_scheduled', 'dispatch_in_progress', 'timed_out'"), 'dispatch locks should allow stale dispatch_in_progress jobs to be relocked for endpoint retry.');
