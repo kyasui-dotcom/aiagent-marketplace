@@ -1571,6 +1571,51 @@ assert.equal(cmoCheckpointPacket.runtime?.provider, 'built_in');
 assert.ok(cmoCheckpointPacket.files?.[0]?.content?.includes('Execution status'), 'CMO checkpoint packet should still carry prior-run status.');
 assert.ok(cmoCheckpointPacket.files?.[0]?.content?.includes('Data layer skipped'), 'CMO checkpoint packet should still carry prior-run evidence.');
 
+let cmoFinalSummaryNetworkCalls = 0;
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input.url;
+  if (url === 'https://api.openai.com/v1/responses' || url.startsWith('https://api.search.brave.com/res/v1/web/search?')) {
+    cmoFinalSummaryNetworkCalls += 1;
+    throw new Error('final summary should not call external generation');
+  }
+  return originalBuiltinQaFetch(input, init);
+};
+try {
+  const cmoFinalSummaryPacket = await runBuiltInAgent('cmo_leader', {
+    prompt: 'CMO final summary should integrate prior deliverables without waiting on OpenAI.',
+    input: {
+      _broker: {
+        workflow: {
+          sequencePhase: 'final_summary',
+          leaderHandoff: {
+            priorRuns: [
+              {
+                taskType: 'research',
+                status: 'completed',
+                summary: 'Search demand is developer-led and comparison-driven.',
+                files: [{ name: 'research-delivery.md', content: '# Research\n\nDevelopers need proof, comparison, and approval safety.' }]
+              },
+              {
+                taskType: 'seo_gap',
+                status: 'completed',
+                summary: 'SEO page artifact is ready for the /chat conversion path.',
+                files: [{ name: 'seo-agent-delivery.md', content: '# SEO page artifact\n\nH1, metadata, CTA, and measurement events are ready.' }]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }, { OPENAI_API_KEY: 'sk-test-should-not-be-needed-for-final-summary' });
+  assert.equal(cmoFinalSummaryNetworkCalls, 0, 'CMO final summary should use a deterministic leader packet when prior deliverables exist.');
+  assert.equal(cmoFinalSummaryPacket.runtime?.workflow, 'workflow_leader_packet');
+  assert.equal(cmoFinalSummaryPacket.status, 'completed');
+  assert.ok(cmoFinalSummaryPacket.files?.[0]?.content?.includes('SEO page artifact'), 'Final summary should preserve visible specialist deliverable snippets.');
+  assert.ok(cmoFinalSummaryPacket.files?.[0]?.content?.includes('Execution status'), 'Final summary should include the integrated run table.');
+} finally {
+  globalThis.fetch = originalBuiltinQaFetch;
+}
+
 const failedLeaderWorkflowOutput = buildAgentTeamDeliveryOutput({
   id: 'qa-failed-parent',
   status: 'failed',
