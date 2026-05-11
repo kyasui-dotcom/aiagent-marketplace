@@ -596,7 +596,7 @@ globalThis.fetch = async (input, init) => {
       siteEntry: [{ siteUrl: 'sc-domain:example.com', permissionLevel: 'siteFullUser' }]
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
-  if (String(url || '').startsWith('https://analyticsadmin.googleapis.com/v1alpha/accountSummaries')) {
+  if (String(url || '').startsWith('https://analyticsadmin.googleapis.com/v1beta/accountSummaries')) {
     return new Response(JSON.stringify({
       accountSummaries: [{
         name: 'accountSummaries/1',
@@ -625,6 +625,34 @@ try {
   assert.deepEqual(googleAssetsAfterConnect.body.google.missing_scope_groups, [], 'default analytics connect should persist both GA4 and Search Console scopes even when Google omits token.scope.');
   assert.equal(googleAssetsAfterConnect.body.search_console.sites[0].siteUrl, 'sc-domain:example.com');
   assert.equal(googleAssetsAfterConnect.body.ga4.account_summaries[0].propertySummaries[0].property, 'properties/123456789');
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (String(url || '').startsWith('https://www.googleapis.com/webmasters/v3/sites')) {
+      return new Response(JSON.stringify({
+        siteEntry: [{ siteUrl: 'sc-domain:example.com', permissionLevel: 'siteFullUser' }]
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (String(url || '').startsWith('https://analyticsadmin.googleapis.com/v1beta/accountSummaries')) {
+      return new Response(JSON.stringify({
+        error: {
+          code: 403,
+          message: 'Google Analytics Admin API has not been used in project 123 before or it is disabled.',
+          status: 'PERMISSION_DENIED',
+          details: [{
+            '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+            reason: 'SERVICE_DISABLED',
+            domain: 'googleapis.com',
+            metadata: { service: 'analyticsadmin.googleapis.com' }
+          }]
+        }
+      }), { status: 403, headers: { 'content-type': 'application/json' } });
+    }
+    return googleOauthFlowFetch(input, init);
+  };
+  const googleAssetsWithDisabledApi = await request('/api/connectors/google/assets?include=gsc,ga4', {}, { sessionCookie: linkedGoogleSession });
+  assert.equal(googleAssetsWithDisabledApi.status, 200, 'Google assets should return partial source data with actionable API warnings.');
+  assert.ok(googleAssetsWithDisabledApi.body.warnings.some((warning) => warning.includes('GA4 Admin API is not enabled')), 'GA4 Admin disabled errors should explain the Cloud project action.');
+  assert.equal(googleAssetsWithDisabledApi.body.google.api_errors.ga4.google_reason, 'SERVICE_DISABLED', 'Google API error payload should preserve the service-disabled reason.');
 } finally {
   globalThis.fetch = googleOauthFlowFetch;
 }

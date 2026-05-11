@@ -1752,10 +1752,65 @@ async function fetchGoogleAuthorizedJson(url, accessToken, init = {}) {
   if (!response.ok) {
     const error = new Error(data?.error?.message || data?.error_description || data?.error || `Google API request failed (${response.status})`);
     error.statusCode = response.status;
+    error.googleStatus = String(data?.error?.status || '');
+    error.googleCode = String(data?.error?.code || response.status || '');
+    error.googleReason = googleApiErrorReason(data);
     error.payload = data;
     throw error;
   }
   return data;
+}
+
+function googleApiErrorReason(data = {}) {
+  const details = Array.isArray(data?.error?.details) ? data.error.details : [];
+  const detailReason = details
+    .map((detail) => String(detail?.reason || detail?.metadata?.reason || '').trim())
+    .find(Boolean);
+  if (detailReason) return detailReason;
+  const errors = Array.isArray(data?.error?.errors) ? data.error.errors : [];
+  const legacyReason = errors.map((item) => String(item?.reason || '').trim()).find(Boolean);
+  return legacyReason || '';
+}
+
+function googleApiRecoveryHint(label = 'Google', error = {}) {
+  const text = [
+    error?.message,
+    error?.googleStatus,
+    error?.googleReason,
+    error?.payload?.error?.message
+  ].map((item) => String(item || '')).join(' ');
+  if (/SERVICE_DISABLED|accessNotConfigured|has not been used|disabled/i.test(text)) {
+    return `${label} API is not enabled for the Google Cloud OAuth project. Enable the API, then reconnect Google.`;
+  }
+  if (/ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficient authentication scopes|insufficientPermissions/i.test(text)) {
+    return `Reconnect Google with the ${label} scope.`;
+  }
+  if (/PERMISSION_DENIED|permission|sufficient permissions|User does not have/i.test(text)) {
+    return `Use a Google account that has access to the ${label} resource.`;
+  }
+  if (/UNAUTHENTICATED|invalid_grant|invalid credentials|Login Required/i.test(text)) {
+    return 'Reconnect Google and refresh sources again.';
+  }
+  return '';
+}
+
+function googleApiWarning(label = 'Google', error = {}) {
+  const message = String(error?.message || error || 'request failed');
+  const hint = googleApiRecoveryHint(label, error);
+  return hint ? `${label}: ${message}. ${hint}` : `${label}: ${message}`;
+}
+
+function googleApiErrorPayload(label = 'Google', error = {}) {
+  const hint = googleApiRecoveryHint(label, error);
+  return {
+    label,
+    message: String(error?.message || error || 'request failed'),
+    status_code: Number(error?.statusCode || 0),
+    google_status: String(error?.googleStatus || ''),
+    google_code: String(error?.googleCode || ''),
+    google_reason: String(error?.googleReason || ''),
+    action: hint
+  };
 }
 
 function encodeBase64UrlUtf8(value = '') {
@@ -10111,6 +10166,21 @@ function normalizeGoogleGa4PropertyName(value = '') {
   return digits ? `properties/${digits}` : raw;
 }
 
+async function fetchGoogleGa4AccountSummaries(accessToken) {
+  const accountSummaries = [];
+  let pageToken = '';
+  for (let page = 0; page < 10; page += 1) {
+    const url = new URL('https://analyticsadmin.googleapis.com/v1beta/accountSummaries');
+    url.searchParams.set('pageSize', '200');
+    if (pageToken) url.searchParams.set('pageToken', pageToken);
+    const payload = await fetchGoogleAuthorizedJson(url.toString(), accessToken);
+    accountSummaries.push(...(Array.isArray(payload?.accountSummaries) ? payload.accountSummaries : []));
+    pageToken = String(payload?.nextPageToken || '').trim();
+    if (!pageToken) break;
+  }
+  return { accountSummaries };
+}
+
 async function fetchGoogleSearchConsoleReport(accessToken, siteUrl = '', range = {}) {
   const target = String(siteUrl || '').trim();
   if (!target) return { site_url: '', rows: [], totals: { clicks: 0, impressions: 0 }, skipped: true };
@@ -10315,8 +10385,8 @@ async function handleGoogleAnalyticsReport(request, env) {
       ga4Property ? fetchGoogleGa4Report(tokenInfo.accessToken, ga4Property, dateRange) : Promise.resolve(null)
     ]);
     const warnings = [];
-    if (gscResult.status === 'rejected') warnings.push(`Search Console report: ${gscResult.reason?.message || gscResult.reason || 'request failed'}`);
-    if (ga4Result.status === 'rejected') warnings.push(`GA4 report: ${ga4Result.reason?.message || ga4Result.reason || 'request failed'}`);
+    if (gscResult.status === 'rejected') warnings.push(googleApiWarning('Search Console report', gscResult.reason));
+    if (ga4Result.status === 'rejected') warnings.push(googleApiWarning('GA4 Data report', ga4Result.reason));
     if (ga4Result.status === 'fulfilled' && Array.isArray(ga4Result.value?.warnings)) warnings.push(...ga4Result.value.warnings);
     if (current?.apiKey?.id) await recordOrderApiKeyUsage(storage, current, request);
     return json({
@@ -10388,7 +10458,7 @@ async function handleGoogleConnectorAssets(request, env) {
         ? fetchGoogleAuthorizedJson('https://www.googleapis.com/webmasters/v3/sites', tokenInfo.accessToken)
         : Promise.resolve(null),
       readableGroups.includes('ga4')
-        ? fetchGoogleAuthorizedJson('https://analyticsadmin.googleapis.com/v1alpha/accountSummaries?pageSize=200', tokenInfo.accessToken)
+        ? fetchGoogleGa4AccountSummaries(tokenInfo.accessToken)
         : Promise.resolve(null),
       readableGroups.includes('drive')
         ? fetchGoogleAuthorizedJson('https://www.googleapis.com/drive/v3/files?pageSize=50&fields=files(id,name,mimeType,webViewLink,modifiedTime)', tokenInfo.accessToken)
@@ -10457,12 +10527,12 @@ async function handleGoogleConnectorAssets(request, env) {
     for (const group of missingGroups) {
       warnings.push(`${googleScopeGroupLabel(group)}: OAuth scope is not connected. Use the ${googleScopeGroupLabel(group)} connect button to authorize only this source.`);
     }
-    if (includeGroups.includes('gsc') && sitesResult.status === 'rejected') warnings.push(`Search Console: ${sitesResult.reason?.message || sitesResult.reason || 'request failed'}`);
-    if (includeGroups.includes('ga4') && ga4Result.status === 'rejected') warnings.push(`GA4: ${ga4Result.reason?.message || ga4Result.reason || 'request failed'}`);
-    if (includeGroups.includes('drive') && driveResult.status === 'rejected') warnings.push(`Drive: ${driveResult.reason?.message || driveResult.reason || 'request failed'}`);
-    if (includeGroups.includes('calendar') && calendarResult.status === 'rejected') warnings.push(`Calendar: ${calendarResult.reason?.message || calendarResult.reason || 'request failed'}`);
-    if (includeGroups.includes('gmail') && gmailProfileResult.status === 'rejected') warnings.push(`Gmail profile: ${gmailProfileResult.reason?.message || gmailProfileResult.reason || 'request failed'}`);
-    if (includeGroups.includes('gmail') && gmailLabelsResult.status === 'rejected') warnings.push(`Gmail labels: ${gmailLabelsResult.reason?.message || gmailLabelsResult.reason || 'request failed'}`);
+    if (includeGroups.includes('gsc') && sitesResult.status === 'rejected') warnings.push(googleApiWarning('Search Console', sitesResult.reason));
+    if (includeGroups.includes('ga4') && ga4Result.status === 'rejected') warnings.push(googleApiWarning('GA4 Admin', ga4Result.reason));
+    if (includeGroups.includes('drive') && driveResult.status === 'rejected') warnings.push(googleApiWarning('Drive', driveResult.reason));
+    if (includeGroups.includes('calendar') && calendarResult.status === 'rejected') warnings.push(googleApiWarning('Calendar', calendarResult.reason));
+    if (includeGroups.includes('gmail') && gmailProfileResult.status === 'rejected') warnings.push(googleApiWarning('Gmail profile', gmailProfileResult.reason));
+    if (includeGroups.includes('gmail') && gmailLabelsResult.status === 'rejected') warnings.push(googleApiWarning('Gmail labels', gmailLabelsResult.reason));
     if (current?.apiKey?.id) await recordOrderApiKeyUsage(storage, current, request);
     const payload = {
       ok: true,
@@ -10474,7 +10544,11 @@ async function handleGoogleConnectorAssets(request, env) {
         missing_scope_groups: missingGroups,
         missing_capabilities: googleOAuthCapabilitiesFromGroups(missingCapabilityGroups),
         token_expires_at: String(tokenInfo.connector?.tokenExpiresAt || ''),
-        refreshed: tokenInfo.refreshed
+        refreshed: tokenInfo.refreshed,
+        api_errors: {
+          ...(includeGroups.includes('gsc') && sitesResult.status === 'rejected' ? { search_console: googleApiErrorPayload('Search Console', sitesResult.reason) } : {}),
+          ...(includeGroups.includes('ga4') && ga4Result.status === 'rejected' ? { ga4: googleApiErrorPayload('GA4 Admin', ga4Result.reason) } : {})
+        }
       },
       warnings
     };

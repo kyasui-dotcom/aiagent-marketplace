@@ -24,6 +24,7 @@ const state = {
   target: 'cmo_leader',
   googleConnected: false,
   googleWarnings: [],
+  googleApiErrors: {},
   googleReportLoaded: false,
   googleReportSources: { ga4: false, gsc: false },
   googleReportWarnings: [],
@@ -293,6 +294,12 @@ function renderGoogleSourceControls() {
     els.googleSourceNote.textContent = `${state.googleWarnings.join(' / ')}. Use the matching Connect GA4 or Connect Search Console button to authorize only the missing source, then Refresh sources.`;
     return;
   }
+  if (connected && !sites.length && !ga4.length && !state.googleReportLoaded) {
+    els.googleSourceStatus.textContent = 'Google connected, no sources returned';
+    els.googleSourceStatus.className = 'status-pill blocked';
+    els.googleSourceNote.textContent = 'Google returned no GA4 properties or Search Console sites for this account. Use a Google account with access to those resources, or check the Google API warnings after refreshing sources.';
+    return;
+  }
   if (state.googleReportLoaded && state.googleReportDateRange) {
     const warnings = Array.isArray(state.googleReportWarnings) ? state.googleReportWarnings.filter(Boolean) : [];
     const ga4Missing = Boolean(state.ga4Property && !state.googleReportSources.ga4);
@@ -358,6 +365,9 @@ async function refreshGoogleSources(options = {}) {
     }
     state.googleConnected = Boolean(payload?.google?.connected);
     state.googleWarnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
+    state.googleApiErrors = payload?.google?.api_errors && typeof payload.google.api_errors === 'object'
+      ? payload.google.api_errors
+      : {};
     state.gscSites = Array.isArray(payload?.search_console?.sites) ? payload.search_console.sites : [];
     state.ga4Properties = flattenGa4Properties(payload?.ga4?.account_summaries || []);
     applyCachedGoogleSources();
@@ -375,6 +385,7 @@ async function refreshGoogleSources(options = {}) {
         ].filter(Boolean).join(' / ')
       : '';
     state.googleWarnings = [detail || String(error?.message || error || 'Google sources are not connected.')];
+    state.googleApiErrors = {};
     state.gscSites = [];
     state.ga4Properties = [];
   } finally {
@@ -798,6 +809,7 @@ function buildContext() {
       googleReportDateRange: state.googleReportDateRange,
       analyticsSelectedChannel: state.selectedChannel,
       googleWarnings: state.googleWarnings,
+      googleApiErrors: state.googleApiErrors,
       googleReportWarnings: state.googleReportWarnings
     }
   });

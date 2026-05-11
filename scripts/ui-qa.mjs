@@ -450,6 +450,8 @@ assert.ok(analyticsJs.includes('/api/connectors/google/analytics-report'), 'Anal
 assert.ok(analyticsJs.includes('googleReportSources'), 'Analytics Console should track whether GA4 and Search Console loaded separately.');
 assert.ok(analyticsJs.includes('googleReportSources: {'), 'Analytics Console context should carry loaded GA4/Search Console source flags.');
 assert.ok(analyticsJs.includes('Report loaded with warnings'), 'Analytics Console should surface partial Google report failures.');
+assert.ok(analyticsJs.includes('Google connected, no sources returned'), 'Analytics Console should separate connected-empty Google accounts from OAuth failures.');
+assert.ok(analyticsJs.includes('googleApiErrors'), 'Analytics Console context should carry structured Google API failures for diagnosis.');
 assert.ok(analyticsJs.includes('GA4 not loaded'), 'Analytics Console should not label missing GA4 data as loaded.');
 assert.ok(analyticsJs.includes('function normalizeGa4Property'), 'Analytics Console should normalize manual GA4 property IDs.');
 assert.ok(analyticsJs.includes('els.ga4PropertyInput?.value'), 'Analytics Console should read the manual GA4 property ID before loading reports.');
@@ -806,6 +808,9 @@ assert.ok(
 );
 assert.ok(worker.includes('/api/connectors/google/analytics-report'), 'Worker should expose the Google analytics report endpoint.');
 assert.ok(worker.includes('analyticsdata.googleapis.com/v1beta'), 'Worker should call the GA4 Data API for report rows.');
+assert.ok(worker.includes('analyticsadmin.googleapis.com/v1beta/accountSummaries'), 'Worker should call the current GA4 Admin account summaries endpoint.');
+assert.ok(!worker.includes('analyticsadmin.googleapis.com/v1alpha/accountSummaries'), 'Worker should not use the old GA4 Admin account summaries endpoint.');
+assert.ok(worker.includes('googleApiRecoveryHint'), 'Worker should return actionable Google API failure hints for source loading.');
 assert.ok(worker.includes('Promise.allSettled(['), 'Worker GA4 detail rows should not make the whole GA4 report fail when one breakdown fails.');
 assert.ok(worker.includes('function normalizeGoogleGa4PropertyName'), 'Worker should accept numeric GA4 property IDs and normalize them.');
 assert.ok(worker.includes("'sessionDefaultChannelGroup', 'sessionSourceMedium'"), 'Worker should fetch channel source/referral detail from GA4.');
