@@ -12359,7 +12359,7 @@ function resolveOrderStrategy(agents, body = {}, strategy = 'auto') {
     ...(preservedPlannedTasks.length ? { plannedTasks: preservedPlannedTasks, preservePlannedTasks: true, expand: true } : {})
   };
   const repoBackedCodeIntent = ['code', 'debug', 'ops', 'automation'].includes(String(taskType || '').trim().toLowerCase())
-    && /(github|git hub|repo|repository|pull request|\bpr\b|branch|commit|diff|issue|bug|debug|fix|修正|直して|デバッグ|リポジトリ|プルリク|ブランチ|コミット|差分)/i.test(String(body.prompt || ''));
+    && /(\b(?:github|git hub|repo|repository|pull request|pr|branch|commit|diff|issue|bug|debug|fix)\b|修正|直して|デバッグ|リポジトリ|プルリク|ブランチ|コミット|差分)/i.test(String(body.prompt || ''));
   if (strategy === 'single') {
     return { strategy: 'single', reason: 'Single-agent routing was selected.' };
   }
@@ -19161,7 +19161,7 @@ async function performSingleJobCreate(storage, env, current, body, options = {})
     accountId: accountIdForLogin(current.login)
   });
   const taskType = normalizeTaskTypes([body.task_type])[0] || inferTaskType(body.task_type, body.prompt);
-  const state = await storage.getState();
+  const state = options.initialState || await loadSingleOrderCreateState(storage, current, body);
   const account = current?.login ? accountSettingsForLogin(state, current.login, current.user, current.authProvider) : null;
   const billingMode = billingModeForRequester(current, account, env);
   if (!skipIntake) {
@@ -19622,6 +19622,38 @@ function requestedFollowupJobIdFromCreateBody(body = {}) {
 }
 
 async function loadOrderCreatePlanningState(storage, current = {}, body = {}) {
+  if (typeof storage.listAgents !== 'function' || typeof storage.getAccountByLogin !== 'function' || typeof storage.getJobById !== 'function') {
+    return storage.getState();
+  }
+  const clientOrderId = clientOrderIdFromCreateBody(body);
+  const followupJobId = requestedFollowupJobIdFromCreateBody(body);
+  const [agents, account, clientOrderJob, followupJob] = await Promise.all([
+    storage.listAgents({ limit: 500 }),
+    current?.login ? storage.getAccountByLogin(current.login) : Promise.resolve(null),
+    clientOrderId ? storage.getJobById(clientOrderId) : Promise.resolve(null),
+    followupJobId && followupJobId !== clientOrderId ? storage.getJobById(followupJobId) : Promise.resolve(null)
+  ]);
+  const jobs = [];
+  for (const job of [clientOrderJob, followupJob]) {
+    if (job?.id && !jobs.some((item) => item.id === job.id)) jobs.push(job);
+  }
+  return {
+    agents: Array.isArray(agents) ? agents : [],
+    accounts: account ? [account] : [],
+    jobs,
+    apps: [],
+    events: [],
+    feedbackReports: [],
+    chatTranscripts: [],
+    appContexts: [],
+    recurringOrders: [],
+    emailDeliveries: [],
+    exactMatchActions: [],
+    appSettings: []
+  };
+}
+
+async function loadSingleOrderCreateState(storage, current = {}, body = {}) {
   if (typeof storage.listAgents !== 'function' || typeof storage.getAccountByLogin !== 'function' || typeof storage.getJobById !== 'function') {
     return storage.getState();
   }
@@ -20654,7 +20686,7 @@ async function handleCreateJob(storage, request, env, ctx = null) {
   }
   body = applyActiveLeaderLockToOrderBody(body);
   try {
-    current = await currentOrderRequesterContext(storage, request, env);
+    current = await currentOrderRequesterContext(storage, request, env, { lightweight: true });
     const touchUsage = async () => {
       if (current.apiKey?.id) await recordOrderApiKeyUsage(storage, current, request);
     };
@@ -20712,7 +20744,7 @@ async function handleCreateJob(storage, request, env, ctx = null) {
       : null;
     const result = resolved.strategy === 'multi'
       ? await handleCreateWorkflowJob(storage, request, env, current, body, { touchUsage, workflowPlan: resolved.plan, asyncDispatch, waitUntil, initialState: state })
-      : await performSingleJobCreate(storage, env, current, body, { touchUsage, request, asyncDispatch, waitUntil });
+      : await performSingleJobCreate(storage, env, current, body, { touchUsage, request, asyncDispatch, waitUntil, initialState: state });
     if (result?.error) return json(result, result.statusCode || 400);
     result.order_strategy_requested = requestedStrategy;
     result.order_strategy_resolved = resolved.strategy;

@@ -297,7 +297,7 @@ export function exactWorkActionRuleForPrompt(prompt = '', exactActions = []) {
 
 export function isDeveloperExecutionIntentText(prompt = '') {
   const compact = String(prompt || '').replace(/\s+/g, ' ').trim();
-  return /(github|git hub|repo|repository|pull request|\bpr\b|branch|commit|diff|sandbox|code|coding|debug|fix|bug|修正|直して|実装|デバッグ|コード|プルリク|リポジトリ|ブランチ|コミット|差分|サンドボックス)/i.test(compact)
+  return /(\b(?:github|git hub|repo|repository|pull request|pr|branch|commit|diff|sandbox|code|coding|debug|fix|bug)\b|修正|直して|実装|デバッグ|コード|プルリク|リポジトリ|ブランチ|コミット|差分|サンドボックス)/i.test(compact)
     && !/^(feedback|report issue|bug report|contact|問い合わせ|バグ報告|不具合報告|要望|問い合わせフォーム)$/i.test(compact)
     && !/(?:feedback|report issue|bug report|問い合わせ|バグ報告|不具合報告|要望|問い合わせフォーム).*(?:送|出|報告|開|open|書きたい|したい)/i.test(compact);
 }

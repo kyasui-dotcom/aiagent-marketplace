@@ -89,6 +89,9 @@ assert.ok(workerSource.includes("options.dispatchMode !== 'direct' && Boolean(wo
 assert.ok(workerSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
 assert.ok(workerSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');
 assert.ok(workerSource.includes('persistedJobForClientOrderId'), 'order create should check for an existing client order before creating a new job.');
+assert.ok(workerSource.includes('async function loadSingleOrderCreateState'), 'single-agent order creation should have a targeted state loader for production-sized D1 databases.');
+assert.ok(workerSource.includes('currentOrderRequesterContext(storage, request, env, { lightweight: true })'), 'order creation should authenticate browser sessions without loading the full production snapshot.');
+assert.ok(workerSource.includes('options.initialState || await loadSingleOrderCreateState(storage, current, body)'), 'single-agent order creation should avoid full-state reads when targeted list/get methods are available.');
 assert.ok(workerSource.includes('external_agent_dispatch_contract'), 'completion sweeps should recover via endpoint dispatch instead of Worker-side generation.');
 assert.ok(!workerSource.includes('Built-in workflow dispatch queue was requested repeatedly but did not start execution.'), 'workflow queue non-starts must no longer fail the order before recovery.');
 assert.ok(workerSource.includes('googleGrantedCapabilities'), 'auth status should expose granted Google capabilities so chat does not repeat OAuth prompts.');

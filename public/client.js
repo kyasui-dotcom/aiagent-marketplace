@@ -3791,7 +3791,7 @@ function isRepoBackedCodeOrderIntent(taskType = '', prompt = '') {
   const task = String(taskType || '').trim().toLowerCase();
   const text = openChatIntentMatchText(prompt);
   const codeTask = ['code', 'debug', 'ops', 'automation'].includes(task);
-  const repoIntent = /(github|git hub|repo|repository|pull request|\bpr\b|branch|commit|diff|issue|bug|debug|fix|修正|直して|デバッグ|リポジトリ|プルリク|ブランチ|コミット|差分)/i.test(text);
+  const repoIntent = /(\b(?:github|git hub|repo|repository|pull request|pr|branch|commit|diff|issue|bug|debug|fix)\b|修正|直して|デバッグ|リポジトリ|プルリク|ブランチ|コミット|差分)/i.test(text);
   return codeTask && repoIntent;
 }
 
@@ -22800,7 +22800,7 @@ function flexibleToolCandidates(prompt = String(els.jobPrompt?.value || ''), inp
     });
   }
 
-  if (/(?:github|git hub|repo|repository|pull request|\bpr\b|branch|commit|diff|sandbox|code review|コードレビュー|リポジトリ|プルリク|ブランチ|コミット|差分|サンドボックス)/i.test(compact)) {
+  if (/(?:\b(?:github|git hub|repo|repository|pull request|pr|branch|commit|diff|sandbox|code review)\b|コードレビュー|リポジトリ|プルリク|ブランチ|コミット|差分|サンドボックス)/i.test(compact)) {
     add({
       id: 'github_work',
       title: 'GitHub work mode',

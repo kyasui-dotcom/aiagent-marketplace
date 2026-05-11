@@ -38,7 +38,7 @@ export function isRepoBackedCodeIntentText(prompt = '', taskType = '') {
   const codeLike = !task || ['code', 'debug', 'ops', 'automation', 'build_team_leader', 'cto_leader'].includes(task);
   if (!codeLike) return false;
   return hasAnyPattern(text, [
-    /(github|git hub|repo|repository|pull request|\bpr\b|branch|commit|diff|issue|bug|debug|fix)/i,
+    /\b(?:github|git hub|repo|repository|pull request|pr|branch|commit|diff|issue|bug|debug|fix)\b/i,
     /(修正|直して|デバッグ|リポジトリ|プルリク|ブランチ|コミット|差分)/i
   ]);
 }
