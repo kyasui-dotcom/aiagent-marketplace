@@ -495,11 +495,50 @@ await deliveryItemStorage.upsertJobs([{
   createdAt: '2026-04-26T08:22:00.000Z',
   completedAt: '2026-04-26T08:23:00.000Z'
 }]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-data-packet',
+  parentAgentId: 'qa',
+  taskType: 'data_analysis',
+  prompt: 'analytics packet',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'data_analysis',
+  workflowAgentName: 'DATA ANALYSIS AGENT',
+  output: {
+    report: { summary: 'GA4 packet' },
+    files: [{ name: 'analytics.md', type: 'text/markdown', content: '# GA4 packet\n\nリード and signup context.' }]
+  },
+  createdAt: '2026-04-26T08:24:00.000Z',
+  completedAt: '2026-04-26T08:25:00.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-research-memo',
+  parentAgentId: 'qa',
+  taskType: 'research',
+  prompt: 'research memo',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'research',
+  workflowAgentName: 'RESEARCH AGENT',
+  output: {
+    report: { summary: 'Research memo' },
+    files: [{ name: 'research.md', type: 'text/markdown', content: '# Research memo\n\nSEO and リード context for downstream agents.' }]
+  },
+  createdAt: '2026-04-26T08:26:00.000Z',
+  completedAt: '2026-04-26T08:27:00.000Z'
+}]);
 const publisherItems = await deliveryItemStorage.listDeliveryItems({ surface: 'publisher', ownerLogins: ['owner@example.com'] });
 assert.equal(publisherItems.length, 1);
 assert.equal(publisherItems[0].surface, 'publisher');
 assert.equal(publisherItems[0].itemType, 'seo_article');
 assert.equal(publisherItems[0].metadata.meta_description, 'Source-backed guide.');
+const analyticsItems = await deliveryItemStorage.listDeliveryItems({ surface: 'analytics', ownerLogins: ['owner@example.com'] });
+assert.equal(analyticsItems.length, 1);
+assert.equal(analyticsItems[0].surface, 'analytics');
+const leadItems = await deliveryItemStorage.listDeliveryItems({ surface: 'lead', ownerLogins: ['owner@example.com'] });
+assert.equal(leadItems.length, 0);
 
 function createConcurrentJobsDb() {
   const jobsRows = [];
