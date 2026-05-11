@@ -138,7 +138,7 @@ assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat c
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/chat.css?v=20260510b'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260510a"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260511a"'), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -160,8 +160,8 @@ assert.ok(chatJs.includes('rememberConversationLanguage(prompt)'), 'Chat should 
 assert.ok(chatJs.includes('PROMPT_PLACEHOLDERS'), 'Chat composer placeholders should be able to follow the selected conversation language.');
 assert.ok(chatJs.includes('CAIt will not keep asking after this round'), 'Leader intake should tell users it will not repeat after the current round.');
 assert.ok(chatJs.includes('growthLeaderNeedsDataHint'), 'Growth leader intake should point users toward connectors or source URLs instead of asking repeated data questions.');
-assert.ok(chatJs.includes('Analytics data skipped unless attached'), 'Growth order checks should skip analytics when no report is already attached.');
-assert.ok(chatJs.includes('No GA4/Search Console report is requested during Send order'), 'Growth order checks should not ask users to detour through analytics during dispatch.');
+assert.ok(chatJs.includes('Connected Google analytics can be attached'), 'Growth order checks should surface connected Google analytics instead of silently skipping it.');
+assert.ok(chatJs.includes('Analytics was skipped for this prepared order'), 'Growth order checks should allow an explicit analytics skip only when the user chooses it.');
 assert.ok(clientJs.includes("if (requested.length) url.searchParams.set('capabilities', requested.join(','))"), 'Chat Google connector should pass exact required Google capabilities into OAuth without adding broad defaults.');
 assert.ok(clientJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
 assert.ok(chatJs.includes('googleAuthorityConnectGroups'), 'Chat Google approval should connect every requested Google source in one OAuth popup.');
@@ -174,6 +174,8 @@ assert.ok(chatJs.includes("source === 'leader_execution_approval' && status !== 
 assert.ok(chatJs.includes('Progress check temporarily failed'), 'Chat progress polling should retry transient 503-style failures instead of stopping the order.');
 assert.ok(chatJs.includes('answerSaysAnalyticsAvailable'), 'Chat intake should detect when the user says GA4/Search Console is available.');
 assert.ok(chatJs.includes('openAnalyticsConsoleForIntake'), 'Chat intake should open Analytics Console before dispatch when analytics data is available.');
+assert.ok(chatJs.includes('openAnalyticsConsoleForDraft'), 'Chat order checks should open Analytics Console and attach returned context to the prepared draft.');
+assert.ok(chatJs.includes('attachAppContextToDraft'), 'Returned app context should attach to the current draft instead of only filling the composer.');
 assert.ok(chatJs.includes('choose the GA4 property and Search Console site'), 'Chat should instruct users to identify the exact analytics account, property, and site.');
 assert.ok(chatJs.includes('analyticsIntakeChoiceHtml'), 'Chat intake should render explicit analytics choice buttons.');
 assert.ok(chatJs.includes('data-chat-action="analytics-use"'), 'Chat intake should include a button to use GA4/Search Console.');

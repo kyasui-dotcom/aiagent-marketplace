@@ -4573,12 +4573,37 @@ function orderNeedsAnalyticsContext(taskType = '', prompt = '') {
 
 function analyticsPreOrderHintHtml(taskType = '', prompt = '') {
   if (!orderNeedsAnalyticsContext(taskType, prompt)) return '';
+  const status = draftAnalyticsContextStatus(state.draft);
+  const granted = authGrantedGoogleCapabilities();
+  const googleConnected = granted.has('google.read_ga4') || granted.has('google.read_gsc') || state.auth?.googleLinked || state.auth?.googleAuthorized;
+  const explicit = draftExplicitlyRequestsAnalytics(state.draft || { prompt });
+  const title = status.loaded
+    ? chatText('Analytics context attached', 'アナリティクス添付済み', prompt)
+    : status.skipped
+      ? chatText('Analytics skipped by user choice', 'アナリティクスはスキップ指定', prompt)
+      : googleConnected
+        ? chatText('Connected Google analytics can be attached', '接続済みGoogle分析を添付できます', prompt)
+        : chatText('Analytics data requires attachment', 'アナリティクスは添付が必要', prompt);
+  const detail = status.loaded
+    ? chatText('Loaded GA4/Search Console evidence is attached to this order draft and will be passed to the data layer.', '読み込み済みのGA4/Search Console根拠をこの発注ドラフトに添付済みです。データ層へ渡します。', prompt)
+    : status.skipped
+      ? chatText('This order will proceed without GA4/Search Console evidence because analytics was skipped for this draft.', 'このドラフトではアナリティクスをスキップしたため、GA4/Search Console根拠なしで進めます。', prompt)
+      : googleConnected
+        ? chatText('Google OAuth is already connected. Open Analytics Console to choose the GA4 property/Search Console site and send the loaded report back to this draft. OAuth should not be requested again unless a missing scope is selected.', 'Google OAuth は接続済みです。Analytics Console でGA4プロパティ/Search Consoleサイトを選び、レポートを読み込んでこのドラフトへ戻してください。不足scopeを選ばない限りOAuthを再要求しません。', prompt)
+        : chatText('Open Analytics Console, connect the needed Google source once, choose the property/site, load the report, then send it back to this draft.', 'Analytics Console を開き、必要なGoogleソースを1回接続して、プロパティ/サイトを選び、レポートを読み込んでこのドラフトへ戻してください。', prompt);
+  const actions = status.loaded || status.skipped
+    ? []
+    : [
+        `<button class="ghost-btn inline-btn" type="button" data-chat-action="analytics-use">${escapeHtml(googleConnected ? chatText('Use connected GA4/Search Console', '接続済みGA4/Search Consoleを使う', prompt) : chatText('Open Analytics Console', 'Analytics Consoleを開く', prompt))}</button>`,
+        explicit ? `<button class="ghost-btn inline-btn" type="button" data-chat-action="analytics-skip">${escapeHtml(chatText('Skip analytics for this order', 'この注文ではスキップ', prompt))}</button>` : ''
+      ].filter(Boolean);
   return [
     '<div class="preflight-card">',
-    `<strong>${escapeHtml(chatText('Analytics data skipped unless attached', 'アナリティクスは添付済みの場合だけ使用', prompt))}</strong>`,
-    `<span>${escapeHtml(chatText('No GA4/Search Console report is requested during Send order. If no Analytics Console context is already attached, this order will skip GA4/Search Console and continue with assumptions.', 'Send order の途中では GA4/Search Console レポートを要求しません。Analytics Console のコンテキストがすでに添付されていない場合、この発注では GA4/Search Console をスキップして仮説で進めます。', prompt))}</span>`,
+    `<strong>${escapeHtml(title)}</strong>`,
+    `<span>${escapeHtml(detail)}</span>`,
+    actions.length ? `<div class="inline-actions">${actions.join('')}</div>` : '',
     '</div>'
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function analyticsIntakeChoiceHtml(sample = '') {
@@ -4956,6 +4981,154 @@ function pendingIntakeHasAttachedAppContext(intake = {}) {
   );
 }
 
+function contextRawContext(context = {}) {
+  return context?.raw_context && typeof context.raw_context === 'object'
+    ? context.raw_context
+    : (context?.rawContext && typeof context.rawContext === 'object' ? context.rawContext : {});
+}
+
+function appContextLooksLikeAnalytics(context = {}) {
+  if (!context || typeof context !== 'object') return false;
+  const raw = contextRawContext(context);
+  const text = [
+    context.source_app,
+    context.sourceApp,
+    context.source_app_label,
+    context.sourceAppLabel,
+    context.title,
+    context.summary,
+    raw.connector_provider,
+    raw.provider,
+    raw.connector_type,
+    raw.connectorType,
+    ...(Array.isArray(raw.connector_services) ? raw.connector_services : []),
+    raw.googleGa4Property,
+    raw.googleSearchConsoleSite,
+    raw.googleReportLoaded
+  ].filter(Boolean).join(' ');
+  return /(analytics|google analytics|ga4|search console|\bgsc\b|アナリティクス|サーチコンソール)/i.test(text);
+}
+
+function appContextHasLoadedAnalyticsEvidence(context = {}) {
+  if (!appContextLooksLikeAnalytics(context)) return false;
+  const raw = contextRawContext(context);
+  if (raw.googleReportLoaded === true || String(raw.googleReportLoaded || '').toLowerCase() === 'true') return true;
+  const artifacts = Array.isArray(context.artifacts) ? context.artifacts : [];
+  return artifacts.some((artifact) => {
+    if (String(artifact?.type || '').trim().toLowerCase() !== 'google_report_status') return false;
+    return (Array.isArray(artifact.rows) ? artifact.rows : []).some((row) => (
+      row?.loaded === true || String(row?.loaded || '').toLowerCase() === 'true'
+    ));
+  });
+}
+
+function draftBroker(draft = null) {
+  return draft?.input?._broker && typeof draft.input._broker === 'object' ? draft.input._broker : {};
+}
+
+function draftAnalyticsContexts(draft = null) {
+  const input = draft?.input && typeof draft.input === 'object' ? draft.input : {};
+  const broker = draftBroker(draft);
+  return [
+    ...(Array.isArray(broker.appContexts) ? broker.appContexts : []),
+    ...(Array.isArray(broker.connectorContexts) ? broker.connectorContexts : []),
+    ...(Array.isArray(input.appContexts) ? input.appContexts : []),
+    ...(Array.isArray(input.connectorContexts) ? input.connectorContexts : [])
+  ].filter((context) => context && typeof context === 'object' && appContextLooksLikeAnalytics(context));
+}
+
+function draftAnalyticsContextStatus(draft = null) {
+  const contexts = draftAnalyticsContexts(draft);
+  const broker = draftBroker(draft);
+  return {
+    attached: contexts.length > 0,
+    loaded: contexts.some(appContextHasLoadedAnalyticsEvidence),
+    skipped: broker.analyticsContextSkipped === true || broker.analytics_context_skipped === true,
+    contexts
+  };
+}
+
+function draftExplicitlyRequestsAnalytics(draft = null) {
+  const text = [
+    draft?.prompt,
+    draft?.originalPrompt,
+    draft?.input?.original_prompt,
+    draft?.input?.originalPrompt
+  ].map((item) => String(item || '')).join('\n');
+  if (!/(ga4|google analytics|search console|サーチコンソール|アナリティクス)/i.test(text)) return false;
+  if (/(skip analytics|without analytics|no analytics|アナリティクスをスキップ)/i.test(text)) return false;
+  if (/(ga4|google analytics|search console|サーチコンソール|アナリティクス).{0,32}(使わない|なし|無し|ありません|不要|skip|without|no)/i.test(text)) return false;
+  if (/(使わない|なし|無し|ありません|不要|skip|without|no).{0,32}(ga4|google analytics|search console|サーチコンソール|アナリティクス)/i.test(text)) return false;
+  return /(使う|使いたい|接続済み|あります|ある|available|connected|use|with|利用)/i.test(text);
+}
+
+function mergeUniqueContexts(existing = [], nextContext = null) {
+  const list = Array.isArray(existing) ? existing.filter((context) => context && typeof context === 'object') : [];
+  if (!nextContext || typeof nextContext !== 'object') return list;
+  const nextKey = [
+    nextContext.id,
+    nextContext.source_app || nextContext.sourceApp,
+    nextContext.title
+  ].map((item) => String(item || '').trim()).filter(Boolean).join('|').toLowerCase();
+  if (nextKey && list.some((context) => [
+    context.id,
+    context.source_app || context.sourceApp,
+    context.title
+  ].map((item) => String(item || '').trim()).filter(Boolean).join('|').toLowerCase() === nextKey)) {
+    return list.map((context) => {
+      const key = [
+        context.id,
+        context.source_app || context.sourceApp,
+        context.title
+      ].map((item) => String(item || '').trim()).filter(Boolean).join('|').toLowerCase();
+      return key === nextKey ? { ...context, ...nextContext } : context;
+    });
+  }
+  return [nextContext, ...list].slice(0, 8);
+}
+
+function attachAppContextToDraft(context = null) {
+  if (!state.draft || !context || typeof context !== 'object') return false;
+  const input = state.draft.input && typeof state.draft.input === 'object' ? state.draft.input : {};
+  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
+  const appContexts = mergeUniqueContexts(broker.appContexts || input.appContexts || [], context);
+  const connectorContexts = appContextLooksLikeAnalytics(context)
+    ? mergeUniqueContexts(broker.connectorContexts || input.connectorContexts || [], context)
+    : (Array.isArray(broker.connectorContexts) ? broker.connectorContexts : []);
+  state.draft.input = {
+    ...input,
+    appContexts,
+    ...(connectorContexts.length ? { connectorContexts } : {}),
+    _broker: {
+      ...broker,
+      appContexts,
+      ...(connectorContexts.length ? { connectorContexts } : {}),
+      analyticsContextSkipped: false,
+      analytics_context_skipped: false
+    }
+  };
+  state.draft.updatedAt = new Date().toISOString();
+  state.draftRevision += 1;
+  return true;
+}
+
+function markDraftAnalyticsSkipped() {
+  if (!state.draft) return false;
+  const input = state.draft.input && typeof state.draft.input === 'object' ? state.draft.input : {};
+  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
+  state.draft.input = {
+    ...input,
+    _broker: {
+      ...broker,
+      analyticsContextSkipped: true,
+      analytics_context_skipped: true
+    }
+  };
+  state.draft.updatedAt = new Date().toISOString();
+  state.draftRevision += 1;
+  return true;
+}
+
 function caitAppContextAnswerLine(context = {}) {
   const source = String(context?.source_app || '').toLowerCase();
   const raw = context?.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
@@ -5044,6 +5217,60 @@ async function openAnalyticsConsoleForIntake(intake = {}, answer = '') {
     if (popup) popup.location.href = fallback.toString();
     else window.open(fallback.toString(), '_blank');
     appendTextMessage('assistant', `${chatText('I opened Analytics Console, but could not attach the intake context automatically.', 'Analytics Consoleを開きましたが、ヒアリング文脈の自動添付には失敗しました。', answer)} ${orderErrorMessage(error)}`, { tone: 'error', label: 'Analytics' });
+  }
+}
+
+async function openAnalyticsConsoleForDraft(draft = null) {
+  const sourceDraft = draft || state.draft || {};
+  const sample = sourceDraft.originalPrompt || sourceDraft.prompt || state.conversationLanguage || '';
+  const popup = window.open('about:blank', '_blank');
+  const handoffId = makeChatHandoffId('analytics-draft');
+  const chatReturnTo = currentChatReturnPath();
+  const payload = {
+    schema_version: 'cait-app-agent-transfer/v1',
+    transfer_id: `analytics-draft-${Date.now().toString(36)}`,
+    title: 'Analytics evidence requested before order dispatch',
+    source: 'CAIt Chat order check',
+    summary: 'The prepared order explicitly requests GA4/Search Console. Use the already connected Google account when possible, choose the exact property/site, load the report, then send the analytics context back to CAIt before dispatching the order.',
+    action: {
+      kind: 'analytics_report_load',
+      title: 'Load GA4/Search Console evidence into this prepared order',
+      text: sourceDraft.prompt || sourceDraft.originalPrompt || '',
+      source: 'CAIt Chat order check',
+      requiresApproval: false
+    },
+    context: {
+      original_prompt: sourceDraft.originalPrompt || '',
+      prepared_prompt: sourceDraft.prompt || '',
+      task_type: sourceDraft.taskType || sourceDraft.task_type || '',
+      leader: sourceDraft.conversationOwner || null,
+      chat_handoff_id: handoffId,
+      chat_return_to: chatReturnTo
+    },
+    settings: {
+      outputLanguage: chatLanguage(sample),
+      workspaceNotes: `Prepared order:\n${sourceDraft.prompt || ''}\n\nOriginal prompt:\n${sourceDraft.originalPrompt || ''}`
+    }
+  };
+  try {
+    const href = await createAppAgentContextOpenUrl('analytics-console', payload);
+    const url = new URL(href, window.location.origin);
+    url.searchParams.set('chat_handoff_id', handoffId);
+    url.searchParams.set('chat_return_to', chatReturnTo);
+    if (popup) popup.location.href = url.toString();
+    else window.open(url.toString(), '_blank');
+    appendTextMessage('assistant', chatText(
+      'I opened Analytics Console for this prepared order. If Google is already connected, choose the GA4 property/Search Console site, load the report, then press Send to CAIt. I will attach it to this draft; no order will be sent until you press Send order again.',
+      'この発注ドラフト用に Analytics Console を開きました。Google接続済みなら、GA4プロパティ/Search Consoleサイトを選び、レポートをLoadしてから Send to CAIt を押してください。戻ったコンテキストはこのドラフトに添付します。もう一度 Send order を押すまで発注は送信しません。',
+      sample
+    ), { tone: 'ok', label: 'Analytics' });
+  } catch (error) {
+    const fallback = new URL('/analytics-console.html', window.location.origin);
+    fallback.searchParams.set('chat_handoff_id', handoffId);
+    fallback.searchParams.set('chat_return_to', chatReturnTo);
+    if (popup) popup.location.href = fallback.toString();
+    else window.open(fallback.toString(), '_blank');
+    appendTextMessage('assistant', `${chatText('I opened Analytics Console, but could not attach the prepared order context automatically.', 'Analytics Consoleを開きましたが、発注ドラフト文脈の自動添付には失敗しました。', sample)} ${orderErrorMessage(error)}`, { tone: 'error', label: 'Analytics' });
   }
 }
 
@@ -5860,25 +6087,7 @@ async function prepareOrder(prompt, options = {}) {
   });
   const appContext = options.appContext || state.pendingAppContext || null;
   if (appContext && typeof appContext === 'object') {
-    const broker = state.draft.input?._broker && typeof state.draft.input._broker === 'object' ? state.draft.input._broker : {};
-    state.draft.input = {
-      ...(state.draft.input || {}),
-      _broker: {
-        ...broker,
-        appContexts: [appContext],
-        connectorContexts: [
-          {
-            source_app: appContext.source_app || '',
-            source_app_label: appContext.source_app_label || '',
-            title: appContext.title || '',
-            summary: appContext.summary || '',
-            metrics: Array.isArray(appContext.metrics) ? appContext.metrics.slice(0, 12) : [],
-            artifacts: Array.isArray(appContext.artifacts) ? appContext.artifacts.slice(0, 12) : [],
-            raw_context: appContext.raw_context && typeof appContext.raw_context === 'object' ? appContext.raw_context : {}
-          }
-        ]
-      }
-    };
+    attachAppContextToDraft(appContext);
   }
   state.pendingIntake = null;
   state.draftRevision += 1;
@@ -5893,6 +6102,16 @@ async function sendOrder() {
     const lockedOwner = lockedLeaderOwnerForPrompt(state.draft?.originalPrompt || state.draft?.prompt || '');
     const acceptedDraft = lockedOwner ? withLeaderOwner(state.draft, lockedOwner) : state.draft;
     state.draft = acceptedDraft;
+    const analyticsStatus = draftAnalyticsContextStatus(acceptedDraft);
+    if (draftExplicitlyRequestsAnalytics(acceptedDraft) && !analyticsStatus.loaded && !analyticsStatus.skipped) {
+      await openAnalyticsConsoleForDraft(acceptedDraft);
+      appendTextMessage('assistant', chatText(
+        'This order explicitly asks to use GA4/Search Console, so I stopped dispatch until the loaded analytics context is attached. After Send to CAIt returns here, press Send order again.',
+        'この注文は GA4/Search Console の利用を明示しているため、読み込み済みアナリティクスコンテキストが添付されるまで発注送信を止めました。Send to CAIt で戻った後、もう一度 Send order を押してください。',
+        acceptedDraft.originalPrompt || acceptedDraft.prompt || ''
+      ), { tone: 'warn', label: 'Analytics required' });
+      return;
+    }
     const actorLabel = activeActorLabel('CAIt');
     const payload = chatEngineBuildJobPayload(acceptedDraft, {
       parentAgentId: 'chatux',
@@ -6403,6 +6622,18 @@ async function handleInboundAppContext(context = {}, options = {}) {
       'アプリの情報を進行中のヒアリングに戻しました。未入力の選択肢を続けて入力するか、準備できたらこの回答を送信してください。まだ実行も課金も発生していません。',
       state.pendingIntake.originalPrompt || prompt
     ), { label: options.label || 'App context' });
+    return true;
+  }
+  if (state.draft) {
+    attachAppContextToDraft(context);
+    state.pendingAppContext = context;
+    appendTextMessage('system', chatText(
+      'Analytics/app context was attached to the prepared order. Review the updated order check, then press Send order when ready.',
+      'アナリティクス/アプリコンテキストを発注ドラフトに添付しました。更新された注文確認を見て、問題なければ Send order を押してください。',
+      state.draft.originalPrompt || state.draft.prompt || ''
+    ), { label: options.label || 'App context' });
+    appendOrderConfirmation({ updated: true });
+    setBusy(false);
     return true;
   }
   state.pendingAppContext = context;
@@ -6975,16 +7206,28 @@ els.chatThread.addEventListener('click', async (event) => {
       .catch((error) => appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Leader choice' }))
       .finally(() => setBusy(false));
   } else if (action === 'analytics-use') {
-    if (!state.pendingIntake) {
-      appendTextMessage('assistant', 'There is no active intake to attach analytics to.', { tone: 'error', label: 'Analytics' });
-      return;
-    }
     setBusy(true);
-    void openAnalyticsConsoleForIntake(state.pendingIntake, chatText('GA4/Search Console is available.', 'GA4/Search Consoleがあります。', state.pendingIntake.originalPrompt))
+    const analyticsOpen = state.pendingIntake
+      ? openAnalyticsConsoleForIntake(state.pendingIntake, chatText('GA4/Search Console is available.', 'GA4/Search Consoleがあります。', state.pendingIntake.originalPrompt))
+      : state.draft
+        ? openAnalyticsConsoleForDraft(state.draft)
+        : Promise.reject(new Error('There is no active intake or prepared order to attach analytics to.'));
+    void analyticsOpen
+      .catch((error) => appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Analytics' }))
       .finally(() => setBusy(false));
   } else if (action === 'analytics-skip') {
+    if (state.draft && !state.pendingIntake) {
+      markDraftAnalyticsSkipped();
+      appendTextMessage('system', chatText(
+        'Analytics was skipped for this prepared order. Press Send order to proceed without GA4/Search Console evidence.',
+        'この発注ドラフトではアナリティクスをスキップしました。GA4/Search Console根拠なしで進める場合は Send order を押してください。',
+        state.draft.originalPrompt || state.draft.prompt || ''
+      ), { label: 'Analytics' });
+      appendOrderConfirmation({ updated: true });
+      return;
+    }
     if (!state.pendingIntake) {
-      appendTextMessage('assistant', 'There is no active intake to continue.', { tone: 'error', label: 'Analytics' });
+      appendTextMessage('assistant', 'There is no active intake or prepared order to continue.', { tone: 'error', label: 'Analytics' });
       return;
     }
     appendIntakeChoiceToComposer(
