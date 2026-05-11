@@ -567,6 +567,8 @@ assert.ok(chatJs.indexOf("if (leaderTextHasCmoSignal(text, intent)) return 'cmo_
 assert.ok(chatJs.indexOf("if (leaderTextHasCmoSignal(text, intent)) return 'cmo_leader';") < chatJs.indexOf("if (leaderTextHasSpecificCtoSignal(text)) return 'cto_leader';"), 'Chat intake routing should prefer explicit CMO growth intent before CTO wording.');
 assert.ok(chatJs.includes('activeLeaderLocked: false'), 'Chat should track when a leader has been confirmed and locked.');
 assert.ok(chatJs.includes('function lockedLeaderOwnerForPrompt'), 'Chat should preserve a confirmed leader unless the user explicitly asks to change it.');
+assert.ok(chatJs.includes('leaderFollowupSpecialistTaskForText'), 'Leader follow-up artifact requests should draft specialist orders instead of single leader orders.');
+assert.ok(chatJs.includes('suppressLeaderLock'), 'Specialist follow-up drafts should not be rewritten back to the locked leader on SEND ORDER.');
 assert.ok(chatJs.includes('function suggestLeaderChangeIfNeeded'), 'Chat should ask before changing away from a confirmed leader.');
 assert.ok(chatJs.includes('data-chat-action="keep-leader"'), 'Chat should offer a keep-current-leader action when a different leader is suggested.');
 assert.ok(chatJs.includes('data-chat-action="switch-leader"'), 'Chat should offer an explicit switch-leader action instead of automatically changing the leader.');

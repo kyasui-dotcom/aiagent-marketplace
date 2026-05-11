@@ -19644,8 +19644,82 @@ function previousFollowupJobFromCreateState(state = {}, body = {}) {
     .find((job) => String(job?.id || '').trim() === followupJobId) || null;
 }
 
+function primaryTaskForOrderJob(job = {}) {
+  const planned = Array.isArray(job?.workflow?.plannedTasks) ? job.workflow.plannedTasks : [];
+  return String(planned[0] || job.taskType || job.workflowTask || '').trim().toLowerCase();
+}
+
+function orderCreateFollowupText(body = {}) {
+  const input = body?.input && typeof body.input === 'object' ? body.input : {};
+  return [
+    body.prompt,
+    body.goal,
+    body.user_adjustment,
+    body.userAdjustment,
+    input.original_prompt,
+    input.originalPrompt,
+    input.user_adjustment,
+    input.userAdjustment
+  ].map((item) => String(item || '').trim()).filter(Boolean).join('\n');
+}
+
+function orderCreateLeaderTaskType(state = {}, body = {}) {
+  const previousPrimary = primaryTaskForOrderJob(previousFollowupJobFromCreateState(state, body) || {});
+  const requestedTask = normalizeTaskTypes([body.task_type])[0] || inferTaskType(body.task_type, body.prompt);
+  const leaderTask = previousPrimary || requestedTask;
+  return isWorkflowLeaderTask(leaderTask) ? leaderTask : '';
+}
+
+function orderCreateSpecialistTaskForLeaderText(text = '') {
+  const safe = String(text || '').trim();
+  if (!safe) return '';
+  if (/(seo|自然検索|検索流入|検索意図|検索順位|サチコ|search console|\bgsc\b|keyword|キーワード|serp|h1|h2|meta description|メタディスクリプション|コンテンツseo|記事|article)/i.test(safe)) return 'seo_gap';
+  if (/(landing\s*page|\blp\b|ランディング|LP|hero|ヒーロー|cta|ページ|page|コピー|copy|ファーストビュー|conversion|cvr|登録導線|トライアル導線)/i.test(safe)) return 'landing';
+  if (/(集客|リード|登録|トライアル|signup|trial|acquisition|growth|問い合わせ|lead)/i.test(safe)) return 'growth';
+  return '';
+}
+
+function orderCreateLeaderFollowupSpecialistTask(state = {}, body = {}) {
+  const previousJob = previousFollowupJobFromCreateState(state, body);
+  if (!previousJob?.id) return '';
+  const leaderTask = orderCreateLeaderTaskType(state, body);
+  if (!leaderTask) return '';
+  const text = orderCreateFollowupText(body);
+  return orderCreateSpecialistTaskForLeaderText(text);
+}
+
+function orderBodyWithLeaderFollowupSpecialistRouting(state = {}, body = {}) {
+  const specialistTask = orderCreateLeaderFollowupSpecialistTask(state, body);
+  if (!specialistTask) return body;
+  const input = body?.input && typeof body.input === 'object' ? body.input : {};
+  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
+  const priorLeader = broker.activeLeader || broker.conversationOwner || {};
+  return {
+    ...body,
+    task_type: specialistTask,
+    taskType: specialistTask,
+    active_leader_locked: false,
+    activeLeaderLocked: false,
+    active_leader_task_type: '',
+    activeLeaderTaskType: '',
+    input: {
+      ...input,
+      _broker: {
+        ...broker,
+        activeLeaderLocked: false,
+        leaderFollowupSpecialistRouted: true,
+        conversationOwner: { type: 'specialist', taskType: specialistTask, label: specialistTask },
+        previousLeader: priorLeader && typeof priorLeader === 'object' ? priorLeader : {}
+      }
+    }
+  };
+}
+
 function orderStrategyWithFollowupContext(requestedStrategy = 'auto', state = {}, body = {}) {
   const strategy = normalizeOrderStrategy(requestedStrategy);
+  const broker = body?.input?._broker && typeof body.input._broker === 'object' ? body.input._broker : {};
+  if (broker.leaderFollowupSpecialistRouted === true && strategy !== 'multi') return 'single';
+  if (strategy === 'single' && orderCreateLeaderTaskType(state, body)) return 'multi';
   if (strategy !== 'auto') return strategy;
   const previousJob = previousFollowupJobFromCreateState(state, body);
   if (!previousJob?.id) return strategy;
@@ -20735,7 +20809,9 @@ async function handleCreateJob(storage, request, env, ctx = null) {
     const requestedStrategy = normalizeOrderStrategy(body.order_strategy || body.orderStrategy || body.execution_mode || body.executionMode);
     const asyncDispatch = body.async_dispatch === true || body.asyncDispatch === true || body.respond_async === true || body.respondAsync === true;
     const clientOrderId = clientOrderIdFromCreateBody(body);
-    const state = requestedStrategy !== 'single' || clientOrderId
+    const requestedTaskForRouting = normalizeTaskTypes([body.task_type])[0] || inferTaskType(body.task_type, body.prompt);
+    const requestedLeaderSingle = requestedStrategy === 'single' && isWorkflowLeaderTask(requestedTaskForRouting);
+    const state = requestedStrategy !== 'single' || clientOrderId || requestedFollowupJobIdFromCreateBody(body) || requestedLeaderSingle
       ? await loadOrderCreatePlanningState(storage, current, body)
       : null;
     if (clientOrderId && state) {
@@ -20755,6 +20831,7 @@ async function handleCreateJob(storage, request, env, ctx = null) {
         }), 202);
       }
     }
+    body = orderBodyWithLeaderFollowupSpecialistRouting(state || {}, body);
     const effectiveRequestedStrategy = orderStrategyWithFollowupContext(requestedStrategy, state || {}, body);
     let resolved = resolveOrderStrategy(state?.agents || [], body, effectiveRequestedStrategy);
     if (!orderCreateSkipPrePersistencePlanning(body)) {

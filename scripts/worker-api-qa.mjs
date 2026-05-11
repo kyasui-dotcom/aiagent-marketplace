@@ -96,6 +96,7 @@ assert.ok(/async function handleGetJob[\s\S]{0,250}currentOrderRequesterContext\
 assert.ok(workerSource.includes("refresh: job.jobKind === 'workflow'"), 'single-job progress polling should not run workflow handoff refresh work.');
 assert.ok(workerSource.includes('function orderCreateSkipIntake'), 'confirmed chat orders should skip pre-persistence intake checks on create.');
 assert.ok(workerSource.includes('orderStrategyWithFollowupContext'), 'follow-up orders should keep the previous order shape instead of rerouting AUTO before persistence.');
+assert.ok(workerSource.includes('leaderFollowupSpecialistRouted'), 'leader follow-up artifact requests should route to specialist agents instead of single leader runs.');
 assert.ok(workerSource.includes('external_agent_dispatch_contract'), 'completion sweeps should recover via endpoint dispatch instead of Worker-side generation.');
 assert.ok(!workerSource.includes('Built-in workflow dispatch queue was requested repeatedly but did not start execution.'), 'workflow queue non-starts must no longer fail the order before recovery.');
 assert.ok(workerSource.includes('googleGrantedCapabilities'), 'auth status should expose granted Google capabilities so chat does not repeat OAuth prompts.');
@@ -901,6 +902,72 @@ assert.ok(asyncWorkflowTaskOrder.indexOf(asyncResearchRun.taskType) < asyncWorkf
 assert.equal(asyncWorkflowTaskOrder.includes('teardown'), false, 'CMO workflow should not add competitor teardown unless competitor analysis is requested');
 assert.notEqual(asyncDataRun?.agentName, 'RESEARCH TEAM LEADER', 'data_analysis should use the data specialist instead of a research leader');
 assert.ok(asyncWorkflowFirstState.body.job.workflow.statusCounts.completed >= 2, 'leader handoff should release eligible built-in specialists after the leader completes');
+
+const singleLeaderAttemptWaits = [];
+const singleLeaderAttempt = await request('/api/jobs', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    parent_agent_id: 'qa-runner',
+    task_type: 'cmo_leader',
+    prompt: 'CMOとして集客したい。まず最初の実行計画を作ってください。',
+    order_strategy: 'single',
+    async_dispatch: true,
+    skip_intake: true,
+    budget_cap: 500
+  })
+}, { waitUntilPromises: singleLeaderAttemptWaits, env: qaSearchEnv });
+assert.equal(singleLeaderAttempt.status, 201);
+assert.equal(singleLeaderAttempt.body.order_strategy_requested, 'single');
+assert.equal(singleLeaderAttempt.body.order_strategy_resolved, 'multi');
+assert.ok(singleLeaderAttempt.body.workflow_job_id, 'leader tasks must not run as single-agent jobs.');
+await Promise.allSettled(singleLeaderAttemptWaits);
+
+const leaderSeoFollowup = await request('/api/jobs', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    parent_agent_id: 'qa-runner',
+    task_type: 'cmo_leader',
+    prompt: [
+      `Follow-up/change request for running order ${asyncWorkflow.body.workflow_job_id}:`,
+      'seo対策したlp提案してもらえますか',
+      '',
+      'Use the previous order context and return the concrete publisher-ready LP artifact.',
+      '',
+      'User adjustment:',
+      '集客したい'
+    ].join('\n'),
+    followup_to_job_id: asyncWorkflow.body.workflow_job_id,
+    order_strategy: 'single',
+    skip_intake: true,
+    input: {
+      original_prompt: 'seo対策したlp提案してもらえますか',
+      _broker: {
+        activeLeaderLocked: true,
+        activeLeader: { taskType: 'cmo_leader', label: 'CMO Leader' },
+        conversationOwner: { type: 'leader', taskType: 'cmo_leader', label: 'CMO Leader' },
+        conversation: {
+          mode: 'followup',
+          followupToJobId: asyncWorkflow.body.workflow_job_id
+        }
+      }
+    }
+  })
+}, { env: qaSearchEnv });
+assert.equal(leaderSeoFollowup.status, 201);
+assert.equal(leaderSeoFollowup.body.order_strategy_requested, 'single');
+assert.equal(leaderSeoFollowup.body.order_strategy_resolved, 'single');
+assert.ok(leaderSeoFollowup.body.job_id);
+assert.equal(leaderSeoFollowup.body.workflow_job_id, undefined);
+const leaderSeoFollowupJob = await request(`/api/jobs/${leaderSeoFollowup.body.job_id}`, {}, { env: qaSearchEnv });
+assert.equal(leaderSeoFollowupJob.status, 200);
+assert.equal(leaderSeoFollowupJob.body.job.taskType, 'seo_gap');
+assert.equal(leaderSeoFollowupJob.body.job.input._broker.leaderFollowupSpecialistRouted, true);
+assert.ok(
+  (leaderSeoFollowupJob.body.job.output?.files || []).some((file) => String(file.name || '').includes('seo-agent-delivery')),
+  'leader SEO follow-up should produce an SEO specialist delivery file.'
+);
 
 const ambiguousWorkflowWaits = [];
 const ambiguousWorkflowPrompt = 'CMOとして、https://aiagent-marketplace.net の集客を実行まで。対象はAIツールを使う開発者と小規模SaaS創業者。目標は30日でGitHubログインとエージェント登録を増やすこと。現状は流入が少なく、広告費なし。GA4やSearch Consoleはなし、営業資料なし。納品は媒体プラン、投稿/掲載コピー、承認パケット。最後の実行フェイズはできる限りの複数アクションをする。';

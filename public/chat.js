@@ -1204,6 +1204,19 @@ function normalizeLeaderTaskType(value = '') {
   return aliases[token] || (token.endsWith('_leader') ? token : '');
 }
 
+function isLeaderTaskType(value = '') {
+  return Boolean(normalizeLeaderTaskType(value));
+}
+
+function leaderFollowupSpecialistTaskForText(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/(seo|自然検索|検索流入|検索意図|検索順位|サチコ|search console|\bgsc\b|keyword|キーワード|serp|h1|h2|meta description|メタディスクリプション|コンテンツseo|記事|article)/i.test(text)) return 'seo_gap';
+  if (/(landing\s*page|\blp\b|ランディング|LP|hero|ヒーロー|cta|ページ|page|コピー|copy|ファーストビュー|conversion|cvr|登録導線|トライアル導線)/i.test(text)) return 'landing';
+  if (/(集客|リード|登録|トライアル|signup|trial|acquisition|growth|問い合わせ|lead)/i.test(text)) return 'growth';
+  return '';
+}
+
 function explicitLeaderChangeTaskTypeFromText(value = '') {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
@@ -5929,12 +5942,14 @@ async function prepareFollowupForRunningOrder(prompt = '') {
   if (!text || !orderId) return false;
   const job = await fetchVisibleJob(orderId);
   if (!job?.id || isTerminalStatus(job.status)) return false;
-  const taskType = String(
+  const baseTaskType = String(
     (Array.isArray(job.workflow?.plannedTasks) ? job.workflow.plannedTasks[0] : '')
     || job.taskType
     || 'research'
   ).trim().toLowerCase() || 'research';
-  const isWorkflow = job.jobKind === 'workflow' || Boolean(job.workflow);
+  const specialistTaskType = isLeaderTaskType(baseTaskType) ? leaderFollowupSpecialistTaskForText(text) : '';
+  const taskType = specialistTaskType || baseTaskType;
+  const isWorkflow = !specialistTaskType && (job.jobKind === 'workflow' || Boolean(job.workflow));
   const followupPrompt = [
     `Follow-up/change request for running order ${job.id}:`,
     text,
@@ -5947,7 +5962,9 @@ async function prepareFollowupForRunningOrder(prompt = '') {
     resolvedOrderStrategy: isWorkflow ? 'multi' : 'single',
     resolved_order_strategy: isWorkflow ? 'multi' : 'single',
     reason: `Prepared as an add-on request for running order ${job.id.slice(0, 8)}. It will not run until Send order is pressed.`,
-    conversationOwner: taskType.endsWith('_leader')
+    conversationOwner: specialistTaskType
+      ? { type: 'cait', label: taskLabel(specialistTaskType), reason: `Leader follow-up routed to ${taskLabel(specialistTaskType)} for the concrete artifact.` }
+      : taskType.endsWith('_leader')
       ? { type: 'leader', taskType, label: taskLabel(taskType), reason: 'Follow-up request for active leader workflow.' }
       : { type: 'cait', label: 'CAIt', reason: 'Follow-up request for active order.' }
   };
@@ -5968,7 +5985,11 @@ async function prepareFollowupForRunningOrder(prompt = '') {
         followupToJobId: job.id,
         followup_to_job_id: job.id,
         requestedAt: new Date().toISOString()
-      }
+      },
+      ...(specialistTaskType ? {
+        leaderFollowupSpecialistRouted: true,
+        previousLeader: { taskType: baseTaskType, label: taskLabel(baseTaskType) }
+      } : {})
     }
   };
   state.draft.followupToJobId = job.id;
@@ -6134,7 +6155,9 @@ async function sendOrder() {
   setBusy(true);
   try {
     const chatSessionId = ensureChatSessionId({ force: true });
-    const lockedOwner = lockedLeaderOwnerForPrompt(state.draft?.originalPrompt || state.draft?.prompt || '');
+    const draftBroker = state.draft?.input?._broker && typeof state.draft.input._broker === 'object' ? state.draft.input._broker : {};
+    const suppressLeaderLock = draftBroker.leaderFollowupSpecialistRouted === true;
+    const lockedOwner = suppressLeaderLock ? null : lockedLeaderOwnerForPrompt(state.draft?.originalPrompt || state.draft?.prompt || '');
     const acceptedDraft = lockedOwner ? withLeaderOwner(state.draft, lockedOwner) : state.draft;
     state.draft = acceptedDraft;
     const analyticsStatus = draftAnalyticsContextStatus(acceptedDraft);
