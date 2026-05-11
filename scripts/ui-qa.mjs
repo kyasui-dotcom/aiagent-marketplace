@@ -138,7 +138,7 @@ assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat c
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/chat.css?v=20260510b'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(chatHtml.includes('type="module" src="/chat.js?v=20260511a"'), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(/type="module"\s+src="\/chat\.js\?v=20260511[a-z0-9]+"/.test(chatHtml), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -613,6 +613,9 @@ assert.ok(chatJs.includes('data-chat-logout'), 'Chat should render logout contro
 assert.ok(chatJs.includes("new URL('/login', window.location.origin)"), 'Chat should client-gate unauthenticated static asset access.');
 assert.ok(chatJs.includes("loginUrl.searchParams.set('next', nextPath || CHATUX_RETURN_PATH)"), 'Chat login gate should preserve the current chat path and context query.');
 assert.ok(chatJs.includes("timeoutMs: 15000"), 'Chat auth checks should allow production auth/status to finish before surfacing session-unavailable states.');
+assert.ok(chatJs.includes('function csrfRequiredApiError'), 'Chat API helper should detect CSRF write failures.');
+assert.ok(chatJs.includes('await refreshAuthForUnsafeWrite'), 'Chat API helper should refresh auth before/retry browser writes that need CSRF.');
+assert.ok(chatJs.includes("headers.set('x-aiagent2-csrf', state.auth.csrfToken)"), 'Chat API helper should attach refreshed CSRF tokens to unsafe same-origin writes.');
 assert.ok(chatJs.includes("await apiWithRetry('/api/work/prepare-order'"), 'Chat should retry transient prepare-order failures before surfacing an error.');
 assert.ok(chatJs.includes('maxAttempts: 5'), 'Chat prepare-order retry should wait through short production 5xx/429 bursts.');
 assert.ok(chatJs.includes('intake.taskType || intake.task_type'), 'Intake answers should preserve the originally selected leader task.');

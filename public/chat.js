@@ -1630,44 +1630,79 @@ function rememberConversationLanguage(sample = '') {
   return state.conversationLanguage || chatLanguage(sample);
 }
 
+function unsafeApiMethod(method = 'GET') {
+  return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(method || 'GET').toUpperCase());
+}
+
+function csrfRequiredApiError(error = {}) {
+  const status = Number(error?.status || 0);
+  const message = String(error?.data?.error || error?.message || '').toLowerCase();
+  return status === 403 && message.includes('csrf');
+}
+
+async function refreshAuthForUnsafeWrite(options = {}) {
+  try {
+    await refreshAuth({
+      maxAttempts: Math.max(1, Math.min(5, Number(options.maxAttempts || 3) || 3)),
+      scheduleRetry: false
+    });
+  } catch {
+    // The write request below will surface the real error if auth refresh is unavailable.
+  }
+  return Boolean(state.auth?.csrfToken);
+}
+
 async function api(path, options = {}) {
   const method = String(options.method || 'GET').toUpperCase();
-  const headers = new Headers(options.headers || {});
-  if (!headers.has('content-type')) headers.set('content-type', 'application/json');
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && state.auth?.csrfToken) {
-    headers.set('x-aiagent2-csrf', state.auth.csrfToken);
-  }
-  if (state.visitorId) headers.set('x-aiagent2-visitor-id', state.visitorId);
-  const timeoutMs = Math.max(0, Number(options.timeoutMs || 0) || 0);
-  const controller = timeoutMs && !options.signal ? new AbortController() : null;
-  const timeout = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
-  try {
-    const response = await fetch(path, {
-      ...options,
-      method,
-      headers,
-      credentials: 'same-origin',
-      ...(controller ? { signal: controller.signal } : {})
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const error = new Error(String(data?.error || `Request failed (${response.status})`));
-      error.status = response.status;
-      error.data = data;
+  const needsCsrf = unsafeApiMethod(method);
+  const originalHeaders = new Headers(options.headers || {});
+  const explicitCsrfHeader = originalHeaders.has('x-aiagent2-csrf');
+  let lastError = null;
+  const attempts = needsCsrf && !explicitCsrfHeader ? 2 : 1;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    if (needsCsrf && !explicitCsrfHeader && (!state.auth?.csrfToken || attempt > 1)) {
+      await refreshAuthForUnsafeWrite({ maxAttempts: attempt > 1 ? 4 : 2 });
+    }
+    const headers = new Headers(options.headers || {});
+    if (!headers.has('content-type')) headers.set('content-type', 'application/json');
+    if (needsCsrf && !explicitCsrfHeader && state.auth?.csrfToken) {
+      headers.set('x-aiagent2-csrf', state.auth.csrfToken);
+    }
+    if (state.visitorId) headers.set('x-aiagent2-visitor-id', state.visitorId);
+    const timeoutMs = Math.max(0, Number(options.timeoutMs || 0) || 0);
+    const controller = timeoutMs && !options.signal ? new AbortController() : null;
+    const timeout = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+    try {
+      const response = await fetch(path, {
+        ...options,
+        method,
+        headers,
+        credentials: 'same-origin',
+        ...(controller ? { signal: controller.signal } : {})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(String(data?.error || `Request failed (${response.status})`));
+        error.status = response.status;
+        error.data = data;
+        throw error;
+      }
+      return data;
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        const timeoutError = new Error(`Request timed out (${timeoutMs}ms)`);
+        timeoutError.status = 0;
+        timeoutError.data = { error: 'request_timeout', timeout_ms: timeoutMs };
+        throw timeoutError;
+      }
+      lastError = error;
+      if (attempt < attempts && csrfRequiredApiError(error)) continue;
       throw error;
+    } finally {
+      if (timeout) window.clearTimeout(timeout);
     }
-    return data;
-  } catch (error) {
-    if (error?.name === 'AbortError') {
-      const timeoutError = new Error(`Request timed out (${timeoutMs}ms)`);
-      timeoutError.status = 0;
-      timeoutError.data = { error: 'request_timeout', timeout_ms: timeoutMs };
-      throw timeoutError;
-    }
-    throw error;
-  } finally {
-    if (timeout) window.clearTimeout(timeout);
   }
+  throw lastError || new Error('Request failed');
 }
 
 function apiRetryableError(error = {}, statuses = []) {
