@@ -5944,8 +5944,8 @@ async function prepareFollowupForRunningOrder(prompt = '') {
   const prepared = {
     taskType,
     task_type: taskType,
-    resolvedOrderStrategy: isWorkflow ? 'multi' : 'auto',
-    resolved_order_strategy: isWorkflow ? 'multi' : 'auto',
+    resolvedOrderStrategy: isWorkflow ? 'multi' : 'single',
+    resolved_order_strategy: isWorkflow ? 'multi' : 'single',
     reason: `Prepared as an add-on request for running order ${job.id.slice(0, 8)}. It will not run until Send order is pressed.`,
     conversationOwner: taskType.endsWith('_leader')
       ? { type: 'leader', taskType, label: taskLabel(taskType), reason: 'Follow-up request for active leader workflow.' }

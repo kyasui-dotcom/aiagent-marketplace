@@ -94,6 +94,8 @@ assert.ok(workerSource.includes('currentOrderRequesterContext(storage, request, 
 assert.ok(workerSource.includes('options.initialState || await loadSingleOrderCreateState(storage, current, body)'), 'single-agent order creation should avoid full-state reads when targeted list/get methods are available.');
 assert.ok(/async function handleGetJob[\s\S]{0,250}currentOrderRequesterContext\(storage, request, env, \{ lightweight: true \}\)/.test(workerSource), 'live progress polling should authenticate without loading the full production snapshot.');
 assert.ok(workerSource.includes("refresh: job.jobKind === 'workflow'"), 'single-job progress polling should not run workflow handoff refresh work.');
+assert.ok(workerSource.includes('function orderCreateSkipIntake'), 'confirmed chat orders should skip pre-persistence intake checks on create.');
+assert.ok(workerSource.includes('orderStrategyWithFollowupContext'), 'follow-up orders should keep the previous order shape instead of rerouting AUTO before persistence.');
 assert.ok(workerSource.includes('external_agent_dispatch_contract'), 'completion sweeps should recover via endpoint dispatch instead of Worker-side generation.');
 assert.ok(!workerSource.includes('Built-in workflow dispatch queue was requested repeatedly but did not start execution.'), 'workflow queue non-starts must no longer fail the order before recovery.');
 assert.ok(workerSource.includes('googleGrantedCapabilities'), 'auth status should expose granted Google capabilities so chat does not repeat OAuth prompts.');
@@ -5192,6 +5194,27 @@ try {
   assert.equal(followupJob.body.job.input._broker.conversation.followupToJobId, fundedOrder.body.job_id);
   assert.equal(followupJob.body.job.input._broker.conversation.turn, 2);
   assert.ok(followupJob.body.job.input._broker.conversation.previousJob.summaryText.includes('Summary:'));
+
+  const autoFollowupOrder = await request('/api/jobs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      parent_agent_id: 'qa-runner',
+      task_type: 'ops',
+      prompt: 'Follow-up additive request: propose the next deployment checklist item.',
+      followup_to_job_id: fundedOrder.body.job_id,
+      order_strategy: 'auto',
+      skip_intake: true
+    })
+  }, { sessionCookie: daveSession });
+  assert.equal(autoFollowupOrder.status, 201);
+  assert.equal(autoFollowupOrder.body.order_strategy_requested, 'auto');
+  assert.equal(autoFollowupOrder.body.order_strategy_resolved, 'single');
+  assert.ok(autoFollowupOrder.body.job_id);
+  assert.equal(autoFollowupOrder.body.workflow_job_id, undefined);
+  const autoFollowupJob = await request(`/api/jobs/${autoFollowupOrder.body.job_id}`, {}, { sessionCookie: daveSession });
+  assert.equal(autoFollowupJob.status, 200);
+  assert.equal(autoFollowupJob.body.job.input._broker.conversation.followupToJobId, fundedOrder.body.job_id);
 
   const daveSettingsAfter = await request('/api/settings', {}, { sessionCookie: daveSession });
   assert.equal(daveSettingsAfter.status, 200);

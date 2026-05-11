@@ -19155,7 +19155,7 @@ async function performSingleJobCreate(storage, env, current, body, options = {})
   body = orderBodyWithCommonQualityRules(body);
   const touchUsage = options.touchUsage || (async () => {});
   const request = options.request;
-  const skipIntake = options.skipIntake === true;
+  const skipIntake = options.skipIntake === true || orderCreateSkipIntake(body);
   const requester = requesterContextFromUser(current.user, current.authProvider, {
     login: current.login,
     accountId: accountIdForLogin(current.login)
@@ -19621,6 +19621,37 @@ function requestedFollowupJobIdFromCreateBody(body = {}) {
   ).trim();
 }
 
+function orderCreateSkipIntake(body = {}) {
+  const broker = body?.input?._broker && typeof body.input._broker === 'object' ? body.input._broker : {};
+  const intake = broker.intake && typeof broker.intake === 'object' ? broker.intake : {};
+  return body.skip_intake === true
+    || body.skipIntake === true
+    || body.intake_answered === true
+    || body.intakeAnswered === true
+    || intake.answered === true
+    || intake.prepared_in_chat === true
+    || intake.preparedInChat === true;
+}
+
+function orderCreateSkipPrePersistencePlanning(body = {}) {
+  return orderCreateSkipIntake(body);
+}
+
+function previousFollowupJobFromCreateState(state = {}, body = {}) {
+  const followupJobId = requestedFollowupJobIdFromCreateBody(body);
+  if (!followupJobId) return null;
+  return (Array.isArray(state?.jobs) ? state.jobs : [])
+    .find((job) => String(job?.id || '').trim() === followupJobId) || null;
+}
+
+function orderStrategyWithFollowupContext(requestedStrategy = 'auto', state = {}, body = {}) {
+  const strategy = normalizeOrderStrategy(requestedStrategy);
+  if (strategy !== 'auto') return strategy;
+  const previousJob = previousFollowupJobFromCreateState(state, body);
+  if (!previousJob?.id) return strategy;
+  return previousJob.jobKind === 'workflow' || Boolean(previousJob.workflow) ? 'multi' : 'single';
+}
+
 async function loadOrderCreatePlanningState(storage, current = {}, body = {}) {
   if (typeof storage.listAgents !== 'function' || typeof storage.getAccountByLogin !== 'function' || typeof storage.getJobById !== 'function') {
     return storage.getState();
@@ -19747,10 +19778,13 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
     return { error: 'Multi-agent objective does not support a single pinned agent. Clear the pin and retry.', statusCode: 400 };
   }
   const taskType = normalizeTaskTypes([body.task_type])[0] || inferTaskType(body.task_type, body.prompt);
-  const intakeClarification = await buildIntakeClarificationWithAi(body, { taskType }, env);
-  if (intakeClarification) {
-    await (options.touchUsage || (async () => {}))();
-    return intakeClarification;
+  const skipIntake = options.skipIntake === true || orderCreateSkipIntake(body);
+  if (!skipIntake) {
+    const intakeClarification = await buildIntakeClarificationWithAi(body, { taskType }, env);
+    if (intakeClarification) {
+      await (options.touchUsage || (async () => {}))();
+      return intakeClarification;
+    }
   }
   const state = options.initialState || await storage.getState();
   const plan = options.workflowPlan || planWorkflowSelections(state.agents, body.task_type, body.prompt, {
@@ -20721,8 +20755,11 @@ async function handleCreateJob(storage, request, env, ctx = null) {
         }), 202);
       }
     }
-    let resolved = resolveOrderStrategy(state?.agents || [], body, requestedStrategy);
-    resolved = await maybeRefineWorkflowPlanWithLeaderLlm(state?.agents || [], body, resolved, env);
+    const effectiveRequestedStrategy = orderStrategyWithFollowupContext(requestedStrategy, state || {}, body);
+    let resolved = resolveOrderStrategy(state?.agents || [], body, effectiveRequestedStrategy);
+    if (!orderCreateSkipPrePersistencePlanning(body)) {
+      resolved = await maybeRefineWorkflowPlanWithLeaderLlm(state?.agents || [], body, resolved, env);
+    }
     if (resolved?.error) {
       await touchUsage();
       return json({
@@ -20743,8 +20780,8 @@ async function handleCreateJob(storage, request, env, ctx = null) {
       ? (promise) => ctx.waitUntil(promise)
       : null;
     const result = resolved.strategy === 'multi'
-      ? await handleCreateWorkflowJob(storage, request, env, current, body, { touchUsage, workflowPlan: resolved.plan, asyncDispatch, waitUntil, initialState: state })
-      : await performSingleJobCreate(storage, env, current, body, { touchUsage, request, asyncDispatch, waitUntil, initialState: state });
+      ? await handleCreateWorkflowJob(storage, request, env, current, body, { touchUsage, workflowPlan: resolved.plan, asyncDispatch, waitUntil, initialState: state, skipIntake: orderCreateSkipIntake(body) })
+      : await performSingleJobCreate(storage, env, current, body, { touchUsage, request, asyncDispatch, waitUntil, initialState: state, skipIntake: orderCreateSkipIntake(body) });
     if (result?.error) return json(result, result.statusCode || 400);
     result.order_strategy_requested = requestedStrategy;
     result.order_strategy_resolved = resolved.strategy;
