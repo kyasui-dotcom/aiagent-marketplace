@@ -8,6 +8,19 @@ aiagent2 は CAIt のチャット発注、リーダー/エージェント orches
 
 未追跡ファイルとして `oauth-demo/`, `scripts/build-google-oauth-video-from-screenshots.mjs`, `scripts/build-google-oauth-video.mjs`, `tmp-app-screens/` が残っています。ユーザー作成/検証用の可能性があるため、勝手に削除・コミットしないでください。
 
+## OAuth / Google connector の回帰防止メモ
+
+Google OAuth、GA4/Search Console connector、Analytics Console の source loading は複数回 regression しているため、次に触る前に必ず `docs/GOOGLE_OAUTH_CONNECTOR_IMPLEMENTATION_JA.md` を確認してください。
+
+特に守ること:
+
+- OAuth接続済みと、注文に analytics app context が添付済みであることを混同しない。
+- Google token response に `scope` がなくても requested scope を connector に保存する。
+- `/api/connectors/google/assets` と `/api/connectors/google/analytics-report` は認証前に D1 全体 state を読まない。
+- GA4 property list は `analyticsadmin.googleapis.com/v1beta/accountSummaries` を使う。
+- API未有効、scope不足、resource権限不足、source 0件をUIで分ける。
+- 未ログインの Google assets/report は 503 ではなく 401 で即時終了する。
+
 ## ユーザーの固定方針
 
 - 常に理想形を追う。一時しのぎで worker に特殊処理を増やさない。
