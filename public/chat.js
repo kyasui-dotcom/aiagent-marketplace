@@ -4678,11 +4678,11 @@ function analyticsIntakeChoiceHtml(sample = '') {
 }
 
 function intakeSourceText(intake = {}, sample = '') {
-  return [
+  return [...new Set([
     sample,
-    intake.originalPrompt,
-    ...(Array.isArray(intake.questions) ? intake.questions : [])
-  ].join('\n');
+    intake.originalPrompt
+  ].map((item) => String(item || '').trim()).filter(Boolean))]
+    .join('\n');
 }
 
 function compactIntakeText(value = '', maxLength = 140) {
@@ -4694,6 +4694,13 @@ function compactIntakeText(value = '', maxLength = 140) {
   return `${text.slice(0, maxLength - 1).trim()}…`;
 }
 
+function intakeSuggestionLooksLikeQuestion(value = '') {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return false;
+  return /[?？]$/.test(text)
+    || /(教えて|ください|選んで|選択|どれ|どの|何を|何です|ありますか|使いますか|必要ですか|want to|which|what|do you|please|choose|select|provide|tell us)/i.test(text);
+}
+
 function intakeInitialAnswerSuggestions(intake = {}, sample = '') {
   const text = intakeSourceText(intake, sample);
   const pick = (en, ja) => chatText(en, ja, sample || intake.originalPrompt || text);
@@ -4701,6 +4708,7 @@ function intakeInitialAnswerSuggestions(intake = {}, sample = '') {
   const add = (id, value) => {
     const safeValue = compactIntakeText(value);
     if (!id || !safeValue) return;
+    if (intakeSuggestionLooksLikeQuestion(safeValue)) return;
     result[id] ||= [];
     if (!result[id].some((item) => item === safeValue)) result[id].push(safeValue);
   };

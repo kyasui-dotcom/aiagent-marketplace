@@ -610,6 +610,8 @@ assert.ok(chatJs.includes('activeLeader: null'), 'Chat should track whether CAIt
 assert.ok(chatJs.includes('function setConversationOwnerFromPrepared'), 'Chat should switch the visible conversation owner from prepare-order responses.');
 assert.ok(chatJs.includes('CAIt specialist router'), 'Chat drafts should make direct specialist routing explicit.');
 assert.ok(chatJs.includes('function intakeInitialAnswerSuggestions'), 'Intake choices should extract usable answers from the initial chat prompt.');
+assert.ok(chatJs.includes('function intakeSuggestionLooksLikeQuestion'), 'Intake initial choices should reject question text as a confirmed answer.');
+assert.ok(chatJs.includes('intake.originalPrompt') && !/function intakeSourceText[\s\S]{0,220}intake\.questions/.test(chatJs), 'Intake initial choice extraction should not treat generated intake questions as already selected answers.');
 assert.ok(chatJs.includes('function seedIntakeInitialChoices'), 'Initial prompt-derived intake answers should be added to the editable composer.');
 assert.ok(chatJs.includes('From initial request'), 'Initial prompt-derived intake answers should be visibly marked as confirmed candidates.');
 assert.ok(
