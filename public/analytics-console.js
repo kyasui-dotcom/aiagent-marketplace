@@ -286,6 +286,12 @@ function renderGoogleSourceControls() {
     els.googleSourceNote.textContent = `${state.googleWarnings.join(' / ')}. Use the matching Connect GA4 or Connect Search Console button to authorize only the missing source, then Refresh sources.`;
     return;
   }
+  if (connected && Array.isArray(state.googleWarnings) && state.googleWarnings.length && !state.googleReportLoaded) {
+    els.googleSourceStatus.textContent = 'Google connected with warnings';
+    els.googleSourceStatus.className = 'status-pill blocked';
+    els.googleSourceNote.textContent = `${state.googleWarnings.join(' / ')}. Use the matching Connect GA4 or Connect Search Console button to authorize only the missing source, then Refresh sources.`;
+    return;
+  }
   if (state.googleReportLoaded && state.googleReportDateRange) {
     const warnings = Array.isArray(state.googleReportWarnings) ? state.googleReportWarnings.filter(Boolean) : [];
     const ga4Missing = Boolean(state.ga4Property && !state.googleReportSources.ga4);

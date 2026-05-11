@@ -2817,6 +2817,14 @@ function googleScopedOAuthScope(env, groups = []) {
   return [...scopes].join(' ');
 }
 
+function googleScopeString(...values) {
+  return [...new Set(values
+    .flatMap((value) => String(value || '').split(/\s+/))
+    .map((scope) => String(scope || '').trim())
+    .filter(Boolean))]
+    .join(' ');
+}
+
 function googleConnectorScopeSet(connector = null) {
   return new Set(String(connector?.scopes || '')
     .split(/\s+/)
@@ -2850,12 +2858,22 @@ function googleScopeForOAuthAction(env, action = 'login', url = null) {
   if (normalized === 'login') return googleLoginScope(env);
   const groups = googleOAuthScopeGroupsFromUrl(url);
   if (normalized === 'analytics_connect' && !groups.size) {
-    groups.add('ga4');
+    return googleAnalyticsScope(env);
   }
   if (['link', 'connect'].includes(normalized) && !groups.size) {
-    groups.add('ga4');
+    return googleAnalyticsScope(env);
   }
   return googleScopedOAuthScope(env, groups);
+}
+
+function googleRequestedScopeForOAuthState(env, cookieState = null) {
+  const explicitScope = googleScopeString(cookieState?.requestedScope || cookieState?.requested_scope || '');
+  if (explicitScope) return explicitScope;
+  const groups = Array.isArray(cookieState?.googleScopeGroups)
+    ? cookieState.googleScopeGroups.map((group) => String(group || '').trim()).filter(Boolean)
+    : [];
+  if (groups.length) return googleScopedOAuthScope(env, groups);
+  return googleScopeForOAuthAction(env, cookieState?.action || 'analytics_connect');
 }
 
 function googlePromptForOAuthAction(action = 'login') {
@@ -5271,15 +5289,32 @@ async function authStatus(request, env) {
   const session = await getSession(request, env);
   const policy = runtimePolicy(env);
   const current = lightweightCurrentFromSession(session);
+  const storage = runtimeStorage(env);
+  let account = current?.account || null;
+  if (!account && current?.login && typeof storage.getAccountByLogin === 'function') {
+    try {
+      account = await storage.getAccountByLogin(current.login);
+    } catch {
+      account = null;
+    }
+  }
+  const githubIdentity = accountIdentityForProvider(account, 'github') || current?.githubIdentity || null;
+  const googleIdentity = accountIdentityForProvider(account, 'google') || current?.googleIdentity || null;
+  const currentWithAccount = {
+    ...current,
+    account,
+    githubIdentity,
+    googleIdentity
+  };
   const loggedIn = Boolean(current?.user);
-  const githubLinked = Boolean(current?.githubLinked);
-  const googleLinked = Boolean(current?.googleLinked);
-  const xLinked = Boolean(current?.xLinked);
-  const githubAuthorized = Boolean(current?.githubAuthorized);
-  const googleAuthorized = Boolean(current?.googleAuthorized);
-  const xAuthorized = Boolean(current?.xAuthorized);
-  const identityLogins = identityLoginsForCurrent(current);
-  const googleConnector = googleConnectorForAccount(current?.account);
+  const githubLinked = Boolean(current?.githubLinked || githubIdentity || accountHasGithubConnector(account));
+  const googleLinked = Boolean(current?.googleLinked || googleIdentity || accountHasGoogleConnector(account));
+  const xLinked = Boolean(current?.xLinked || accountHasXConnector(account));
+  const githubAuthorized = Boolean(current?.githubAuthorized || accountHasGithubConnector(account));
+  const googleAuthorized = Boolean(current?.googleAuthorized || accountHasGoogleConnector(account));
+  const xAuthorized = Boolean(current?.xAuthorized || accountHasXConnector(account));
+  const identityLogins = identityLoginsForCurrent(currentWithAccount);
+  const googleConnector = googleConnectorForAccount(account);
   const googleGrantedScopes = [...googleConnectorScopeSet({
     scopes: [
       session?.googleScopes,
@@ -5344,8 +5379,8 @@ async function authStatus(request, env) {
     user: current?.user || null,
     login: current?.login || '',
     accountLogin: current?.login || '',
-    githubIdentity: current?.githubIdentity || null,
-    googleIdentity: current?.googleIdentity || null,
+    githubIdentity,
+    googleIdentity,
     identityLogins
   };
 }
@@ -9527,16 +9562,17 @@ async function handleGoogleAuthStart(request, env) {
   if (existingSession?.user && action === 'login') return redirect(returnTo || '/');
   const state = crypto.randomUUID();
   const callback = `${baseUrl(request, env)}/auth/google/callback`;
+  const requestedScope = googleScopeForOAuthAction(env, action, url);
   const googleUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   googleUrl.searchParams.set('client_id', googleClientId(env));
   googleUrl.searchParams.set('redirect_uri', callback);
   googleUrl.searchParams.set('response_type', 'code');
-  googleUrl.searchParams.set('scope', googleScopeForOAuthAction(env, action, url));
+  googleUrl.searchParams.set('scope', requestedScope);
   googleUrl.searchParams.set('state', state);
   googleUrl.searchParams.set('access_type', 'offline');
   googleUrl.searchParams.set('include_granted_scopes', 'true');
   googleUrl.searchParams.set('prompt', googlePromptForOAuthAction(action));
-  return redirectWithCookies(googleUrl.toString(), [await pushOAuthStateCookie(request, env, state, { provider: 'google-oauth', action, returnTo, loginSource, visitorId, googleScopeGroups })]);
+  return redirectWithCookies(googleUrl.toString(), [await pushOAuthStateCookie(request, env, state, { provider: 'google-oauth', action, returnTo, loginSource, visitorId, googleScopeGroups, requestedScope })]);
 }
 
 async function handleGoogleAuthCallback(request, env) {
@@ -9577,6 +9613,8 @@ async function handleGoogleAuthCallback(request, env) {
     });
     const user = await fetchGoogleUserProfile(token.access_token);
     const googleIdentity = googleUserRecord(user);
+    const requestedGoogleScope = googleRequestedScopeForOAuthState(env, cookieState);
+    const grantedGoogleScope = String(token.scope || requestedGoogleScope || '').trim();
     let session;
     if (shouldLinkOAuthCallback(cookieState, existingSession)) {
       const current = await oauthCallbackCurrentContext(storage, request, env, existingSession);
@@ -9591,7 +9629,7 @@ async function handleGoogleAuthCallback(request, env) {
       if (persistentGoogleConnector) {
         await mutateAccountByLogin(storage, linked.account.login, async (draft) => {
           const latest = accountSettingsForLogin(draft, linked.account.login, { ...googleIdentity, login: linked.account.login }, 'google-oauth');
-          const google = await googleConnectorFromOAuthToken(env, googleIdentity, token, latest?.connectors?.google || {});
+          const google = await googleConnectorFromOAuthToken(env, googleIdentity, token, latest?.connectors?.google || {}, requestedGoogleScope);
           linked.account = upsertAccountSettingsInState(draft, linked.account.login, { ...googleIdentity, login: linked.account.login }, 'google-oauth', {
             connectors: {
               ...(latest.connectors || {}),
@@ -9605,7 +9643,7 @@ async function handleGoogleAuthCallback(request, env) {
         googleIdentity: accountIdentityForProvider(linked.account, 'google') || googleIdentity,
         githubIdentity: accountIdentityForProvider(linked.account, 'github') || existingSession?.githubIdentity || null,
         googleAccessToken: persistentGoogleConnector ? '' : token.access_token,
-        googleScopes: token.scope || googleScopeForOAuthAction(env, cookieState?.action || 'analytics_connect'),
+        googleScopes: googleScopeString(existingSession?.googleScopes, grantedGoogleScope),
         linkedProviders: linkedProvidersFromAccount(linked.account)
       });
     } else {
@@ -9614,7 +9652,7 @@ async function handleGoogleAuthCallback(request, env) {
       if (persistentGoogleConnector) {
         await mutateAccountByLogin(storage, account.login, async (draft) => {
           const latest = accountSettingsForLogin(draft, account.login, googleIdentity, 'google-oauth');
-          const google = await googleConnectorFromOAuthToken(env, googleIdentity, token, latest?.connectors?.google || {});
+          const google = await googleConnectorFromOAuthToken(env, googleIdentity, token, latest?.connectors?.google || {}, requestedGoogleScope);
           account = upsertAccountSettingsInState(draft, account.login, googleIdentity, 'google-oauth', {
             connectors: {
               ...(latest.connectors || {}),
@@ -9630,7 +9668,7 @@ async function handleGoogleAuthCallback(request, env) {
         googleIdentity: accountIdentityForProvider(account, 'google') || googleIdentity,
         githubIdentity: accountIdentityForProvider(account, 'github') || null,
         googleAccessToken: persistentGoogleConnector ? '' : token.access_token,
-        googleScopes: token.scope || googleScopeForOAuthAction(env, cookieState?.action || 'login'),
+        googleScopes: googleScopeString(grantedGoogleScope),
         linkedProviders: linkedProvidersFromAccount(account),
         createdAt: Date.now()
       });

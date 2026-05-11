@@ -467,11 +467,25 @@ async function request(path, init = {}, options = {}) {
   }
   const text = await res.text();
   const responseHeaders = Object.fromEntries(res.headers.entries());
+  if (typeof res.headers.getSetCookie === 'function') {
+    const setCookies = res.headers.getSetCookie();
+    if (setCookies.length) responseHeaders['set-cookie'] = setCookies.join('\n');
+  }
   let body = text;
   try {
     body = text ? JSON.parse(text) : null;
   } catch {}
   return { status: res.status, body, text, headers: responseHeaders };
+}
+
+function cookiePairFromSetCookieHeader(headers = {}, name = '') {
+  const raw = String(headers['set-cookie'] || headers['Set-Cookie'] || '');
+  const marker = `${name}=`;
+  const start = raw.indexOf(marker);
+  if (start === -1) return '';
+  const tail = raw.slice(start);
+  const end = tail.indexOf(';');
+  return end === -1 ? tail : tail.slice(0, end);
 }
 
 const aliceSession = await buildSessionCookie('alice', 'Alice Example', { provider: 'github-app' });
@@ -523,8 +537,8 @@ assert.ok(!String(googleAuthStart.headers.location || '').includes('prompt=selec
 
 const googleAuthLink = await request('/auth/google?mode=link');
 assert.equal(googleAuthLink.status, 302);
-assert.ok(String(googleAuthLink.headers.location || '').includes('analytics.readonly'), 'Google link mode should request the narrow default GA4 connector scope');
-assert.ok(!String(googleAuthLink.headers.location || '').includes('webmasters.readonly'), 'Google link mode should not request Search Console unless that source is selected');
+assert.ok(String(googleAuthLink.headers.location || '').includes('analytics.readonly'), 'Google link mode should request GA4 connector scope');
+assert.ok(String(googleAuthLink.headers.location || '').includes('webmasters.readonly'), 'Google link mode should request Search Console with the default analytics connector scope');
 assert.ok(!String(googleAuthLink.headers.location || '').includes('gmail.readonly'), 'Google link mode should avoid broad restricted Gmail scopes for analytics connectors');
 assert.ok(String(googleAuthLink.headers.location || '').includes('prompt=select_account+consent'), 'Google link mode should request consent prompt');
 
@@ -542,8 +556,8 @@ assert.ok(!String(googleAuthDrive.headers.location || '').includes('gmail'), 'Go
 const loggedInGoogleAnalyticsConnect = await request('/auth/google?action=analytics_connect&return_to=%2Fanalytics-console.html', {}, { sessionCookie: daveSession });
 assert.equal(loggedInGoogleAnalyticsConnect.status, 302);
 assert.ok(String(loggedInGoogleAnalyticsConnect.headers.location || '').startsWith('https://accounts.google.com/'), 'Logged-in analytics connect should still open Google OAuth instead of returning to the app.');
-assert.ok(String(loggedInGoogleAnalyticsConnect.headers.location || '').includes('analytics.readonly'), 'Logged-in analytics connect should default to GA4 scopes.');
-assert.ok(!String(loggedInGoogleAnalyticsConnect.headers.location || '').includes('webmasters.readonly'), 'Logged-in analytics connect should not request Search Console without a Search Console source request.');
+assert.ok(String(loggedInGoogleAnalyticsConnect.headers.location || '').includes('analytics.readonly'), 'Logged-in analytics connect should default to GA4 scope.');
+assert.ok(String(loggedInGoogleAnalyticsConnect.headers.location || '').includes('webmasters.readonly'), 'Logged-in analytics connect should default to Search Console scope too.');
 
 const loggedInGoogleSearchConsoleConnect = await request('/auth/google?action=analytics_connect&scope_group=gsc&return_to=%2Fanalytics-console.html', {}, { sessionCookie: daveSession });
 assert.equal(loggedInGoogleSearchConsoleConnect.status, 302);
@@ -554,6 +568,66 @@ const loggedInGoogleAllAnalyticsConnect = await request('/auth/google?action=ana
 assert.equal(loggedInGoogleAllAnalyticsConnect.status, 302);
 assert.ok(String(loggedInGoogleAllAnalyticsConnect.headers.location || '').includes('analytics.readonly'), 'Combined analytics connect should request GA4 scope.');
 assert.ok(String(loggedInGoogleAllAnalyticsConnect.headers.location || '').includes('webmasters.readonly'), 'Combined analytics connect should request Search Console scope in the same OAuth pass.');
+
+const googleAnalyticsOAuthState = new URL(String(loggedInGoogleAnalyticsConnect.headers.location || '')).searchParams.get('state');
+const googleAnalyticsOAuthCookie = cookiePairFromSetCookieHeader(loggedInGoogleAnalyticsConnect.headers, 'aiagent2_oauth_state');
+assert.ok(googleAnalyticsOAuthState, 'analytics OAuth start should include an OAuth state.');
+assert.ok(googleAnalyticsOAuthCookie, 'analytics OAuth start should set an OAuth state cookie.');
+const googleOauthFlowFetch = globalThis.fetch;
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input.url;
+  if (url === 'https://oauth2.googleapis.com/token') {
+    return new Response(JSON.stringify({
+      access_token: 'qa-google-access-token',
+      refresh_token: 'qa-google-refresh-token',
+      expires_in: 3600
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  if (url === 'https://openidconnect.googleapis.com/v1/userinfo') {
+    return new Response(JSON.stringify({
+      sub: 'dave-google',
+      email: 'dave@example.com',
+      name: 'Dave Example',
+      picture: ''
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  if (String(url || '').startsWith('https://www.googleapis.com/webmasters/v3/sites')) {
+    return new Response(JSON.stringify({
+      siteEntry: [{ siteUrl: 'sc-domain:example.com', permissionLevel: 'siteFullUser' }]
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  if (String(url || '').startsWith('https://analyticsadmin.googleapis.com/v1alpha/accountSummaries')) {
+    return new Response(JSON.stringify({
+      accountSummaries: [{
+        name: 'accountSummaries/1',
+        displayName: 'QA Analytics Account',
+        propertySummaries: [{ property: 'properties/123456789', displayName: 'QA GA4 Property' }]
+      }]
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  return googleOauthFlowFetch(input, init);
+};
+try {
+  const googleAnalyticsCallback = await request(`/auth/google/callback?code=qa-google-code&state=${encodeURIComponent(googleAnalyticsOAuthState)}`, {}, {
+    sessionCookie: `${daveSession}; ${googleAnalyticsOAuthCookie}`
+  });
+  assert.equal(googleAnalyticsCallback.status, 302, 'Google analytics OAuth callback should complete after token exchange.');
+  assert.equal(googleAnalyticsCallback.headers.location, '/analytics-console.html', 'Google analytics OAuth callback should return to Analytics Console.');
+  const linkedGoogleSession = cookiePairFromSetCookieHeader(googleAnalyticsCallback.headers, SESSION_COOKIE);
+  assert.ok(linkedGoogleSession, 'Google analytics OAuth callback should refresh the browser session.');
+  const googleStatusAfterConnect = await request('/auth/status', {}, { sessionCookie: linkedGoogleSession });
+  assert.equal(googleStatusAfterConnect.status, 200);
+  assert.equal(googleStatusAfterConnect.body.googleAuthorized, true, 'auth status should treat persistent Google connectors as authorized.');
+  assert.ok(googleStatusAfterConnect.body.googleGrantedCapabilities.includes('google.read_ga4'), 'auth status should expose persisted GA4 scope from requested OAuth state.');
+  assert.ok(googleStatusAfterConnect.body.googleGrantedCapabilities.includes('google.read_gsc'), 'auth status should expose persisted Search Console scope from requested OAuth state.');
+  const googleAssetsAfterConnect = await request('/api/connectors/google/assets?include=gsc,ga4', {}, { sessionCookie: linkedGoogleSession });
+  assert.equal(googleAssetsAfterConnect.status, 200, 'Google assets should load after default analytics connect.');
+  assert.deepEqual(googleAssetsAfterConnect.body.google.missing_scope_groups, [], 'default analytics connect should persist both GA4 and Search Console scopes even when Google omits token.scope.');
+  assert.equal(googleAssetsAfterConnect.body.search_console.sites[0].siteUrl, 'sc-domain:example.com');
+  assert.equal(googleAssetsAfterConnect.body.ga4.account_summaries[0].propertySummaries[0].property, 'properties/123456789');
+} finally {
+  globalThis.fetch = googleOauthFlowFetch;
+}
 
 const loggedInGoogleConnect = await request('/auth/google?mode=connect&return_to=%2Fchat', {}, { sessionCookie: daveSession });
 assert.equal(loggedInGoogleConnect.status, 302);
