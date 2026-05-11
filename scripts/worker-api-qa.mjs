@@ -121,6 +121,9 @@ assert.ok(workerSource.includes("'dispatch_scheduled', 'dispatch_in_progress', '
 assert.ok(workerSource.includes('stale endpoint dispatch lock recovered for retry'), 'stale dispatch_in_progress recovery must be marked so D1 merge accepts dispatch_scheduled.');
 assert.ok(storageSource.includes('function jobStatusIsTerminalForMerge'), 'D1 job merge must treat completed jobs as terminal, not only failed/timed_out jobs.');
 assert.ok(storageSource.includes('const existingCompletedBlocksStaleActive = existingCompleted'), 'D1 job merge must preserve completed endpoint results against stale active dispatch writes.');
+assert.ok(storageSource.includes('async function loadJobsByIds'), 'D1 job upserts should load existing records in one targeted query batch.');
+assert.ok(storageSource.includes('async function upsertJobBatch'), 'D1 job upserts should write workflow parent/children through a single batch path.');
+assert.ok(storageSource.includes('await db.batch(prepared)'), 'D1 job upserts should use batch writes to avoid partial workflow creation.');
 assert.ok(storageSource.includes('const incomingRetryMutation = existingRecoverableTerminal'), 'D1 job merge retry handling must not allow active writes to reopen completed jobs.');
 assert.ok(storageSource.includes('ON CONFLICT(id) DO UPDATE SET'), 'D1 job upsert must use guarded UPSERT instead of unconditional INSERT OR REPLACE.');
 assert.ok(storageSource.includes("lower(jobs.status) = 'completed'"), 'D1 job upsert must guard completed rows at SQL write time against cross-isolate stale writes.');
