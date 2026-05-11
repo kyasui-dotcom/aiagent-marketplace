@@ -1021,7 +1021,7 @@ await qaStorage.mutate(async (draft) => {
       jobKind: 'workflow',
       parentAgentId: 'qa-runner',
       taskType: 'cmo_leader',
-      prompt: 'auto retry timed out research child',
+      prompt: 'restart required for timed out research child',
       status: 'running',
       createdAt: nowIso(),
       startedAt: nowIso(),
@@ -1038,7 +1038,7 @@ await qaStorage.mutate(async (draft) => {
       taskType: 'research',
       workflowTask: 'research',
       workflowAgentName: 'Research Agent',
-      prompt: 'timed out research child should be retried by leader sweep',
+      prompt: 'timed out research child should force full order retry',
       status: 'timed_out',
       assignedAgentId: 'agent_research_01',
       workflowParentId: 'qa-workflow-auto-retry-parent',
@@ -1058,12 +1058,18 @@ const autoRetrySweep = await request('/api/dev/timeout-sweep', {
   body: JSON.stringify({ retry_limit: 1 })
 }, { env: qaSearchEnv });
 assert.equal(autoRetrySweep.status, 200);
-assert.equal(autoRetrySweep.body.retry.retried_count, 1, 'leader timeout sweep should retry timed-out workflow children');
-assert.ok(autoRetrySweep.body.retry.job_ids.includes('qa-workflow-auto-retry-child'));
+assert.equal(autoRetrySweep.body.retry.retried_count, 0, 'workflow child failures must not be retried in-place');
+assert.equal(autoRetrySweep.body.retry.restart_required_count, 1, 'retry sweep should convert retryable workflow child failures into full-order retry requirements');
+assert.ok(autoRetrySweep.body.retry.restart_required_job_ids.includes('qa-workflow-auto-retry-child'));
 const autoRetryState = await qaStorage.getState();
 const autoRetriedChild = autoRetryState.jobs.find((job) => job.id === 'qa-workflow-auto-retry-child');
-assert.ok(['queued', 'running', 'completed'].includes(String(autoRetriedChild?.status || '')), 'auto-retried workflow child should leave timed_out status');
-assert.ok(Number(autoRetriedChild.dispatch.attempts || 0) >= 1);
+const autoRetryParent = autoRetryState.jobs.find((job) => job.id === 'qa-workflow-auto-retry-parent');
+assert.equal(autoRetriedChild?.status, 'failed', 'failed workflow child should stay terminal instead of being requeued');
+assert.equal(autoRetriedChild?.failureCategory, 'workflow_restart_required');
+assert.equal(autoRetriedChild?.dispatch?.retryable, false);
+assert.equal(autoRetriedChild?.dispatch?.restartRequired, true);
+assert.equal(autoRetryParent?.status, 'failed', 'parent workflow should fail visibly when a child requires a full-order retry');
+assert.equal(autoRetryParent?.failureCategory, 'workflow_restart_required');
 
 await qaStorage.mutate(async (draft) => {
   draft.jobs.push(
@@ -1072,7 +1078,7 @@ await qaStorage.mutate(async (draft) => {
       jobKind: 'workflow',
       parentAgentId: 'qa-runner',
       taskType: 'cmo_leader',
-      prompt: 'auto retry failed preparation child',
+      prompt: 'restart required for failed preparation child',
       status: 'running',
       createdAt: nowIso(),
       startedAt: nowIso(),
@@ -1089,7 +1095,7 @@ await qaStorage.mutate(async (draft) => {
       taskType: 'seo_gap',
       workflowTask: 'seo_gap',
       workflowAgentName: 'SEO Agent',
-      prompt: 'retryable preparation timeout should be retried by leader sweep',
+      prompt: 'retryable preparation timeout should force full order retry',
       status: 'failed',
       assignedAgentId: 'agent_seogap_01',
       workflowParentId: 'qa-workflow-auto-retry-prep-parent',
@@ -1110,12 +1116,18 @@ const autoRetryPrepSweep = await request('/api/dev/timeout-sweep', {
   body: JSON.stringify({ retry_limit: 1 })
 }, { env: qaSearchEnv });
 assert.equal(autoRetryPrepSweep.status, 200);
-assert.equal(autoRetryPrepSweep.body.retry.retried_count, 1, 'leader timeout sweep should retry retryable dispatch failures beyond the research layer');
-assert.ok(autoRetryPrepSweep.body.retry.job_ids.includes('qa-workflow-auto-retry-prep-child'));
+assert.equal(autoRetryPrepSweep.body.retry.retried_count, 0, 'preparation children must not be retried in-place');
+assert.equal(autoRetryPrepSweep.body.retry.restart_required_count, 1, 'retryable dispatch failures should become full-order retry requirements');
+assert.ok(autoRetryPrepSweep.body.retry.restart_required_job_ids.includes('qa-workflow-auto-retry-prep-child'));
 const autoRetryPrepState = await qaStorage.getState();
 const autoRetriedPrepChild = autoRetryPrepState.jobs.find((job) => job.id === 'qa-workflow-auto-retry-prep-child');
-assert.ok(['queued', 'running', 'completed'].includes(String(autoRetriedPrepChild?.status || '')), 'auto-retried preparation child should leave failed status');
-assert.ok(Number(autoRetriedPrepChild.dispatch.attempts || 0) >= 1);
+const autoRetryPrepParent = autoRetryPrepState.jobs.find((job) => job.id === 'qa-workflow-auto-retry-prep-parent');
+assert.equal(autoRetriedPrepChild?.status, 'failed', 'failed preparation child should stay terminal instead of being requeued');
+assert.equal(autoRetriedPrepChild?.failureCategory, 'workflow_restart_required');
+assert.equal(autoRetriedPrepChild?.dispatch?.retryable, false);
+assert.equal(autoRetriedPrepChild?.dispatch?.restartRequired, true);
+assert.equal(autoRetryPrepParent?.status, 'failed', 'parent workflow should fail visibly when a preparation child requires a full-order retry');
+assert.equal(autoRetryPrepParent?.failureCategory, 'workflow_restart_required');
 
 const asyncRawState = await qaStorage.getState();
 const asyncCheckpointLeader = asyncRawState.jobs.find((job) => (
@@ -1216,22 +1228,40 @@ try {
       BUILTIN_WORKFLOW_OPENAI_ENABLED: '1'
     }
   });
-  assert.equal(blockedRetry.status, 200);
-  assert.equal(blockedRetry.body.mode, 'failed');
-  assert.equal(blockedSearchOpenAiCalls, 0, 'search-required workflow retry must not hit OpenAI when no source URL is available');
+  assert.equal(blockedRetry.status, 409);
+  assert.equal(blockedRetry.body.restart_required, true);
+  assert.equal(blockedSearchOpenAiCalls, 0, 'single-child workflow retry must not hit OpenAI when the whole order should be retried');
 } finally {
   globalThis.fetch = originalWorkerApiFetch;
 }
 const blockedSearchState = await qaStorage.getState();
 const blockedSearchChild = blockedSearchState.jobs.find((job) => job.id === blockedSearchChildId);
 const blockedSearchParent = blockedSearchState.jobs.find((job) => job.id === blockedSearchParentId);
-assert.equal(blockedSearchChild?.status, 'failed', 'search-required workflow child should fail quality-first when no source URL is available');
-assert.equal(blockedSearchChild?.dispatch?.completionStatus, 'failed');
-assert.equal(blockedSearchChild?.dispatch?.retryable, true, 'source collection failures should keep retry budget for data/research quality');
-assert.equal(blockedSearchChild?.dispatch?.maxRetries, 10);
-assert.equal(blockedSearchChild?.failureCategory, 'missing_required_sources');
-assert.match(blockedSearchChild?.failureReason || '', /source|search|OpenAI generation was not started/i);
+assert.equal(blockedSearchChild?.status, 'queued', 'single-child retry rejection should not reopen or partially execute the workflow child');
 assert.notEqual(blockedSearchParent?.status, 'completed', 'workflow parent should not advance as completed from source-missing research');
+await qaStorage.mutate(async (draft) => {
+  const child = draft.jobs.find((job) => job.id === blockedSearchChildId);
+  const parent = draft.jobs.find((job) => job.id === blockedSearchParentId);
+  const failedAt = nowIso();
+  if (child) {
+    child.status = 'failed';
+    child.failedAt = failedAt;
+    child.failureCategory = 'workflow_restart_required';
+    child.failureReason = 'QA cleanup: full order retry required after rejected child retry.';
+    child.dispatch = {
+      ...(child.dispatch || {}),
+      completionStatus: 'workflow_restart_required',
+      retryable: false,
+      restartRequired: true
+    };
+  }
+  if (parent) {
+    parent.status = 'failed';
+    parent.failedAt = failedAt;
+    parent.failureCategory = 'workflow_restart_required';
+    parent.failureReason = 'QA cleanup: full order retry required after rejected child retry.';
+  }
+});
 
 const blockedResearchSequenceParentId = 'qa-blocked-research-sequence-parent';
 const blockedResearchCheckpointId = 'qa-blocked-research-sequence-checkpoint';

@@ -5154,26 +5154,87 @@ function workflowCompletionRetryLimitForJob(env = {}, job = {}) {
   return maxDispatchRetriesForJob(job);
 }
 
+function jobIsE2eScenario(job = {}) {
+  const text = [
+    job?.id,
+    job?.workflowParentId,
+    job?.parentAgentId,
+    job?.input?.source,
+    job?.input?._broker?.source,
+    job?.input?._broker?.workflow?.source,
+    job?.input?._broker?.workflow?.scenarioId,
+    job?.prompt,
+    job?.originalPrompt
+  ].map((item) => String(item || '')).join(' ').toLowerCase();
+  return /\be2e[_-]?order\b|playwright-e2e|e2e_order_scenario/.test(text);
+}
+
+function workflowProviderRunMaxAttempts(env = {}, job = {}) {
+  const e2eConfigured = Number(env?.E2E_PROVIDER_RUN_MAX_ATTEMPTS || env?.E2E_WORKFLOW_PROVIDER_RUN_MAX_ATTEMPTS || 0);
+  if (jobIsE2eScenario(job)) {
+    return Number.isFinite(e2eConfigured) && e2eConfigured > 0
+      ? Math.max(1, Math.min(3, e2eConfigured))
+      : 1;
+  }
+  const configured = Number(env?.WORKFLOW_PROVIDER_RUN_MAX_ATTEMPTS || env?.PROVIDER_RUN_MAX_ATTEMPTS || 0);
+  return Number.isFinite(configured) && configured > 0
+    ? Math.max(1, Math.min(8, configured))
+    : 3;
+}
+
+function providerRunAttempts(job = {}) {
+  const dispatch = job?.dispatch && typeof job.dispatch === 'object' ? job.dispatch : {};
+  return Math.max(
+    Number(dispatch.providerRunAttempts || 0) || 0,
+    Number(dispatch.providerQueueRequeueAttempts || 0) || 0,
+    Number(dispatch.acceptedEndpointRecoveryAttempts || 0) || 0
+  );
+}
+
+function providerRunLimitReached(env = {}, job = {}) {
+  return providerRunAttempts(job) >= workflowProviderRunMaxAttempts(env, job);
+}
+
+function acceptedEndpointRecoveryMaxAttempts(env = {}, job = {}) {
+  const e2eConfigured = Number(env?.E2E_ACCEPTED_ENDPOINT_RECOVERY_MAX_ATTEMPTS || env?.E2E_ACCEPTED_ENDPOINT_RECOVERY_LIMIT || 0);
+  if (jobIsE2eScenario(job)) {
+    return Number.isFinite(e2eConfigured) && e2eConfigured >= 0
+      ? Math.max(0, Math.min(2, e2eConfigured))
+      : 0;
+  }
+  const configured = Number(env?.ACCEPTED_ENDPOINT_RECOVERY_MAX_ATTEMPTS || env?.ACCEPTED_ENDPOINT_RECOVERY_LIMIT || 0);
+  return Number.isFinite(configured) && configured >= 0
+    ? Math.max(0, Math.min(3, configured))
+    : 0;
+}
+
+function acceptedEndpointRecoveryAttempts(job = {}) {
+  const dispatch = job?.dispatch && typeof job.dispatch === 'object' ? job.dispatch : {};
+  return Math.max(
+    Number(dispatch.acceptedEndpointRecoveryAttempts || 0) || 0,
+    Number(dispatch.providerQueueRequeueAttempts || 0) || 0
+  );
+}
+
+function acceptedEndpointRecoveryLimitReached(env = {}, job = {}) {
+  return acceptedEndpointRecoveryAttempts(job) >= acceptedEndpointRecoveryMaxAttempts(env, job);
+}
+
+function workflowChildShouldRestartFromBeginning(job = {}) {
+  return Boolean(job?.workflowParentId || job?.jobKind === 'workflow_child');
+}
+
+function workflowRestartRequiredReason(job = {}, cause = '') {
+  const task = workflowTaskName(job) || job?.taskType || 'workflow child';
+  const detail = String(cause || job?.failureReason || '').trim();
+  return `${task} failed in a way that should not be retried in-place. Retry the order from the beginning.${detail ? ` Cause: ${detail}` : ''}`;
+}
+
 function shouldAutoRetryWorkflowChild(parent = null, job = {}) {
-  if (!parent || parent.jobKind !== 'workflow' || !job?.workflowParentId) return false;
-  const status = String(job.status || '').trim().toLowerCase();
-  const failureCategory = String(job.failureCategory || '').trim().toLowerCase();
-  const sourceCollectionFailure = status === 'failed'
-    && failureCategory === 'missing_required_sources';
-  const retryableDispatchFailure = status === 'failed'
-    && job.dispatch?.retryable === true
-    && ['dispatch_timeout', 'dispatch_http_5xx', 'dispatch_error'].includes(failureCategory);
-  if (status !== 'timed_out' && !sourceCollectionFailure && !retryableDispatchFailure) return false;
-  if (!canRetryJob(job)) return false;
-  const nextRetryAt = Date.parse(String(job.dispatch?.nextRetryAt || ''));
-  if (Number.isFinite(nextRetryAt) && Date.now() < nextRetryAt) return false;
-  const primary = workflowPrimaryTask(parent);
-  if (!isWorkflowLeaderTask(primary)) return false;
-  const task = String(job.workflowTask || job.taskType || '').trim().toLowerCase();
-  if (isWorkflowLeaderTask(task)) return true;
-  const layer = workflowDispatchLayer(parent, job);
-  if (retryableDispatchFailure) return layer >= 1;
-  return layer <= 2;
+  // Workflow child retries reuse partial state and can multiply external provider
+  // calls when persistence or queue delivery is unstable. A failed workflow child
+  // should fail the workflow; user-initiated retry creates a fresh order.
+  return false;
 }
 
 function shouldAutoRetryTimedOutWorkflowChild(parent = null, job = {}) {
@@ -12480,6 +12541,51 @@ async function reconcileWorkflowParent(storage, parentJobId) {
         concreteArtifactWarningCount: concreteArtifactWarnings
       } : {})
     };
+    const restartRequiredFailedChild = failed.find((item) => (
+      String(item?.failureCategory || '').trim().toLowerCase() === 'workflow_restart_required'
+      || item?.dispatch?.restartRequired === true
+    ));
+    if (restartRequiredFailedChild) {
+      blockWorkflowPendingChildren(
+        children.filter((item) => item.id !== restartRequiredFailedChild.id && !terminal.has(String(item.status || '').trim().toLowerCase())),
+        'blocked_after_restart_required_failure'
+      );
+      const refreshedChildRuns = workflowChildSnapshot(children);
+      parent.workflow = {
+        ...(parent.workflow || {}),
+        childRuns: refreshedChildRuns,
+        statusCounts: {
+          total: expectedTotal,
+          planned: plannedRunCount,
+          completed: children.filter((item) => item.status === 'completed').length,
+          failed: children.filter((item) => ['failed', 'timed_out'].includes(String(item.status || '').toLowerCase())).length,
+          blocked: children.filter((item) => item.status === 'blocked').length,
+          queued: children.filter((item) => item.status === 'queued').length,
+          running: children.filter((item) => ['claimed', 'running', 'dispatched'].includes(String(item.status || '').toLowerCase())).length
+        },
+        restartRequired: {
+          childJobId: restartRequiredFailedChild.id,
+          task: workflowTaskName(restartRequiredFailedChild) || restartRequiredFailedChild.taskType || '',
+          reason: restartRequiredFailedChild.failureReason || '',
+          at: nowIso()
+        }
+      };
+      parent.status = 'failed';
+      parent.completedAt = null;
+      parent.failedAt = restartRequiredFailedChild.failedAt || restartRequiredFailedChild.timedOutAt || nowIso();
+      parent.failureCategory = 'workflow_restart_required';
+      parent.failureReason = workflowRestartRequiredReason(restartRequiredFailedChild, restartRequiredFailedChild.failureReason);
+      parent.dispatch = {
+        ...(parent.dispatch || {}),
+        completionStatus: 'workflow_restart_required',
+        retryable: false,
+        nextRetryAt: null,
+        restartRequired: true
+      };
+      parent.output = buildAgentTeamDeliveryOutput(parent, children);
+      syncJobAuthorityRequest(parent);
+      return cloneJob(parent);
+    }
     const leaderSequence = workflowLeaderSequence(parent);
     if (leaderSequence?.enabled) {
       const checkpointJobId = String(leaderSequence.checkpointJobId || '').trim();
@@ -13265,6 +13371,47 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
   if (dispatchExecutionIsFresh(job, agent)) {
     return { ok: true, mode: 'running', job: cloneJob(job), skippedInProgress: true };
   }
+  const currentCompletionStatus = String(job.dispatch?.completionStatus || '').trim().toLowerCase();
+  if (workflowChildShouldRestartFromBeginning(job) && currentCompletionStatus === 'dispatch_in_progress') {
+    const reason = workflowRestartRequiredReason(job, 'provider dispatch was already in progress and became stale');
+    const failed = await failJob(storage, job.id, reason, ['stale provider dispatch requires full order retry'], {
+      failureStatus: 'failed',
+      failureCategory: 'workflow_restart_required',
+      retryable: false,
+      attempts: providerRunAttempts(job),
+      maxRetries: workflowProviderRunMaxAttempts(env, job),
+      restartRequired: true,
+      source: 'stale-provider-dispatch'
+    });
+    await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} stale provider dispatch failed; retry from beginning`, {
+      kind: 'workflow_restart_required',
+      jobId: job.id,
+      parentJobId: job.workflowParentId || null,
+      attempts: providerRunAttempts(job),
+      maxAttempts: workflowProviderRunMaxAttempts(env, job)
+    });
+    return { ok: true, mode: 'failed', job: failed, restartRequired: true, error: reason };
+  }
+  if (workflowChildShouldRestartFromBeginning(job) && providerRunLimitReached(env, job)) {
+    const reason = workflowRestartRequiredReason(job, `provider run limit reached (${providerRunAttempts(job)}/${workflowProviderRunMaxAttempts(env, job)})`);
+    const failed = await failJob(storage, job.id, reason, ['provider run limit reached; full order retry required'], {
+      failureStatus: 'failed',
+      failureCategory: 'workflow_restart_required',
+      retryable: false,
+      attempts: providerRunAttempts(job),
+      maxRetries: workflowProviderRunMaxAttempts(env, job),
+      restartRequired: true,
+      source: 'provider-run-limit'
+    });
+    await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} provider run limit reached; retry from beginning`, {
+      kind: 'provider_run_limit_reached',
+      jobId: job.id,
+      parentJobId: job.workflowParentId || null,
+      attempts: providerRunAttempts(job),
+      maxAttempts: workflowProviderRunMaxAttempts(env, job)
+    });
+    return { ok: true, mode: 'failed', job: failed, restartRequired: true, error: reason };
+  }
   const lockDispatchJob = async (draft) => {
     const draftJob = draft.jobs.find((item) => item.id === job.id);
     const draftAgent = draft.agents.find((item) => item.id === agent.id);
@@ -13277,10 +13424,59 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
       return { ok: true, mode: 'running', job: cloneJob(draftJob), skippedInProgress: true };
     }
     const completionStatus = String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase();
+    if (workflowChildShouldRestartFromBeginning(draftJob) && completionStatus === 'dispatch_in_progress') {
+      const failedAt = nowIso();
+      draftJob.status = 'failed';
+      draftJob.failedAt = failedAt;
+      draftJob.timedOutAt = null;
+      draftJob.completedAt = null;
+      draftJob.failureCategory = 'workflow_restart_required';
+      draftJob.failureReason = workflowRestartRequiredReason(draftJob, 'stale provider dispatch lock');
+      if (draftJob.billingReservation && !draftJob.billingSettlement?.settledAt && !draftJob.billingReservation?.releasedAt) {
+        releaseBillingReservationInState(draft, draftJob);
+      }
+      draftJob.dispatch = {
+        ...(draftJob.dispatch || {}),
+        completionStatus: 'workflow_restart_required',
+        failedAt,
+        retryable: false,
+        nextRetryAt: null,
+        restartRequired: true,
+        attempts: providerRunAttempts(draftJob),
+        maxRetries: workflowProviderRunMaxAttempts(env, draftJob)
+      };
+      draftJob.logs = [...(draftJob.logs || []), 'stale provider dispatch failed; full order retry required'];
+      return { ok: true, mode: 'failed', job: cloneJob(draftJob), restartRequired: true };
+    }
+    if (workflowChildShouldRestartFromBeginning(draftJob) && providerRunLimitReached(env, draftJob)) {
+      const failedAt = nowIso();
+      draftJob.status = 'failed';
+      draftJob.failedAt = failedAt;
+      draftJob.timedOutAt = null;
+      draftJob.completedAt = null;
+      draftJob.failureCategory = 'workflow_restart_required';
+      draftJob.failureReason = workflowRestartRequiredReason(draftJob, `provider run limit reached (${providerRunAttempts(draftJob)}/${workflowProviderRunMaxAttempts(env, draftJob)})`);
+      if (draftJob.billingReservation && !draftJob.billingSettlement?.settledAt && !draftJob.billingReservation?.releasedAt) {
+        releaseBillingReservationInState(draft, draftJob);
+      }
+      draftJob.dispatch = {
+        ...(draftJob.dispatch || {}),
+        completionStatus: 'workflow_restart_required',
+        failedAt,
+        retryable: false,
+        nextRetryAt: null,
+        restartRequired: true,
+        attempts: providerRunAttempts(draftJob),
+        maxRetries: workflowProviderRunMaxAttempts(env, draftJob)
+      };
+      draftJob.logs = [...(draftJob.logs || []), 'provider run limit reached before dispatch; full order retry required'];
+      return { ok: true, mode: 'failed', job: cloneJob(draftJob), restartRequired: true };
+    }
     if (completionStatus && !['dispatch_scheduled', 'dispatch_in_progress', 'timed_out', 'failed', 'retry_queued', 'leader_auto_retry_queued', 'leader_checkpoint_queued', 'leader_final_summary_queued', 'leader_adaptive_queued'].includes(completionStatus)) {
       return { ok: true, mode: draftJob.status || completionStatus, job: cloneJob(draftJob), skippedLocked: true };
     }
     const at = nowIso();
+    const providerRunAttempt = providerRunAttempts(draftJob) + 1;
     draftJob.status = 'running';
     draftJob.startedAt = draftJob.startedAt || at;
     draftJob.dispatch = {
@@ -13291,16 +13487,21 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
       completionStatus: 'dispatch_in_progress',
       retryable: false,
       nextRetryAt: null,
-      maxRetries: maxDispatchRetriesForJob(draftJob)
+      maxRetries: maxDispatchRetriesForJob(draftJob),
+      providerRunAttempts: providerRunAttempt,
+      providerRunMaxAttempts: workflowProviderRunMaxAttempts(env, draftJob)
     };
-    draftJob.logs = [...(draftJob.logs || []), `dispatch locked for ${draftAgent.id}`];
+    draftJob.logs = [...(draftJob.logs || []), `dispatch locked for ${draftAgent.id} provider_run_attempt=${providerRunAttempt}/${workflowProviderRunMaxAttempts(env, draftJob)}`];
     return { ok: true, mode: 'locked', job: cloneJob(draftJob), agent: structuredClone(draftAgent) };
   };
   const locked = typeof storage.mutateJobAndAgent === 'function'
     ? await storage.mutateJobAndAgent(job.id, agent.id, lockDispatchJob)
     : await storage.mutate(lockDispatchJob);
   if (locked?.error) return { error: locked.error, statusCode: locked.statusCode || 500 };
-  if (locked?.mode && locked.mode !== 'locked') return locked;
+  if (locked?.mode && locked.mode !== 'locked') {
+    if (locked.mode === 'failed' && locked.job?.workflowParentId) await reconcileWorkflowParent(storage, locked.job.workflowParentId);
+    return locked;
+  }
   const dispatchJob = locked?.job || job;
   const dispatchAgent = locked?.agent || agent;
   try {
@@ -13320,10 +13521,11 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
         const sourceRetryMeta = failureMeta.category === 'missing_required_sources'
           ? sourceCollectionFailureRetryMeta(env, draftJob)
           : null;
+        const restartRequired = workflowChildShouldRestartFromBeginning(draftJob);
         draftJob.status = 'failed';
         draftJob.failedAt = nowIso();
-        draftJob.failureReason = dispatch.failureReason;
-        draftJob.failureCategory = failureMeta.category;
+        draftJob.failureReason = restartRequired ? workflowRestartRequiredReason(draftJob, dispatch.failureReason) : dispatch.failureReason;
+        draftJob.failureCategory = restartRequired ? 'workflow_restart_required' : failureMeta.category;
         if (draftJob.billingReservation && !draftJob.billingReservation?.releasedAt) {
           releaseBillingReservationInState(draft, draftJob);
         }
@@ -13333,13 +13535,14 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
           statusCode: dispatch.statusCode || null,
           responseStatus: dispatch.responseBody?.status || null,
           lastAttemptAt: nowIso(),
-          attempts: sourceRetryMeta?.attempts ?? failureMeta.attempts,
-          retryable: sourceRetryMeta?.retryable ?? failureMeta.retryable,
-          nextRetryAt: sourceRetryMeta?.nextRetryAt ?? failureMeta.nextRetryAt,
+          attempts: providerRunAttempts(draftJob) || sourceRetryMeta?.attempts || failureMeta.attempts,
+          retryable: restartRequired ? false : (sourceRetryMeta?.retryable ?? failureMeta.retryable),
+          nextRetryAt: restartRequired ? null : (sourceRetryMeta?.nextRetryAt ?? failureMeta.nextRetryAt),
           maxRetries: sourceRetryMeta?.maxRetries ?? maxDispatchRetriesForJob(draftJob),
-          completionStatus: 'failed'
+          completionStatus: restartRequired ? 'workflow_restart_required' : 'failed',
+          restartRequired
         };
-        draftJob.logs = [...(draftJob.logs || []), `dispatch failed for ${dispatchAgent.id}`, dispatch.failureReason, `retryable=${sourceRetryMeta?.retryable ?? failureMeta.retryable}`];
+        draftJob.logs = [...(draftJob.logs || []), `dispatch failed for ${dispatchAgent.id}`, dispatch.failureReason, restartRequired ? 'full order retry required' : `retryable=${sourceRetryMeta?.retryable ?? failureMeta.retryable}`];
         return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
       }
 
@@ -13347,6 +13550,7 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
       draftJob.startedAt = draftJob.startedAt || draftJob.dispatchedAt;
       draftJob.status = 'dispatched';
       draftJob.dispatch = {
+        ...(draftJob.dispatch || {}),
         endpoint: dispatch.endpoint,
         statusCode: dispatch.statusCode,
         externalJobId: dispatch.normalized.externalJobId,
@@ -13355,7 +13559,8 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
         attempts: Number(draftJob.dispatch?.attempts || 0) + 1,
         retryable: false,
         nextRetryAt: null,
-        completionStatus: dispatch.normalized.blocked ? 'blocked' : (dispatch.normalized.completed ? 'completed' : 'accepted')
+        completionStatus: dispatch.normalized.blocked ? 'blocked' : (dispatch.normalized.completed ? 'completed' : 'accepted'),
+        ...(dispatch.normalized.accepted && !dispatch.normalized.completed && !dispatch.normalized.blocked ? { providerQueueAcceptedAt: nowIso() } : {})
       };
       draftJob.logs = [...(draftJob.logs || []), `dispatched to ${dispatchAgent.id} endpoint=${dispatch.endpoint}`];
 
@@ -13372,12 +13577,13 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
         appendWorkflowOriginalInfoUsage(draftJob);
         const sourceProofFailure = workflowSearchCompletionFailureReason(draftJob, dispatch.normalized.report);
         if (sourceProofFailure) {
-          const sourceRetryMeta = sourceCollectionFailureRetryMeta(env, draftJob, { alreadyAttempted: true });
+          const restartRequired = workflowChildShouldRestartFromBeginning(draftJob);
+          const sourceRetryMeta = restartRequired ? null : sourceCollectionFailureRetryMeta(env, draftJob, { alreadyAttempted: true });
           draftJob.status = 'failed';
           draftJob.completedAt = null;
           draftJob.failedAt = nowIso();
-          draftJob.failureReason = sourceProofFailure;
-          draftJob.failureCategory = 'missing_required_sources';
+          draftJob.failureReason = restartRequired ? workflowRestartRequiredReason(draftJob, sourceProofFailure) : sourceProofFailure;
+          draftJob.failureCategory = restartRequired ? 'workflow_restart_required' : 'missing_required_sources';
           draftJob.actualBilling = null;
           draftJob.deliveryQuality = null;
           if (draftJob.billingReservation && !draftJob.billingReservation?.releasedAt) {
@@ -13385,13 +13591,14 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
           }
           draftJob.dispatch = {
             ...(draftJob.dispatch || {}),
-            completionStatus: 'failed',
-            retryable: sourceRetryMeta.retryable,
-            attempts: sourceRetryMeta.attempts,
-            nextRetryAt: sourceRetryMeta.nextRetryAt,
-            maxRetries: sourceRetryMeta.maxRetries
+            completionStatus: restartRequired ? 'workflow_restart_required' : 'failed',
+            retryable: restartRequired ? false : sourceRetryMeta.retryable,
+            attempts: restartRequired ? providerRunAttempts(draftJob) : sourceRetryMeta.attempts,
+            nextRetryAt: restartRequired ? null : sourceRetryMeta.nextRetryAt,
+            maxRetries: restartRequired ? workflowProviderRunMaxAttempts(env, draftJob) : sourceRetryMeta.maxRetries,
+            restartRequired
           };
-          draftJob.logs.push(sourceProofFailure, 'failed before completion: missing search execution proof');
+          draftJob.logs.push(sourceProofFailure, restartRequired ? 'full order retry required after missing search execution proof' : 'failed before completion: missing search execution proof');
           return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
         }
         const concreteArtifactWarning = workflowConcreteArtifactFailureReason(draftJob);
@@ -13473,7 +13680,14 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
     }
     return final;
   } catch (error) {
-    const failed = await failJob(storage, dispatchJob.id, error.message, [`dispatch exception for ${dispatchAgent.id}`], { failureCategory: 'dispatch_error', retryable: true, attempts: 1, nextRetryAt: computeNextRetryAt(1) });
+    const restartRequired = workflowChildShouldRestartFromBeginning(dispatchJob);
+    const failed = await failJob(storage, dispatchJob.id, restartRequired ? workflowRestartRequiredReason(dispatchJob, error.message) : error.message, [`dispatch exception for ${dispatchAgent.id}`], {
+      failureCategory: restartRequired ? 'workflow_restart_required' : 'dispatch_error',
+      retryable: restartRequired ? false : true,
+      attempts: providerRunAttempts(dispatchJob) || 1,
+      nextRetryAt: restartRequired ? null : computeNextRetryAt(1),
+      restartRequired
+    });
     await touchEvent(storage, 'FAILED', `${dispatchJob.taskType}/${dispatchJob.id.slice(0, 6)} dispatch exception`);
     if (dispatchJob.workflowParentId) await reconcileWorkflowParent(storage, dispatchJob.workflowParentId);
     return { ok: true, mode: failed?.status || 'failed', job: failed, error: error.message };
@@ -16491,6 +16705,56 @@ async function markDispatchScheduled(storage, jobId, agentId, reason = 'dispatch
     if (dispatchScheduleIsFreshForAgent(job, agent)) {
       return { scheduled: false, reason: 'already_scheduled', job: cloneJob(job), agent: publicAgent(agent) };
     }
+    const previousDispatch = job.dispatch && typeof job.dispatch === 'object' ? job.dispatch : {};
+    const previousCompletionStatus = String(previousDispatch.completionStatus || '').trim().toLowerCase();
+    if (workflowChildShouldRestartFromBeginning(job) && previousCompletionStatus === 'dispatch_in_progress') {
+      const failedAt = nowIso();
+      job.status = 'failed';
+      job.failedAt = failedAt;
+      job.timedOutAt = null;
+      job.completedAt = null;
+      job.failureCategory = 'workflow_restart_required';
+      job.failureReason = workflowRestartRequiredReason(job, 'stale provider dispatch lock reached the scheduler');
+      if (job.billingReservation && !job.billingSettlement?.settledAt && !job.billingReservation?.releasedAt) {
+        releaseBillingReservationInState(state, job);
+      }
+      job.dispatch = {
+        ...previousDispatch,
+        completionStatus: 'workflow_restart_required',
+        failedAt,
+        retryable: false,
+        nextRetryAt: null,
+        restartRequired: true,
+        attempts: providerRunAttempts(job),
+        maxRetries: workflowProviderRunMaxAttempts(env, job)
+      };
+      job.logs = [...(job.logs || []), 'stale dispatch_in_progress lock requires full order retry'];
+      return { scheduled: false, reason: 'workflow_restart_required', job: cloneJob(job), agent: publicAgent(agent), restartRequired: true };
+    }
+    if (workflowChildShouldRestartFromBeginning(job) && providerRunLimitReached(env, job)) {
+      const failedAt = nowIso();
+      job.status = 'failed';
+      job.failedAt = failedAt;
+      job.timedOutAt = null;
+      job.completedAt = null;
+      job.failureCategory = 'workflow_restart_required';
+      job.failureReason = workflowRestartRequiredReason(job, `provider run limit reached (${providerRunAttempts(job)}/${workflowProviderRunMaxAttempts(env, job)})`);
+      if (job.billingReservation && !job.billingSettlement?.settledAt && !job.billingReservation?.releasedAt) {
+        releaseBillingReservationInState(state, job);
+      }
+      job.dispatch = {
+        ...previousDispatch,
+        completionStatus: 'workflow_restart_required',
+        failedAt,
+        retryable: false,
+        nextRetryAt: null,
+        restartRequired: true,
+        attempts: providerRunAttempts(job),
+        maxRetries: workflowProviderRunMaxAttempts(env, job)
+      };
+      job.logs = [...(job.logs || []), 'provider run limit reached before scheduling; full order retry required'];
+      return { scheduled: false, reason: 'provider_run_limit_reached', job: cloneJob(job), agent: publicAgent(agent), restartRequired: true };
+    }
     job.status = 'running';
     job.startedAt = job.startedAt || at;
     job.failureReason = null;
@@ -16509,8 +16773,6 @@ async function markDispatchScheduled(storage, jobId, agentId, reason = 'dispatch
         if (freshHandoff) workflowLeaderHandoffForDispatch = freshHandoff;
       }
     }
-    const previousDispatch = job.dispatch && typeof job.dispatch === 'object' ? job.dispatch : {};
-    const previousCompletionStatus = String(previousDispatch.completionStatus || '').trim().toLowerCase();
     const firstDispatchRequestedAt = previousDispatch.firstDispatchRequestedAt || previousDispatch.dispatchRequestedAt || at;
     const scheduleAttempts = Number(previousDispatch.scheduleAttempts || 0) + 1;
     const recoveringStaleInProgressDispatch = previousCompletionStatus === 'dispatch_in_progress';
@@ -16570,7 +16832,10 @@ async function scheduleProgressDispatchesForJobId(storage, env, waitUntil, jobId
       env,
       workflowLeaderHandoff: target.workflowLeaderHandoff || null
     });
-    if (!marked.scheduled) continue;
+    if (!marked.scheduled) {
+      if (marked.restartRequired && marked.job?.workflowParentId) await reconcileWorkflowParent(storage, marked.job.workflowParentId);
+      continue;
+    }
     scheduled.push({ ...marked, parentJobId: target.parentJobId || marked.job.workflowParentId || null });
     await touchEvent(storage, 'RUNNING', `${marked.agent.name} scheduled ${marked.job.taskType}/${marked.job.id.slice(0, 6)}`, {
       kind: 'dispatch_scheduled',
@@ -17763,12 +18028,54 @@ async function runQueuedEndpointDispatchSweep(storage, env, options = {}) {
         if (candidate.workflowParentId) await reconcileWorkflowParent(storage, candidate.workflowParentId);
         continue;
       }
+      const completionStatus = String(candidate.dispatch?.completionStatus || '').trim().toLowerCase();
+      if (workflowChildShouldRestartFromBeginning(candidate) && completionStatus === 'dispatch_in_progress') {
+        const reason = workflowRestartRequiredReason(candidate, 'stale endpoint dispatch was still in progress when the sweep checked it');
+        const failed = await failJob(storage, candidate.id, reason, ['stale endpoint dispatch failed; full order retry required'], {
+          failureStatus: 'failed',
+          failureCategory: 'workflow_restart_required',
+          retryable: false,
+          attempts: providerRunAttempts(candidate),
+          maxRetries: workflowProviderRunMaxAttempts(env, candidate),
+          restartRequired: true,
+          source: 'queued-dispatch-sweep'
+        });
+        skippedRootJobIds.add(rootJobId);
+        if (failed?.workflowParentId || candidate.workflowParentId) await reconcileWorkflowParent(storage, candidate.workflowParentId || failed.workflowParentId);
+        await touchEvent(storage, 'FAILED', `${candidate.taskType}/${candidate.id.slice(0, 6)} stale endpoint dispatch requires full order retry`, {
+          kind: 'workflow_restart_required',
+          jobId: candidate.id,
+          parentJobId: candidate.workflowParentId || null
+        });
+        continue;
+      }
+      if (workflowChildShouldRestartFromBeginning(candidate) && providerRunLimitReached(env, candidate)) {
+        const reason = workflowRestartRequiredReason(candidate, `provider run limit reached (${providerRunAttempts(candidate)}/${workflowProviderRunMaxAttempts(env, candidate)})`);
+        const failed = await failJob(storage, candidate.id, reason, ['provider run limit reached during sweep; full order retry required'], {
+          failureStatus: 'failed',
+          failureCategory: 'workflow_restart_required',
+          retryable: false,
+          attempts: providerRunAttempts(candidate),
+          maxRetries: workflowProviderRunMaxAttempts(env, candidate),
+          restartRequired: true,
+          source: 'queued-dispatch-sweep'
+        });
+        skippedRootJobIds.add(rootJobId);
+        if (failed?.workflowParentId || candidate.workflowParentId) await reconcileWorkflowParent(storage, candidate.workflowParentId || failed.workflowParentId);
+        await touchEvent(storage, 'FAILED', `${candidate.taskType}/${candidate.id.slice(0, 6)} provider run limit reached; full order retry required`, {
+          kind: 'provider_run_limit_reached',
+          jobId: candidate.id,
+          parentJobId: candidate.workflowParentId || null
+        });
+        continue;
+      }
       const marked = await markDispatchScheduled(storage, candidate.id, agent.id, options.reason || 'cron dispatch sweep', {
         env,
         workflowLeaderHandoff: null
       });
       if (!marked?.scheduled) {
         skippedRootJobIds.add(rootJobId);
+        if (marked?.restartRequired && marked.job?.workflowParentId) await reconcileWorkflowParent(storage, marked.job.workflowParentId);
         continue;
       }
       scheduledJobIds.add(marked.job.id);
@@ -17829,7 +18136,7 @@ async function runQueuedEndpointDispatchSweep(storage, env, options = {}) {
       }
     }
     {
-      const acceptedRecoveryLimit = Math.max(1, Math.min(4, Number(env?.ACCEPTED_ENDPOINT_RECOVERY_LIMIT || 2) || 2));
+      const acceptedRecoveryLimit = Math.max(0, Math.min(4, Number(env?.ACCEPTED_ENDPOINT_RECOVERY_LIMIT || env?.ACCEPTED_ENDPOINT_RECOVERY_MAX_ATTEMPTS || 0) || 0));
       const acceptedTime = (job = {}) => Date.parse(String(
         job?.dispatch?.providerQueueAcceptedAt
         || job?.dispatch?.lastAttemptAt
@@ -17838,16 +18145,38 @@ async function runQueuedEndpointDispatchSweep(storage, env, options = {}) {
         || job?.createdAt
         || ''
       )) || 0;
-      const acceptedCandidates = await storage.listAcceptedEndpointDispatchJobs({
-        limit: Math.max(limit, acceptedRecoveryLimit * 4),
-        maxAgeMs: workflowDispatchMaxAgeMs(env),
-        minAgeMs: DISPATCH_IN_PROGRESS_STALE_MS
-      });
+      const acceptedCandidates = acceptedRecoveryLimit > 0
+        ? await storage.listAcceptedEndpointDispatchJobs({
+            limit: Math.max(limit, acceptedRecoveryLimit * 4),
+            maxAgeMs: workflowDispatchMaxAgeMs(env),
+            minAgeMs: DISPATCH_IN_PROGRESS_STALE_MS
+          })
+        : [];
       for (const candidate of acceptedCandidates.sort((left, right) => acceptedTime(right) - acceptedTime(left))) {
         if (acceptedRecovered.length >= acceptedRecoveryLimit) break;
         if (!candidate?.id || scheduledJobIds.has(candidate.id)) continue;
         const rootJobId = String(candidate.workflowParentId || candidate.id || '').trim();
         if (!rootJobId || skippedRootJobIds.has(rootJobId)) continue;
+        if (workflowChildShouldRestartFromBeginning(candidate)) {
+          const reason = workflowRestartRequiredReason(candidate, 'accepted endpoint dispatch became stale before provider completion');
+          const failed = await failJob(storage, candidate.id, reason, ['stale accepted endpoint dispatch failed; full order retry required'], {
+            failureStatus: 'failed',
+            failureCategory: 'workflow_restart_required',
+            retryable: false,
+            attempts: providerRunAttempts(candidate),
+            maxRetries: workflowProviderRunMaxAttempts(env, candidate),
+            restartRequired: true,
+            source: 'accepted-endpoint-recovery'
+          });
+          skippedRootJobIds.add(rootJobId);
+          if (failed?.workflowParentId || candidate.workflowParentId) await reconcileWorkflowParent(storage, candidate.workflowParentId || failed.workflowParentId);
+          await touchEvent(storage, 'FAILED', `${candidate.taskType}/${candidate.id.slice(0, 6)} stale accepted endpoint dispatch requires full order retry`, {
+            kind: 'workflow_restart_required',
+            jobId: candidate.id,
+            parentJobId: candidate.workflowParentId || null
+          });
+          continue;
+        }
         const agent = await storage.getAgentById(candidate.assignedAgentId);
         if (!agent) {
           skippedRootJobIds.add(rootJobId);
@@ -17858,6 +18187,7 @@ async function runQueuedEndpointDispatchSweep(storage, env, options = {}) {
               const draftJob = draft.jobs.find((item) => item.id === candidate.id);
               const draftAgent = draft.agents.find((item) => item.id === agent.id);
               if (!draftJob || !draftAgent || isTerminalJobStatus(draftJob.status)) return null;
+              const recoveryAttempts = acceptedEndpointRecoveryAttempts(draftJob) + 1;
               draftJob.status = 'running';
               draftJob.startedAt = draftJob.startedAt || nowIso();
               draftJob.dispatch = {
@@ -17865,6 +18195,7 @@ async function runQueuedEndpointDispatchSweep(storage, env, options = {}) {
                 completionStatus: 'dispatch_scheduled',
                 retryable: true,
                 nextRetryAt: null,
+                acceptedEndpointRecoveryAttempts: recoveryAttempts,
                 endpointDispatchRecoveredAt: nowIso(),
                 acceptedEndpointRecoveredAt: nowIso()
               };
@@ -18207,98 +18538,55 @@ async function runWorkflowOrchestrationWatchdog(storage, env, options = {}) {
 
 async function runWorkflowTimeoutRetrySweep(storage, env, options = {}) {
   const limit = Math.max(1, Math.min(10, Number(options.limit || 3) || 3));
-  const waitUntil = typeof options.waitUntil === 'function' ? options.waitUntil : null;
-  const retried = [];
-  for (let i = 0; i < limit; i += 1) {
-    const targetedCandidates = typeof storage.listRetryableWorkflowChildren === 'function'
-      ? await storage.listRetryableWorkflowChildren({
-        limit: Math.max(limit * 4, 12),
-        maxAgeMs: workflowDispatchMaxAgeMs(env)
-      })
-      : null;
-    const state = targetedCandidates ? null : await storage.getState();
-    const candidates = targetedCandidates || state.jobs
-      .filter((job) => ['timed_out', 'failed'].includes(String(job.status || '').trim().toLowerCase()))
-      .filter((job) => job.workflowParentId)
-      .sort((a, b) => String(a.timedOutAt || a.failedAt || a.createdAt || '').localeCompare(String(b.timedOutAt || b.failedAt || b.createdAt || '')));
-    let candidate = null;
-    let parentForCandidate = null;
-    for (const job of candidates) {
-      const parent = targetedCandidates
-        ? (typeof storage.getJobById === 'function' ? await storage.getJobById(job.workflowParentId) : null)
-        : state.jobs.find((item) => item.id === job.workflowParentId && item.jobKind === 'workflow');
-      if (!shouldAutoRetryWorkflowChild(parent, job)) continue;
-      const hasAgent = targetedCandidates
-        ? Boolean(typeof storage.getAgentById === 'function' ? await storage.getAgentById(job.assignedAgentId) : null)
-        : state.agents.some((item) => item.id === job.assignedAgentId);
-      if (!hasAgent) continue;
-      candidate = job;
-      parentForCandidate = parent;
-      break;
+  const targetedCandidates = typeof storage.listRetryableWorkflowChildren === 'function'
+    ? await storage.listRetryableWorkflowChildren({
+      limit: Math.max(limit * 4, 12),
+      maxAgeMs: workflowDispatchMaxAgeMs(env)
+    })
+    : null;
+  const state = targetedCandidates ? null : await storage.getState();
+  const candidates = targetedCandidates || state.jobs
+    .filter((job) => ['timed_out', 'failed'].includes(String(job.status || '').trim().toLowerCase()))
+    .filter((job) => job.workflowParentId && job.dispatch?.retryable === true)
+    .sort((a, b) => String(a.timedOutAt || a.failedAt || a.createdAt || '').localeCompare(String(b.timedOutAt || b.failedAt || b.createdAt || '')));
+  const restartRequired = [];
+  for (const job of candidates) {
+    if (restartRequired.length >= limit) break;
+    if (!job?.workflowParentId) continue;
+    const status = String(job.status || '').trim().toLowerCase();
+    if (!['failed', 'timed_out'].includes(status)) continue;
+    if (String(job.failureCategory || '').trim().toLowerCase() === 'workflow_restart_required' || job.dispatch?.restartRequired === true) {
+      await reconcileWorkflowParent(storage, job.workflowParentId);
+      continue;
     }
-    if (!candidate) break;
-    const agent = targetedCandidates
-      ? await storage.getAgentById(candidate.assignedAgentId)
-      : state.agents.find((item) => item.id === candidate.assignedAgentId);
-    if (!agent) break;
-    const attempts = Number(candidate.dispatch?.attempts || 0) + 1;
-    const mutateRetry = typeof storage.mutateWorkflow === 'function' && candidate.workflowParentId
-      ? (mutator) => storage.mutateWorkflow(candidate.workflowParentId, mutator)
-      : (mutator) => storage.mutate(mutator);
-    const queued = await mutateRetry(async (draft) => {
-      const draftJob = draft.jobs.find((item) => item.id === candidate.id);
-      if (!draftJob) return null;
-      const parent = draft.jobs.find((item) => item.id === draftJob.workflowParentId && item.jobKind === 'workflow');
-      if (!shouldAutoRetryWorkflowChild(parent || parentForCandidate, draftJob)) return null;
-      const sourceCollectionRetry = String(draftJob.failureCategory || '').trim().toLowerCase() === 'missing_required_sources';
-      const retryReason = sourceCollectionRetry
-        ? 'source collection workflow child'
-        : (String(draftJob.failureCategory || '').trim().toLowerCase() === 'dispatch_timeout'
-          ? 'timed-out endpoint workflow child'
-          : 'retryable workflow child');
-      const maxRetries = sourceCollectionRetry ? workflowSourceCollectionMaxRetries(env) : maxDispatchRetriesForJob(draftJob);
-      draftJob.status = 'queued';
-      draftJob.failedAt = null;
-      draftJob.timedOutAt = null;
-      draftJob.completedAt = null;
-      draftJob.failureReason = null;
-      draftJob.failureCategory = null;
-      draftJob.dispatchedAt = null;
-      draftJob.startedAt = null;
-      draftJob.logs = [
-        ...(draftJob.logs || []),
-        `leader auto retry queued ${retryReason} (attempt=${attempts})`
-      ];
-      draftJob.dispatch = {
-        ...(draftJob.dispatch || {}),
-        attempts,
-        retryable: true,
-        nextRetryAt: null,
-        completionStatus: 'leader_auto_retry_queued',
-        retriedAt: nowIso(),
-        maxRetries
-      };
-      return cloneJob(draftJob);
+    const reason = workflowRestartRequiredReason(job, job.failureReason || `${status} workflow child was previously retryable`);
+    await failJob(storage, job.id, reason, ['workflow child in-place retry disabled; full order retry required'], {
+      force: true,
+      failureStatus: 'failed',
+      failureCategory: 'workflow_restart_required',
+      retryable: false,
+      attempts: providerRunAttempts(job) || Number(job.dispatch?.attempts || 0) || 0,
+      maxRetries: workflowProviderRunMaxAttempts(env, job),
+      restartRequired: true,
+      source: 'workflow-retry-sweep'
     });
-    if (!queued) break;
-    retried.push(queued.id);
-    await touchEvent(storage, 'RETRY', `${queued.taskType}/${queued.id.slice(0, 6)} leader auto retry queued`, {
-      kind: 'leader_auto_retry',
-      jobId: queued.id,
-      parentJobId: queued.workflowParentId || null,
-      taskType: queued.workflowTask || queued.taskType || '',
-      attempts
+    restartRequired.push(job.id);
+    await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} workflow child retry disabled; full order retry required`, {
+      kind: 'workflow_restart_required',
+      jobId: job.id,
+      parentJobId: job.workflowParentId,
+      taskType: job.workflowTask || job.taskType || ''
     });
-    if (queued.workflowParentId) await reconcileWorkflowParent(storage, queued.workflowParentId);
-    const scheduled = await scheduleProgressDispatchForJobId(storage, env, waitUntil, queued.workflowParentId || queued.id, 'leader auto retry dispatch');
-    if (!scheduled?.scheduled) {
-      const dispatchPromise = dispatchExistingJobToAssignedAgent(storage, env, queued.id, agent.id)
-        .catch((error) => touchEvent(storage, 'FAILED', `${queued.taskType}/${queued.id.slice(0, 6)} leader auto retry exception ${String(error?.message || error).slice(0, 120)}`));
-      if (waitUntil) waitUntil(dispatchPromise);
-      else await dispatchPromise;
-    }
+    await reconcileWorkflowParent(storage, job.workflowParentId);
   }
-  return { ok: true, retried_count: retried.length, job_ids: retried };
+  return {
+    ok: true,
+    retried_count: 0,
+    job_ids: [],
+    restart_required_count: restartRequired.length,
+    restart_required_job_ids: restartRequired,
+    mode: 'workflow_child_in_place_retry_disabled'
+  };
 }
 
 async function completeJobFromAgentResult(storage, jobId, agentId, payload = {}, meta = {}) {
@@ -18351,13 +18639,14 @@ async function completeJobFromAgentResult(storage, jobId, agentId, payload = {},
     appendWorkflowOriginalInfoUsage(job);
     const sourceProofFailure = targetStatus === 'completed' ? workflowSearchCompletionFailureReason(job, outputReport) : '';
     if (sourceProofFailure) {
+      const restartRequired = workflowChildShouldRestartFromBeginning(job);
       targetStatus = 'failed';
       job.status = 'failed';
       job.completedAt = null;
       job.failedAt = completionAt;
       job.timedOutAt = null;
-      job.failureReason = sourceProofFailure;
-      job.failureCategory = 'missing_required_sources';
+      job.failureReason = restartRequired ? workflowRestartRequiredReason(job, sourceProofFailure) : sourceProofFailure;
+      job.failureCategory = restartRequired ? 'workflow_restart_required' : 'missing_required_sources';
       job.usage = usage;
       job.actualBilling = null;
       job.deliveryQuality = null;
@@ -18368,13 +18657,14 @@ async function completeJobFromAgentResult(storage, jobId, agentId, payload = {},
         ...(job.dispatch || {}),
         externalJobId: meta.externalJobId || job.dispatch?.externalJobId || null,
         completionSource: meta.source || job.dispatch?.completionSource || null,
-        completionStatus: 'failed',
+        completionStatus: restartRequired ? 'workflow_restart_required' : 'failed',
         completedAt: null,
         lastCallbackAt: meta.source === 'callback' ? completionAt : (job.dispatch?.lastCallbackAt || null),
         retryable: false,
-        nextRetryAt: null
+        nextRetryAt: null,
+        restartRequired
       };
-      job.logs = [...(job.logs || []), sourceProofFailure, 'failed before completion: missing search execution proof'];
+      job.logs = [...(job.logs || []), sourceProofFailure, restartRequired ? 'full order retry required after missing search execution proof' : 'failed before completion: missing search execution proof'];
       if (meta.source) job.logs.push(`completion source=${meta.source}`);
       return { ok: true, mode: 'failed', job: cloneJob(job), billing: null, workflowParentId: job.workflowParentId || null };
     }
@@ -18434,7 +18724,7 @@ async function failJob(storage, jobId, reason, extraLogs = [], options = {}) {
   const result = await storage.mutate(async (state) => {
     const job = state.jobs.find((item) => item.id === jobId);
     if (!job) return null;
-    if (isTerminalJobStatus(job.status)) return cloneJob(job);
+    if (isTerminalJobStatus(job.status) && !options.force) return cloneJob(job);
     const failedAt = nowIso();
     const failureStatus = options.failureStatus || (job.status === 'dispatched' ? 'timed_out' : 'failed');
     job.status = failureStatus;
@@ -18450,13 +18740,14 @@ async function failJob(storage, jobId, reason, extraLogs = [], options = {}) {
       ...(job.dispatch || {}),
       externalJobId: options.externalJobId || job.dispatch?.externalJobId || null,
       completionSource: options.source || job.dispatch?.completionSource || null,
-      completionStatus: failureStatus,
+      completionStatus: options.completionStatus || (options.restartRequired ? 'workflow_restart_required' : failureStatus),
       failedAt,
       lastCallbackAt: options.source === 'callback' ? failedAt : (job.dispatch?.lastCallbackAt || null),
       retryable: options.retryable ?? job.dispatch?.retryable ?? false,
       nextRetryAt: options.nextRetryAt ?? job.dispatch?.nextRetryAt ?? null,
       attempts: options.attempts ?? job.dispatch?.attempts ?? 0,
-      maxRetries: options.maxRetries ?? job.dispatch?.maxRetries
+      maxRetries: options.maxRetries ?? job.dispatch?.maxRetries,
+      restartRequired: options.restartRequired ?? job.dispatch?.restartRequired ?? false
     };
     job.logs = [...(job.logs || []), ...extraLogs, failureReason];
     return { ...cloneJob(job), workflowParentId: job.workflowParentId || null };
@@ -21000,6 +21291,12 @@ async function handleRetryDispatch(storage, request, env) {
   const job = state.jobs.find((item) => item.id === jobId);
   if (!job) return json({ error: 'Job not found' }, 404);
   if (!canRetryJob(job)) return json({ error: 'Job is not retryable' }, 409);
+  if (workflowChildShouldRestartFromBeginning(job)) {
+    return json({
+      error: 'Workflow child jobs are not retryable in-place. Retry the order from the beginning.',
+      restart_required: true
+    }, 409);
+  }
   const agent = state.agents.find((item) => item.id === job.assignedAgentId);
   if (!agent) return json({ error: 'Assigned agent not found' }, 404);
   const attempts = Number(job.dispatch?.attempts || 0) + 1;
@@ -21046,23 +21343,25 @@ async function handleRetryDispatch(storage, request, env) {
         const sourceRetryMeta = failureMeta.category === 'missing_required_sources'
           ? sourceCollectionFailureRetryMeta(env, draftJob)
           : null;
+        const restartRequired = workflowChildShouldRestartFromBeginning(draftJob);
         draftJob.status = 'failed';
         draftJob.failedAt = nowIso();
-        draftJob.failureReason = dispatch.failureReason;
-        draftJob.failureCategory = failureMeta.category;
+        draftJob.failureReason = restartRequired ? workflowRestartRequiredReason(draftJob, dispatch.failureReason) : dispatch.failureReason;
+        draftJob.failureCategory = restartRequired ? 'workflow_restart_required' : failureMeta.category;
         draftJob.dispatch = {
           ...(draftJob.dispatch || {}),
           endpoint: dispatch.endpoint || draftJob.dispatch?.endpoint || null,
           statusCode: dispatch.statusCode || null,
           responseStatus: dispatch.responseBody?.status || null,
           lastAttemptAt: nowIso(),
-          attempts: sourceRetryMeta?.attempts ?? failureMeta.attempts,
-          retryable: sourceRetryMeta?.retryable ?? failureMeta.retryable,
-          nextRetryAt: sourceRetryMeta?.nextRetryAt ?? failureMeta.nextRetryAt,
-          maxRetries: sourceRetryMeta?.maxRetries ?? maxDispatchRetriesForJob(draftJob),
-          completionStatus: 'failed'
+          attempts: restartRequired ? providerRunAttempts(draftJob) : (sourceRetryMeta?.attempts ?? failureMeta.attempts),
+          retryable: restartRequired ? false : (sourceRetryMeta?.retryable ?? failureMeta.retryable),
+          nextRetryAt: restartRequired ? null : (sourceRetryMeta?.nextRetryAt ?? failureMeta.nextRetryAt),
+          maxRetries: restartRequired ? workflowProviderRunMaxAttempts(env, draftJob) : (sourceRetryMeta?.maxRetries ?? maxDispatchRetriesForJob(draftJob)),
+          completionStatus: restartRequired ? 'workflow_restart_required' : 'failed',
+          restartRequired
         };
-        draftJob.logs = [...(draftJob.logs || []), 'worker dispatch retry failed', dispatch.failureReason, `retryable=${sourceRetryMeta?.retryable ?? failureMeta.retryable}`];
+        draftJob.logs = [...(draftJob.logs || []), 'worker dispatch retry failed', dispatch.failureReason, restartRequired ? 'full order retry required' : `retryable=${sourceRetryMeta?.retryable ?? failureMeta.retryable}`];
         return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
       }
 
@@ -21101,23 +21400,25 @@ async function handleRetryDispatch(storage, request, env) {
         appendWorkflowOriginalInfoUsage(draftJob);
         const sourceProofFailure = workflowSearchCompletionFailureReason(draftJob, dispatch.normalized.report);
         if (sourceProofFailure) {
-          const sourceRetryMeta = sourceCollectionFailureRetryMeta(env, draftJob, { alreadyAttempted: true });
+          const restartRequired = workflowChildShouldRestartFromBeginning(draftJob);
+          const sourceRetryMeta = restartRequired ? null : sourceCollectionFailureRetryMeta(env, draftJob, { alreadyAttempted: true });
           draftJob.status = 'failed';
           draftJob.completedAt = null;
           draftJob.failedAt = nowIso();
-          draftJob.failureReason = sourceProofFailure;
-          draftJob.failureCategory = 'missing_required_sources';
+          draftJob.failureReason = restartRequired ? workflowRestartRequiredReason(draftJob, sourceProofFailure) : sourceProofFailure;
+          draftJob.failureCategory = restartRequired ? 'workflow_restart_required' : 'missing_required_sources';
           draftJob.actualBilling = null;
           draftJob.deliveryQuality = null;
           draftJob.dispatch = {
             ...(draftJob.dispatch || {}),
-            completionStatus: 'failed',
-            retryable: sourceRetryMeta.retryable,
-            attempts: sourceRetryMeta.attempts,
-            nextRetryAt: sourceRetryMeta.nextRetryAt,
-            maxRetries: sourceRetryMeta.maxRetries
+            completionStatus: restartRequired ? 'workflow_restart_required' : 'failed',
+            retryable: restartRequired ? false : sourceRetryMeta.retryable,
+            attempts: restartRequired ? providerRunAttempts(draftJob) : sourceRetryMeta.attempts,
+            nextRetryAt: restartRequired ? null : sourceRetryMeta.nextRetryAt,
+            maxRetries: restartRequired ? workflowProviderRunMaxAttempts(env, draftJob) : sourceRetryMeta.maxRetries,
+            restartRequired
           };
-          draftJob.logs.push(sourceProofFailure, 'failed before retry completion: missing search execution proof');
+          draftJob.logs.push(sourceProofFailure, restartRequired ? 'full order retry required after missing search execution proof' : 'failed before retry completion: missing search execution proof');
           return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
         }
         const authorityRequest = syncJobAuthorityRequest(draftJob, draftAgent);
@@ -21292,20 +21593,26 @@ async function sweepTimedOutJobs(storage, options = {}) {
       const expiredByDeadline = !skipQueuedWorkflowDeadline && deadlineMs != null && ageMs >= deadlineMs;
       const expiredByManualWindow = staleMs != null && ageMs >= staleMs;
       if (!expiredByDeadline && !expiredByManualWindow) continue;
-      job.status = 'timed_out';
-      job.timedOutAt = nowIso();
-      job.failureReason = 'Run exceeded timeout window';
-      job.failureCategory = 'deadline_timeout';
-      job.logs = [...(job.logs || []), `worker timeout sweep marked run as timed_out source=${eventSource}`];
-      const maxRetries = maxDispatchRetriesForJob(job);
-      const retryable = nextAttempt <= maxRetries;
+      const restartRequired = workflowChildShouldRestartFromBeginning(job);
+      const timedOutAt = nowIso();
+      job.status = restartRequired ? 'failed' : 'timed_out';
+      job.timedOutAt = timedOutAt;
+      if (restartRequired) job.failedAt = timedOutAt;
+      job.failureReason = restartRequired
+        ? workflowRestartRequiredReason(job, 'Run exceeded timeout window')
+        : 'Run exceeded timeout window';
+      job.failureCategory = restartRequired ? 'workflow_restart_required' : 'deadline_timeout';
+      job.logs = [...(job.logs || []), `worker timeout sweep marked run as ${job.status} source=${eventSource}${restartRequired ? '; full order retry required' : ''}`];
+      const maxRetries = restartRequired ? 0 : maxDispatchRetriesForJob(job);
+      const retryable = restartRequired ? false : nextAttempt <= maxRetries;
       job.dispatch = {
         ...(job.dispatch || {}),
         attempts,
         retryable,
         nextRetryAt: retryable ? computeNextRetryAt(nextAttempt, nowMs) : null,
-        completionStatus: 'timed_out',
-        maxRetries
+        completionStatus: restartRequired ? 'workflow_restart_required' : 'timed_out',
+        maxRetries,
+        restartRequired
       };
       swept.push({
         id: job.id,
@@ -21315,6 +21622,7 @@ async function sweepTimedOutJobs(storage, options = {}) {
         attempts,
         maxRetries: job.dispatch.maxRetries,
         workflowParentId: job.workflowParentId || null,
+        restartRequired,
         deadlineMs,
         ageMs
       });
@@ -21324,13 +21632,16 @@ async function sweepTimedOutJobs(storage, options = {}) {
 
   for (const job of result.swept) {
     if (job.workflowParentId) await reconcileWorkflowParent(storage, job.workflowParentId);
-    const retryMessage = job.retryable
+    const retryMessage = job.restartRequired
+      ? `run/${job.id.slice(0, 6)} timed out; full order retry required`
+      : job.retryable
       ? `run/${job.id.slice(0, 6)} timed out; retry ${job.attempts + 1}/${job.maxRetries} available`
       : `run/${job.id.slice(0, 6)} timed out; retries exhausted at ${job.attempts}/${job.maxRetries}`;
     await touchEvent(storage, 'TIMEOUT', retryMessage, {
       kind: 'run_timeout',
       jobId: job.id,
       retryable: job.retryable,
+      restartRequired: job.restartRequired || false,
       attempts: job.attempts,
       maxRetries: job.maxRetries,
       nextRetryAt: job.nextRetryAt,
