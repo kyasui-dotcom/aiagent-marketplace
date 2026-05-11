@@ -1985,9 +1985,11 @@ function progressNarratorTextForJob(job = {}) {
   if (phase === 'initial') return `${agent || 'Leader'} is reviewing the order and preparing the next handoff.`;
   if (phase === 'data') return `${agent || 'Data agent'} is checking the available metrics before research moves on.`;
   if (phase === 'research') return `${agent || 'Research agent'} is gathering source-backed context for the plan.`;
+  if (phase === 'checkpoint') return `${agent || 'Leader'} is reviewing the completed layer before releasing the next specialist.`;
   if (phase === 'planning') return `${agent || 'Planner'} is turning the inputs into a channel and execution plan.`;
   if (phase === 'preparation') return `${agent || 'Preparation agent'} is preparing copy, pages, packets, or handoff assets.`;
   if (phase === 'action') return `${agent || 'Action agent'} is waiting for approval or preparing the external action packet.`;
+  if (phase === 'final_summary') return `${agent || 'Leader'} is synthesizing the specialist outputs into the final delivery.`;
   if (status === 'completed') return 'The order is complete. Preparing the delivery for this chat.';
   if (status === 'failed' || status === 'timed_out') return 'The order stopped. Collecting the failure reason and next step.';
   return 'CAIt is checking the current order state and keeping this chat attached.';
@@ -2044,7 +2046,7 @@ function workflowChildIsAdaptivePending(child = {}) {
 
 function visibleWorkflowChildRuns(childRuns = [], options = {}) {
   return (Array.isArray(childRuns) ? childRuns : [])
-    .filter((child) => !workflowChildIsInternalLeaderSequenceRun(child))
+    .filter((child) => options.includeInternalLeaderSequence === true || !workflowChildIsInternalLeaderSequenceRun(child))
     .filter((child) => options.includeAdaptivePending === true || !workflowChildIsAdaptivePending(child));
 }
 
@@ -2054,11 +2056,13 @@ function workflowPhaseLabel(phase = '') {
     initial: 'Leader review',
     data: 'Data',
     research: 'Research',
+    checkpoint: 'Leader checkpoint',
     planning: 'Planning',
     product_design: 'Product design',
     preparation: 'Preparation',
     action: 'Action',
     prompt_handoff: 'Action handoff',
+    final_summary: 'Final summary',
     leader: 'Leader',
     summary: 'Summary'
   };
@@ -2067,7 +2071,7 @@ function workflowPhaseLabel(phase = '') {
 
 function workflowPhaseRank(phase = '') {
   const safe = String(phase || '').trim().toLowerCase();
-  return { initial: 1, data: 2, research: 3, product_design: 4, planning: 4, preparation: 5, prompt_handoff: 6, action: 6, summary: 7 }[safe] || 9;
+  return { initial: 1, data: 2, research: 3, checkpoint: 3.5, product_design: 4, planning: 4, preparation: 5, prompt_handoff: 6, action: 6, final_summary: 7, summary: 7 }[safe] || 9;
 }
 
 function workflowChildStatusRank(status = '') {
@@ -2082,6 +2086,14 @@ function workflowChildDisplayLabel(child = {}) {
 function workflowCurrentChildRun(job = {}) {
   const childRuns = createdOrderChildRuns(job);
   if (!childRuns.length) return '';
+  const internalLeaderActive = createdOrderChildRuns(job, { includeInternalLeaderSequence: true })
+    .filter((child) => workflowChildIsInternalLeaderSequenceRun(child))
+    .filter((child) => ['running', 'claimed', 'dispatched', 'queued'].includes(String(child.status || '').trim().toLowerCase()))
+    .sort((left, right) => (
+      workflowChildStatusRank(left.status) - workflowChildStatusRank(right.status)
+      || workflowPhaseRank(left.sequencePhase || left.sequence_phase) - workflowPhaseRank(right.sequencePhase || right.sequence_phase)
+    ));
+  if (internalLeaderActive[0]) return internalLeaderActive[0];
   const active = childRuns
     .filter((child) => ['running', 'claimed', 'dispatched'].includes(String(child.status || '').trim().toLowerCase()))
     .sort((left, right) => (
@@ -2211,8 +2223,11 @@ function initialAgentMapHtml(created = {}, prompt = '') {
 }
 
 function workflowPhaseProgressMapHtml(job = {}) {
-  const childRuns = createdOrderChildRuns(job, { includeAdaptivePending: true });
   const current = workflowCurrentChildRun(job);
+  const childRuns = createdOrderChildRuns(job, {
+    includeAdaptivePending: true,
+    includeInternalLeaderSequence: workflowChildIsInternalLeaderSequenceRun(current || {})
+  });
   if (!childRuns.length || !current) return '';
   const phase = String(current.sequencePhase || '').trim().toLowerCase();
   return workflowAgentMapHtml(childRuns, {

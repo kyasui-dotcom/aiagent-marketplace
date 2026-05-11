@@ -556,6 +556,9 @@ assert.ok(chatJs.includes('function showChatListPanel'), 'Chat should expose rec
 assert.ok(chatJs.includes('function showWorkerListPanel'), 'Chat should expose worker/agent list modal.');
 assert.ok(chatJs.includes('function initialAgentMapHtml'), 'Chat should render an initial agent map after workflow order acceptance.');
 assert.ok(chatJs.includes('workflowCurrentLocationLabel'), 'Chat progress should show the current workflow phase and active agent.');
+assert.ok(chatJs.includes('internalLeaderActive'), 'Chat progress should surface internal leader checkpoint runs instead of appearing stuck on the previous specialist.');
+assert.ok(chatJs.includes("checkpoint: 'Leader checkpoint'"), 'Chat progress should label leader checkpoints explicitly.');
+assert.ok(chatJs.includes('includeInternalLeaderSequence: workflowChildIsInternalLeaderSequenceRun'), 'Chat progress maps should include internal checkpoint nodes when they are the active run.');
 assert.ok(chatJs.includes('function workflowPhaseProgressMapHtml'), 'Chat should render a progress map when the workflow phase changes.');
 assert.ok(chatJs.includes('data-progress-narrator-stream'), 'Chat progress should render a live text activity stream during running orders.');
 assert.ok(chatJs.includes('function syncProgressNarratorAnimation'), 'Chat progress should animate narrator text independently of poll responses.');
