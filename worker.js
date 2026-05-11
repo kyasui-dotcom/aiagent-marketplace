@@ -21664,7 +21664,7 @@ async function handleResolveJob(storage, request, env) {
 }
 
 async function handleGetJob(storage, request, env, jobId, ctx = null) {
-  const current = await currentOrderRequesterContext(storage, request, env);
+  const current = await currentOrderRequesterContext(storage, request, env, { lightweight: true });
   if (!current.user && current.apiKeyStatus === 'invalid') return json({ error: 'Invalid API key' }, 401);
   const loadJob = async () => (
     typeof storage.getJobById === 'function'
@@ -21691,7 +21691,8 @@ async function handleGetJob(storage, request, env, jobId, ctx = null) {
       }
       return scheduleProgressDispatchesForJobId(storage, env, waitUntil, job.id, 'progress poll', {
         maxTargets: 8,
-        awaitDispatch: !waitUntil
+        awaitDispatch: !waitUntil,
+        refresh: job.jobKind === 'workflow'
       });
     })();
     if (waitUntil && storage.kind === 'd1') {
