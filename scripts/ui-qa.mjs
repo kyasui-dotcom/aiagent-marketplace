@@ -562,6 +562,8 @@ assert.ok(chatJs.includes('internalLeaderActive'), 'Chat progress should surface
 assert.ok(chatJs.includes("checkpoint: 'Leader checkpoint'"), 'Chat progress should label leader checkpoints explicitly.');
 assert.ok(chatJs.includes('includeInternalLeaderSequence: workflowChildIsInternalLeaderSequenceRun'), 'Chat progress maps should include internal checkpoint nodes when they are the active run.');
 assert.ok(chatJs.includes('function workflowPhaseProgressMapHtml'), 'Chat should render a progress map when the workflow phase changes.');
+assert.ok(chatJs.includes('function workflowAgentProgressCounts'), 'Chat progress counts should use a dedicated helper instead of only the currently released layer total.');
+assert.ok(chatJs.includes('workflow.plannedCandidateAgentRunCount'), 'Chat progress should preserve planned later agent layers in the visible total.');
 assert.ok(chatJs.includes('data-progress-narrator-stream'), 'Chat progress should render a live text activity stream during running orders.');
 assert.ok(chatJs.includes('function syncProgressNarratorAnimation'), 'Chat progress should animate narrator text independently of poll responses.');
 assert.ok(chatJs.includes('function stopLiveProgressNarrator'), 'Chat progress should stop the narrator stream when live order status tracking stops.');

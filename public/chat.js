@@ -1997,9 +1997,9 @@ function progressNarratorTextForJob(job = {}) {
 
 function progressNarratorOptionsForJob(job = {}) {
   const current = workflowCurrentChildRun(job);
-  const counts = job.workflow?.agentStatusCounts || job.workflow?.statusCounts || {};
-  const total = Number(counts.total || job.workflow?.plannedAgentRunCount || job.workflow?.plannedChildRunCount || 0) || 0;
-  const completed = Number(counts.completed || 0) || 0;
+  const counts = workflowAgentProgressCounts(job);
+  const total = counts.total;
+  const completed = counts.completed;
   const phase = workflowPhaseLabel(current?.sequencePhase || current?.sequence_phase || '');
   const status = statusLabel(job);
   return {
@@ -2008,7 +2008,7 @@ function progressNarratorOptionsForJob(job = {}) {
     status,
     detail: current ? `${workflowChildDisplayLabel(current)} is ${statusDisplayLabel(current.status || 'queued')}.` : '',
     steps: [
-      total ? `${completed}/${total} runs complete` : '',
+      total ? `${completed}/${total} agent runs complete` : '',
       workflowCurrentLocationLabel(job),
       job.failureReason || job.failure_reason || ''
     ].filter(Boolean),
@@ -2020,16 +2020,50 @@ function statusLabel(job = {}) {
   const status = String(job.status || '').trim() || 'created';
   const visibleStatus = statusDisplayLabel(status);
   if (job.jobKind === 'workflow' || job.workflow) {
-    const counts = job.workflow?.agentStatusCounts || job.workflow?.statusCounts || {};
-    const total = Number(counts.total || job.workflow?.plannedAgentRunCount || job.workflow?.plannedChildRunCount || 0) || 0;
-    const completed = Number(counts.completed || 0) || 0;
-    const blocked = Number(counts.blocked || 0) || 0;
-    const failed = Number(counts.failed || 0) || 0;
+    const counts = workflowAgentProgressCounts(job);
+    const total = counts.total;
+    const completed = counts.completed;
+    const blocked = counts.blocked;
+    const failed = counts.failed;
     const location = workflowCurrentLocationLabel(job);
     const suffix = total ? `, ${completed}/${total} agent runs complete${blocked ? `, ${blocked} waiting` : ''}${failed ? `, ${failed} failed` : ''}` : '';
     return `${visibleStatus}${suffix}${location ? `, now: ${location}` : ''}`;
   }
   return visibleStatus;
+}
+
+function workflowAgentProgressCounts(job = {}) {
+  const workflow = job?.workflow && typeof job.workflow === 'object' ? job.workflow : {};
+  const sourceCounts = workflow.agentStatusCounts && typeof workflow.agentStatusCounts === 'object'
+    ? workflow.agentStatusCounts
+    : (workflow.statusCounts && typeof workflow.statusCounts === 'object' ? workflow.statusCounts : {});
+  const agentRuns = createdOrderChildRuns(job, { includeAdaptivePending: true });
+  const runCount = agentRuns.length;
+  const total = Math.max(
+    Number(sourceCounts.total || 0) || 0,
+    Number(workflow.plannedAgentRunCount || 0) || 0,
+    Number(workflow.plannedCandidateAgentRunCount || 0) || 0,
+    runCount
+  );
+  const countRuns = (predicate) => agentRuns.filter(predicate).length;
+  const completed = Math.max(
+    Number(sourceCounts.completed || 0) || 0,
+    countRuns((child) => String(child.status || '').trim().toLowerCase() === 'completed')
+  );
+  const blocked = Math.max(
+    Number(sourceCounts.blocked || 0) || 0,
+    countRuns((child) => !child.adaptivePending && String(child.status || '').trim().toLowerCase() === 'blocked')
+  );
+  const failed = Math.max(
+    Number(sourceCounts.failed || 0) || 0,
+    countRuns((child) => ['failed', 'timed_out'].includes(String(child.status || '').trim().toLowerCase()))
+  );
+  return {
+    total,
+    completed: total ? Math.min(completed, total) : completed,
+    blocked: total ? Math.min(blocked, total) : blocked,
+    failed: total ? Math.min(failed, total) : failed
+  };
 }
 
 function workflowChildIsInternalLeaderSequenceRun(child = {}) {
