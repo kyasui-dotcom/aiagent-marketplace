@@ -21946,7 +21946,8 @@ async function handleGetJob(storage, request, env, jobId, ctx = null) {
     }
   }
   if (current.apiKey?.id) await recordOrderApiKeyUsage(storage, current, request);
-  return json({ job: sanitizeJobForViewer(job, env) });
+  const sanitizedJob = sanitizeJobForViewer(job, env);
+  return json({ ...sanitizedJob, job: sanitizedJob });
 }
 
 async function handleRetryDispatch(storage, request, env) {

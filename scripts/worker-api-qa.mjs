@@ -102,6 +102,8 @@ assert.ok(!workerSource.includes('Built-in workflow dispatch queue was requested
 assert.ok(workerSource.includes('googleGrantedCapabilities'), 'auth status should expose granted Google capabilities so chat does not repeat OAuth prompts.');
 assert.ok(workerSource.includes('currentAgentRequesterContextWithAccount'), 'Google connector source reads should authenticate with targeted account loading.');
 assert.ok(workerSource.includes('const current = await currentAgentRequesterContextWithAccount(storage, request, env);'), 'Google connector source reads should not load the full state snapshot before auth.');
+assert.ok(workerSource.includes('const sanitizedJob = sanitizeJobForViewer(job, env);'), 'job reads should build a single sanitized public view before returning it.');
+assert.ok(workerSource.includes('return json({ ...sanitizedJob, job: sanitizedJob });'), 'job reads should expose sanitized job fields at the top level and nested job for API compatibility.');
 assert.ok(/async function scheduleProgressDispatchesForJobId[\s\S]{0,500}getFreshState/.test(workerSource), 'workflow progress dispatch target selection should read fresh storage after leader completion.');
 assert.ok(workerSource.includes('function builtInAgentIdCandidatesForKind'), 'built-in agent endpoint auth should use targeted agent id candidates.');
 assert.ok(/async function canUseBuiltInAgentJobRoute[\s\S]{0,900}getAgentById/.test(workerSource), 'built-in agent endpoint auth must use targeted getAgentById instead of loading all production jobs.');

@@ -239,9 +239,9 @@ test.describe('CAIt Chat workspace', () => {
 
     await sendOrderButton.click();
     await expect(page.locator('#chatThread')).toContainText(/承認が必要です|Action approval required/, { timeout: chatResponseTimeout });
-    const approvalLink = page.getByRole('link', { name: 'Open chat approval' });
-    await expect(approvalLink).toHaveAttribute('href', /^#approval-e2e-approval-required$/);
-    await approvalLink.click();
+    const approvalAction = page.getByRole('button', { name: /Resume X approval|Open chat approval/ });
+    await expect(approvalAction).toHaveAttribute('data-chat-order-open', blockedJob.id);
+    await approvalAction.click();
     await expect(page).toHaveURL(/\/chat(?:\.html)?(?:\?|#|$)/);
     expect(new URL(page.url()).pathname).toBe('/chat');
   });
