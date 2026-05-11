@@ -1685,7 +1685,7 @@ async function googleAccessTokenForConnector(storage, env, login = '', user = nu
     scope: token.scope || connector.scopes || googleScopeForOAuthAction(env, 'analytics_connect')
   };
   let updatedConnector = connector;
-  await storage.mutate(async (draft) => {
+  await mutateAccountByLogin(storage, login, async (draft) => {
     const latest = accountSettingsForLogin(draft, login, user, authProvider);
     updatedConnector = await googleConnectorFromOAuthToken(env, {
       providerUserId: connector.providerUserId,
@@ -3727,6 +3727,20 @@ async function currentAgentRequesterContext(storage, request, env, options = {})
     ? await storage.getFreshState()
     : await storage.getState();
   return resolveCaitApiKeyAgentContext(state, request);
+}
+
+async function currentAgentRequesterContextWithAccount(storage, request, env) {
+  const current = await currentAgentRequesterContext(storage, request, env, { lightweight: true });
+  if (!current?.user || current?.account || !current?.login || typeof storage.getAccountByLogin !== 'function') return current;
+  const account = await storage.getAccountByLogin(current.login);
+  if (!account) return current;
+  return {
+    ...current,
+    user: accountUserFromSettings(account) || current.user,
+    account,
+    googleAuthorized: Boolean(current.googleAuthorized || accountHasGoogleConnector(account)),
+    googleLinked: Boolean(current.googleLinked || accountHasGoogleConnector(account) || accountIdentityForProvider(account, 'google'))
+  };
 }
 function requireOrderWriteAccess(current, env) {
   const policy = runtimePolicy(env);
@@ -10341,8 +10355,7 @@ async function fetchGoogleGa4Report(accessToken, property = '', range = {}) {
 
 async function handleGoogleAnalyticsReport(request, env) {
   const storage = runtimeStorage(env);
-  const state = await storage.getState();
-  const current = await currentAgentRequesterContext(storage, request, env);
+  const current = await currentAgentRequesterContextWithAccount(storage, request, env);
   if (!current?.user && current.apiKeyStatus === 'invalid') return json({ error: 'Invalid API key' }, 401);
   if (!current?.user && current.apiKeyStatus !== 'valid') return json({ error: 'Login or CAIt API key required' }, 401);
   const url = new URL(request.url);
@@ -10353,7 +10366,7 @@ async function handleGoogleAnalyticsReport(request, env) {
   }
   const days = clampGoogleReportRange(url.searchParams.get('range') || url.searchParams.get('days') || '28');
   const dateRange = googleReportDateRange(days);
-  const account = current.account || accountSettingsForLogin(state, current.login, current.user, current.authProvider);
+  const account = current.account || null;
   const connector = googleConnectorForAccount(account);
   if ((!connector?.connected || !connector?.accessTokenEnc) && !sessionHasGoogleOauth(current?.session)) {
     return json({
@@ -10417,8 +10430,7 @@ async function handleGoogleAnalyticsReport(request, env) {
 
 async function handleGoogleConnectorAssets(request, env) {
   const storage = runtimeStorage(env);
-  const state = await storage.getState();
-  const current = await currentAgentRequesterContext(storage, request, env);
+  const current = await currentAgentRequesterContextWithAccount(storage, request, env);
   if (!current?.user && current.apiKeyStatus === 'invalid') return json({ error: 'Invalid API key' }, 401);
   if (!current?.user && current.apiKeyStatus !== 'valid') return json({ error: 'Login or CAIt API key required' }, 401);
   const url = new URL(request.url);
@@ -10438,7 +10450,7 @@ async function handleGoogleConnectorAssets(request, env) {
     if (group === 'gmail') return ['google.read_gmail'];
     return [];
   })));
-  const account = current.account || accountSettingsForLogin(state, current.login, current.user, current.authProvider);
+  const account = current.account || null;
   const connector = googleConnectorForAccount(account);
   if ((!connector?.connected || !connector?.accessTokenEnc) && !sessionHasGoogleOauth(current?.session)) {
     return json({
