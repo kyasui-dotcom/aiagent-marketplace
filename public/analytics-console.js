@@ -166,20 +166,21 @@ function caitAuthOrigin() {
 }
 
 function googleConnectHref(loginSource = 'analytics_console', sourceKind = 'ga4') {
-  const kind = String(sourceKind || '').trim().toLowerCase() === 'gsc' ? 'gsc' : 'ga4';
+  const rawKind = String(sourceKind || '').trim().toLowerCase();
+  const kind = rawKind === 'gsc' ? 'gsc' : rawKind === 'analytics' || rawKind === 'both' ? 'analytics' : 'ga4';
   const url = new URL('/auth/google', caitAuthOrigin());
   url.searchParams.set('action', 'analytics_connect');
   url.searchParams.set('return_to', currentAnalyticsReturnPath());
   url.searchParams.set('login_source', loginSource);
-  url.searchParams.set('scope_group', kind);
-  url.searchParams.set('capabilities', kind === 'gsc' ? 'google.read_gsc' : 'google.read_ga4');
+  url.searchParams.set('scope_group', kind === 'analytics' ? 'ga4,gsc' : kind);
+  url.searchParams.set('capabilities', kind === 'analytics' ? 'google.read_ga4,google.read_gsc' : kind === 'gsc' ? 'google.read_gsc' : 'google.read_ga4');
   return url.toString();
 }
 
 function updateGoogleConnectLinks() {
   for (const link of els.googleConnectLinks || []) {
     const kind = String(link.dataset.googleConnectLink || '').trim();
-    const source = kind === 'gsc' ? 'analytics_console_gsc' : 'analytics_console_ga4';
+    const source = kind === 'gsc' ? 'analytics_console_gsc' : kind === 'analytics' || kind === 'both' ? 'analytics_console_google' : 'analytics_console_ga4';
     link.href = googleConnectHref(source, kind);
     link.target = '_top';
   }

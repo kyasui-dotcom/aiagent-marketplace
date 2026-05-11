@@ -278,8 +278,11 @@ assert.ok(analyticsHtml.includes('/analytics-console.js?v=20260511a'), 'Analytic
 assert.ok(analyticsHtml.includes('/app-console.css?v=20260507a'), 'Analytics Console should load the current shared app console CSS.');
 assert.ok(analyticsHtml.includes('id="analyticsStepSources"'), 'Analytics Console should show a compact workflow state strip.');
 assert.ok(analyticsHtml.includes('id="connectGoogleBtn"'), 'Analytics Console should expose a Google OAuth connection button.');
+assert.ok(analyticsHtml.includes('id="connectGoogleAllBtn"'), 'Analytics Console should expose a combined GA4 and Search Console OAuth connection button.');
 assert.ok(analyticsHtml.includes('href="https://aiagent-marketplace.net/auth/google?action=analytics_connect'), 'Analytics Console connect controls should use real OAuth links, not depend on JS-only click handling.');
+assert.ok(analyticsHtml.includes('data-google-connect-link="analytics"'), 'Analytics Console combined connect should be a standard link that requests analytics scopes.');
 assert.ok(analyticsHtml.includes('data-google-connect-link="ga4"'), 'Analytics Console GA4 connect should be a standard link that works inside app surfaces.');
+assert.ok(analyticsHtml.includes('scope_group=ga4,gsc'), 'Analytics Console combined connect should request GA4 and Search Console together.');
 assert.ok(analyticsHtml.includes('scope_group=ga4'), 'Analytics Console GA4 connect should request only the GA4 scope group.');
 assert.ok(analyticsHtml.includes('scope_group=gsc'), 'Analytics Console Search Console connect should request only the Search Console scope group.');
 assert.ok(analyticsHtml.includes('target="_top"'), 'Analytics Console OAuth links should leave embedded app surfaces and open Google consent in the top page.');
@@ -460,8 +463,9 @@ assert.ok(analyticsJs.includes('cait_analytics_sources'), 'Analytics Console sho
 assert.ok(analyticsJs.includes('applyCachedGoogleSources()'), 'Analytics Console should restore the last loaded GA4/Search Console selection on startup.');
 assert.ok(analyticsJs.includes('saveCachedGoogleSources({ ga4: Boolean(ga4), gsc: Boolean(gsc) })'), 'Analytics Console should save only successfully loaded Google source selections.');
 assert.ok(analyticsJs.includes("url.searchParams.set('action', 'analytics_connect')"), 'Analytics Console Google connect should always use the narrow analytics connector action.');
-assert.ok(analyticsJs.includes("url.searchParams.set('scope_group', kind)"), 'Analytics Console Google connect should pass the selected source scope group.');
-assert.ok(analyticsJs.includes("kind === 'gsc' ? 'google.read_gsc' : 'google.read_ga4'"), 'Analytics Console Google connect should pass one selected Google capability.');
+assert.ok(analyticsJs.includes("url.searchParams.set('scope_group', kind === 'analytics' ? 'ga4,gsc' : kind)"), 'Analytics Console Google connect should pass the selected source scope group.');
+assert.ok(analyticsJs.includes("kind === 'analytics' ? 'google.read_ga4,google.read_gsc'"), 'Analytics Console combined Google connect should pass both analytics capabilities.');
+assert.ok(analyticsJs.includes("kind === 'gsc' ? 'google.read_gsc' : 'google.read_ga4'"), 'Analytics Console source-specific Google connect should pass one selected Google capability.');
 assert.ok(!analyticsJs.includes('/auth/status'), 'Analytics Console connect buttons should not be blocked by a preflight request before OAuth redirect.');
 assert.ok(analyticsJs.includes('updateGoogleConnectLinks'), 'Analytics Console should keep real OAuth links updated with the current app context return path.');
 assert.ok(analyticsJs.includes('caitAuthOrigin'), 'Analytics Console should submit OAuth to the official CAIt auth origin even from preview origins.');
