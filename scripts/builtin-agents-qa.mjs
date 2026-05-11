@@ -1334,7 +1334,11 @@ try {
   assert.equal(cmoDynamicPayload.runtime.workflow, 'workflow_research_synthesis_packet');
   assert.ok(cmoDynamicPayload.files[0].content.includes('Task-aligned research interpretation'), 'Research delivery should include task-aligned interpretation, not only sources');
   assert.ok(/3C analysis|3C分析/i.test(cmoDynamicPayload.files[0].content), 'Research delivery should include 3C analysis, not only task-aligned findings');
+  assert.ok(cmoDynamicPayload.files[0].content.includes('Downstream agent handoff packet'), 'Research delivery should include a downstream handoff packet for later agents');
   assert.ok(cmoDynamicPayload.report.research_findings.three_c_analysis, 'Research findings should expose structured 3C analysis for leader handoff');
+  assert.ok(cmoDynamicPayload.report.research_findings.downstream_handoff?.channel_requirements?.seo, 'Research findings should expose structured SEO handoff requirements');
+  assert.ok(cmoDynamicPayload.report.research_findings.downstream_handoff?.channel_requirements?.social, 'Research findings should expose structured social handoff requirements');
+  assert.ok(Array.isArray(cmoDynamicPayload.report.research_findings.evidence_gaps), 'Research findings should expose evidence gaps for downstream collection');
   assert.ok(cmoDynamicPayload.files[0].content.includes('Top-content patterns'), 'Research delivery should summarize top content patterns for downstream agents');
   assert.ok(cmoDynamicPayload.report.research_findings.task_aligned_findings.some((item) => item.lens === 'seo_serp'), 'SEO requests should produce an SEO/SERP task finding');
   assert.ok(/one page to win|required sections|target depth/i.test(cmoDynamicPayload.report.research_findings.task_aligned_findings.map((item) => item.finding).join(' ')), 'SEO research finding should describe how downstream SEO/writing should use top-result depth and structure');

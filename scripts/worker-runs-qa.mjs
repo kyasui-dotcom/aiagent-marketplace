@@ -306,6 +306,7 @@ await storage.mutate(async (draft) => {
   job.status = 'running';
   job.startedAt = new Date(Date.now() - 5_000).toISOString();
   job.createdAt = job.startedAt;
+  job.logs = [...(job.logs || []), 'qa backdated running job for cron timeout sweep'];
 });
 
 const cronWaitUntil = [];

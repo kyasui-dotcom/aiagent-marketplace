@@ -9,10 +9,13 @@ import { E2E_DEFAULT_ORDER_PROMPT, assertOrderScenarioQuality, buildOrderScenari
 const workerSource = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
 const deliveryActionContractSource = readFileSync(new URL('../public/delivery-action-contract.js', import.meta.url), 'utf8');
 const builtInAgentsSource = readFileSync(new URL('../lib/builtin-agents.js', import.meta.url), 'utf8');
+const localAgentEndpointsSource = readFileSync(new URL('../lib/local-agent-endpoints.js', import.meta.url), 'utf8');
 const storageSource = readFileSync(new URL('../lib/storage.js', import.meta.url), 'utf8');
-assert.ok(workerSource.includes('function builtInWorkflowKindForJob'), 'workflow built-in jobs should resolve kind from the child workflow task');
-assert.ok(workerSource.includes("if (!agentKind) return '';"), 'external workflow agents must not be rerouted through built-in sample execution');
-assert.ok(workerSource.includes('BUILT_IN_KINDS.includes(taskKind)'), 'workflow child task kind must be allowed to override the assigned leader sample kind');
+assert.ok(workerSource.includes("from './lib/local-agent-endpoints.js'"), 'same-worker agent execution should be isolated behind the local endpoint adapter.');
+assert.ok(localAgentEndpointsSource.includes('function localAgentKindFromAgent'), 'local endpoint invocation should resolve the registered local agent kind outside worker dispatch.');
+assert.ok(localAgentEndpointsSource.includes('agentCanInvokeLocalEndpoint'), 'external workflow agents must not be rerouted through local sample execution.');
+assert.ok(!workerSource.includes('BUILT_IN_DISPATCH_SCHEDULE_STALE_MS'), 'dispatch_scheduled freshness must be endpoint-contract based, not built-in specific.');
+assert.ok(!workerSource.includes('BUILT_IN_JOB_TIMEOUT_FLOOR_MS'), 'standalone timeout floors must not depend on built-in agent identity.');
 assert.ok(workerSource.includes('function dispatchJobToAssignedAgent'), 'workflow jobs should dispatch through the generic provider endpoint path');
 assert.ok(workerSource.includes('function braveSearchConfiguredForWorkflow'), 'Brave search configuration should stay available for search-required workflow jobs');
 assert.ok(workerSource.includes('workflowJobRequiresSearch(job)'), 'search-required workflow jobs should preserve source-quality gates');
@@ -48,7 +51,7 @@ assert.ok(workerSource.includes('compactWorkflowAppContextsForDispatch'), 'attac
 assert.ok(workerSource.includes('compactWorkflowInputForEndpointDispatch'), 'workflow endpoint dispatch should compact duplicated app/connector context before handing work to an agent endpoint.');
 assert.ok(!workerSource.includes('compactWorkflowInputForBuiltInDispatch'), 'workflow dispatch compaction must be endpoint-contract based, not built-in-agent special casing.');
 assert.ok(workerSource.includes('function invokeSameWorkerAgentEndpoint'), 'same-worker agent endpoints should run through the endpoint contract without HTTP self-fetch from queue consumers.');
-assert.ok(workerSource.includes('sameWorkerAgentJobEndpointKind(endpoint, env)'), 'same-worker endpoint invocation should be restricted to registered local agent job endpoints.');
+assert.ok(workerSource.includes('invokeLocalAgentJobEndpoint(endpointPath, payload, env, agent)'), 'same-worker endpoint invocation should be restricted to registered local agent job endpoints.');
 assert.ok(workerSource.includes("const canUseTargetedDispatchResult = typeof storage.mutateJobAndAgent === 'function'"), 'completed and failed endpoint dispatch results should persist through targeted job/agent mutation instead of loading full production state.');
 assert.ok(workerSource.includes('if (!isBillableJob(job))'), 'test-mode billing outcomes should not force a full-state billing settlement during queue completion.');
 assert.ok(!workerSource.includes('app-context-data-analysis-shortcut'), 'data_analysis must not complete through simulated attached-context shortcut fallback.');
@@ -98,6 +101,7 @@ assert.ok(workerSource.includes('listQueuedWorkflowDispatchRoots'), 'cron queued
 assert.ok(workerSource.includes('listAcceptedEndpointDispatchJobs'), 'cron queued dispatch sweep must recover stale accepted endpoint dispatches.');
 assert.ok(workerSource.includes('listRetryableWorkflowChildren'), 'cron retry sweep must target active retryable workflow children instead of being starved by old failed jobs.');
 assert.ok(workerSource.includes("source: 'progress-poll'"), 'job progress polling should trigger retry sweeps so live orders do not wait only for cron.');
+assert.ok(workerSource.includes('pauseTerminalWorkflowChildRetryForParentAuthority'), 'retry sweeps must pause terminal child retries while the parent workflow is waiting for approval.');
 assert.ok(workerSource.includes('legacy accepted endpoint dispatch recovered'), 'accepted endpoint recovery should leave an auditable job log.');
 assert.ok(workerSource.includes('loadWorkflowDispatchState(jobId)'), 'workflow progress dispatch should load only the parent workflow and assigned agents when available.');
 assert.ok(workerSource.includes("['queued', 'pending'].includes(String(leaderSequence?.status"), 'completed checkpoint rows must release adaptive children even if leader sequence status stayed pending.');
@@ -1572,6 +1576,118 @@ const reportSourcesOnlyResearch = reportSourcesOnlyState.jobs.find((job) => job.
 assert.equal(reportSourcesOnlyResearch?.qualityGate?.passed, true, 'report-level web_sources should count as original search evidence in the delivery');
 assert.notEqual(reportSourcesOnlyCheckpoint?.failureCategory, 'leader_quality_gate_failed', 'checkpoint should not preserve a stale quality-gate block after current review passes');
 assert.notEqual(reportSourcesOnlyParent?.workflow?.leaderSequence?.lastQualityGate?.passed, false, 'parent should clear stale failed layer gate when current source review passes');
+
+const researchStructuredHandoffParentId = 'qa-research-structured-handoff-parent';
+const researchStructuredHandoffPlanningId = 'qa-research-structured-handoff-planning';
+await qaStorage.mutate(async (draft) => {
+  const at = nowIso();
+  draft.jobs.push(
+    {
+      id: researchStructuredHandoffParentId,
+      jobKind: 'workflow',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      prompt: 'leader should pass research downstream_handoff into the planning layer',
+      status: 'running',
+      createdAt: at,
+      startedAt: at,
+      workflow: {
+        plannedTasks: ['cmo_leader', 'research', 'media_planner'],
+        childRuns: []
+      },
+      logs: ['research structured handoff qa parent']
+    },
+    {
+      id: 'qa-research-structured-handoff-leader',
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      workflowTask: 'cmo_leader',
+      workflowAgentName: 'CMO Team Leader',
+      prompt: 'initial leader completed',
+      status: 'completed',
+      assignedAgentId: 'agent_cmo_leader_01',
+      workflowParentId: researchStructuredHandoffParentId,
+      createdAt: at,
+      completedAt: at,
+      input: { _broker: { workflow: { sequencePhase: 'initial' } } },
+      output: { summary: 'initial leader completed', report: { summary: 'initial leader completed', nextAction: 'hand research to planning' }, files: [] },
+      logs: []
+    },
+    {
+      id: 'qa-research-structured-handoff-research',
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'research',
+      workflowTask: 'research',
+      workflowAgentName: 'Research Agent',
+      prompt: 'research completed with structured downstream handoff',
+      status: 'completed',
+      assignedAgentId: 'agent_research_01',
+      workflowParentId: researchStructuredHandoffParentId,
+      createdAt: at,
+      completedAt: at,
+      input: { _broker: { workflow: { sequencePhase: 'research', forceWebSearch: true } } },
+      output: {
+        summary: 'Research used the CAIt marketplace source and produced a downstream handoff packet.',
+        report: {
+          summary: 'Research used the CAIt marketplace source and produced a downstream handoff packet.',
+          bullets: ['CAIt marketplace source supports developer signup positioning.'],
+          nextAction: 'Planning must use SEO, SNS, paid, and approval requirements.',
+          web_sources: [{ title: 'CAIt marketplace source', url: 'https://aiagent-marketplace.net/chat', snippet: 'Developer-facing AI agent marketplace chat.', query: 'CAIt marketplace developer signup', action: 'brave_search' }],
+          research_findings: {
+            downstream_handoff: {
+              source_status: { provider: 'brave', source_count: 1, fetched_page_count: 1, domains: ['aiagent-marketplace.net'] },
+              channel_requirements: {
+                planning: { use: 'Use CAIt marketplace source vocabulary before choosing media lanes.' },
+                seo: { use: 'SEO must return a source-backed page plan for developer signup intent.', required_artifacts: ['query cluster', 'H1/H2 pattern'] },
+                social: { use: 'SNS drafts must keep claims source-backed and approval-ready.', evidence_rule: 'Do not invent engagement counts.' },
+                paid: { use: 'Paid ads stay a small validation with one hypothesis and stop rule.' },
+                action: { use: 'External publishing requires an approval packet.', approval_required: true }
+              },
+              evidence_gaps: [
+                { id: 'social_engagement', severity: 'medium', gap: 'SNS engagement counts missing', next_check: 'Collect post URLs and reaction counts.' }
+              ],
+              approval_boundary: { use: 'Separate account, URL, exact copy, and stop rule before execution.', approval_required: true }
+            },
+            evidence_gaps: [
+              { id: 'social_engagement', severity: 'medium', gap: 'SNS engagement counts missing', next_check: 'Collect post URLs and reaction counts.' }
+            ]
+          },
+          evidence_gaps: [
+            { id: 'social_engagement', severity: 'medium', gap: 'SNS engagement counts missing', next_check: 'Collect post URLs and reaction counts.' }
+          ]
+        },
+        files: [{ name: 'research.md', content: '# research\nCAIt marketplace source https://aiagent-marketplace.net/chat\n\n## Downstream agent handoff packet\nSEO, SNS, paid, and approval requirements are structured in report.research_findings.' }]
+      },
+      logs: []
+    },
+    {
+      id: researchStructuredHandoffPlanningId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'media_planner',
+      workflowTask: 'media_planner',
+      workflowAgentName: 'Media Planner Agent',
+      prompt: 'planning should receive structured research requirements',
+      status: 'queued',
+      assignedAgentId: 'agent_media_planner_01',
+      workflowParentId: researchStructuredHandoffParentId,
+      createdAt: at,
+      input: { _broker: { workflow: { sequencePhase: 'planning' } } },
+      logs: []
+    }
+  );
+});
+await request(`/api/jobs/${researchStructuredHandoffParentId}`);
+const researchStructuredHandoffState = await qaStorage.getState();
+const researchStructuredHandoffPlanning = researchStructuredHandoffState.jobs.find((job) => job.id === researchStructuredHandoffPlanningId);
+const researchStructuredDigestText = JSON.stringify(researchStructuredHandoffPlanning?.input?._broker?.workflow?.leaderHandoff?.structuredHandoffDigest || []);
+const researchStructuredAdditionalPrompt = String(researchStructuredHandoffPlanning?.additionalPrompt || researchStructuredHandoffPlanning?.input?._broker?.workflow?.additionalPrompt || '');
+assert.ok(researchStructuredDigestText.includes('SEO must return a source-backed page plan'), 'leader handoff digest should preserve Research Agent SEO channel requirements');
+assert.ok(researchStructuredDigestText.includes('SNS engagement counts missing'), 'leader handoff digest should preserve Research Agent evidence gaps');
+assert.ok(researchStructuredAdditionalPrompt.includes('Channel requirements'), 'downstream planning prompt should expose structured channel requirements');
+assert.ok(researchStructuredAdditionalPrompt.includes('Evidence gaps'), 'downstream planning prompt should expose structured evidence gaps');
 
 const missingHandoffUsageParentId = 'qa-missing-handoff-usage-parent';
 const missingHandoffUsageCheckpointId = 'qa-missing-handoff-usage-checkpoint';
@@ -3341,6 +3457,85 @@ const authorityRawState = await qaStorage.getState();
 const authorityRawChild = authorityRawState.jobs.find((job) => job.id === authorityChildId);
 assert.equal(authorityRawChild?.status, 'queued', 'authority-blocked workflow should leave child ready but unscheduled for later resume');
 assert.notEqual(authorityRawChild?.dispatch?.completionStatus, 'dispatch_scheduled', 'authority-blocked workflow should not retry/schedule child dispatch');
+
+const authorityRetryParentId = 'qa-authority-retry-parent';
+const authorityRetryChildId = 'qa-authority-retry-child';
+await qaStorage.mutate(async (draft) => {
+  const at = nowIso();
+  draft.jobs.unshift(
+    {
+      id: authorityRetryParentId,
+      jobKind: 'workflow',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      prompt: 'approval waiting retry sweep qa',
+      input: {},
+      priority: 'normal',
+      status: 'running',
+      createdAt: at,
+      failureCategory: null,
+      failureReason: null,
+      dispatch: { completionStatus: 'accepted', retryable: false, nextRetryAt: null },
+      workflow: {
+        strategy: 'multi_agent',
+        plannedTasks: ['cmo_leader', 'research'],
+        childRuns: []
+      },
+      output: {
+        summary: 'Approval required before retrying research.',
+        report: {
+          summary: 'Approval required before retrying research.',
+          authority_request: {
+            reason: 'Google analytics context must be approved before retrying source collection.',
+            missing_connectors: ['google'],
+            missing_connector_capabilities: ['google.read_ga4'],
+            required_google_sources: ['ga4'],
+            source: 'agent_delivery'
+          }
+        },
+        files: []
+      },
+      logs: ['approval retry qa parent']
+    },
+    {
+      id: authorityRetryChildId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'research',
+      workflowTask: 'research',
+      workflowAgentName: 'Research Agent',
+      prompt: 'retryable failed child should pause while parent waits for approval',
+      input: {},
+      priority: 'normal',
+      status: 'failed',
+      assignedAgentId: 'agent_research_01',
+      createdAt: at,
+      failedAt: at,
+      workflowParentId: authorityRetryParentId,
+      failureCategory: 'dispatch_timeout',
+      failureReason: 'Run exceeded timeout window',
+      dispatch: { completionStatus: 'failed', retryable: true, nextRetryAt: new Date(Date.now() - 1000).toISOString(), attempts: 1, maxRetries: 3 },
+      logs: ['approval retry qa child']
+    }
+  );
+});
+const authorityRetrySweep = await request('/api/dev/timeout-sweep', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ retry_limit: 3 })
+}, { env: qaSearchEnv });
+assert.equal(authorityRetrySweep.status, 200);
+assert.equal(
+  authorityRetrySweep.body.retry.restart_required_job_ids.includes(authorityRetryChildId),
+  false,
+  'retry sweep must not convert approval-waiting workflow children into full-order retry requirements'
+);
+const authorityRetryState = await qaStorage.getState();
+const authorityRetryChild = authorityRetryState.jobs.find((job) => job.id === authorityRetryChildId);
+const authorityRetryParent = authorityRetryState.jobs.find((job) => job.id === authorityRetryParentId);
+assert.equal(authorityRetryChild?.dispatch?.completionStatus, 'approval_waiting_retry_paused', 'retryable terminal child should pause while parent waits for approval');
+assert.equal(authorityRetryChild?.dispatch?.retryable, false, 'paused approval retry should not remain retryable');
+assert.equal(authorityRetryParent?.status, 'blocked', 'approval-waiting parent should remain blocked instead of failing during retry sweep');
 
 const staleWorkflowParentId = 'qa-stale-workflow-parent';
 const staleWorkflowChildId = 'qa-stale-workflow-child';
