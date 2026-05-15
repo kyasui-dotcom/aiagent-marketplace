@@ -24097,8 +24097,15 @@ function renderStripeTools(account = null, auth = null) {
   const connectOnboardingStatus = String(accountStripe.connectOnboardingStatus || 'not_started');
   const chargesEnabled = accountStripe.chargesEnabled === true || String(accountStripe.chargesEnabled || '').toLowerCase() === 'true';
   const payoutsEnabled = accountStripe.payoutsEnabled === true || String(accountStripe.payoutsEnabled || '').toLowerCase() === 'true';
+  const identityVerified = accountStripe.identityVerified === true || String(accountStripe.identityVerified || '').toLowerCase() === 'true';
+  const identityVerificationStatus = String(accountStripe.identityVerificationStatus || (identityVerified ? 'verified' : 'not_started'));
+  const transferCapabilityStatus = String(accountStripe.transferCapabilityStatus || 'missing');
+  const requirementsCurrentDue = Array.isArray(accountStripe.requirementsCurrentDue) ? accountStripe.requirementsCurrentDue : [];
+  const requirementsPastDue = Array.isArray(accountStripe.requirementsPastDue) ? accountStripe.requirementsPastDue : [];
+  const requirementsDisabledReason = String(accountStripe.requirementsDisabledReason || '').trim();
+  const stripeRequirementsClear = requirementsCurrentDue.length === 0 && requirementsPastDue.length === 0 && !requirementsDisabledReason;
   const connectDetailsSubmitted = payoutStatus === 'ready' || connectOnboardingStatus === 'completed';
-  const connectReady = payoutsEnabled;
+  const connectReady = identityVerified && payoutsEnabled;
   const connectStarted = Boolean(accountStripe.connectedAccountId) || connectDetailsSubmitted || ['pending', 'started'].includes(payoutStatus) || ['pending', 'started'].includes(connectOnboardingStatus);
   const connectActionLabel = connectReady ? 'CONNECT READY' : (connectStarted ? 'RESUME CONNECT' : 'OPEN CONNECT');
   const configuredMode = account?.billing?.mode || billingProfile?.mode || 'monthly_invoice';
@@ -24189,7 +24196,7 @@ function renderStripeTools(account = null, auth = null) {
       els.runStripeProviderPayoutBtn.textContent = 'REQUEST MANUAL PAYOUT';
       els.runStripeProviderPayoutBtn.title = 'Automated provider withdrawal is paused. Contact support for manual payout handling.';
     }
-    const manualPayoutReady = canManagePayouts && providerEnabled && providerPending >= providerMinimum && providerPending > 0;
+    const manualPayoutReady = canManagePayouts && providerEnabled && identityVerified && providerPending >= providerMinimum && providerPending > 0;
     setButtonAccess(els.createStripeSubscriptionSessionBtn, canManagePayments);
     setButtonAccess(els.createStripeSetupSessionBtn, cardSetupReady && !savedCard);
     setButtonAccess(els.createStripeConnectOnboardingBtn, false);
@@ -24198,7 +24205,9 @@ function renderStripeTools(account = null, auth = null) {
     if (els.runStripeProviderPayoutBtn && !manualPayoutReady) {
       els.runStripeProviderPayoutBtn.title = providerPending < providerMinimum
         ? `Minimum manual payout request is ${yen(providerMinimum)}.`
-        : 'Enable the provider profile and link GitHub before requesting manual payout.';
+        : (!identityVerified
+          ? 'Complete Stripe Connect identity verification before requesting payout handling.'
+          : 'Enable the provider profile and link GitHub before requesting manual payout.');
     }
     return;
   }
@@ -24222,8 +24231,8 @@ function renderStripeTools(account = null, auth = null) {
     providerNextStep = 'Connect GitHub first. Provider onboarding and withdrawals require a GitHub-linked account.';
   } else if (!stripeReady) {
     providerNextStep = 'Platform payout-provider setup is incomplete.';
-  } else if (providerEnabled && !payoutsEnabled) {
-    providerNextStep = `Use ${connectActionLabel} to finish external payout onboarding.`;
+  } else if (providerEnabled && !identityVerified) {
+    providerNextStep = `Use ${connectActionLabel} to complete identity verification before withdrawals.`;
   } else if (providerEnabled && !(providerPending > 0)) {
     providerNextStep = 'No provider earnings are available to withdraw yet.';
   } else if (providerEnabled && providerPending < providerMinimum) {
@@ -24242,7 +24251,7 @@ function renderStripeTools(account = null, auth = null) {
   if (!canManagePayouts) withdrawDisabledReason = 'Connect GitHub first to manage provider withdrawals.';
   else if (!stripeReady) withdrawDisabledReason = 'Payout provider is not ready on the platform.';
   else if (!providerEnabled) withdrawDisabledReason = 'Enable and save the provider profile before withdrawing.';
-  else if (!payoutsEnabled) withdrawDisabledReason = `${connectActionLabel} first so external payouts can be enabled.`;
+  else if (!identityVerified) withdrawDisabledReason = `${connectActionLabel} first to complete Stripe Connect identity verification.`;
   else if (!(providerPending > 0)) withdrawDisabledReason = 'No provider earnings are available to withdraw yet.';
   else if (providerPending < providerMinimum) withdrawDisabledReason = `Minimum withdrawal is ${yen(providerMinimum)}.`;
   const withdrawReady = !withdrawDisabledReason;
@@ -24262,6 +24271,12 @@ function renderStripeTools(account = null, auth = null) {
     `GitHub linked: ${canManagePayouts ? 'yes' : 'no'}`,
     `Connect status: ${displayPayoutStatus}`,
     `Connect details submitted: ${connectDetailsSubmitted ? 'yes' : 'no'}`,
+    `Identity verified for payout: ${identityVerified ? 'yes' : 'no'} (${identityVerificationStatus})`,
+    `Transfers capability: ${transferCapabilityStatus}`,
+    `Stripe requirements clear: ${stripeRequirementsClear ? 'yes' : 'no'}`,
+    requirementsCurrentDue.length ? `Requirements currently due: ${requirementsCurrentDue.join(', ')}` : null,
+    requirementsPastDue.length ? `Requirements past due: ${requirementsPastDue.join(', ')}` : null,
+    requirementsDisabledReason ? `Requirements disabled reason: ${requirementsDisabledReason}` : null,
     `Charges enabled: ${chargesEnabled ? 'yes' : 'no'}`,
     `Payouts enabled: ${payoutsEnabled ? 'yes' : 'no'}`,
     `Connected account: ${accountStripe.connectedAccountId || 'not created'}`,
@@ -24284,7 +24299,7 @@ function renderStripeTools(account = null, auth = null) {
     `Next step: ${providerNextStep}`
   ];
   safeText(els.stripeCustomerStatus, customerLines.join('\n'));
-  safeText(els.stripeProviderStatus, providerLines.join('\n'));
+  safeText(els.stripeProviderStatus, providerLines.filter(Boolean).join('\n'));
   safeText(els.stripeCustomerActionResult, [
     'Payment-method setup opens a hosted setup page and enables month-end billing after confirmation.',
     'Month-end billing accrues settled order costs through the month, then charges the saved card after closing.',
@@ -24292,9 +24307,9 @@ function renderStripeTools(account = null, auth = null) {
   ].join('\n'));
   safeText(els.stripeProviderActionResult, [
     connectReady
-      ? 'External payouts are enabled. Reopening onboarding is not needed.'
+      ? 'External payouts are enabled after Stripe Connect identity verification.'
       : canManagePayouts
-        ? `${connectActionLabel} ${connectStarted ? 'continues' : 'starts'} the external payout setup that receives provider earnings.`
+        ? `${connectActionLabel} ${connectStarted ? 'continues' : 'starts'} Stripe Connect identity verification and payout setup before earnings can be withdrawn.`
       : 'Connect GitHub first. Provider setup and withdrawals are restricted to GitHub-linked accounts.',
     providerMonthlyChargeReady
       ? `RUN PROVIDER MONTHLY BILLING will charge ${yen(providerMonthlyDue)} for ${state.settingsPeriod || currentMonthPeriod()} using the saved card on this account.`
@@ -24303,7 +24318,7 @@ function renderStripeTools(account = null, auth = null) {
       ? `Latest provider monthly failure: ${providerMonthlyLastFailureMessage}${providerMonthlyRetryPeriod ? ` · retry ${providerMonthlyRetryCount}/${providerMonthlyMaxAttempts} for ${providerMonthlyRetryPeriod}` : ''}`
       : `Auto-run policy: ${providerMonthlyAutoEnabled ? `enabled with up to ${providerMonthlyMaxAttempts} attempts per period.` : 'disabled.'}`,
     withdrawReady
-      ? `Provider withdrawal moves earnings from ${PRODUCT_NAME} after payout onboarding is ready.`
+      ? `Provider withdrawal moves earnings from ${PRODUCT_NAME} only after Stripe Connect identity verification is complete.`
       : `Provider withdrawal is locked: ${withdrawDisabledReason}`,
     'Leave the amount blank to withdraw the full available balance.',
     'Use these only if this account receives revenue share.'

@@ -188,6 +188,8 @@ assert.ok(chatJs.includes('will ask one item at a time before dispatch'), 'Leade
 assert.ok(chatJs.includes('growthLeaderNeedsDataHint'), 'Growth leader intake should point users toward connectors or source URLs instead of asking repeated data questions.');
 assert.ok(chatJs.includes('Connected Google analytics can be attached'), 'Growth order checks should surface connected Google analytics instead of silently skipping it.');
 assert.ok(chatJs.includes('Analytics was skipped for this prepared order'), 'Growth order checks should allow an explicit analytics skip only when the user chooses it.');
+assert.ok(clientJs.includes('Identity verified for payout'), 'Provider payout UI should show Stripe Connect identity verification state.');
+assert.ok(clientJs.includes('complete Stripe Connect identity verification'), 'Provider payout UI should block withdrawals until identity verification is complete.');
 assert.ok(clientJs.includes("if (requested.length) url.searchParams.set('capabilities', requested.join(','))"), 'Chat Google connector should pass exact required Google capabilities into OAuth without adding broad defaults.');
 assert.ok(clientJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
 assert.ok(chatJs.includes('googleAuthorityConnectGroups'), 'Chat Google approval should connect every requested Google source in one OAuth popup.');
@@ -744,6 +746,8 @@ assert.ok(chatJs.includes('Final action: X Client Ops'), 'X Client Ops delivery 
 assert.ok(chatJs.includes('CAIt has attached the X post draft and strategy context prepared during the workflow.'), 'X Client Ops explanation should be English.');
 assert.ok(chatJs.includes('function renderAppHandoffTools'), 'Chat deliveries should expose generic app handoff cards.');
 assert.ok(chatJs.includes('function renderAppHandoffTree'), 'Chat deliveries should render the preparation artifact to app routing tree.');
+assert.ok(chatJs.includes('function renderAppHandoffRoutingPreview'), 'Agent map progress should preview SaaS routing before final delivery.');
+assert.ok(chatJs.includes('handoffHtml: renderAppHandoffRoutingPreview(job)'), 'Workflow progress maps should include the preparation artifact to SaaS app route.');
 assert.ok(chatJs.includes('Preparation data routing'), 'App handoff cards should label the preparation data routing tree.');
 assert.ok(chatJs.includes('appHandoffEntryMatchesArtifact'), 'App handoff routing tree should use the same contract matching as the app handoff cards.');
 assert.ok(chatJs.includes('destinationConnectors'), 'App handoff routing tree should show destination connector/capability hints from app manifests.');

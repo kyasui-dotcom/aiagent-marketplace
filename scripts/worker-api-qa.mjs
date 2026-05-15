@@ -4424,6 +4424,112 @@ assert.deepEqual(
   ['qa-missing-checkpoint', 'qa-missing-final-summary'].sort()
 );
 
+const queuedBlockedFinalParentId = 'qa-queued-blocked-final-parent';
+const queuedBlockedFinalId = 'qa-queued-blocked-final-summary';
+await qaStorage.mutate(async (draft) => {
+  const at = nowIso();
+  draft.jobs.unshift(
+    {
+      id: queuedBlockedFinalParentId,
+      jobKind: 'workflow',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      prompt: 'queued final summary child persisted as blocked should be repaired',
+      input: {},
+      priority: 'normal',
+      status: 'running',
+      createdAt: at,
+      failureReason: 'Workflow is blocked before final leader summary can complete.',
+      workflow: {
+        strategy: 'multi_agent',
+        plannedTasks: ['cmo_leader', 'research'],
+        childJobIds: ['qa-queued-blocked-final-leader', 'qa-queued-blocked-final-research', queuedBlockedFinalId],
+        childRuns: [
+          { id: 'qa-queued-blocked-final-leader', taskType: 'cmo_leader', agentId: 'agent_cmo_leader_01', sequencePhase: 'initial', status: 'completed' },
+          { id: 'qa-queued-blocked-final-research', taskType: 'research', agentId: 'agent_research_01', sequencePhase: 'research', status: 'completed' },
+          { id: queuedBlockedFinalId, taskType: 'cmo_leader', agentId: 'agent_cmo_leader_01', sequencePhase: 'final_summary', status: 'blocked' }
+        ],
+        leaderSequence: {
+          enabled: true,
+          status: 'completed',
+          checkpoints: [],
+          finalSummaryJobId: queuedBlockedFinalId,
+          finalSummaryStatus: 'queued',
+          finalSummaryQueuedAt: at
+        },
+        statusCounts: { total: 3, completed: 2, running: 1, queued: 0, failed: 0, blocked: 1 }
+      },
+      logs: ['queued blocked final summary qa parent']
+    },
+    {
+      id: 'qa-queued-blocked-final-leader',
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      workflowTask: 'cmo_leader',
+      workflowAgentName: 'CMO Team Leader',
+      prompt: 'completed leader child',
+      input: { _broker: { workflow: { sequencePhase: 'initial' } } },
+      priority: 'normal',
+      status: 'completed',
+      assignedAgentId: 'agent_cmo_leader_01',
+      createdAt: at,
+      completedAt: at,
+      workflowParentId: queuedBlockedFinalParentId,
+      output: { summary: 'leader completed', report: { summary: 'leader completed', bullets: ['run research'], nextAction: 'summarize' }, files: [] },
+      logs: []
+    },
+    {
+      id: 'qa-queued-blocked-final-research',
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'research',
+      workflowTask: 'research',
+      workflowAgentName: 'Research Agent',
+      prompt: 'completed source-backed research child',
+      input: { _broker: { workflow: { sequencePhase: 'research', forceWebSearch: true } } },
+      priority: 'normal',
+      status: 'completed',
+      assignedAgentId: 'agent_research_01',
+      createdAt: at,
+      completedAt: at,
+      workflowParentId: queuedBlockedFinalParentId,
+      output: {
+        summary: 'qa research completed for final summary repair',
+        report: { summary: 'qa research completed', web_sources: [{ title: 'CAIt', url: 'https://aiagent-marketplace.net/' }] },
+        files: [{ name: 'research-delivery.md', content: '# Research\n\nSource: https://aiagent-marketplace.net/' }]
+      },
+      logs: []
+    },
+    {
+      id: queuedBlockedFinalId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      workflowTask: 'cmo_leader',
+      workflowAgentName: 'CMO Team Leader',
+      prompt: 'final leader summary blocked row',
+      input: { _broker: { workflow: { sequencePhase: 'final_summary' } } },
+      priority: 'normal',
+      status: 'blocked',
+      assignedAgentId: 'agent_cmo_leader_01',
+      createdAt: at,
+      workflowParentId: queuedBlockedFinalParentId,
+      dispatch: { completionStatus: 'leader_final_summary_blocked', retryable: true },
+      logs: ['leader final summary queued after specialist completion from qa-queued-blocked-final-leader']
+    }
+  );
+});
+const queuedBlockedFinalWaits = [];
+const queuedBlockedFinalPoll = await request(`/api/jobs/${queuedBlockedFinalParentId}`, {}, { waitUntilPromises: queuedBlockedFinalWaits });
+assert.equal(queuedBlockedFinalPoll.status, 200);
+await Promise.allSettled(queuedBlockedFinalWaits);
+const queuedBlockedFinalAfter = await request(`/api/jobs/${queuedBlockedFinalParentId}`);
+assert.equal(queuedBlockedFinalAfter.status, 200);
+const queuedBlockedFinalRun = queuedBlockedFinalAfter.body.job.workflow.childRuns.find((run) => run.id === queuedBlockedFinalId);
+assert.equal(queuedBlockedFinalRun?.status, 'completed', 'queued final summary persisted as blocked should be repaired and dispatched');
+assert.equal(queuedBlockedFinalAfter.body.job.status, 'completed', 'workflow parent should complete after repaired final summary dispatch');
+
 const guestVisitorId = 'worker-api-qa-guest-order';
 const guestOrderWaits = [];
 const guestOrder = await request('/api/jobs', {
@@ -4804,6 +4910,7 @@ assert.equal(githubDraftUnauthorized.status, 401);
 
 const originalFetch = globalThis.fetch;
 let capturedOpenAiIntentRequest = null;
+let workerQaConnectedAccountIdentityReady = false;
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
   const providerResponseForRequest = (requestBody = {}, usage = { total_cost_basis: 90, compute_cost: 30, tool_cost: 10, labor_cost: 50 }) => {
@@ -4944,6 +5051,60 @@ globalThis.fetch = async (input, init) => {
       id: 'cus_worker_qa_dave',
       object: 'customer',
       invoice_settings: { default_payment_method: 'pm_worker_qa_dave' }
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  if (url === 'https://api.stripe.com/v1/accounts' && String(init?.method || 'GET').toUpperCase() === 'POST') {
+    return new Response(JSON.stringify({
+      id: 'acct_worker_qa_alice',
+      object: 'account',
+      details_submitted: false,
+      charges_enabled: false,
+      payouts_enabled: false,
+      capabilities: { transfers: 'pending' },
+      requirements: {
+        currently_due: ['individual.verification.document'],
+        past_due: [],
+        disabled_reason: 'requirements.past_due'
+      }
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  if (url === 'https://api.stripe.com/v1/account_links' && String(init?.method || 'GET').toUpperCase() === 'POST') {
+    return new Response(JSON.stringify({
+      id: 'link_worker_qa_alice',
+      object: 'account_link',
+      url: 'https://connect.stripe.com/setup/worker-qa-alice'
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  if (url === 'https://api.stripe.com/v1/accounts/acct_worker_qa_alice') {
+    return new Response(JSON.stringify(workerQaConnectedAccountIdentityReady
+      ? {
+          id: 'acct_worker_qa_alice',
+          object: 'account',
+          details_submitted: true,
+          charges_enabled: true,
+          payouts_enabled: true,
+          capabilities: { transfers: 'active' },
+          requirements: { currently_due: [], past_due: [], disabled_reason: null }
+        }
+      : {
+          id: 'acct_worker_qa_alice',
+          object: 'account',
+          details_submitted: true,
+          charges_enabled: false,
+          payouts_enabled: false,
+          capabilities: { transfers: 'pending' },
+          requirements: {
+            currently_due: ['individual.verification.document'],
+            past_due: [],
+            disabled_reason: 'requirements.past_due'
+          }
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  if (url === 'https://api.stripe.com/v1/transfers' && String(init?.method || 'GET').toUpperCase() === 'POST') {
+    return new Response(JSON.stringify({
+      id: 'tr_worker_qa_alice_payout',
+      object: 'transfer',
+      destination: 'acct_worker_qa_alice'
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
   if (url === 'https://worker-qa.example/manifest.json') {
@@ -5988,6 +6149,56 @@ try {
   const providerSettingsAfter = await request('/api/settings', {}, { sessionCookie: aliceSession });
   assert.equal(providerSettingsAfter.status, 200);
   assert.ok(Number(providerSettingsAfter.body.account?.payout?.pendingBalance || 0) > providerPendingBefore);
+  const providerPendingAfterOrders = Number(providerSettingsAfter.body.account?.payout?.pendingBalance || 0);
+
+  const providerPayoutProfile = await request('/api/settings/payout', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      providerEnabled: true,
+      entityType: 'individual',
+      legalName: 'Alice Example',
+      displayName: 'Alice Provider',
+      payoutEmail: 'alice-provider@example.test',
+      country: 'JP',
+      website: 'https://worker-qa.example'
+    })
+  }, { sessionCookie: aliceSession });
+  assert.equal(providerPayoutProfile.status, 200);
+  assert.equal(providerPayoutProfile.body.account.payout.providerEnabled, true);
+
+  const openedConnect = await request('/api/stripe/connect/onboarding', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({})
+  }, { sessionCookie: aliceSession });
+  assert.equal(openedConnect.status, 201);
+  assert.equal(openedConnect.body.account_id, 'acct_worker_qa_alice');
+  assert.ok(String(openedConnect.body.onboarding_url || '').startsWith('https://connect.stripe.com/'));
+
+  const blockedPayoutBeforeIdentity = await request('/api/stripe/payout/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({})
+  }, { sessionCookie: aliceSession });
+  assert.equal(blockedPayoutBeforeIdentity.status, 409);
+  assert.equal(blockedPayoutBeforeIdentity.body.code, 'identity_verification_required');
+  assert.equal(blockedPayoutBeforeIdentity.body.onboarding_required, true);
+  assert.equal(blockedPayoutBeforeIdentity.body.identity_verification.verified, false);
+  assert.ok(blockedPayoutBeforeIdentity.body.identity_verification.missing.includes('payouts_enabled'));
+  assert.ok(blockedPayoutBeforeIdentity.body.identity_verification.missing.includes('transfers_capability_active'));
+
+  workerQaConnectedAccountIdentityReady = true;
+  const completedPayoutAfterIdentity = await request('/api/stripe/payout/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ force: true })
+  }, { sessionCookie: aliceSession });
+  assert.equal(completedPayoutAfterIdentity.status, 200);
+  assert.equal(completedPayoutAfterIdentity.body.transfer_id, 'tr_worker_qa_alice_payout');
+  assert.equal(completedPayoutAfterIdentity.body.account.stripe.identityVerified, true);
+  assert.equal(completedPayoutAfterIdentity.body.account.stripe.identityVerificationStatus, 'verified');
+  assert.ok(Number(completedPayoutAfterIdentity.body.pending_after || 0) < providerPendingAfterOrders);
 
   const idempotentSinglePayload = {
     parent_agent_id: 'qa-idempotency',

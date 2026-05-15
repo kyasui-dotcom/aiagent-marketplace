@@ -2735,6 +2735,7 @@ function workflowAgentMapHtml(childRuns = [], options = {}) {
     `<span>${escapeHtml(options.subtitle || `${visibleRuns.length} visible agent runs`)}</span>`,
     '</div>',
     `<div class="agent-map-diagram">${diagram}</div>`,
+    options.handoffHtml ? options.handoffHtml : '',
     footer ? `<div class="chat-hint">${escapeHtml(footer)}</div>` : '',
     '</div>'
   ].join('\n');
@@ -2834,7 +2835,8 @@ function workflowPhaseProgressMapHtml(job = {}, options = {}) {
     currentPhase: phase,
     currentChildId: current.id,
     progress: true,
-    parentJobId: job.id || state.orderId || ''
+    parentJobId: job.id || state.orderId || '',
+    handoffHtml: renderAppHandoffRoutingPreview(job)
   });
 }
 
@@ -4087,6 +4089,27 @@ function renderAppHandoffTree(job = {}, entries = []) {
     `<ul>${branchHtml}</ul>`,
     '</div>'
   ].join('\n');
+}
+
+function renderAppHandoffRoutingPreview(job = {}) {
+  const entries = appAgentHandoffCandidates(job);
+  if (!entries.length) return '';
+  const tree = renderAppHandoffTree(job, entries);
+  if (!tree) return '';
+  const appLinks = entries
+    .map((entry) => {
+      const directUrl = String(entry.entryUrl || entry.baseUrl || '').trim();
+      if (!directUrl) return '';
+      return `<a class="ghost-btn inline-btn file-action" href="${escapeHtml(directUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.name || 'Open app')}</a>`;
+    })
+    .filter(Boolean)
+    .join('');
+  return [
+    '<div class="app-handoff-preview">',
+    tree,
+    appLinks ? `<div class="inline-actions">${appLinks}</div>` : '',
+    '</div>'
+  ].filter(Boolean).join('\n');
 }
 
 function appHandoffRelevanceScore(entry = {}, job = {}, options = {}) {

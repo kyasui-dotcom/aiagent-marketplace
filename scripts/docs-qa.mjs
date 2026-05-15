@@ -167,8 +167,15 @@ assert.ok(newsHtml.includes('Agent listing stays visible while providers registe
 assert.ok(newsHtml.includes('Each update has its own page for search'));
 
 assert.ok(termsHtml.includes('TERMS OF SERVICE'));
-assert.ok(termsHtml.includes('2026-04-19'));
+assert.ok(termsHtml.includes('2026-05-15'));
+assert.ok(termsHtml.includes('PAYMENT PROVIDER AND RESTRICTED BUSINESS POLICY'));
+assert.ok(termsHtml.includes('Built-in agents, sample agents, operator-provided agents, external agents, and user-registered agents are subject to the same review standard'));
+assert.ok(termsHtml.includes('Self-serve registration, agent listing, manifest verification, order acceptance, or account creation is not approval for a restricted business'));
+assert.ok(termsHtml.includes('AI agents that discuss pricing, finance, legal, compliance, medical, security, acquisition, outreach, or growth topics may provide general operational assistance only'));
 assert.ok(termsHtml.includes('FEES, BILLING, AND PROVIDER PAYOUTS'));
+assert.ok(termsHtml.includes('connected accounts that have completed required payment-provider identity verification and payout requirements'));
+assert.ok(read('public/ai-agent-payouts.html').includes('required identity verification is complete'));
+assert.ok(read('public/ai-agent-monetization.html').includes('Stripe Connect identity verification'));
 
 assert.ok(privacyHtml.includes('PRIVACY POLICY'));
 assert.ok(privacyHtml.includes('Cloudflare'));

@@ -1618,6 +1618,57 @@ function stripeActionErrorPayload(error = {}, fallback = 'Stripe action failed.'
   };
 }
 
+function stripeConnectedAccountIdentityStatus(account = null) {
+  const requirements = account?.requirements && typeof account.requirements === 'object' ? account.requirements : {};
+  const capabilities = account?.capabilities && typeof account.capabilities === 'object' ? account.capabilities : {};
+  const detailsSubmitted = Boolean(account?.details_submitted);
+  const chargesEnabled = Boolean(account?.charges_enabled);
+  const payoutsEnabled = Boolean(account?.payouts_enabled);
+  const transfersCapability = String(capabilities.transfers || '').trim().toLowerCase();
+  const currentlyDue = Array.isArray(requirements.currently_due) ? requirements.currently_due.filter(Boolean) : [];
+  const pastDue = Array.isArray(requirements.past_due) ? requirements.past_due.filter(Boolean) : [];
+  const disabledReason = String(requirements.disabled_reason || '').trim();
+  const requirementsClear = currentlyDue.length === 0 && pastDue.length === 0 && !disabledReason;
+  const transferReady = transfersCapability === 'active';
+  const verified = detailsSubmitted && payoutsEnabled && transferReady && requirementsClear;
+  const missing = [];
+  if (!detailsSubmitted) missing.push('details_submitted');
+  if (!payoutsEnabled) missing.push('payouts_enabled');
+  if (!transferReady) missing.push('transfers_capability_active');
+  if (!requirementsClear) missing.push('account_requirements_clear');
+  return {
+    verified,
+    status: verified ? 'verified' : 'verification_required',
+    detailsSubmitted,
+    chargesEnabled,
+    payoutsEnabled,
+    transfersCapability: transfersCapability || 'missing',
+    currentlyDue,
+    pastDue,
+    disabledReason,
+    missing
+  };
+}
+
+function stripeConnectedAccountPatch(connectedAccountId, remoteAccount = null) {
+  const identity = stripeConnectedAccountIdentityStatus(remoteAccount);
+  return {
+    connectedAccountId,
+    connectedAccountStatus: identity.verified ? 'ready' : 'pending',
+    connectOnboardingStatus: identity.detailsSubmitted ? 'completed' : 'pending',
+    chargesEnabled: identity.chargesEnabled,
+    payoutsEnabled: identity.payoutsEnabled,
+    identityVerified: identity.verified,
+    identityVerificationStatus: identity.status,
+    transferCapabilityStatus: identity.transfersCapability,
+    requirementsCurrentDue: identity.currentlyDue,
+    requirementsPastDue: identity.pastDue,
+    requirementsDisabledReason: identity.disabledReason,
+    lastSyncAt: nowIso(),
+    mode: 'configured'
+  };
+}
+
 function githubHeaders(token = '') {
   const headers = { accept: 'application/vnd.github+json', 'user-agent': 'aiagent2' };
   if (token) headers.authorization = `Bearer ${token}`;
@@ -8095,9 +8146,7 @@ async function createStripeConnectOnboardingForCurrent(storage, request, env) {
   const existingConnectedAccountId = String(account?.stripe?.connectedAccountId || '').trim();
   if (existingConnectedAccountId) {
     const remoteAccount = await retrieveConnectedAccount(config, existingConnectedAccountId);
-    const detailsSubmitted = Boolean(remoteAccount?.details_submitted);
-    const chargesEnabled = Boolean(remoteAccount?.charges_enabled);
-    const payoutsEnabled = Boolean(remoteAccount?.payouts_enabled);
+    const identity = stripeConnectedAccountIdentityStatus(remoteAccount);
     await storage.mutate(async (draft) => {
       const latest = accountSettingsForLogin(draft, current.login, current.user, current.authProvider);
       upsertAccountSettingsInState(draft, current.login, current.user, current.authProvider, {
@@ -8108,19 +8157,13 @@ async function createStripeConnectOnboardingForCurrent(storage, request, env) {
         },
         stripe: {
           ...(latest.stripe || {}),
-          connectedAccountId: existingConnectedAccountId,
-          connectedAccountStatus: payoutsEnabled ? 'ready' : 'pending',
-          connectOnboardingStatus: detailsSubmitted ? 'completed' : 'pending',
-          chargesEnabled,
-          payoutsEnabled,
-          lastSyncAt: nowIso(),
-          mode: 'configured'
+          ...stripeConnectedAccountPatch(existingConnectedAccountId, remoteAccount)
         }
       });
     });
-    if (payoutsEnabled) {
+    if (identity.verified) {
       await touchEvent(storage, 'STRIPE', `${current.login} connect onboarding already complete`);
-      return { ok: true, already_connected: true, account_id: existingConnectedAccountId, status: 'ready' };
+      return { ok: true, already_connected: true, account_id: existingConnectedAccountId, status: 'ready', identity_verification: identity };
     }
   }
   let connected;
@@ -8151,11 +8194,19 @@ async function createStripeConnectOnboardingForCurrent(storage, request, env) {
       },
       stripe: {
         ...(latest.stripe || {}),
-        connectedAccountId: connected.connectedAccountId,
-        connectedAccountStatus: connected.created ? 'pending' : (latest.stripe?.payoutsEnabled ? 'ready' : 'pending'),
+        ...(connected.account
+          ? stripeConnectedAccountPatch(connected.connectedAccountId, connected.account)
+          : {
+              connectedAccountId: connected.connectedAccountId,
+              connectedAccountStatus: connected.created ? 'pending' : (latest.stripe?.identityVerified ? 'ready' : 'pending'),
+              identityVerified: false,
+              identityVerificationStatus: 'verification_required',
+              lastSyncAt: nowIso(),
+              mode: 'configured'
+            }),
         connectOnboardingStatus: 'started',
-        lastSyncAt: nowIso(),
-        mode: 'configured'
+        identityVerified: false,
+        identityVerificationStatus: 'verification_required'
       }
     });
   });
@@ -8185,25 +8236,24 @@ async function createStripeProviderPayoutForCurrent(storage, request, env) {
     return { error: 'Open Connect first to create a connected payout account.', statusCode: 400 };
   }
   const remoteAccount = await retrieveConnectedAccount(config, connectedAccountId);
-  const payoutsEnabled = Boolean(remoteAccount?.payouts_enabled);
-  const chargesEnabled = Boolean(remoteAccount?.charges_enabled);
+  const identity = stripeConnectedAccountIdentityStatus(remoteAccount);
   await storage.mutate(async (draft) => {
     const latest = accountSettingsForLogin(draft, current.login, current.user, current.authProvider);
     upsertAccountSettingsInState(draft, current.login, current.user, current.authProvider, {
       stripe: {
         ...(latest.stripe || {}),
-        connectedAccountId,
-        connectedAccountStatus: payoutsEnabled ? 'ready' : 'pending',
-        connectOnboardingStatus: remoteAccount?.details_submitted ? 'completed' : 'pending',
-        chargesEnabled,
-        payoutsEnabled,
-        lastSyncAt: nowIso(),
-        mode: 'configured'
+        ...stripeConnectedAccountPatch(connectedAccountId, remoteAccount)
       }
     });
   });
-  if (!payoutsEnabled) {
-    return { error: 'Stripe Connect payout onboarding is not complete yet. Finish OPEN CONNECT or RESUME CONNECT and wait for payouts to be enabled.', statusCode: 409 };
+  if (!identity.verified) {
+    return {
+      error: 'Stripe Connect identity verification is required before provider earnings can be withdrawn. Finish OPEN CONNECT or RESUME CONNECT and resolve all Stripe account requirements.',
+      code: 'identity_verification_required',
+      onboarding_required: true,
+      identity_verification: identity,
+      statusCode: 409
+    };
   }
   const latestState = await storage.getState();
   const latestAccount = accountSettingsForLogin(latestState, current.login, current.user, current.authProvider);
@@ -8265,13 +8315,7 @@ async function createStripeProviderPayoutForCurrent(storage, request, env) {
       },
       stripe: {
         ...(draftAccount.stripe || {}),
-        connectedAccountId,
-        connectedAccountStatus: payoutsEnabled ? 'ready' : 'pending',
-        connectOnboardingStatus: remoteAccount?.details_submitted ? 'completed' : 'pending',
-        chargesEnabled,
-        payoutsEnabled,
-        lastSyncAt: nowIso(),
-        mode: 'configured'
+        ...stripeConnectedAccountPatch(connectedAccountId, remoteAccount)
       }
     });
   });
@@ -8878,13 +8922,7 @@ async function applyStripeWebhookEvent(storage, request, env, event) {
         upsertAccountSettingsInState(draft, matched.login, null, 'github-app', {
           stripe: {
             ...(account.stripe || {}),
-            connectedAccountId,
-            connectedAccountStatus: object.payouts_enabled ? 'ready' : 'pending',
-            connectOnboardingStatus: object.details_submitted ? 'completed' : 'pending',
-            chargesEnabled: Boolean(object.charges_enabled),
-            payoutsEnabled: Boolean(object.payouts_enabled),
-            lastSyncAt: nowIso(),
-            mode: 'configured'
+            ...stripeConnectedAccountPatch(connectedAccountId, object)
           }
         });
       });
@@ -18237,6 +18275,72 @@ async function refreshWorkflowLeaderHandoffForJobId(storage, jobId) {
     }
     if (leaderSequence?.enabled && finalSummaryJob) {
       const finalSummaryStatus = String(finalSummaryJob.status || '').trim().toLowerCase();
+      if (String(leaderSequence?.finalSummaryStatus || '').trim().toLowerCase() === 'queued' && finalSummaryStatus === 'blocked') {
+        const finalSummaryCompletion = String(finalSummaryJob.dispatch?.completionStatus || '').trim().toLowerCase();
+        if (finalSummaryCompletion === 'leader_final_summary_blocked' && finalSummaryJob.failureCategory !== 'leader_quality_gate_failed') {
+          const specialistChildren = children.filter((child) => !isWorkflowLeaderTask(workflowTaskName(child)));
+          const specialistPending = specialistChildren.some((child) => !workflowChildIsTerminalForProgress(child));
+          const sourceLeader = !specialistPending
+            ? completedWorkflowLeader(parent, children.filter((child) => child.id !== finalSummaryJob.id))
+            : null;
+          if (sourceLeader) {
+            const qualityGate = workflowLayerQualityGate(parent, specialistChildren, { includeAllCompleted: true });
+            const handoff = workflowLeaderHandoff(parent, sourceLeader, children, Number.MAX_SAFE_INTEGER);
+            const input = finalSummaryJob.input && typeof finalSummaryJob.input === 'object' ? { ...finalSummaryJob.input } : {};
+            const broker = input._broker && typeof input._broker === 'object' ? { ...input._broker } : {};
+            const workflow = broker.workflow && typeof broker.workflow === 'object' ? { ...broker.workflow } : {};
+            workflow.leaderHandoff = workflow.leaderHandoff || handoff;
+            workflow.sequencePhase = 'final_summary';
+            if (!workflow.leaderActionProtocol && (workflow.leaderHandoff || handoff)?.actionProtocol) {
+              workflow.leaderActionProtocol = (workflow.leaderHandoff || handoff).actionProtocol;
+            }
+            broker.workflow = workflow;
+            input._broker = broker;
+            finalSummaryJob.input = input;
+            applyWorkflowHandoffPromptContextToJob(finalSummaryJob);
+            finalSummaryJob.status = 'queued';
+            finalSummaryJob.startedAt = null;
+            finalSummaryJob.completedAt = null;
+            finalSummaryJob.failedAt = null;
+            finalSummaryJob.timedOutAt = null;
+            finalSummaryJob.failureReason = null;
+            finalSummaryJob.failureCategory = null;
+            finalSummaryJob.qualityGate = qualityGate.applicableCount ? qualityGate : null;
+            finalSummaryJob.dispatch = {
+              ...(finalSummaryJob.dispatch || {}),
+              completionStatus: 'leader_final_summary_queued',
+              retryable: true,
+              nextRetryAt: null,
+              dispatchRequestedAt: null,
+              maxRetries: maxDispatchRetriesForJob(finalSummaryJob)
+            };
+            const repairLog = `leader final summary repaired to queued from persisted final summary state from ${sourceLeader.id.slice(0, 6)}`;
+            finalSummaryJob.logs = (finalSummaryJob.logs || []).some((line) => String(line || '') === repairLog)
+              ? finalSummaryJob.logs
+              : [...(finalSummaryJob.logs || []), repairLog];
+            parent.workflow = {
+              ...(parent.workflow || {}),
+              leaderSequence: {
+                ...leaderSequence,
+                finalSummaryStatus: 'queued',
+                finalSummaryQueuedAt: leaderSequence.finalSummaryQueuedAt || nowIso(),
+                finalSummarySourceLeaderJobId: leaderSequence.finalSummarySourceLeaderJobId || sourceLeader.id,
+                specialistCompleted: specialistChildren.filter((child) => child.status === 'completed').length,
+                specialistTotal: specialistChildren.length,
+                lastQualityGate: {
+                  scope: 'final_summary',
+                  passed: qualityGate.passed !== false,
+                  summary: qualityGate.summary || '',
+                  checkedAt: nowIso(),
+                  reviews: qualityGate.reviews
+                }
+              }
+            };
+            leaderSequence = workflowLeaderSequence(parent);
+            updated += 1;
+          }
+        }
+      }
       if (String(leaderSequence?.finalSummaryStatus || '').trim().toLowerCase() === 'pending' && finalSummaryStatus === 'blocked') {
         const specialistChildren = children.filter((child) => !isWorkflowLeaderTask(workflowTaskName(child)));
         const specialistPending = specialistChildren.some((child) => !workflowChildIsTerminalForProgress(child));
@@ -24644,7 +24748,9 @@ export default {
             error: result.error,
             code: result.code || null,
             pending_balance: result.pending_balance ?? null,
-            minimum_payout_amount: result.minimum_payout_amount ?? null
+            minimum_payout_amount: result.minimum_payout_amount ?? null,
+            onboarding_required: result.onboarding_required ?? null,
+            identity_verification: result.identity_verification ?? null
           }, result.statusCode || 400);
         }
         return json(result);
