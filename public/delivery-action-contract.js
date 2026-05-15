@@ -137,6 +137,57 @@ function socialPostCandidatesFromJson(content = '', options = {}) {
   return candidates;
 }
 
+const SOCIAL_POST_FIELD_LABEL_PATTERN = '(?:x\\s+post\\s+draft|post\\s+draft|post\\s+text|tweet\\s+text|exact[_\\s-]*copy|post[_\\s-]*text|投稿本文|投稿コピー|投稿ドラフト|本文)';
+const SOCIAL_POST_FIELD_SUFFIX_PATTERN = '(?:\\s*\\([^\\n)]{0,180}\\)|\\s+[-–—]\\s+[^\\n:：]{0,160})?';
+
+function socialPostCandidatesFromLabeledBlocks(content = '', options = {}) {
+  const candidates = [];
+  const lines = String(content || '').replace(/\r\n/g, '\n').split('\n');
+  const labelLinePattern = new RegExp(`^\\s*(?:[-*]\\s*)?(?:\\*\\*)?${SOCIAL_POST_FIELD_LABEL_PATTERN}${SOCIAL_POST_FIELD_SUFFIX_PATTERN}\\s*[:：]\\s*(?:\\*\\*)?\\s*$`, 'i');
+  const nextLabelPattern = new RegExp(`^\\s*(?:[-*]\\s*)?(?:\\*\\*)?${SOCIAL_POST_FIELD_LABEL_PATTERN}`, 'i');
+  const stopPattern = /^(?:#{1,6}\s+|deliverable\b|approval packet\b|oauth\b|execution handoff\b|cadence\b|reply candidates\b|optional thread\b|status\b|required\b)/i;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] || '';
+    if (!labelLinePattern.test(line)) continue;
+    let cursor = index + 1;
+    while (cursor < lines.length && !String(lines[cursor] || '').trim()) cursor += 1;
+
+    const quoted = [];
+    for (; cursor < lines.length; cursor += 1) {
+      const current = lines[cursor] || '';
+      if (/^\s*>/.test(current)) {
+        quoted.push(current.replace(/^\s*>\s?/, '').trimEnd());
+        continue;
+      }
+      if (quoted.length && !String(current || '').trim()) {
+        quoted.push('');
+        continue;
+      }
+      break;
+    }
+    if (quoted.length) {
+      addSocialPostCandidate(candidates, quoted.join('\n').replace(/\n+$/g, ''), options);
+      continue;
+    }
+
+    const paragraph = [];
+    for (; cursor < lines.length; cursor += 1) {
+      const current = lines[cursor] || '';
+      const trimmed = current.trim();
+      const plain = trimmed.replace(/\*\*/g, '');
+      if (!trimmed) {
+        if (paragraph.length) break;
+        continue;
+      }
+      if (stopPattern.test(plain) || nextLabelPattern.test(trimmed)) break;
+      paragraph.push(current.replace(/^\s*>\s?/, '').trimEnd());
+    }
+    addSocialPostCandidate(candidates, paragraph.join('\n'), options);
+  }
+  return candidates;
+}
+
 export function extractSocialPostTextFromDeliveryContent(content = '', options = {}) {
   const text = String(content || '').replace(/\r\n/g, '\n');
   const maxLength = Number(options.maxLength || 0);
@@ -145,7 +196,10 @@ export function extractSocialPostTextFromDeliveryContent(content = '', options =
   for (const candidate of socialPostCandidatesFromJson(text, candidateOptions)) {
     addSocialPostCandidate(candidates, candidate, candidateOptions);
   }
-  const fieldPattern = /(?:^|\n)\s*(?:[-*]\s*)?(?:x\s+post\s+draft|post\s+draft|post\s+text|tweet\s+text|exact[_\s-]*copy|post[_\s-]*text|投稿本文|投稿コピー|投稿ドラフト|本文)\s*[:：]\s*([^\n]+)/gi;
+  for (const candidate of socialPostCandidatesFromLabeledBlocks(text, candidateOptions)) {
+    addSocialPostCandidate(candidates, candidate, candidateOptions);
+  }
+  const fieldPattern = new RegExp(`(?:^|\\n)\\s*(?:[-*]\\s*)?(?:\\*\\*)?${SOCIAL_POST_FIELD_LABEL_PATTERN}${SOCIAL_POST_FIELD_SUFFIX_PATTERN}(?:\\*\\*)?\\s*[:：][ \\t]*(?:\\*\\*)?[ \\t]*([^\\n]+)`, 'gi');
   for (const match of text.matchAll(fieldPattern)) {
     addSocialPostCandidate(candidates, match[1], candidateOptions);
   }

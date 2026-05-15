@@ -27,6 +27,41 @@ function buildAccount(login, updatedAt) {
 const storage = createD1LikeStorage(null, { allowInMemory: true });
 const emptyState = await storage.getState();
 
+const sampleProviderStorage = createD1LikeStorage(null, {
+  allowInMemory: true,
+  sampleAgentEndpointBaseUrl: 'https://example.test/sample-agents'
+});
+const sampleProviderState = await sampleProviderStorage.getState();
+const readySampleAgents = sampleProviderState.agents.filter((agent) => (
+  agent?.online === true
+  && agent?.verificationStatus === 'verified'
+  && agent?.agentReviewStatus === 'not_required'
+  && String(agent?.metadata?.manifest?.jobEndpoint || agent?.metadata?.manifest?.job_endpoint || '').startsWith('https://example.test/sample-agents/')
+));
+assert.ok(readySampleAgents.length >= 2, 'configured sample provider must expose at least two ready agents for team workflows');
+const staleSampleAgent = {
+  ...readySampleAgents[0],
+  online: false,
+  verificationStatus: 'manifest_loaded',
+  verificationError: 'stale persisted seed row',
+  verificationDetails: null,
+  agentReviewStatus: 'pending',
+  agentReview: { status: 'pending', reasons: ['stale persisted seed row'] },
+  metadata: {
+    ...(readySampleAgents[0].metadata || {}),
+    externalProviderRequired: true,
+    external_provider_required: true
+  }
+};
+await sampleProviderStorage.replaceState({
+  ...sampleProviderState,
+  agents: [staleSampleAgent]
+});
+const recoveredSampleAgent = (await sampleProviderStorage.getState()).agents.find((agent) => agent.id === staleSampleAgent.id);
+assert.equal(recoveredSampleAgent?.online, true, 'sample provider merge must recover stale offline seed rows');
+assert.equal(recoveredSampleAgent?.verificationStatus, 'verified', 'sample provider merge must not preserve stale unverified seed status');
+assert.equal(recoveredSampleAgent?.agentReviewStatus, 'not_required', 'sample provider seed review state must stay routable');
+
 const alpha = buildAccount('alpha@example.com', '2026-04-25T08:00:00.000Z');
 await storage.replaceState({
   ...emptyState,
@@ -420,6 +455,22 @@ const repairedCmo = repairedSeedState.agents.find((agent) => agent.id === 'agent
 assert.ok(repairedCmo);
 assert.equal(Boolean(repairedCmo.metadata?.hidden_from_catalog), false);
 assert.equal(Boolean(repairedCmo.metadata?.deleted_at || repairedCmo.metadata?.deletedAt), false);
+
+const repairedProviderStorage = createD1LikeStorage(createSeedRepairDb(), {
+  stateCacheTtlMs: 0,
+  sampleAgentEndpointBaseUrl: 'https://example.test/sample-agents'
+});
+const repairedProviderState = await repairedProviderStorage.getState();
+const d1ReadySampleAgents = repairedProviderState.agents.filter((agent) => (
+  agent?.online === true
+  && agent?.verificationStatus === 'verified'
+  && agent?.agentReviewStatus === 'not_required'
+  && String(agent?.metadata?.manifest?.jobEndpoint || agent?.metadata?.manifest?.job_endpoint || '').startsWith('https://example.test/sample-agents/')
+));
+assert.ok(d1ReadySampleAgents.length >= 2, 'D1 seed repair must expose at least two ready sample agents for team workflows');
+const repairedProviderCmo = repairedProviderState.agents.find((agent) => agent.id === 'agent_cmo_leader_01');
+assert.equal(repairedProviderCmo?.verificationStatus, 'verified', 'D1 seed repair must overwrite stale leader verification when sample provider is configured');
+assert.equal(repairedProviderCmo?.agentReviewStatus, 'not_required', 'D1 seed repair must keep provider-backed sample leaders routable');
 
 const jobStorage = createD1LikeStorage(null, { allowInMemory: true });
 const jobState = await jobStorage.getState();

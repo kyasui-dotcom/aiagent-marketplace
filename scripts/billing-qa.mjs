@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { WELCOME_CREDITS_GRANT_AMOUNT, billingProfileForAccount, buildAdminDashboard, buildMonthlyAccountSummary, estimateBilling, estimateRunWindow, ledgerAmountToDisplayCurrency, maybeGrantWelcomeCreditsForSignupInState, maybeGrantWelcomeCreditsForVerifiedAgentInState, providerMonthlyBillingLedgerForLogin, recordProviderMonthlyChargeInAccount, releaseBillingReservationInState, requesterContextFromUser, reserveBillingEstimateInState, resolvePricingPolicy, settleBillingForJobInState, subscriptionIncludedCreditsForPlan, upsertAccountSettingsInState } from '../lib/shared.js';
+import { API_COST_CATALOG_VERSION, WELCOME_CREDITS_GRANT_AMOUNT, billingProfileForAccount, buildAdminDashboard, buildMonthlyAccountSummary, estimateBilling, estimateRunWindow, ledgerAmountToDisplayCurrency, maybeGrantWelcomeCreditsForSignupInState, maybeGrantWelcomeCreditsForVerifiedAgentInState, providerMonthlyBillingLedgerForLogin, recordProviderMonthlyChargeInAccount, releaseBillingReservationInState, requesterContextFromUser, reserveBillingEstimateInState, resolvePricingPolicy, settleBillingForJobInState, subscriptionIncludedCreditsForPlan, upsertAccountSettingsInState } from '../lib/shared.js';
 
 const agent = {
   providerMarkupRate: 0.1
@@ -37,6 +37,12 @@ assert.equal(customBilling.marketplaceFee, 13.89);
 assert.equal(customBilling.agentPayout, 25);
 assert.equal(customBilling.total, 138.89);
 
+const maxMarkupBilling = estimateBilling({ providerMarkupRate: 1 }, usage);
+assert.equal(maxMarkupBilling.providerMarkup, 100);
+assert.equal(maxMarkupBilling.marketplaceFee, 22.22);
+assert.equal(maxMarkupBilling.agentPayout, 100);
+assert.equal(maxMarkupBilling.total, 222.22);
+
 const tokenBilling = estimateBilling({ providerMarkupRate: 0.1 }, {
   input_tokens: 1_000_000,
   output_tokens: 500_000,
@@ -69,6 +75,24 @@ assert.equal(usdTokenBilling.marketplaceFee, 110);
 assert.equal(usdTokenBilling.total, 1100);
 assert.equal(ledgerAmountToDisplayCurrency(usdTokenBilling.total), 7.33);
 
+const anthropicTokenBilling = estimateBilling({ providerMarkupRate: 0.1 }, {
+  input_tokens: 200_000,
+  output_tokens: 50_000,
+  input_price_per_mtok: 3,
+  output_price_per_mtok: 15,
+  api_provider: 'anthropic',
+  model: 'claude-example'
+});
+assert.equal(anthropicTokenBilling.apiCost, 2250);
+assert.equal(anthropicTokenBilling.totalCostBasis, 2250);
+assert.equal(anthropicTokenBilling.tokenUsage.provider, 'anthropic');
+assert.equal(anthropicTokenBilling.tokenUsage.model, 'claude-example');
+assert.equal(anthropicTokenBilling.tokenUsage.inputPricePerMTok, 25);
+assert.equal(anthropicTokenBilling.tokenUsage.outputPricePerMTok, 200);
+assert.equal(anthropicTokenBilling.tokenUsage.pricingSource, 'catalog_high_watermark');
+assert.equal(anthropicTokenBilling.costTelemetry.costCatalogVersion, API_COST_CATALOG_VERSION);
+assert.equal(anthropicTokenBilling.total, 2750);
+
 const smallReportedUsageBilling = estimateBilling({ providerMarkupRate: 0.1 }, {
   api_cost: 0.043,
   total_cost_basis: 0.043,
@@ -82,6 +106,65 @@ assert.equal(smallReportedUsageBilling.totalCostBasis, 6.45);
 assert.ok(smallReportedUsageBilling.total > 0, 'positive reported AI usage must not round down to a free order');
 assert.equal(smallReportedUsageBilling.total, 7.88);
 assert.equal(ledgerAmountToDisplayCurrency(smallReportedUsageBilling.total), 0.05);
+
+const explicitZeroUsageBilling = estimateBilling({ providerMarkupRate: 0.1 }, {
+  api_cost: 0,
+  total_cost_basis: 0,
+  api_cost_currency: 'USD',
+  input_tokens: 1200,
+  output_tokens: 80,
+  total_tokens: 1280,
+  model: 'deterministic-attached-data-packet'
+});
+assert.equal(explicitZeroUsageBilling.apiCost, 0);
+assert.equal(explicitZeroUsageBilling.totalCostBasis, 0);
+assert.equal(explicitZeroUsageBilling.providerMarkup, 0);
+assert.equal(explicitZeroUsageBilling.marketplaceFee, 0);
+assert.equal(explicitZeroUsageBilling.total, 0);
+assert.equal(explicitZeroUsageBilling.costTelemetry.source, 'reported_cost_basis');
+assert.equal(explicitZeroUsageBilling.costTelemetry.confidence, 'reported');
+
+const explicitZeroLlmUsageBilling = estimateBilling({ providerMarkupRate: 0.1 }, {
+  api_cost: 0,
+  total_cost_basis: 0,
+  api_cost_currency: 'USD',
+  input_tokens: 1000,
+  output_tokens: 100,
+  total_tokens: 1100,
+  api_provider: 'anthropic',
+  model: 'claude-sonnet-example'
+});
+assert.equal(explicitZeroLlmUsageBilling.apiCost, 6.75);
+assert.equal(explicitZeroLlmUsageBilling.totalCostBasis, 6.75);
+assert.equal(explicitZeroLlmUsageBilling.total, 8.25);
+assert.equal(explicitZeroLlmUsageBilling.costTelemetry.source, 'catalog_cost_estimate');
+assert.equal(explicitZeroLlmUsageBilling.costTelemetry.confidence, 'catalog_estimated');
+
+const toolCatalogBilling = estimateBilling({ providerMarkupRate: 0.1 }, {
+  tool_calls: [
+    { provider: 'brave', action: 'search', count: 2 },
+    { provider: 'serpapi', action: 'search', count: 1 },
+    { key: 'browser_render_fetch', count: 1 }
+  ]
+});
+assert.equal(toolCatalogBilling.costBasis.api, 0);
+assert.equal(toolCatalogBilling.costBasis.tool, 37.5);
+assert.equal(toolCatalogBilling.totalCostBasis, 37.5);
+assert.equal(toolCatalogBilling.total, 45.83);
+assert.equal(toolCatalogBilling.toolUsage.calls.length, 3);
+assert.equal(toolCatalogBilling.costTelemetry.source, 'catalog_cost_estimate');
+assert.equal(toolCatalogBilling.costTelemetry.costCatalogVersion, API_COST_CATALOG_VERSION);
+
+const explicitZeroToolCatalogBilling = estimateBilling({ providerMarkupRate: 0.1 }, {
+  api_cost: 0,
+  total_cost_basis: 0,
+  api_cost_currency: 'USD',
+  tool_calls: { brave_web_search: 2 }
+});
+assert.equal(explicitZeroToolCatalogBilling.costBasis.tool, 15);
+assert.equal(explicitZeroToolCatalogBilling.totalCostBasis, 15);
+assert.equal(explicitZeroToolCatalogBilling.total, 18.33);
+assert.equal(explicitZeroToolCatalogBilling.costTelemetry.source, 'catalog_cost_estimate');
 
 const fixedRunBilling = estimateBilling({
   pricingModel: 'fixed_per_run',

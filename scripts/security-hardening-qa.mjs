@@ -80,7 +80,7 @@ async function main() {
           name: 'security_agent',
           task_types: ['research'],
           pricing: { premium_rate: 0.2, basic_rate: 0.1 },
-          healthcheck_url: `${BASE}/mock/research/health`,
+          healthcheck_url: 'https://security.example/agent/health',
           verification: {
             challenge_url: 'https://example.com/.well-known/agent-challenge.txt',
             challenge_token: 'super-secret-token'

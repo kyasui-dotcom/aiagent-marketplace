@@ -259,7 +259,11 @@ const WORK_COMMAND_PATTERNS = Object.freeze([
   { action: 'set_clarify_mode', patterns: [/^(clarify mode|clarification mode|ask first mode|question mode|確認モード|質問モード|整理モード|クラリファイモード)$/i, /(?:clarify|clarification|ask first|question|確認|質問|整理|ヒアリング).*(?:mode|モード).*(?:on|切替|変更|して|にして)?/i] },
   { action: 'set_order_mode', patterns: [/^(order mode|dispatch mode|send order mode|注文モード|発注モード|実行モード|オーダーモード)$/i, /(?:order|dispatch|send order|注文|発注|実行|オーダー).*(?:mode|モード).*(?:on|切替|変更|して|にして)?/i] },
   { action: 'restore_brief', patterns: [/^(copy brief|copy order|restore brief|restore order|発注文をコピー|発注文コピー|ブリーフコピー|発注文を戻して|ブリーフを戻して|コピー)$/i, /(?:発注文|ブリーフ|brief|order).*(?:コピー|copy|戻|restore|入力欄)/i] },
-  { action: 'open_delivery_history', patterns: [/^(orders|order history|delivery|deliveries|注文履歴|納品|納品確認|履歴)$/i, /(?:order|orders|delivery|deliveries|注文|納品|履歴|結果).*(?:見る|見たい|確認|開|open|探|inspect)/i] },
+  { action: 'open_delivery_history', patterns: [
+    /^(orders|order history|delivery|deliveries|deliverables|results|completed delivery|completed deliveries|注文履歴|納品|納品物|納品確認|履歴|完了済み納品|完了済み納品物)$/i,
+    /(?:order|orders|delivery|deliveries|deliverables|result|results|completed|complete|done|finished|注文|納品|納品物|成果物|履歴|結果|完了|完了済).*(?:見る|見たい|見せ|表示|確認|開|一覧|リスト|open|show|view|list|display|探|inspect|review)/i,
+    /(?:見る|見たい|見せ|表示|確認|開|一覧|リスト|open|show|view|list|display|探|inspect|review).*(?:order|orders|delivery|deliveries|deliverables|result|results|completed|complete|done|finished|注文|納品|納品物|成果物|履歴|結果|完了|完了済)/i
+  ] },
   { action: 'open_marketing_timeline', patterns: [/^(work timeline|run history|agent work history|stored timeline|実行履歴|workタイムライン|タイムライン履歴)$/i] },
   { action: 'open_order_settings', patterns: [/^(open order settings|order settings|source settings|詳細設定|歯車|ソースを追加|urlを追加|ファイルを追加)$/i, /(?:url|file|ファイル|source|ソース|添付|歯車).*(?:追加|入れ|開|open|移動|ジャンプ)/i] },
   { action: 'queue_parallel_plan', patterns: [/^(queue parallel|add parallel|add to parallel queue|queue these|並列キューに追加|キューに追加|並列に追加|これを並列に追加)$/i, /(?:parallel|並列).*(?:queue|キュー|追加|add)/i] },

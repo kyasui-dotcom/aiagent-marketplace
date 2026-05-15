@@ -9,7 +9,7 @@
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/app-console.css?v=20260507b" />
-  <script type="module" src="/publisher-approval.js?v=20260511a"></script>
+  <script type="module" src="/publisher-approval.js?v=20260514c"></script>
 </head>
 <body>
   <main class="app-console-shell" aria-label="CAIt Publisher and Approval Studio">
@@ -69,7 +69,7 @@
             </div>
             <div class="workflow-step" id="publisherStepHandoff">
               <span class="step-index">3</span>
-              <span><strong>Approve handoff</strong><span>Send the approved destination packet to CAIt or GitHub.</span></span>
+              <span><strong>Approve handoff</strong><span>Send the approved packet to CAIt, GitHub, or WordPress draft.</span></span>
             </div>
           </section>
 
@@ -129,12 +129,26 @@
               </div>
               <div class="field-grid">
                 <div class="field-row"><label for="destinationInput">Destination</label><input id="destinationInput" /></div>
+                <div class="field-row">
+                  <label for="channelSelect">Medium / channel</label>
+                  <select id="channelSelect"></select>
+                </div>
+                <div class="field-row"><label for="connectorInput">Publish connector</label><input id="connectorInput" readonly /></div>
+                <div class="field-row"><label for="connectorCapabilityInput">Connector capability</label><input id="connectorCapabilityInput" readonly /></div>
+                <div class="field-row"><label for="publishMethodInput">Publish method</label><input id="publishMethodInput" readonly /></div>
                 <div class="field-row"><label for="marketInput">Market</label><input id="marketInput" placeholder="Global, US, EU, APAC..." /></div>
                 <div class="field-row"><label for="localeInput">Locale</label><input id="localeInput" placeholder="en, en-US, ja-JP..." /></div>
                 <div class="field-row"><label for="ownerInput">Owner</label><input id="ownerInput" placeholder="CMO, SEO, Partner manager..." /></div>
                 <div class="field-row"><label for="titleInput">Title</label><input id="titleInput" /></div>
                 <div class="field-row"><label for="slugInput">Slug / path</label><input id="slugInput" /></div>
                 <div class="field-row"><label for="metaInput">Meta description</label><textarea id="metaInput"></textarea></div>
+                <div class="field-row"><label for="keywordsInput">Keywords / target query</label><textarea id="keywordsInput"></textarea></div>
+                <div class="field-row"><label for="h1Input">H1</label><input id="h1Input" /></div>
+                <div class="field-row"><label for="primaryCtaInput">Primary CTA</label><input id="primaryCtaInput" /></div>
+                <div class="field-row"><label for="secondaryCtaInput">Secondary CTA</label><input id="secondaryCtaInput" /></div>
+                <div class="field-row"><label for="internalLinksInput">Internal links</label><textarea id="internalLinksInput"></textarea></div>
+                <div class="field-row"><label for="ogTitleInput">OG title</label><input id="ogTitleInput" /></div>
+                <div class="field-row"><label for="ogDescriptionInput">OG description</label><textarea id="ogDescriptionInput"></textarea></div>
                 <div class="field-row"><label for="bodyInput">Draft / change body</label><textarea id="bodyInput"></textarea></div>
               </div>
               <div class="inline-actions" style="margin-top:12px">
@@ -170,6 +184,42 @@
                 </div>
               </div>
             </article>
+            <article class="panel">
+              <div class="status-row">
+                <h2>WordPress draft handoff</h2>
+                <span class="status-pill pending" id="wordpressStatusPill">WordPress not checked</span>
+              </div>
+              <div class="inline-actions" style="margin-bottom:12px">
+                <button class="ghost-btn" id="refreshWordpressBtn" type="button">Check WordPress</button>
+                <button class="ghost-btn" id="connectWordpressBtn" type="button">Connect WordPress</button>
+                <button class="ghost-btn" id="createWordpressDraftBtn" type="button">Create WP draft</button>
+              </div>
+              <p class="muted" id="wordpressStatusNote">Use a WordPress Application Password to create a draft only. Publishing happens inside WordPress after review.</p>
+              <div class="field-grid">
+                <div class="field-row">
+                  <label for="wordpressSiteInput">WordPress site URL</label>
+                  <input id="wordpressSiteInput" placeholder="https://example.com" />
+                </div>
+                <div class="field-row">
+                  <label for="wordpressUsernameInput">WordPress username</label>
+                  <input id="wordpressUsernameInput" autocomplete="username" />
+                </div>
+                <div class="field-row">
+                  <label for="wordpressPasswordInput">Application Password</label>
+                  <input id="wordpressPasswordInput" type="password" autocomplete="current-password" />
+                </div>
+                <div class="field-row">
+                  <label for="wordpressPostTypeSelect">Draft type</label>
+                  <select id="wordpressPostTypeSelect">
+                    <option value="posts">Post</option>
+                    <option value="pages">Page</option>
+                  </select>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section class="split-main">
             <article class="panel">
               <div class="status-row">
                 <h2>Execution result</h2>

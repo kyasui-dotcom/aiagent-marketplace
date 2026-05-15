@@ -19,7 +19,8 @@ These are the parts that are generally safe to publish after running the open-co
 - `lib/manifest.js`
 - `lib/verify.js`
 - `lib/github-adapter.js`
-- `lib/builtin-agents.js`
+- `lib/builtin-agents/agents/`
+- `lib/agent-selection-index.js`
 - selected UI code that documents public product behavior
 - non-production QA scripts
 

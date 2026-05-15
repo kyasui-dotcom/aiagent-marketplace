@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 
 const PORT = Number(process.env.PORT || 4323);
 const BASE = `http://127.0.0.1:${PORT}`;
+const PROVIDER_PORT = Number(process.env.PROVIDER_PORT || (PORT + 100));
+const PROVIDER_BASE = `http://127.0.0.1:${PROVIDER_PORT}`;
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -34,8 +37,31 @@ async function waitForServer(timeoutMs = 8000) {
   throw new Error('Server did not become ready in time');
 }
 
+function startProviderServer() {
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url || '/', PROVIDER_BASE);
+    if (url.pathname.endsWith('/health')) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, service: 'callback_qa_provider' }));
+      return;
+    }
+    if (url.pathname === '/accepted/jobs') {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const payload = body ? JSON.parse(body) : {};
+      res.writeHead(202, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ accepted: true, status: 'accepted', external_job_id: `callback-${String(payload.job_id || '').slice(0, 8)}` }));
+      return;
+    }
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not found' }));
+  });
+  return new Promise((resolve) => server.listen(PROVIDER_PORT, '127.0.0.1', () => resolve(server)));
+}
+
 async function main() {
   const taskType = 'callback_qa_research';
+  const provider = await startProviderServer();
 
   const child = spawn('node', ['server.js'], {
     cwd: process.cwd(),
@@ -66,8 +92,8 @@ async function main() {
       name: 'callback_qa_agent',
       task_types: [taskType],
       pricing: { premium_rate: 0.15, basic_rate: 0.1 },
-      healthcheck_url: `${BASE}/mock/research/health`,
-      job_endpoint: `${BASE}/mock/accepted/jobs`
+      healthcheck_url: `${PROVIDER_BASE}/accepted/health`,
+      job_endpoint: `${PROVIDER_BASE}/accepted/jobs`
     };
     const importJson = await request('/api/agents/import-manifest', {
       method: 'POST',
@@ -157,6 +183,7 @@ async function main() {
     console.log('callback qa passed');
   } finally {
     child.kill('SIGTERM');
+    provider.close();
     await sleep(300);
   }
 }

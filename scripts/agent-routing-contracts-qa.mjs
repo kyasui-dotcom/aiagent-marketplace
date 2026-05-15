@@ -43,9 +43,10 @@ assertBefore(xPostSequence, 'research', 'writing', 'x_post should research befor
 assertBefore(xPostSequence, 'writing', 'x_post', 'x_post should draft before execution');
 
 const multiChannelSequence = inferTaskSequence('cmo_leader', '1告知でX Reddit Indie Hackers Instagramまでまとめて作って投稿準備したい', { maxTasks: 14 });
-assertBefore(multiChannelSequence, 'writing', 'x_post', 'multi-channel launch should draft before X execution');
-assertBefore(multiChannelSequence, 'writing', 'instagram', 'multi-channel launch should draft before Instagram execution');
-assertBefore(multiChannelSequence, 'writing', 'reddit', 'multi-channel launch should draft before Reddit execution');
+assertBefore(multiChannelSequence, 'writing', 'reddit', 'multi-channel launch should draft before Reddit handoff copy');
+assertBefore(multiChannelSequence, 'writing', 'indie_hackers', 'multi-channel launch should draft before Indie Hackers handoff copy');
+assert.equal(multiChannelSequence.includes('x_post'), false, 'multi-channel leader route should not require an X connector execution agent');
+assert.equal(multiChannelSequence.includes('instagram'), false, 'multi-channel leader route should not require an Instagram connector execution agent');
 
 const userTwitterAgent = {
   id: 'agent_user_twitter_adapter_qa',

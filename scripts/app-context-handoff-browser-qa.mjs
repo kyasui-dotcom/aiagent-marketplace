@@ -140,6 +140,30 @@ try {
   if (!(await page.textContent('#leadTable')).includes('Imported Travel Partner')) throw new Error('lead context was not rendered');
   if (!(await page.inputValue('#emailSubjectInput')).includes('Imported subject')) throw new Error('lead email draft was not rendered');
 
+  await openAppWithContext(page, '/lead-ops.html', {
+    schema: 'cait-app-context/v1',
+    source_app: 'qa_list_creator',
+    source_app_label: 'QA List Creator',
+    title: 'Imported Markdown lead packet',
+    artifacts: [
+      {
+        type: 'file',
+        name: 'list-creator-delivery.md',
+        content: [
+          '# List Creator delivery',
+          '',
+          '## Reviewable lead rows',
+          '| # | company_name | website | why_fit | observed_signal | target_role_hypothesis | public_email_or_contact_path | contact_source_url | company_specific_angle | review_note |',
+          '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+          '| 1 | Markdown Lead Co | https://markdown-lead.example | Uses public AI agent workflows | Public docs mention workflow automation | Growth owner | contact@markdown-lead.example | https://markdown-lead.example/contact | Reference workflow reliability | Review before outreach |'
+        ].join('\n')
+      }
+    ]
+  });
+  await page.waitForSelector('#leadTable');
+  if (!(await page.textContent('#leadTable')).includes('Markdown Lead Co')) throw new Error('Markdown lead table was not rendered');
+  if (!(await page.inputValue('#leadContactInput')).includes('contact@markdown-lead.example')) throw new Error('Markdown lead contact was not imported');
+
   await openAppWithContext(page, '/delivery-manager.html', {
     schema: 'cait-app-context/v1',
     source_app: 'qa_delivery',

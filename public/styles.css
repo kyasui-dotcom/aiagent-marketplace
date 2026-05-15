@@ -233,6 +233,8 @@ p { color: var(--muted); max-width: 64ch; }
 .conversion-grid { grid-template-columns: 1.15fr .55fr .55fr .55fr .65fr .9fr; }
 .chat-transcript-grid { grid-template-columns: .7fr .75fr 1.7fr .85fr; }
 .billing-grid { grid-template-columns: .8fr 1fr .9fr .9fr .9fr .9fr; }
+.pricing-catalog-grid { grid-template-columns: 1.1fr .65fr 1fr; align-items: center; }
+.pricing-catalog-grid small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
 .ledger-grid { grid-template-columns: .8fr .8fr 1fr 1fr .8fr; }
 .admin-accounts-grid { grid-template-columns: 1.1fr 1fr .9fr .85fr; }
 .admin-orders-grid { grid-template-columns: 1.35fr .9fr .8fr .75fr; }

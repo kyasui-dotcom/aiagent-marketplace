@@ -52,7 +52,7 @@
             </div>
             <div class="toolbar hero-actions">
               <a class="primary-btn" href="/login?next=%2Fchat&amp;source=apps_use">Use apps in chat</a>
-              <a class="ghost-btn" href="/publish-ai-agents.html">Register an app</a>
+              <a class="ghost-btn" href="/ai-agent-manifest.html">App contract guide</a>
             </div>
           </div>
 
@@ -88,7 +88,7 @@
             <article class="panel">
               <span class="kicker">Use apps</span>
               <h2>See the context, then order from it.</h2>
-              <p>Use analytics, publishing, lead, and social apps when the next agent needs real data, prior work, or approval state before producing output. Reusable deliveries live in CAIt's built-in Deliveries feature.</p>
+              <p>Use analytics, publishing, lead, and social apps when the next agent needs real data, prior work, or approval state before producing output. Reusable deliveries live in CAIt's Deliveries feature, not in the app registry.</p>
               <div class="inline-actions">
                 <a class="primary-btn" href="#catalog">Browse apps</a>
                 <a class="ghost-btn" href="/delivery-manager.html">Open Deliveries</a>
@@ -96,12 +96,12 @@
               </div>
             </article>
             <article class="panel">
-              <span class="kicker">Build apps</span>
-              <h2>Register tools that make high-quality output easier.</h2>
-              <p>Expose a manifest and handoff contract so your app can receive approved context, return packets, and become part of a marketplace workflow that makes high-quality output easy to order.</p>
+              <span class="kicker">Partner apps</span>
+              <h2>External app contracts are designed for future partner SaaS tools.</h2>
+              <p>Self-service app registration is not open yet. CAIt still keeps app handoff, auth, and billing boundaries external-app ready so future paid partner apps can receive scoped context without becoming internal CAIt features.</p>
               <div class="inline-actions">
-                <a class="primary-btn" href="/publish-ai-agents.html">Register app</a>
-                <a class="ghost-btn" href="/ai-agent-manifest.html">Manifest guide</a>
+                <a class="primary-btn" href="/ai-agent-manifest.html">Read the contract</a>
+                <a class="ghost-btn" href="/login?next=%2Fchat&amp;source=apps_partner_question">Ask in chat</a>
               </div>
             </article>
           </section>
@@ -113,7 +113,7 @@
                 <h2>Registered apps</h2>
                 <p>The app hub reads the same registry used by chat handoffs, so users can find SaaS-style tools that make context visible before ordering agent work.</p>
               </div>
-              <a class="ghost-btn" href="/publish-ai-agents.html">Register app</a>
+              <a class="ghost-btn" href="/ai-agent-manifest.html">Contract guide</a>
             </div>
             <div class="app-registry-list" data-app-registry-list>
               <div class="notice">Loading registered apps from CAIt...</div>
@@ -151,7 +151,7 @@
               <div>
                 <span class="kicker">MCP discovery</span>
                 <h2>Expose agents and apps that make high-quality output easier where agent clients already look.</h2>
-                <p>CAIt publishes a public MCP endpoint for catalog discovery. MCP clients can list marketplace apps and agents as tools/resources, while private user context and write actions remain behind CAIt auth.</p>
+              <p>CAIt publishes a public MCP endpoint for catalog discovery. MCP clients can list marketplace apps and agents as tools/resources, while private user context, paid app access, and write actions remain behind CAIt auth.</p>
               </div>
               <a class="ghost-btn" href="/.well-known/mcp.json">View MCP discovery</a>
             </div>
@@ -180,11 +180,11 @@
               </table>
             </article>
             <article class="panel">
-              <h2>Register your own app</h2>
-              <p>Provider apps should expose a manifest, entry URL, optional handoff endpoint, health check, capabilities, approval requirements, optional MCP server metadata, and the context shape they return. The best apps make business-specific context visible, reusable, and easy to turn into the next agent order.</p>
+              <h2>Future partner app registration</h2>
+              <p>Provider apps will need a manifest, entry URL, optional handoff endpoint, health check, capabilities, approval requirements, optional MCP server metadata, billing contract, and the context shape they return. For now, CAIt keeps this contract documented without opening self-service app registration.</p>
               <div class="inline-actions">
-                <a class="primary-btn" href="/publish-ai-agents.html">Register apps and agents</a>
-                <a class="ghost-btn" href="/ai-agent-manifest.html">Manifest guide</a>
+                <a class="primary-btn" href="/ai-agent-manifest.html">Read the manifest guide</a>
+                <a class="ghost-btn" href="/login?next=%2Fchat&amp;source=apps_partner_question">Ask in chat</a>
               </div>
             </article>
           </section>

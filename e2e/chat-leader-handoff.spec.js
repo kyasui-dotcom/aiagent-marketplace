@@ -18,9 +18,9 @@ test.describe('CAIt leader handoff chat', () => {
 
     await page.locator('#promptInput').fill('集客したいです');
     await page.locator('#sendMessageBtn').click();
-    await expect(page.locator('#chatThread')).toContainText(/Answer what you can|分かる範囲で回答してください|実行前に確認したい内容/, { timeout: chatResponseTimeout });
-    await expect(page.locator('#chatThread')).toContainText(/GA4|Search Console|サーチコンソール/);
-    await expect(page.locator('#chatThread')).toContainText(/資料|sales deck|material|current acquisition|現在の集客|広告|CRM/i);
+    await expect(page.locator('#chatThread')).toContainText(/1項目ずつ|質問 1\/|Question 1 of/, { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText(/URL|商材|サービス|Product\/service/);
+    await expect(page.locator('#chatThread')).not.toContainText(/質問 2\/|Question 2 of/);
     await expect(page.locator('#chatThread')).toContainText(/Nothing has been dispatched yet\.|まだ実行も課金も発生していません/);
 
     await page.locator('#promptInput').fill('pause?');
@@ -28,6 +28,29 @@ test.describe('CAIt leader handoff chat', () => {
     await expect(page.locator('#chatThread')).toContainText(/No new order was created|発注外の会話/, { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).not.toContainText('User clarification:');
     await expect(page.locator('#chatThread')).not.toContainText('Order accepted.');
+  });
+
+  test('routes typo customer acquisition into step intake before OpenAI clarification', async ({ page }) => {
+    test.skip(!canUseAuth, authSkipReason);
+
+    let openChatIntentCalls = 0;
+    await page.route('**/api/open-chat/intent', async (route) => {
+      openChatIntentCalls += 1;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'OpenAI intent should not be required for obvious acquisition intake.' })
+      });
+    });
+
+    await openNewChat(page);
+    await page.locator('#promptInput').fill('customer aquitisition');
+    await page.locator('#sendMessageBtn').click();
+
+    await expect(page.locator('#chatThread')).toContainText(/1項目ずつ|質問 1\/|Question 1 of/, { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText(/Product\/service|対象サービス|商材|サービス/);
+    await expect(page.locator('#chatThread')).not.toContainText('User asks for customer acquisition');
+    expect(openChatIntentCalls).toBe(0);
   });
 
   test('hands broad marketing intent to CMO Leader and reaches terminal delivery in chat', async ({ page }) => {
@@ -45,9 +68,9 @@ test.describe('CAIt leader handoff chat', () => {
 
     await expect(page.locator('#activeLeaderStatus')).toContainText('Lead: CMO Leader', { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText('CMO Leader');
-    await expect(page.locator('#chatThread')).toContainText(/Answer what you can|分かる範囲で回答してください|実行前に確認したい内容/, { timeout: chatResponseTimeout });
-    await expect(page.locator('#chatThread')).toContainText(/GA4|Search Console|サーチコンソール/);
-    await expect(page.locator('#chatThread')).toContainText(/資料|sales deck|material|current acquisition|現在の集客|広告|CRM/i);
+    await expect(page.locator('#chatThread')).toContainText(/1項目ずつ|質問 1\/|Question 1 of/, { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText(/URL|商材|サービス|Product\/service/);
+    await expect(page.locator('#chatThread')).not.toContainText(/質問 2\/|Question 2 of/);
     await expect(page.locator('#chatThread')).toContainText(/Nothing has been dispatched yet\.|まだ実行も課金も発生していません/);
 
     await page.locator('#promptInput').fill([
@@ -147,10 +170,9 @@ test.describe('CAIt leader handoff chat', () => {
     expect(capturedCreatePayload?.order_strategy).toBe('multi');
     expect(capturedCreatePayload?.input?._broker?.conversationOwner?.type).toBe('leader');
     expect(capturedCreatePayload?.input?._broker?.activeLeader?.taskType).toBe('cmo_leader');
-    await expect(page.locator('#chatThread')).toContainText('Sending order. I will keep polling and post progress here.');
-    await expect(page.locator('#chatThread')).toContainText('Order accepted.');
-    await expect(page.locator('#chatThread')).toContainText(/Order ID: [a-z0-9-]+/i);
-    await expect(page.locator('#chatThread')).toContainText(/Order [a-z0-9-]{8}: /i);
+    await expect(page.locator('#chatThread')).toContainText(/Order #e2e-chat: Order submitted/i);
+    await expect(page.locator('#chatThread')).toContainText('Agent map');
+    await expect(page.locator('#chatThread')).toContainText(/visible agent runs|Current:/i);
 
     await expect(page.locator('#chatThread')).toContainText('Delivery update', { timeout: 120_000 });
     await expect(page.locator('#chatThread')).toContainText(/Download (all MD|MD)/);

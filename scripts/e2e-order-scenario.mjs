@@ -258,11 +258,24 @@ export function assertOrderScenarioWorkflowShape(job = {}, options = {}) {
     || workflow.requiresUserApprovalBeforeAction === true,
     `CMO scenario must reach or explicitly gate action planning; tasks=${taskTypes.join(',')} phases=${phases.join(',')}`
   );
-  if (!promptHas(prompt, /competitor|競合|teardown/i)) {
+  if (!promptHas(prompt, /competitor|競合|teardown|parallel|same[-\s]?layer|fan[-\s]?out|同列|同時|並列|深さ|品質優先|品質重視|徹底|網羅/i)) {
     assert.equal(taskTypes.includes('teardown'), false, 'CMO scenario should not add competitor teardown unless requested');
   }
   const dataCount = taskTypes.filter((task) => task === 'data_analysis').length;
   assert.ok(dataCount <= 1, `CMO scenario should not over-select the data layer; count=${dataCount}`);
+}
+
+function hasUnsafePlaceholderText(value = '') {
+  const text = String(value || '');
+  const pattern = /\b(TBD|TODO|lorem ipsum|placeholder|dummy output)\b/ig;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    const term = String(match[0] || '').toLowerCase();
+    const before = text.slice(Math.max(0, match.index - 24), match.index).toLowerCase();
+    if (term === 'placeholder' && /\b(no|without|exclude|excluding|exclusions:\s*no)\s+$/.test(before)) continue;
+    return true;
+  }
+  return false;
 }
 
 export function assertOrderScenarioQuality(job = {}, options = {}) {
@@ -303,7 +316,7 @@ export function assertOrderScenarioQuality(job = {}, options = {}) {
   const deliveryText = collectOrderDeliveryText(job);
   const minDeliveryChars = Number(options.minDeliveryChars || 900) || 900;
   assert.ok(deliveryText.length >= minDeliveryChars, `delivery is too thin (${deliveryText.length} chars); status=${summarizeOrderStatus(job)}`);
-  assert.ok(!/\b(TBD|TODO|lorem ipsum|placeholder|dummy output)\b/i.test(deliveryText), 'delivery must not contain placeholder text');
+  assert.ok(!hasUnsafePlaceholderText(deliveryText), 'delivery must not contain placeholder text');
   if (promptHas(prompt, /Output language:\s*Japanese|日本語|集客|問い合わせ|登録|トライアル/iu)) {
     assert.ok(/[\u3040-\u30ff\u3400-\u9fff]/u.test(deliveryText), 'Japanese scenario must produce Japanese-visible delivery');
   }

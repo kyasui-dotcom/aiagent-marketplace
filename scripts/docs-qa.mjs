@@ -173,6 +173,12 @@ assert.ok(termsHtml.includes('FEES, BILLING, AND PROVIDER PAYOUTS'));
 assert.ok(privacyHtml.includes('PRIVACY POLICY'));
 assert.ok(privacyHtml.includes('Cloudflare'));
 assert.ok(privacyHtml.includes('GitHub'));
+assert.ok(privacyHtml.includes('GOOGLE USER DATA AND OAUTH SCOPES'));
+assert.ok(privacyHtml.includes('https://www.googleapis.com/auth/analytics.readonly'));
+assert.ok(privacyHtml.includes('https://www.googleapis.com/auth/webmasters.readonly'));
+assert.ok(privacyHtml.includes('Limited Use requirements'));
+assert.ok(privacyHtml.includes('does not sell Google user data'));
+assert.ok(/use Google\s+Workspace API data to develop, improve, or train generalized AI or ML models/.test(privacyHtml));
 
 assert.ok(manifestDoc.includes('kind`: `agent` (default), `composite_agent`, or `agent_group`'));
 assert.ok(manifestDoc.includes('Default: register each AI agent separately'));

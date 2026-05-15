@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 
 const PORT = Number(process.env.PORT || 4327);
 const BASE = `http://127.0.0.1:${PORT}`;
+const PROVIDER_PORT = Number(process.env.PROVIDER_PORT || (PORT + 100));
+const PROVIDER_BASE = `http://127.0.0.1:${PROVIDER_PORT}`;
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 async function request(path, options = {}) {
@@ -34,7 +37,50 @@ async function waitForJob(jobId, predicate, timeoutMs = 6000) {
   return latest;
 }
 
+function startProviderServer() {
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url || '/', PROVIDER_BASE);
+    const [, kind = '', route = ''] = url.pathname.match(/^\/([^/]+)\/([^/]+)$/) || [];
+    if (route === 'health') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, service: `e2e_${kind}_provider` }));
+      return;
+    }
+    if (route === 'jobs') {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const payload = body ? JSON.parse(body) : {};
+      const taskType = String(payload.task_type || kind || 'agent').trim().toLowerCase();
+      if (kind === 'accepted') {
+        res.writeHead(202, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ accepted: true, status: 'accepted', external_job_id: `e2e-${String(payload.job_id || '').slice(0, 8)}` }));
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'completed',
+        summary: `E2E ${taskType} provider completed.`,
+        report: {
+          summary: `E2E ${taskType} report completed with concrete output.`,
+          bullets: ['External provider endpoint was used instead of an in-worker sample route.'],
+          nextAction: 'Review the generated delivery.'
+        },
+        files: [{
+          name: `${taskType}-delivery.md`,
+          content: `# E2E ${taskType} delivery\n\nProvider-backed delivery.`
+        }],
+        usage: { input_tokens: 50, output_tokens: 50, total_tokens: 100, api_cost: 1 }
+      }));
+      return;
+    }
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not found' }));
+  });
+  return new Promise((resolve) => server.listen(PROVIDER_PORT, '127.0.0.1', () => resolve(server)));
+}
+
 async function main() {
+  const provider = await startProviderServer();
   const child = spawn('node', ['server.js'], {
     cwd: process.cwd(),
     env: {
@@ -59,8 +105,8 @@ async function main() {
         pricing: { premium_rate: 0.05, basic_rate: 0.1 },
         success_rate: 0.99,
         avg_latency_sec: 5,
-        healthcheck_url: `${BASE}/mock/research/health`,
-        job_endpoint: `${BASE}/mock/research/jobs`
+        healthcheck_url: `${PROVIDER_BASE}/research/health`,
+        job_endpoint: `${PROVIDER_BASE}/research/jobs`
       } })
     });
     const syncAgentId = syncImport.body.agent.id;
@@ -76,8 +122,8 @@ async function main() {
         pricing: { premium_rate: 0.35, basic_rate: 0.1 },
         success_rate: 0.8,
         avg_latency_sec: 40,
-        healthcheck_url: `${BASE}/mock/research/health`,
-        job_endpoint: `${BASE}/mock/accepted/jobs`
+        healthcheck_url: `${PROVIDER_BASE}/accepted/health`,
+        job_endpoint: `${PROVIDER_BASE}/accepted/jobs`
       } })
     });
     const asyncAgentId = asyncImport.body.agent.id;
@@ -93,8 +139,8 @@ async function main() {
         pricing: { premium_rate: 0.08, basic_rate: 0.1 },
         success_rate: 0.97,
         avg_latency_sec: 8,
-        healthcheck_url: `${BASE}/mock/writer/health`,
-        job_endpoint: `${BASE}/mock/writer/jobs`
+        healthcheck_url: `${PROVIDER_BASE}/writer/health`,
+        job_endpoint: `${PROVIDER_BASE}/writer/jobs`
       } })
     });
     const writerAgentId = writerImport.body.agent.id;
@@ -110,8 +156,8 @@ async function main() {
         pricing: { premium_rate: 0.06, basic_rate: 0.1 },
         success_rate: 0.99,
         avg_latency_sec: 5,
-        healthcheck_url: `${BASE}/mock/writer/health`,
-        job_endpoint: `${BASE}/mock/writer/jobs`
+        healthcheck_url: `${PROVIDER_BASE}/writer/health`,
+        job_endpoint: `${PROVIDER_BASE}/writer/jobs`
       } })
     });
     const seoAgentId = seoImport.body.agent.id;
@@ -266,6 +312,7 @@ async function main() {
     console.log('e2e mock qa passed');
   } finally {
     child.kill('SIGTERM');
+    provider.close();
     await sleep(300);
   }
 }

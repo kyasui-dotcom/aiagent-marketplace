@@ -26,9 +26,18 @@ let orderToken = '';
 function buildVerifiedAgents() {
   return DEFAULT_AGENT_SEEDS.map((agent, index) => ({
     ...structuredClone(agent),
+    id: `${agent.id}_recurring_qa`,
+    online: true,
     verificationStatus: 'verified',
     verificationCheckedAt: `2026-04-18T00:0${index}:00.000Z`,
     verificationError: null,
+    agentReviewStatus: 'approved',
+    agentReview: {
+      status: 'approved',
+      source: 'recurring-orders-qa',
+      reviewedAt: `2026-04-18T00:0${index}:00.000Z`,
+      reasons: []
+    },
     manifestSource: 'qa://recurring-orders',
     metadata: {
       ...(agent.metadata || {}),

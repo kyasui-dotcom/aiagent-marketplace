@@ -7,19 +7,18 @@ import {
   chatEngineDraftBrief,
   chatEngineIsNeedsInputResponse
 } from './chat-engine.js?v=20260509a';
-import {
-  deliveryExecutionPromptPresentation,
-  extractSocialPostTextFromDeliveryContent
-} from './delivery-action-contract.js?v=20260501a';
+import { extractSocialPostTextFromDeliveryContent } from './delivery-action-contract.js?v=20260501a';
 import {
   caitAppContextChatPrompt,
   caitAppContextThreadHtml,
   consumeCaitAppContextForChat
 } from './cait-app-bridge.js?v=20260508e';
 import {
+  inferWorkIntentTaskType,
+  isDeliveryHistoryQuestionIntentText,
   isLeaderCatalogQuestionIntentText,
   isNonOrderConversationIntentText
-} from './work-intent-resolver.js?v=20260505c';
+} from './work-intent-resolver.js?v=20260512a';
 
 const CHATUX_RETURN_PATH = '/chat';
 const CHATUX_BACKFILL_INTERVAL_MS = 10000;
@@ -28,6 +27,9 @@ const CHATUX_CATALOG_CACHE_TTL_MS = 60000;
 const CHATUX_PROGRESS_MAX_POLLS = 300;
 const CHATUX_OAUTH_RETURN_STATE_KEY = 'cait.chat.oauthReturnState.v1';
 const CHATUX_OAUTH_RETURN_MAX_AGE_MS = 30 * 60 * 1000;
+const CHATUX_RUNTIME_STATE_KEY = 'cait.chat.runtimeState.v1';
+const CHATUX_RUNTIME_STATE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+const CHATUX_RETRY_MODE_NEW_ORDER = 'same_content_new_order';
 const CAIT_APP_CONTEXT_CHANNEL = 'cait-app-context';
 const CHATUX_WELCOME_TEXT = 'What do you want done?';
 const X_CLIENT_OPS_URL = 'https://x.niche-s.com/';
@@ -37,30 +39,22 @@ function leaderCatalogChatAnswer(prompt = '') {
   const ja = chatLanguage(prompt) === 'ja';
   return ja
     ? [
-        '利用できる主なリーダーは以下です。これは案内回答なので、まだ注文も課金も発生していません。',
+        '利用できる主なリーダー',
         '',
-        '- CMO Leader: 集客、SEO、SNS、ローンチ、計測までを品質重視で組み立てる',
-        '- CTO Leader: 技術方針、実装計画、リポジトリ修正、デプロイやロールバックを整理する',
-        '- CPO Leader: プロダクト戦略、UX、優先順位、検証計画を整理する',
-        '- CFO Leader: 価格、収支、ユニットエコノミクス、資金繰りを整理する',
-        '- Legal Leader: 規約、プライバシー、コンプライアンス、リスクを確認する',
-        '- Research Team Leader: 複数ソースの調査、比較、意思決定メモをまとめる',
-        '- Build Team Leader: 実装タスクを分解し、専門エージェントやアプリへの引き継ぎをまとめる',
-        '- Secretary Leader: 日程、返信、会議準備、秘書業務の流れを整理する',
+        '利用できるリーダーは登録済みエージェントのカタログに基づいて選ばれます。これは案内回答なので、まだ注文も課金も発生していません。',
+        '',
+        '- Leader Agent: 目的を分解し、必要な専門エージェント、順序、承認点、最終統合を管理します。',
+        '- Specialist Agent: 調査、設計、文章、分析、実装などの個別成果物を作ります。',
         '',
         '迷う場合は、やりたい成果をそのまま書けば CAIt がリーダーか専門エージェントかを判断します。実行する場合だけ Send order を押してください。'
       ].join('\n')
     : [
-        'Available leaders are below. This is a chat answer, so no order or billing happened.',
+        'Main available leaders',
         '',
-        '- CMO Leader: acquisition, SEO, social, launch, and measurement work',
-        '- CTO Leader: technical direction, implementation planning, repo changes, deploy and rollback planning',
-        '- CPO Leader: product strategy, UX, prioritization, and validation planning',
-        '- CFO Leader: pricing, unit economics, cash flow, and finance decisions',
-        '- Legal Leader: terms, privacy, compliance, and risk review',
-        '- Research Team Leader: multi-source research, comparisons, and decision memos',
-        '- Build Team Leader: implementation breakdowns and specialist/app handoffs',
-        '- Secretary Leader: scheduling, replies, meeting prep, and assistant workflows',
+        'Available leaders are selected from the registered agent catalog. This is a chat answer, so no order or billing happened.',
+        '',
+        '- Leader Agent: decomposes the goal, chooses specialists, manages sequence, approval points, and final synthesis.',
+        '- Specialist Agent: produces focused research, design, writing, analysis, implementation, or other artifacts.',
         '',
         'If you are unsure, describe the outcome you want and CAIt will choose a leader or specialist. Paid work only starts when you press Send order.'
       ].join('\n');
@@ -82,20 +76,28 @@ const APP_AGENT_MANIFESTS = [
       returns: ['facts', 'metrics', 'artifacts', 'recommended_next_actions']
     },
     tags: ['analytics', 'seo', 'growth'],
-    reusePrompt: 'Open Analytics Console, review acquisition evidence, then send the context to CAIt for the CMO, SEO, or Growth leader.'
+    reusePrompt: 'Open Analytics Console, review analytics evidence, then send the context to CAIt for the matching leader or data specialist.'
   },
   {
     id: 'publisher-approval-studio',
     name: 'Publisher & Approval Studio',
     kind: 'application_agent',
-    description: 'Content, page, metadata, directory submission, PR draft, and approval queue studio for external action handoffs.',
+    description: 'Content, page, metadata, media-separated publish packets, directory submission, PR draft, and approval queue studio for external action handoffs.',
     baseUrl: '/publisher-approval.html',
     entryUrl: '/publisher-approval.html',
-    capabilities: ['content_management', 'approval_queue', 'directory_submission_packet', 'publisher_change_set'],
-    requiresApprovalFor: ['publish_change', 'directory_submit', 'github_pr', 'external_send'],
+    capabilities: ['content_management', 'approval_queue', 'directory_submission_packet', 'publisher_change_set', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'site_publish_packet', 'wordpress_draft_packet'],
+    requiresApprovalFor: ['publish_change', 'directory_submit', 'github_pr', 'wordpress_draft', 'x_post', 'reddit_post', 'indie_hackers_post', 'external_send'],
     inputContract: {
       schemaVersion: 'cait-app-context/v1',
-      accepts: ['article_draft', 'landing_page_change', 'directory_packet', 'approval_request'],
+      accepts: ['article_draft', 'seo_page_artifact', 'landing_page_change', 'site_publish_packet', 'wordpress_draft_packet', 'directory_packet', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'approval_request'],
+      destinationConnectors: {
+        owned_site: { connector: 'github', capability: 'github.write_pr', method: 'github_pr' },
+        wordpress_site: { connector: 'wordpress', capability: 'wordpress.create_draft', method: 'wordpress_application_password' },
+        directory: { connector: 'directory_app', capability: 'directory.submit', method: 'saas_or_manual_submit' },
+        x: { connector: 'x', capability: 'x.post', method: 'x_oauth_or_x_saas' },
+        reddit: { connector: 'reddit', capability: 'reddit.post', method: 'reddit_oauth_or_manual_copy' },
+        indie_hackers: { connector: 'indie_hackers', capability: 'indie_hackers.post', method: 'indie_hackers_connector_or_manual_copy' }
+      },
       returns: ['approval_requests', 'artifacts', 'delivery_files', 'recommended_next_actions']
     },
     tags: ['publisher', 'approval', 'seo'],
@@ -164,6 +166,8 @@ const state = {
   polling: null,
   progressNarratorArticle: null,
   progressNarratorKey: '',
+  progressMapArticle: null,
+  progressMapKey: '',
   progressNarratorTimer: null,
   progressNarratorTimerArticle: null,
   liveProgressStoppedOrderIds: new Set(),
@@ -173,8 +177,7 @@ const state = {
   trackedOrderIds: new Set(),
   deliveredOrderIds: new Set(),
   authorityNoticeKeys: new Set(),
-  progressPollLimitNotifiedOrderIds: new Set(),
-  progressErrorNoticeKeys: new Set(),
+  orderMilestoneNoticeKeys: new Set(),
   appAgentHistory: [],
   aiAgentHistory: [],
   recentJobs: [],
@@ -203,6 +206,7 @@ const state = {
   chatSessions: [],
   chatMessages: [],
   currentChatSessionId: '',
+  chatViewRevision: 0,
   chatSidebarOpen: false,
   lastTranscriptPrompt: '',
   lastTranscriptId: '',
@@ -214,10 +218,53 @@ const state = {
 
 const deliveryFileStore = new Map();
 const appTransferStore = new Map();
+const agentMapRunStore = new Map();
+let agentMapRunKeyCounter = 0;
 const processedAppContextIds = new Set();
+const chatGa4EventKeys = new Set();
 let appContextBroadcastChannel = null;
+let pendingServerChatSessionSnapshot = null;
+let chatSessionSnapshotTimer = null;
 
 const $ = (id) => document.getElementById(id);
+
+function ga4SafeString(value = '', max = 120) {
+  return String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+}
+
+function trackChatGa4Event(eventName = '', params = {}) {
+  try {
+    if (typeof window.caitTrackGa4Event !== 'function') return false;
+    return window.caitTrackGa4Event(eventName, {
+      source: 'chat',
+      chat_session_id: ga4SafeString(state.currentChatSessionId || '', 80),
+      ...params
+    });
+  } catch {
+    return false;
+  }
+}
+
+function trackChatGa4Once(key = '', eventName = '', params = {}) {
+  const safeKey = ga4SafeString(key, 160);
+  if (!safeKey || chatGa4EventKeys.has(safeKey)) return false;
+  chatGa4EventKeys.add(safeKey);
+  return trackChatGa4Event(eventName, params);
+}
+
+function trackChatIntakeStarted(prompt = '', source = 'chat_submit') {
+  const sessionKey = state.currentChatSessionId || state.visitorId || 'anonymous';
+  return trackChatGa4Once(`chat_intake_started:${sessionKey}`, 'chat_intake_started', {
+    source,
+    prompt_length: String(prompt || '').length,
+    language: chatLanguage(prompt),
+    active_leader: state.activeLeader?.taskType || ''
+  });
+}
 const els = {
   authStatus: $('authStatus'),
   chatThread: $('chatThread'),
@@ -253,12 +300,12 @@ const PROMPT_PLACEHOLDERS = {
     ja: '追加調整を書くか、SEND ORDER と入力して実行してください...'
   },
   intake: {
-    en: 'Answer the questions above before CAIt prepares the order...',
-    ja: '発注準備の前に、上の質問へ回答してください...'
+    en: 'Answer this intake item before CAIt prepares the order...',
+    ja: '発注準備の前に、この確認項目へ回答してください...'
   },
   active: {
-    en: 'Add a request to the running order, or ask for status...',
-    ja: '進行中オーダーへの追加要望を書くか、状態を聞いてください...'
+    en: 'Start a new request, ask for status, or type "continue this order: ..." explicitly...',
+    ja: '新しい依頼を書くか、状態確認をするか、「このオーダーの続きとして: ...」と明示してください...'
   }
 };
 
@@ -326,6 +373,12 @@ function normalizeChatSession(session = {}) {
     .map((item) => String(item || '').trim())
     .filter(Boolean)
     .slice(0, 20))];
+  const linkedOrderId = String(session.linkedOrderId || '').trim();
+  const relatedOrderIds = [...new Set([
+    ...(Array.isArray(session.relatedOrderIds) ? session.relatedOrderIds : []),
+    linkedOrderId,
+    ...activeJobIds
+  ].map((item) => String(item || '').trim()).filter(Boolean))].slice(0, 40);
   return {
     ...session,
     id,
@@ -340,9 +393,10 @@ function normalizeChatSession(session = {}) {
         }
       : null,
     activeLeaderLocked: Boolean(session.activeLeaderLocked || session.active_leader_locked),
-    activeWork: Boolean(session.activeWork || activeJobIds.length),
-    linkedOrderId: String(session.linkedOrderId || '').trim(),
+    activeWork: Boolean(session.activeWork),
+    linkedOrderId,
     activeJobIds,
+    relatedOrderIds,
     createdAt: String(session.createdAt || updatedAt).trim(),
     updatedAt
   };
@@ -354,7 +408,7 @@ function upsertChatSession(session = {}) {
   const others = state.chatSessions.filter((item) => item.id !== normalized.id && item.sessionId !== normalized.sessionId);
   state.chatSessions = [normalized, ...others]
     .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
-    .slice(0, 40);
+    .slice(0, 200);
   return normalized;
 }
 
@@ -364,10 +418,11 @@ function currentChatSessionPayload() {
   const existing = state.chatSessions.find((session) => session.id === sessionId || session.sessionId === sessionId) || {};
   const now = isoNow();
   const linkedOrderId = String(existing.linkedOrderId || state.orderId || '').trim();
-  const activeJobIds = [...new Set([
-    ...(Array.isArray(existing.activeJobIds) ? existing.activeJobIds : []),
+  const activeJobIds = [];
+  const relatedOrderIds = [...new Set([
+    ...(Array.isArray(existing.relatedOrderIds) ? existing.relatedOrderIds : []),
     linkedOrderId
-  ].map((item) => String(item || '').trim()).filter(Boolean))].slice(0, 20);
+  ].map((item) => String(item || '').trim()).filter(Boolean))].slice(0, 40);
   return normalizeChatSession({
     ...existing,
     id: sessionId,
@@ -378,7 +433,8 @@ function currentChatSessionPayload() {
     activeLeaderLocked: Boolean(state.activeLeaderLocked && state.activeLeader?.taskType),
     linkedOrderId,
     activeJobIds,
-    activeWork: Boolean(existing.activeWork || linkedOrderId || activeJobIds.length),
+    relatedOrderIds,
+    activeWork: false,
     createdAt: existing.createdAt || state.chatMessages[0]?.ts || now,
     updatedAt: now
   });
@@ -388,6 +444,7 @@ function persistRuntimeChatSession() {
   const session = currentChatSessionPayload();
   if (!session) return null;
   upsertChatSession(session);
+  saveChatRuntimeState('runtime_session');
   renderChatSessionSidebar();
   return session;
 }
@@ -412,6 +469,29 @@ function safeSessionStorageGet(key = '') {
 function safeSessionStorageRemove(key = '') {
   try {
     window.sessionStorage.removeItem(key);
+  } catch {}
+}
+
+function safeLocalStorageSet(key = '', value = '') {
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function safeLocalStorageGet(key = '') {
+  try {
+    return window.localStorage.getItem(key) || '';
+  } catch {
+    return '';
+  }
+}
+
+function safeLocalStorageRemove(key = '') {
+  try {
+    window.localStorage.removeItem(key);
   } catch {}
 }
 
@@ -460,8 +540,8 @@ function chatRuntimeStateSnapshot(reason = '') {
       title: chatSessionTitle(state.chatMessages),
       messages: state.chatMessages.slice(-80),
       linkedOrderId: state.orderId,
-      activeJobIds: state.orderId ? [state.orderId] : [],
-      activeWork: Boolean(state.orderId),
+      activeJobIds: [],
+      activeWork: false,
       createdAt: state.chatMessages[0]?.ts || isoNow(),
       updatedAt: isoNow()
     });
@@ -470,11 +550,12 @@ function chatRuntimeStateSnapshot(reason = '') {
     session = normalizeChatSession({
       ...session,
       linkedOrderId: session.linkedOrderId || state.orderId,
-      activeJobIds: [...new Set([
-        ...(Array.isArray(session.activeJobIds) ? session.activeJobIds : []),
+      activeJobIds: [],
+      relatedOrderIds: [...new Set([
+        ...(Array.isArray(session.relatedOrderIds) ? session.relatedOrderIds : []),
         state.orderId
       ].filter(Boolean))],
-      activeWork: true,
+      activeWork: false,
       updatedAt: isoNow()
     });
   }
@@ -499,7 +580,46 @@ function chatRuntimeStateSnapshot(reason = '') {
 }
 
 function saveChatOAuthReturnState(reason = 'oauth') {
+  return saveChatRuntimeSnapshot(CHATUX_OAUTH_RETURN_STATE_KEY, reason);
+}
+
+function saveChatRuntimeSnapshot(key = CHATUX_RUNTIME_STATE_KEY, reason = 'runtime') {
   const snapshot = chatRuntimeStateSnapshot(reason);
+  return saveChatRuntimeSnapshotObject(key, snapshot);
+}
+
+function compactChatRuntimeSnapshot(snapshot = {}) {
+  const session = normalizeChatSession(snapshot.session || {});
+  return {
+    version: 1,
+    savedAt: snapshot.savedAt || isoNow(),
+    reason: String(snapshot.reason || 'runtime_compact').slice(0, 80),
+    returnPath: snapshot.returnPath || CHATUX_RETURN_PATH,
+    currentChatSessionId: String(snapshot.currentChatSessionId || session?.id || '').trim(),
+    session: session ? normalizeChatSession({
+      id: session.id,
+      sessionId: session.sessionId,
+      title: session.title,
+      messages: (Array.isArray(session.messages) ? session.messages : []).slice(-50),
+      linkedOrderId: session.linkedOrderId || snapshot.orderId || '',
+      activeJobIds: [],
+      relatedOrderIds: Array.isArray(session.relatedOrderIds) ? session.relatedOrderIds : [],
+      activeWork: false,
+      activeLeader: session.activeLeader || null,
+      activeLeaderLocked: session.activeLeaderLocked,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt || isoNow()
+    }) : null,
+    orderId: String(snapshot.orderId || session?.linkedOrderId || '').trim(),
+    trackedOrderIds: Array.isArray(snapshot.trackedOrderIds) ? snapshot.trackedOrderIds.slice(-20) : [],
+    activeLeader: snapshot.activeLeader || session?.activeLeader || null,
+    activeLeaderLocked: Boolean(snapshot.activeLeaderLocked || session?.activeLeaderLocked),
+    conversationLanguage: String(snapshot.conversationLanguage || '').trim(),
+    promptValue: String(snapshot.promptValue || '').slice(0, 4000)
+  };
+}
+
+function saveChatRuntimeSnapshotObject(key = CHATUX_RUNTIME_STATE_KEY, snapshot = {}) {
   let serialized = '';
   try {
     serialized = JSON.stringify(snapshot);
@@ -518,7 +638,106 @@ function saveChatOAuthReturnState(reason = 'oauth') {
       return false;
     }
   }
-  return safeSessionStorageSet(CHATUX_OAUTH_RETURN_STATE_KEY, serialized);
+  const savedSession = safeSessionStorageSet(key, serialized);
+  if (key !== CHATUX_RUNTIME_STATE_KEY) return savedSession;
+  const savedLocal = safeLocalStorageSet(key, serialized);
+  if (savedSession || savedLocal) return true;
+  try {
+    const compactSerialized = JSON.stringify(compactChatRuntimeSnapshot(snapshot));
+    return safeSessionStorageSet(key, compactSerialized) || safeLocalStorageSet(key, compactSerialized);
+  } catch {
+    return false;
+  }
+}
+
+function saveChatRuntimeState(reason = 'runtime') {
+  const snapshot = chatRuntimeStateSnapshot(reason);
+  const hasSession = Boolean(snapshot?.session?.messages?.length);
+  const hasActiveState = Boolean(snapshot?.orderId || snapshot?.pendingIntake || snapshot?.draft || snapshot?.promptValue);
+  if (!hasSession && !hasActiveState) return false;
+  queueServerChatSessionSnapshot(snapshot, {
+    immediate: /beforeunload|order|restore/i.test(String(reason || '')),
+    delayMs: 1000
+  });
+  return saveChatRuntimeSnapshotObject(CHATUX_RUNTIME_STATE_KEY, snapshot);
+}
+
+function clearChatRuntimeState() {
+  safeSessionStorageRemove(CHATUX_RUNTIME_STATE_KEY);
+  safeLocalStorageRemove(CHATUX_RUNTIME_STATE_KEY);
+}
+
+function bumpChatViewRevision() {
+  state.chatViewRevision = (Number(state.chatViewRevision) || 0) + 1;
+  return state.chatViewRevision;
+}
+
+function clearQueuedChatSessionSnapshot() {
+  pendingServerChatSessionSnapshot = null;
+  if (chatSessionSnapshotTimer) window.clearTimeout(chatSessionSnapshotTimer);
+  chatSessionSnapshotTimer = null;
+}
+
+function clearActiveOrderMemory() {
+  state.orderId = '';
+  state.followupTargetOrderId = '';
+  state.trackedOrderIds.clear();
+  state.deliveredOrderIds.clear();
+  state.pendingRecoveryPayloads = [];
+  state.liveProgressStoppedOrderIds.clear();
+  state.authorityNoticeKeys.clear();
+  state.orderMilestoneNoticeKeys.clear();
+  state.progressNarratorArticle = null;
+  state.progressNarratorKey = '';
+  state.progressMapArticle = null;
+  state.progressMapKey = '';
+  deliveryFileStore.clear();
+  appTransferStore.clear();
+  agentMapRunStore.clear();
+}
+
+function serverChatSessionPayload(snapshot = {}) {
+  const session = normalizeChatSession(snapshot.session || {});
+  if (!session) return null;
+  return {
+    session,
+    orderId: String(snapshot.orderId || session.linkedOrderId || '').trim(),
+    trackedOrderIds: Array.isArray(snapshot.trackedOrderIds) ? snapshot.trackedOrderIds.slice(-40) : []
+  };
+}
+
+async function flushServerChatSessionSnapshot() {
+  const payload = pendingServerChatSessionSnapshot;
+  pendingServerChatSessionSnapshot = null;
+  if (!payload) return false;
+  try {
+    await api('/api/chat-sessions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      timeoutMs: 8000
+    });
+    state.chatSessionHistoryFetchedAt = 0;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function queueServerChatSessionSnapshot(snapshot = {}, options = {}) {
+  const payload = serverChatSessionPayload(snapshot);
+  if (!payload?.session?.id) return false;
+  pendingServerChatSessionSnapshot = payload;
+  if (chatSessionSnapshotTimer) window.clearTimeout(chatSessionSnapshotTimer);
+  if (options.immediate === true) {
+    chatSessionSnapshotTimer = null;
+    void flushServerChatSessionSnapshot();
+    return true;
+  }
+  chatSessionSnapshotTimer = window.setTimeout(() => {
+    chatSessionSnapshotTimer = null;
+    void flushServerChatSessionSnapshot();
+  }, Math.max(400, Number(options.delayMs || 1200) || 1200));
+  return true;
 }
 
 function restoreChatMessagesFromSession(session = null) {
@@ -540,17 +759,19 @@ function restoreChatMessagesFromSession(session = null) {
 function applyRestoredChatSnapshot(snapshot = {}, request = {}) {
   const session = normalizeChatSession(snapshot.session || {});
   if (!session && !snapshot.orderId && !snapshot.pendingIntake && !snapshot.draft) return false;
+  const viewRevision = bumpChatViewRevision();
   if (state.polling) window.clearInterval(state.polling);
   stopProgressNarratorAnimation();
   state.polling = null;
   state.progressNarratorArticle = null;
   state.progressNarratorKey = '';
+  state.progressMapArticle = null;
+  state.progressMapKey = '';
   state.liveProgressStoppedOrderIds.clear();
   state.currentChatSessionId = session?.id || String(snapshot.currentChatSessionId || request.sessionId || '').trim();
   state.chatMessages = (Array.isArray(session?.messages) ? session.messages : []).slice(-80);
   state.lastTranscriptPrompt = '';
   state.lastTranscriptId = '';
-  state.orderId = String(snapshot.orderId || session?.linkedOrderId || request.orderId || '').trim();
   state.pendingIntake = snapshot.pendingIntake && typeof snapshot.pendingIntake === 'object' ? snapshot.pendingIntake : null;
   state.draft = snapshot.draft && typeof snapshot.draft === 'object' ? snapshot.draft : null;
   state.pendingAppContext = snapshot.pendingAppContext && typeof snapshot.pendingAppContext === 'object' ? snapshot.pendingAppContext : null;
@@ -559,9 +780,8 @@ function applyRestoredChatSnapshot(snapshot = {}, request = {}) {
   state.pendingLeaderChange = snapshot.pendingLeaderChange && typeof snapshot.pendingLeaderChange === 'object' ? snapshot.pendingLeaderChange : null;
   state.conversationLanguage = String(snapshot.conversationLanguage || '').trim();
   state.draftRevision += 1;
-  state.authorityNoticeKeys.clear();
-  deliveryFileStore.clear();
-  appTransferStore.clear();
+  clearActiveOrderMemory();
+  state.orderId = String(snapshot.orderId || session?.linkedOrderId || request.orderId || '').trim();
   if (Array.isArray(snapshot.trackedOrderIds)) {
     for (const id of snapshot.trackedOrderIds) rememberTrackedOrder(id);
   }
@@ -575,12 +795,17 @@ function applyRestoredChatSnapshot(snapshot = {}, request = {}) {
   renderActiveLeaderStatus();
   updateComposerMode();
   renderChatSessionSidebar();
+  const restoredFromReload = /^runtime/i.test(String(snapshot.reason || ''));
   appendTextMessage('system', chatText(
-    'Returned from Google connection. This chat and its active order were restored.',
-    'Google接続から戻りました。このチャットと進行中のオーダーを復元しました。',
+    restoredFromReload
+      ? 'Chat restored. Loading current Order state.'
+      : 'Returned from Google connection. Chat restored and current Order state is loading.',
+    restoredFromReload
+      ? 'チャットを復元しました。現在のOrder状態を読み込みます。'
+      : 'Google接続から戻りました。チャットを復元し、現在のOrder状態を読み込みます。',
     state.chatMessages[0]?.body || state.conversationLanguage
   ), { label: 'Chat restored', record: false });
-  if (session) void renderRestoredSessionOrderContext(session);
+  if (session) void renderRestoredSessionOrderContext(session, { viewRevision, sessionId: session.id || session.sessionId });
   if (state.orderId) startPolling(state.orderId);
   startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
   return true;
@@ -613,11 +838,46 @@ function restoreChatOAuthReturnStateFromUrl() {
   return restored;
 }
 
+function restoreChatRuntimeState() {
+  const raw = safeSessionStorageGet(CHATUX_RUNTIME_STATE_KEY) || safeLocalStorageGet(CHATUX_RUNTIME_STATE_KEY);
+  if (!raw) return false;
+  let snapshot = null;
+  try {
+    snapshot = JSON.parse(raw);
+  } catch {
+    clearChatRuntimeState();
+    return false;
+  }
+  const savedMs = Date.parse(snapshot?.savedAt || '');
+  if (!Number.isFinite(savedMs) || Date.now() - savedMs > CHATUX_RUNTIME_STATE_MAX_AGE_MS) {
+    clearChatRuntimeState();
+    return false;
+  }
+  return applyRestoredChatSnapshot({ ...snapshot, reason: snapshot.reason || 'runtime_reload' }, {});
+}
+
 function restoreRequestedChatSessionFromHistory() {
   const request = chatRestoreRequestFromUrl();
-  if (!request.requested || !request.sessionId) return false;
-  const session = state.chatSessions.find((item) => item.id === request.sessionId || item.sessionId === request.sessionId);
-  if (!session) return false;
+  if (!request.requested || (!request.sessionId && !request.orderId)) return false;
+  const session = state.chatSessions.find((item) => {
+    if (request.sessionId && (item.id === request.sessionId || item.sessionId === request.sessionId)) return true;
+    if (!request.orderId) return false;
+    return item.linkedOrderId === request.orderId || (Array.isArray(item.relatedOrderIds) && item.relatedOrderIds.includes(request.orderId));
+  });
+  if (!session) {
+    if (!request.orderId) return false;
+    state.orderId = request.orderId;
+    rememberTrackedOrder(request.orderId);
+    appendTextMessage('system', chatText(
+      'Order link restored. Loading current Order state.',
+      'Orderリンクを復元しました。現在のOrder状態を読み込みます。',
+      state.conversationLanguage
+    ), { label: 'Order restored', record: false });
+    startPolling(request.orderId);
+    clearChatRestoreParamsFromUrl();
+    saveChatRuntimeState('runtime_order_restore');
+    return true;
+  }
   loadChatSession(session.id || session.sessionId);
   if (request.orderId && !state.orderId) {
     state.orderId = request.orderId;
@@ -648,10 +908,11 @@ function chatSessionFromMemory(item = {}) {
   return normalizeChatSession({
     id: sessionId,
     sessionId,
-    title: prompt || answer || 'Saved chat',
+    title: String(item.title || '').trim() || prompt || answer || 'Saved chat',
     activeWork: Boolean(item.activeWork),
     linkedOrderId: String(item.linkedOrderId || '').trim(),
     activeJobIds: Array.isArray(item.activeJobIds) ? item.activeJobIds : [],
+    relatedOrderIds: Array.isArray(item.relatedOrderIds) ? item.relatedOrderIds : [],
     createdAt,
     updatedAt: String(item.updatedAt || createdAt).trim(),
     messages: messages.length ? messages : [
@@ -675,7 +936,7 @@ function renderChatSessionSidebar() {
       if (right.id === state.currentChatSessionId) return 1;
       return String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''));
     })
-    .slice(0, 40);
+    .slice(0, 200);
   if (els.chatSessionSidebar) {
     els.chatSessionSidebar.classList.toggle('mobile-open', Boolean(state.chatSidebarOpen));
   }
@@ -696,7 +957,7 @@ function renderChatSessionSidebar() {
   els.chatSessionList.innerHTML = sessions.map((session) => {
     const active = session.id === state.currentChatSessionId || session.sessionId === state.currentChatSessionId;
     const messageCount = Array.isArray(session.messages) ? session.messages.length : 0;
-    const activeWork = session.activeWork ? ' / active work' : '';
+    const activeWork = session.activeWork ? ' / live order' : '';
     return [
       `<div class="chat-session-row ${active ? 'active' : ''}">`,
       `<button type="button" class="chat-session-item" data-chat-session-id="${escapeHtml(session.id)}" aria-current="${active ? 'true' : 'false'}">`,
@@ -710,6 +971,7 @@ function renderChatSessionSidebar() {
 }
 
 function startNewChatSession() {
+  bumpChatViewRevision();
   stopProgressNarratorAnimation();
   state.currentChatSessionId = '';
   state.chatMessages = [];
@@ -720,15 +982,14 @@ function startNewChatSession() {
   state.activeLeader = null;
   state.activeLeaderLocked = false;
   state.pendingLeaderChange = null;
+  state.pendingAppContext = null;
   state.conversationLanguage = '';
   state.draftRevision += 1;
-  state.orderId = '';
-  state.progressNarratorArticle = null;
-  state.progressNarratorKey = '';
-  state.liveProgressStoppedOrderIds.clear();
-  state.authorityNoticeKeys.clear();
-  deliveryFileStore.clear();
-  appTransferStore.clear();
+  clearActiveOrderMemory();
+  clearChatRuntimeState();
+  clearQueuedChatSessionSnapshot();
+  clearChatRestoreParamsFromUrl();
+  if (els.promptInput) els.promptInput.value = '';
   els.chatThread.innerHTML = '';
   renderActiveLeaderStatus();
   appendTextMessage('assistant', CHATUX_WELCOME_TEXT, { record: false });
@@ -739,6 +1000,7 @@ function startNewChatSession() {
 function loadChatSession(sessionId = '') {
   const session = state.chatSessions.find((item) => item.id === sessionId || item.sessionId === sessionId);
   if (!session) return;
+  const viewRevision = bumpChatViewRevision();
   if (state.polling) window.clearInterval(state.polling);
   stopProgressNarratorAnimation();
   state.polling = null;
@@ -755,10 +1017,12 @@ function loadChatSession(sessionId = '') {
   state.activeLeaderLocked = Boolean(session.activeLeaderLocked && state.activeLeader?.taskType);
   state.pendingLeaderChange = null;
   state.draftRevision += 1;
+  clearActiveOrderMemory();
   state.orderId = session.linkedOrderId || '';
-  state.authorityNoticeKeys.clear();
-  deliveryFileStore.clear();
-  appTransferStore.clear();
+  for (const id of chatSessionOrderIds(session)) {
+    const safeId = String(id || '').trim();
+    if (safeId) state.trackedOrderIds.add(safeId);
+  }
   els.chatThread.innerHTML = '';
   if (state.chatMessages.length) {
     for (const message of state.chatMessages) {
@@ -776,7 +1040,7 @@ function loadChatSession(sessionId = '') {
   renderChatSessionSidebar();
   state.chatSidebarOpen = false;
   renderChatSessionSidebar();
-  void renderRestoredSessionOrderContext(session);
+  void renderRestoredSessionOrderContext(session, { viewRevision, sessionId: session.id || session.sessionId });
   if (state.orderId) startPolling(state.orderId);
 }
 
@@ -792,7 +1056,7 @@ function deleteChatSession(sessionId = '') {
 }
 
 function chatSessionHistoryApiPath() {
-  return '/api/chat-memory';
+  return '/api/chat-memory?limit=200';
 }
 
 function applyAuthState(auth = {}, options = {}) {
@@ -1041,8 +1305,8 @@ function appAgentLaunchUrl(manifestOrEntry = {}, hrefOverride = '') {
   try {
     const url = new URL(href, window.location.origin);
     const id = normalizeUsageId(manifestOrEntry.id || '');
-    const builtInSameOrigin = APP_AGENT_MANIFESTS.some((item) => normalizeUsageId(item.id) === id && id !== 'x-client-ops');
-    if (builtInSameOrigin && /^(?:www\.)?aiagent-marketplace\.net$/i.test(url.hostname)) {
+    const sameOriginManifest = APP_AGENT_MANIFESTS.some((item) => normalizeUsageId(item.id) === id && id !== 'x-client-ops');
+    if (sameOriginManifest && /^(?:www\.)?aiagent-marketplace\.net$/i.test(url.hostname)) {
       return new URL(`${url.pathname}${url.search}${url.hash}`, window.location.origin).toString();
     }
     return url.toString();
@@ -1084,7 +1348,6 @@ function rememberAppAgentUsage(id = '', details = {}, options = {}) {
 function taskLabel(taskType = '') {
   const safeTask = String(taskType || '').trim().toLowerCase();
   const labels = {
-    cmo_leader: 'CMO Leader',
     research_team_leader: 'Research Team Leader',
     build_team_leader: 'Build Team Leader',
     cto_leader: 'CTO Leader',
@@ -1107,7 +1370,12 @@ function taskLabel(taskType = '') {
   };
   if (labels[safeTask]) return labels[safeTask];
   return safeTask
-    ? safeTask.split(/[_\s-]+/).filter(Boolean).map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`).join(' ')
+    ? safeTask.split(/[_\s-]+/).filter(Boolean).map((part) => {
+        const segment = String(part || '').trim();
+        return segment.length > 0 && segment.length <= 3
+          ? segment.toUpperCase()
+          : `${segment.slice(0, 1).toUpperCase()}${segment.slice(1)}`;
+      }).join(' ')
     : 'AI Agent';
 }
 
@@ -1174,68 +1442,28 @@ function conversationOwnerFromPrepared(value = {}, fallback = {}) {
 
 function normalizeLeaderTaskType(value = '') {
   const token = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-  const aliases = {
-    cmo: 'cmo_leader',
-    cmo_leader: 'cmo_leader',
-    marketing_leader: 'cmo_leader',
-    growth_leader: 'cmo_leader',
-    cait_cmo_leader: 'cmo_leader',
-    cto: 'cto_leader',
-    cto_leader: 'cto_leader',
-    technical_leader: 'cto_leader',
-    build_team: 'build_team_leader',
-    build_team_leader: 'build_team_leader',
-    engineering_leader: 'build_team_leader',
-    cpo: 'cpo_leader',
-    cpo_leader: 'cpo_leader',
-    product_leader: 'cpo_leader',
-    cfo: 'cfo_leader',
-    cfo_leader: 'cfo_leader',
-    finance_leader: 'cfo_leader',
-    legal: 'legal_leader',
-    legal_leader: 'legal_leader',
-    legal_counsel: 'legal_leader',
-    research: 'research_team_leader',
-    research_team: 'research_team_leader',
-    research_team_leader: 'research_team_leader',
-    secretary: 'secretary_leader',
-    secretary_leader: 'secretary_leader'
-  };
-  return aliases[token] || (token.endsWith('_leader') ? token : '');
+  return token.endsWith('_leader') ? token : '';
 }
 
 function isLeaderTaskType(value = '') {
   return Boolean(normalizeLeaderTaskType(value));
 }
 
-function leaderFollowupSpecialistTaskForText(value = '') {
-  const text = String(value || '').trim();
-  if (!text) return '';
-  if (/(seo|自然検索|検索流入|検索意図|検索順位|サチコ|search console|\bgsc\b|keyword|キーワード|serp|h1|h2|meta description|メタディスクリプション|コンテンツseo|記事|article)/i.test(text)) return 'seo_gap';
-  if (/(landing\s*page|\blp\b|ランディング|LP|hero|ヒーロー|cta|ページ|page|コピー|copy|ファーストビュー|conversion|cvr|登録導線|トライアル導線)/i.test(text)) return 'landing';
-  if (/(集客|リード|登録|トライアル|signup|trial|acquisition|growth|問い合わせ|lead)/i.test(text)) return 'growth';
-  return '';
-}
-
 function explicitLeaderChangeTaskTypeFromText(value = '') {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
-  const lower = text.toLowerCase();
-  const leaderPattern = /(\b(?:cmo|cto|cpo|cfo|legal)\b|research\s+team|build\s+team|marketing\s+leader|growth\s+leader|technical\s+leader|product\s+leader|finance\s+leader|legal\s+leader|secretary\s+leader|マーケ|cmoリーダー|技術責任者|ctoリーダー|プロダクト責任者|cpoリーダー|財務|cfoリーダー|法務|legalリーダー|調査リーダー|リサーチリーダー|ビルドリーダー|秘書リーダー)/i;
-  const leaderMatch = lower.match(leaderPattern);
-  if (!leaderMatch) return '';
+  const requested = normalizeLeaderTaskType(text);
+  if (!requested) return '';
   const explicitChange = /(?:leader|リーダー|担当|主体|lead|owner|route|routing|use|switch|change|変更|切替|切り替|変え|にして|で進め|でお願い|に戻|に固定|固定|指名|選択)/i.test(text)
-    || /^(?:cmo|cto|cpo|cfo|legal|research\s+team|build\s+team)(?:\s+leader)?$/i.test(text);
+    || text.toLowerCase().replace(/[\s-]+/g, '_') === requested;
   if (!explicitChange) return '';
-  if (/\b(?:cmo|marketing|growth)\b|マーケ/i.test(text)) return 'cmo_leader';
-  if (/\b(?:cto|technical)\b|技術責任者/i.test(text)) return 'cto_leader';
-  if (/\b(?:build\s+team|engineering)\b|ビルド/i.test(text)) return 'build_team_leader';
-  if (/\b(?:cpo|product)\b|プロダクト責任者/i.test(text)) return 'cpo_leader';
-  if (/\b(?:cfo|finance)\b|財務/i.test(text)) return 'cfo_leader';
-  if (/\blegal\b|法務/i.test(text)) return 'legal_leader';
-  if (/\bresearch\b|調査|リサーチ/i.test(text)) return 'research_team_leader';
-  if (/\bsecretary\b|秘書/i.test(text)) return 'secretary_leader';
-  return '';
+  return requested;
+}
+
+function explicitLeaderTaskTypeFromText(value = '') {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return normalizeLeaderTaskType(text);
 }
 
 function leaderOwner(taskType = '', reason = '') {
@@ -1512,6 +1740,7 @@ function rememberTrackedOrder(orderId = '') {
   const safeId = String(orderId || '').trim();
   if (!safeId) return;
   state.trackedOrderIds.add(safeId);
+  saveChatRuntimeState('runtime_order_tracking');
 }
 
 function markOrderDelivered(orderId = '') {
@@ -1540,11 +1769,22 @@ function fileMimeType(name = '', content = '') {
 function isInternalDeliveryFile(file = {}) {
   const name = String(file?.name || file?.filename || '').trim().toLowerCase();
   const content = String(file?.content || file?.body || '').trim();
+  const contentType = String(file?.content_type || file?.contentType || '').trim().toLowerCase();
   const visibility = String(file?.visibility || file?.delivery_visibility || file?.deliveryVisibility || '').trim().toLowerCase();
   if (file?.internal === true || file?.user_visible === false || file?.userVisible === false || file?.delivery_visible === false || file?.deliveryVisible === false) return true;
   if (['internal', 'hidden', 'system'].includes(visibility)) return true;
+  if ([
+    'supporting_specialist_deliverables',
+    'workflow_integrated_delivery',
+    'partial_workflow_delivery',
+    'all_deliverables_bundle',
+    'review_ready_delivery'
+  ].includes(contentType)) return true;
   if (name === 'supporting-specialist-deliverables.md') return true;
   if (name === 'integrated-delivery.md' && /#\s+Integrated delivery|##\s+Supporting work products|##\s+Integrated next actions/i.test(content)) return true;
+  if (name === 'workflow-partial-delivery.md') return true;
+  if (name === 'all-deliverables.md' || /^all-deliverables-[^.]+\.md$/i.test(name)) return true;
+  if (name === 'review-ready-delivery.md' || /^review-ready-delivery-[^.]+\.md$/i.test(name)) return true;
   return false;
 }
 
@@ -1552,11 +1792,65 @@ function visibleDeliveryFiles(files = []) {
   return (Array.isArray(files) ? files : []).filter((file) => file && !isInternalDeliveryFile(file));
 }
 
+function cleanReadableBundleContent(value = '') {
+  const lines = String(value || '').replace(/\r\n/g, '\n').split('\n');
+  const result = [];
+  let skip = false;
+  for (const line of lines) {
+    if (/^\s*-?\s*Source run\s*:/i.test(line)) continue;
+    if (/^\s*This bundle is copied into the parent delivery/i.test(line)) continue;
+    if (/^\s*This file contains the completed Markdown deliverables/i.test(line)) continue;
+    const heading = line.match(/^(#{1,6})\s+(.+?)\s*$/);
+    if (heading) {
+      const level = heading[1].length;
+      const title = heading[2].trim();
+      const noisy = (
+        /^Original information used$/i.test(title)
+        || /^Upstream work used$/i.test(title)
+        || /^受け渡し情報の利用$/i.test(title)
+        || /^Braveソース由来の補助分析$/i.test(title)
+        || /^Agent handoff$/i.test(title)
+        || /^下流エージェント用handoff packet$/i.test(title)
+        || /^Downstream handoff$/i.test(title)
+        || /^後続エージェントへの制約$/i.test(title)
+      );
+      if (noisy) {
+        skip = true;
+        continue;
+      }
+      if (skip && level <= 2) skip = false;
+    }
+    if (skip) continue;
+    result.push(line);
+  }
+  return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function internalAllDeliverablesFallbackFiles(job = {}, candidates = []) {
+  const bundle = (Array.isArray(candidates) ? candidates : []).find((file) => {
+    const name = String(file?.name || file?.filename || '').trim().toLowerCase();
+    return name === 'supporting-specialist-deliverables.md' && String(file?.content || file?.body || '').trim();
+  });
+  if (!bundle) return [];
+  const id = String(job?.id || '').trim().slice(0, 8) || 'order';
+  const raw = String(bundle.content || bundle.body || '').trim();
+  const readable = cleanReadableBundleContent(raw);
+  return [
+    {
+      name: `agent-deliverables-${id}.md`,
+      type: 'text/markdown',
+      content: readable || raw,
+      content_type: 'readable_agent_delivery_bundle'
+    }
+  ];
+}
+
 function registerDeliveryFile(file = {}, fallbackName = 'delivery.md') {
   const name = safeFileName(file.name || fallbackName, fallbackName);
   const content = String(file.content || '');
   const id = `file-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`;
   deliveryFileStore.set(id, {
+    ...(file && typeof file === 'object' ? file : {}),
     name,
     content,
     type: String(file.type || fileMimeType(name, content)).trim() || fileMimeType(name, content)
@@ -1566,7 +1860,7 @@ function registerDeliveryFile(file = {}, fallbackName = 'delivery.md') {
     if (!first) break;
     deliveryFileStore.delete(first);
   }
-  return { id, name, content };
+  return { ...(file && typeof file === 'object' ? file : {}), id, name, content };
 }
 
 async function copyTextToClipboard(text = '') {
@@ -1759,9 +2053,6 @@ function setBusy(next) {
   document.querySelectorAll('[data-chat-action="keep-leader"], [data-chat-action="switch-leader"]').forEach((button) => {
     button.disabled = state.busy || !state.pendingLeaderChange;
   });
-  document.querySelectorAll('[data-x-post-submit]').forEach((button) => {
-    button.disabled = state.busy;
-  });
 }
 
 function threadIsNearBottom(threshold = 80) {
@@ -1817,12 +2108,18 @@ function progressNarratorHtml(text = '', options = {}) {
   const phase = String(options.phase || '').trim();
   const steps = Array.isArray(options.steps) ? options.steps.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 4) : [];
   const streamText = progressNarratorStreamText(text, options, 0);
+  const progress = progressNarratorProgress(options);
+  const progressLabel = progressNarratorProgressLabel(options, progress);
   return [
     '<div class="progress-narrator" data-progress-narrator>',
     '<div class="progress-narrator-row">',
     `<span class="progress-narrator-pulse" aria-hidden="true"></span>`,
     `<strong data-progress-narrator-text>${escapeHtml(text || 'Working through the order...')}</strong>`,
     '<span class="progress-narrator-caret" aria-hidden="true"></span>',
+    '</div>',
+    '<div class="progress-narrator-bar-row">',
+    `<div class="progress-narrator-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${escapeHtml(String(progress.percent))}" style="--progress-value: ${escapeHtml(String(progress.percent))}%"><span></span></div>`,
+    `<span class="progress-narrator-bar-label" data-progress-narrator-bar-label>${escapeHtml(progressLabel)}</span>`,
     '</div>',
     `<div class="progress-narrator-stream" data-progress-narrator-stream aria-live="off">${escapeHtml(streamText)}</div>`,
     detail ? `<div class="progress-narrator-detail" data-progress-narrator-detail>${escapeHtml(detail)}</div>` : '<div class="progress-narrator-detail" data-progress-narrator-detail hidden></div>',
@@ -1832,18 +2129,44 @@ function progressNarratorHtml(text = '', options = {}) {
   ].join('\n');
 }
 
+function progressNarratorProgress(options = {}) {
+  const explicit = Number(options.progressPercent ?? options.percent ?? options.progress?.percent);
+  if (Number.isFinite(explicit)) {
+    return { percent: Math.max(0, Math.min(100, Math.round(explicit))), known: true };
+  }
+  const total = Number(options.total ?? options.progress?.total);
+  const completed = Number(options.completed ?? options.progress?.completed);
+  if (Number.isFinite(total) && total > 0 && Number.isFinite(completed)) {
+    const percent = Math.round((Math.max(0, completed) / total) * 100);
+    return { percent: Math.max(options.done === true ? 100 : 6, Math.min(100, percent)), known: true };
+  }
+  return { percent: options.done === true ? 100 : 12, known: false };
+}
+
+function progressNarratorProgressLabel(options = {}, progress = progressNarratorProgress(options)) {
+  const explicitLabel = String(options.progressLabel || options.progress?.label || '').trim();
+  if (explicitLabel) return explicitLabel;
+  const total = Number(options.total ?? options.progress?.total);
+  const completed = Number(options.completed ?? options.progress?.completed);
+  if (Number.isFinite(total) && total > 0 && Number.isFinite(completed)) {
+    return `${Math.max(0, Math.min(total, completed))}/${total}`;
+  }
+  if (options.done === true) return '100%';
+  return progress.known ? `${progress.percent}%` : 'Working';
+}
+
 function progressNarratorStreamSegments(text = '', options = {}) {
   const sample = [text, options.detail, options.phase, options.status, state.conversationLanguage].join(' ');
   const ja = chatLanguage(sample) === 'ja';
   const base = ja
-    ? ['注文を確認中', '現在フェーズを同期', '担当エージェントを確認', '待機項目を検査', '結果をチャットへ反映準備']
-    : ['reading order', 'syncing phase', 'checking active agent', 'watching waits', 'preparing chat update'];
+    ? ['進捗を更新中', 'エージェントツリーを同期中', '完了状況を確認中']
+    : ['updating progress', 'syncing agent map', 'checking completion'];
   const specific = [
-    options.phase ? `${ja ? 'フェーズ' : 'phase'}: ${options.phase}` : '',
-    options.status ? `${ja ? '状態' : 'status'}: ${options.status}` : '',
+    options.phase ? `${ja ? '現在' : 'now'}: ${options.phase}` : '',
+    options.status ? `${ja ? '状況' : 'status'}: ${options.status}` : '',
     ...(Array.isArray(options.steps) ? options.steps : []).slice(0, 3)
   ].map((item) => String(item || '').trim()).filter(Boolean);
-  return [...specific, ...base].filter(Boolean).slice(0, 8);
+  return [...specific, ...base].filter(Boolean).slice(0, 5);
 }
 
 function progressNarratorStreamText(text = '', options = {}, frame = 0) {
@@ -1851,7 +2174,7 @@ function progressNarratorStreamText(text = '', options = {}, frame = 0) {
   const cursor = ['|', '/', '-', '\\'][Math.abs(Number(frame || 0)) % 4];
   const start = Math.abs(Number(frame || 0)) % Math.max(1, segments.length);
   const ordered = [...segments.slice(start), ...segments.slice(0, start)];
-  const count = Math.min(4, Math.max(2, 2 + (Math.abs(Number(frame || 0)) % 3)));
+  const count = Math.min(3, Math.max(1, 1 + (Math.abs(Number(frame || 0)) % 2)));
   const dots = '.'.repeat(1 + (Math.abs(Number(frame || 0)) % 3));
   return `${cursor} ${ordered.slice(0, count).join('  ·  ')}${dots}`;
 }
@@ -1910,7 +2233,16 @@ function updateProgressNarratorArticle(article, text = '', options = {}) {
   const detailNode = article.querySelector('[data-progress-narrator-detail]');
   const metaNode = article.querySelector('[data-progress-narrator-meta]');
   const stepsNode = article.querySelector('[data-progress-narrator-steps]');
+  const barNode = article.querySelector('.progress-narrator-bar');
+  const barLabelNode = article.querySelector('[data-progress-narrator-bar-label]');
   if (textNode) textNode.textContent = String(text || 'Working through the order...');
+  const progress = progressNarratorProgress(options);
+  if (barNode) {
+    barNode.style.setProperty('--progress-value', `${progress.percent}%`);
+    barNode.setAttribute('aria-valuenow', String(progress.percent));
+    barNode.classList.toggle('complete', progress.percent >= 100 || options.done === true);
+  }
+  if (barLabelNode) barLabelNode.textContent = progressNarratorProgressLabel(options, progress);
   if (detailNode) {
     const detail = String(options.detail || '').trim();
     detailNode.textContent = detail;
@@ -1977,22 +2309,51 @@ function resumeLiveProgress(orderId = '') {
   if (safeId) state.liveProgressStoppedOrderIds.delete(safeId);
 }
 
+function draftRetryMode(draft = {}) {
+  const broker = draft?.input?._broker && typeof draft.input._broker === 'object' ? draft.input._broker : {};
+  const retry = broker.retry && typeof broker.retry === 'object' ? broker.retry : {};
+  return String(draft.retryMode || draft.retry_mode || retry.mode || retry.intent || '').trim();
+}
+
+function draftIsSameContentNewOrderRetry(draft = {}) {
+  if (!draft || typeof draft !== 'object') return false;
+  const broker = draft?.input?._broker && typeof draft.input._broker === 'object' ? draft.input._broker : {};
+  const retry = broker.retry && typeof broker.retry === 'object' ? broker.retry : {};
+  return draftRetryMode(draft) === CHATUX_RETRY_MODE_NEW_ORDER
+    || retry.continuesOrder === false
+    || draft.continuesOrder === false
+    || draft.continues_order === false;
+}
+
+function draftIsExplicitFollowupContinuation(draft = {}) {
+  if (!draft || typeof draft !== 'object') return false;
+  const broker = draft?.input?._broker && typeof draft.input._broker === 'object' ? draft.input._broker : {};
+  const conversation = broker.conversation && typeof broker.conversation === 'object' ? broker.conversation : {};
+  return conversation.mode === 'followup'
+    && (
+      conversation.userExplicitContinuation === true
+      || conversation.explicitContinuation === true
+      || draft.userExplicitContinuation === true
+      || draft.explicitContinuation === true
+    );
+}
+
+function retryDraftSourceOrderId(draft = {}) {
+  const broker = draft?.input?._broker && typeof draft.input._broker === 'object' ? draft.input._broker : {};
+  const retry = broker.retry && typeof broker.retry === 'object' ? broker.retry : {};
+  return String(draft.retryOfOrderId || draft.retry_of_order_id || broker.retryOfOrderId || retry.sourceOrderId || retry.source_order_id || '').trim();
+}
+
 function progressNarratorTextForJob(job = {}) {
   const current = workflowCurrentChildRun(job);
   const phase = String(current?.sequencePhase || current?.sequence_phase || '').trim().toLowerCase();
   const agent = workflowChildDisplayLabel(current || {});
   const status = String(current?.status || job.status || '').trim().toLowerCase();
-  if (phase === 'initial') return `${agent || 'Leader'} is reviewing the order and preparing the next handoff.`;
-  if (phase === 'data') return `${agent || 'Data agent'} is checking the available metrics before research moves on.`;
-  if (phase === 'research') return `${agent || 'Research agent'} is gathering source-backed context for the plan.`;
-  if (phase === 'checkpoint') return `${agent || 'Leader'} is reviewing the completed layer before releasing the next specialist.`;
-  if (phase === 'planning') return `${agent || 'Planner'} is turning the inputs into a channel and execution plan.`;
-  if (phase === 'preparation') return `${agent || 'Preparation agent'} is preparing copy, pages, packets, or handoff assets.`;
-  if (phase === 'action') return `${agent || 'Action agent'} is waiting for approval or preparing the external action packet.`;
-  if (phase === 'final_summary') return `${agent || 'Leader'} is synthesizing the specialist outputs into the final delivery.`;
+  const phaseLabel = workflowPhaseLabel(phase);
+  if (current) return `${phaseLabel}: ${agent || 'Agent'} is ${statusDisplayLabel(status || 'queued').toLowerCase()}.`;
   if (status === 'completed') return 'The order is complete. Preparing the delivery for this chat.';
   if (status === 'failed' || status === 'timed_out') return 'The order stopped. Collecting the failure reason and next step.';
-  return 'CAIt is checking the current order state and keeping this chat attached.';
+  return 'CAIt is updating the agent map.';
 }
 
 function progressNarratorOptionsForJob(job = {}) {
@@ -2001,15 +2362,20 @@ function progressNarratorOptionsForJob(job = {}) {
   const total = counts.total;
   const completed = counts.completed;
   const phase = workflowPhaseLabel(current?.sequencePhase || current?.sequence_phase || '');
-  const status = statusLabel(job);
+  const status = statusDisplayLabel(job.status || 'running');
   return {
     key: String(job.id || state.orderId || 'progress'),
     phase,
     status,
-    detail: current ? `${workflowChildDisplayLabel(current)} is ${statusDisplayLabel(current.status || 'queued')}.` : '',
+    detail: current ? `Current: ${workflowChildDisplayLabel(current)} / ${statusDisplayLabel(current.status || 'queued')}` : '',
+    total,
+    completed,
+    progressPercent: isTerminalStatus(job.status)
+      ? 100
+      : (total ? Math.max(8, Math.min(96, Math.round((completed / total) * 100))) : 12),
+    progressLabel: total ? `${completed}/${total} agents` : status,
     steps: [
       total ? `${completed}/${total} agent runs complete` : '',
-      workflowCurrentLocationLabel(job),
       job.failureReason || job.failure_reason || ''
     ].filter(Boolean),
     done: isTerminalStatus(job.status)
@@ -2018,6 +2384,10 @@ function progressNarratorOptionsForJob(job = {}) {
 
 function statusLabel(job = {}) {
   const status = String(job.status || '').trim() || 'created';
+  if (jobBlockedByLeaderQualityGate(job)) {
+    const location = workflowCurrentLocationLabel(job);
+    return `blocked by quality gate${location ? `, now: ${location}` : ''}`;
+  }
   const visibleStatus = statusDisplayLabel(status);
   if (job.jobKind === 'workflow' || job.workflow) {
     const counts = workflowAgentProgressCounts(job);
@@ -2174,8 +2544,145 @@ function createdOrderChildRuns(created = {}, options = {}) {
     agentName: String(child.agentName || child.agent_name || '').trim(),
     sequencePhase: String(child.sequencePhase || child.sequence_phase || '').trim().toLowerCase(),
     status: String(child.status || 'queued').trim().toLowerCase(),
-    adaptivePending: workflowChildIsAdaptivePending(child)
+    adaptivePending: workflowChildIsAdaptivePending(child),
+    createdAt: String(child.createdAt || child.created_at || '').trim(),
+    startedAt: String(child.startedAt || child.started_at || '').trim(),
+    updatedAt: String(child.updatedAt || child.updated_at || '').trim(),
+    completedAt: String(child.completedAt || child.completed_at || '').trim(),
+    failedAt: String(child.failedAt || child.failed_at || '').trim(),
+    failureReason: String(child.failureReason || child.failure_reason || '').trim(),
+    latestLog: String(child.latestLog || child.latest_log || '').trim()
   })).filter((child) => child.taskType || child.agentName || child.agentId);
+}
+
+function workflowAgentRunJobId(child = {}) {
+  return String(child.id || child.job_id || child.jobId || child.jobID || '').trim();
+}
+
+function rememberAgentMapRun(child = {}) {
+  const jobId = workflowAgentRunJobId(child);
+  const stable = [
+    child.sequencePhase || child.sequence_phase || '',
+    child.taskType || child.task_type || child.dispatchTaskType || child.dispatch_task_type || '',
+    child.agentId || child.agent_id || '',
+    child.agentName || child.agent_name || ''
+  ].map((item) => String(item || '').trim()).filter(Boolean).join(':');
+  const key = jobId ? `job:${jobId}` : `planned:${stable || 'agent'}:${++agentMapRunKeyCounter}`;
+  agentMapRunStore.set(key, { ...child });
+  while (agentMapRunStore.size > 250) {
+    const first = agentMapRunStore.keys().next().value;
+    if (!first) break;
+    agentMapRunStore.delete(first);
+  }
+  return key;
+}
+
+function agentRunDetailRows(run = {}, job = null) {
+  const phase = String(job?.input?._broker?.workflow?.sequencePhase || run.sequencePhase || run.sequence_phase || '').trim();
+  const task = String(job?.workflowTask || run.taskType || run.task_type || run.dispatchTaskType || run.dispatch_task_type || '').trim();
+  const agent = String(job?.workflowAgentName || run.agentName || run.agent_name || '').trim();
+  const jobId = workflowAgentRunJobId(job || run);
+  const timestamps = [
+    ['Created', job?.createdAt || run.createdAt],
+    ['Started', job?.startedAt || run.startedAt],
+    ['Updated', job?.updatedAt || run.updatedAt],
+    ['Completed', job?.completedAt || run.completedAt],
+    ['Failed', job?.failedAt || run.failedAt]
+  ].map(([label, value]) => [label, shortDateTime(value)]).filter(([, value]) => value);
+  return [
+    ['Status', statusDisplayLabel(job?.status || run.status || 'planned')],
+    phase ? ['Phase', workflowPhaseLabel(phase)] : null,
+    task ? ['Task', taskLabel(task)] : null,
+    agent ? ['Agent', agent] : null,
+    jobId ? ['Job ID', jobId.slice(0, 8)] : null,
+    ...timestamps
+  ].filter(Boolean);
+}
+
+function renderAgentRunDetailHtml(run = {}, job = null, options = {}) {
+  const loading = options.loading === true;
+  const error = String(options.error || '').trim();
+  const status = String(job?.status || run.status || 'planned').trim().toLowerCase();
+  const label = workflowChildDisplayLabel({
+    ...run,
+    agentName: job?.workflowAgentName || run.agentName || run.agent_name || ''
+  }) || 'Agent run';
+  const rows = agentRunDetailRows(run, job);
+  const latestLog = String(job?.logs?.slice?.(-1)?.[0] || run.latestLog || '').trim();
+  const failureReason = String(job?.failureReason || job?.failure_reason || run.failureReason || run.failure_reason || '').trim();
+  const text = job ? deliveryText(job) : '';
+  const files = job ? deliveryFiles(job) : [];
+  const detailBody = loading
+    ? '<div class="agent-run-empty">Loading this agent run...</div>'
+    : [
+        text ? `<pre class="agent-run-output-text">${escapeHtml(text)}</pre>` : '',
+        files.length ? renderFileCards(files) : '',
+        !text && !files.length ? '<div class="agent-run-empty">No intermediate deliverable has been recorded for this agent run yet.</div>' : ''
+      ].filter(Boolean).join('\n');
+  return [
+    '<div class="agent-run-detail-inner">',
+    '<div class="agent-run-detail-head">',
+    `<strong>${escapeHtml(label)}</strong>`,
+    `<span class="${escapeHtml(status.replace(/[^a-z0-9_-]+/g, '') || 'planned')}">${escapeHtml(statusDisplayLabel(status || 'planned'))}</span>`,
+    '</div>',
+    rows.length ? `<dl class="agent-run-meta">${rows.map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>` : '',
+    latestLog ? `<div class="chat-hint">Latest log: ${escapeHtml(latestLog)}</div>` : '',
+    failureReason ? `<div class="chat-hint error-text">Failure: ${escapeHtml(failureReason)}</div>` : '',
+    error ? `<div class="chat-hint error-text">Could not load live run detail: ${escapeHtml(error)}</div>` : '',
+    '<div class="agent-run-section">',
+    '<strong>Intermediate deliverables</strong>',
+    detailBody,
+    '</div>',
+    '</div>'
+  ].filter(Boolean).join('\n');
+}
+
+function ensureAgentRunDetailPanel(button) {
+  const card = button?.closest?.('[data-agent-progress-map]');
+  if (!card) return null;
+  let panel = card.querySelector('[data-agent-run-detail]');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.className = 'agent-run-detail-panel';
+    panel.dataset.agentRunDetail = 'true';
+    card.appendChild(panel);
+  }
+  return panel;
+}
+
+async function openAgentRunDetail(button) {
+  const key = String(button?.dataset?.agentRunKey || '').trim();
+  const run = agentMapRunStore.get(key) || {
+    id: String(button?.dataset?.agentJobId || '').trim(),
+    agentName: String(button?.dataset?.agentName || '').trim(),
+    taskType: String(button?.dataset?.agentTask || '').trim(),
+    sequencePhase: String(button?.dataset?.agentPhase || '').trim(),
+    status: String(button?.dataset?.agentStatus || '').trim()
+  };
+  const panel = ensureAgentRunDetailPanel(button);
+  if (!panel) return;
+  const card = button.closest('[data-agent-progress-map]');
+  card?.querySelectorAll('[data-agent-run-open]').forEach((node) => {
+    const selected = node === button;
+    node.classList.toggle('selected', selected);
+    node.setAttribute('aria-expanded', selected ? 'true' : 'false');
+  });
+  panel.dataset.agentRunKey = key;
+  panel.innerHTML = renderAgentRunDetailHtml(run, null, { loading: true });
+  const jobId = workflowAgentRunJobId(run);
+  if (!jobId) {
+    panel.innerHTML = renderAgentRunDetailHtml(run, null);
+    return;
+  }
+  try {
+    const job = await fetchVisibleJob(jobId, { force: true });
+    if (panel.dataset.agentRunKey !== key) return;
+    panel.innerHTML = renderAgentRunDetailHtml(run, job || null);
+  } catch (error) {
+    if (panel.dataset.agentRunKey !== key) return;
+    panel.innerHTML = renderAgentRunDetailHtml(run, null, { error: orderErrorMessage(error) });
+  }
+  scrollThread();
 }
 
 function workflowAgentMapHtml(childRuns = [], options = {}) {
@@ -2207,11 +2714,13 @@ function workflowAgentMapHtml(childRuns = [], options = {}) {
         const isCurrent = currentChildId
           ? currentChildId === String(child.id || '').trim()
           : phaseIsCurrent && ['running', 'claimed', 'dispatched', 'queued', 'blocked'].includes(status);
+        const runKey = rememberAgentMapRun(child);
+        const jobId = workflowAgentRunJobId(child);
         return [
-          `<div class="agent-map-node ${escapeHtml(statusClass)}${isCurrent ? ' current' : ''}">`,
+          `<button class="agent-map-node ${escapeHtml(statusClass)}${isCurrent ? ' current' : ''}" type="button" data-agent-run-open data-agent-run-key="${escapeHtml(runKey)}" data-agent-job-id="${escapeHtml(jobId)}" data-agent-name="${escapeHtml(workflowChildDisplayLabel(child))}" data-agent-task="${escapeHtml(child.taskType || child.dispatchTaskType || '')}" data-agent-phase="${escapeHtml(child.sequencePhase || '')}" data-agent-status="${escapeHtml(shownStatus || 'queued')}" aria-expanded="false" title="Show status and intermediate deliverables">`,
           `<strong>${escapeHtml(workflowChildDisplayLabel(child))}</strong>`,
           `<span>${escapeHtml(taskLabel(child.taskType || child.dispatchTaskType || 'work'))} · ${escapeHtml(statusDisplayLabel(shownStatus || 'queued'))}</span>`,
-          '</div>'
+          '</button>'
         ].join('');
       }),
       group.items.length > 4 ? `<span class="agent-map-more">+${group.items.length - 4} more</span>` : '',
@@ -2220,7 +2729,7 @@ function workflowAgentMapHtml(childRuns = [], options = {}) {
   }).join('\n');
   const footer = String(options.footer || '').trim();
   return [
-    `<div class="agent-map-card${options.progress ? ' progress' : ''}">`,
+    `<div class="agent-map-card${options.progress ? ' progress' : ''}" data-agent-progress-map data-agent-parent-job-id="${escapeHtml(options.parentJobId || '')}">`,
     '<div class="agent-map-head">',
     `<strong>${escapeHtml(options.title || 'Agent map')}</strong>`,
     `<span>${escapeHtml(options.subtitle || `${visibleRuns.length} visible agent runs`)}</span>`,
@@ -2231,32 +2740,81 @@ function workflowAgentMapHtml(childRuns = [], options = {}) {
   ].join('\n');
 }
 
+function showWorkflowProgressMap(job = {}, options = {}) {
+  const html = workflowPhaseProgressMapHtml(job, options);
+  if (!html) return null;
+  const key = String(job?.id || state.orderId || 'progress-map').trim();
+  const shouldScroll = options.forceScroll === true || threadIsNearBottom();
+  if (!state.progressMapArticle || !state.progressMapArticle.isConnected || state.progressMapKey !== key) {
+    state.progressMapArticle = appendMessage('assistant', html, {
+      tone: 'info',
+      label: 'Agent map',
+      record: false,
+      forceScroll: shouldScroll
+    });
+    state.progressMapKey = key;
+    return state.progressMapArticle;
+  }
+  const body = state.progressMapArticle.querySelector('.message-body') || state.progressMapArticle;
+  body.innerHTML = html;
+  if (shouldScroll) scrollThread({ force: true });
+  return state.progressMapArticle;
+}
+
+function renderInitialAgentMap(created = {}, prompt = '') {
+  const html = initialAgentMapHtml(created, prompt);
+  if (!html) return null;
+  const key = String(extractOrderId(created) || state.orderId || 'progress-map').trim();
+  const shouldScroll = threadIsNearBottom();
+  const article = appendMessage('assistant', html, {
+    tone: 'info',
+    label: 'Agent map',
+    record: false,
+    forceScroll: shouldScroll
+  });
+  state.progressMapArticle = article;
+  state.progressMapKey = key;
+  return article;
+}
+
 function initialAgentMapHtml(created = {}, prompt = '') {
   const childRuns = createdOrderChildRuns(created, { includeAdaptivePending: true });
   const isWorkflow = String(created?.mode || '').toLowerCase() === 'workflow' || Boolean(created?.workflow_job_id || created?.workflowJobId);
   if (!isWorkflow && !childRuns.length && !created?.matched_agent_id) return '';
   if (!isWorkflow) {
+    const jobId = extractOrderId(created);
+    const run = {
+      id: jobId,
+      agentId: String(created?.matched_agent_id || '').trim(),
+      agentName: String(created?.matched_agent_name || created?.matched_agent_id || 'Selected agent').trim(),
+      taskType: String(created?.task_type || created?.taskType || '').trim(),
+      sequencePhase: 'initial',
+      status: String(created?.status || 'created').trim().toLowerCase()
+    };
+    const runKey = rememberAgentMapRun(run);
+    const statusClass = run.status.replace(/[^a-z0-9_-]+/g, '') || 'created';
     return [
-      '<div class="agent-map-card">',
+      `<div class="agent-map-card" data-agent-progress-map data-agent-parent-job-id="${escapeHtml(jobId)}">`,
       '<div class="agent-map-head">',
       '<strong>Agent map</strong>',
       '<span>Initial route</span>',
       '</div>',
-      '<div class="agent-map-single">',
-      `<strong>${escapeHtml(String(created?.matched_agent_name || created?.matched_agent_id || 'Selected agent'))}</strong>`,
+      `<button class="agent-map-single agent-map-node ${escapeHtml(statusClass)}" type="button" data-agent-run-open data-agent-run-key="${escapeHtml(runKey)}" data-agent-job-id="${escapeHtml(jobId)}" data-agent-name="${escapeHtml(run.agentName)}" data-agent-task="${escapeHtml(run.taskType)}" data-agent-phase="initial" data-agent-status="${escapeHtml(run.status)}" aria-expanded="false" title="Show status and intermediate deliverables">`,
+      `<strong>${escapeHtml(run.agentName)}</strong>`,
       `<span>${escapeHtml(statusDisplayLabel(created?.status || 'created'))}</span>`,
-      '</div>',
+      '</button>',
       '</div>'
     ].join('\n');
   }
   return workflowAgentMapHtml(childRuns, {
     title: 'Agent map',
     subtitle: `${childRuns.length} visible agent runs · adaptive first layer`,
-    footer: 'Progress updates below will show the current phase and active agent. Later layers appear after leader checkpoints.'
+    footer: 'Progress updates below will show the current phase and active agent. Later layers appear after leader checkpoints.',
+    parentJobId: extractOrderId(created)
   });
 }
 
-function workflowPhaseProgressMapHtml(job = {}) {
+function workflowPhaseProgressMapHtml(job = {}, options = {}) {
   const current = workflowCurrentChildRun(job);
   const childRuns = createdOrderChildRuns(job, {
     includeAdaptivePending: true,
@@ -2264,13 +2822,19 @@ function workflowPhaseProgressMapHtml(job = {}) {
   });
   if (!childRuns.length || !current) return '';
   const phase = String(current.sequencePhase || '').trim().toLowerCase();
+  const counts = workflowAgentProgressCounts(job);
   return workflowAgentMapHtml(childRuns, {
-    title: `Now: ${workflowPhaseLabel(phase)}`,
-    subtitle: `${workflowChildDisplayLabel(current)} · ${statusDisplayLabel(current.status || 'queued')}`,
-    footer: `Order ${String(job.id || '').slice(0, 8)} moved to ${workflowPhaseLabel(phase)}.`,
+    title: 'Agent map',
+    subtitle: [
+      `${counts.completed}/${counts.total || childRuns.length} complete`,
+      `Current: ${workflowPhaseLabel(phase)} / ${workflowChildDisplayLabel(current)} / ${statusDisplayLabel(current.status || 'queued')}`,
+      options.retrying ? 'status check retrying' : ''
+    ].filter(Boolean).join(' · '),
+    footer: options.footer || '',
     currentPhase: phase,
     currentChildId: current.id,
-    progress: true
+    progress: true,
+    parentJobId: job.id || state.orderId || ''
   });
 }
 
@@ -2283,6 +2847,20 @@ function statusDisplayLabel(status = '') {
 
 function isTerminalStatus(status = '') {
   return ['completed', 'failed', 'timed_out'].includes(String(status || '').toLowerCase());
+}
+
+function jobBlockedByLeaderQualityGate(job = {}) {
+  const failureCategory = String(job?.failureCategory || job?.failure_category || '').trim().toLowerCase();
+  const completionStatus = String(job?.dispatch?.completionStatus || job?.dispatch?.completion_status || '').trim().toLowerCase();
+  return Boolean(
+    failureCategory === 'leader_quality_gate_failed'
+    || completionStatus === 'leader_quality_gate_failed'
+    || /leader quality gate/i.test(String(job?.failureReason || job?.failure_reason || ''))
+  );
+}
+
+function jobHasDeliveryResult(job = {}) {
+  return isTerminalStatus(job?.status) || jobBlockedByLeaderQualityGate(job) || jobBlockedForSaasHandoff(job);
 }
 
 function extractOrderId(created = {}) {
@@ -2301,7 +2879,7 @@ function deliveryFiles(job = {}) {
     ...(Array.isArray(deliveryReport.files) ? deliveryReport.files : [])
   ];
   const seen = new Set();
-  return visibleDeliveryFiles(candidates)
+  const files = visibleDeliveryFiles(candidates)
     .filter((file) => file && (file.content || file.name))
     .filter((file) => {
       const key = `${file.name || ''}:${String(file.content || '').slice(0, 120)}`;
@@ -2310,6 +2888,10 @@ function deliveryFiles(job = {}) {
       return true;
     })
     .slice(0, 8);
+  if (files.length || !jobHasDeliveryResult(job)) return files;
+  const allDeliverables = internalAllDeliverablesFallbackFiles(job, candidates);
+  if (allDeliverables.length) return allDeliverables;
+  return files;
 }
 
 function deliveryText(job = {}) {
@@ -2517,17 +3099,100 @@ function registerAppTransferPayload(payload = {}) {
   return id;
 }
 
+function splitAuthorityList(value = '') {
+  return String(value || '')
+    .split(/[,、\n/]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 16);
+}
+
+function authorityTextField(text = '', label = '') {
+  const safeLabel = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = String(text || '').match(new RegExp(`(?:^|\\n)\\s*${safeLabel}\\s*[:：]\\s*([^\\n]+)`, 'i'));
+  return match ? match[1].trim() : '';
+}
+
+function authorityRequestFromText(text = '') {
+  const source = String(text || '').trim();
+  if (!/(Action approval required|承認が必要|approval\/connector setup|waiting for approval|approve\/resume)/i.test(source)) return null;
+  const required = splitAuthorityList(authorityTextField(source, 'Required'));
+  const googleSources = splitAuthorityList(authorityTextField(source, 'Google sources'))
+    .map((item) => item.toLowerCase().replace(/[\s-]+/g, '_'))
+    .filter((item) => ['ga4', 'gsc', 'gmail_send'].includes(item));
+  const inferredCapabilities = [
+    ...required.filter((item) => /\./.test(item)),
+    ...Array.from(source.matchAll(/\b(?:google\.(?:send_gmail|read_gsc|read_ga4)|github\.write_pr|x\.post)\b/gi)).map((match) => match[0])
+  ];
+  const capabilities = [...new Set(inferredCapabilities.map((item) => item.trim().toLowerCase()).filter(Boolean))];
+  const connectors = [...new Set([
+    ...required.filter((item) => /^(google|github|x)$/i.test(item)).map((item) => item.toLowerCase()),
+    ...capabilities.map((item) => item.split('.')[0]).filter((item) => ['google', 'github', 'x'].includes(item))
+  ])];
+  if (!required.length && !capabilities.length && !connectors.length && !googleSources.length) return null;
+  return {
+    reason: authorityTextField(source, 'Reason') || 'External action requires approval before execution.',
+    missing_connectors: connectors,
+    missing_connector_capabilities: capabilities,
+    required_google_sources: googleSources,
+    source: 'delivery_text_approval'
+  };
+}
+
+function authorityScanTextFromJob(job = {}) {
+  const output = job.output && typeof job.output === 'object' ? job.output : {};
+  const report = output.report && typeof output.report === 'object' ? output.report : {};
+  const delivery = output.delivery && typeof output.delivery === 'object' ? output.delivery : {};
+  const deliveryReport = delivery.report && typeof delivery.report === 'object' ? delivery.report : {};
+  const executorState = job.executorState && typeof job.executorState === 'object' ? job.executorState : {};
+  const executorAuthority = executorState.authorityRequired && typeof executorState.authorityRequired === 'object'
+    ? executorState.authorityRequired
+    : {};
+  return [
+    output.summary,
+    output.text,
+    output.markdown,
+    report.summary,
+    report.nextAction,
+    report.next_action,
+    report.final_delivery_digest,
+    report.finalDeliveryDigest,
+    delivery.summary,
+    delivery.markdown,
+    deliveryReport.summary,
+    deliveryReport.nextAction,
+    deliveryReport.next_action,
+    executorAuthority.reason,
+    executorAuthority.missingConnectors,
+    executorAuthority.missingConnectorCapabilities
+  ].map((item) => String(item || '').trim()).filter(Boolean).join('\n\n');
+}
+
 function authorityRequestFromJob(job = {}) {
   const output = job.output && typeof job.output === 'object' ? job.output : {};
   const report = output.report && typeof output.report === 'object' ? output.report : {};
+  const delivery = output.delivery && typeof output.delivery === 'object' ? output.delivery : {};
+  const deliveryReport = delivery.report && typeof delivery.report === 'object' ? delivery.report : {};
+  const executorState = job.executorState && typeof job.executorState === 'object' ? job.executorState : {};
   const request = report.authority_request
     || report.authorityRequest
     || report.action_required
     || report.actionRequired
     || report.executor_request
     || report.executorRequest
+    || output.authority_request
+    || output.authorityRequest
+    || output.action_required
+    || output.actionRequired
+    || deliveryReport.authority_request
+    || deliveryReport.authorityRequest
+    || deliveryReport.action_required
+    || deliveryReport.actionRequired
+    || executorState.authorityRequired
+    || executorState.authority_required
     || null;
-  return request && typeof request === 'object' ? request : null;
+  if (request && typeof request === 'object') return request;
+  return authorityRequestFromText(authorityScanTextFromJob(job));
 }
 
 function googleIncludeGroupsFromAuthority(request = null) {
@@ -2549,6 +3214,7 @@ function googleIncludeGroupsFromAuthority(request = null) {
   const groups = [];
   if (capabilities.some((item) => /^google\.read_ga4$/i.test(String(item || '')))) groups.push('ga4');
   if (capabilities.some((item) => /^google\.read_gsc$/i.test(String(item || '')))) groups.push('gsc');
+  if (capabilities.some((item) => /^google\.send_gmail$/i.test(String(item || '')))) groups.push('gmail_send');
   return [...new Set(groups)];
 }
 
@@ -2563,9 +3229,10 @@ function googleAuthorityConnectGroups(request = null, preferredGroup = '') {
   const capabilities = listValues(request?.missing_connector_capabilities || request?.missingConnectorCapabilities || request?.capabilities);
   if (capabilities.some((item) => /^google\.read_ga4$/i.test(String(item || '')))) add('ga4');
   if (capabilities.some((item) => /^google\.read_gsc$/i.test(String(item || '')))) add('gsc');
+  if (capabilities.some((item) => /^google\.send_gmail$/i.test(String(item || '')))) add('gmail_send');
   if (!groups.length) add(preferredGroup);
   if (!groups.length) add('ga4');
-  return ['ga4', 'gsc'].filter((group) => groups.includes(group));
+  return ['ga4', 'gsc', 'gmail_send'].filter((group) => groups.includes(group));
 }
 
 function googleCapabilitiesForGroups(groups = []) {
@@ -2573,6 +3240,7 @@ function googleCapabilitiesForGroups(groups = []) {
   const capabilities = [];
   if (normalized.includes('ga4')) capabilities.push('google.read_ga4');
   if (normalized.includes('gsc')) capabilities.push('google.read_gsc');
+  if (normalized.includes('gmail_send')) capabilities.push('google.send_gmail');
   return capabilities;
 }
 
@@ -2585,6 +3253,7 @@ function googleGroupAlreadyGranted(group = '') {
   const capabilities = authGrantedGoogleCapabilities();
   if (normalized === 'ga4') return capabilities.has('google.read_ga4');
   if (normalized === 'gsc') return capabilities.has('google.read_gsc');
+  if (normalized === 'gmail_send') return capabilities.has('google.send_gmail');
   return false;
 }
 
@@ -2595,9 +3264,20 @@ function googleAuthorityMissingGroups(request = null, preferredGroup = '') {
 
 function googleConnectLabelForGroups(groups = []) {
   const normalized = Array.isArray(groups) ? groups : [];
+  if (normalized.includes('gmail_send')) return 'Connect Gmail send';
   if (normalized.includes('ga4') && normalized.includes('gsc')) return 'Connect GA4 + Search Console';
   if (normalized.includes('gsc')) return 'Connect Search Console';
   return 'Connect GA4';
+}
+
+function githubAuthHrefForApproval() {
+  saveChatOAuthReturnState('github_approval');
+  const url = new URL('/auth/github', window.location.origin);
+  url.searchParams.set('mode', 'link');
+  url.searchParams.set('return_to', currentChatReturnPath({ oauthPopup: true, oauthProvider: 'github' }));
+  url.searchParams.set('login_source', 'chatux_github_approval');
+  url.searchParams.set('visitor_id', state.visitorId);
+  return `${url.pathname}${url.search}`;
 }
 
 function authorityNeedsApproval(request = null) {
@@ -2607,6 +3287,7 @@ function authorityNeedsApproval(request = null) {
   const googleSources = listValues(request.required_google_sources || request.requiredGoogleSources || request.google_source_types || request.googleSourceTypes);
   const reason = String(request.reason || request.message || request.summary || '').trim();
   const source = String(request.source || request.reason_code || request.reasonCode || '').trim().toLowerCase();
+  if (source === 'leader_execution_approval') return false;
   const requiredChannelSelection = Boolean(request.required_channel_selection || request.requiredChannelSelection);
   const channelCandidates = listValues(request.channel_candidates || request.channelCandidates || request.channels);
   const writeCapabilities = missingCapabilities.filter((item) => (
@@ -2630,11 +3311,42 @@ function authorityNeedsApproval(request = null) {
   );
 }
 
+function authorityRequestHandledBySaasHandoffInChat(request = null) {
+  if (!request || typeof request !== 'object') return false;
+  const missingConnectors = listValues(request.missing_connectors || request.missingConnectors || request.connectors)
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter(Boolean);
+  const missingCapabilities = listValues(request.missing_connector_capabilities || request.missingConnectorCapabilities || request.capabilities)
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter(Boolean);
+  const googleSources = googleIncludeGroupsFromAuthority(request);
+  const nonXConnectors = missingConnectors.filter((item) => !/^(x|twitter)$/.test(item));
+  const nonXCapabilities = missingCapabilities.filter((item) => !/^(x\.post|x\.write|twitter\.post|social\.post)$/.test(item));
+  const mentionsXPublish = [...missingConnectors, ...missingCapabilities, request.reason, request.summary, request.message]
+    .some((item) => /(^x$|x\.post|twitter|tweet)/i.test(String(item || '')));
+  return Boolean(mentionsXPublish && !googleSources.length && !nonXConnectors.length && !nonXCapabilities.length);
+}
+
+function jobBlockedForSaasHandoff(job = {}) {
+  const status = String(job?.status || '').trim().toLowerCase();
+  if (!['blocked', 'waiting'].includes(status)) return false;
+  return authorityRequestHandledBySaasHandoffInChat(authorityRequestFromJob(job));
+}
+
 function authorityRequestIsActionableForJob(job = {}, request = null) {
   if (!authorityNeedsApproval(request)) return false;
+  if (authorityRequestHandledBySaasHandoffInChat(request)) return false;
   const source = String(request?.source || request?.reason_code || request?.reasonCode || '').trim().toLowerCase();
   const status = String(job?.status || '').trim().toLowerCase();
-  if (source === 'leader_execution_approval' && status !== 'blocked') return false;
+  const failureCategory = String(job?.failureCategory || job?.failure_category || '').trim().toLowerCase();
+  const completionStatus = String(job?.dispatch?.completionStatus || job?.dispatch?.completion_status || '').trim().toLowerCase();
+  if (
+    failureCategory === 'leader_quality_gate_failed'
+    || completionStatus === 'leader_quality_gate_failed'
+    || /leader quality gate/i.test(String(job?.failureReason || job?.failure_reason || ''))
+  ) return false;
+  const approvalWaitingStatuses = new Set(['blocked', 'waiting', 'action_required', 'needs_action', 'approval_required', 'connector_required', 'blocked_waiting_for_approval']);
+  if (source === 'leader_execution_approval' && status && !approvalWaitingStatuses.has(status)) return false;
   return true;
 }
 
@@ -2651,6 +3363,11 @@ function googleAuthHrefForAuthority(request = null, group = '') {
   url.searchParams.set('scope_group', groups.join(','));
   url.searchParams.set('capabilities', capabilities.join(','));
   return `${url.pathname}${url.search}`;
+}
+
+function approvalAnchorForJob(job = {}) {
+  const safeJobId = String(job?.id || state.orderId || '').trim();
+  return safeJobId ? `approval-${safeJobId.replace(/[^a-z0-9_-]/gi, '')}` : 'chatThread';
 }
 
 function authorityNoticeKey(job = {}) {
@@ -2673,9 +3390,9 @@ function fileLooksLikeSocialPostPack(file = {}) {
   const type = String(file?.content_type || file?.contentType || file?.type || '').toLowerCase();
   const content = String(file?.content || '').toLowerCase();
   return Boolean(
-    /social[_-\s]?post|x[_-\s]?post|tweet|twitter|post[-_\s]?pack|sns/.test(name)
-    || /social[_-\s]?post|x[_-\s]?post|tweet|twitter/.test(type)
-    || /x post draft|tweet text|post text|投稿本文|投稿ドラフト/.test(content)
+    /social[_-\s]?post|x[_-\s]?(?:post|ops)|tweet|twitter|post[-_\s]?pack|sns/.test(name)
+    || /social[_-\s]?post|x[_-\s]?(?:post|ops)|tweet|twitter/.test(type)
+    || /x ops|x post draft|tweet text|post text|approval packet|投稿本文|投稿ドラフト/.test(content)
   );
 }
 
@@ -2686,7 +3403,7 @@ function xPostDraftFromJob(job = {}) {
     ...files.filter((file) => !fileLooksLikeSocialPostPack(file))
   ];
   for (const file of orderedFiles) {
-    const text = extractSocialPostTextFromDeliveryContent(file?.content || '', { maxLength: 280 });
+    const text = extractSocialPostTextFromDeliveryContent(file?.content || '', { maxLength: 1200 });
     if (text) {
       return {
         text,
@@ -2695,7 +3412,7 @@ function xPostDraftFromJob(job = {}) {
     }
   }
   const summaryText = deliveryText(job);
-  const text = extractSocialPostTextFromDeliveryContent(summaryText, { maxLength: 280 });
+  const text = extractSocialPostTextFromDeliveryContent(summaryText, { maxLength: 1200 });
   return text ? { text, source: 'delivery summary' } : null;
 }
 
@@ -2773,16 +3490,7 @@ function xStrategyContextFromJob(job = {}) {
 }
 
 function xPostConnectHint() {
-  if (!state.auth?.loggedIn) {
-    return `<a class="primary-btn inline-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in</a>`;
-  }
-  if (state.auth?.xConfigured === false || state.auth?.xTokenEncryptionConfigured === false) {
-    return '<span class="chat-hint">X OAuth is not configured for this environment.</span>';
-  }
-  if (state.auth?.xLinked || state.auth?.xAuthorized) {
-    return '<span class="chat-hint">Connected X account will be checked before posting.</span>';
-  }
-  return xConnectLinkHtml('Connect X', 'ghost');
+  return '<span class="chat-hint">X account connection and final publishing are handled inside X Client Ops, not in chat.</span>';
 }
 
 function xClientOpsHandoffUrl(jobId = '', draft = {}) {
@@ -2817,20 +3525,64 @@ function xClientOpsPayloadFromUrl(value = '') {
   };
 }
 
+function appHandoffMarkdownFieldValue(markdown = '', labels = []) {
+  const source = String(markdown || '').replace(/\r\n/g, '\n');
+  for (const label of labels) {
+    const safeLabel = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const field = source.match(new RegExp(`(?:^|\\n)\\s*(?:[-*]\\s*)?(?:\\*\\*)?${safeLabel}(?:\\*\\*)?\\s*[:：]\\s*([^\\n]+)`, 'i'));
+    if (field?.[1]) return field[1].trim();
+  }
+  return '';
+}
+
+function appHandoffSlugFromTitle(value = '') {
+  const slug = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug ? `/${slug}` : '';
+}
+
+function appHandoffFileMetadata(file = {}) {
+  const content = String(file?.content || '');
+  const title = appHandoffMarkdownFieldValue(content, ['Meta title', 'Page title', 'Title', 'H1', 'Headline']);
+  const meta = appHandoffMarkdownFieldValue(content, ['Meta description', 'Description']);
+  const h1 = appHandoffMarkdownFieldValue(content, ['H1', 'Headline']);
+  const keywords = appHandoffMarkdownFieldValue(content, ['Keywords', 'Meta keywords', 'Target keyword', 'Target query', 'Primary keyword', 'Keyword cluster', 'Keyword and intent']);
+  const primaryCta = appHandoffMarkdownFieldValue(content, ['Primary CTA', 'CTA', '主CTA']);
+  const secondaryCta = appHandoffMarkdownFieldValue(content, ['Secondary CTA', '副CTA']);
+  const internalLinks = appHandoffMarkdownFieldValue(content, ['Internal links', 'Internal link', '内部リンク']);
+  const ogTitle = appHandoffMarkdownFieldValue(content, ['OG title', 'Open Graph title']);
+  const ogDescription = appHandoffMarkdownFieldValue(content, ['OG description', 'Open Graph description']);
+  return {
+    ...(title ? { title, slug: appHandoffSlugFromTitle(title) } : {}),
+    ...(meta ? { meta, description: meta } : {}),
+    ...(h1 ? { h1 } : {}),
+    ...(keywords ? { keywords, target_keyword: keywords } : {}),
+    ...(primaryCta ? { primary_cta: primaryCta } : {}),
+    ...(secondaryCta ? { secondary_cta: secondaryCta } : {}),
+    ...(internalLinks ? { internal_links: internalLinks } : {}),
+    ...(ogTitle ? { og_title: ogTitle } : {}),
+    ...(ogDescription ? { og_description: ogDescription } : {})
+  };
+}
+
 function appContextFromTransferPayload(appId = '', payload = {}) {
   const manifest = appManifestById(appId) || {};
   const order = payload.order && typeof payload.order === 'object' ? payload.order : {};
   const settings = payload.settings && typeof payload.settings === 'object' ? payload.settings : {};
   const delivery = payload.delivery && typeof payload.delivery === 'object' ? payload.delivery : {};
+  const fileArtifacts = (Array.isArray(payload.files) ? payload.files : []).map((file) => ({
+    type: 'file',
+    name: file?.name || '',
+    content_type: file?.type || file?.contentType || file?.content_type || '',
+    content: file?.content || '',
+    ...appHandoffFileMetadata(file)
+  }));
   const artifacts = [
-    payload.action ? { type: 'action', title: payload.action.title || payload.title || 'Action packet', content: payload.action.text || payload.summary || '' } : null,
+    ...fileArtifacts,
     delivery.summary ? { type: 'delivery_summary', title: payload.title || 'Delivery summary', content: delivery.summary } : null,
-    ...(Array.isArray(payload.files) ? payload.files : []).map((file) => ({
-      type: 'file',
-      name: file?.name || '',
-      content_type: file?.type || '',
-      content: file?.content || ''
-    }))
+    payload.action ? { type: 'action', title: payload.action.title || payload.title || 'Action packet', content: payload.action.text || payload.summary || '' } : null
   ].filter(Boolean);
   return {
     source_app: normalizeUsageId(manifest.id || appId || 'app'),
@@ -3007,10 +3759,9 @@ function renderXPostTool(job = {}) {
     '<div class="inline-actions">',
     `<a class="primary-btn inline-btn file-action" href="${escapeHtml(xClientOpsUrl)}" target="_blank" rel="noopener noreferrer" data-x-client-ops-link="${escapeHtml(jobId)}" data-app-transfer-id="${escapeHtml(transferId)}">Open X Client Ops</a>`,
     `<button class="ghost-btn inline-btn file-action" type="button" data-x-post-copy="${escapeHtml(jobId)}">Copy X draft</button>`,
-    `<button class="ghost-btn inline-btn file-action" type="button" data-x-post-submit="${escapeHtml(jobId)}">Post via CAIt connector</button>`,
     xPostConnectHint(),
     '</div>',
-    '<span class="chat-hint">CAIt will not post automatically from a summary alone. X Client Ops or the CAIt connector still requires the final user action.</span>',
+    '<span class="chat-hint">CAIt will not post automatically from a summary alone. Open the SaaS publishing surface or copy the prepared text into the target service for the final user action.</span>',
     '</div>'
   ].filter(Boolean).join('\n');
 }
@@ -3034,7 +3785,8 @@ function appAgentGenericTransferPayload(appId = '', job = {}) {
     }),
     title: appAgentHandoffTitle(job),
     source: 'CAIt delivery',
-    summary: compactTransferText(text, 1800)
+    summary: compactTransferText(text, 1800),
+    files: deliveryFiles(job)
   };
 }
 
@@ -3090,23 +3842,259 @@ function appHandoffManifestSignalText(entry = {}) {
   ].map((item) => String(item || '').trim()).filter(Boolean).join('\n').toLowerCase();
 }
 
+const HANDOFF_ARTIFACT_CAPABILITY_ALIASES = {
+  metrics: ['analytics_context', 'ga4_packet'],
+  search_queries: ['search_console_packet', 'analytics_context'],
+  landing_pages: ['analytics_context'],
+  conversion_paths: ['analytics_context'],
+  channel_breakdown: ['analytics_context'],
+  article_draft: ['content_management'],
+  seo_page_artifact: ['content_management', 'publisher_change_set', 'site_publish_packet'],
+  landing_page_change: ['content_management', 'publisher_change_set', 'site_publish_packet'],
+  site_publish_packet: ['content_management', 'publisher_change_set'],
+  wordpress_draft_packet: ['content_management', 'publisher_change_set', 'site_publish_packet'],
+  directory_packet: ['directory_submission_packet', 'content_management'],
+  community_post_packet: ['community_post_packet', 'social_copy_packet', 'content_management'],
+  social_copy_packet: ['social_copy_packet', 'community_post_packet', 'content_management'],
+  social_post_pack: ['social_copy_packet', 'community_post_packet', 'x_post_draft', 'x_post_queue', 'social_action'],
+  x_post_packet: ['x_post_draft', 'x_post_queue', 'social_action', 'social_copy_packet'],
+  approval_request: ['approval_queue'],
+  lead_rows: ['lead_management', 'crm_packet'],
+  evidence_urls: ['lead_management', 'crm_packet'],
+  email_drafts: ['email_draft', 'outreach_review'],
+  next_actions: ['lead_management', 'outreach_review'],
+  post_text: ['x_post_draft', 'social_action'],
+  strategy: ['x_post_queue', 'social_action'],
+  delivery_summary: ['x_post_queue', 'social_action']
+};
+
+const HANDOFF_ARTIFACT_LABELS = {
+  metrics: 'Analytics metrics',
+  search_queries: 'Search query data',
+  landing_pages: 'Landing page data',
+  conversion_paths: 'Conversion path data',
+  channel_breakdown: 'Channel breakdown',
+  article_draft: 'Article draft',
+  seo_page_artifact: 'SEO page artifact',
+  landing_page_change: 'Landing page change',
+  site_publish_packet: 'Site publish packet',
+  wordpress_draft_packet: 'WordPress draft packet',
+  directory_packet: 'Directory submission packet',
+  community_post_packet: 'Community post packet',
+  social_copy_packet: 'Social copy packet',
+  social_post_pack: 'Social post pack',
+  x_post_packet: 'X post packet',
+  approval_request: 'Approval request',
+  lead_rows: 'Lead rows',
+  evidence_urls: 'Evidence URLs',
+  email_drafts: 'Email drafts',
+  next_actions: 'Next actions',
+  post_text: 'Post text',
+  strategy: 'Strategy context',
+  delivery_summary: 'Delivery summary'
+};
+
+const HANDOFF_ARTIFACT_DESTINATION_HINTS = {
+  article_draft: ['owned_site', 'wordpress_site'],
+  seo_page_artifact: ['owned_site', 'wordpress_site'],
+  landing_page_change: ['owned_site', 'wordpress_site'],
+  site_publish_packet: ['owned_site', 'wordpress_site'],
+  wordpress_draft_packet: ['wordpress_site'],
+  directory_packet: ['directory'],
+  community_post_packet: ['x', 'reddit', 'indie_hackers'],
+  social_copy_packet: ['x', 'reddit', 'indie_hackers'],
+  social_post_pack: ['x'],
+  x_post_packet: ['x'],
+  approval_request: ['owned_site', 'wordpress_site', 'directory', 'x', 'reddit', 'indie_hackers']
+};
+
+function appHandoffFileSignalText(file = {}) {
+  return [
+    file?.name,
+    file?.filename,
+    file?.type,
+    file?.content_type,
+    file?.contentType,
+    file?.summary,
+    file?.description,
+    String(file?.content || file?.body || '').slice(0, 5000)
+  ].map((item) => String(item || '').trim()).filter(Boolean).join('\n').toLowerCase();
+}
+
+function appHandoffFileLooksLikeAnalytics(file = {}, sourceText = '') {
+  const name = String(file?.name || file?.filename || '').trim().toLowerCase();
+  const contentType = String(file?.content_type || file?.contentType || file?.type || '').trim().toLowerCase();
+  const firstHeading = String(sourceText || '').match(/^#\s+(.+?)\s*$/m)?.[1] || '';
+  return /(^|[-_])data[-_]?analysis|analytics[-_]?context|ga4[-_]?packet|search[-_]?console[-_]?packet|metrics[-_]?packet/.test(name)
+    || /(analytics_context|ga4_packet|search_console_packet|metrics)/.test(contentType)
+    || /^(添付データコンテキストパケット|data context packet|acquisition analytics summary|analytics metrics)$/i.test(String(firstHeading || '').trim());
+}
+
+function appHandoffFileLooksLikeLeadOps(file = {}, sourceText = '') {
+  const name = String(file?.name || file?.filename || '').trim().toLowerCase();
+  const contentType = String(file?.content_type || file?.contentType || file?.type || '').trim().toLowerCase();
+  return /(list[-_]?creator|lead[-_]?ops|lead[-_]?rows|crm[-_]?packet)/.test(name)
+    || /(lead_rows|crm_packet|email_draft)/.test(contentType)
+    || /reviewable lead rows|lead_rows|company_name\s*\|\s*website|public_email_or_contact_path|contact_source_url|qualified lead rows|リード行/i.test(sourceText);
+}
+
+function deliveryHandoffArtifactTypes(job = {}) {
+  const types = new Set();
+  const analyticsTypes = new Set();
+  const add = (...items) => {
+    items.map(normalizeUsageId).filter(Boolean).forEach((item) => types.add(item));
+  };
+  const addAnalytics = (...items) => {
+    items.map(normalizeUsageId).filter(Boolean).forEach((item) => analyticsTypes.add(item));
+  };
+  const files = deliveryFiles(job);
+
+  if (xPostDraftFromJob(job)?.text) {
+    add('post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet');
+  }
+
+  for (const file of files) {
+    const sourceText = appHandoffFileSignalText(file);
+    if (!sourceText) continue;
+
+    if (appHandoffFileLooksLikeAnalytics(file, sourceText) && /(ga4|google analytics|search console|\bgsc\b|search_queries|search_console_packet|ga4_packet|sessions|conversion_rate|channel_breakdown|landing_pages|analytics_context|サーチコンソール|アナリティクス)/i.test(sourceText)) {
+      addAnalytics('metrics', 'search_queries', 'landing_pages', 'conversion_paths', 'channel_breakdown');
+    }
+    if (/(seo page artifact|seo-agent-delivery|keyword and intent|meta description|page structure draft|h1 and metadata|search-intent landing page|seo_page_artifact)/i.test(sourceText)) {
+      add('seo_page_artifact', 'landing_page_change');
+    }
+    if (/(article draft|blog post|copy artifact|conversion copy artifact|body draft|hero copy|cta copy|原稿|記事案|本文ドラフト)/i.test(sourceText)) {
+      add('article_draft');
+    }
+    if (/(landing page change|landing-page-delivery|landing_page_change|page change|hero copy|primary cta|secondary cta|internal links|ランディングページ変更)/i.test(sourceText)) {
+      add('landing_page_change');
+    }
+    if (/(wordpress|wp-json|wp-admin|site_publish_packet|wordpress_draft_packet)/i.test(sourceText)) {
+      add('site_publish_packet', 'wordpress_draft_packet');
+    }
+    if (/(directory submission|directory submission packet|directory_packet|citation|掲載パケット|ディレクトリ)/i.test(sourceText)) {
+      add('directory_packet');
+    }
+    if (/(reddit|indie hackers|community post|social copy|social_copy_packet|community_post_packet|sns|投稿案|コミュニティ)/i.test(sourceText)) {
+      add('community_post_packet', 'social_copy_packet');
+    }
+    if (/(social post pack|x post draft|x-post-delivery|x_post_packet|post_text|tweet draft|x投稿ドラフト)/i.test(sourceText)) {
+      add('post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet');
+    }
+    if (/(approval_request|approval queue|approval packet|github pr packet|pull request packet|publish_change packet|external_send packet|承認パケット|公開前パケット)/i.test(sourceText)) {
+      add('approval_request');
+    }
+    if (appHandoffFileLooksLikeLeadOps(file, sourceText)) {
+      add('lead_rows', 'evidence_urls', 'next_actions');
+    }
+    if (/(email draft|email_draft|cold email draft|outreach draft|営業メール下書き|メール下書き)/i.test(sourceText)) {
+      add('email_drafts', 'next_actions');
+    }
+  }
+
+  if (!types.size && analyticsTypes.size) {
+    analyticsTypes.forEach((item) => types.add(item));
+  }
+
+  return types;
+}
+
+function appHandoffArtifactLabel(artifactType = '') {
+  const normalized = normalizeUsageId(artifactType);
+  return HANDOFF_ARTIFACT_LABELS[normalized] || normalized.replace(/_/g, ' ');
+}
+
+function appHandoffEntryMatchesArtifact(entry = {}, artifactType = '') {
+  const normalizedType = normalizeUsageId(artifactType);
+  if (!normalizedType) return false;
+  const accepts = new Set(listValues(entry.inputContract?.accepts).map(normalizeUsageId).filter(Boolean));
+  const capabilities = new Set(listValues(entry.capabilities).map(normalizeUsageId).filter(Boolean));
+  if (accepts.has(normalizedType) || capabilities.has(normalizedType)) return true;
+  return (HANDOFF_ARTIFACT_CAPABILITY_ALIASES[normalizedType] || [])
+    .map(normalizeUsageId)
+    .some((alias) => accepts.has(alias) || capabilities.has(alias));
+}
+
+function appHandoffConnectorNotes(entry = {}, artifactType = '') {
+  const normalizedType = normalizeUsageId(artifactType);
+  const destinationConnectors = entry.inputContract?.destinationConnectors && typeof entry.inputContract.destinationConnectors === 'object'
+    ? entry.inputContract.destinationConnectors
+    : null;
+  if (destinationConnectors) {
+    const keys = (HANDOFF_ARTIFACT_DESTINATION_HINTS[normalizedType] || Object.keys(destinationConnectors))
+      .filter((key, index, array) => key && array.indexOf(key) === index);
+    return keys
+      .map((key) => {
+        const destination = destinationConnectors[key];
+        if (!destination || typeof destination !== 'object') return '';
+        const connector = String(destination.connector || '').trim();
+        const capability = String(destination.capability || '').trim();
+        const method = String(destination.method || '').trim();
+        const detail = [connector, capability, method].filter(Boolean).join(' / ');
+        return detail ? `${key.replace(/_/g, ' ')}: ${detail}` : '';
+      })
+      .filter(Boolean)
+      .slice(0, 3);
+  }
+
+  const accepts = new Set(listValues(entry.inputContract?.accepts).map(normalizeUsageId).filter(Boolean));
+  const capabilities = new Set(listValues(entry.capabilities).map(normalizeUsageId).filter(Boolean));
+  const matchedCapabilities = [
+    normalizedType,
+    ...(HANDOFF_ARTIFACT_CAPABILITY_ALIASES[normalizedType] || []).map(normalizeUsageId)
+  ].filter((item, index, array) => item && array.indexOf(item) === index)
+    .filter((item) => capabilities.has(item) || accepts.has(item))
+    .slice(0, 3);
+  if (matchedCapabilities.length) return [`capability: ${matchedCapabilities.join(' / ')}`];
+
+  const requiredConnectors = listValues(entry.requiredConnectors).map(String).filter(Boolean).slice(0, 3);
+  if (requiredConnectors.length) return [`connector: ${requiredConnectors.join(' / ')}`];
+  return [];
+}
+
+function renderAppHandoffTree(job = {}, entries = []) {
+  const artifactTypes = Array.from(deliveryHandoffArtifactTypes(job));
+  const branches = artifactTypes
+    .map((artifactType) => {
+      const apps = entries
+        .filter((entry) => appHandoffEntryMatchesArtifact(entry, artifactType))
+        .map((entry) => ({
+          name: entry.name || entry.id || 'Registered app',
+          notes: appHandoffConnectorNotes(entry, artifactType)
+        }));
+      return apps.length ? { artifactType, apps } : null;
+    })
+    .filter(Boolean);
+  if (!branches.length) return '';
+
+  const branchHtml = branches.map((branch) => {
+    const appHtml = branch.apps.map((app) => {
+      const notes = app.notes.map((note) => `<span class="app-tree-connector">${escapeHtml(note)}</span>`).join('');
+      return `<li><span class="app-tree-app">${escapeHtml(app.name)}</span>${notes}</li>`;
+    }).join('');
+    return [
+      '<li>',
+      `<span class="app-tree-artifact">${escapeHtml(appHandoffArtifactLabel(branch.artifactType))}</span>`,
+      `<ul>${appHtml}</ul>`,
+      '</li>'
+    ].join('');
+  }).join('');
+
+  return [
+    '<div class="app-handoff-tree" aria-label="Preparation data app routing tree">',
+    '<strong>Preparation data routing</strong>',
+    '<div class="chat-hint">This shows which preparation artifact type will be sent to each matching app. Final publish/send actions still happen inside the app or connector.</div>',
+    `<ul>${branchHtml}</ul>`,
+    '</div>'
+  ].join('\n');
+}
+
 function appHandoffRelevanceScore(entry = {}, job = {}, options = {}) {
   const id = normalizeUsageId(entry.id || '');
   const jobText = options.jobText || appHandoffJobSignalText(job);
-  const appText = appHandoffManifestSignalText(entry);
-  const authority = authorityRequestFromJob(job) || {};
-  const childRuns = visibleWorkflowChildRuns(job.workflow?.childRuns);
-  const taskSet = new Set([
-    String(job.taskType || '').trim().toLowerCase(),
-    String(job.workflowTask || '').trim().toLowerCase(),
-    ...(Array.isArray(job.workflow?.plannedTasks) ? job.workflow.plannedTasks : []),
-    ...childRuns.flatMap((child) => [child.taskType, child.dispatchTaskType])
-  ].map((task) => String(task || '').trim().toLowerCase()).filter(Boolean));
-  const missing = [
-    ...listValues(authority.missing_connectors || authority.missingConnectors || authority.connectors),
-    ...listValues(authority.missing_connector_capabilities || authority.missingConnectorCapabilities || authority.capabilities),
-    ...listValues(authority.channel_candidates || authority.channelCandidates || authority.channels)
-  ].join(' ').toLowerCase();
+  const accepts = new Set(listValues(entry.inputContract?.accepts).map(normalizeUsageId).filter(Boolean));
+  const capabilities = new Set(listValues(entry.capabilities).map(normalizeUsageId).filter(Boolean));
+  const artifactTypes = deliveryHandoffArtifactTypes(job);
   const score = { value: 0, reasons: [] };
   const add = (value, reason) => {
     if (!value) return;
@@ -3114,37 +4102,53 @@ function appHandoffRelevanceScore(entry = {}, job = {}, options = {}) {
     if (reason && !score.reasons.includes(reason)) score.reasons.push(reason);
   };
 
-  if (id === 'analytics-console') {
-    if (taskSet.has('data_analysis')) add(44, 'analytics/data lane');
-    if (/(ga4|gsc|search console|google analytics|analytics|conversion|traffic|流入|検索クエリ|サーチコンソール)/i.test(jobText)) add(30, 'analytics evidence');
-    if (/google\.read_ga4|google\.read_gsc|ga4|gsc|search_console/.test(missing)) add(34, 'Google analytics connector');
-  }
-  if (id === 'publisher-approval-studio') {
-    if ([...taskSet].some((task) => ['seo_gap', 'landing', 'writing', 'directory_submission', 'citation_ops', 'code', 'debug'].includes(task))) add(38, 'content/publishing lane');
-    if (/(article|landing|seo|directory|citation|publisher|approval|github|pull request|pr|publish|submit|掲載|承認|記事|lp|ディレクトリ)/i.test(jobText)) add(28, 'publishable artifact');
-    if (/(github|directory|publish|submit|write)/i.test(missing)) add(34, 'write approval');
-  }
-  if (id === 'lead-ops-console') {
-    if ([...taskSet].some((task) => ['list_creator', 'email_ops', 'cold_email', 'acquisition_automation'].includes(task))) add(42, 'lead/outreach lane');
-    if (/(lead|crm|email|gmail|outreach|cold email|newsletter|prospect|sales|リード|営業メール|メール)/i.test(jobText)) add(30, 'lead or email artifact');
-    if (/(email|gmail|crm|lead)/i.test(missing)) add(34, 'lead/email connector');
-  }
-  if (id === 'x-client-ops') {
-    if (xPostDraftFromJob(job)?.text) add(70, 'X post draft');
-    if (taskSet.has('x_post')) add(46, 'X action lane');
-    if (/(x post|twitter|tweet|x\.post|投稿ドラフト|x投稿)/i.test(jobText) || /(x\.post|twitter|x\b)/i.test(missing)) add(34, 'X/social action');
+  for (const artifactType of artifactTypes) {
+    if (accepts.has(artifactType)) add(70, `accepts ${artifactType}`);
+    if (capabilities.has(artifactType)) add(44, `capability ${artifactType}`);
+    for (const alias of HANDOFF_ARTIFACT_CAPABILITY_ALIASES[artifactType] || []) {
+      const normalizedAlias = normalizeUsageId(alias);
+      if (accepts.has(normalizedAlias)) add(56, `accepts ${normalizedAlias}`);
+      if (capabilities.has(normalizedAlias)) add(32, `capability ${normalizedAlias}`);
+    }
   }
 
-  const appTokens = new Set(appText.split(/[^a-z0-9_]+/).filter((token) => token.length >= 4));
-  const jobTokens = new Set(jobText.split(/[^a-z0-9_]+/).filter((token) => token.length >= 4));
-  const overlaps = [...appTokens].filter((token) => jobTokens.has(token)).slice(0, 5);
-  if (overlaps.length) add(Math.min(18, overlaps.length * 4), `matched ${overlaps.slice(0, 2).join(', ')}`);
+  if (id === 'x-client-ops' && xPostDraftFromJob(job)?.text) add(80, 'X post draft');
+  if (!accepts.size && !capabilities.size && /(^|\n)app_handoff:/i.test(jobText)) add(24, 'explicit handoff note');
 
   return score;
 }
 
+function appHandoffIsCaitManagedSurface(entry = {}) {
+  const id = normalizeUsageId(entry.id || '');
+  return APP_AGENT_MANIFESTS.some((item) => normalizeUsageId(item.id) === id);
+}
+
+function appHandoffSpecificityScore(entry = {}, job = {}) {
+  const accepts = new Set(listValues(entry.inputContract?.accepts).map(normalizeUsageId).filter(Boolean));
+  const capabilities = new Set(listValues(entry.capabilities).map(normalizeUsageId).filter(Boolean));
+  const artifactTypes = deliveryHandoffArtifactTypes(job);
+  let directMatches = 0;
+  let aliasMatches = 0;
+
+  for (const artifactType of artifactTypes) {
+    if (accepts.has(artifactType)) directMatches += 1;
+    if (capabilities.has(artifactType)) directMatches += 1;
+    for (const alias of HANDOFF_ARTIFACT_CAPABILITY_ALIASES[artifactType] || []) {
+      const normalizedAlias = normalizeUsageId(alias);
+      if (accepts.has(normalizedAlias)) aliasMatches += 1;
+      if (capabilities.has(normalizedAlias)) aliasMatches += 1;
+    }
+  }
+
+  const contractSize = accepts.size + capabilities.size;
+  const narrowContractBonus = Math.max(0, 18 - Math.min(18, contractSize));
+  const externalAppBonus = appHandoffIsCaitManagedSurface(entry) ? 0 : 12;
+  const handoffEndpointBonus = entry.handoff?.createUrl ? 4 : 0;
+  const broadContractPenalty = Math.max(0, contractSize - 4) * 12;
+  return (directMatches * 40) + (aliasMatches * 18) + narrowContractBonus + externalAppBonus + handoffEndpointBonus - broadContractPenalty;
+}
+
 function appAgentHandoffCandidates(job = {}) {
-  const hasXPostTool = Boolean(xPostDraftFromJob(job)?.text);
   const jobText = appHandoffJobSignalText(job);
   return appManifestSources()
     .map((entry) => {
@@ -3152,22 +4156,29 @@ function appAgentHandoffCandidates(job = {}) {
       return {
         ...entry,
         handoffRelevanceScore: relevance.value,
+        handoffSpecificityScore: appHandoffSpecificityScore(entry, job),
         handoffReason: relevance.reasons.slice(0, 2).join(' / ')
       };
     })
     .filter((entry) => {
       if (!entry?.id || (!entry.entryUrl && !entry.baseUrl && !entry.handoff?.createUrl)) return false;
-      if (normalizeUsageId(entry.id) === 'x-client-ops' && hasXPostTool) return false;
       if (String(entry.status || '').toLowerCase() === 'deprecated') return false;
-      if (Number(entry.handoffRelevanceScore || 0) <= 0) return false;
+      if (Number(entry.handoffRelevanceScore || 0) < 50) return false;
       return true;
     })
-    .sort((left, right) => Number(right.handoffRelevanceScore || 0) - Number(left.handoffRelevanceScore || 0))
+    .sort((left, right) => (
+      Number(right.handoffSpecificityScore || 0) - Number(left.handoffSpecificityScore || 0)
+      || Number(right.handoffRelevanceScore || 0) - Number(left.handoffRelevanceScore || 0)
+      || String(left.name || left.id || '').localeCompare(String(right.name || right.id || ''))
+    ))
     .slice(0, 3);
 }
 
 function renderAppHandoffTools(job = {}) {
-  if (String(job.status || '').trim().toLowerCase() !== 'completed') return '';
+  const status = String(job.status || '').trim().toLowerCase();
+  const hasPreparationData = deliveryFiles(job).length > 0
+    || visibleWorkflowChildRuns(job.workflow?.childRuns).some((child) => ['completed', 'failed', 'blocked', 'waiting'].includes(String(child.status || '').trim().toLowerCase()));
+  if (!['completed', 'failed', 'blocked', 'waiting'].includes(status) || !hasPreparationData) return '';
   const entries = appAgentHandoffCandidates(job);
   if (!entries.length) return '';
   const rows = entries.map((entry) => {
@@ -3194,7 +4205,8 @@ function renderAppHandoffTools(job = {}) {
   return [
     '<div class="app-handoff-card">',
     '<strong>App handoff</strong>',
-    '<div class="chat-hint">Only apps matched to this delivery, files, agent chain, connector blocker, or action lane are shown here. External execution still requires that app or connector to ask for final approval.</div>',
+    '<div class="chat-hint">Preparation-layer delivery data is already available to matching SaaS apps. Open the relevant app to publish, create an approval packet, or copy the prepared text into the target service.</div>',
+    renderAppHandoffTree(job, entries),
     rows,
     '</div>'
   ].join('\n');
@@ -3478,13 +4490,23 @@ async function refreshRecentJobs(options = {}) {
   return state.recentJobsRequest;
 }
 
-async function fetchVisibleJob(jobId = '') {
+async function fetchVisibleJob(jobId = '', options = {}) {
   const safeId = String(jobId || '').trim();
   if (!safeId) return null;
-  const cached = (Array.isArray(state.recentJobs) ? state.recentJobs : [])
-    .find((job) => String(job?.id || '').trim() === safeId);
-  if (cached) return cached;
-  const result = await api(`/api/jobs/${encodeURIComponent(safeId)}?visitor_id=${encodeURIComponent(state.visitorId)}`, { method: 'GET' });
+  if (options.force !== true) {
+    const cached = (Array.isArray(state.recentJobs) ? state.recentJobs : [])
+      .find((job) => String(job?.id || '').trim() === safeId);
+    if (cached) return cached;
+  }
+  const inspectOnly = options.progress === false || options.inspectOnly === true;
+  const query = new URLSearchParams({
+    visitor_id: state.visitorId
+  });
+  if (inspectOnly) {
+    query.set('progress', '0');
+    query.set('inspect_only', '1');
+  }
+  const result = await api(`/api/jobs/${encodeURIComponent(safeId)}?${query.toString()}`, { method: 'GET' });
   const job = result?.job && typeof result.job === 'object' ? { ...result.job, id: result.job.id || safeId } : null;
   if (job?.id) {
     state.recentJobs = [
@@ -3495,6 +4517,59 @@ async function fetchVisibleJob(jobId = '') {
     rememberAiAgentsFromJob(job);
   }
   return job;
+}
+
+function appendOrderStatusCheck(job = {}) {
+  const safeId = String(job?.id || state.orderId || '').trim();
+  if (!safeId) return;
+  const authority = authorityRequestFromJob(job);
+  const waiting = authorityRequestIsActionableForJob(job, authority);
+  const qualityBlocked = jobBlockedByLeaderQualityGate(job);
+  appendTextMessage('system', [
+    `Order #${safeId.slice(0, 8)}: ${statusLabel(job)}.`,
+    qualityBlocked ? `Blocked by leader quality gate: ${String(job.failureReason || job.failure_reason || 'Specialist output needs repair before this workflow can continue.').trim()}` : '',
+    waiting ? 'Waiting for approval or connector access. Use the approval controls in this chat to continue.' : '',
+    jobHasDeliveryResult(job) ? 'The latest delivery/result is available in this chat.' : ''
+  ].filter(Boolean).join('\n'), { label: 'Status', record: false });
+}
+
+async function approveAndResumeOrder(orderId = '') {
+  const safeId = String(orderId || '').trim();
+  if (!safeId) return;
+  setBusy(true);
+  try {
+    const result = await api(`/api/jobs/${encodeURIComponent(safeId)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({
+        confirm_approval: true,
+        visitor_id: state.visitorId,
+        source: 'chat_approval_card'
+      })
+    });
+    const job = result?.job && typeof result.job === 'object'
+      ? { ...result.job, id: result.job.id || safeId }
+      : await fetchVisibleJob(safeId, { force: true });
+    state.authorityNoticeKeys.clear();
+    rememberTrackedOrder(job?.id || safeId);
+    appendTextMessage('system', `Approval recorded for Order #${safeId.slice(0, 8)}. Resuming the workflow from the same order context.`, { label: 'Approval', record: false });
+    if (job?.id) {
+      showWorkflowProgressMap(job);
+      maybeRenderAuthorityNotice(job, { label: 'Approval required' });
+      appendOrderStatusCheck(job);
+      if (jobHasDeliveryResult(job)) renderDeliveryOnce(job, { force: true });
+      else {
+        resumeLiveProgress(job.id);
+        startPolling(job.id);
+      }
+    } else {
+      resumeLiveProgress(safeId);
+      startPolling(safeId);
+    }
+  } catch (error) {
+    appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Approval' });
+  } finally {
+    setBusy(false);
+  }
 }
 
 async function refreshRecurringOrders(options = {}) {
@@ -3628,6 +4703,42 @@ function jobUtilityRows(jobs = []) {
   return rows.length ? `<div class="utility-list">${rows.join('\n')}</div>` : utilityEmptyHtml('No chat orders are visible yet.');
 }
 
+function chatSessionUtilityRows(sessions = []) {
+  const rows = (Array.isArray(sessions) ? sessions : [])
+    .map(normalizeChatSession)
+    .filter(Boolean)
+    .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
+    .slice(0, 80)
+    .map((session) => {
+      const messageCount = Array.isArray(session.messages) ? session.messages.length : 0;
+      const orderCount = new Set([
+        session.linkedOrderId,
+        ...(Array.isArray(session.relatedOrderIds) ? session.relatedOrderIds : []),
+        ...(Array.isArray(session.activeJobIds) ? session.activeJobIds : [])
+      ].map((item) => String(item || '').trim()).filter(Boolean)).size;
+      const meta = [
+        chatSessionTimeLabel(session.updatedAt || session.createdAt),
+        messageCount ? `${messageCount} message${messageCount === 1 ? '' : 's'}` : '',
+        orderCount ? `${orderCount} related order${orderCount === 1 ? '' : 's'}` : '',
+        session.activeWork ? 'live order' : ''
+      ].filter(Boolean).join(' / ');
+      const preview = compact((Array.isArray(session.messages) ? session.messages.find((message) => message.role === 'assistant')?.body : '') || session.messages?.[0]?.body || '', 180);
+      return [
+        '<div class="utility-row">',
+        '<div class="utility-main">',
+        `<strong>${escapeHtml(session.title || 'Chat')}</strong>`,
+        meta ? `<span class="utility-meta">${escapeHtml(meta)}</span>` : '',
+        preview ? `<span>${escapeHtml(preview)}</span>` : '',
+        '</div>',
+        '<div class="utility-actions">',
+        `<button class="ghost-btn file-action" type="button" data-utility-chat-session-open="${escapeHtml(session.id)}">Open</button>`,
+        '</div>',
+        '</div>'
+      ].filter(Boolean).join('\n');
+    });
+  return rows.length ? `<div class="utility-list">${rows.join('\n')}</div>` : utilityEmptyHtml('No chat sessions are visible yet.');
+}
+
 function orderIdsFromText(value = '') {
   const text = String(value || '');
   const ids = [];
@@ -3648,8 +4759,7 @@ function orderIdsFromText(value = '') {
 function chatSessionOrderIds(session = {}) {
   const ids = [
     session.linkedOrderId,
-    ...(Array.isArray(session.activeJobIds) ? session.activeJobIds : []),
-    ...(Array.isArray(session.messages) ? session.messages.flatMap((message) => orderIdsFromText(message.body || '')) : [])
+    ...(Array.isArray(session.relatedOrderIds) ? session.relatedOrderIds : [])
   ].map((item) => String(item || '').trim()).filter(Boolean);
   return [...new Set(ids)].slice(0, 8);
 }
@@ -3657,52 +4767,27 @@ function chatSessionOrderIds(session = {}) {
 function restoredSessionOrderCardHtml(job = {}) {
   const orderId = String(job.id || '').trim();
   const status = String(job.status || '').trim().toLowerCase();
-  const terminal = isTerminalStatus(status);
-  const failed = ['failed', 'timed_out'].includes(status);
+  const qualityBlocked = jobBlockedByLeaderQualityGate(job);
+  const terminal = isTerminalStatus(status) || qualityBlocked;
+  const failed = ['failed', 'timed_out'].includes(status) || qualityBlocked;
   const completed = status === 'completed';
-  const waiting = status === 'blocked';
+  const waiting = status === 'blocked' && !qualityBlocked;
   const active = !terminal && !waiting;
   const title = [
     taskLabel(job.taskType || job.workflowTask || 'work'),
     orderId ? `#${orderId.slice(0, 8)}` : ''
   ].filter(Boolean).join(' ');
   const summary = deliveryText(job) || job.failureReason || job.prompt || '';
-  const childRuns = visibleWorkflowChildRuns(job.workflow?.childRuns);
-  const childProgress = childRuns.length
-    ? [
-        '<details class="restored-order-progress" open>',
-        '<summary>Progress</summary>',
-        '<div class="utility-list compact">',
-        ...childRuns.slice(0, 12).map((child) => {
-          const childTask = taskLabel(child.taskType || child.dispatchTaskType || child.workflowTask || 'work');
-          const childStatus = statusDisplayLabel(child.status || 'queued');
-          const childMeta = [
-            child.agentName || '',
-            child.sequencePhase ? `phase: ${child.sequencePhase}` : '',
-            child.failureReason || child.failure_reason || ''
-          ].filter(Boolean).join(' / ');
-          return [
-            '<div class="utility-row restored-progress-row">',
-            '<div class="utility-main">',
-            `<strong>${escapeHtml(childTask)}</strong>`,
-            `<span class="utility-meta">${escapeHtml(childStatus)}${childMeta ? ` / ${escapeHtml(childMeta)}` : ''}</span>`,
-            '</div>',
-            '</div>'
-          ].join('');
-        }),
-        childRuns.length > 12 ? `<div class="chat-hint">${escapeHtml(`${childRuns.length - 12} more progress entries are available in the result.`)}</div>` : '',
-        '</div>',
-        '</details>'
-      ].join('\n')
-    : '';
   const meta = [
-    `Status: ${statusLabel(job)}`,
+    `Status: ${qualityBlocked ? 'blocked by quality gate' : statusDisplayLabel(status || 'created')}`,
     job.createdAt ? `Started: ${shortDateTime(job.createdAt)}` : '',
     job.completedAt ? `Completed: ${shortDateTime(job.completedAt)}` : '',
     job.failedAt ? `Failed: ${shortDateTime(job.failedAt)}` : '',
     job.timedOutAt ? `Timed out: ${shortDateTime(job.timedOutAt)}` : ''
   ].filter(Boolean).join(' / ');
-  const hint = waiting
+  const hint = qualityBlocked
+    ? 'This order is blocked by a leader quality gate. Review the failed specialist output before preparing a retry or repair.'
+    : waiting
     ? 'This order is waiting for an approval or connector action. Review the requested action before continuing.'
     : active
       ? 'This order is still in progress. CAIt will resume polling from this chat.'
@@ -3711,7 +4796,7 @@ function restoredSessionOrderCardHtml(job = {}) {
         : 'This order ended without a successful delivery. Review the reason before preparing a retry.';
   const actions = [
     orderId ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(orderId)}">${escapeHtml(terminal ? 'Show result' : 'Check status')}</button>` : '',
-    orderId && terminal ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-retry="${escapeHtml(orderId)}">${escapeHtml(failed ? 'Prepare retry' : 'Run again')}</button>` : '',
+    orderId && terminal ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-retry="${escapeHtml(orderId)}">${escapeHtml(failed ? 'Retry as new order' : 'Run again as new order')}</button>` : '',
     orderId && completed ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-schedule="${escapeHtml(orderId)}">Schedule</button>` : ''
   ].filter(Boolean).join('');
   return [
@@ -3719,18 +4804,29 @@ function restoredSessionOrderCardHtml(job = {}) {
     `<strong>${escapeHtml(title || 'Related order')}</strong>`,
     meta ? `<div class="utility-meta">${escapeHtml(meta)}</div>` : '',
     summary ? `<div>${escapeHtml(compact(summary, 520))}</div>` : '<div>Order details are available. Open the result to inspect the delivery.</div>',
-    childProgress,
     actions ? `<div class="inline-actions">${actions}</div>` : '',
     `<span class="chat-hint">${escapeHtml(hint)}</span>`,
     '</div>'
   ].join('\n');
 }
 
-async function renderRestoredSessionOrderContext(session = {}) {
+function restoredSessionOrderContextIsCurrent(sessionId = '', viewRevision = 0) {
+  const safeSessionId = String(sessionId || '').trim();
+  const safeRevision = Number(viewRevision || 0) || 0;
+  if (safeRevision && Number(state.chatViewRevision || 0) !== safeRevision) return false;
+  if (safeSessionId && String(state.currentChatSessionId || '').trim() !== safeSessionId) return false;
+  return true;
+}
+
+async function renderRestoredSessionOrderContext(session = {}, options = {}) {
+  const sessionId = String(options.sessionId || session.id || session.sessionId || '').trim();
+  const viewRevision = Number(options.viewRevision || state.chatViewRevision || 0) || 0;
+  if (!restoredSessionOrderContextIsCurrent(sessionId, viewRevision)) return;
   const ids = chatSessionOrderIds(session);
   if (!ids.length) return;
   for (const id of ids) rememberTrackedOrder(id);
   const settled = await Promise.allSettled(ids.map((id) => fetchVisibleJob(id)));
+  if (!restoredSessionOrderContextIsCurrent(sessionId, viewRevision)) return;
   const jobs = settled
     .map((item) => item.status === 'fulfilled' ? item.value : null)
     .filter((job) => job?.id);
@@ -3744,25 +4840,70 @@ async function renderRestoredSessionOrderContext(session = {}) {
     ...jobs.map(restoredSessionOrderCardHtml),
     failures.length ? `<div class="chat-hint">${escapeHtml(`Could not load: ${failures.join(' / ')}`)}</div>` : ''
   ].filter(Boolean).join('\n\n');
-  appendMessage('system', body, { label: 'Order history', tone: jobs.some((job) => !isTerminalStatus(job.status)) ? 'warn' : 'info', record: false });
-  const activeJob = jobs.find((job) => !isTerminalStatus(job.status));
+  appendMessage('system', body, { label: 'Order history', tone: jobs.some((job) => !jobHasDeliveryResult(job)) ? 'warn' : 'info', record: false });
+  const activeJob = jobs.find((job) => !jobHasDeliveryResult(job));
   const primary = activeJob || jobs[0] || null;
   if (primary?.id) {
+    if (!restoredSessionOrderContextIsCurrent(sessionId, viewRevision)) return;
     state.orderId = primary.id;
     if (!isTerminalStatus(primary.status)) startPolling(primary.id);
   }
 }
 
 async function showChatListPanel() {
-  openUtilityModal('Chats', utilityEmptyHtml('Loading recent chats and orders...'));
+  openUtilityModal('Chats', utilityEmptyHtml('Loading chat sessions...'));
   try {
-    const jobs = await refreshRecentJobs({ force: true, limit: 30 });
+    const sessions = await refreshChatSessionHistory({ force: true });
     openUtilityModal('Chats', [
-      '<div class="chat-hint">Recent orders are restored here so completed work can be reopened after reloads.</div>',
-      jobUtilityRows(jobs)
+      '<div class="chat-hint">Chats show conversation and related orders. Live status is loaded from Order state.</div>',
+      chatSessionUtilityRows(sessions)
     ].join('\n'));
   } catch (error) {
     openUtilityModal('Chats', utilityEmptyHtml(orderErrorMessage(error)));
+  }
+}
+
+async function showDeliveryHistoryForPrompt(prompt = '') {
+  if (!isDeliveryHistoryQuestionIntentText(prompt)) return false;
+  const ja = chatLanguage(prompt) === 'ja';
+  openUtilityModal('Deliveries', utilityEmptyHtml(ja ? '完了済みの納品を読み込み中です...' : 'Loading completed deliveries...'));
+  try {
+    const directJob = state.orderId ? await fetchVisibleJob(state.orderId, { force: true }).catch(() => null) : null;
+    const jobs = await refreshRecentJobs({ force: true, limit: 50 });
+    const merged = [
+      ...(directJob?.id ? [directJob] : []),
+      ...(Array.isArray(jobs) ? jobs : [])
+    ].filter((job, index, all) => job?.id && all.findIndex((item) => String(item?.id || '') === String(job.id || '')) === index);
+    const completed = merged.filter((job) => String(job.status || '').trim().toLowerCase() === 'completed' && jobHasDeliveryResult(job));
+    const terminal = completed.length ? completed : merged.filter((job) => jobHasDeliveryResult(job));
+    const primary = (state.orderId ? terminal.find((job) => String(job.id || '') === String(state.orderId)) : null) || terminal[0] || null;
+    openUtilityModal('Deliveries', [
+      `<div class="chat-hint">${escapeHtml(ja
+        ? '完了済みまたは納品結果のあるオーダーだけを表示しています。Open でチャットに再表示できます。'
+        : 'Showing completed orders or orders with delivery results. Use Open to restore one into the chat.')}</div>`,
+      jobUtilityRows(terminal)
+    ].join('\n'));
+    if (!primary?.id) {
+      appendTextMessage('assistant', chatText(
+        'I could not find a completed delivery visible to this chat. No order was created.',
+        'このチャットから見える完了済み納品物は見つかりませんでした。新しいオーダーは作成していません。',
+        prompt
+      ), { tone: 'warn', label: 'Delivery history' });
+      return true;
+    }
+    rememberTrackedOrder(primary.id);
+    state.orderId = primary.id;
+    appendTextMessage('system', chatText(
+      `Showing the latest completed delivery I can access: Order #${primary.id.slice(0, 8)} (${statusDisplayLabel(primary.status || 'completed')}). No new order was created.`,
+      `表示できる最新の完了済み納品物を開きます: Order #${primary.id.slice(0, 8)} (${statusDisplayLabel(primary.status || 'completed')})。新しいオーダーは作成していません。`,
+      prompt
+    ), { label: 'Delivery history', record: false });
+    renderDeliveryOnce(primary, { force: true });
+    return true;
+  } catch (error) {
+    openUtilityModal('Deliveries', utilityEmptyHtml(orderErrorMessage(error)));
+    appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Delivery history' });
+    return true;
   }
 }
 
@@ -4122,16 +5263,14 @@ async function loadMoreUtilityCatalog(kind = '') {
 function showInfoPanel() {
   const auth = state.auth || {};
   const login = auth.login || auth.user?.login || auth.user?.email || '';
-  const xState = auth.xLinked || auth.xAuthorized ? 'connected' : (auth.xConfigured === false ? 'not configured' : 'not connected');
   const adminAction = auth.isPlatformAdmin || auth.admin ? '<a class="ghost-btn file-action" href="/admin">Admin</a>' : '';
   openUtilityModal('Info', [
     '<div class="utility-list">',
     '<div class="utility-row"><div class="utility-main">',
     '<strong>Account</strong>',
     `<span class="utility-meta">${escapeHtml(login || 'Not signed in')}</span>`,
-    `<span>X connector: ${escapeHtml(xState)}</span>`,
     '</div><div class="utility-actions">',
-    auth.loggedIn || login ? `${adminAction}${xConnectLinkHtml('Connect X', 'ghost')}<button class="ghost-btn file-action" type="button" data-chat-logout>Sign out</button>` : `<a class="ghost-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in</a>`,
+    auth.loggedIn || login ? `${adminAction}<button class="ghost-btn file-action" type="button" data-chat-logout>Sign out</button>` : `<a class="ghost-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in</a>`,
     '</div></div>',
     '<div class="utility-row"><div class="utility-main"><strong>Resources</strong><span class="utility-meta">Docs, terms, privacy, and help.</span></div><div class="utility-actions"><a class="ghost-btn file-action" href="/help.html">Help</a><a class="ghost-btn file-action" href="/resources.html">Resources</a></div></div>',
     '</div>'
@@ -4229,22 +5368,17 @@ function renderAuthorityRequest(job = {}) {
   const googleSources = googleIncludeGroupsFromAuthority(authority);
   const required = [...missingCapabilities, ...missingConnectors].filter(Boolean);
   const reason = String(authority.reason || authority.message || authority.summary || job.failureReason || 'External action requires approval before execution.').trim();
-  const xNeeded = required.some((item) => /(^x$|x\.post|twitter|tweet)/i.test(item));
   const googleNeeded = required.some((item) => /^google\.|^google$/i.test(item)) || googleSources.length > 0;
+  const githubNeeded = required.some((item) => /^github(?:\.|$)|github\.write_pr|git hub/i.test(item));
   const safeJobId = String(job.id || state.orderId || '').trim();
-  const approvalAnchor = safeJobId ? `approval-${safeJobId.replace(/[^a-z0-9_-]/gi, '')}` : 'chatThread';
+  const approvalAnchor = approvalAnchorForJob(job);
   const actionLinks = [];
-  if (xNeeded && !state.auth?.loggedIn) {
-    actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in</a>`);
-  } else if (xNeeded && !state.auth?.xLinked && !state.auth?.xAuthorized && state.auth?.xConfigured !== false && state.auth?.xTokenEncryptionConfigured !== false) {
-    actionLinks.push(xConnectLinkHtml('Connect X', 'primary'));
-  } else if (xNeeded && safeJobId) {
-    actionLinks.push(`<button class="primary-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(safeJobId)}">Resume X approval</button>`);
-  }
   if (googleNeeded && !state.auth?.loggedIn) {
     actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in with Google</a>`);
   } else if (googleNeeded) {
-    const nextGoogleGroup = googleSources.includes('ga4') ? 'ga4' : (googleSources.includes('gsc') ? 'gsc' : (missingCapabilities.includes('google.read_gsc') ? 'gsc' : 'ga4'));
+    const nextGoogleGroup = missingCapabilities.includes('google.send_gmail')
+      ? 'gmail_send'
+      : (googleSources.includes('ga4') ? 'ga4' : (googleSources.includes('gsc') ? 'gsc' : (missingCapabilities.includes('google.read_gsc') ? 'gsc' : 'ga4')));
     const googleGroups = googleAuthorityMissingGroups(authority, nextGoogleGroup);
     if (googleGroups.length) {
       const googleAuthority = {
@@ -4253,12 +5387,21 @@ function renderAuthorityRequest(job = {}) {
         missing_connector_capabilities: googleCapabilitiesForGroups(googleGroups)
       };
       actionLinks.push(`<a class="primary-btn inline-btn file-action" data-chat-oauth-popup="google" href="${escapeHtml(googleAuthHrefForAuthority(googleAuthority, googleGroups[0]))}">${escapeHtml(googleConnectLabelForGroups(googleGroups))}</a>`);
-    } else if (safeJobId) {
-      actionLinks.push(`<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(safeJobId)}">Check status</button>`);
     }
   }
-  if (safeJobId && !actionLinks.some((html) => html.includes('data-chat-order-open='))) {
-    actionLinks.push(`<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(safeJobId)}">Open chat approval</button>`);
+  if (githubNeeded && !state.auth?.loggedIn) {
+    actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(loginHref('github'))}">Sign in with GitHub</a>`);
+  } else if (githubNeeded && !state.auth?.githubAuthorized && !state.auth?.githubLinked) {
+    actionLinks.push(`<a class="primary-btn inline-btn file-action" data-chat-oauth-popup="github" href="${escapeHtml(githubAuthHrefForApproval())}">Connect GitHub</a>`);
+  } else if (githubNeeded && !state.auth?.githubAuthorized) {
+    actionLinks.push(`<a class="primary-btn inline-btn file-action" data-chat-oauth-popup="github" href="${escapeHtml(githubAuthHrefForApproval())}">Refresh GitHub access</a>`);
+  }
+  if (safeJobId) {
+    const approvalLabel = actionLinks.length
+      ? 'I connected it. Resume order'
+      : 'Approve and resume order';
+    const style = actionLinks.length ? 'ghost' : 'primary';
+    actionLinks.push(`<button class="${style}-btn inline-btn file-action" type="button" data-chat-order-approve="${escapeHtml(safeJobId)}">${escapeHtml(approvalLabel)}</button>`);
   }
   return [
     `<div class="approval-card" id="${escapeHtml(approvalAnchor)}">`,
@@ -4275,10 +5418,17 @@ function renderAuthorityRequest(job = {}) {
 
 function maybeRenderAuthorityNotice(job = {}, options = {}) {
   const key = authorityNoticeKey(job);
-  if (!key || state.authorityNoticeKeys.has(key)) return false;
-  state.authorityNoticeKeys.add(key);
+  if (!key) return false;
   const body = renderAuthorityRequest(job);
   if (!body) return false;
+  const existing = document.getElementById(approvalAnchorForJob(job));
+  if (existing) {
+    existing.outerHTML = body;
+    state.authorityNoticeKeys.add(key);
+    return true;
+  }
+  if (state.authorityNoticeKeys.has(key)) return false;
+  state.authorityNoticeKeys.add(key);
   appendMessage('assistant', body, {
     tone: 'warn',
     label: options.label || 'Approval required'
@@ -4320,15 +5470,99 @@ function renderFileCards(files = []) {
   return [bundleActions, cards].filter(Boolean).join('');
 }
 
+function retryReusableArtifactEntries(job = {}) {
+  const status = String(job.status || '').trim().toLowerCase();
+  if (!['failed', 'timed_out'].includes(status) && !jobBlockedByLeaderQualityGate(job)) return [];
+  const sourceOrderId = String(job.id || '').trim();
+  const seenTasks = new Set();
+  return deliveryFiles(job)
+    .map((file) => {
+      const taskType = String(file.source_task_type || file.sourceTaskType || '').trim().toLowerCase();
+      const sourceRunId = String(file.source_run_id || file.sourceRunId || '').trim();
+      const content = String(file.content || '').trim();
+      if (!taskType || taskType.endsWith('_leader') || !sourceRunId || !content) return null;
+      if (seenTasks.has(taskType)) return null;
+      seenTasks.add(taskType);
+      return {
+        file,
+        taskType,
+        sourceRunId,
+        sourceOrderId,
+        agentName: String(file.source_agent_name || file.sourceAgentName || taskLabel(taskType)).trim(),
+        fileName: String(file.name || `${taskType}-delivery.md`).trim() || `${taskType}-delivery.md`,
+        summary: String(file.summary || file.reason || '').trim()
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function selectedRetryReuseArtifactsForOrder(orderId = '') {
+  const safeOrderId = String(orderId || '').trim();
+  if (!safeOrderId) return [];
+  return [...document.querySelectorAll(`[data-retry-reuse-order="${CSS.escape(safeOrderId)}"][data-retry-reuse-artifact]:checked`)]
+    .map((input) => {
+      const file = deliveryFileStore.get(String(input.dataset.fileId || ''));
+      const taskType = String(input.dataset.taskType || '').trim().toLowerCase();
+      const sourceRunId = String(input.dataset.sourceRunId || '').trim();
+      if (!file || !taskType || !sourceRunId || !String(file.content || '').trim()) return null;
+      return {
+        task_type: taskType,
+        taskType,
+        source_order_id: safeOrderId,
+        sourceOrderId: safeOrderId,
+        source_run_id: sourceRunId,
+        sourceRunId,
+        file_name: file.name || `${taskType}-delivery.md`,
+        fileName: file.name || `${taskType}-delivery.md`,
+        content: String(file.content || ''),
+        type: file.type || 'text/markdown',
+        content_type: file.content_type || file.contentType || 'reused_agent_delivery',
+        source_agent_name: String(input.dataset.agentName || file.source_agent_name || file.sourceAgentName || '').trim(),
+        user_selected: true,
+        userSelected: true,
+        selected_at: new Date().toISOString()
+      };
+    })
+    .filter(Boolean);
+}
+
+function renderRetryReuseControls(job = {}) {
+  const orderId = String(job.id || '').trim();
+  const artifacts = retryReusableArtifactEntries(job);
+  if (!orderId || !artifacts.length) return '';
+  const rows = artifacts.map((entry) => {
+    const registered = registerDeliveryFile(entry.file, entry.fileName);
+    const label = `${taskLabel(entry.taskType)}: ${entry.fileName}`;
+    const meta = entry.agentName && entry.agentName !== taskLabel(entry.taskType)
+      ? ` (${entry.agentName})`
+      : '';
+    return [
+      '<label class="retry-reuse-row">',
+      `<input type="checkbox" data-retry-reuse-artifact="1" data-retry-reuse-order="${escapeHtml(orderId)}" data-file-id="${escapeHtml(registered.id)}" data-task-type="${escapeHtml(entry.taskType)}" data-source-run-id="${escapeHtml(entry.sourceRunId)}" data-agent-name="${escapeHtml(entry.agentName)}">`,
+      `<span>${escapeHtml(label)}${escapeHtml(meta)}</span>`,
+      '</label>'
+    ].join('');
+  }).join('');
+  return [
+    '<div class="approval-card retry-reuse-card">',
+    '<strong>Reuse completed artifacts on retry / 完了済み成果物をリトライで再利用</strong>',
+    '<div>Select only outputs you inspected and trust. Selected agent steps will be marked reused and will not run again in the new order.</div>',
+    `<div class="retry-reuse-list">${rows}</div>`,
+    '<span class="chat-hint">Nothing is reused automatically. Press Retry as new order after selecting the artifacts to carry forward.</span>',
+    '</div>'
+  ].join('\n');
+}
+
 function deliveryOrderActionsHtml(job = {}) {
   const orderId = String(job.id || '').trim();
-  if (!orderId || !isTerminalStatus(job.status)) return '';
+  if (!orderId || !jobHasDeliveryResult(job)) return '';
   const status = String(job.status || '').trim().toLowerCase();
-  const failed = ['failed', 'timed_out'].includes(status);
+  const failed = ['failed', 'timed_out'].includes(status) || jobBlockedByLeaderQualityGate(job);
   const completed = status === 'completed';
   const actions = [
-    `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(orderId)}">Check status</button>`,
-    failed ? `<button class="primary-btn inline-btn file-action" type="button" data-chat-order-retry="${escapeHtml(orderId)}">Prepare retry</button>` : '',
+    `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(orderId)}">${escapeHtml(completed ? 'Review delivery' : 'Check status')}</button>`,
+    failed ? `<button class="primary-btn inline-btn file-action" type="button" data-chat-order-retry="${escapeHtml(orderId)}">Retry as new order</button>` : '',
     completed ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-schedule="${escapeHtml(orderId)}">Schedule</button>` : ''
   ].filter(Boolean).join('');
   return actions ? `<div class="inline-actions">${actions}</div>` : '';
@@ -4338,30 +5572,120 @@ function renderDelivery(job = {}) {
   rememberAiAgentsFromJob(job);
   const files = deliveryFiles(job);
   const text = deliveryText(job) || `Order ${job.id || ''} is ${statusDisplayLabel(job.status || 'updated')}.`;
+  const status = String(job.status || '').trim().toLowerCase();
+  const failed = ['failed', 'timed_out'].includes(status) || jobBlockedByLeaderQualityGate(job);
+  const completed = status === 'completed';
+  const heading = failed ? 'Order failed' : 'Delivery update';
   const body = [
     renderAuthorityRequest(job),
+    renderRetryReuseControls(job),
     deliveryOrderActionsHtml(job),
     renderXPostTool(job),
     renderAppHandoffTools(job),
-    `<strong>Delivery update</strong>\n${escapeHtml(text)}`,
+    `<strong>${escapeHtml(heading)}</strong>\n${escapeHtml(text)}`,
     files.length ? renderFileCards(files) : ''
   ].filter(Boolean).join('\n\n');
-  appendMessage(isTerminalStatus(job.status) ? 'assistant' : 'system', body, {
-    tone: job.status === 'completed' ? 'ok' : (job.status === 'failed' || job.status === 'timed_out' ? 'error' : (job.status === 'blocked' ? 'warn' : '')),
-    label: isTerminalStatus(job.status) ? 'Delivery' : 'Progress'
+  appendMessage(jobHasDeliveryResult(job) ? 'assistant' : 'system', body, {
+    tone: completed ? 'ok' : (failed ? 'error' : (job.status === 'blocked' ? 'warn' : '')),
+    label: completed ? 'Review' : (jobHasDeliveryResult(job) ? 'Delivery' : 'Order')
   });
 }
 
 function renderDeliveryOnce(job = {}, options = {}) {
   const safeId = String(job?.id || '').trim();
-  if (!safeId || !isTerminalStatus(job.status)) return false;
+  if (!safeId || !jobHasDeliveryResult(job)) return false;
   if (state.deliveredOrderIds.has(safeId) && !options.force) return false;
   rememberTrackedOrder(safeId);
-  if (safeId === state.orderId || state.progressNarratorKey === safeId) {
-    stopLiveProgressNarrator(progressNarratorTextForJob(job), progressNarratorOptionsForJob(job));
-  }
+  notifyOrderMilestone(job);
+  showWorkflowProgressMap(job, { footer: jobHasDeliveryResult(job) ? 'Workflow finished.' : '' });
   renderDelivery(job);
   markOrderDelivered(safeId);
+  return true;
+}
+
+function orderMilestoneState(job = {}, options = {}) {
+  const explicit = String(options.state || options.orderState || '').trim().toLowerCase();
+  if (explicit) return explicit;
+  const status = String(job?.status || '').trim().toLowerCase();
+  const reviewStatus = String(job?.reviewStatus || job?.review_status || job?.output?.reviewStatus || job?.output?.review_status || job?.output?.delivery?.reviewStatus || '').trim().toLowerCase();
+  if (['approved', 'accepted', 'done'].includes(reviewStatus)) return 'done';
+  if (['failed', 'timed_out'].includes(status)) return 'failed';
+  if (['cancelled', 'canceled'].includes(status)) return 'cancelled';
+  if (status === 'blocked') return 'blocked';
+  if (status === 'completed') return 'review';
+  if (['revision', 'revising'].includes(status)) return 'revision';
+  if (status === 'submitted') return 'submitted';
+  if (status === 'planning') return 'planning';
+  if (status === 'assigned' || status === 'claimed') return 'assigned';
+  if (['running', 'dispatched'].includes(status) || job.startedAt || job.started_at || job.dispatchedAt || job.dispatched_at) return 'running';
+  if (['queued', 'created', 'pending'].includes(status)) {
+    if (job.assignedAgentId || job.assigned_agent_id || job.workflow || job.jobKind === 'workflow') return 'assigned';
+    return 'planning';
+  }
+  return status || 'submitted';
+}
+
+function orderMilestoneMessage(job = {}, options = {}) {
+  const orderState = orderMilestoneState(job, options);
+  const orderId = String(job?.id || options.orderId || state.orderId || '').trim();
+  const shortId = orderId ? `#${orderId.slice(0, 8)}` : 'order';
+  const prompt = String(job?.originalPrompt || job?.original_prompt || job?.prompt || options.prompt || '').trim();
+  const title = prompt ? ` "${compact(prompt, 72)}"` : '';
+  const prefix = `Order ${shortId}: `;
+  const messages = {
+    submitted: `${prefix}Order submitted.${title}`,
+    planning: `${prefix}Creating execution plan.`,
+    assigned: `${prefix}Worker assigned.`,
+    running: `${prefix}Work started.`,
+    blocked: `${prefix}Input required. Please review the requested approval or connector action.`,
+    review: `${prefix}Deliverable submitted. Please review.`,
+    revision: `${prefix}Revision request received. Reworking.`,
+    done: `${prefix}Completed.`,
+    failed: `${prefix}Failed. Please check the cause.`,
+    cancelled: `${prefix}Cancelled.`
+  };
+  return messages[orderState] || `${prefix}${statusDisplayLabel(orderState)}.`;
+}
+
+function orderMilestoneChatExists(orderId = '', orderState = '', message = '') {
+  const shortId = String(orderId || '').trim().slice(0, 8);
+  const needle = String(message || '').trim();
+  if (!needle) return false;
+  const statePhrase = {
+    submitted: 'Order submitted',
+    planning: 'Creating execution plan',
+    assigned: 'Worker assigned',
+    running: 'Work started',
+    blocked: 'Input required',
+    review: 'Deliverable submitted',
+    revision: 'Revision request received',
+    done: 'Completed',
+    failed: 'Failed',
+    cancelled: 'Cancelled'
+  }[String(orderState || '').trim().toLowerCase()] || '';
+  return state.chatMessages.some((entry) => {
+    const body = String(entry?.body || '').trim();
+    if (!body) return false;
+    if (body === needle) return true;
+    return Boolean(shortId && statePhrase && body.includes(`#${shortId}`) && body.includes(statePhrase));
+  });
+}
+
+function notifyOrderMilestone(job = {}, options = {}) {
+  const orderId = String(job?.id || options.orderId || state.orderId || '').trim();
+  const orderState = orderMilestoneState(job, options);
+  if (!orderId || !orderState) return false;
+  const key = `${orderId}|${orderState}`;
+  const message = orderMilestoneMessage(job, { ...options, state: orderState });
+  if (state.orderMilestoneNoticeKeys.has(key) || orderMilestoneChatExists(orderId, orderState, message)) {
+    state.orderMilestoneNoticeKeys.add(key);
+    return false;
+  }
+  state.orderMilestoneNoticeKeys.add(key);
+  appendTextMessage('system', message, {
+    tone: ['done', 'review'].includes(orderState) ? 'ok' : (['failed', 'cancelled'].includes(orderState) ? 'error' : (orderState === 'blocked' ? 'warn' : 'info')),
+    label: 'Order'
+  });
   return true;
 }
 
@@ -4393,7 +5717,9 @@ async function backfillChatDeliveries(options = {}) {
     if (!matchesTracked && !matchesRecovery) continue;
     rememberTrackedOrder(safeId);
     if (!state.orderId && matchesRecovery) state.orderId = safeId;
-    if (isTerminalStatus(job.status)) {
+    notifyOrderMilestone(job);
+    showWorkflowProgressMap(job);
+    if (jobHasDeliveryResult(job)) {
       if (options.renderTerminalDeliveries === false && !matchesRecovery) continue;
       if (renderDeliveryOnce(job, { force: options.force === true })) delivered += 1;
     } else if (!state.polling && safeId === state.orderId && !state.liveProgressStoppedOrderIds.has(safeId)) {
@@ -4409,18 +5735,28 @@ async function backfillChatDeliveries(options = {}) {
 function startDeliveryBackfillLoop(options = {}) {
   if (state.deliveryBackfill) return;
   let runs = 0;
+  const viewRevision = Number(options.viewRevision || state.chatViewRevision || 0) || 0;
+  let intervalId = null;
+  const stopLoop = () => {
+    if (intervalId) window.clearInterval(intervalId);
+    if (state.deliveryBackfill === intervalId) state.deliveryBackfill = null;
+  };
   const tick = async () => {
+    if (viewRevision && Number(state.chatViewRevision || 0) !== viewRevision) {
+      stopLoop();
+      return;
+    }
     runs += 1;
     try {
       await backfillChatDeliveries(options);
     } catch {}
     if (runs >= Number(options.maxRuns || 36)) {
-      window.clearInterval(state.deliveryBackfill);
-      state.deliveryBackfill = null;
+      stopLoop();
     }
   };
+  intervalId = window.setInterval(tick, CHATUX_BACKFILL_INTERVAL_MS);
+  state.deliveryBackfill = intervalId;
   void tick();
-  state.deliveryBackfill = window.setInterval(tick, CHATUX_BACKFILL_INTERVAL_MS);
 }
 
 function draftBrief(prompt, prepared) {
@@ -4579,7 +5915,6 @@ async function recoverAcceptedOrderAfterCreateError(payload = {}, error = null) 
   if (!shouldTry) return null;
   if (!payload._caitRecoveryNoticeShown) {
     payload._caitRecoveryNoticeShown = true;
-    appendTextMessage('system', 'The create response failed, so I am checking whether the order was saved before retrying the same request.');
   }
   payload._caitRecoveryStartedAt = payload._caitRecoveryStartedAt || Date.now();
   const recoveredBeforeRetry = await findRecoveredOrderCreatePayload(payload);
@@ -4587,7 +5922,6 @@ async function recoverAcceptedOrderAfterCreateError(payload = {}, error = null) 
   const clientOrderId = clientOrderIdFromOrderCreate(payload);
   if (!payload._caitRecoveryRetried && clientOrderId) {
     payload._caitRecoveryRetried = true;
-    appendTextMessage('system', 'No saved order was found yet. Retrying the same idempotent order request once.');
     try {
       return await api('/api/jobs', {
         method: 'POST',
@@ -4599,11 +5933,199 @@ async function recoverAcceptedOrderAfterCreateError(payload = {}, error = null) 
       throw retryError;
     }
   }
-  appendTextMessage('system', 'No saved order was found after the failed create response. The order was not accepted; retry is safe.');
   return null;
 }
 
+function intakeStoredAnswers(intake = {}) {
+  return Array.isArray(intake.stepAnswers)
+    ? intake.stepAnswers.filter((item) => item && typeof item === 'object')
+    : [];
+}
+
+function intakeQuestionList(intake = {}) {
+  return (Array.isArray(intake.questions) ? intake.questions : [])
+    .map((question) => String(question || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+function intakeStepGroups(intake = {}, sample = '') {
+  return intakeChoiceGroups(intake, sample)
+    .map((group) => ({
+      ...group,
+      initialChoices: []
+    }))
+    .filter((group) => group?.id && group?.title);
+}
+
+function intakeSteps(intake = {}) {
+  const sample = intake.originalPrompt || intake.original_prompt || '';
+  const groups = intakeStepGroups(intake, sample);
+  if (groups.length) {
+    return groups.map((group) => ({
+      type: 'choice_group',
+      id: group.id,
+      title: group.title,
+      prompt: group.hint || group.title,
+      group
+    }));
+  }
+  return intakeQuestionList(intake).map((question, index) => ({
+    type: 'question',
+    id: `question-${index + 1}`,
+    title: chatText(`Question ${index + 1}`, `質問 ${index + 1}`, sample),
+    prompt: question,
+    group: null
+  }));
+}
+
+function intakeCurrentStepIndex(intake = {}) {
+  const steps = intakeSteps(intake);
+  if (!steps.length) return 0;
+  const raw = Number(intake.currentStepIndex ?? intake.current_step_index ?? intake.currentQuestionIndex ?? intake.current_question_index ?? 0);
+  const index = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+  return Math.min(index, steps.length - 1);
+}
+
+function setIntakeCurrentStepIndex(intake = {}, index = 0) {
+  const steps = intakeSteps(intake);
+  const nextIndex = Math.max(0, Math.min(Number(index) || 0, Math.max(steps.length - 1, 0)));
+  intake.currentStepIndex = nextIndex;
+  intake.currentQuestionIndex = nextIndex;
+  return nextIndex;
+}
+
+function intakeCurrentStep(intake = {}) {
+  const steps = intakeSteps(intake);
+  if (!steps.length) return null;
+  return steps[intakeCurrentStepIndex(intake)] || steps[0] || null;
+}
+
+function intakeProgressLine(intake = {}, sample = '') {
+  const steps = intakeSteps(intake);
+  if (steps.length <= 1) return chatText('Question', '質問', sample);
+  const index = intakeCurrentStepIndex(intake);
+  return chatText(`Question ${index + 1} of ${steps.length}`, `質問 ${index + 1}/${steps.length}`, sample);
+}
+
+function intakeStepAnswerPrompt(intake = {}) {
+  const sample = intake.originalPrompt || intake.original_prompt || '';
+  return chatText(
+    'Choose one or more options, or type a short answer, then send it to continue.',
+    '選択肢は複数選べます。短く入力して送信すると次に進みます。',
+    sample
+  );
+}
+
+function intakeStepCardHtml(intake = {}) {
+  const step = intakeCurrentStep(intake);
+  if (!step?.group) return '';
+  return intakeChoiceCardsHtml(intake, intake.originalPrompt || '', {
+    groups: [step.group],
+    includeInitialChoices: false,
+    title: chatText('Answer this item', 'この項目に回答', intake.originalPrompt || ''),
+    detail: intakeStepAnswerPrompt(intake),
+    footer: chatText(
+      'Choices only fill the composer. Work starts only after the final order approval.',
+      '選択肢は入力欄に入るだけです。最後の発注承認まで実行されません。',
+      intake.originalPrompt || ''
+    )
+  });
+}
+
+function disableRenderedIntakeControls() {
+  els.chatThread?.querySelectorAll('[data-intake-choice], [data-intake-other-add], [data-intake-confirmed-edit], [data-intake-confirmed-remove]').forEach((button) => {
+    button.disabled = true;
+  });
+  els.chatThread?.querySelectorAll('[data-intake-other-input]').forEach((input) => {
+    input.disabled = true;
+  });
+}
+
+function appendPendingIntakeStep(options = {}) {
+  const intake = state.pendingIntake;
+  if (!intake) return;
+  const sample = intake.originalPrompt || '';
+  const step = intakeCurrentStep(intake);
+  if (!step) return;
+  const owner = intake.conversationOwner || { type: 'cait', label: 'Intake' };
+  const label = owner.type === 'leader' ? (owner.label || activeActorLabel('Intake')) : 'Intake';
+  const leadLine = options.includeLead === true && owner.type === 'leader'
+    ? chatText(
+        `${owner.label || 'The selected leader'} will ask one item at a time before dispatch.`,
+        `${owner.label || '選択されたリーダー'} が実行前に1項目ずつ確認します。`,
+        sample
+      )
+    : '';
+  const dataHint = step.id === 'analytics'
+    ? growthLeaderNeedsDataHint(owner.taskType || intake.taskType, sample)
+    : '';
+  appendTextMessage('assistant', [
+    options.includeMessage === true ? options.message : '',
+    leadLine,
+    `${intakeProgressLine(intake, sample)}: ${step.title}`,
+    step.prompt,
+    dataHint,
+    intakeStepAnswerPrompt(intake),
+    chatText('Nothing has been dispatched yet.', 'まだ実行も課金も発生していません。', sample)
+  ].filter(Boolean).join('\n'), { tone: 'ok', label });
+  const cardHtml = intakeStepCardHtml(intake);
+  if (cardHtml) {
+    appendMessage('assistant', cardHtml, { tone: 'ok', label: chatText('Choices', '選択肢', sample) });
+  }
+}
+
+function recordIntakeStepAnswer(intake = {}, answer = '') {
+  const step = intakeCurrentStep(intake);
+  const text = String(answer || '').trim();
+  if (!step || !text) return;
+  const answers = intakeStoredAnswers(intake);
+  answers.push({
+    id: step.id,
+    title: step.title,
+    prompt: step.prompt,
+    answer: text
+  });
+  intake.stepAnswers = answers;
+}
+
+function intakeCombinedAnswerText(intake = {}, latestAnswer = '') {
+  const answers = intakeStoredAnswers(intake);
+  if (!answers.length) return String(latestAnswer || '').trim();
+  return answers
+    .map((entry) => {
+      const title = String(entry.title || entry.prompt || 'Answer').trim();
+      const answer = String(entry.answer || '').trim();
+      return answer ? `- ${title}: ${answer}` : '';
+    })
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+function intakeAnswerLooksLikeCompleteBrief(answer = '', options = {}) {
+  const text = String(answer || '').trim();
+  if (!text) return false;
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+  if (options.allowLineCount === true && lines.length >= 3) return true;
+  if (options.allowRichParagraph === true
+    && text.length >= 80
+    && /(納品|成果|制約|対象|目標|優先|資料|データ|コネクタ|検証|レビュー|価格|原価|粗利|タイムゾーン|GitHub|repo|repository|Calendar|Gmail|deliver|output|constraint|target|priority|evidence|data)/i.test(text)
+    && (text.match(/[。、,.;；]/g) || []).length >= 3) {
+    return true;
+  }
+  const signals = [
+    /(?:https?:\/\/|www\.|[a-z0-9-]+\.[a-z]{2,})/i,
+    /(ga4|google analytics|search console|サーチコンソール|アナリティクス|sales deck|pricing|資料|LP)/i,
+    /(purchase|sales|revenue|inquir|lead|signup|trial|購入|売上|問い合わせ|リード|登録|トライアル)/i,
+    /(audience|target|customer|founder|developer|consumer|対象|ターゲット|顧客|ユーザー)/i,
+    /(channel|seo|organic|sns|social|ads|広告|自然検索|チャネル)/i,
+    /(budget|deadline|constraint|no paid|deliver|checklist|copy|asset|予算|期限|制約|納品|チェックリスト|原稿)/i
+  ];
+  return signals.filter((pattern) => pattern.test(text)).length >= 3;
+}
+
 function startIntake(response = {}, originalPrompt = '') {
+  trackChatIntakeStarted(originalPrompt, 'step_intake');
   const explicitLeaderTaskType = explicitLeaderChangeTaskTypeFromText(originalPrompt);
   const requestedLeaderOwner = explicitLeaderTaskType ? leaderOwner(explicitLeaderTaskType, 'User explicitly changed the leader.') : null;
   const lockedOwner = lockedLeaderOwnerForPrompt(originalPrompt, { leaderChangeRequested: Boolean(requestedLeaderOwner) });
@@ -4615,57 +6137,37 @@ function startIntake(response = {}, originalPrompt = '') {
     : response;
   state.pendingLeaderChange = null;
   state.pendingIntake = chatEngineBuildIntakeState(intakeResponse, originalPrompt);
+  state.pendingIntake.stepAnswers = [];
+  setIntakeCurrentStepIndex(state.pendingIntake, 0);
   setConversationOwnerFromPrepared(intakeResponse, {
     sample: originalPrompt,
     leaderChangeRequested: Boolean(requestedLeaderOwner)
   });
-  const questions = Array.isArray(state.pendingIntake.questions) ? state.pendingIntake.questions.filter(Boolean).slice(0, 4) : [];
-  const owner = state.pendingIntake.conversationOwner || conversationOwnerFromPrepared(response);
-  const label = owner.type === 'leader' ? (owner.label || activeActorLabel('Intake')) : 'Intake';
-  const leadLine = owner.type === 'leader'
-    ? chatText(
-        `${owner.label || 'The selected leader'} needs these details before dispatch.`,
-        `${owner.label || '選択されたリーダー'} が実行前に確認したい内容です。`,
-        originalPrompt
-      )
-    : '';
-  const dataHint = growthLeaderNeedsDataHint(owner.taskType || state.pendingIntake.taskType, originalPrompt);
   state.draft = null;
   state.draftRevision += 1;
   updateComposerMode();
-  appendTextMessage('assistant', [
-    response.message || 'I need a few more details before preparing or dispatching the order.',
-    leadLine,
-    state.pendingIntake.selectedAgentName ? `Selected worker: ${state.pendingIntake.selectedAgentName}` : '',
-    dataHint,
-    '',
-    chatText('Answer what you can. CAIt will not keep asking after this round:', '分かる範囲で回答してください。この回答後は追加ヒアリングを繰り返さず発注確認へ進みます:', originalPrompt),
-    ...questions.map((question, index) => `${index + 1}. ${question}`),
-    '',
-    chatText('Nothing has been dispatched yet.', 'まだ実行も課金も発生していません。', originalPrompt)
-  ].filter(Boolean).join('\n'), { tone: 'ok', label });
-  const choiceHtml = intakeChoiceCardsHtml(state.pendingIntake, originalPrompt);
-  if (choiceHtml) {
-    appendMessage('assistant', choiceHtml, { tone: 'ok', label: chatText('Choices', '選択肢', originalPrompt) });
-    seedIntakeInitialChoices(state.pendingIntake, originalPrompt);
-  }
+  appendPendingIntakeStep({
+    includeMessage: true,
+    includeLead: true,
+    message: [
+      response.message || 'I need a few more details before preparing or dispatching the order.',
+      state.pendingIntake.selectedAgentName ? `Selected worker: ${state.pendingIntake.selectedAgentName}` : ''
+    ].filter(Boolean).join('\n')
+  });
 }
 
 function growthLeaderNeedsDataHint(taskType = '', sample = '') {
-  const task = String(taskType || '').trim().toLowerCase();
-  if (!['cmo_leader', 'growth', 'marketing', 'customer_acquisition', 'seo_strategy', 'acquisition_automation'].includes(task)) return '';
+  if (!/(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics|計測|流入|seo|cvr|conversion|コンバージョン)/i.test(`${taskType}\n${sample}`)) return '';
   return chatText(
-    'If you have GA4/Search Console, answer "yes, I have GA4" and I will open Analytics Console so you can choose the Google account, property, and site. If not, say "skip analytics" and CAIt will proceed with assumptions. For X/Twitter, paste the account URL.',
-    'GA4/Search Console を持っている場合は「GA4あります」と答えてください。Analytics Console を開き、Googleアカウント、プロパティ、サイトを選べるようにします。使わない場合は「アナリティクスをスキップ」と答えれば、仮説で進めます。X/Twitter はアカウントURLを貼ってください。',
+    'If you have GA4/Search Console, answer "yes, I have GA4" and I will open Analytics Console so you can choose the Google account, property, and site. If not, say "skip analytics" and CAIt will proceed with assumptions.',
+    'GA4/Search Console を持っている場合は「GA4あります」と答えてください。Analytics Console を開き、Googleアカウント、プロパティ、サイトを選べるようにします。使わない場合は「アナリティクスをスキップ」と答えれば、仮説で進めます。',
     sample
   );
 }
 
 function orderNeedsAnalyticsContext(taskType = '', prompt = '') {
-  const task = String(taskType || '').trim().toLowerCase();
   const text = String(prompt || '').toLowerCase();
-  return ['cmo_leader', 'growth', 'marketing', 'customer_acquisition', 'seo_strategy', 'seo_gap', 'acquisition_automation'].includes(task)
-    || /(ga4|google analytics|search console|サーチコンソール|アナリティクス|流入|集客|seo|cvr|conversion|コンバージョン)/i.test(text);
+  return /(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics|計測|流入|seo|cvr|conversion|コンバージョン)/i.test(`${taskType}\n${text}`);
 }
 
 function analyticsPreOrderHintHtml(taskType = '', prompt = '') {
@@ -4706,7 +6208,7 @@ function analyticsPreOrderHintHtml(taskType = '', prompt = '') {
 function analyticsIntakeChoiceHtml(sample = '') {
   return intakeChoiceCardsHtml({
     originalPrompt: sample,
-    taskType: 'cmo_leader',
+    taskType: 'data_analysis',
     questions: [chatText('Do you want to use GA4/Search Console?', 'GA4/Search Consoleを使いますか？', sample)]
   }, sample);
 }
@@ -4864,7 +6366,7 @@ function intakeChoiceGroups(intake = {}, sample = '') {
     );
   }
 
-  if (/(goal|objective|outcome|conversion|kpi|目的|成果|ゴール|コンバージョン|登録|問い合わせ|売上|認知|集客)/i.test(text)) {
+  if (/(goal|objective|outcome|final action|action should increase|conversion|kpi|sales|revenue|purchase|inquir|lead|signup|trial|traffic|awareness|increase|目的|成果|ゴール|増やしたい行動|コンバージョン|登録|問い合わせ|売上|購入|リード|認知|集客|流入)/i.test(text)) {
     pushGroup(
       'goal',
       'Main goal',
@@ -4972,12 +6474,26 @@ function intakeChoiceGroups(intake = {}, sample = '') {
       });
     }
   });
+  const intakeGroupOrder = new Map([
+    ['service', 1],
+    ['analytics', 2],
+    ['goal', 3],
+    ['audience', 4],
+    ['constraints', 5],
+    ['channel', 6],
+    ['deliverable', 7],
+    ['direction', 8]
+  ]);
+  groups.sort((left, right) => (intakeGroupOrder.get(left.id) || 50) - (intakeGroupOrder.get(right.id) || 50));
   return groups.slice(0, 6);
 }
 
-function intakeChoiceCardsHtml(intake = {}, sample = '') {
-  const groups = intakeChoiceGroups(intake, sample);
+function intakeChoiceCardsHtml(intake = {}, sample = '', options = {}) {
+  const groups = Array.isArray(options.groups)
+    ? options.groups.filter((group) => group?.id && group?.title)
+    : intakeChoiceGroups(intake, sample);
   if (!groups.length) return '';
+  const includeInitialChoices = options.includeInitialChoices !== false;
   const initialSourceLabel = chatText('From initial request', '初回文面から', sample);
   const groupHtml = groups.map((group) => [
     '<div class="intake-choice-group">',
@@ -4994,17 +6510,17 @@ function intakeChoiceCardsHtml(intake = {}, sample = '') {
     `<input class="intake-other-input" type="text" data-intake-other-input="${escapeHtml(group.id)}" data-choice-group="${escapeHtml(group.title)}" placeholder="${escapeHtml(group.inputPlaceholder || chatText('Other: type your own answer', 'その他: 自由に入力', sample))}" aria-label="${escapeHtml(chatText(`Other answer for ${group.title}`, `${group.title} のその他回答`, sample))}" />`,
     `<button class="ghost-btn inline-btn intake-other-add" type="button" data-intake-other-add="${escapeHtml(group.id)}" data-choice-group="${escapeHtml(group.title)}">${escapeHtml(chatText('Add', '追加', sample))}</button>`,
     '</div>',
-    `<div class="intake-confirmed-list" data-intake-confirmed-list="${escapeHtml(group.id)}" data-choice-group="${escapeHtml(group.title)}"${group.initialChoices?.length ? '' : ' hidden'}>`,
-    ...(group.initialChoices || []).map((choice) => intakeConfirmedChoiceHtml(group.title, choice, initialSourceLabel, sample)),
+    `<div class="intake-confirmed-list" data-intake-confirmed-list="${escapeHtml(group.id)}" data-choice-group="${escapeHtml(group.title)}"${includeInitialChoices && group.initialChoices?.length ? '' : ' hidden'}>`,
+    ...(includeInitialChoices ? (group.initialChoices || []).map((choice) => intakeConfirmedChoiceHtml(group.title, choice, initialSourceLabel, sample)) : []),
     '</div>',
     '</div>'
   ].filter(Boolean).join('\n')).join('\n');
   return [
     '<div class="preflight-card intake-choice-card">',
-    `<strong>${escapeHtml(chatText('Choose concrete answers', '具体的な選択肢から選んでください', sample))}</strong>`,
-    `<span>${escapeHtml(chatText('Click one or more choices to add them to the answer box. You can edit or remove text before sending.', 'ボタンは複数選べます。入力欄に追加されるだけなので、送信前に編集・削除できます。', sample))}</span>`,
+    `<strong>${escapeHtml(options.title || chatText('Choose concrete answers', '具体的な選択肢から選んでください', sample))}</strong>`,
+    `<span>${escapeHtml(options.detail || chatText('Click one or more choices to add them to the answer box. You can edit or remove text before sending.', 'ボタンは複数選べます。入力欄に追加されるだけなので、送信前に編集・削除できます。', sample))}</span>`,
     groupHtml,
-    `<span class="chat-hint">${escapeHtml(chatText('Selected choices are added to the composer; nothing is dispatched until you send the answer and approve the order.', '選択内容は入力欄に入るだけです。回答送信と発注承認までは実行されません。', sample))}</span>`,
+    `<span class="chat-hint">${escapeHtml(options.footer || chatText('Selected choices are added to the composer; nothing is dispatched until you send the answer and approve the order.', '選択内容は入力欄に入るだけです。回答送信と発注承認までは実行されません。', sample))}</span>`,
     '</div>'
   ].join('\n');
 }
@@ -5253,14 +6769,22 @@ function caitAppContextAnswerLine(context = {}) {
 }
 
 function intakeHasAnalyticsQuestion(intake = {}) {
-  const source = [
+  const explicitSource = [
     intake.originalPrompt,
     intake.taskType,
-    intake.activeLeaderTaskType,
-    ...(Array.isArray(intake.questions) ? intake.questions : [])
+    intake.activeLeaderTaskType
   ].join('\n');
-  return orderNeedsAnalyticsContext(intake.taskType || intake.activeLeaderTaskType || '', intake.originalPrompt || source)
-    || /(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics console)/i.test(source);
+  return orderNeedsAnalyticsContext(intake.taskType || intake.activeLeaderTaskType || '', intake.originalPrompt || explicitSource)
+    || /(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics console)/i.test(explicitSource)
+    || intakeShouldOfferAnalyticsChoice(intake);
+}
+
+function intakeShouldOfferAnalyticsChoice(intake = {}) {
+  const prompt = String(intake.originalPrompt || '').trim();
+  if (!prompt) return false;
+  const inferredTask = inferWorkIntentTaskType(prompt);
+  if (inferredTask === 'growth' || inferredTask === 'seo' || inferredTask === 'data_analysis') return true;
+  return /(growth|go[-\s]?to[-\s]?market|gtm|acquisition|aquisition|aquire|new customers?|more users?|more sales|increase sales|increase revenue|signup|trial|marketing|traffic|organic|seo|conversion|cvr|集客|流入|認知|登録|トライアル|問い合わせ|リード|売上|購入|マーケ|自然検索)/i.test(prompt);
 }
 
 function answerSaysAnalyticsAvailable(answer = '') {
@@ -5408,7 +6932,23 @@ async function answerPendingIntake(answer = '', options = {}) {
     intake.conversationOwner = changedLeaderOwner;
     renderActiveLeaderStatus();
   }
-  const combined = chatEngineBuildIntakeCombinedPrompt(intake, text, {
+  recordIntakeStepAnswer(intake, text);
+  disableRenderedIntakeControls();
+  const steps = intakeSteps(intake);
+  const currentIndex = intakeCurrentStepIndex(intake);
+  const answeredAllAtOnce = intakeAnswerLooksLikeCompleteBrief(text, {
+    allowLineCount: currentIndex === 0,
+    allowRichParagraph: currentIndex === 0
+  });
+  if (!answeredAllAtOnce && currentIndex < steps.length - 1) {
+    setIntakeCurrentStepIndex(intake, currentIndex + 1);
+    els.promptInput.value = '';
+    updateComposerMode();
+    appendPendingIntakeStep();
+    return true;
+  }
+  const combinedAnswer = intakeCombinedAnswerText(intake, text);
+  const combined = chatEngineBuildIntakeCombinedPrompt(intake, combinedAnswer, {
     connectorContext: intake.appContextPrompt || ''
   });
   state.pendingIntake = null;
@@ -5442,6 +6982,11 @@ function orderConfirmationHtml(options = {}) {
   const selectedAgent = String(draft.selectedAgentName || draft.selected_agent_name || draft.selectedAgentId || draft.selected_agent_id || '').trim();
   const owner = conversationOwnerFromPrepared(draft);
   const lead = owner.type === 'leader' ? `${owner.label || taskLabel(owner.taskType)} (${owner.taskType})` : 'CAIt specialist router';
+  const sameContentRetry = draftIsSameContentNewOrderRetry(draft);
+  const retrySourceOrderId = retryDraftSourceOrderId(draft);
+  const reuseArtifacts = Array.isArray(draft.retryReuseArtifacts || draft.retry_reuse_artifacts)
+    ? (draft.retryReuseArtifacts || draft.retry_reuse_artifacts).filter((item) => item && (item.task_type || item.taskType))
+    : [];
   return [
     `<strong>${updated ? 'Updated order check' : 'Order check'}</strong>`,
     '',
@@ -5450,6 +6995,12 @@ function orderConfirmationHtml(options = {}) {
     `Route: ${escapeHtml(route)}`,
     selectedAgent ? `Selected worker: ${escapeHtml(selectedAgent)}` : '',
     `Reason: ${escapeHtml(reason)}`,
+    sameContentRetry
+      ? `Retry mode: ${escapeHtml(`Same content as a NEW order${retrySourceOrderId ? `; not a continuation of #${retrySourceOrderId.slice(0, 8)}` : '; not a continuation'}.`)}`
+      : '',
+    reuseArtifacts.length
+      ? `Reuse selected artifacts: ${escapeHtml(reuseArtifacts.map((item) => item.task_type || item.taskType).join(', '))}`
+      : '',
     '',
     analyticsPreOrderHintHtml(task, prompt),
     '<details class="file-card order-brief" open>',
@@ -5479,6 +7030,251 @@ function chatIntentConversationContext() {
       return content ? { role, content: content.slice(0, 900) } : null;
     })
     .filter(Boolean);
+}
+
+function recentUserChatBodies(limit = 8) {
+  return state.chatMessages
+    .filter((entry) => entry?.role === 'user')
+    .map((entry) => String(entry.body || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(-Math.max(1, Number(limit) || 8));
+}
+
+function recentAssistantClarificationCount() {
+  return state.chatMessages
+    .filter((entry) => entry?.role === 'assistant')
+    .map((entry) => String(entry.body || '').replace(/\s+/g, ' ').trim())
+    .filter((text) => /(no order or billing happened yet|no order or billing happens yet|nothing has run or been billed|まだ注文も課金も発生していません|まだ実行も課金もしていません)/i.test(text))
+    .slice(-5)
+    .length;
+}
+
+function accumulatedOrderText(latestPrompt = '') {
+  const lines = recentUserChatBodies(8);
+  const latest = String(latestPrompt || '').replace(/\s+/g, ' ').trim();
+  if (latest && !lines.some((line) => line === latest)) lines.push(latest);
+  const seen = new Set();
+  return lines
+    .map((line) => line.trim())
+    .filter((line) => {
+      const key = line.toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join('\n');
+}
+
+function firstUrlFromText(value = '') {
+  const match = String(value || '').match(/(?:https?:\/\/|www\.)[^\s<>"'）)]+|[a-z0-9-]+\.[a-z]{2,}(?:\/[^\s<>"'）)]*)?/i);
+  if (!match) return '';
+  return match[0].replace(/[、。,.]+$/g, '');
+}
+
+function matchingRecentUserLines(pattern, limit = 3) {
+  return recentUserChatBodies(10)
+    .filter((line) => pattern.test(line))
+    .slice(-Math.max(1, Number(limit) || 3));
+}
+
+function accumulatedWorkOrderReadiness(latestPrompt = '') {
+  const text = accumulatedOrderText(latestPrompt);
+  const lower = text.toLowerCase();
+  if (!text || promptInjectionGuard(text).blocked) return { ready: false };
+  const hasAcquisitionGoal = /(acquire|aquire|get|grow|increase|new customers?|customers?|users?|user acquisition|customer acquisition|aquisition|aquitisition|growth|marketing|sales|集客|顧客獲得|ユーザーを増や|ユーザー獲得|新規顧客)/i.test(text);
+  const targetUrl = firstUrlFromText(text);
+  const hasTarget = Boolean(targetUrl);
+  const hasAudience = /(engineers?|developers?|technical users?|individuals?|consumers?|founders?|operators?|対象|開発者|技術ユーザー|個人|一般消費者|ターゲット)/i.test(text);
+  const hasConversion = /(signup|sign up|trial|register|registration|conversion|lead|contact|primary conversion|登録|トライアル|問い合わせ|リード|コンバージョン)/i.test(text);
+  const hasConstraint = /(no budget|no paid ads|no ads|without ads|organic|free|low budget|広告なし|広告無し|予算なし|低予算|オーガニック)/i.test(text);
+  const hasExecuteIntent = /(action plan|do the action|do it|execute|run it|start|proceed|handle it|実行|やって|進めて|アクション|行動計画)/i.test(text);
+  const repeatedClarification = recentAssistantClarificationCount() >= 2;
+  const latestIsClarificationAnswer = /(cta|call to action|offer|product|サービス|商材|signup|sign up|登録|コンバージョン|conversion)/i.test(latestPrompt);
+  if (!(hasAcquisitionGoal && hasTarget && hasConversion && (hasAudience || hasConstraint) && (hasExecuteIntent || (repeatedClarification && latestIsClarificationAnswer)))) {
+    return { ready: false };
+  }
+
+  const audience = matchingRecentUserLines(/engineers?|developers?|technical users?|individuals?|consumers?|対象|開発者|技術|個人|一般消費者/i).join('; ');
+  const conversion = matchingRecentUserLines(/signup|sign up|trial|register|registration|conversion|登録|トライアル|コンバージョン/i, 2).join('; ');
+  const constraints = matchingRecentUserLines(/no budget|no paid ads|no ads|without ads|organic|free|low budget|広告なし|広告無し|予算なし|低予算|オーガニック/i).join('; ');
+  const offerContext = matchingRecentUserLines(/cta|call to action|offer|product|value|ai agents?|高品質|アクション|signup/i, 3).join('; ');
+  const goalLine = hasAcquisitionGoal
+    ? (chatLanguage(latestPrompt) === 'ja' ? '新規顧客/ユーザー獲得を増やす。' : 'Acquire new customers/users.')
+    : latestPrompt;
+  const prompt = [
+    'Conversation-derived work request:',
+    `Goal: ${goalLine}`,
+    `Target service: ${targetUrl}`,
+    audience ? `Target audience: ${audience}` : '',
+    conversion ? `Primary conversion/outcome: ${conversion}` : '',
+    constraints ? `Constraints: ${constraints}` : '',
+    offerContext ? `CTA/offer context: ${offerContext}` : '',
+    '',
+    'User asked for an action plan and execution. Use the accumulated details above as sufficient intake.',
+    'If the CTA, offer mechanics, account access, or external publishing target is incomplete, treat that as an assumption/blocker to resolve inside the plan and delivery. Do not ask another pre-order intake question just because the CTA is weak.',
+    'Produce concrete next actions and any approval-ready drafts or SaaS handoff artifacts needed before external publishing. Do not claim external posting, sending, publishing, or repository writes without connector or SaaS proof.',
+    '',
+    'Source conversation:',
+    text
+  ].filter(Boolean).join('\n');
+  return {
+    ready: true,
+    prompt,
+    originalPrompt: text,
+    taskType: 'growth'
+  };
+}
+
+async function prepareAccumulatedOrderIfReady(latestPrompt = '') {
+  const readiness = accumulatedWorkOrderReadiness(latestPrompt);
+  if (!readiness.ready) return false;
+  await prepareOrder(readiness.prompt, {
+    originalPrompt: readiness.originalPrompt || latestPrompt,
+    taskType: readiness.taskType || 'growth',
+    intakeAnswered: true,
+    skipOpenAiIntent: true,
+    skipLeaderChangeProposal: true
+  });
+  return true;
+}
+
+function normalizeAgentTaskTypes(agent = {}) {
+  return [
+    ...(Array.isArray(agent.taskTypes) ? agent.taskTypes : []),
+    ...(Array.isArray(agent.task_types) ? agent.task_types : []),
+    ...(Array.isArray(agent.metadata?.manifest?.task_types) ? agent.metadata.manifest.task_types : []),
+    ...(Array.isArray(agent.metadata?.manifest?.taskTypes) ? agent.metadata.manifest.taskTypes : []),
+    ...(Array.isArray(agent.metadata?.downstream_task_types) ? agent.metadata.downstream_task_types : []),
+    ...(Array.isArray(agent.metadata?.downstreamTaskTypes) ? agent.metadata.downstreamTaskTypes : [])
+  ]
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function leaderTaskTypeFromAgent(agent = {}) {
+  const taskTypes = normalizeAgentTaskTypes(agent);
+  const manifest = agent.metadata?.manifest && typeof agent.metadata.manifest === 'object' ? agent.metadata.manifest : {};
+  const roleText = [
+    agent.executionLayer,
+    agent.execution_layer,
+    agent.metadata?.layer,
+    agent.metadata?.agentRole,
+    agent.metadata?.agent_role,
+    manifest.agent_role,
+    manifest.execution_layer
+  ].map((item) => String(item || '').trim().toLowerCase()).join('\n');
+  return taskTypes.find((task) => task.endsWith('_leader'))
+    || (/\bleader\b/.test(roleText) ? taskTypes[0] || '' : '');
+}
+
+function nestedArrayValues(value = null, keys = []) {
+  const results = [];
+  const visit = (item) => {
+    if (!item) return;
+    if (Array.isArray(item)) {
+      item.forEach(visit);
+      return;
+    }
+    if (typeof item !== 'object') return;
+    keys.forEach((key) => {
+      if (Array.isArray(item[key])) results.push(...item[key]);
+    });
+    Object.values(item).forEach((child) => {
+      if (child && typeof child === 'object') visit(child);
+    });
+  };
+  visit(value);
+  return results;
+}
+
+function leaderDownstreamTaskTypesFromAgent(agent = {}) {
+  const metadata = agent.metadata && typeof agent.metadata === 'object' ? agent.metadata : {};
+  const manifest = metadata.manifest && typeof metadata.manifest === 'object' ? metadata.manifest : {};
+  const links = agent.links && typeof agent.links === 'object' ? agent.links : {};
+  const downstreamLinks = links.downstream && typeof links.downstream === 'object' ? links.downstream : {};
+  return [
+    ...(Array.isArray(metadata.downstream_task_types) ? metadata.downstream_task_types : []),
+    ...(Array.isArray(metadata.downstreamTaskTypes) ? metadata.downstreamTaskTypes : []),
+    ...(Array.isArray(manifest.downstream_task_types) ? manifest.downstream_task_types : []),
+    ...(Array.isArray(manifest.downstreamTaskTypes) ? manifest.downstreamTaskTypes : []),
+    ...(Array.isArray(downstreamLinks.task_types) ? downstreamLinks.task_types : []),
+    ...(Array.isArray(downstreamLinks.taskTypes) ? downstreamLinks.taskTypes : []),
+    ...nestedArrayValues(metadata.workflowProfile || manifest.workflowProfile || manifest.workflow_profile || metadata.leaderBehavior || manifest.leaderBehavior || manifest.leader_behavior, [
+      'tasks',
+      'downstreamTaskTypes',
+      'downstream_task_types'
+    ])
+  ]
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function bestCatalogLeaderTaskTypeForSpecialistTask(agents = [], taskType = '') {
+  const safeTask = String(taskType || '').trim().toLowerCase();
+  if (!safeTask) return '';
+  const candidates = (Array.isArray(agents) ? agents : [])
+    .map((agent) => {
+      const leaderTask = leaderTaskTypeFromAgent(agent);
+      if (!leaderTask) return null;
+      const downstream = new Set(leaderDownstreamTaskTypesFromAgent(agent));
+      const taskTypes = new Set(normalizeAgentTaskTypes(agent));
+      const exact = downstream.has(safeTask);
+      const selfMatch = taskTypes.has(safeTask);
+      if (!exact && !selfMatch) return null;
+      return {
+        leaderTask,
+        score: Number(exact) * 10 + Number(selfMatch) * 3 + Number(agent.online === true)
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.score - left.score || left.leaderTask.localeCompare(right.leaderTask));
+  return candidates[0]?.leaderTask || '';
+}
+
+async function refreshWorkerAgentsForRouting() {
+  await refreshWorkerAgents({ force: true, limit: 100 }).catch(() => state.workerAgents || []);
+  let guard = 0;
+  while (state.workerAgentsHasMore && guard < 5) {
+    guard += 1;
+    const before = state.workerAgents.length;
+    await refreshWorkerAgents({
+      force: true,
+      append: true,
+      offset: before,
+      limit: 100
+    }).catch(() => state.workerAgents || []);
+    if (state.workerAgents.length <= before) break;
+  }
+  return state.workerAgents || [];
+}
+
+function obviousStepIntakeSpecialistTaskType(prompt = '') {
+  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
+  if (!text || promptInjectionGuard(text).blocked) return '';
+  const words = text.split(/\s+/).filter(Boolean);
+  const shortEnough = words.length <= 10 || text.length <= 80;
+  const acquisitionOrGrowth = /(?:customer\s+(?:acquisition|aquisition|aquitisition)|(?:acquire|aquire|get|gain|grow)\s+(?:new\s+)?customers?|new\s+customers?|more\s+(?:users?|customers?|sales)|need\s+more\s+sales|increase\s+(?:sales|revenue|signups?|trials?)|user\s+acquisition|growth|marketing|集客|顧客獲得|ユーザーを増や|ユーザー獲得|売上.*増|登録.*増)/i.test(text);
+  const broadGuidance = /\b(?:what\s+should\s+i\s+do|what\s+do\s+i\s+do|help\s+me\s+(?:grow|market|sell)|action\s+plan|strategy)\b|どうすれば|何をすれば|施策|実行計画/i.test(text);
+  const socialDraftOrApproval = /\b(?:x|twitter|tweet|social)\b.{0,80}\b(?:post|draft|copy|approve|approved|approval|publish|publishing)\b|\b(?:post|draft|copy|approve|approval|publish|publishing)\b.{0,80}\b(?:x|twitter|tweet|social)\b|(?:x|twitter|ツイッター).{0,80}(投稿|下書き|承認|公開)|(?:投稿|下書き|承認|公開).{0,80}(x|twitter|ツイッター)/i.test(text);
+  if ((shortEnough && acquisitionOrGrowth) || acquisitionOrGrowth || broadGuidance || socialDraftOrApproval) {
+    return inferWorkIntentTaskType(text);
+  }
+  return '';
+}
+
+async function prepareObviousStepIntakeIfNeeded(prompt = '') {
+  const specialistTaskType = obviousStepIntakeSpecialistTaskType(prompt);
+  if (!specialistTaskType) return false;
+  const agents = await refreshWorkerAgentsForRouting();
+  const taskType = bestCatalogLeaderTaskTypeForSpecialistTask(agents, specialistTaskType) || specialistTaskType;
+  if (!taskType) return false;
+  await prepareOrder(prompt, {
+    originalPrompt: prompt,
+    taskType,
+    skipOpenAiIntent: true,
+    skipLeaderChangeProposal: true
+  });
+  return true;
 }
 
 function isStructuredOrderBriefText(value = '') {
@@ -5589,66 +7385,42 @@ function normalizeLlmIntakeQuestions(value = []) {
     .slice(0, 4);
 }
 
-function leaderTextHasCmoSignal(text = '', intent = '') {
-  const source = `${intent}\n${text}`;
-  return /natural_business_growth|natural_marketing_launch|growth|marketing|sales|acquisition|launch|signup|signups|trial|trials|customers?|conversion|seo|paid ads?|referral|sns|social|channels?|campaign|go[-\s]?to[-\s]?market|gtm|集客|売上|マーケ|ローンチ|会員登録|登録|トライアル|顧客獲得|広告|自然流入|オーガニック|媒体|チャネル|sns/i.test(source);
-}
-
-function leaderTextHasSpecificCpoSignal(text = '') {
-  return /(?:\bcpo\b|chief product|product leader|product strategy|product roadmap|roadmap|ux strategy|feature priorit|feature roadmap|mvp roadmap|onboarding friction|activation path|user journey|information architecture|プロダクト責任者|プロダクト戦略|ロードマップ|機能優先|機能ロードマップ|ux戦略|仮説検証計画|アイデア検証計画)/i.test(String(text || ''));
-}
-
-function leaderTextHasSpecificCtoSignal(text = '') {
-  return /(?:\bcto\b|chief technology|technical leader|engineering leader|architecture|system design|technical architecture|repo-wide|repository-wide|codebase|github repo|repository|pull request|\bpr\b|implementation plan|deploy plan|rollback plan|infra(?:structure)?|database schema|api design|技術責任者|開発責任者|アーキテクチャ|全体設計|技術設計|実装計画|デプロイ計画|ロールバック|リポジトリ|コードベース|プルリク)/i.test(String(text || ''));
-}
-
-function leaderTextHasSpecificBuildSignal(text = '') {
-  return /(?:build team|coding team|implementation team|engineering team|debug|bug|fix(?:ing)?|code change|code implementation|repo fix|開発チーム|実装チーム|複数.*(?:実装|修正|開発)|デバッグ|バグ|不具合|コード修正)/i.test(String(text || ''));
-}
-
 function leaderTaskTypeFromIntentResult(prompt = '', result = {}) {
   const text = `${prompt}\n${result?.summary || ''}\n${result?.narrowing_question || ''}`.toLowerCase();
+  return explicitLeaderTaskTypeFromText(`${result?.intent || ''}\n${text}`);
+}
+
+function taskTypeFromOpenChatIntent(result = {}) {
+  const briefTask = String(result?.order_brief || result?.orderBrief || '').match(/^Task:\s*([a-z0-9_-]+)/im)?.[1] || '';
+  if (briefTask) return briefTask.trim().toLowerCase();
   const intent = String(result?.intent || '').trim();
-  if (/(cfo|pricing|finance|unit economics|cash|価格|財務|収支|粗利)/i.test(text)) return 'cfo_leader';
-  if (/(legal|privacy|terms|contract|compliance|規約|法務|契約|プライバシー)/i.test(text)) return 'legal_leader';
-  if (leaderTextHasCmoSignal(text, intent)) return 'cmo_leader';
-  if (leaderTextHasSpecificCtoSignal(text)) return 'cto_leader';
-  if (leaderTextHasSpecificCpoSignal(text)) return 'cpo_leader';
-  if (leaderTextHasSpecificBuildSignal(text)) return 'build_team_leader';
-  if (/(research team|analysis team|decision team|調査チーム|分析チーム|複数.*(?:調査|分析)|意思決定)/i.test(text)) return 'research_team_leader';
-  return '';
+  if (intent === 'natural_business_growth' || intent === 'natural_marketing_launch') return 'growth';
+  if (intent === 'natural_idea_discovery' || intent === 'natural_entity_exploration') return 'research';
+  return String(result?.task_type || result?.taskType || '').trim().toLowerCase();
+}
+
+function openChatIntentShouldUseStepIntake(result = {}) {
+  const action = String(result?.action || '').trim();
+  if (action !== 'ask_clarifying_question') return false;
+  const intent = String(result?.intent || '').trim();
+  return ['natural_business_growth', 'natural_marketing_launch', 'natural_idea_discovery'].includes(intent);
 }
 
 function clientPrepareOrderIntakeFallback(prompt = '', options = {}) {
   const taskType = String(options.taskType || options.task_type || options.activeLeaderTaskType || options.active_leader_task_type || leaderTaskTypeFromIntentResult(prompt, {}) || 'research').trim();
   const leaderName = options.activeLeaderName || options.active_leader_name || taskLabel(taskType);
   const ja = chatLanguage(prompt) === 'ja';
-  const cmo = taskType === 'cmo_leader';
-  const questions = cmo
-    ? (ja
-        ? [
-            '売りたい商材・サービス内容とそのURLを教えてください。',
-            '増やしたい具体的な行動（購入、問い合わせ、登録など）とターゲット層を教えてください。',
-            'GA4、Search Console、LP、価格表、営業資料など参考にしたい資料や実データはありますか？',
-            '優先したいチャネル、避けたい施策、予算や期限などの制約を教えてください。'
-          ]
-        : [
-            'What product, service, and URL should this acquisition work focus on?',
-            'Which action should increase, such as purchases, inquiries, signups, or trials, and who is the target audience?',
-            'Do you have GA4, Search Console, landing pages, pricing, sales material, or other evidence to use?',
-            'Which channels, constraints, budget, deadline, or avoided tactics should the leader respect?'
-          ])
-    : (ja
-        ? [
-            '今回達成したい成果と対象を教えてください。',
-            '参考にしたい資料、URL、データ、制約があれば教えてください。',
-            '最終アウトプットの形式と優先順位を教えてください。'
-          ]
-        : [
-            'What outcome and target should this work focus on?',
-            'What source material, URLs, data, or constraints should be used?',
-            'What final output format and priority should the leader optimize for?'
-          ]);
+  const questions = ja
+    ? [
+        '今回達成したい成果と対象を教えてください。',
+        '参考にしたい資料、URL、データ、制約があれば教えてください。',
+        '最終アウトプットの形式と優先順位を教えてください。'
+      ]
+    : [
+        'What outcome and target should this work focus on?',
+        'What source material, URLs, data, or constraints should be used?',
+        'What final output format and priority should the leader optimize for?'
+      ];
   return {
     ok: true,
     status: 'needs_input',
@@ -5724,6 +7496,29 @@ async function handleChatIntentWithLlm(prompt = '') {
       }, prompt);
       return true;
     }
+    if (leaderTaskType) {
+      await prepareOrder(prompt, {
+        originalPrompt: prompt,
+        taskType: leaderTaskType,
+        activeLeaderTaskType: leaderTaskType,
+        activeLeaderName: taskLabel(leaderTaskType),
+        activeLeaderLocked: true,
+        leaderChangeRequested: Boolean(explicitLeaderTaskType),
+        skipOpenAiIntent: true,
+        skipLeaderChangeProposal: true
+      });
+      return true;
+    }
+    const intentTaskType = taskTypeFromOpenChatIntent(result);
+    if (intentTaskType && openChatIntentShouldUseStepIntake(result)) {
+      await prepareOrder(prompt, {
+        originalPrompt: prompt,
+        taskType: intentTaskType,
+        skipOpenAiIntent: true,
+        skipLeaderChangeProposal: true
+      });
+      return true;
+    }
     appendTextMessage('assistant', [
       result.summary || '',
       result.narrowing_question || chatText(
@@ -5788,7 +7583,7 @@ function addChatAdjustmentToDraft(prompt = '') {
   return true;
 }
 
-function retryDraftFromJob(job = {}) {
+function retryDraftFromJob(job = {}, options = {}) {
   const workflow = job.workflow && typeof job.workflow === 'object'
     ? job.workflow
     : (job.input?._broker?.workflow && typeof job.input._broker.workflow === 'object' ? job.input._broker.workflow : {});
@@ -5841,12 +7636,34 @@ function retryDraftFromJob(job = {}) {
     : Array.isArray(previousInput.appContexts)
       ? previousInput.appContexts.slice(0, 8)
       : [];
+  const reuseArtifacts = Array.isArray(options.reuseArtifacts)
+    ? options.reuseArtifacts
+      .filter((item) => item && item.user_selected !== false && item.userSelected !== false)
+      .map((item) => ({
+        ...item,
+        task_type: String(item.task_type || item.taskType || '').trim().toLowerCase(),
+        taskType: String(item.taskType || item.task_type || '').trim().toLowerCase(),
+        source_order_id: String(item.source_order_id || item.sourceOrderId || job.id || '').trim(),
+        sourceOrderId: String(item.sourceOrderId || item.source_order_id || job.id || '').trim(),
+        source_run_id: String(item.source_run_id || item.sourceRunId || '').trim(),
+        sourceRunId: String(item.sourceRunId || item.source_run_id || '').trim(),
+        user_selected: true,
+        userSelected: true
+      }))
+      .filter((item) => item.task_type && item.source_run_id && String(item.content || '').trim())
+      .slice(0, 8)
+    : [];
   return {
     taskType,
     task_type: taskType,
     resolvedOrderStrategy: route,
     resolved_order_strategy: route,
-    reason: `Prepared after reviewing previous order ${String(job.id || '').slice(0, 8)}. It will not run until Send order is pressed.`,
+    retryMode: CHATUX_RETRY_MODE_NEW_ORDER,
+    retry_mode: CHATUX_RETRY_MODE_NEW_ORDER,
+    retryOfOrderId: String(job.id || '').trim(),
+    continuesOrder: false,
+    continues_order: false,
+    reason: `Prepared as the same content in a new order from previous order ${String(job.id || '').slice(0, 8)}. It will not continue the previous order.`,
     prompt,
     originalPrompt: originalPrompt || prompt,
     intakeChecked: true,
@@ -5858,6 +7675,7 @@ function retryDraftFromJob(job = {}) {
     conversationOwner: ownerTaskType ? { type: 'leader', taskType: ownerTaskType, label: ownerLabel || taskLabel(ownerTaskType) } : undefined,
     workflowPlannedTasks: plannedTasks,
     workflow_planned_tasks: plannedTasks,
+    ...(reuseArtifacts.length ? { retryReuseArtifacts: reuseArtifacts, retry_reuse_artifacts: reuseArtifacts } : {}),
     input: {
       ...(previousConnectorContexts.length ? { connectorContexts: previousConnectorContexts } : {}),
       ...(previousAppContexts.length ? { appContexts: previousAppContexts } : {}),
@@ -5868,13 +7686,25 @@ function retryDraftFromJob(job = {}) {
         retryOfStatus: String(job.status || '').trim(),
         retryPreparedAt: new Date().toISOString(),
         retry: {
+          mode: CHATUX_RETRY_MODE_NEW_ORDER,
+          intent: CHATUX_RETRY_MODE_NEW_ORDER,
           sourceOrderId: String(job.id || '').trim(),
           sourceStatus: String(job.status || '').trim(),
+          continuesOrder: false,
           preservePrompt: true,
           preservePlan: plannedTasks.length > 0,
           plannedTasks,
+          ...(reuseArtifacts.length ? { reuseArtifacts, reuse_artifacts: reuseArtifacts } : {}),
           preparedAt: new Date().toISOString()
         },
+        ...(reuseArtifacts.length ? {
+          workflow: {
+            ...(broker.workflow && typeof broker.workflow === 'object' ? broker.workflow : {}),
+            reusedArtifacts: reuseArtifacts,
+            reuseArtifacts,
+            retryReuseArtifacts: reuseArtifacts
+          }
+        } : {}),
         ...(ownerTaskType ? {
           conversationOwner: { type: 'leader', taskType: ownerTaskType, label: ownerLabel || taskLabel(ownerTaskType) },
           activeLeader: { taskType: ownerTaskType, label: ownerLabel || taskLabel(ownerTaskType) },
@@ -5886,15 +7716,24 @@ function retryDraftFromJob(job = {}) {
   };
 }
 
-async function prepareRetryFromOrder(orderId = '') {
+async function prepareRetryFromOrder(orderId = '', options = {}) {
   const safeId = String(orderId || '').trim();
   if (!safeId) return;
   setBusy(true);
   try {
-    const job = await fetchVisibleJob(safeId);
+    const job = await fetchVisibleJob(safeId, { force: true, progress: false, inspectOnly: true });
     if (!job?.id) throw new Error('Order was not found.');
     renderDeliveryOnce(job, { force: true });
-    state.draft = retryDraftFromJob(job);
+    const reuseArtifacts = Array.isArray(options.reuseArtifacts) ? options.reuseArtifacts : selectedRetryReuseArtifactsForOrder(safeId);
+    state.draft = retryDraftFromJob(job, { reuseArtifacts });
+    const sourceOrderId = String(job.id || safeId || '').trim();
+    state.followupTargetOrderId = '';
+    markLiveProgressStopped(sourceOrderId);
+    if (String(state.orderId || '').trim() === sourceOrderId) {
+      state.orderId = '';
+      if (state.polling) window.clearInterval(state.polling);
+      state.polling = null;
+    }
     const retryOwner = state.draft.conversationOwner?.type === 'leader'
       ? leaderOwner(state.draft.conversationOwner.taskType, `Preserved from retry source order ${String(job.id || '').slice(0, 8)}.`)
       : null;
@@ -5913,11 +7752,18 @@ async function prepareRetryFromOrder(orderId = '') {
     }
     setConversationOwnerFromPrepared(state.draft, { sample: state.draft.originalPrompt || state.draft.prompt });
     state.draftRevision += 1;
+    const reuseNote = reuseArtifacts.length
+      ? chatText(
+          ` Selected completed artifacts to reuse: ${reuseArtifacts.map((item) => item.task_type || item.taskType).filter(Boolean).join(', ')}. Those steps will be skipped in the new order.`,
+          ` 再利用する完了済み成果物: ${reuseArtifacts.map((item) => item.task_type || item.taskType).filter(Boolean).join(', ')}。新しいオーダーでは該当ステップをスキップします。`,
+          state.draft.originalPrompt || state.draft.prompt
+        )
+      : '';
     appendTextMessage('assistant', chatText(
-      'I prepared a retry draft from the previous order. Review the result above and press Send order only if you want to run it again.',
-      '過去オーダーの内容からリトライ用ドラフトを作りました。上の結果を確認し、再実行する場合だけ Send order を押してください。',
+      `I prepared a same-content retry as a NEW order. It will not continue order #${sourceOrderId.slice(0, 8)}. Use Check status or approval controls when you want to continue an existing order instead.${reuseNote}`,
+      `同じ内容を新しいオーダーとして再実行するドラフトを作りました。既存オーダー #${sourceOrderId.slice(0, 8)} の続きではありません。既存オーダーを続ける場合は Check status や承認コントロールを使ってください。${reuseNote}`,
       state.draft.originalPrompt || state.draft.prompt
-    ), { tone: 'warn', label: 'Retry confirmation' });
+    ), { tone: 'warn', label: 'Retry as new order' });
     appendOrderConfirmation({ updated: true });
   } catch (error) {
     appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Retry' });
@@ -5943,12 +7789,12 @@ async function retryTargetJobForCommand() {
       const job = await fetchVisibleJob(id);
       if (!job?.id) continue;
       if (!firstKnown) firstKnown = job;
-      if (isTerminalStatus(job.status)) return job;
+      if (jobHasDeliveryResult(job)) return job;
     } catch {}
   }
   try {
     const jobs = await refreshRecentJobs({ force: true });
-    const terminal = (Array.isArray(jobs) ? jobs : []).find((job) => job?.id && isTerminalStatus(job.status));
+    const terminal = (Array.isArray(jobs) ? jobs : []).find((job) => job?.id && jobHasDeliveryResult(job));
     if (terminal) return terminal;
     return firstKnown || (Array.isArray(jobs) ? jobs.find((job) => job?.id) : null) || null;
   } catch {
@@ -5961,16 +7807,17 @@ async function handleRetryCommand(prompt = '') {
   const job = await retryTargetJobForCommand();
   if (!job?.id) {
     appendTextMessage('assistant', chatText(
-      'I could not find an order to retry. Open an order from history first, then press Prepare retry.',
-      'リトライ対象のオーダーが見つかりません。先に履歴から対象オーダーを開いてから Prepare retry を押してください。',
+      'I could not find an order to retry. Open an order from history first, then press Retry as new order.',
+      'リトライ対象のオーダーが見つかりません。先に履歴から対象オーダーを開いてから Retry as new order を押してください。',
       prompt
     ), { tone: 'warn', label: 'Retry' });
     return true;
   }
-  if (!isTerminalStatus(job.status)) {
+  if (!jobHasDeliveryResult(job)) {
+    const visibleStatus = statusDisplayLabel(job.status || 'created');
     appendTextMessage('assistant', chatText(
-      `Order ${job.id.slice(0, 8)} is still ${statusLabel(job)}. I did not create a retry draft while the order is active.`,
-      `オーダー ${job.id.slice(0, 8)} はまだ ${statusLabel(job)} です。進行中のためリトライドラフトは作成していません。`,
+      `Order ${job.id.slice(0, 8)} is still ${visibleStatus}. I did not create a retry draft while the order is active.`,
+      `オーダー ${job.id.slice(0, 8)} はまだ ${visibleStatus} です。進行中のためリトライドラフトは作成していません。`,
       prompt
     ), { tone: 'warn', label: 'Retry' });
     maybeRenderAuthorityNotice(job, { label: 'Approval required' });
@@ -5990,7 +7837,16 @@ function activeOrderFollowupAllowedText(prompt = '') {
   if (retryCommandText(compact)) return false;
   if (/^(status|help|状況|現状|今どこ|何待ち|ヘルプ)$/i.test(compact)) return false;
   if (/^(pause|hold|stop|later|not now|cancel|一旦保留|いったん保留|保留|あとで|後で|ストップ|止めて|中断|キャンセル|やめる)$/i.test(compact)) return false;
-  return true;
+  return explicitActiveOrderFollowupRequestText(compact);
+}
+
+function explicitActiveOrderFollowupRequestText(text = '') {
+  const compact = String(text || '').trim();
+  if (!compact) return false;
+  return /(?:continue|resume|follow[-\s]?up|add|attach|append).{0,48}(?:this|current|existing|same).{0,16}(?:order|workflow|run)/i.test(compact)
+    || /(?:this|current|existing|same).{0,16}(?:order|workflow|run).{0,48}(?:continue|resume|follow[-\s]?up|add|attach|append)/i.test(compact)
+    || /(?:この|今の|現在の|既存の|同じ).{0,12}(?:オーダー|注文|ワークフロー|依頼).{0,32}(?:続き|追加|紐づけ|引き継ぎ|再開)/i.test(compact)
+    || /(?:続き|追加|紐づけ|引き継ぎ|再開).{0,32}(?:この|今の|現在の|既存の|同じ).{0,12}(?:オーダー|注文|ワークフロー|依頼)/i.test(compact);
 }
 
 async function prepareFollowupForRunningOrder(prompt = '') {
@@ -5998,15 +7854,14 @@ async function prepareFollowupForRunningOrder(prompt = '') {
   const orderId = String(state.orderId || '').trim();
   if (!text || !orderId) return false;
   const job = await fetchVisibleJob(orderId);
-  if (!job?.id || isTerminalStatus(job.status)) return false;
+  if (!job?.id || jobHasDeliveryResult(job)) return false;
   const baseTaskType = String(
     (Array.isArray(job.workflow?.plannedTasks) ? job.workflow.plannedTasks[0] : '')
     || job.taskType
     || 'research'
   ).trim().toLowerCase() || 'research';
-  const specialistTaskType = isLeaderTaskType(baseTaskType) ? leaderFollowupSpecialistTaskForText(text) : '';
-  const taskType = specialistTaskType || baseTaskType;
-  const isWorkflow = !specialistTaskType && (job.jobKind === 'workflow' || Boolean(job.workflow));
+  const taskType = baseTaskType;
+  const isWorkflow = job.jobKind === 'workflow' || Boolean(job.workflow);
   const followupPrompt = [
     `Follow-up/change request for running order ${job.id}:`,
     text,
@@ -6019,9 +7874,7 @@ async function prepareFollowupForRunningOrder(prompt = '') {
     resolvedOrderStrategy: isWorkflow ? 'multi' : 'single',
     resolved_order_strategy: isWorkflow ? 'multi' : 'single',
     reason: `Prepared as an add-on request for running order ${job.id.slice(0, 8)}. It will not run until Send order is pressed.`,
-    conversationOwner: specialistTaskType
-      ? { type: 'cait', label: taskLabel(specialistTaskType), reason: `Leader follow-up routed to ${taskLabel(specialistTaskType)} for the concrete artifact.` }
-      : taskType.endsWith('_leader')
+    conversationOwner: taskType.endsWith('_leader')
       ? { type: 'leader', taskType, label: taskLabel(taskType), reason: 'Follow-up request for active leader workflow.' }
       : { type: 'cait', label: 'CAIt', reason: 'Follow-up request for active order.' }
   };
@@ -6036,17 +7889,15 @@ async function prepareFollowupForRunningOrder(prompt = '') {
     ...(state.draft.input || {}),
     _broker: {
       ...broker,
-      conversation: {
-        ...(broker.conversation && typeof broker.conversation === 'object' ? broker.conversation : {}),
-        mode: 'followup',
-        followupToJobId: job.id,
-        followup_to_job_id: job.id,
-        requestedAt: new Date().toISOString()
-      },
-      ...(specialistTaskType ? {
-        leaderFollowupSpecialistRouted: true,
-        previousLeader: { taskType: baseTaskType, label: taskLabel(baseTaskType) }
-      } : {})
+        conversation: {
+          ...(broker.conversation && typeof broker.conversation === 'object' ? broker.conversation : {}),
+          mode: 'followup',
+          userExplicitContinuation: true,
+          explicitContinuation: true,
+          followupToJobId: job.id,
+          followup_to_job_id: job.id,
+          requestedAt: new Date().toISOString()
+        },
     }
   };
   state.draft.followupToJobId = job.id;
@@ -6102,6 +7953,7 @@ function handleNonOrderConversation(prompt = '') {
 }
 
 async function prepareOrder(prompt, options = {}) {
+  trackChatIntakeStarted(prompt, options.intakeAnswered === true ? 'intake_completed_order_prep' : 'order_prep');
   const explicitLeaderTaskType = explicitLeaderChangeTaskTypeFromText(prompt);
   const leaderChangeRequested = options.leaderChangeRequested === true || Boolean(explicitLeaderTaskType);
   const requestedLeaderOwner = explicitLeaderTaskType ? leaderOwner(explicitLeaderTaskType, 'User explicitly changed the leader.') : null;
@@ -6145,7 +7997,7 @@ async function prepareOrder(prompt, options = {}) {
     prepared = await apiWithRetry('/api/work/prepare-order', {
       method: 'POST',
       body: JSON.stringify(chatEngineBuildPrepareOrderPayload(prompt, {
-      requestedStrategy: 'auto',
+      requestedStrategy: options.requestedStrategy || options.requested_strategy || 'auto',
       taskType: effectiveLeaderOwner?.taskType || options.taskType || options.task_type || '',
       selectedAgentId: options.selectedAgentId || options.selected_agent_id || '',
       selectedAgentName: options.selectedAgentName || options.selected_agent_name || '',
@@ -6248,7 +8100,11 @@ async function sendOrder() {
         }
       }
     });
-    const followupToJobId = String(acceptedDraft.followupToJobId || acceptedDraft.followup_to_job_id || acceptedDraft.input?._broker?.conversation?.followupToJobId || '').trim();
+    const sameContentRetryAsNewOrder = draftIsSameContentNewOrderRetry(acceptedDraft);
+    const explicitFollowupContinuation = draftIsExplicitFollowupContinuation(acceptedDraft);
+    const followupToJobId = sameContentRetryAsNewOrder || !explicitFollowupContinuation
+      ? ''
+      : String(acceptedDraft.followupToJobId || acceptedDraft.followup_to_job_id || acceptedDraft.input?._broker?.conversation?.followupToJobId || '').trim();
     if (followupToJobId) payload.followup_to_job_id = followupToJobId;
     payload.session_id = chatSessionId;
     const clientOrderId = clientOrderIdFromOrderCreate(payload) || makeClientOrderId();
@@ -6264,18 +8120,39 @@ async function sendOrder() {
         clientOrderPreparedAt: new Date().toISOString()
       }
     };
+    if (sameContentRetryAsNewOrder) {
+      delete payload.followup_to_job_id;
+      delete payload.followupToJobId;
+      const broker = payload.input?._broker && typeof payload.input._broker === 'object' ? payload.input._broker : null;
+      const conversation = broker?.conversation && typeof broker.conversation === 'object' ? broker.conversation : null;
+      if (conversation) {
+        delete conversation.followupToJobId;
+        delete conversation.followup_to_job_id;
+      }
+      if (broker) {
+        broker.retry = {
+          ...(broker.retry && typeof broker.retry === 'object' ? broker.retry : {}),
+          mode: CHATUX_RETRY_MODE_NEW_ORDER,
+          intent: CHATUX_RETRY_MODE_NEW_ORDER,
+          continuesOrder: false
+        };
+      }
+    } else if (!explicitFollowupContinuation) {
+      delete payload.followup_to_job_id;
+      delete payload.followupToJobId;
+      const broker = payload.input?._broker && typeof payload.input._broker === 'object' ? payload.input._broker : null;
+      const conversation = broker?.conversation && typeof broker.conversation === 'object' ? broker.conversation : null;
+      if (conversation) {
+        delete conversation.followupToJobId;
+        delete conversation.followup_to_job_id;
+        if (conversation.mode === 'followup') delete conversation.mode;
+      }
+      delete payload.input?._broker?.followupToJobId;
+      delete payload.input?._broker?.followup_to_job_id;
+      delete acceptedDraft.followupToJobId;
+      delete acceptedDraft.followup_to_job_id;
+    }
     rememberPendingRecoveryPayload(payload);
-    appendTextMessage('system', 'Sending order. I will keep polling and post progress here.');
-    showProgressNarrator(chatText(
-      'Sending the order and attaching this chat to the live run.',
-      'オーダーを送信し、このチャットを進行中の実行に接続しています。',
-      acceptedDraft.originalPrompt || payload.prompt
-    ), {
-      key: `sending:${chatSessionId}`,
-      phase: 'Dispatch',
-      status: 'sending',
-      steps: ['Create order', 'Build first agent layer', 'Start live progress']
-    });
     let created;
     try {
       created = await api('/api/jobs', {
@@ -6286,24 +8163,19 @@ async function sendOrder() {
       const recovered = await recoverAcceptedOrderAfterCreateError(payload, error);
       if (!recovered) throw error;
       created = recovered;
-      appendTextMessage('assistant', 'Recovered the saved order after the create response failed. Switching to progress tracking.', { tone: 'ok', label: actorLabel });
     }
     if (isNeedsInputResponse(created)) {
-      stopLiveProgressNarrator(chatText(
-        'Order dispatch paused because CAIt needs one more answer before creating the live order.',
-        'ライブオーダー作成前に追加確認が必要なため、送信進行表示を停止しました。',
-        state.draft?.originalPrompt || payload.prompt
-      ), {
-        key: `sending:${chatSessionId}`,
-        phase: 'Intake',
-        status: 'waiting',
-        steps: ['Answer the intake question', 'Then send order']
-      });
       startIntake(created, state.draft?.originalPrompt || payload.prompt);
       return;
     }
     state.orderId = extractOrderId(created);
     if (state.orderId) {
+      trackChatGa4Once(`order_submitted:${state.orderId}`, 'order_submitted', {
+        order_id: state.orderId,
+        task_type: acceptedDraft.taskType || acceptedDraft.task_type || payload.task_type || '',
+        strategy: acceptedDraft.requestedStrategy || acceptedDraft.requested_strategy || payload.strategy || '',
+        retry_mode: sameContentRetryAsNewOrder ? CHATUX_RETRY_MODE_NEW_ORDER : (followupToJobId ? 'followup_continuation' : 'new_order')
+      });
       resumeLiveProgress(state.orderId);
       rememberTrackedOrder(state.orderId);
       clearPendingRecoveryPayload(payload);
@@ -6312,8 +8184,9 @@ async function sendOrder() {
         upsertChatSession({
           ...session,
           linkedOrderId: state.orderId,
-          activeJobIds: [...new Set([...(Array.isArray(session.activeJobIds) ? session.activeJobIds : []), state.orderId])],
-          activeWork: true,
+          activeJobIds: [],
+          relatedOrderIds: [...new Set([...(Array.isArray(session.relatedOrderIds) ? session.relatedOrderIds : []), state.orderId])],
+          activeWork: false,
           updatedAt: isoNow()
         });
         renderChatSessionSidebar();
@@ -6324,52 +8197,23 @@ async function sendOrder() {
     state.followupTargetOrderId = '';
     state.draftRevision += 1;
     updateComposerMode();
-    appendTextMessage('assistant', [
-      'Order accepted.',
-      '',
-      `Order ID: ${state.orderId || '-'}`,
-      `Status: ${created.status || created.mode || 'created'}`,
-      created.routing_reason ? `Route reason: ${created.routing_reason}` : ''
-    ].filter(Boolean).join('\n'), { tone: 'ok', label: actorLabel });
     if (state.orderId) {
-      showProgressNarrator(chatText(
-        'Order accepted. The leader will review the brief and release later agent layers after each checkpoint.',
-        'オーダーを受け付けました。leader が依頼内容を確認し、以降のエージェント層は checkpoint ごとに解放します。',
-        acceptedDraft.originalPrompt || payload.prompt
-      ), {
-        key: state.orderId,
-        phase: 'Leader review',
-        status: created.status || created.mode || 'created',
-        steps: ['Initial layer only', 'Checkpoint-driven handoff', 'Approval before external writes']
+      notifyOrderMilestone({
+        id: state.orderId,
+        status: 'submitted',
+        prompt: acceptedDraft.originalPrompt || payload.prompt || '',
+        originalPrompt: acceptedDraft.originalPrompt || payload.prompt || ''
+      }, {
+        state: 'submitted'
       });
+      renderInitialAgentMap(created, acceptedDraft.originalPrompt || payload.prompt || '');
     }
-    const agentMap = initialAgentMapHtml(created, payload.prompt || '');
-    if (agentMap) appendMessage('assistant', agentMap, { tone: 'info', label: 'Agent map' });
     if (state.orderId) startPolling(state.orderId);
     else {
-      stopLiveProgressNarrator(chatText(
-        'Order creation returned without a live order ID, so live progress tracking stopped.',
-        'オーダーIDが返らなかったため、ライブ進捗表示を停止しました。',
-        acceptedDraft.originalPrompt || payload.prompt
-      ), {
-        key: `sending:${chatSessionId}`,
-        phase: 'Dispatch',
-        status: 'stopped',
-        steps: ['No live order ID returned', 'History backfill active']
-      });
       startDeliveryBackfillLoop({ maxRuns: 60 });
     }
     state.pendingAppContext = null;
   } catch (error) {
-    stopLiveProgressNarrator(chatText(
-      'Order creation stopped before live progress could start.',
-      'ライブ進捗開始前にオーダー作成が停止しました。',
-      state.draft?.originalPrompt || state.conversationLanguage
-    ), {
-      phase: 'Dispatch',
-      status: 'stopped',
-      steps: [String(error?.message || 'Order failed.').slice(0, 140)]
-    });
     appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Waiting' });
   } finally {
     setBusy(false);
@@ -6387,193 +8231,103 @@ function orderErrorMessage(error) {
   return message;
 }
 
-function xIdentityFromConnectorStatus(status = {}) {
-  const x = status?.x && typeof status.x === 'object' ? status.x : {};
-  const username = String(x.username || '').trim().replace(/^@+/, '');
-  const userId = String(x.xUserId || x.providerUserId || '').trim();
-  const displayName = String(x.displayName || '').trim();
-  return {
-    configured: x.configured !== false && x.encryptionConfigured !== false,
-    connected: Boolean(x.connected && username),
-    username,
-    handle: username ? `@${username}` : '',
-    userId,
-    label: username ? `@${username}` : (displayName || userId || 'connected X account')
-  };
-}
-
-async function postXDraftFromChat(jobId = '', postText = '') {
-  const exactText = String(postText || '').trim();
-  if (!exactText) {
-    appendTextMessage('assistant', 'X post text is empty. Add the exact text first.', { tone: 'error', label: 'X action' });
-    return;
-  }
-  if (exactText.length > 280) {
-    appendTextMessage('assistant', `X post is ${exactText.length} characters. Shorten it to 280 or less before posting.`, { tone: 'error', label: 'X action' });
-    return;
-  }
-  setBusy(true);
-  try {
-    const status = await api('/api/connectors/x/status', { method: 'GET' });
-    const identity = xIdentityFromConnectorStatus(status);
-    if (!identity.configured) {
-      appendTextMessage('assistant', 'X OAuth is not configured for this environment, so CAIt cannot post from this chat yet.', { tone: 'error', label: 'X action' });
-      return;
-    }
-    if (!identity.connected) {
-      appendMessage('assistant', [
-        'X is not connected yet.',
-        '',
-        xConnectLinkHtml('Connect X', 'primary'),
-        '<span class="chat-hint">After connecting, return here and press Post to X again. The draft will stay in this chat.</span>'
-      ].join('\n'), { tone: 'warn', label: 'X action' });
-      return;
-    }
-    const prompt = deliveryExecutionPromptPresentation('x_post', {
-      postText: exactText,
-      xAccountLabel: identity.label
-    });
-    if (!window.confirm(prompt.confirm)) {
-      appendTextMessage('system', prompt.stopped || 'X execution stopped for this delivery.', { label: 'X action' });
-      return;
-    }
-    const result = await api('/api/connectors/x/post', {
-      method: 'POST',
-      body: JSON.stringify({
-        text: exactText,
-        confirm_post: true,
-        approved_x_username: identity.handle || identity.username || '',
-        approved_x_user_id: identity.userId || '',
-        approved_text: exactText,
-        source: 'chatux_x_action_tool',
-        job_id: String(jobId || '').trim()
-      })
-    });
-    const postedUrl = String(result?.url || '').trim();
-    appendTextMessage('assistant', [
-      'Posted to X after explicit confirmation.',
-      '',
-      postedUrl || `Tweet ID: ${String(result?.tweet_id || '').trim() || '(returned without id)'}`,
-      '',
-      `Account: ${identity.label}`
-    ].filter(Boolean).join('\n'), { tone: 'ok', label: 'X action' });
-  } catch (error) {
-    if (error?.status === 401) {
-      appendTextMessage('assistant', [
-        'Sign in is required before posting to X.',
-        '',
-        `Google: ${loginHref('google')}`,
-        `GitHub: ${loginHref('github')}`
-      ].join('\n'), { tone: 'error', label: 'X action' });
-      return;
-    }
-    const data = error?.data && typeof error.data === 'object' ? error.data : {};
-    const action = data?.action && typeof data.action === 'object' ? data.action : {};
-    const next = String(data.required || action.message || action.href || '').trim();
-    appendTextMessage('assistant', [
-      String(error?.message || 'X post failed.'),
-      next ? `Next: ${next}` : '',
-      data.needs_connector ? 'Connect X, then press Post to X again from this card.' : ''
-    ].filter(Boolean).join('\n\n'), { tone: 'error', label: 'X action' });
-  } finally {
-    setBusy(false);
-  }
-}
-
 function startPolling(orderId) {
   if (state.polling) window.clearInterval(state.polling);
-  let lastKey = '';
-  let lastPhaseKey = '';
+  const safeOrderId = String(orderId || '').trim();
+  const viewRevision = Number(state.chatViewRevision || 0) || 0;
   let pollCount = 0;
   let consecutiveProgressErrors = 0;
+  let nextProgressPollAt = 0;
+  if (safeOrderId) {
+    showProgressNarrator('Checking order progress.', {
+      key: safeOrderId,
+      phase: 'Dispatch',
+      status: 'running',
+      detail: `Order #${safeOrderId.slice(0, 8)}`,
+      progressPercent: 8,
+      progressLabel: 'Starting'
+    });
+  }
+  const pollingContextIsCurrent = () => (
+    (!viewRevision || Number(state.chatViewRevision || 0) === viewRevision)
+    && String(state.orderId || '').trim() === safeOrderId
+  );
   const tick = async () => {
+    if (!pollingContextIsCurrent()) return;
     pollCount += 1;
+    const now = Date.now();
+    if (nextProgressPollAt && now < nextProgressPollAt) return;
     try {
-      const result = await api(`/api/jobs/${encodeURIComponent(orderId)}?visitor_id=${encodeURIComponent(state.visitorId)}`);
+      const result = await api(`/api/jobs/${encodeURIComponent(safeOrderId)}?visitor_id=${encodeURIComponent(state.visitorId)}`);
+      if (!pollingContextIsCurrent()) return;
       consecutiveProgressErrors = 0;
-      const job = result.job && typeof result.job === 'object' ? { ...result.job, id: result.job.id || orderId } : { id: orderId };
-      const key = `${job.status}|${job.completedAt || ''}|${job.failedAt || ''}|${job.failureReason || ''}|${JSON.stringify(job.workflow?.agentStatusCounts || job.workflow?.statusCounts || {})}|${workflowCurrentLocationLabel(job)}`;
-      const phaseKey = workflowCurrentPhaseKey(job);
-      const approvalWaiting = authorityNeedsApproval(authorityRequestFromJob(job));
+      nextProgressPollAt = 0;
+      const job = result.job && typeof result.job === 'object' ? { ...result.job, id: result.job.id || safeOrderId } : { id: safeOrderId };
+      const authorityRequest = authorityRequestFromJob(job);
+      const approvalWaiting = authorityRequestIsActionableForJob(job, authorityRequest);
+      rememberTrackedOrder(job.id || safeOrderId);
+      notifyOrderMilestone(job);
       showProgressNarrator(progressNarratorTextForJob(job), progressNarratorOptionsForJob(job));
-      if (key !== lastKey) {
-        lastKey = key;
-        appendTextMessage('system', `Order ${orderId.slice(0, 8)}: ${statusLabel(job)}`);
-      }
-      if (phaseKey && phaseKey !== lastPhaseKey) {
-        const shouldRenderPhaseMap = Boolean(lastPhaseKey) || phaseKey !== 'initial';
-        lastPhaseKey = phaseKey;
-        const phaseMap = shouldRenderPhaseMap ? workflowPhaseProgressMapHtml(job) : '';
-        if (phaseMap) appendMessage('assistant', phaseMap, { tone: 'info', label: 'Progress map' });
-      }
+      showWorkflowProgressMap(job);
       maybeRenderAuthorityNotice(job, { label: 'Approval required' });
       if (approvalWaiting && String(job.status || '').trim().toLowerCase() === 'blocked') {
+        showProgressNarrator('Waiting for approval or connector access.', {
+          ...progressNarratorOptionsForJob(job),
+          status: 'waiting',
+          detail: 'Review the requested action in this chat.'
+        });
         window.clearInterval(state.polling);
         state.polling = null;
-        markLiveProgressStopped(orderId);
-        stopLiveProgressNarrator(progressNarratorTextForJob(job), {
-          ...progressNarratorOptionsForJob(job),
-          status: 'waiting for approval',
-          steps: [
-            'User approval or connector action required',
-            workflowCurrentLocationLabel(job)
-          ].filter(Boolean)
-        });
+        markLiveProgressStopped(safeOrderId);
         updateComposerMode();
         startDeliveryBackfillLoop({ maxRuns: 12, renderTerminalDeliveries: false });
         return;
       }
-      if (isTerminalStatus(job.status)) {
+      if (jobHasDeliveryResult(job)) {
+        showProgressNarrator(progressNarratorTextForJob(job), {
+          ...progressNarratorOptionsForJob(job),
+          done: true,
+          progressPercent: 100,
+          progressLabel: 'Complete'
+        });
         window.clearInterval(state.polling);
         state.polling = null;
-        showProgressNarrator(progressNarratorTextForJob(job), { ...progressNarratorOptionsForJob(job), done: true });
         updateComposerMode();
         renderDeliveryOnce(job);
         return;
       }
       if (pollCount >= CHATUX_PROGRESS_MAX_POLLS) {
+        showProgressNarrator('Progress is continuing in the background.', {
+          key: safeOrderId,
+          phase: 'Background',
+          status: 'watching',
+          progressPercent: 96,
+          progressLabel: 'Background'
+        });
         window.clearInterval(state.polling);
         state.polling = null;
-        markLiveProgressStopped(orderId);
-        stopLiveProgressNarrator(chatText(
-          'Live progress polling paused. Background order-history checks will keep watching this order.',
-          'ライブ進捗確認を停止しました。履歴チェックでこのオーダーの監視は継続します。',
-          state.chatMessages[0]?.body || state.conversationLanguage
-        ), {
-          key: String(orderId || state.orderId || 'progress'),
-          phase: 'Progress',
-          status: 'paused',
-          steps: ['No new order created', 'Ask for status or press Check status to resume']
-        });
+        markLiveProgressStopped(safeOrderId);
         updateComposerMode();
-        if (!state.progressPollLimitNotifiedOrderIds.has(orderId)) {
-          state.progressPollLimitNotifiedOrderIds.add(orderId);
-          appendTextMessage('system', 'Live progress polling reached its limit, so I switched to background order-history checks. No new order was created. Reload or ask for status to check again.');
-        }
         startDeliveryBackfillLoop({ maxRuns: 60 });
       }
     } catch (error) {
+      if (!pollingContextIsCurrent()) return;
       consecutiveProgressErrors += 1;
       const status = Number(error?.status || error?.statusCode || error?.data?.status || 0);
       const message = String(error?.message || '').toLowerCase();
       const transient = [408, 429, 500, 502, 503, 504].includes(status)
         || /failed to fetch|network|timeout|temporar|unavailable|gateway|rate limit|service/i.test(message);
-      if (transient && consecutiveProgressErrors < 10) {
-        showProgressNarrator(chatText(
-          'Progress check hit a temporary server error. I am retrying without detaching the order.',
-          '進捗確認が一時的なサーバーエラーになりました。オーダーはこのチャットに紐づけたまま再試行します。',
-          state.chatMessages[0]?.body || state.conversationLanguage
-        ), {
-          key: String(orderId || state.orderId || 'progress'),
+      if (transient && consecutiveProgressErrors < 30) {
+        const retryDelayMs = Math.min(45000, Math.max(5000, 3500 * consecutiveProgressErrors));
+        nextProgressPollAt = Date.now() + retryDelayMs;
+        showProgressNarrator('Progress check is retrying.', {
+          key: safeOrderId,
           phase: 'Progress',
-          status: status ? `retrying after ${status}` : 'retrying',
-          steps: ['Live poll retry', 'History backfill active']
+          status: 'retrying',
+          detail: `Next check in ${Math.ceil(retryDelayMs / 1000)}s`,
+          progressPercent: 18,
+          progressLabel: 'Retrying'
         });
-        const noticeKey = `${orderId}|${status || 'network'}|${consecutiveProgressErrors}`;
-        if ([1, 4, 8].includes(consecutiveProgressErrors) && !state.progressErrorNoticeKeys.has(noticeKey)) {
-          state.progressErrorNoticeKeys.add(noticeKey);
-          appendTextMessage('system', `Progress check temporarily failed${status ? ` (${status})` : ''}. Retrying in this chat; the order remains attached.`);
-        }
         if (consecutiveProgressErrors === 1) startDeliveryBackfillLoop({ maxRuns: 8 });
         return;
       }
@@ -6581,34 +8335,12 @@ function startPolling(orderId) {
       state.polling = null;
       updateComposerMode();
       if (transient) {
-        markLiveProgressStopped(orderId);
-        appendTextMessage('system', `Live progress checks are still failing${status ? ` (${status})` : ''}, so I switched to background order-history checks. The order remains attached.`);
-        stopLiveProgressNarrator(chatText(
-          'Live polling paused, but background history checks are still watching this order.',
-          'ライブ進捗確認は一時停止しましたが、履歴チェックでこのオーダーを追跡し続けます。',
-          state.chatMessages[0]?.body || state.conversationLanguage
-        ), {
-          key: String(orderId || state.orderId || 'progress'),
-          phase: 'Progress',
-          status: 'background checks',
-          steps: ['No new order created', 'Delivery will be posted here']
-        });
+        markLiveProgressStopped(safeOrderId);
         startDeliveryBackfillLoop({ maxRuns: 60 });
         return;
       }
-      markLiveProgressStopped(orderId);
-      stopLiveProgressNarrator(chatText(
-        'Progress tracking stopped because the order status check failed.',
-        'オーダーステータス確認に失敗したため、進捗表示を停止しました。',
-        state.chatMessages[0]?.body || state.conversationLanguage
-      ), {
-        key: String(orderId || state.orderId || 'progress'),
-        phase: 'Progress',
-        status: 'stopped',
-        steps: [String(error?.message || 'Progress check failed.').slice(0, 140)]
-      });
-      appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Progress stopped' });
-      appendTextMessage('system', 'I will keep checking order history and post the delivery here if the work completes.');
+      markLiveProgressStopped(safeOrderId);
+      appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Order status' });
       startDeliveryBackfillLoop({ maxRuns: 60 });
     }
   };
@@ -6623,19 +8355,6 @@ function loginHref(provider) {
   url.searchParams.set('login_source', 'chatux');
   url.searchParams.set('visitor_id', state.visitorId);
   return `${url.pathname}${url.search}`;
-}
-
-function xAuthHref(options = {}) {
-  const url = new URL('/auth/x', window.location.origin);
-  url.searchParams.set('return_to', currentChatReturnPath(options.oauthPopup ? { oauthPopup: true, oauthProvider: 'x' } : {}));
-  url.searchParams.set('login_source', 'chatux');
-  url.searchParams.set('visitor_id', state.visitorId);
-  return `${url.pathname}${url.search}`;
-}
-
-function xConnectLinkHtml(label = 'Connect X', style = 'ghost') {
-  const buttonClass = style === 'primary' ? 'primary-btn' : 'ghost-btn';
-  return `<a class="${buttonClass} inline-btn file-action" data-chat-oauth-popup="x" href="${escapeHtml(xAuthHref({ oauthPopup: true }))}">${escapeHtml(label || 'Connect X')}</a>`;
 }
 
 async function signOut() {
@@ -6695,6 +8414,12 @@ async function refreshAuth(options = {}) {
   }
 }
 
+function ensureAuthRefreshProgress() {
+  const statusText = String(els.authStatus?.textContent || '').trim();
+  if (!/Checking session/i.test(statusText)) return;
+  void refreshAuth({ maxAttempts: 2 });
+}
+
 function resetChat() {
   if (state.polling) window.clearInterval(state.polling);
   if (state.deliveryBackfill) window.clearInterval(state.deliveryBackfill);
@@ -6704,12 +8429,9 @@ function resetChat() {
   state.oauthPopupMonitor = null;
   state.progressNarratorArticle = null;
   state.progressNarratorKey = '';
-  state.liveProgressStoppedOrderIds.clear();
-  state.followupTargetOrderId = '';
   state.pendingAppContext = null;
   startNewChatSession();
   setBusy(false);
-  startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
 }
 
 async function handleInboundAppContext(context = {}, options = {}) {
@@ -6837,7 +8559,7 @@ function startOAuthPopupMonitor(popup = null) {
         void fetchVisibleJob(state.orderId)
           .then((job) => {
             maybeRenderAuthorityNotice(job, { label: 'Approval required' });
-            if (isTerminalStatus(job.status)) renderDeliveryOnce(job, { force: true });
+            if (jobHasDeliveryResult(job)) renderDeliveryOnce(job, { force: true });
             else {
               resumeLiveProgress(job.id || state.orderId);
               startPolling(job.id || state.orderId);
@@ -6890,7 +8612,7 @@ async function handleOAuthPopupReturnMessage(data = {}) {
     try {
       const job = await fetchVisibleJob(state.orderId);
       maybeRenderAuthorityNotice(job, { label: 'Approval required' });
-      if (isTerminalStatus(job.status)) renderDeliveryOnce(job, { force: true });
+      if (jobHasDeliveryResult(job)) renderDeliveryOnce(job, { force: true });
       else {
         resumeLiveProgress(job.id || state.orderId);
         startPolling(job.id || state.orderId);
@@ -6965,14 +8687,20 @@ els.composer.addEventListener('submit', async (event) => {
       // blocked before intent classification, draft adjustment, or dispatch prep
     } else if (await handleRetryCommand(prompt)) {
       // prepared an exact retry draft from the latest terminal order
+    } else if (await showDeliveryHistoryForPrompt(prompt)) {
+      // displayed existing delivery/history instead of preparing a new order
     } else if (handleNonOrderConversation(prompt)) {
       // handled as chat, not a work order
-    } else if (activeOrderFollowupAllowedText(prompt) && await prepareFollowupForRunningOrder(prompt)) {
-      // prepared as an add-on request attached to the running order
     } else if (state.pendingIntake) {
       await answerPendingIntake(prompt);
+    } else if (activeOrderFollowupAllowedText(prompt) && await prepareFollowupForRunningOrder(prompt)) {
+      // prepared as an add-on request attached to the running order
     } else if (state.draft) {
       addChatAdjustmentToDraft(prompt);
+    } else if (await prepareAccumulatedOrderIfReady(prompt)) {
+      // Recent chat turns now contain enough concrete work context to draft an order.
+    } else if (await prepareObviousStepIntakeIfNeeded(prompt)) {
+      // Short growth/acquisition work requests should enter step intake before freeform chat clarification.
     } else if (await handleChatIntentWithLlm(prompt)) {
       // OpenAI classified this as chat, clarification, or an order-ready brief.
     } else {
@@ -7005,7 +8733,7 @@ window.addEventListener('message', (event) => {
 });
 
 document.addEventListener('click', (event) => {
-  const oauthLink = event.target?.closest?.('a[href^="/auth/google"], a[href^="/auth/github"], a[href^="/auth/x"]');
+  const oauthLink = event.target?.closest?.('a[href^="/auth/google"], a[href^="/auth/github"]');
   if (!oauthLink) return;
   saveChatOAuthReturnState('oauth_link_click');
   if (oauthLink.dataset.chatOauthPopup) {
@@ -7022,6 +8750,12 @@ els.authStatus?.addEventListener('click', (event) => {
 });
 
 els.chatThread.addEventListener('click', async (event) => {
+  const agentRunButton = event.target.closest('[data-agent-run-open]');
+  if (agentRunButton) {
+    event.preventDefault();
+    await openAgentRunDetail(agentRunButton);
+    return;
+  }
   const appOpenButton = event.target.closest('[data-app-agent-open]');
   if (appOpenButton) {
     openAppAgent(appOpenButton.dataset.appAgentOpen || '', { source: 'chat_library_button' });
@@ -7164,13 +8898,6 @@ els.chatThread.addEventListener('click', async (event) => {
       .catch(() => appendTextMessage('assistant', 'Could not copy the X post draft.', { tone: 'error', label: 'X action' }));
     return;
   }
-  const xSubmitButton = event.target.closest('[data-x-post-submit]');
-  if (xSubmitButton) {
-    const card = xSubmitButton.closest('.x-post-card');
-    const textarea = card?.querySelector('[data-x-post-text]');
-    void postXDraftFromChat(xSubmitButton.dataset.xPostSubmit || '', textarea?.value || '');
-    return;
-  }
   const fileButton = event.target.closest('[data-file-action]');
   if (fileButton) {
     const file = deliveryFileStore.get(String(fileButton.dataset.fileId || ''));
@@ -7189,20 +8916,28 @@ els.chatThread.addEventListener('click', async (event) => {
     }
     return;
   }
+  const orderApproveButton = event.target.closest('[data-chat-order-approve]');
+  if (orderApproveButton) {
+    const orderId = String(orderApproveButton.dataset.chatOrderApprove || '').trim();
+    if (!orderId) return;
+    await approveAndResumeOrder(orderId);
+    return;
+  }
   const orderOpenButton = event.target.closest('[data-chat-order-open]');
   if (orderOpenButton) {
     const orderId = String(orderOpenButton.dataset.chatOrderOpen || '').trim();
     if (!orderId) return;
     setBusy(true);
     try {
-      const job = await fetchVisibleJob(orderId);
+      const job = await fetchVisibleJob(orderId, { force: true });
       if (!job?.id) throw new Error('Order was not found.');
       rememberTrackedOrder(job.id);
       maybeRenderAuthorityNotice(job, { label: 'Approval required' });
-      if (isTerminalStatus(job.status)) {
+      appendOrderStatusCheck(job);
+      if (jobHasDeliveryResult(job)) {
         renderDeliveryOnce(job, { force: true });
       } else {
-        appendTextMessage('system', `Order ${job.id.slice(0, 8)}: ${statusLabel(job)}\n\nProgress tracking resumed in this chat.`, { label: 'Progress' });
+        notifyOrderMilestone(job);
         resumeLiveProgress(job.id);
         startPolling(job.id);
       }
@@ -7215,7 +8950,8 @@ els.chatThread.addEventListener('click', async (event) => {
   }
   const orderRetryButton = event.target.closest('[data-chat-order-retry]');
   if (orderRetryButton) {
-    await prepareRetryFromOrder(orderRetryButton.dataset.chatOrderRetry || '');
+    const orderId = String(orderRetryButton.dataset.chatOrderRetry || '').trim();
+    await prepareRetryFromOrder(orderId, { reuseArtifacts: selectedRetryReuseArtifactsForOrder(orderId) });
     return;
   }
   const orderScheduleButton = event.target.closest('[data-chat-order-schedule]');
@@ -7379,7 +9115,26 @@ els.utilityModalBody?.addEventListener('click', async (event) => {
       rememberTrackedOrder(jobId);
       closeUtilityModal();
       appendTextMessage('system', `Reopened order ${jobId.slice(0, 8)} from history.`);
-      startPolling(jobId);
+      setBusy(true);
+      try {
+        const job = await fetchVisibleJob(jobId, { force: true });
+        state.orderId = job?.id || jobId;
+        if (jobHasDeliveryResult(job)) renderDeliveryOnce(job, { force: true });
+        else startPolling(jobId);
+      } catch {
+        startPolling(jobId);
+      } finally {
+        setBusy(false);
+      }
+    }
+    return;
+  }
+  const openChatSessionButton = event.target.closest('[data-utility-chat-session-open]');
+  if (openChatSessionButton) {
+    const sessionId = String(openChatSessionButton.dataset.utilityChatSessionOpen || '').trim();
+    if (sessionId) {
+      closeUtilityModal();
+      loadChatSession(sessionId);
     }
     return;
   }
@@ -7561,16 +9316,21 @@ els.promptInput?.addEventListener('keydown', (event) => {
 });
 
 els.resetBtn.addEventListener('click', resetChat);
+window.addEventListener('beforeunload', () => {
+  saveChatRuntimeState('runtime_beforeunload');
+});
 
 renderActiveLeaderStatus();
 updateComposerMode();
 renderChatSessionSidebar();
 startAppContextBroadcastListener();
 if (!handleChatOAuthPopupReturn()) {
-  restoreChatOAuthReturnStateFromUrl();
+  const restoredFromOAuth = restoreChatOAuthReturnStateFromUrl();
+  if (!restoredFromOAuth && !chatRestoreRequestFromUrl().requested) restoreChatRuntimeState();
   void hydrateAppContextFromUrl();
   void refreshChatSessionHistory({ force: true }).then(() => {
     restoreRequestedChatSessionFromHistory();
   });
   void refreshAuth();
+  window.setTimeout(ensureAuthRefreshProgress, 8000);
 }

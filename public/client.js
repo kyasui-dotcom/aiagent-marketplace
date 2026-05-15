@@ -1555,11 +1555,9 @@ function workflowChildDisplayName(child = {}, options = {}) {
   if (!task) return String(child?.agentName || child?.agentId || 'task').trim() || 'task';
   const phase = workflowPhaseShortLabel(child?.sequencePhase || child?.sequence_phase || '', options);
   const normalizedTask = task.toLowerCase();
-  if (normalizedTask === 'cmo_leader') {
-    return phase ? `CMO Leader - ${phase}` : 'CMO Leader';
-  }
   if (normalizedTask.endsWith('_leader')) {
-    return phase ? `${task} - ${phase}` : task;
+    const label = task.split(/[_\s-]+/).filter(Boolean).map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`).join(' ');
+    return phase ? `${label} - ${phase}` : label;
   }
   return task;
 }
@@ -1588,9 +1586,9 @@ function workflowTaskWorkingNote(taskType = '', phase = '', status = '', options
       ? (ja ? 'Next:' : 'Next:')
       : (ja ? 'Thinking:' : 'Thinking:');
   const phrases = {
-    cmo_leader: {
-      initial: queued ? 'frame the objective, compare channels, and choose the first lane.' : 'framing the objective, comparing channels, and choosing the first lane.',
-      checkpoint: queued ? 'review research output and decide the next execution lane.' : 'reviewing research output and deciding the next execution lane.',
+    leader: {
+      initial: queued ? 'frame the objective, evidence needs, and first specialist lane.' : 'framing the objective, evidence needs, and first specialist lane.',
+      checkpoint: queued ? 'review specialist output and decide the next layer.' : 'reviewing specialist output and deciding the next layer.',
       final_summary: queued ? 'merge supporting work products into one accountable final report.' : 'merging supporting work products into one accountable final report.'
     },
     research: queued ? 'collect comparable market signals and evidence.' : 'collecting comparable market signals and evidence.',
@@ -1605,8 +1603,8 @@ function workflowTaskWorkingNote(taskType = '', phase = '', status = '', options
     landing: queued ? 'shape the landing page structure and copy direction.' : 'shaping the landing page structure and copy direction.'
   };
   let body = '';
-  if (task === 'cmo_leader') {
-    body = phrases.cmo_leader[normalizedPhase] || (queued ? 'review the workflow and decide the next best move.' : 'reviewing the workflow and deciding the next best move.');
+  if (task.endsWith('_leader')) {
+    body = phrases.leader[normalizedPhase] || (queued ? 'review the workflow and decide the next best move.' : 'reviewing the workflow and deciding the next best move.');
   } else {
     body = phrases[task] || (queued ? 'prepare the next supporting work step.' : 'working through the assigned supporting work step.');
   }
@@ -1756,13 +1754,24 @@ function jobDeliveryFileLines(job = {}, options = {}) {
 function isInternalDeliveryFile(file = {}) {
   const name = String(file?.name || file?.filename || file || '').trim().toLowerCase();
   const content = String(file?.content || file?.body || '').trim();
+  const contentType = String(file?.content_type || file?.contentType || '').trim().toLowerCase();
   const visibility = String(file?.visibility || file?.delivery_visibility || file?.deliveryVisibility || '').trim().toLowerCase();
   if (file && typeof file === 'object') {
     if (file.internal === true || file.user_visible === false || file.userVisible === false || file.delivery_visible === false || file.deliveryVisible === false) return true;
   }
   if (['internal', 'hidden', 'system'].includes(visibility)) return true;
+  if ([
+    'supporting_specialist_deliverables',
+    'workflow_integrated_delivery',
+    'partial_workflow_delivery',
+    'all_deliverables_bundle',
+    'review_ready_delivery'
+  ].includes(contentType)) return true;
   if (name === 'supporting-specialist-deliverables.md') return true;
   if (name === 'integrated-delivery.md' && /#\s+Integrated delivery|##\s+Supporting work products|##\s+Integrated next actions/i.test(content)) return true;
+  if (name === 'workflow-partial-delivery.md') return true;
+  if (name === 'all-deliverables.md' || /^all-deliverables-[^.]+\.md$/i.test(name)) return true;
+  if (name === 'review-ready-delivery.md' || /^review-ready-delivery-[^.]+\.md$/i.test(name)) return true;
   return false;
 }
 
@@ -2621,6 +2630,23 @@ let runtimeRememberedAuth = false;
 const runtimeConversionEvents = new Set();
 const runtimeStartedLogins = new Set();
 const runtimeCompletedLogins = new Set();
+const clientPendingGa4Events = [];
+let clientAnalyticsReady = false;
+const CLIENT_GA4_EVENT_NAME_MAP = {
+  order_created: 'order_submitted',
+  order_submitted: 'order_submitted',
+  draft_order_created: 'chat_intake_started',
+  intake_questions_shown: 'chat_intake_started',
+  feedback_submitted: 'generate_lead',
+  lead_submitted: 'generate_lead',
+  contact_submitted: 'generate_lead',
+  signup_completed: 'sign_up',
+  google_login_completed: 'login',
+  github_login_completed: 'login',
+  email_login_completed: 'login',
+  begin_checkout: 'begin_checkout',
+  purchase: 'purchase'
+};
 
 function analyticsFlagEnabled(value) {
   return !['0', 'false', 'off', 'no'].includes(String(value || '1').trim().toLowerCase());
@@ -2711,7 +2737,11 @@ async function analyticsAuthStatus() {
 }
 
 function loadAnalytics() {
-  if (window.__aiagent2AnalyticsLoaded) return;
+  if (window.__aiagent2AnalyticsLoaded) {
+    clientAnalyticsReady = true;
+    flushClientGa4Events();
+    return;
+  }
   window.__aiagent2AnalyticsLoaded = true;
   window.dataLayer = window.dataLayer || [];
   window.gtag = window.gtag || function gtag() { window.dataLayer.push(arguments); };
@@ -2721,6 +2751,8 @@ function loadAnalytics() {
   document.head.appendChild(script);
   window.gtag('js', new Date());
   window.gtag('config', ANALYTICS_ID);
+  clientAnalyticsReady = true;
+  flushClientGa4Events();
 }
 
 async function initAnalytics() {
@@ -2907,9 +2939,49 @@ function makeOpenChatTranscriptId(sessionId = '') {
   return `${base}_turn_${Date.now().toString(36)}_${openChatTranscriptSequence}`;
 }
 
+function clientGa4EventName(event = '') {
+  const eventName = safeAnalyticsString(event, 64).toLowerCase().replace(/[^a-z0-9_:-]+/g, '_').replace(/^_+|_+$/g, '');
+  return CLIENT_GA4_EVENT_NAME_MAP[eventName] || eventName;
+}
+
+function clientGa4Params(meta = {}) {
+  return {
+    page_path: window.location.pathname || '/',
+    current_tab: state.currentTab || '',
+    source: 'web',
+    ...sanitizeClientAnalyticsMeta(meta)
+  };
+}
+
+function flushClientGa4Events() {
+  if (!clientAnalyticsReady || typeof window.gtag !== 'function') return;
+  while (clientPendingGa4Events.length) {
+    const item = clientPendingGa4Events.shift();
+    if (!item?.eventName) continue;
+    window.gtag('event', item.eventName, item.params || {});
+  }
+}
+
+function trackClientGa4Event(event = '', meta = {}) {
+  const eventName = clientGa4EventName(event);
+  if (!eventName) return false;
+  if (typeof window.caitTrackGa4Event === 'function') {
+    return window.caitTrackGa4Event(eventName, clientGa4Params(meta));
+  }
+  if (analyticsBaseSkipReason()) return false;
+  const params = clientGa4Params(meta);
+  if (clientAnalyticsReady && typeof window.gtag === 'function') {
+    window.gtag('event', eventName, params);
+    return true;
+  }
+  clientPendingGa4Events.push({ eventName, params });
+  return true;
+}
+
 async function trackConversionEvent(event, meta = {}) {
   const eventName = safeAnalyticsString(event, 64).toLowerCase().replace(/[^a-z0-9_:-]+/g, '_').replace(/^_+|_+$/g, '');
   if (!eventName) return;
+  trackClientGa4Event(eventName, meta);
   try {
     const csrfToken = state.snapshot?.auth?.csrfToken || '';
     const headers = new Headers({ 'content-type': 'application/json' });
@@ -3473,22 +3545,26 @@ function renderOrderStrategyControls() {
   els.executionChoiceSummary.textContent = lines.join(' ');
 }
 
-function isAgentTeamLaunchIntentText(taskType = '', prompt = '') {
-  const explicit = String(taskType || '').trim().toLowerCase();
-  if (explicit === 'agent_team_launch') return true;
-  return /(agent team|agent_team|launch team|multi[-\s]?agent launch|one announcement|all channels|cross[-\s]?channel|launch campaign|告知.*(まとめ|一括|全部|複数|チーム)|ローンチ.*(まとめ|一括|全部|複数|チーム)|複数.*(agent|エージェント).*告知|1告知|一つの告知|まとめて.*(告知|投稿|発信)|各チャネル.*告知)/i.test(String(prompt || ''));
+function clientTaskToken(value = '') {
+  return String(value || '')
+    .normalize('NFKC')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
 }
 
-function isFreeWebGrowthIntentText(taskType = '', prompt = '') {
-  const explicit = String(taskType || '').trim().toLowerCase();
-  if (explicit === 'free_web_growth_leader' || explicit === 'free_web_growth' || explicit === 'organic_growth' || explicit === 'free_marketing') return true;
-  return /(free web growth|free marketing|organic growth|organic acquisition|no[-\s]?ads?|without ads|web.*free|free.*web|無料.*(web|ウェブ|施策|集客|流入|マーケ|SEO)|(?:web|ウェブ).*(無料|施策|集客|流入|マーケ)|広告費.*(なし|使わない|ゼロ)|自然流入|オーガニック.*(集客|流入|成長)|無料で.*(集客|伸ば|売上|ユーザー))/i.test(String(prompt || ''));
+function clientStructuredTaskToken(prompt = '') {
+  return clientTaskToken((String(prompt || '').match(/^Task:\s*([a-z_ -]+)/im)?.[1] || '').trim());
 }
 
-function isCmoExternalExecutionIntentText(taskType = '', prompt = '') {
-  const explicit = String(taskType || '').trim().toLowerCase();
-  if (['x_post', 'email_ops', 'cold_email', 'instagram', 'reddit', 'indie_hackers', 'directory_submission', 'acquisition_automation'].includes(explicit)) return true;
-  return /(external connector|external execution|connector handoff|connector execution|oauth|publish(?:ing)?|post(?:ing)?|send(?:ing)?|schedule(?:ing)?|execute(?: the)? action|run through action|action handoff|action packet|外部コネクタ|外部コネクター|コネクタ.*(?:実行|連携|接続|handoff|ハンドオフ)|コネクター.*(?:実行|連携|接続|handoff|ハンドオフ)|実行反映|実行まで|反映まで|アクションまで|actionまで|投稿まで|公開まで|送信まで|配信まで|掲載まで|実際に.*(?:投稿|公開|送信|配信|掲載|反映|実行)|(?:x|twitter|ツイッター).*(?:投稿|ポスト|スレッド)|(?:メール|gmail).*(?:送信|配信|スケジュール)|(?:github|ギットハブ).*(?:pr|pull request|プルリク|反映))/i.test(String(prompt || ''));
+function isClientLeaderTaskToken(value = '') {
+  const token = clientTaskToken(value);
+  return Boolean(token && (token.endsWith('_leader') || ['leader', 'team_leader', 'leader_agent'].includes(token)));
+}
+
+function isExplicitClientLeaderTask(taskType = '', prompt = '') {
+  return isClientLeaderTaskToken(taskType) || isClientLeaderTaskToken(clientStructuredTaskToken(prompt));
 }
 
 function isDirectorySubmissionIntentText(taskType = '', prompt = '') {
@@ -3515,27 +3591,9 @@ function isListCreatorIntentText(taskType = '', prompt = '') {
   return /(list creator|lead sourcing|lead qualification|prospect sourcing|company list builder|prospect research|build.*lead list|build.*prospect list|reviewable lead|public email|public contact|contact path|公開メアド|公開メール|公開連絡先|連絡先収集|見込み客リスト作成|リードリスト作成|営業先リスト|企業リスト作成|送る会社リスト|会社リスト作成|営業リスト作成|公開情報.*リスト|公開情報.*見込み客|公開情報.*営業先|公開情報.*メアド|公開情報.*連絡先)/i.test(String(prompt || ''));
 }
 
-function pushAgentTeamLaunchTasks(push) {
-  ['cmo_leader', 'media_planner', 'citation_ops', 'growth', 'directory_submission', 'acquisition_automation', 'list_creator', 'cold_email', 'teardown', 'landing', 'instagram', 'x_post', 'reddit', 'indie_hackers', 'data_analysis'].forEach(push);
-}
-
-function pushCmoGrowthTasks(push, options = {}) {
-  ['cmo_leader', 'research', 'teardown', 'data_analysis', 'media_planner', 'seo_gap', 'landing', 'growth'].forEach(push);
-  if (options.execution) {
-    ['directory_submission', 'acquisition_automation'].forEach(push);
-    if (options.social || options.connector) push('x_post');
-    if (options.email) push('email_ops');
-    if (options.community) ['reddit', 'indie_hackers'].forEach(push);
-  }
-}
-
 function inferClientTaskSequence(taskType, prompt = '') {
   const explicit = String(taskType || '').trim().toLowerCase();
   const text = openChatIntentMatchText(prompt);
-  const cmoExternalExecutionIntent = isCmoExternalExecutionIntentText(explicit, text);
-  const socialExecutionIntent = /(x\.com|\bx post\b|\bx posts\b|\bx thread\b|twitter|tweet|tweets|social post|sns|ツイート|x投稿|ポスト|スレッド|sns|ソーシャル|投稿|発信)/i.test(text);
-  const emailExecutionIntent = /(email ops|email campaign|newsletter|gmail|mailbox|send email|cold email|outbound email|メール|メアド|gmail|配信|送信|コールドメール|営業メール)/i.test(text);
-  const communityExecutionIntent = /(reddit|indie hackers|indiehackers|product hunt|community|subreddit|レディット|インディーハッカー|インディーハッカーズ|プロダクトハント|コミュニティ)/i.test(text);
   const ordered = [];
   const push = (value) => {
     const safe = String(value || '').trim().toLowerCase();
@@ -3545,20 +3603,16 @@ function inferClientTaskSequence(taskType, prompt = '') {
   if (explicit) push(explicit);
   const structuredTask = explicit ? '' : (String(prompt || '').match(/^Task:\s*([a-z_ -]+)/im)?.[1] || '').trim().toLowerCase();
   if (structuredTask) push(structuredTask);
-  if (isFreeWebGrowthIntentText(explicit, text)) push('cmo_leader');
-  if (isAgentTeamLaunchIntentText(explicit, text)) push('cmo_leader');
-  if (cmoExternalExecutionIntent) push('cmo_leader');
   if (isMediaPlannerIntentText(explicit, text)) push('media_planner');
   if (isListCreatorIntentText(explicit, text)) push('list_creator');
   if (isDirectorySubmissionIntentText(explicit, text)) push('directory_submission');
   if (isCitationOpsIntentText(explicit, text)) push('citation_ops');
-  if (/(research team|analysis team|decision team|調査チーム|分析チーム|複数.*(調査|分析)|競合.*データ.*調査)/i.test(text)) push('research_team_leader');
-  if (/(build team|coding team|implementation team|engineering team|開発チーム|実装チーム|複数.*(実装|修正|開発)|コード.*運用.*テスト)/i.test(text)) push('build_team_leader');
-  if (/(?:\bcmo\b|chief marketing|marketing leader|マーケ責任者|cmo的|マーケ部長|マーケティング責任者)/i.test(text)) push('cmo_leader');
-  if (/(?:\bcto\b|chief technology|technical leader|architecture|技術責任者|cto的|開発責任者|技術部長|アーキテクチャ)/i.test(text)) push('cto_leader');
-  if (/(?:\bcpo\b|chief product|product leader|roadmap|product strategy|プロダクト責任者|cpo的|プロダクト部長|ロードマップ|ux戦略)/i.test(text)) push('cpo_leader');
-  if (/(?:\bcfo\b|chief financial|finance leader|unit economics|cash flow|financial model|財務責任者|cfo的|財務部長|ユニットエコノミクス|収支|資金繰り)/i.test(text)) push('cfo_leader');
-  if (/(legal leader|legal counsel|compliance|terms|privacy policy|lawyer|法務|法務部長|規約|プライバシーポリシー|コンプライアンス|特商法|リスクレビュー)/i.test(text)) push('legal_leader');
+  if (/(research team|analysis team|decision team|research leader|調査チーム|分析チーム|調査リーダー|リサーチリーダー)/i.test(text)) push('research_team_leader');
+  if (/(build team|coding team|implementation team|engineering team|build leader|開発チーム|実装チーム|ビルドリーダー)/i.test(text)) push('build_team_leader');
+  if (/(?:\bcto\b|chief technology|technical leader|ctoリーダー|技術責任者|開発責任者)/i.test(text)) push('cto_leader');
+  if (/(?:\bcpo\b|chief product|product leader|cpoリーダー|プロダクト責任者)/i.test(text)) push('cpo_leader');
+  if (/(?:\bcfo\b|chief financial|finance leader|cfoリーダー|財務責任者)/i.test(text)) push('cfo_leader');
+  if (/(legal leader|legal counsel|compliance leader|法務リーダー|legalリーダー|法務責任者)/i.test(text)) push('legal_leader');
   if (/(fix|bug|debug|実装|修正|コード|\bapi\b|server|worker|deploy|billing|\bui\b)/i.test(text)) push('code');
   if (/(competitor|teardown|benchmark|positioning|vs\.?|競合分析|競合比較|ベンチマーク|ポジショニング)/i.test(text)) push('teardown');
   if (/(landing page critique|lp critique|hero section|cta|コンバージョン|ファーストビュー|lp改善|ランディングページ改善)/i.test(text)) push('landing');
@@ -3583,61 +3637,11 @@ function inferClientTaskSequence(taskType, prompt = '') {
   if (/(research|compare|analysis|investigate|市場|比較|調査|戦略)/i.test(text)) push('research');
   if (!ordered.length) push('research');
   const primary = ordered[0] || 'research';
-  if (primary === 'cmo_leader' && isFreeWebGrowthIntentText(explicit, text)) {
-    const expanded = [];
-    const pushExpanded = (value) => {
-      const safe = String(value || '').trim().toLowerCase();
-      if (safe && !expanded.includes(safe)) expanded.push(safe);
-    };
-    pushCmoGrowthTasks(pushExpanded, {
-      execution: cmoExternalExecutionIntent || isAgentTeamLaunchIntentText(explicit, text),
-      social: socialExecutionIntent,
-      email: emailExecutionIntent,
-      community: communityExecutionIntent,
-      connector: /connector|コネクタ|コネクター|外部実行|外部コネクタ|外部コネクター/i.test(text)
-    });
-    ordered
-      .filter((task) => ['citation_ops', 'directory_submission', 'acquisition_automation', 'email_ops', 'list_creator', 'cold_email', 'instagram', 'x_post', 'reddit', 'indie_hackers'].includes(String(task || '').trim().toLowerCase()))
-      .forEach(pushExpanded);
-    return expanded.slice(0, 14);
-  }
-  if (primary === 'agent_team_launch') {
-    const expanded = [];
-    const pushExpanded = (value) => {
-      const safe = String(value || '').trim().toLowerCase();
-      if (safe && safe !== 'agent_team_launch' && !expanded.includes(safe)) expanded.push(safe);
-    };
-    pushAgentTeamLaunchTasks(pushExpanded);
-    ordered.forEach(pushExpanded);
-    return expanded.slice(0, 11);
-  }
   if (primary === 'research_team_leader') {
     ['research', 'teardown', 'diligence', 'data_analysis', 'summary'].forEach(push);
   }
   if (primary === 'build_team_leader') {
     ['code', 'debug', 'ops', 'automation', 'summary'].forEach(push);
-  }
-  if (primary === 'cmo_leader') {
-    const explicitSpecialists = ordered.filter((task) => ['citation_ops', 'seo_gap', 'landing', 'growth', 'directory_submission', 'acquisition_automation', 'email_ops', 'list_creator', 'cold_email', 'instagram', 'x_post', 'reddit', 'indie_hackers'].includes(String(task || '').trim().toLowerCase()));
-    ['research', 'teardown', 'data_analysis', 'media_planner'].forEach(push);
-    if (cmoExternalExecutionIntent || isAgentTeamLaunchIntentText(explicit, text) || isFreeWebGrowthIntentText(explicit, text)) {
-      ['seo_gap', 'landing', 'growth', 'directory_submission', 'acquisition_automation'].forEach(push);
-      if (socialExecutionIntent || /connector|コネクタ|コネクター|外部実行|外部コネクタ|外部コネクター/i.test(text)) push('x_post');
-      if (emailExecutionIntent) push('email_ops');
-      if (communityExecutionIntent) ['reddit', 'indie_hackers'].forEach(push);
-    }
-    if (explicitSpecialists.includes('cold_email') && !explicitSpecialists.includes('list_creator')) push('list_creator');
-    explicitSpecialists.forEach(push);
-    if (ordered.includes('cold_email') && ordered.includes('list_creator')) {
-      const coldEmailIndex = ordered.indexOf('cold_email');
-      const listCreatorIndex = ordered.indexOf('list_creator');
-      if (listCreatorIndex > coldEmailIndex) {
-        ordered.splice(listCreatorIndex, 1);
-        ordered.splice(coldEmailIndex, 0, 'list_creator');
-      }
-    }
-    if (!explicitSpecialists.length) push('growth');
-    return ordered.slice(0, (cmoExternalExecutionIntent || explicitSpecialists.length || isFreeWebGrowthIntentText(explicit, text)) ? 14 : 8);
   }
   if (primary === 'cto_leader') {
     ['code', 'debug', 'ops', 'automation', 'summary'].forEach(push);
@@ -3696,7 +3700,6 @@ function inferClientTaskSequence(taskType, prompt = '') {
 function inferPrimaryTaskSequence(taskType, prompt = '') {
   const explicit = String(taskType || '').trim().toLowerCase();
   const text = openChatIntentMatchText(prompt);
-  const cmoExternalExecutionIntent = isCmoExternalExecutionIntentText(explicit, text);
   const ordered = [];
   const push = (value) => {
     const safe = String(value || '').trim().toLowerCase();
@@ -3706,16 +3709,12 @@ function inferPrimaryTaskSequence(taskType, prompt = '') {
   if (explicit) push(explicit);
   const structuredTask = explicit ? '' : (String(prompt || '').match(/^Task:\s*([a-z_ -]+)/im)?.[1] || '').trim().toLowerCase();
   if (structuredTask) push(structuredTask);
-  if (isFreeWebGrowthIntentText(explicit, text)) push('cmo_leader');
-  if (isAgentTeamLaunchIntentText(explicit, text)) push('cmo_leader');
-  if (cmoExternalExecutionIntent) push('cmo_leader');
-  if (/(research team|analysis team|decision team|調査チーム|分析チーム|複数.*(調査|分析)|競合.*データ.*調査)/i.test(text)) push('research_team_leader');
-  if (/(build team|coding team|implementation team|engineering team|開発チーム|実装チーム|複数.*(実装|修正|開発)|コード.*運用.*テスト)/i.test(text)) push('build_team_leader');
-  if (/(?:\bcmo\b|chief marketing|marketing leader|マーケ責任者|cmo的|マーケ部長|マーケティング責任者)/i.test(text)) push('cmo_leader');
-  if (/(?:\bcto\b|chief technology|technical leader|architecture|技術責任者|cto的|開発責任者|技術部長|アーキテクチャ)/i.test(text)) push('cto_leader');
-  if (/(?:\bcpo\b|chief product|product leader|roadmap|product strategy|プロダクト責任者|cpo的|プロダクト部長|ロードマップ|ux戦略)/i.test(text)) push('cpo_leader');
-  if (/(?:\bcfo\b|chief financial|finance leader|unit economics|cash flow|financial model|財務責任者|cfo的|財務部長|ユニットエコノミクス|収支|資金繰り)/i.test(text)) push('cfo_leader');
-  if (/(legal leader|legal counsel|compliance|terms|privacy policy|lawyer|法務|法務部長|規約|プライバシーポリシー|コンプライアンス|特商法|リスクレビュー)/i.test(text)) push('legal_leader');
+  if (/(research team|analysis team|decision team|research leader|調査チーム|分析チーム|調査リーダー|リサーチリーダー)/i.test(text)) push('research_team_leader');
+  if (/(build team|coding team|implementation team|engineering team|build leader|開発チーム|実装チーム|ビルドリーダー)/i.test(text)) push('build_team_leader');
+  if (/(?:\bcto\b|chief technology|technical leader|ctoリーダー|技術責任者|開発責任者)/i.test(text)) push('cto_leader');
+  if (/(?:\bcpo\b|chief product|product leader|cpoリーダー|プロダクト責任者)/i.test(text)) push('cpo_leader');
+  if (/(?:\bcfo\b|chief financial|finance leader|cfoリーダー|財務責任者)/i.test(text)) push('cfo_leader');
+  if (/(legal leader|legal counsel|compliance leader|法務リーダー|legalリーダー|法務責任者)/i.test(text)) push('legal_leader');
   if (/(fix|bug|debug|実装|修正|コード|\bapi\b|server|worker|deploy|billing|\bui\b)/i.test(text)) push('code');
   if (/(competitor|teardown|benchmark|positioning|vs\.?|競合分析|競合比較|ベンチマーク|ポジショニング)/i.test(text)) push('teardown');
   if (/(landing page critique|lp critique|hero section|cta|コンバージョン|ファーストビュー|lp改善|ランディングページ改善)/i.test(text)) push('landing');
@@ -3735,26 +3734,6 @@ function inferPrimaryTaskSequence(taskType, prompt = '') {
   if (/(research|compare|analysis|investigate|市場|比較|調査|戦略)/i.test(text)) push('research');
   if (!ordered.length && text) push(inferClientTaskSequence(explicit, text)[0] || 'research');
   if (!ordered.length) push(explicit || 'research');
-  if (ordered[0] === 'cmo_leader' && isFreeWebGrowthIntentText(explicit, text)) {
-    const expanded = [];
-    const pushExpanded = (value) => {
-      const safe = String(value || '').trim().toLowerCase();
-      if (safe && !expanded.includes(safe)) expanded.push(safe);
-    };
-    pushCmoGrowthTasks(pushExpanded, { execution: cmoExternalExecutionIntent });
-    ordered.forEach(pushExpanded);
-    return expanded.slice(0, 14);
-  }
-  if (ordered[0] === 'agent_team_launch') {
-    const expanded = [];
-    const pushExpanded = (value) => {
-      const safe = String(value || '').trim().toLowerCase();
-      if (safe && safe !== 'agent_team_launch' && !expanded.includes(safe)) expanded.push(safe);
-    };
-    pushAgentTeamLaunchTasks(pushExpanded);
-    ordered.forEach(pushExpanded);
-    return expanded.slice(0, 11);
-  }
   return ordered.slice(0, 3);
 }
 
@@ -4225,7 +4204,7 @@ function renderPlanModalSummary() {
     `Selected plan: ${label}`,
     'Stripe Checkout opens in a new tab.',
     'When payment is confirmed, the recurring plan becomes active for each billing cycle.',
-    'The plan can cover built-in AI agent work without separate buyer-side model API contracts.'
+    'The plan can cover managed sample agent work without separate buyer-side model API contracts.'
   ].join('\n'));
 }
 
@@ -4560,7 +4539,7 @@ function openChatProjectFingerprint(value = '') {
   const text = normalizeOpenChatSessionFingerprintText(value);
   if (!text) return '';
   const task = openChatStructuredField(value, 'task')
-    || (text.match(/\b(cmo_leader|research_team_leader|build_team_leader|cto_leader|cpo_leader|cfo_leader|legal_leader|research|teardown|seo_gap|landing|growth|x_post)\b/)?.[1] || '');
+    || (text.match(/\b([a-z][a-z0-9_]*_leader|research|teardown|seo_gap|landing|growth|x_post)\b/)?.[1] || '');
   const domain = text.match(/(?:https?:\/\/)?(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)/i)?.[1]
     || (/\baiagent[-_\s]?marketplace\b/i.test(text) ? 'aiagent-marketplace.net' : '');
   const goal = openChatStructuredField(value, 'goal')
@@ -5510,7 +5489,7 @@ function renderAgentSetupFlow(auth = state.snapshot?.auth || {}) {
   const reposLoaded = Array.isArray(state.repos) && state.repos.length > 0;
   const repoSelected = Boolean(selectedRepoFromPicker());
   let statusTitle = 'Browse ready agents or list your own.';
-  let statusBody = 'Start by trying a built-in agent. Developers can click LIST YOUR AGENT to publish from GitHub or a manifest.';
+  let statusBody = 'Start by trying a managed sample agent. Developers can click LIST YOUR AGENT to publish from GitHub or a manifest.';
   let tone = 'info';
   const showSetupControls = Boolean(setupStarted || setupCompleted);
 
@@ -5555,7 +5534,7 @@ function renderAgentSetupFlow(auth = state.snapshot?.auth || {}) {
   } else if (!setupStarted) {
     statusTitle = hasAgents ? 'Agent catalog is ready.' : 'Start agent registration.';
     statusBody = hasAgents
-      ? 'Pick USE IN CAIt Chat on a built-in agent to prefill Chat, or click LIST YOUR AGENT to publish your own.'
+      ? 'Pick USE IN CAIt Chat on a sample agent to prefill Chat, or click LIST YOUR AGENT to publish your own.'
       : 'Click LIST YOUR AGENT. Then choose GitHub repo or direct manifest import.';
   } else if (!setupMode) {
     statusTitle = 'Choose registration method.';
@@ -6856,7 +6835,7 @@ function latestOpenChatAgentConfirmationBody() {
     const body = String(message?.fullBody || message?.body || '').trim();
     if (!body) continue;
     const text = openChatIntentMatchText(body);
-    const looksConfirmation = /(?:接続先:|Route:|Work:|Delivery:|CMOリーダーに繋げる内容|対応するオーダーに繋げます|I will connect this to the matching order|I prepared it for the CMO|内容が合っていれば\s*SEND ORDER|press SEND ORDER|SEND ORDERできます)/i.test(text);
+    const looksConfirmation = /(?:接続先:|Route:|Work:|Delivery:|対応するオーダーに繋げます|I will connect this to the matching order|内容が合っていれば\s*SEND ORDER|press SEND ORDER|SEND ORDERできます)/i.test(text);
     if (looksConfirmation || (sendLabel && text.includes(sendLabel))) return body;
   }
   return '';
@@ -8186,13 +8165,17 @@ function openChatClarifyingQuestions(taskType = 'research', prompt = '') {
 const OPEN_CHAT_LEADER_INTAKE_TASKS = new Set([
   'research_team_leader',
   'build_team_leader',
-  'cmo_leader',
   'secretary_leader',
   'cto_leader',
   'cpo_leader',
   'cfo_leader',
   'legal_leader'
 ]);
+
+function openChatIsLeaderIntakeTask(taskType = '') {
+  const task = String(taskType || '').trim().toLowerCase();
+  return Boolean(task && (OPEN_CHAT_LEADER_INTAKE_TASKS.has(task) || task.endsWith('_leader')));
+}
 
 function openChatLeaderIntakeProfile(taskType = '') {
   const task = String(taskType || '').toLowerCase();
@@ -8202,7 +8185,7 @@ function openChatLeaderIntakeProfile(taskType = '') {
   if (task === 'cpo_leader') return 'product';
   if (task === 'cfo_leader') return 'finance';
   if (task === 'legal_leader') return 'legal';
-  if (OPEN_CHAT_LEADER_INTAKE_TASKS.has(task)) return 'growth';
+  if (openChatIsLeaderIntakeTask(task)) return 'general';
   return '';
 }
 
@@ -8217,13 +8200,9 @@ function openChatImplicitLeaderIntakeTask(prompt = '') {
     || /(えーじぇんと|えいじぇんと|agent).{0,30}(とうろく|こうかい|まにふぇすと|べりふぁい|けんしょう)/i.test(raw);
   if (providerListingIntent) return '';
   const current = String(currentRoutingTask() || '').trim().toLowerCase();
-  if (OPEN_CHAT_LEADER_INTAKE_TASKS.has(current)) return current;
+  if (openChatIsLeaderIntakeTask(current)) return current;
   const inferred = inferClientTaskSequence('', text)[0] || '';
-  if (OPEN_CHAT_LEADER_INTAKE_TASKS.has(inferred)) return inferred;
-  if (isFreeWebGrowthIntentText('', text)) return 'cmo_leader';
-  if (/(?:売上|収益|集客|流入|登録|会員登録|サインアップ|ユーザー獲得|顧客獲得|CVR|コンバージョン|反応|認知|問い合わせ|購入|継続|解約|マーケ|マーケティング|ローンチ|投稿|拡散|sales|revenue|growth|traffic|acquisition|aquisition|signups|customers|cutomers|conversion|retention|churn|marketing|launch|distribution|get\s+new\s+(?:customers|cutomers|users|signups|leads))/i.test(text)) {
-    return 'cmo_leader';
-  }
+  if (openChatIsLeaderIntakeTask(inferred)) return inferred;
   return '';
 }
 
@@ -8254,14 +8233,13 @@ function openChatMissingLeaderIntakeFields(taskType = '', prompt = '', inputCoun
   const require = (key, label) => {
     if (!signals[key]) missing.push(label);
   };
-  if (profile === 'growth') {
+  if (profile === 'general') {
     require('objective', 'objective');
-    require('business', 'business_or_product');
-    if (!signals.audience) missing.push('target_customer');
+    if (!signals.business && !signals.system) missing.push('target_context');
     if (!signals.sourceData) missing.push('source_data_context');
     if (!signals.currentState && !signals.constraints) missing.push('current_state_or_constraints');
     if (!signals.deliverable) missing.push('desired_delivery');
-    if (!signals.longEnough) missing.push('business_context_detail');
+    if (!signals.longEnough) missing.push('context_detail');
   } else if (profile === 'research') {
     require('objective', 'decision_objective');
     require('business', 'research_target');
@@ -8305,9 +8283,7 @@ function openChatMissingLeaderIntakeFields(taskType = '', prompt = '', inputCoun
 
 function openChatNormalizeLeaderIntakeTask(taskType = '') {
   const task = String(taskType || '').trim().toLowerCase();
-  if (OPEN_CHAT_LEADER_INTAKE_TASKS.has(task)) return task;
-  if (['cait_growth_team', 'cait_cmo_leader', 'cait cmo_leader', 'cait growth team', 'growth_team', 'growth', 'marketing', 'cmo', 'free_web_growth', 'organic_growth', 'free_marketing'].includes(task)) return 'cmo_leader';
-  if (['agent_team', 'agent_team_launch', 'launch_team', 'launch_team_leader'].includes(task)) return 'cmo_leader';
+  if (openChatIsLeaderIntakeTask(task)) return task;
   return '';
 }
 
@@ -8315,7 +8291,6 @@ const OPEN_CHAT_CANONICAL_ORDER_TASKS = new Set([
   'prompt_brushup',
   'research_team_leader',
   'build_team_leader',
-  'cmo_leader',
   'secretary_leader',
   'cto_leader',
   'cpo_leader',
@@ -8365,20 +8340,6 @@ function openChatCanonicalOrderTaskType(taskType = '', context = '') {
   const token = openChatTaskToken(taskType);
   const contextText = `${taskType}\n${context}`;
   const matched = openChatIntentMatchText(contextText);
-  if (isFreeWebGrowthIntentText(token, contextText)) return 'cmo_leader';
-  if ([
-    'cait_growth_team',
-    'cait_cmo_leader',
-    'cait_marketing_team',
-    'cait_growth',
-    'growth_team',
-    'marketing_team',
-    'organic_acquisition',
-    'organic_growth',
-    'free_marketing',
-    'marketing_leader'
-  ].includes(token)) return 'cmo_leader';
-  if (token === 'agent_team_launch' || token === 'launch_team' || token === 'launch_team_leader') return 'cmo_leader';
   if (['secretary_team', 'secretary', 'executive_secretary', 'executive_assistant', 'assistant_ops'].includes(token)) return 'secretary_leader';
   if (token === 'build_team' || token === 'coding_team' || token === 'engineering_team') return 'build_team_leader';
   if (token === 'research_team' || token === 'analysis_team') return 'research_team_leader';
@@ -8386,10 +8347,6 @@ function openChatCanonicalOrderTaskType(taskType = '', context = '') {
   if (OPEN_CHAT_CANONICAL_ORDER_TASKS.has(token)) return token;
   const leaderTask = openChatNormalizeLeaderIntakeTask(token);
   if (leaderTask) return leaderTask;
-  if (/(?:\bcmo\b|chief marketing|marketing leader|マーケ責任者|cmo的|マーケ部長|マーケティング責任者)/i.test(matched)) return 'cmo_leader';
-  if (/(?:売上|収益|集客|流入|登録|会員登録|サインアップ|ユーザー獲得|顧客獲得|CVR|コンバージョン|反応|認知|問い合わせ|購入|継続|解約|マーケ|マーケティング|ローンチ|投稿|拡散|sales|revenue|growth|traffic|acquisition|aquisition|signups|customers|cutomers|conversion|retention|churn|marketing|launch|distribution|get\s+new\s+(?:customers|cutomers|users|signups|leads))/i.test(matched)) {
-    return 'cmo_leader';
-  }
   return '';
 }
 
@@ -8428,23 +8385,21 @@ function openChatLeaderIntakeQuestionsForTask(taskType = '', prompt = '') {
   const profile = openChatLeaderIntakeProfile(taskType);
   const ja = looksJapanese(prompt);
   if (!profile) return [];
-  if (profile === 'growth') {
+  if (profile === 'general') {
     return ja
       ? [
-        '売りたい商材・サービス内容とURLを教えてください。',
-        '依頼者として今回何を達成・判断したいですか？例: 認知、流入、登録、問い合わせ、購入、継続。',
-        '誰向けに売りたいですか？ICP、顧客の課題、今一番取りたい行動を教えてください。',
-        '営業資料、提案資料、DL資料、LP、価格表、事例など読ませたい資料があればURLやファイルで入れてください。なければ「なし」で大丈夫です。',
-        'GA4、Search Console、CRM、売上、問い合わせ、広告、SNSなどの実データはありますか？使える範囲と見たい期間を教えてください。',
-        '他に読ませたい情報、制約、希望する納品形式を教えてください。回答後、リーダーが意図を要約して提案に入ります。'
+        'このリーダーに最終的に何を判断・達成してほしいですか？',
+        '対象のサービス、システム、資料、URL、またはプロジェクトを教えてください。',
+        '読ませたい資料、実データ、過去の納品、ログ、URL、ファイルがあれば入れてください。なければ「なし」で大丈夫です。',
+        '制約、優先順位、承認が必要な点、避けたいことはありますか？',
+        '納品形式と完了条件を教えてください。回答後、リーダーが意図を要約します。'
       ]
       : [
-        'What product or service do you want to sell? Include the URL.',
-        'As the order owner, what do you want to achieve or decide: awareness, traffic, signups, leads, purchases, retention, or launch?',
-        'Who is the target customer? Include ICP, pain, and the user action you want most.',
-        'Add any sales deck, downloadable material, landing page, pricing page, case study, or product material the leader should read. If none, say none.',
-        'What real data is available: GA4, Search Console, CRM, sales, leads, ads, social, or campaign data? Include the usable range and period.',
-        'Add any other data to read, constraints, and desired delivery format. After this, the leader will summarize your intent before proposing.'
+        'What should this leader help decide or accomplish?',
+        'What service, system, source material, URL, or project is in scope?',
+        'Add any source materials, real data, prior deliveries, logs, URLs, or files the leader should read. If none, say none.',
+        'What constraints, priorities, approval gates, or exclusions matter?',
+        'What delivery format and acceptance criteria should define completion? The leader will summarize your intent first.'
       ];
   }
   if (profile === 'research') {
@@ -8495,9 +8450,9 @@ function normalizeOpenChatDynamicLeaderIntakeQuestions(value = []) {
     .slice(0, 6);
 }
 
-function buildOpenChatLeaderIntakeClarifyAnswer(taskType = 'cmo_leader', prompt = '', missing = [], options = {}) {
+function buildOpenChatLeaderIntakeClarifyAnswer(taskType = 'research_team_leader', prompt = '', missing = [], options = {}) {
   const text = String(prompt || '').trim();
-  const safeTaskType = openChatNormalizeLeaderIntakeTask(taskType) || taskType || 'cmo_leader';
+  const safeTaskType = openChatNormalizeLeaderIntakeTask(taskType) || taskType || 'research_team_leader';
   const safeMissing = Array.isArray(missing) && missing.length
     ? missing
     : openChatMissingLeaderIntakeFields(safeTaskType, text, {});
@@ -8560,7 +8515,6 @@ function openChatLeaderIntakeTaskFromPromptBody(body = '', original = '') {
   if (/(対象プロダクトや機能|What product or feature)/i.test(text)) return 'cpo_leader';
   if (/(商売モデル、商品、価格|business model, product, price)/i.test(text)) return 'cfo_leader';
   if (/(確認したい法務領域|legal area should be reviewed)/i.test(text)) return 'legal_leader';
-  if (/(商材・サービス内容|target customer|誰向けに売りたい|growth plan|集客プラン)/i.test(text)) return 'cmo_leader';
   return '';
 }
 
@@ -8616,7 +8570,8 @@ function leaderIntakeFollowupQuestions(taskType = '', missing = [], prompt = '')
     source_data_context: questions[3] || questions[2],
     current_state_or_constraints: questions[4] || questions[3],
     desired_delivery: questions[5] || questions[4],
-    business_context_detail: questions[0],
+    target_context: questions[1] || questions[0],
+    context_detail: questions[0],
     decision_objective: questions[0],
     research_target: questions[1],
     scope_or_evidence_constraints: questions[3] || questions[2],
@@ -8647,21 +8602,17 @@ function leaderIntakeFollowupQuestions(taskType = '', missing = [], prompt = '')
   return [...new Set(picked.length ? picked : questions)].slice(0, 3);
 }
 
-function buildOpenChatLeaderOrderBrief(taskType = 'cmo_leader', original = '', answer = '', inputCounts = {}) {
+function buildOpenChatLeaderOrderBrief(taskType = 'research_team_leader', original = '', answer = '', inputCounts = {}) {
   const ja = looksJapanese(original) || looksJapanese(answer);
   const combined = combinedLeaderIntakePrompt(original, answer);
-  const profile = openChatLeaderIntakeProfile(taskType) || 'growth';
+  const profile = openChatLeaderIntakeProfile(taskType) || 'research';
   const sourceLine = [
     Number(inputCounts.urlCount || 0) ? `${Number(inputCounts.urlCount || 0)} attached URL(s)` : '',
     Number(inputCounts.fileCount || 0) ? `${Number(inputCounts.fileCount || 0)} attached file(s)` : '',
     /https?:\/\//i.test(combined) ? 'inline URL(s) in chat' : ''
   ].filter(Boolean).join(', ') || 'written chat context';
-  const split = profile === 'growth'
-    ? 'CMO leader -> competitor positioning -> SEO / landing page -> social/community posts -> measurement plan'
-    : `${taskType} -> specialist agents as needed -> merged delivery`;
-  const deliver = profile === 'growth'
-    ? 'marketing plan with actual no-paid-ads actions, recommended channels/media, ready-to-post copy, competitor assumptions to verify, priority order, KPI table, and next 7-day execution checklist'
-    : 'leader summary, specialist task split, assumptions, execution plan, concrete deliverables, risks, and acceptance criteria';
+  const split = `${taskType} -> specialist agents as needed -> merged delivery`;
+  const deliver = 'leader summary, specialist task split, assumptions, execution plan, concrete deliverables, risks, and acceptance criteria';
   return [
     `Task: ${taskType}`,
     `Goal: Turn the user intake into an executable Team Leader order for ${profile} work after summarizing the order owner's intent.`,
@@ -8670,7 +8621,7 @@ function buildOpenChatLeaderOrderBrief(taskType = 'cmo_leader', original = '', a
     compactChatText(answer, 1600),
     `Work split: ${split}`,
     `Inputs: ${sourceLine}. Treat inline URLs, sales materials, analytics notes, files, and other user-provided data as source targets to inspect if available.`,
-    'Constraints: Respect the user-provided constraints. If no paid ads is mentioned, prioritize organic/free acquisition routes.',
+    'Constraints: Respect the user-provided constraints, approval gates, source limits, and execution boundaries.',
     `Deliver: ${deliver}.`,
     `Output language: ${ja ? 'Japanese' : 'English'}`,
     'Acceptance: first summarize the order owner intent and supplied source data; do not ask the same intake questions again; use the provided answers, state any remaining assumptions, separate facts from inference, and produce reusable execution assets.'
@@ -8688,7 +8639,8 @@ function buildOpenChatRecoveredLeaderIntakeAnswer(prompt = '', inputCounts = {})
     recovered?.taskType
       || openChatLeaderIntakeTaskFromPromptBody(previousAgentBody, original)
       || openChatNormalizeLeaderIntakeTask(openChatImplicitLeaderIntakeTask(`${original}\n${answer}`))
-      || 'cmo_leader'
+      || currentRoutingTask()
+      || 'research_team_leader'
   ).trim();
   if (!original || !taskType) return null;
   state.openChatLeaderIntakePrompt = compactChatText(original, 2000);
@@ -8698,12 +8650,6 @@ function buildOpenChatRecoveredLeaderIntakeAnswer(prompt = '', inputCounts = {})
 
 function openChatNormalizeDispatchTask(taskType = '', original = '', answer = '') {
   const task = openChatCanonicalOrderTaskType(taskType, `${original}\n${answer}`) || String(taskType || '').toLowerCase();
-  const text = openChatIntentMatchText(`${original}\n${answer}`);
-  if (isFreeWebGrowthIntentText(task, text)) return 'cmo_leader';
-  if (task === 'growth' || task === 'marketing' || task === 'cmo' || task === 'cmo_leader') return 'cmo_leader';
-  if (/(集客|売上|顧客|ユーザー|マーケ|ローンチ|投稿|媒体|growth|marketing|acquisition|aquisition|sales|customers|cutomers|users|launch|distribution|get\s+new\s+(?:customers|cutomers|users|signups|leads))/i.test(text)) {
-    return 'cmo_leader';
-  }
   return task || openChatCanonicalOrderTaskType(inferClientTaskSequence('', `${original}\n${answer}`)[0], `${original}\n${answer}`) || currentRoutingTask() || 'research';
 }
 
@@ -8727,7 +8673,7 @@ function openChatLooksNumberedLeaderIntakeAnswer(prompt = '') {
 function openChatLeaderHasMinimumRouteContext(taskType = '', prompt = '', inputCounts = {}) {
   const profile = openChatLeaderIntakeProfile(taskType);
   const signals = openChatLeaderIntakeSignals(prompt, inputCounts);
-  if (profile === 'growth') return Boolean(signals.business && (signals.audience || signals.objective));
+  if (profile === 'general') return Boolean((signals.business || signals.system) && signals.objective);
   if (profile === 'research') return Boolean(signals.business && signals.objective);
   if (profile === 'build') return Boolean(signals.system && signals.objective);
   if (profile === 'product') return Boolean(signals.business && (signals.audience || signals.objective));
@@ -8738,22 +8684,6 @@ function openChatLeaderHasMinimumRouteContext(taskType = '', prompt = '', inputC
 
 function buildOpenChatDispatchBriefFromPendingAnswer(original = '', answer = '', taskType = 'research', inputCounts = {}) {
   const dispatchTask = openChatNormalizeDispatchTask(taskType, original, answer);
-  const ja = looksJapanese(original) || looksJapanese(answer);
-  if (dispatchTask === 'cmo_leader') {
-    return [
-      `Task: ${dispatchTask}`,
-      'Goal: Create a practical customer-acquisition and growth plan from the user context.',
-      'Context:',
-      `- Original request: ${compactChatText(original, 500)}`,
-      `- User clarification: ${compactChatText(answer, 1200)}`,
-      'Work split: CMO leader intake/refinement -> competitor/channel research -> positioning -> SEO/content -> social/community posts -> measurement plan',
-      `Inputs: ${Number(inputCounts.urlCount || 0) || Number(inputCounts.fileCount || 0) ? `${Number(inputCounts.urlCount || 0)} URL(s), ${Number(inputCounts.fileCount || 0)} file(s), plus written chat context.` : 'Written chat context. If URLs, sales materials, GA4/Search Console notes, CRM data, or other source materials are present in chat, treat them as targets to inspect.'}`,
-      'Constraints: If the user mentions no paid ads, prioritize organic/free acquisition. The Team Leader must summarize the order owner intent and source-data status before assigning specialist agents.',
-      'Deliver: clear growth diagnosis, priority channels/media, competitor-informed positioning, concrete no-paid-ads actions, ready-to-post copy, KPI table, and a 7-day execution checklist.',
-      `Output language: ${ja ? 'Japanese' : 'English'}`,
-      'Acceptance: do not repeat facts the user already supplied; if more context is needed, ask only the missing detail first. Otherwise summarize intent, list supplied and missing data, state assumptions, separate facts from inference, and make the delivery actionable.'
-    ].join('\n');
-  }
   return catCompactDispatchBrief([
     'Original request:',
     original,
@@ -8767,17 +8697,10 @@ function openChatHumanDispatchPreview(brief = '', taskType = 'research', prompt 
   const parts = structuredOrderBriefParts(brief);
   const ja = looksJapanese(prompt) || looksJapanese(brief);
   const task = openChatCanonicalOrderTaskType(parts.taskType || taskType, brief) || String(parts.taskType || taskType || '').toLowerCase();
-  const isGrowth = task === 'cmo_leader' || /growth|marketing|集客|売上/.test(openChatIntentMatchText(brief));
-  const route = isGrowth ? 'CMO Team Leader' : (task || 'matching agent');
-  const goal = isGrowth
-    ? (ja ? '集客・成長施策を、競合/媒体/投稿文/実行手順まで具体化する' : 'Turn the request into a concrete growth/acquisition plan with channels, copy, and actions')
-    : (parts.goal || compactChatText(brief.replace(/\s+/g, ' '), 220));
-  const delivery = isGrowth
-    ? (ja ? '優先媒体、競合を踏まえたポジショニング、無料施策、投稿文、KPI、7日間の実行チェックリスト' : 'priority channels, competitor-informed positioning, organic actions, post copy, KPIs, and a 7-day checklist')
-    : (parts.deliver || openChatDeliverableForTask(task));
-  const assumptions = isGrowth
-    ? (ja ? '商材・対象・制約が不足する場合は、納品内で仮定を明記します。' : 'If product, audience, or constraints are incomplete, the delivery will state assumptions.')
-    : (ja ? '不足条件は仮定として明記します。' : 'Missing details will be stated as assumptions.');
+  const route = task || 'matching agent';
+  const goal = parts.goal || compactChatText(brief.replace(/\s+/g, ' '), 220);
+  const delivery = parts.deliver || openChatDeliverableForTask(task);
+  const assumptions = ja ? '不足条件は仮定として明記します。' : 'Missing details will be stated as assumptions.';
   return ja
     ? [
         '対応するオーダーに繋げます。まだ実行も課金もしていません。',
@@ -8859,10 +8782,9 @@ function buildOpenChatLeaderIntakeFollowupAnswer(prompt = '', inputCounts = {}) 
           '',
           '反映した内容:',
           `- 元の依頼: ${compactChatText(pending.prompt, 160)}`,
-          `- URL/商材: ${/https?:\/\//i.test(answer) ? '入力URLを対象にします' : '回答内容を商材情報として扱います'}`,
-          '- 対象: エンジニア / 一般ユーザーなど、回答に含まれる対象を使います',
-          '- 制約: 広告費なしなど、回答に含まれる制約を使います',
-          '- 納品: マーケティングプラン、実アクション、投稿文、媒体案を含めます',
+          `- 対象: ${/https?:\/\//i.test(answer) ? '入力URLを対象に含めます' : '回答内容を対象情報として扱います'}`,
+          '- 制約: 回答に含まれる制約と承認条件を使います',
+          '- 納品: リーダー判断、担当分解、根拠、成果物、次アクションを含めます',
           '',
           previewBlock,
           '',
@@ -8892,7 +8814,8 @@ function buildOpenChatLeaderIntakeAnswer(prompt = '', inputCounts = {}) {
     const original = openChatPreviousUserMessageBody() || recoverOpenChatLeaderIntakeContextFromMessages()?.prompt || '';
     const taskType = openChatLeaderIntakeTaskFromPromptBody(openChatPreviousAgentMessageBody(), original)
       || openChatNormalizeLeaderIntakeTask(openChatImplicitLeaderIntakeTask(`${original}\n${text}`))
-      || 'cmo_leader';
+      || currentRoutingTask()
+      || 'research_team_leader';
     if (original && taskType) {
       state.openChatLeaderIntakePrompt = compactChatText(original, 2000);
       state.openChatLeaderIntakeTask = compactChatText(taskType, 120);
@@ -8972,7 +8895,7 @@ function buildOpenChatPendingQuestionFollowupAnswer(prompt = '', inputCounts = {
         ? [
           '対応するオーダーに繋ぎます。まだ実行も課金もしていません。',
           '',
-          `接続先: ${dispatchTask === 'cmo_leader' ? 'CMO Team Leader' : dispatchTask}`,
+          `接続先: ${dispatchTask || 'matching agent'}`,
           '',
           'ただ、今のままだとAgentに渡す中身が薄く、納品の方向がぶれます。',
           '次のうち分かる範囲だけ1行で足してください。',
@@ -8987,7 +8910,7 @@ function buildOpenChatPendingQuestionFollowupAnswer(prompt = '', inputCounts = {
         : [
           'I will connect this to the matching order. Nothing has run or been billed yet.',
           '',
-          `Route: ${dispatchTask === 'cmo_leader' ? 'CMO Team Leader' : dispatchTask}`,
+          `Route: ${dispatchTask || 'matching agent'}`,
           '',
           'Right now the agent handoff is still too thin, so the delivery could drift.',
           'Add any of these in one line:',
@@ -10296,7 +10219,7 @@ function buildOpenChatNaturalChoiceFollowup(prompt = '', inputCounts = {}) {
   }
   if (!mode && openChatLooksLikeNaturalChoiceDetails(prompt)) {
     const taskType = intent === 'natural_business_growth' || intent === 'natural_marketing_launch'
-      ? (openChatCanonicalOrderTaskType('', `${original}\n${prompt}`) || 'cmo_leader')
+      ? (openChatCanonicalOrderTaskType('', `${original}\n${prompt}`) || currentRoutingTask() || 'growth')
       : (openChatCanonicalOrderTaskType(inferClientTaskSequence('', `${original}\n${prompt}`)[0], `${original}\n${prompt}`) || 'research');
     const brief = buildOpenChatDispatchBriefFromPendingAnswer(original, prompt, taskType, inputCounts);
     const previewBlock = openChatHumanDispatchPreview(brief, taskType, `${original}\n${prompt}`, inputCounts);
@@ -11809,7 +11732,6 @@ function openChatLibraryCommandScope(prompt = '') {
 function openChatTaskLabel(taskType = '') {
   const task = String(taskType || '').trim().toLowerCase();
   const labels = {
-    cmo_leader: 'CMO Leader',
     research_team_leader: 'Research Team Leader',
     build_team_leader: 'Build Team Leader',
     research: 'Research Agent',
@@ -12623,11 +12545,11 @@ function buildOpenChatMarketingAgentListAnswer(prompt = '') {
     ],
     body: ja
       ? [
-          'マーケティング系の主な built-in agent はこのあたりです。',
+          'マーケティング系の主な sample agent はこのあたりです。',
           '',
           'チームリーダー:',
-          '- CMO TEAM LEADER: ICP、ポジショニング、チャネル優先度を決め、広告費なしのSEO、媒体掲載、X、Reddit、Indie Hackers、計測まで段階的に組む',
-          '- LAUNCH TEAM LEADER: 1つの告知をX、Reddit、Indie Hackers、Instagramなどに展開する',
+          '- Team Leader: 目的、根拠、担当分解、承認点、最終統合を管理する',
+          '- Launch Team Leader: 1つの告知を複数チャネル向けの下書きと計測計画に分解する',
           '',
           '専門agent:',
           '- GROWTH OPERATOR AGENT: 成長ボトルネックと7日実験を設計する',
@@ -12642,14 +12564,14 @@ function buildOpenChatMarketingAgentListAnswer(prompt = '') {
           '- INSTAGRAM LAUNCH AGENT: carousel、reel、story、captionの角度を作る',
           '- DATA ANALYSIS AGENT: 流入、登録、注文、反応を見て次の改善を出す',
           '',
-          '迷う場合は CMO TEAM LEADER に投げるのが安全です。まだ注文も課金も発生していません。'
+          '迷う場合は、やりたい成果をそのまま書けば CAIt がリーダーか専門エージェントかを判断します。まだ注文も課金も発生していません。'
         ].join('\n')
       : [
-          'Here are the main built-in marketing agents.',
+          'Here are the main sample marketing agents.',
           '',
           'Team Leaders:',
-          '- CMO TEAM LEADER: sets ICP, positioning, channel priority, then sequences no-paid SEO, directories, X, Reddit, Indie Hackers, and analytics work.',
-          '- LAUNCH TEAM LEADER: turns one announcement into coordinated X, Reddit, Indie Hackers, Instagram, and measurement work.',
+          '- Team Leader: manages objective, evidence, task split, approval gates, and final merge.',
+          '- Launch Team Leader: turns one announcement into channel drafts and measurement planning.',
           '',
           'Specialists:',
           '- GROWTH OPERATOR AGENT: diagnoses the growth bottleneck and designs a 7-day experiment.',
@@ -12664,7 +12586,7 @@ function buildOpenChatMarketingAgentListAnswer(prompt = '') {
           '- INSTAGRAM LAUNCH AGENT: creates carousel, reel, story, and caption angles.',
           '- DATA ANALYSIS AGENT: reads traffic, signup, order, and campaign metrics.',
           '',
-          'If unsure, start with CMO TEAM LEADER. No order or billing happened here.'
+          'If unsure, describe the outcome you want and CAIt will choose a leader or specialist. No order or billing happened here.'
         ].join('\n'),
     status: 'Marketing agent list answered in chat.\n\nNo order was created and no billing occurred.'
   };
@@ -12684,30 +12606,20 @@ function buildOpenChatLeaderCatalogAnswer(prompt = '') {
     ],
     body: ja
       ? [
-          '利用できる主なリーダーは以下です。これは案内回答なので、まだ注文も課金も発生していません。',
+          '利用できるリーダーは登録済みエージェントの manifest に従います。これは案内回答なので、まだ注文も課金も発生していません。',
           '',
-          '- CMO Leader: 集客、SEO、SNS、ローンチ、計測までを品質重視で組み立てる',
-          '- CTO Leader: 技術方針、実装計画、リポジトリ修正、デプロイやロールバックを整理する',
-          '- CPO Leader: プロダクト戦略、UX、優先順位、検証計画を整理する',
-          '- CFO Leader: 価格、収支、ユニットエコノミクス、資金繰りを整理する',
-          '- Legal Leader: 規約、プライバシー、コンプライアンス、リスクを確認する',
-          '- Research Team Leader: 複数ソースの調査、比較、意思決定メモをまとめる',
-          '- Build Team Leader: 実装タスクを分解し、専門エージェントやアプリへの引き継ぎをまとめる',
-          '- Secretary Leader: 日程、返信、会議準備、秘書業務の流れを整理する',
+          '- Team Leader: 複数エージェントの目的、根拠、順序、承認点、最終統合を管理する',
+          '- Specialist: 単一領域の調査、実装、分析、文章化などを直接担当する',
+          '- External/Sample Agent: manifest の task types、layer、capability に基づいて同じルールで扱われる',
           '',
           '迷う場合は、やりたい成果をそのまま書けば CAIt がリーダーか専門エージェントかを判断します。実行する場合だけ Send order を押してください。'
         ].join('\n')
       : [
-          'Available leaders are below. This is a chat answer, so no order or billing happened.',
+          'Available leaders come from registered agent manifests. This is a chat answer, so no order or billing happened.',
           '',
-          '- CMO Leader: acquisition, SEO, social, launch, and measurement work',
-          '- CTO Leader: technical direction, implementation planning, repo changes, deploy and rollback planning',
-          '- CPO Leader: product strategy, UX, prioritization, and validation planning',
-          '- CFO Leader: pricing, unit economics, cash flow, and finance decisions',
-          '- Legal Leader: terms, privacy, compliance, and risk review',
-          '- Research Team Leader: multi-source research, comparisons, and decision memos',
-          '- Build Team Leader: implementation breakdowns and specialist/app handoffs',
-          '- Secretary Leader: scheduling, replies, meeting prep, and assistant workflows',
+          '- Team Leader: coordinates objective, evidence, order, approvals, and final merge across agents.',
+          '- Specialist: handles a single concrete research, implementation, analysis, or writing lane.',
+          '- External/Sample Agent: routed by the same manifest task types, layer, and capabilities.',
           '',
           'If you are unsure, describe the outcome you want and CAIt will choose a leader or specialist. Paid work only starts when you press Send order.'
         ].join('\n'),
@@ -13002,7 +12914,7 @@ function quickOrderChatAnswer(prompt = '', inputCounts = {}) {
   if (/(api key|apiキー|openai|anthropic|serp|model provider|モデル|プロバイダー|契約)/i.test(matchText)) {
     return ja
       ? `Built-in agent を使う場合、買い手側で OpenAI、Anthropic、検索APIなどを個別契約する必要はありません。${PRODUCT_NAME} の月締め請求で注文できます。自分の外部システムから注文したい場合は SETTINGS で CAIt API key を発行します。`
-      : `For built-in agents, buyers do not need separate OpenAI, Anthropic, search, or model-provider API contracts. Use ${PRODUCT_NAME} month-end billing. For external systems, issue a CAIt API key in SETTINGS.`;
+      : `For managed sample agents, buyers do not need separate OpenAI, Anthropic, search, or model-provider API contracts. Use ${PRODUCT_NAME} month-end billing. For external systems, issue a CAIt API key in SETTINGS.`;
   }
   if (/(github|git hub|agent.*登録|登録|publish|list|manifest|verify|verification|ベリファイ|検証|マニフェスト|公開)/i.test(matchText)) {
     return ja
@@ -13455,14 +13367,12 @@ function openChatLlmLeaderIntakeGuardAnswer(prompt = '', result = {}, fallbackAn
     openChatImplicitLeaderIntakeTask(userContext),
     openChatImplicitLeaderIntakeTask(rawBrief),
     inferClientTaskSequence('', userContext)[0],
-    inferClientTaskSequence('', rawBrief)[0],
-    resultIntent === 'natural_business_growth' || resultIntent === 'natural_marketing_launch' ? 'cmo_leader' : ''
+    inferClientTaskSequence('', rawBrief)[0]
   ];
   const taskType = candidates.map(openChatNormalizeLeaderIntakeTask).find(Boolean) || '';
   if (!taskType) return null;
   const isOrderLike = ['prepare_order', 'use_previous_brief'].includes(action) || rawBrief || fallbackAnswer?.leaderIntakeTask;
   const isLeaderIntent = Boolean(openChatImplicitLeaderIntakeTask(userContext))
-    || ['natural_business_growth', 'natural_marketing_launch'].includes(resultIntent)
     || OPEN_CHAT_LEADER_INTAKE_TASKS.has(taskType);
   if (!isOrderLike && !isLeaderIntent) return null;
   const missing = openChatMissingLeaderIntakeFields(taskType, userContext, orderInputCounts(orderInputFromComposer()));
@@ -15936,7 +15846,7 @@ function agentPricingGuideText(agent = null) {
   if (model === 'hybrid') {
     return 'Hybrid: the SaaS provider pays the monthly fee lane, and the end user pays only the declared overage lane. CAIt keeps 10% of provider monthly fees separately from end-user order billing.';
   }
-  return 'Usage-based: the end user pays measured usage plus provider markup. CAIt platform margin stays fixed at 10% of the end-user order total.';
+  return 'Usage-based: the end user pays measured usage plus provider markup. Provider markup can be 0-100%. CAIt platform margin stays fixed at 10% of the end-user order total.';
 }
 
 function estimateWindowOfAgent(agent, taskType = currentRoutingTask(), options = {}) {
@@ -16060,7 +15970,7 @@ function agentTrustProfile(agent = {}) {
             : (manifestMetadata.trust && typeof manifestMetadata.trust === 'object'
                 ? manifestMetadata.trust
                 : (verificationDetails.trust && typeof verificationDetails.trust === 'object' ? verificationDetails.trust : {}))));
-  const verified = agent.verificationStatus === 'verified' || metadata.builtIn;
+  const verified = agent.verificationStatus === 'verified' || isManagedSampleAgent(agent);
   const score = Number(source.score);
   const level = String(source.level || (verified ? 'verified' : 'unverified')).trim().toLowerCase().replace(/[\s-]+/g, '_');
   const label = String(source.label || (verified ? 'Verified agent' : 'Unverified agent')).trim();
@@ -16072,7 +15982,7 @@ function agentTrustProfile(agent = {}) {
     : ['Endpoint verification required', 'Manifest review required', 'Delivery history required']);
   const evidenceRequirements = agentTrustList(source.evidence_requirements || source.evidenceRequirements, ['Prompt, files, URLs, sources, connector proof, and approval where applicable']);
   const limitations = agentTrustList(source.limitations, ['Trust score is workflow assurance, not a guarantee of business correctness']);
-  const tone = ['approval_gated', 'source_bound', 'orchestration_reviewed', 'verified', 'built_in_verified'].includes(level)
+  const tone = ['approval_gated', 'source_bound', 'orchestration_reviewed', 'verified', 'sample_verified'].includes(level)
     ? (level === 'approval_gated' ? 'warn' : 'ok')
     : 'info';
   return {
@@ -16095,8 +16005,8 @@ function agentRole(agent) {
   const manifest = agentManifest(agent);
   const metadata = agent?.metadata && typeof agent.metadata === 'object' ? agent.metadata : {};
   const raw = String(manifest.agent_role || manifest.agentRole || metadata.agentRole || metadata.agent_role || metadata.role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-  if (['leader', 'leader_agent', 'team_leader', 'manager', 'orchestrator', 'director', 'executive', 'cmo', 'cto', 'cpo', 'cfo', 'legal'].includes(raw)) return 'leader';
-  if ((agent.taskTypes || []).some((task) => /(^|_)(leader|cmo|cto|cpo|cfo|legal|orchestration|planning)(_|$)/i.test(String(task || '')))) return 'leader';
+  if (['leader', 'leader_agent', 'team_leader', 'manager', 'orchestrator', 'director', 'executive'].includes(raw)) return 'leader';
+  if ((agent.taskTypes || []).some((task) => /(^|_)(leader|orchestration|planning)(_|$)/i.test(String(task || '')))) return 'leader';
   return 'worker';
 }
 
@@ -16742,49 +16652,12 @@ function selectGithubRepoInPicker(repoInfo = {}) {
   showSelectedRepo();
 }
 
-const KNOWN_BUILT_IN_AGENT_KINDS = new Set([
-  'prompt_brushup',
-  'research',
-  'writer',
-  'code',
-  'pricing',
-  'teardown',
-  'landing',
-  'validation',
-  'growth',
-  'acquisition_automation',
-  'directory_submission',
-  'research_team_leader',
-  'build_team_leader',
-  'cmo_leader',
-  'cto_leader',
-  'cpo_leader',
-  'cfo_leader',
-  'legal_leader',
-  'secretary_leader',
-  'inbox_triage',
-  'reply_draft',
-  'schedule_coordination',
-  'follow_up',
-  'meeting_prep',
-  'meeting_notes',
-  'instagram',
-  'x_post',
-  'reddit',
-  'indie_hackers',
-  'data_analysis',
-  'seo_gap',
-  'hiring',
-  'diligence'
-]);
-
 function sampleKindFromUrl(value, type = 'any') {
   const raw = String(value || '').trim();
   const directMatch = raw.match(/^\/mock\/([^/]+)\/(health|jobs)$/i);
   if (directMatch) {
     const kind = String(directMatch[1] || '').trim().toLowerCase();
     const endpointType = String(directMatch[2] || '').trim().toLowerCase();
-    if (!KNOWN_BUILT_IN_AGENT_KINDS.has(kind)) return '';
     if (type !== 'any' && endpointType !== type) return '';
     return kind;
   }
@@ -16794,7 +16667,6 @@ function sampleKindFromUrl(value, type = 'any') {
     if (!match) return '';
     const kind = String(match[1] || '').trim().toLowerCase();
     const endpointType = String(match[2] || '').trim().toLowerCase();
-    if (!KNOWN_BUILT_IN_AGENT_KINDS.has(kind)) return '';
     if (type !== 'any' && endpointType !== type) return '';
     return kind;
   } catch {
@@ -16810,8 +16682,17 @@ function sampleKindFromAgent(agent) {
   const taggedSample = Boolean(rootMetadata.sample === true || manifestMetadata.sample === true || manifest.sample === true);
   const nameTaggedSample = fallbackName.includes('sample_research') || fallbackName.includes('sample_writer') || fallbackName.includes('sample_code');
   if (!taggedSample && !nameTaggedSample) return '';
-  const explicitKind = String(rootMetadata.category || manifestMetadata.category || manifest.category || '').trim().toLowerCase();
-  if (taggedSample && KNOWN_BUILT_IN_AGENT_KINDS.has(explicitKind)) return explicitKind;
+  const explicitKind = String(
+    rootMetadata.sampleKind
+    || rootMetadata.sample_kind
+    || rootMetadata.category
+    || manifestMetadata.sampleKind
+    || manifestMetadata.sample_kind
+    || manifestMetadata.category
+    || manifest.category
+    || ''
+  ).trim().toLowerCase();
+  if (taggedSample && explicitKind) return explicitKind;
   const healthKind = sampleKindFromUrl(manifest.healthcheckUrl || manifest.healthcheck_url || manifest.healthUrl || '', 'health');
   if (healthKind) return healthKind;
   const jobKind = sampleKindFromUrl(
@@ -16819,13 +16700,10 @@ function sampleKindFromAgent(agent) {
     'jobs'
   );
   if (jobKind) return jobKind;
-  for (const kind of KNOWN_BUILT_IN_AGENT_KINDS) {
-    if (fallbackName.includes(`sample_${kind}`)) return kind;
-  }
   return '';
 }
 
-function isBuiltInSampleAgent(agent) {
+function isManagedSampleAgent(agent) {
   return Boolean(sampleKindFromAgent(agent));
 }
 
@@ -16933,7 +16811,7 @@ function agentReview(agent) {
 }
 
 function agentReviewStatus(agent) {
-  if (isBuiltInSampleAgent(agent)) return 'not_required';
+  if (isManagedSampleAgent(agent)) return 'not_required';
   const status = String(agent?.agentReviewStatus || agent?.agent_review_status || '').trim().toLowerCase();
   if (['approved', 'rejected', 'needs_human_review', 'not_required'].includes(status)) return status;
   if (agent?.verificationStatus === 'verified') return 'approved_legacy';
@@ -16968,7 +16846,7 @@ function agentReviewReason(agent) {
 
 function agentHealth(agent) {
   const verification = agentVerification(agent);
-  const verified = agent?.verificationStatus === 'verified' || isBuiltInSampleAgent(agent);
+  const verified = agent?.verificationStatus === 'verified' || isManagedSampleAgent(agent);
   const reviewApproved = agentReviewApproved(agent);
   const reviewLabel = agentReviewLabel(agent);
   const endpoints = collectAgentEndpoints(agent);
@@ -17075,18 +16953,9 @@ function agentReadinessScore(agent) {
   return (health.ready ? 1000 : 0)
     + (health.verified ? 300 : 0)
     + (agent.online ? 120 : 0)
-    + (isBuiltInAgent(agent) ? 0 : 180)
+    + (isManagedSampleAgent(agent) ? 0 : 180)
     + Math.round(Number(agent.successRate || 0) * 100)
     - Math.round(Number(agent.avgLatencySec || 0));
-}
-
-function isBuiltInAgent(agent = {}) {
-  return Boolean(
-    agent?.metadata?.builtIn
-    || agent?.manifestSource === 'built-in'
-    || String(agent?.manifestUrl || '').startsWith('built-in://')
-    || agent?.owner === 'aiagent2'
-  );
 }
 
 function agentTaskSpecificityScore(agent = {}, taskType = '') {
@@ -17113,78 +16982,64 @@ function currentOrderInputTypeHints(prompt = String(els.jobPrompt?.value || ''),
   return [...hints];
 }
 
-function clientTaskTagHints(taskType = '') {
-  const task = String(taskType || '').trim().toLowerCase();
-  const map = {
-    cmo_leader: ['leader', 'marketing', 'growth', 'strategy'],
-    research_team_leader: ['leader', 'research', 'analysis'],
-    cto_leader: ['leader', 'engineering', 'github'],
-    cpo_leader: ['leader', 'product', 'ux'],
-    cfo_leader: ['leader', 'finance', 'pricing'],
-    legal_leader: ['leader', 'legal', 'compliance'],
-    secretary_leader: ['leader', 'secretary', 'email', 'calendar'],
-    inbox_triage: ['secretary', 'email', 'gmail'],
-    reply_draft: ['secretary', 'email', 'writing'],
-    schedule_coordination: ['secretary', 'calendar', 'meeting'],
-    follow_up: ['secretary', 'reminder', 'email'],
-    meeting_prep: ['secretary', 'meeting', 'briefing'],
-    meeting_notes: ['secretary', 'meeting', 'summary'],
-    growth: ['marketing', 'growth'],
-    teardown: ['research', 'analysis', 'competitor'],
-    data_analysis: ['data', 'analysis'],
-    seo_gap: ['marketing', 'seo', 'research'],
-    landing: ['marketing', 'conversion', 'ux'],
-    directory_submission: ['marketing', 'distribution', 'directory'],
-    acquisition_automation: ['marketing', 'growth', 'automation'],
-    x_post: ['marketing', 'social', 'x'],
-    reddit: ['marketing', 'community', 'reddit'],
-    indie_hackers: ['marketing', 'community', 'indie_hackers'],
-    instagram: ['marketing', 'social', 'instagram'],
-    code: ['engineering', 'code', 'github'],
-    debug: ['engineering', 'debug']
-  };
-  return normalizeClientList([task, ...(map[task] || [])], []);
+function clientTaskRoutingObject(agent = {}) {
+  const metadata = agent?.metadata || {};
+  const manifest = metadata?.manifest || agent?.manifest || {};
+  const manifestMetadata = manifest?.metadata || {};
+  const routing = metadata.taskRouting
+    || metadata.task_routing
+    || manifest.taskRouting
+    || manifest.task_routing
+    || manifestMetadata.taskRouting
+    || manifestMetadata.task_routing
+    || {};
+  return routing && typeof routing === 'object' && !Array.isArray(routing) ? routing : {};
 }
 
-const WORKFLOW_TASK_SOFT_MATCH_MAP = Object.freeze({
-  cmo_leader: ['cmo', 'marketing_leader', 'free_web_growth_leader', 'launch_team_leader', 'agent_team_launch'],
-  research_team_leader: ['research_team_leader', 'research_team', 'analysis_team'],
-  build_team_leader: ['build_team_leader', 'build_team', 'coding_team', 'engineering_team'],
-  cto_leader: ['cto', 'cto_leader', 'technical_leader'],
-  cpo_leader: ['cpo', 'cpo_leader', 'product_leader'],
-  cfo_leader: ['cfo', 'cfo_leader', 'finance_leader'],
-  legal_leader: ['legal', 'legal_leader', 'legal_counsel', 'compliance_leader'],
-  secretary_leader: ['secretary_leader', 'executive_secretary', 'executive_assistant', 'secretary', 'assistant_ops'],
-  inbox_triage: ['inbox_triage', 'email_triage', 'mailbox_triage', 'gmail_triage', 'inbox'],
-  reply_draft: ['reply_draft', 'email_reply', 'reply_writer', 'gmail_reply'],
-  schedule_coordination: ['schedule_coordination', 'calendar_coordination', 'calendar', 'scheduling', 'meeting_schedule', 'google_meet', 'zoom', 'microsoft_teams'],
-  follow_up: ['follow_up', 'followup', 'reminder', 'chaser'],
-  meeting_prep: ['meeting_prep', 'meeting_brief', 'agenda', 'briefing'],
-  meeting_notes: ['meeting_notes', 'minutes', 'action_items', 'meeting_summary'],
-  research: ['research', 'analysis', 'summary'],
-  teardown: ['teardown', 'research', 'analysis', 'competitor', 'benchmark'],
-  data_analysis: ['data_analysis', 'analytics', 'data', 'research'],
-  media_planner: ['media_planner', 'channel_planner', 'distribution_strategy', 'channel_fit', 'listing_media_strategy', 'growth', 'marketing', 'research'],
-  citation_ops: ['citation_ops', 'meo', 'local_seo', 'gbp', 'google_business_profile', 'citations', 'local_listing'],
-  seo_gap: ['seo_gap', 'seo', 'content_gap', 'seo_article', 'seo_rewrite', 'seo_monitor'],
-  landing: ['landing', 'writing', 'seo', 'conversion', 'ux', 'marketing'],
-  growth: ['growth', 'marketing', 'sales', 'customer_acquisition', 'lead_generation'],
-  directory_submission: ['directory_submission', 'directory_listing', 'launch_directory', 'startup_directory', 'ai_tool_directory', 'media_listing', 'free_listing'],
-  acquisition_automation: ['acquisition_automation', 'customer_acquisition', 'lead_generation', 'outreach', 'crm', 'automation', 'growth', 'marketing'],
-  email_ops: ['email_ops', 'email', 'email_campaign', 'lifecycle_email', 'newsletter', 'onboarding_email', 'reactivation_email'],
-  list_creator: ['list_creator', 'lead_sourcing', 'lead_qualification', 'company_list_builder', 'prospect_research', 'lead_list', 'prospect_list'],
-  cold_email: ['cold_email', 'outbound_email', 'sales_email', 'prospecting_email', 'email_ops', 'email'],
-  instagram: ['instagram', 'social'],
-  x_post: ['x_post', 'x_ops', 'x_automation', 'x', 'twitter', 'social'],
-  reddit: ['reddit', 'community'],
-  indie_hackers: ['indie_hackers', 'community'],
-  code: ['code', 'debug', 'ops', 'automation'],
-  debug: ['debug', 'code', 'ops'],
-  pricing: ['pricing', 'finance', 'billing', 'unit_economics'],
-  validation: ['validation', 'product', 'research'],
-  diligence: ['diligence', 'research', 'risk'],
-  summary: ['summary', 'research', 'analysis']
-});
+function clientRoutingByTaskValues(routing = {}, taskType = '', field = '') {
+  const task = String(taskType || '').trim().toLowerCase();
+  if (!task) return [];
+  const source = routing[field] && typeof routing[field] === 'object' && !Array.isArray(routing[field])
+    ? routing[field]
+    : {};
+  return normalizeClientList(source[task] || [], []);
+}
+
+function clientTaskRoutingTokens(taskType = '', options = {}) {
+  const task = String(taskType || '').trim().toLowerCase();
+  if (!task) return [];
+  const field = options.field || 'soft';
+  const directField = field === 'tag' ? 'tag_hints' : 'soft_match_tokens';
+  const byTaskField = field === 'tag' ? 'tag_hints_by_task' : 'soft_match_tokens_by_task';
+  const tokens = [];
+  const push = (items = []) => {
+    normalizeClientList(items, []).forEach((item) => {
+      if (!tokens.includes(item)) tokens.push(item);
+    });
+  };
+  (state.snapshot?.agents || []).forEach((agent) => {
+    const routing = clientTaskRoutingObject(agent);
+    const taskTypes = normalizeClientList(agent?.taskTypes || agent?.task_types || [], []);
+    const aliases = normalizeClientList(routing.aliases || [], []);
+    const ownsTask = taskTypes.includes(task) || aliases.includes(task);
+    push(clientRoutingByTaskValues(routing, task, byTaskField));
+    if (ownsTask) push(routing[directField] || []);
+  });
+  return tokens;
+}
+
+function clientTaskSignalTokens(value = '') {
+  return normalizeClientList(String(value || '').split(/[^a-z0-9_]+/i), []);
+}
+
+function clientTaskTagHints(taskType = '') {
+  const task = String(taskType || '').trim().toLowerCase();
+  return normalizeClientList([
+    task,
+    ...clientTaskRoutingTokens(task, { field: 'tag' }),
+    ...clientTaskSignalTokens(task)
+  ], []);
+}
 
 function clientTaskMetadataScores(agent = {}) {
   const sources = [
@@ -17226,7 +17081,7 @@ function clientWorkflowTaskTokens(taskType = '') {
   if (!task) return [];
   return normalizeClientList([
     task,
-    ...(WORKFLOW_TASK_SOFT_MATCH_MAP[task] || [])
+    ...clientTaskRoutingTokens(task, { field: 'soft' })
   ], []);
 }
 
@@ -17246,7 +17101,7 @@ function clientTaskMatch(agent = {}, taskType = '') {
   const metadataBoost = Math.max(...desiredTokens.map((token) => Number(metadataScores.get(token) || 0)), 0);
   let best = null;
   tasks.forEach((candidateTask) => {
-    const candidateTokens = normalizeClientList([candidateTask, ...(WORKFLOW_TASK_SOFT_MATCH_MAP[candidateTask] || [])], []);
+    const candidateTokens = clientWorkflowTaskTokens(candidateTask);
     const overlap = candidateTokens.filter((token) => desiredSet.has(token)).length;
     const directAlias = desiredSet.has(candidateTask) ? 1 : 0;
     const overlapScore = desiredTokens.length ? overlap / desiredTokens.length : 0;
@@ -17285,7 +17140,7 @@ function agentRoutingScore(agent = {}, taskType = '') {
     + (taskMatch.exact ? 28 : Math.round(Number(taskMatch.compatibility || 0) * 20))
     + quality
     + tagFit
-    + (isBuiltInAgent(agent) ? 0 : 160)
+    + (isManagedSampleAgent(agent) ? 0 : 160)
     + speed
     + inputFit
     + scheduleFit
@@ -18200,11 +18055,6 @@ function workflowChildRunsFromDelivery(run = null, report = {}) {
   return workflowChildren;
 }
 
-const MARKETING_LEADER_TASKS = new Set([
-  'cmo_leader',
-  'agent_team_launch'
-]);
-
 const MARKETING_EMAIL_TASKS = new Set([
   'email_ops',
   'cold_email'
@@ -18411,7 +18261,7 @@ function marketingTaskFamily(taskType = '', deliverable = null) {
   const deliverableType = String(deliverable?.type || '').trim().toLowerCase();
   if (deliverableType === 'email_pack' || MARKETING_EMAIL_TASKS.has(task) || /email/.test(task)) return 'email';
   if (deliverableType === 'social_post_pack' || MARKETING_SOCIAL_TASKS.has(task) || /x_post|social|reddit|indie|instagram/.test(task)) return 'social';
-  if (MARKETING_LEADER_TASKS.has(task)) return 'leader';
+  if (task.endsWith('_leader')) return 'leader';
   if (task === 'landing') return 'landing';
   if (task === 'seo_gap') return 'seo';
   if (task === 'pricing') return 'pricing';
@@ -18426,7 +18276,7 @@ function marketingTaskLabel(taskType = '', deliverable = null) {
   const family = marketingTaskFamily(taskType, deliverable);
   if (family === 'email') return 'Email';
   if (family === 'social') return 'Social';
-  if (family === 'leader') return 'CMO leader';
+  if (family === 'leader') return 'Team leader';
   if (family === 'landing') return 'Landing';
   if (family === 'seo') return 'SEO';
   if (family === 'pricing') return 'Pricing';
@@ -22450,8 +22300,8 @@ async function saveAgentPricing(agent) {
   const subscriptionMonthlyPriceUsd = Number(els.agentPricingMonthlyUsd?.value || 0);
   const overageMode = normalizeClientOverageMode(els.agentPricingOverageMode?.value || '', pricingModel === 'hybrid' ? 'usage_based' : 'included');
   const overageFixedRunPriceUsd = Number(els.agentPricingOverageFixedUsd?.value || 0);
-  if (!Number.isFinite(providerMarkupRate) || providerMarkupRate < 0) {
-    throw new Error('Provider markup must be a non-negative number, for example 0.10.');
+  if (!Number.isFinite(providerMarkupRate) || providerMarkupRate < 0 || providerMarkupRate > 1) {
+    throw new Error('Provider markup must be a number between 0 and 1, for example 0.10 for 10%.');
   }
   if (pricingModel === 'fixed_per_run' && (!Number.isFinite(fixedRunPriceUsd) || fixedRunPriceUsd <= 0)) {
     throw new Error('Fixed per run needs a positive USD run price.');
@@ -22837,19 +22687,14 @@ function flexibleToolCandidates(prompt = String(els.jobPrompt?.value || ''), inp
     });
   }
 
-  if (isAgentTeamLaunchIntentText(currentRoutingTask(), compact)
-    || isFreeWebGrowthIntentText(currentRoutingTask(), compact)
-    || /(agent team|leader agent|team leader|複数エージェント|チームリーダー|まとめて.*(?:告知|投稿|分析)|一括.*(?:告知|投稿|分析)|\bcmo\b|\bcto\b|\bcpo\b|\bcfo\b|\blegal\b|法務部長|マーケ部長|財務部長|技術責任者)/i.test(compact)) {
+  if (isExplicitClientLeaderTask(currentRoutingTask(), compact)
+    || /(agent team|leader agent|team leader|複数エージェント|チームリーダー|まとめて.*(?:告知|投稿|分析)|一括.*(?:告知|投稿|分析)|責任者|部長|リーダー)/i.test(compact)) {
     add({
       id: 'agent_team',
-      title: isFreeWebGrowthIntentText(currentRoutingTask(), compact)
-        ? 'CMO Growth Team planner'
-        : 'Agent Team planner',
+      title: 'Agent Team planner',
       tone: 'ok',
       priority: 74,
-      body: isFreeWebGrowthIntentText(currentRoutingTask(), compact)
-        ? 'This may be better as a CMO-led growth team: SEO, landing page, organic social, community posting, competitor positioning, and analytics without paid ads.'
-        : 'This may be better as one input coordinated by a Team Leader, then split across specialist agents.',
+      body: 'This may be better as one input coordinated by a Team Leader, then split across specialist agents.',
       requirements: 'Need: final outcome, departments or channels, priority order, budget sensitivity, and whether outputs should be merged into one delivery.',
       actions: [
         { action: 'use_agent_team', label: 'USE AGENT TEAM' },
@@ -23309,7 +23154,7 @@ function renderRunCreateStatus(snapshot = state.snapshot || {}) {
     tone = 'ok';
   } else if (!billingReady) {
     title = 'Register card before sending.';
-    body = `Open PAYMENTS and use REGISTER CARD before pressing ${uiLabels.sendOrder}. Paid orders use month-end billing; built-in agents do not require separate buyer-side model API contracts.`;
+    body = `Open PAYMENTS and use REGISTER CARD before pressing ${uiLabels.sendOrder}. Paid orders use month-end billing; managed sample agents do not require separate buyer-side model API contracts.`;
     tone = 'warn';
     buttonText = uiLabels.sendOrder;
   } else if (strategy === 'multi' && pinnedAgent) {
@@ -23786,7 +23631,7 @@ function renderAgents(agents = []) {
     const fit = agentTaskFit(agent);
     const trust = agentTrustProfile(agent);
     const providerMarkupLabel = pricingModelLabel(agent);
-    const builtInLabel = agent?.metadata?.builtIn ? ' <span class="highlight">[BUILT-IN]</span>' : '';
+    const sampleLabel = isManagedSampleAgent(agent) ? ' <span class="highlight">[SAMPLE]</span>' : '';
     const roleLabel = agentRole(agent) === 'leader'
       ? ' <span class="highlight">[LEADER]</span>'
       : ' <span class="row-muted">[WORKER]</span>';
@@ -23805,7 +23650,7 @@ function renderAgents(agents = []) {
       health.ready
         ? `<button class="mini-btn try-agent-row-btn" data-try-agent="${escapeHtml(agent.id)}" style="margin-top:6px">USE IN CAIT CHAT</button>`
         : '',
-      agent.verificationStatus === 'verified' || agent?.metadata?.builtIn
+      agent.verificationStatus === 'verified' || isManagedSampleAgent(agent)
         ? ''
         : `<button class="mini-btn verify-agent-btn" data-verify-agent="${escapeHtml(agent.id)}" style="margin-top:6px">VERIFY HEALTH</button>`,
       canDeleteAgent(agent)
@@ -23814,7 +23659,7 @@ function renderAgents(agents = []) {
     ].filter(Boolean).join('');
     return `
     <div class="table-row agents-grid ${state.selectedAgentId === agent.id ? 'selected-row' : ''} ${agent.online ? 'agent-row-online' : 'agent-row-offline'}" data-agent-id="${escapeHtml(agent.id)}">
-      <div>${escapeHtml(agent.name)}${builtInLabel}${roleLabel}${productLabel}${ownerLabel}<div class="row-muted">${escapeHtml(agent.owner || '-')}</div><div class="row-muted">${escapeHtml(clipText(agent.description || 'No description provided.', 92))}</div></div>
+      <div>${escapeHtml(agent.name)}${sampleLabel}${roleLabel}${productLabel}${ownerLabel}<div class="row-muted">${escapeHtml(agent.owner || '-')}</div><div class="row-muted">${escapeHtml(clipText(agent.description || 'No description provided.', 92))}</div></div>
       <div>${escapeHtml((agent.taskTypes || []).join(', ') || 'no declared capability')}<div class="row-muted">${escapeHtml(tagLabel)}</div><div class="row-muted">${escapeHtml(providerMarkupLabel)} · platform 10%</div>${compositionLabel ? `<div class="row-muted">${escapeHtml(compositionLabel)}</div>` : ''}${requirementLabel ? `<div class="row-muted">${escapeHtml(requirementLabel)}</div>` : ''}<div class="row-muted">${escapeHtml(shortUrl(health.endpoint) || 'no job endpoint')}</div><div class="row-muted">${escapeHtml(clipText(health.reason, 92))}</div></div>
       <div><span class="status-pill ${safeTrustTone}">${escapeHtml(`TRUST ${trust.score}/100`)}</span><div class="row-muted">${escapeHtml(trust.label)}</div><div class="row-muted">${escapeHtml(clipText(trust.summary, 104))}</div></div>
       <div><span class="status-pill ${safeHealthTone}">${escapeHtml(health.label)}</span><div class="row-muted">${escapeHtml(`${health.verifyLabel} · ${agent.online ? 'online' : 'offline'}`)}</div><div class="row-muted">${escapeHtml(`${verification.code || 'no verify code'} · success ${formatPercent(agent.successRate)} · ${agent.avgLatencySec || '-'}s avg`)}</div></div>
@@ -24555,6 +24400,14 @@ async function launchStripeHostedAction(path, payload = {}, options = {}) {
       body: JSON.stringify(payload || {})
     });
     const hostedUrl = response.checkout_url || response.onboarding_url || '';
+    if (String(path || '').includes('/subscription-session')) {
+      void trackConversionEvent('begin_checkout', {
+        source: 'stripe',
+        status: 'checkout_opened',
+        plan: response.plan || payload?.plan || '',
+        sessionId: response.session_id || ''
+      });
+    }
     const lines = [];
     if (options.title) lines.push(options.title);
     if (response.plan) lines.push(`Plan: ${response.plan}`);
@@ -27048,6 +26901,12 @@ loadManifestExample();
   if (initialRoute.settingsSection) state.settingsSection = initialRoute.settingsSection;
   switchTab(initialRoute.tab || readRememberedTab() || 'start', { allowBootstrapAccess: true });
   if (initialRoute.stripeState) {
+    if (initialRoute.stripeState === 'subscription_success') {
+      void trackConversionEvent('purchase', {
+        source: 'stripe_return',
+        status: initialRoute.stripeState
+      });
+    }
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.delete('stripe');
     history.replaceState({}, '', `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);

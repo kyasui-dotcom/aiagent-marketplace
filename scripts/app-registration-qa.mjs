@@ -158,7 +158,7 @@ for (const source of [worker]) {
 
 assert.ok(chat.includes('registeredApps: []'), 'chat state should include registered apps');
 assert.ok(chat.includes("api(catalogApiPath('/api/apps', options)"), 'chat should refresh registered apps with paged catalog API');
-assert.ok(chat.includes('appManifestSources'), 'chat should merge built-in and registered apps');
+assert.ok(chat.includes('appManifestSources'), 'chat should merge CAIt-managed and registered apps');
 assert.ok(chat.includes('/api/apps/${encodeURIComponent(manifest.id || appId)}/handoff'), 'chat should call the same-origin app handoff proxy');
 
 assert.ok(cli.includes('runAppCli'), 'CLI should expose app commands');

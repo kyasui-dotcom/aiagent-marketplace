@@ -8,32 +8,47 @@ import { E2E_DEFAULT_ORDER_PROMPT, assertOrderScenarioQuality, buildOrderScenari
 
 const workerSource = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
 const deliveryActionContractSource = readFileSync(new URL('../public/delivery-action-contract.js', import.meta.url), 'utf8');
-const builtInAgentsSource = readFileSync(new URL('../lib/builtin-agents.js', import.meta.url), 'utf8');
-const localAgentEndpointsSource = readFileSync(new URL('../lib/local-agent-endpoints.js', import.meta.url), 'utf8');
+const sampleAgentDefinitionsSource = readFileSync(new URL('../lib/builtin-agents/agents/index.js', import.meta.url), 'utf8');
+const orchestrationSource = readFileSync(new URL('../lib/orchestration.js', import.meta.url), 'utf8');
+const cmoLeaderSource = readFileSync(new URL('../lib/builtin-agents/agents/cmo-leader.js', import.meta.url), 'utf8');
 const storageSource = readFileSync(new URL('../lib/storage.js', import.meta.url), 'utf8');
-assert.ok(workerSource.includes("from './lib/local-agent-endpoints.js'"), 'same-worker agent execution should be isolated behind the local endpoint adapter.');
-assert.ok(localAgentEndpointsSource.includes('function localAgentKindFromAgent'), 'local endpoint invocation should resolve the registered local agent kind outside worker dispatch.');
-assert.ok(localAgentEndpointsSource.includes('agentCanInvokeLocalEndpoint'), 'external workflow agents must not be rerouted through local sample execution.');
+assert.ok(!workerSource.includes("from './lib/local-agent-endpoints.js'"), 'sample agents must use the normal external provider endpoint path.');
+assert.ok(!workerSource.includes('function invokeSameWorkerAgentEndpoint'), 'worker dispatch must not reroute sample agents into local same-worker execution.');
 assert.ok(!workerSource.includes('BUILT_IN_DISPATCH_SCHEDULE_STALE_MS'), 'dispatch_scheduled freshness must be endpoint-contract based, not built-in specific.');
 assert.ok(!workerSource.includes('BUILT_IN_JOB_TIMEOUT_FLOOR_MS'), 'standalone timeout floors must not depend on built-in agent identity.');
 assert.ok(workerSource.includes('function dispatchJobToAssignedAgent'), 'workflow jobs should dispatch through the generic provider endpoint path');
 assert.ok(workerSource.includes('function braveSearchConfiguredForWorkflow'), 'Brave search configuration should stay available for search-required workflow jobs');
 assert.ok(workerSource.includes('workflowJobRequiresSearch(job)'), 'search-required workflow jobs should preserve source-quality gates');
+assert.ok(!workerSource.includes('function workflowSourceCollectionSourcesForDispatch'), 'worker must not synthesize research web_sources; source extraction belongs to the assigned agent.');
+assert.ok(!workerSource.includes('sourceCollectionAttachedBy'), 'worker must not mark agent-specific source collection in dispatch payloads.');
+assert.ok(!workerSource.includes('web_sources: sourceCollectionSources'), 'worker must not inject research web_sources into dispatch payloads.');
+assert.ok(!workerSource.includes('raw_context: workflowSourceRawContextForDispatch(context)'), 'worker dispatch compaction must not carry agent-specific raw source extraction helpers.');
+assert.ok(!workerSource.includes('const searchConsoleDomain = text.match'), 'worker must not normalize Search Console sc-domain values into source URLs.');
 assert.ok(!workerSource.includes('|| braveSearchConfiguredForWorkflow(env)'), 'Brave configuration alone must not force every workflow child through search');
 assert.ok(workerSource.includes('workflow.forceWebSearch === true'), 'search-required workflow jobs must not be completed by deterministic templates');
-assert.ok(workerSource.includes('resolveDispatchEndpointUrl(endpoint, env)'), 'relative built-in endpoints should be resolved before generic dispatch');
-assert.ok(workerSource.includes('canUseBuiltInAgentJobRoute'), 'built-in agent endpoints should be protected by the same token-style provider contract in public production');
+assert.ok(workerSource.includes('resolveDispatchEndpointUrl(endpoint, env)'), 'relative sample endpoints should be resolved before generic dispatch');
+assert.ok(workerSource.includes('SAMPLE_AGENT_ENDPOINT_BASE_URL'), 'sample agents should become routable through manifest-defined endpoints and the configured endpoint base URL');
+assert.ok(workerSource.includes('function sampleAgentManifestRoute'), 'sample agent manifests should expose a normal HTTP endpoint contract');
+assert.ok(workerSource.includes('function agentSelectionIndexPayload'), 'worker should expose a leader-readable agent selection index endpoint');
+assert.ok(workerSource.includes('agent_manifest_index'), 'leader planner should receive the combined internal/external manifest index');
+assert.ok(workerSource.includes('sample-agents'), 'sample provider endpoint path should be outside internal API route handling');
 assert.ok(workerSource.includes("from './lib/orchestration.js'"), 'workflow routing should use the shared orchestration module');
 assert.ok(workerSource.includes('leaderTaskLayer(primary, task)'), 'leader layer routing should not be hardcoded inside worker.js');
 assert.ok(workerSource.includes('WORKFLOW HANDOFF CONTEXT'), 'workflow handoff must remain available as prompt context');
 assert.ok(workerSource.includes('WORKFLOW ADDITIONAL PROMPT'), 'workflow handoff should be separated into additional_prompt context');
 assert.ok(workerSource.includes('validateXPostExecutionApproval'), 'X posting must validate OAuth account and exact text approval server-side');
+assert.ok(workerSource.includes('async function handleApproveJobAuthority'), 'approval cards must call a server endpoint that records approval and resumes workflow jobs.');
+assert.ok(workerSource.includes("action === 'approve'"), 'job approval resume endpoint must be routed separately from status checks.');
+assert.ok(workerSource.includes("code: 'leader_quality_gate_failed'"), 'approval endpoint must reject leader quality-gate blockers instead of pretending approval can resume them.');
 assert.ok(deliveryActionContractSource.includes('approved_x_username'), 'Delivery execution requests must carry the approved OAuth account handle');
 assert.ok(deliveryActionContractSource.includes('approved_text'), 'Delivery execution requests must carry the exact approved post text');
 assert.ok(workerSource.includes('additional_prompt: additionalPrompt'), 'dispatch payload should send workflow context as additional_prompt');
 assert.ok(workerSource.includes('full_prompt: fullPrompt'), 'dispatch payload should include a compatibility full_prompt for agent runners');
 assert.ok(workerSource.includes('orderBodyWithCommonQualityRules(body)'), 'all order creation paths should attach common quality rules before persistence');
 assert.ok(workerSource.includes('quality_rules:'), 'dispatch payload should expose common quality rules as structured data');
+assert.ok(orchestrationSource.includes('DOWNSTREAM_HANDOFF_SUMMARY_CONTRACT_VERSION'), 'downstream handoff summary contract should be owned by orchestration.js');
+assert.ok(workerSource.includes('downstream_handoff_summary_contract'), 'external dispatch payload should expose the downstream handoff summary contract');
+assert.ok(workerSource.includes('downstream_handoff_summary'), 'external dispatch quality rules should request a compact downstream handoff summary');
 assert.ok(!workerSource.includes('commonOrderQualityRulesText(),'), 'dispatch prompt should not inject generic common quality rule prose into downstream agents');
 assert.ok(
   workerSource.includes('content_available:'),
@@ -47,11 +62,10 @@ assert.ok(workerSource.includes('PRIOR SPECIALIST DELIVERABLES (mandatory contex
 assert.ok(workerSource.includes('prior_layer_unavailable'), 'workflow dispatch should block downstream layers when a prior data/research layer fails or times out.');
 assert.ok(workerSource.includes('Treat this as a blocker for quality'), 'workflow handoff prompt should not tell downstream agents to proceed from unavailable prior work.');
 assert.ok(workerSource.includes('function workflowAppContextOriginalSignals'), 'leader quality gates should accept attached app context evidence when a data child has no prior run output.');
-assert.ok(workerSource.includes('compactWorkflowAppContextsForDispatch'), 'attached app contexts should be passed into built-in dispatch instead of shortcut-completing data/research.');
+assert.ok(workerSource.includes('compactWorkflowAppContextsForDispatch'), 'attached app contexts should be passed into endpoint dispatch instead of shortcut-completing data/research.');
 assert.ok(workerSource.includes('compactWorkflowInputForEndpointDispatch'), 'workflow endpoint dispatch should compact duplicated app/connector context before handing work to an agent endpoint.');
-assert.ok(!workerSource.includes('compactWorkflowInputForBuiltInDispatch'), 'workflow dispatch compaction must be endpoint-contract based, not built-in-agent special casing.');
-assert.ok(workerSource.includes('function invokeSameWorkerAgentEndpoint'), 'same-worker agent endpoints should run through the endpoint contract without HTTP self-fetch from queue consumers.');
-assert.ok(workerSource.includes('invokeLocalAgentJobEndpoint(endpointPath, payload, env, agent)'), 'same-worker endpoint invocation should be restricted to registered local agent job endpoints.');
+assert.ok(!workerSource.includes('compactWorkflowInputForBuiltInDispatch'), 'workflow dispatch compaction must be endpoint-contract based, not sample-agent special casing.');
+assert.ok(!workerSource.includes('invokeLocalAgentJobEndpoint'), 'same-worker local sample endpoint invocation must not exist in worker dispatch.');
 assert.ok(workerSource.includes("const canUseTargetedDispatchResult = typeof storage.mutateJobAndAgent === 'function'"), 'completed and failed endpoint dispatch results should persist through targeted job/agent mutation instead of loading full production state.');
 assert.ok(workerSource.includes('if (!isBillableJob(job))'), 'test-mode billing outcomes should not force a full-state billing settlement during queue completion.');
 assert.ok(!workerSource.includes('app-context-data-analysis-shortcut'), 'data_analysis must not complete through simulated attached-context shortcut fallback.');
@@ -61,17 +75,27 @@ assert.ok(workerSource.includes('oauthCallbackCurrentContext'), 'OAuth callbacks
 assert.ok(workerSource.includes('workflowBlockingQualityGateBeforeLayer'), 'workflow dispatch should not release downstream layers after prior handoff/search quality gates fail');
 assert.ok(workerSource.includes('function workflowFailedPriorLayerShouldWarnNotBlock'), 'leader-released later layers should not get stuck only because one optional prior preparation artifact failed after another artifact completed.');
 assert.ok(workerSource.includes('workflowLayerWasLeaderActivated(parent'), 'non-blocking prior-layer failure handling must be tied to explicit leader activation, not generic auto-progression.');
+assert.ok(workerSource.includes('function workflowLeaderReplanSelectedTasks'), 'leader checkpoints should reconsider next-layer CMO specialist selection from prior media/planning outputs.');
+assert.ok(workerSource.includes('leader_replan_deferred'), 'leader checkpoint replans should explicitly defer non-selected adaptive candidates instead of silently releasing every preplanned child.');
+assert.ok(cmoLeaderSource.includes('cmoWorkflowReplanDecisionText'), 'CMO replanning should read the media/planning lane decision before releasing downstream specialists.');
+assert.ok(cmoLeaderSource.includes('function cmoParallelSameLayerIntentFromText'), 'CMO planning should preserve same-layer fan-out when the prompt asks for depth, quality, or multiple lanes.');
+assert.ok(cmoLeaderSource.includes('normalizeWorkflowPlannedTasks: cmoNormalizeWorkflowPlannedTasks'), 'CMO-specific workflow task normalization must live in the CMO leader agent definition.');
+assert.ok(cmoLeaderSource.includes('plannerAllowsCandidateAgentTasks: false'), 'CMO leader should define whether planner candidate task types can enter its workflow.');
+assert.ok(workerSource.includes('normalizeLeaderWorkflowPlannedTasksFromDefinition'), 'worker should call the generic leader task-normalization hook instead of defining CMO task mappings.');
+assert.ok(!workerSource.includes('canonicalizeLeaderWorkflowPlannedTasks'), 'worker must not contain CMO-specific canonicalization logic.');
+assert.ok(!workerSource.includes('CMO-led growth team plan'), 'worker routing reasons must not contain CMO-specific workflow copy.');
+assert.ok(workerSource.includes('function workflowHasActiveSequentialUserActionWait'), 'workflow dispatch should serialize approval/OAuth user-action waits while allowing normal same-layer fan-out.');
 assert.ok(workerSource.includes('consideredRootJobIds'), 'cron dispatch sweep must dedupe workflow children by parent and avoid direct child execution');
 assert.ok(workerSource.includes('ORCHESTRATION_WATCHDOG_POLICY'), 'workflow orchestration watchdog policy should be shared through lib/orchestration.js');
 assert.ok(workerSource.includes('function runWorkflowOrchestrationWatchdog'), 'cron should have a workflow watchdog that reconciles and safely advances stale parents');
 assert.ok(workerSource.includes('workflow_orchestration_stalled'), 'watchdog should surface stale no-target workflows as visible blockers');
-assert.ok(!workerSource.includes("skipped: 'openai_workflow_enabled'"), 'scheduled built-in completion sweep must recover OpenAI-backed workflow jobs instead of skipping them.');
+assert.ok(!workerSource.includes("skipped: 'openai_workflow_enabled'"), 'scheduled completion sweep must recover OpenAI-backed workflow jobs instead of skipping them.');
 assert.ok(workerSource.includes('clearJobAuthorityRequest(cloned)'), 'public job views must suppress stale authority requests on failed or timed-out jobs.');
-assert.ok(workerSource.includes('const COMPLETION_SWEEP_STALE_MS = 15 * 60 * 1000'), 'built-in workflow completion sweep should not time out research/data generation after only a few minutes.');
+assert.ok(workerSource.includes('const COMPLETION_SWEEP_STALE_MS = 15 * 60 * 1000'), 'workflow completion sweep should not time out research/data generation after only a few minutes.');
 assert.ok(workerSource.includes('function workflowBuiltInFailureRetryMeta'), 'workflow failures should preserve retry metadata for quality-critical research/data layers.');
 assert.ok(workerSource.includes('function workflowLeaderControlTask'), 'leader checkpoint/final-summary control jobs should have explicit retry handling.');
 assert.ok(workerSource.includes('function workflowCompletionRecoveryMinAgeMs'), 'leader control jobs should not be recovered as stale before their generation budget expires.');
-assert.ok(!/async function dispatchJobToAssignedAgent[\s\S]{0,1500}runBuiltInAgent/.test(workerSource), 'generic dispatch must not call the built-in runner directly.');
+assert.ok(!/async function dispatchJobToAssignedAgent[\s\S]{0,1500}runBuiltInAgent/.test(workerSource), 'generic dispatch must not call the local sample runner directly.');
 assert.ok(workerSource.includes('prior specialist deliverable'), 'data context packets should instruct downstream agents to use upstream data.');
 assert.ok(workerSource.includes('&& !workflowJobRequiresSearch(job)'), 'data-unavailable shortcut must not bypass search-required data/research jobs.');
 assert.ok(/dispatchExistingJobToAssignedAgent\(storage,\s*env,\s*jobId,\s*agentId/.test(workerSource), 'endpoint queue consumer should use the normal endpoint dispatcher.');
@@ -80,7 +104,7 @@ assert.ok(workerSource.includes("if (kind === 'endpoint_dispatch')"), 'queue con
 assert.ok(workerSource.includes('isTerminalJobStatus(job.status) && !workflowChildIsAdaptivePending(job)'), 'endpoint dispatch should not treat adaptive-pending blocked children as terminal because queue reads can race with leader release.');
 assert.ok(workerSource.includes('isTerminalJobStatus(draftJob.status) && !workflowChildIsAdaptivePending(draftJob)'), 'endpoint dispatch lock should re-check adaptive-pending blocked children against fresh storage before skipping.');
 const forbiddenAgentRunKind = ['built', 'in', 'agent', 'run'].join('_');
-assert.ok(!workerSource.includes(`kind: '${forbiddenAgentRunKind}'`), 'built-in agents must not use a second internal queue message; they must follow the same endpoint dispatch contract as registered external agents.');
+assert.ok(!workerSource.includes(`kind: '${forbiddenAgentRunKind}'`), 'sample agents must not use a second internal queue message; they must follow the same endpoint dispatch contract as registered external agents.');
 assert.ok(!workerSource.includes('function acceptBuiltInEndpointDispatchForProviderQueue'), 'Worker dispatch must not branch into a built-in-specific provider queue path.');
 assert.ok(!workerSource.includes('enqueueBuiltInAgentProviderRun'), 'Worker dispatch must not enqueue built-in-specific provider runs.');
 assert.ok(workerSource.includes('accepted_endpoint_recovered_count'), 'cron dispatch sweep should report recovery for stale accepted endpoint dispatches.');
@@ -89,10 +113,13 @@ assert.ok(workerSource.includes("options.dispatchMode !== 'direct' && Boolean(wo
 assert.ok(workerSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
 assert.ok(workerSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');
 assert.ok(workerSource.includes('persistedJobForClientOrderId'), 'order create should check for an existing client order before creating a new job.');
+assert.ok(workerSource.includes('function orderCreateBodyIsSameContentNewOrderRetry'), 'same-content retry orders should be explicitly distinguished from follow-up continuations.');
+assert.ok(workerSource.includes('sameContentRetryAsNewOrder && !clientOrderMatches'), 'same-content retry recovery must not attach to an older order by prompt or session match.');
 assert.ok(workerSource.includes('async function loadSingleOrderCreateState'), 'single-agent order creation should have a targeted state loader for production-sized D1 databases.');
 assert.ok(workerSource.includes('currentOrderRequesterContext(storage, request, env, { lightweight: true })'), 'order creation should authenticate browser sessions without loading the full production snapshot.');
 assert.ok(workerSource.includes('options.initialState || await loadSingleOrderCreateState(storage, current, body)'), 'single-agent order creation should avoid full-state reads when targeted list/get methods are available.');
 assert.ok(/async function handleGetJob[\s\S]{0,250}currentOrderRequesterContext\(storage, request, env, \{ lightweight: true \}\)/.test(workerSource), 'live progress polling should authenticate without loading the full production snapshot.');
+assert.ok(workerSource.includes('inspect_only') && workerSource.includes('const shouldRunProgress = !inspectOnly'), 'job inspection for retry preparation should skip progress side effects.');
 assert.ok(workerSource.includes("refresh: job.jobKind === 'workflow'"), 'single-job progress polling should not run workflow handoff refresh work.');
 assert.ok(workerSource.includes('function orderCreateSkipIntake'), 'confirmed chat orders should skip pre-persistence intake checks on create.');
 assert.ok(workerSource.includes('orderStrategyWithFollowupContext'), 'follow-up orders should keep the previous order shape instead of rerouting AUTO before persistence.');
@@ -105,9 +132,8 @@ assert.ok(workerSource.includes('const current = await currentAgentRequesterCont
 assert.ok(workerSource.includes('const sanitizedJob = sanitizeJobForViewer(job, env);'), 'job reads should build a single sanitized public view before returning it.');
 assert.ok(workerSource.includes('return json({ ...sanitizedJob, job: sanitizedJob });'), 'job reads should expose sanitized job fields at the top level and nested job for API compatibility.');
 assert.ok(/async function scheduleProgressDispatchesForJobId[\s\S]{0,500}getFreshState/.test(workerSource), 'workflow progress dispatch target selection should read fresh storage after leader completion.');
-assert.ok(workerSource.includes('function builtInAgentIdCandidatesForKind'), 'built-in agent endpoint auth should use targeted agent id candidates.');
-assert.ok(/async function canUseBuiltInAgentJobRoute[\s\S]{0,900}getAgentById/.test(workerSource), 'built-in agent endpoint auth must use targeted getAgentById instead of loading all production jobs.');
-assert.ok(!/async function canUseBuiltInAgentJobRoute[\s\S]{0,1200}getFreshState/.test(workerSource), 'built-in agent endpoint auth must not call getFreshState in production-sized D1 databases.');
+assert.ok(!workerSource.includes('function sampleAgentIdCandidatesForKind'), 'same-worker sample endpoint auth is removed with the local runner.');
+assert.ok(!workerSource.includes('canUseSampleAgentJobRoute'), 'same-worker sample job route must not remain in worker.js.');
 assert.ok(/async function runQueuedEndpointDispatchSweep[\s\S]{0,900}listStaleDispatchInProgressJobs/.test(workerSource), 'cron queued dispatch sweep should recover stale D1 dispatch locks with targeted queries.');
 assert.ok(workerSource.includes('listQueuedWorkflowDispatchRoots'), 'cron queued dispatch sweep must target plain queued workflow roots without a full-state scan.');
 assert.ok(workerSource.includes('listAcceptedEndpointDispatchJobs'), 'cron queued dispatch sweep must recover stale accepted endpoint dispatches.');
@@ -121,6 +147,8 @@ assert.ok(workerSource.includes('const DISPATCH_IN_PROGRESS_STALE_MS = 3 * 60 * 
 assert.ok(workerSource.includes("completionStatus === 'dispatch_in_progress'"), 'stale dispatch_in_progress jobs should be eligible for endpoint redispatch.');
 assert.ok(workerSource.includes("'dispatch_scheduled', 'dispatch_in_progress', 'timed_out'"), 'dispatch locks should allow stale dispatch_in_progress jobs to be relocked for endpoint retry.');
 assert.ok(workerSource.includes('stale endpoint dispatch lock recovered for retry'), 'stale dispatch_in_progress recovery must be marked so D1 merge accepts dispatch_scheduled.');
+assert.ok(!workerSource.includes('stale provider dispatch lock reached the scheduler'), 'stale provider dispatch locks should recover through redispatch instead of failing workflow children.');
+assert.ok(!workerSource.includes('stale provider dispatch failed; full order retry required'), 'direct stale provider redispatch should not force a full workflow retry before retry limits are reached.');
 assert.ok(storageSource.includes('function jobStatusIsTerminalForMerge'), 'D1 job merge must treat completed jobs as terminal, not only failed/timed_out jobs.');
 assert.ok(storageSource.includes('const existingCompletedBlocksStaleActive = existingCompleted'), 'D1 job merge must preserve completed endpoint results against stale active dispatch writes.');
 assert.ok(storageSource.includes('async function loadJobsByIds'), 'D1 job upserts should load existing records in one targeted query batch.');
@@ -132,22 +160,15 @@ assert.ok(storageSource.includes("lower(jobs.status) = 'completed'"), 'D1 job up
 assert.ok(storageSource.includes("lower(excluded.status) IN ('queued','claimed','running','dispatched')"), 'D1 job upsert guard must specifically reject stale active-status rewrites over completed rows.');
 assert.ok(storageSource.includes('function jobIsApprovalBlockedForStorage'), 'D1 job serialization must normalize approval-blocked jobs to blocked status.');
 assert.ok(storageSource.includes("jobIsApprovalBlockedForStorage(job) ? 'blocked'"), 'D1 must not persist running rows with blocked_waiting_for_approval metadata.');
-assert.ok(workerSource.includes('function workflowTaskRequiresConcreteSpecialistArtifact'), 'quality-sensitive specialist tasks should declare concrete artifact requirements.');
-assert.ok(workerSource.includes('if (workflowTaskRequiresConcreteSpecialistArtifact(task)) return false;'), 'SEO, writing, list, and action specialists must not complete from a generic prior-handoff packet.');
+assert.ok(workerSource.includes('function workflowConcreteDeliverableContractForJob'), 'concrete deliverable checks should be contract-driven instead of task-name driven.');
+assert.ok(!/function workflowTaskRequiresConcreteSpecialistArtifact[\s\S]*'seo_gap'/.test(workerSource), 'worker must not hardcode specialist deliverable requirements by task name.');
+assert.ok(workerSource.includes('if (workflowTaskRequiresConcreteSpecialistArtifact(job)) return false;'), 'prior-handoff fallback must respect explicit concrete-deliverable contracts.');
 assert.ok(workerSource.includes('completionBlocking: false'), 'incomplete specialist artifacts should surface as quality warnings without blocking workflow completion.');
 assert.ok(workerSource.includes('quality warning: missing required concrete deliverable'), 'reconcile should revalidate already-completed specialist children and surface missing-deliverable warnings.');
-assert.ok(builtInAgentsSource.includes('workflowCanCompleteFromSearchSourcePacket(kind, body, source)'), 'workflow research should complete from Brave/source packets instead of entering slower draft generation.');
-assert.ok(builtInAgentsSource.includes('fetchResearchPageSignal'), 'research source packets should fetch top result pages when possible instead of returning raw search rows only.');
-assert.ok(builtInAgentsSource.includes('Research memo with search evidence'), 'research source packets should be delivered as synthesized research memos.');
-assert.ok(builtInAgentsSource.includes('research_findings'), 'research source packets should expose structured findings for downstream handoff.');
-assert.ok(builtInAgentsSource.includes('Task-aligned research interpretation'), 'research source packets should turn search rows into task-aligned research conclusions.');
-assert.ok(builtInAgentsSource.includes('task_aligned_findings'), 'research source packets should expose task-aligned findings for downstream handoff.');
-assert.ok(builtInAgentsSource.includes('researchContentPatterns'), 'research synthesis should summarize common content patterns, not only source URLs.');
-assert.ok(builtInAgentsSource.includes('word-count range'), 'research synthesis should preserve SEO-style word-count signals when page fetch succeeds.');
-assert.ok(builtInAgentsSource.includes('buildResearchThreeCAnalysis'), 'research synthesis must produce 3C analysis from Brave evidence.');
-assert.ok(builtInAgentsSource.includes('openAiResearch3CSynthesis'), 'research source packets should use OpenAI to convert Brave evidence into 3C analysis when available.');
-assert.ok(builtInAgentsSource.includes('workflow_research_3c_synthesis_packet'), 'OpenAI-backed workflow research should expose a 3C synthesis runtime.');
-assert.ok(builtInAgentsSource.includes('SNS/Social'), 'research synthesis must include social/SNS-specific interpretation when requested.');
+assert.ok(sampleAgentDefinitionsSource.includes('SAMPLE_AGENT_MANIFESTS'), 'agent index should derive manifests from individual agent files.');
+assert.ok(sampleAgentDefinitionsSource.includes('sampleAgentDefinitionForKind'), 'agent index should resolve a definition by its own manifest kind.');
+assert.ok(!sampleAgentDefinitionsSource.includes('sampleAgentPayload'), 'agent index must not own cross-agent payload generation.');
+assert.ok(!sampleAgentDefinitionsSource.includes('callOpenAi'), 'agent index must not own agent-specific model actions.');
 
 const ga4SessionPreflight = orderPreflightForAgent(
   {
@@ -191,6 +212,7 @@ const env = {
   STRIPE_WEBHOOK_SECRET: 'whsec_worker_api_qa',
   STRIPE_DEFAULT_CURRENCY: 'USD',
   BASE_URL: 'https://example.test',
+  SAMPLE_AGENT_ENDPOINT_BASE_URL: 'https://example.test/sample-agents',
   CAIT_ADMIN_API_TOKEN: 'worker-api-qa-admin-token',
   ALLOW_IN_MEMORY_STORAGE: '1',
   GITHUB_CLIENT_ID: 'github-worker-api-qa-client-id',
@@ -283,8 +305,54 @@ function workerApiQaOpenAiStructuredOutput(schemaName = '') {
 
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input?.url;
-  if (String(url || '').startsWith('https://example.test/mock/')) {
-    return worker.fetch(new Request(url, init), workerApiQaSelfFetchEnv, { waitUntil() {} });
+  if (String(url || '').startsWith('https://example.test/sample-agents/')) {
+    const parsed = new URL(url);
+    const [, kind = '', route = ''] = parsed.pathname.match(/^\/sample-agents\/([^/]+)\/([^/]+)$/) || [];
+    if (route === 'health') {
+      return new Response(JSON.stringify({ ok: true, service: `qa_${kind}_provider` }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    if (route === 'jobs') {
+      const body = JSON.parse(String(init?.body || '{}'));
+      const effectiveKind = String(body.task_type || kind || 'agent').trim().toLowerCase();
+      const qa = workerApiQaOpenAiStructuredOutput(effectiveKind);
+      const fileName = effectiveKind === 'seo_gap'
+        ? 'seo-agent-delivery.md'
+        : (effectiveKind === 'data_analysis'
+          ? 'data-analysis-delivery.md'
+          : `${effectiveKind}-delivery.md`);
+      const searchBackedKinds = new Set(['research', 'teardown', 'validation']);
+      const webSources = searchBackedKinds.has(effectiveKind)
+        ? [
+            {
+              title: 'CAIt AI agent marketplace',
+              url: 'https://aiagent-marketplace.net/',
+              snippet: 'QA source-backed provider result for workflow progression.',
+              query: 'CAIt AI agent marketplace acquisition workflow',
+              action: 'brave_search',
+              provider: 'brave'
+            }
+          ]
+        : [];
+      return new Response(JSON.stringify({
+        status: 'completed',
+        summary: qa.summary,
+        report: {
+          summary: qa.report_summary,
+          bullets: qa.bullets,
+          nextAction: qa.next_action,
+          authority_request: qa.authority_request,
+          ...(webSources.length ? { web_sources: webSources } : {})
+        },
+        files: [{ name: fileName, content: qa.file_markdown }],
+        usage: { input_tokens: 100, output_tokens: 120, api_cost: 1 }
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
   }
   if (String(url || '') === 'https://api.openai.com/v1/responses') {
     const requestBody = JSON.parse(String(init?.body || '{}'));
@@ -337,7 +405,10 @@ globalThis.fetch = async (input, init) => {
     if (schemaName === 'cait_leader_workflow_plan') {
       const userPayload = JSON.parse(String(requestBody?.input?.find((item) => item?.role === 'user')?.content || '{}'));
       const deterministic = Array.isArray(userPayload.deterministic_plan) ? userPayload.deterministic_plan : [];
-      const planned = deterministic.length ? deterministic.slice(0, 10) : ['cmo_leader', 'research', 'media_planner', 'seo_gap'];
+      const prompt = String(userPayload.prompt || '');
+      const planned = /qa force legacy action planner/i.test(prompt)
+        ? ['cmo_leader', 'research', 'media_planner', 'x_post', 'acquisition_automation', 'reddit', 'indie_hackers', 'directory_submission']
+        : (deterministic.length ? deterministic.slice(0, 10) : ['cmo_leader', 'research', 'media_planner', 'seo_gap']);
       return new Response(JSON.stringify({
         output_text: JSON.stringify({
           planned_tasks: planned,
@@ -460,6 +531,7 @@ async function request(path, init = {}, options = {}) {
     if (!headers.has('x-aiagent2-csrf')) headers.set('x-aiagent2-csrf', sessionCsrfTokens.get(options.sessionCookie) || '');
   }
   const targetEnv = options.env || env;
+  if (process.env.WORKER_API_QA_TRACE === '1') console.error(`REQ ${method} ${path}`);
   const ctx = Array.isArray(options.waitUntilPromises)
     ? { waitUntil: (promise) => options.waitUntilPromises.push(Promise.resolve(promise)) }
     : undefined;
@@ -467,12 +539,20 @@ async function request(path, init = {}, options = {}) {
   workerApiQaSelfFetchEnv = targetEnv;
   const restoreSelfFetchEnv = !Array.isArray(options.waitUntilPromises);
   let res;
+  let timeoutHandle = null;
   try {
-    res = await worker.fetch(new Request(`https://example.test${path}`, { ...init, headers }), targetEnv, ctx);
+    res = await Promise.race([
+      worker.fetch(new Request(`https://example.test${path}`, { ...init, headers }), targetEnv, ctx),
+      new Promise((_, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error(`worker-api-qa request timed out: ${method} ${path}`)), 20000);
+      })
+    ]);
   } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
     if (restoreSelfFetchEnv) workerApiQaSelfFetchEnv = previousSelfFetchEnv;
   }
   const text = await res.text();
+  if (process.env.WORKER_API_QA_TRACE === '1') console.error(`RES ${method} ${path} ${res.status}`);
   const responseHeaders = Object.fromEntries(res.headers.entries());
   if (typeof res.headers.getSetCookie === 'function') {
     const setCookies = res.headers.getSetCookie();
@@ -495,11 +575,13 @@ function cookiePairFromSetCookieHeader(headers = {}, name = '') {
   return end === -1 ? tail : tail.slice(0, end);
 }
 
+if (process.env.WORKER_API_QA_TRACE === '1') console.error('TRACE before sessions');
 const aliceSession = await buildSessionCookie('alice', 'Alice Example', { provider: 'github-app' });
 const samuraiSession = await buildSessionCookie('samurai', 'Samurai Example', { provider: 'github-app' });
 const daveSession = await buildSessionCookie('dave', 'Dave Example', { provider: 'google-oauth' });
 const adminSession = await buildSessionCookie('yasuikunihiro@gmail.com', 'Yasu Admin', { provider: 'google-oauth' });
 
+if (process.env.WORKER_API_QA_TRACE === '1') console.error('TRACE before health');
 const health = await request('/api/health');
 assert.equal(health.status, 200);
 assert.equal(health.body.version, '0.2.0-test');
@@ -509,6 +591,34 @@ const ready = await request('/api/ready');
 assert.equal(ready.status, 200);
 assert.equal(ready.body.ready, true);
 assert.equal(ready.body.version, '0.2.0-test');
+
+const targetedSampleStorage = createD1LikeStorage(null, {
+  allowInMemory: true,
+  sampleAgentEndpointBaseUrl: env.SAMPLE_AGENT_ENDPOINT_BASE_URL
+});
+const targetedSampleAgents = await targetedSampleStorage.listAgents({ limit: 500 });
+assert.ok(
+  targetedSampleAgents.filter((agent) => agent?.online && agent?.verificationStatus === 'verified' && agent?.manifestSource === 'agent-file-manifest').length >= 2,
+  'targeted in-memory listAgents should expose configured sample manifest agents for order creation'
+);
+
+const sampleProviderHealth = await request('/sample-agents/writer/health');
+assert.equal(sampleProviderHealth.status, 200, 'configured sample provider health should use the normal HTTP endpoint route');
+assert.equal(sampleProviderHealth.body.kind, 'writer');
+assert.equal(sampleProviderHealth.body.ok, true);
+
+const sampleProviderJob = await request('/sample-agents/writer/jobs', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    task_type: 'writer',
+    prompt: 'Draft CAIt signup growth copy using the supplied brief.',
+    input: { source: 'worker-api-qa' }
+  })
+});
+assert.equal(sampleProviderJob.status, 200, `configured sample provider job route should return a provider response: ${JSON.stringify(sampleProviderJob.body)}`);
+assert.equal(sampleProviderJob.body.status, 'completed', 'sample provider job route should return a completed provider-contract payload');
+assert.ok(Array.isArray(sampleProviderJob.body.files) && sampleProviderJob.body.files.length, 'sample provider job route should return files through the normal provider contract');
 
 const unauthGoogleAssets = await request('/api/connectors/google/assets?include=gsc,ga4');
 assert.equal(unauthGoogleAssets.status, 401, 'Google source asset reads should fail fast with 401 before D1 state scans.');
@@ -760,9 +870,10 @@ const broadGrowthPrepare = await request('/api/work/prepare-order', {
   })
 });
 assert.equal(broadGrowthPrepare.status, 200);
-assert.equal(broadGrowthPrepare.body.taskType, 'cmo_leader', 'broad acquisition intent should hand the chat to the CMO leader.');
+assert.equal(broadGrowthPrepare.body.taskType, 'cmo_leader', 'broad Japanese acquisition intent should be claimed by the CMO leader definition, not a direct growth specialist.');
 assert.equal(broadGrowthPrepare.body.ownerType, 'leader');
 assert.equal(broadGrowthPrepare.body.resolvedOrderStrategy, 'multi');
+assert.equal(broadGrowthPrepare.body.status, 'needs_input');
 
 const englishCustomerAcquisitionPrepare = await request('/api/work/prepare-order', {
   method: 'POST',
@@ -773,9 +884,22 @@ const englishCustomerAcquisitionPrepare = await request('/api/work/prepare-order
   })
 });
 assert.equal(englishCustomerAcquisitionPrepare.status, 200);
-assert.equal(englishCustomerAcquisitionPrepare.body.taskType, 'cmo_leader', 'English customer-acquisition intent should not fall back to generic research.');
-assert.equal(englishCustomerAcquisitionPrepare.body.ownerType, 'leader');
-assert.equal(englishCustomerAcquisitionPrepare.body.resolvedOrderStrategy, 'multi');
+assert.equal(englishCustomerAcquisitionPrepare.body.taskType, 'growth', 'English customer-acquisition intent should not become CMO leader unless explicitly requested.');
+assert.equal(englishCustomerAcquisitionPrepare.body.ownerType, 'cait');
+assert.equal(englishCustomerAcquisitionPrepare.body.resolvedOrderStrategy, 'single');
+
+const explicitCmoPrepare = await request('/api/work/prepare-order', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    prompt: 'CMO Leaderとして集客施策を設計してください',
+    requestedStrategy: 'auto'
+  })
+});
+assert.equal(explicitCmoPrepare.status, 200);
+assert.equal(explicitCmoPrepare.body.taskType, 'cmo_leader', 'Explicit CMO leader wording should still route to the CMO leader.');
+assert.equal(explicitCmoPrepare.body.ownerType, 'leader');
+assert.equal(explicitCmoPrepare.body.resolvedOrderStrategy, 'multi');
 
 const purchaseGrowthPrepare = await request('/api/work/prepare-order', {
   method: 'POST',
@@ -786,8 +910,8 @@ const purchaseGrowthPrepare = await request('/api/work/prepare-order', {
   })
 });
 assert.equal(purchaseGrowthPrepare.status, 200);
-assert.equal(purchaseGrowthPrepare.body.taskType, 'cmo_leader', 'purchase-growth intent should route to CMO Leader instead of research.');
-assert.equal(purchaseGrowthPrepare.body.ownerType, 'leader');
+assert.equal(purchaseGrowthPrepare.body.taskType, 'growth', 'purchase-growth intent should use a direct growth specialist unless the user explicitly asks for CMO Leader.');
+assert.equal(purchaseGrowthPrepare.body.ownerType, 'cait');
 
 const directResearchPrepare = await request('/api/work/prepare-order', {
   method: 'POST',
@@ -963,14 +1087,14 @@ const publicLockedEnv = {
 };
 const publicDebug = await request('/auth/debug', {}, { env: publicLockedEnv });
 assert.equal(publicDebug.status, 404, 'production debug endpoint should not be public');
-const publicBuiltInHealth = await request('/mock/research/health', {}, { env: publicLockedEnv });
-assert.equal(publicBuiltInHealth.status, 200, 'built-in health may stay public for manifest verification');
-const publicBuiltInJob = await request('/mock/research/jobs', {
+const publicSampleHealth = await request('/mock/research/health', {}, { env: publicLockedEnv });
+assert.equal(publicSampleHealth.status, 404, 'same-worker sample health route must not exist in production');
+const publicSampleJob = await request('/mock/research/jobs', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ prompt: 'should not run in public without billing' })
 }, { env: publicLockedEnv });
-assert.equal(publicBuiltInJob.status, 404, 'built-in job execution should not bypass order billing in production');
+assert.equal(publicSampleJob.status, 404, 'same-worker sample job execution must not exist in production');
 
 const asyncWorkflowWaits = [];
 const asyncWorkflow = await request('/api/jobs', {
@@ -983,7 +1107,7 @@ const asyncWorkflow = await request('/api/jobs', {
 }, { waitUntilPromises: asyncWorkflowWaits, env: qaSearchEnv });
 assert.equal(asyncWorkflow.status, 201);
 assert.equal(asyncWorkflow.body.mode, 'workflow');
-assert.ok(['running', 'completed'].includes(asyncWorkflow.body.status), 'async Agent Team should start or finish the first built-in child immediately');
+assert.ok(['running', 'completed'].includes(asyncWorkflow.body.status), 'async Agent Team should start or finish the first sample child immediately');
 assert.ok(asyncWorkflowWaits.length <= 4, 'async Agent Team should enqueue bounded background dispatch waits');
 await Promise.allSettled(asyncWorkflowWaits);
 
@@ -992,6 +1116,7 @@ assert.equal(asyncWorkflowFirstState.status, 200);
 assert.equal(asyncWorkflowFirstState.body.job.workflow.childRuns[0].taskType, 'cmo_leader', 'CMO leader should remain first in the workflow order');
 assert.equal(asyncWorkflowFirstState.body.job.workflow.childRuns[0].status, 'completed', 'CMO leader should complete before specialists are released');
 const asyncWorkflowTaskOrder = asyncWorkflowFirstState.body.job.workflow.childRuns.map((run) => run.taskType);
+const asyncWorkflowPlannedTasks = asyncWorkflowFirstState.body.job.workflow.plannedTasks || [];
 assert.equal(
   asyncWorkflowFirstState.body.job.workflow.childRuns.length,
   asyncWorkflowFirstState.body.job.workflow.plannedChildRunCount,
@@ -1001,7 +1126,9 @@ assert.ok(asyncWorkflowFirstState.body.job.workflow.childRuns.length >= 11, 'CMO
 assert.ok(asyncWorkflowTaskOrder.indexOf('data_analysis') > 0, 'CMO workflow should schedule data analysis when funnel/analytics data is requested');
 const asyncDataRun = asyncWorkflowFirstState.body.job.workflow.childRuns.find((run) => run.taskType === 'data_analysis');
 const asyncResearchRun = asyncWorkflowFirstState.body.job.workflow.childRuns.find((run) => run.sequencePhase === 'research' && ['research', 'teardown', 'validation'].includes(run.taskType));
-const asyncPlanningRun = asyncWorkflowFirstState.body.job.workflow.childRuns.find((run) => run.sequencePhase === 'planning');
+const asyncResearchRuns = asyncWorkflowFirstState.body.job.workflow.childRuns.filter((run) => run.sequencePhase === 'research' && ['research', 'teardown', 'validation'].includes(run.taskType));
+const asyncPlanningRuns = asyncWorkflowFirstState.body.job.workflow.childRuns.filter((run) => run.sequencePhase === 'planning');
+const asyncPlanningRun = asyncPlanningRuns[0] || null;
 assert.equal(asyncDataRun?.sequencePhase, 'data', 'CMO data analysis should run in the dedicated data phase');
 assert.equal(asyncDataRun?.status, 'completed', 'attached GA4/Search Console app context should complete the data layer as a source packet');
 const asyncDataJob = await request(`/api/jobs/${asyncDataRun.id}`, {}, { env: qaSearchEnv });
@@ -1010,10 +1137,16 @@ const asyncDataOutputText = JSON.stringify(asyncDataJob.body.job?.output || {});
 assert.match(asyncDataOutputText, /Funnel contract|GA4|Search Console/i, 'data layer should persist the agent-generated analytics/funnel packet output');
 assert.doesNotMatch(asyncDataOutputText, /attached_data_context_packet|app-context-data-analysis-shortcut/i, 'data layer should not use Worker-side attached-context shortcut output');
 assert.ok(asyncResearchRun, 'CMO workflow should keep one market research phase separate from data');
-assert.ok(asyncPlanningRun && ['media_planner', 'growth'].includes(asyncPlanningRun.taskType), 'CMO workflow should schedule one planning specialist');
+assert.ok(asyncPlanningRun && ['media_planner', 'growth'].includes(asyncPlanningRun.taskType), 'CMO workflow should schedule at least one planning specialist');
+assert.ok(asyncResearchRuns.length >= 3, 'depth/quality CMO workflow should keep the full same-layer research fan-out instead of collapsing to one or two specialists');
+assert.ok(asyncWorkflowTaskOrder.includes('validation'), 'depth/quality CMO workflow should include validation as part of full research fan-out');
+assert.ok(
+  asyncWorkflowPlannedTasks.includes('media_planner') && asyncWorkflowPlannedTasks.includes('growth'),
+  'depth/quality CMO workflow should preserve same-layer planning candidates in the workflow plan'
+);
 assert.ok(asyncWorkflowTaskOrder.indexOf('data_analysis') < asyncWorkflowTaskOrder.indexOf(asyncResearchRun.taskType), 'CMO data layer should precede the research layer');
 assert.ok(asyncWorkflowTaskOrder.indexOf(asyncResearchRun.taskType) < asyncWorkflowTaskOrder.indexOf(asyncPlanningRun.taskType), 'CMO research layer should precede planning');
-assert.equal(asyncWorkflowTaskOrder.includes('teardown'), false, 'CMO workflow should not add competitor teardown unless competitor analysis is requested');
+assert.ok(asyncWorkflowTaskOrder.includes('teardown'), 'depth/quality CMO workflow should include teardown as part of full research fan-out');
 assert.notEqual(asyncDataRun?.agentName, 'RESEARCH TEAM LEADER', 'data_analysis should use the data specialist instead of a research leader');
 assert.ok(asyncWorkflowFirstState.body.job.workflow.statusCounts.completed >= 2, 'leader handoff should release eligible built-in specialists after the leader completes');
 
@@ -1071,17 +1204,56 @@ const leaderSeoFollowup = await request('/api/jobs', {
 }, { env: qaSearchEnv });
 assert.equal(leaderSeoFollowup.status, 201);
 assert.equal(leaderSeoFollowup.body.order_strategy_requested, 'single');
-assert.equal(leaderSeoFollowup.body.order_strategy_resolved, 'single');
-assert.ok(leaderSeoFollowup.body.job_id);
-assert.equal(leaderSeoFollowup.body.workflow_job_id, undefined);
-const leaderSeoFollowupJob = await request(`/api/jobs/${leaderSeoFollowup.body.job_id}`, {}, { env: qaSearchEnv });
+assert.equal(leaderSeoFollowup.body.order_strategy_resolved, 'multi');
+assert.ok(leaderSeoFollowup.body.workflow_job_id);
+assert.equal(leaderSeoFollowup.body.job_id, undefined);
+assert.ok(leaderSeoFollowup.body.routing_planned_task_types.includes('cmo_leader'));
+assert.ok(leaderSeoFollowup.body.routing_planned_task_types.includes('seo_gap'));
+const leaderSeoFollowupJob = await request(`/api/jobs/${leaderSeoFollowup.body.workflow_job_id}`, {}, { env: qaSearchEnv });
 assert.equal(leaderSeoFollowupJob.status, 200);
-assert.equal(leaderSeoFollowupJob.body.job.taskType, 'seo_gap');
+assert.equal(leaderSeoFollowupJob.body.job.taskType, 'cmo_leader');
 assert.equal(leaderSeoFollowupJob.body.job.input._broker.leaderFollowupSpecialistRouted, true);
 assert.ok(
-  (leaderSeoFollowupJob.body.job.output?.files || []).some((file) => String(file.name || '').includes('seo-agent-delivery')),
-  'leader SEO follow-up should produce an SEO specialist delivery file.'
+  (leaderSeoFollowupJob.body.job.workflow?.plannedTasks || []).includes('seo_gap'),
+  'leader SEO follow-up should keep orchestration and include the SEO specialist in the workflow.'
 );
+
+const leaderSeoFollowupMultiRetry = await request('/api/jobs', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    parent_agent_id: 'qa-runner',
+    task_type: 'cmo_leader',
+    prompt: [
+      `Follow-up/change request for running order ${asyncWorkflow.body.workflow_job_id}:`,
+      'seo対策したlp提案してもらえますか',
+      '',
+      'Use the previous order context and return the concrete publisher-ready LP artifact.'
+    ].join('\n'),
+    followup_to_job_id: asyncWorkflow.body.workflow_job_id,
+    order_strategy: 'multi',
+    skip_intake: true,
+    input: {
+      original_prompt: 'seo対策したlp提案してもらえますか',
+      _broker: {
+        activeLeaderLocked: true,
+        activeLeader: { taskType: 'cmo_leader', label: 'CMO Leader' },
+        conversationOwner: { type: 'leader', taskType: 'cmo_leader', label: 'CMO Leader' },
+        conversation: {
+          mode: 'followup',
+          followupToJobId: asyncWorkflow.body.workflow_job_id
+        }
+      }
+    }
+  })
+}, { env: qaSearchEnv });
+assert.equal(leaderSeoFollowupMultiRetry.status, 201);
+assert.equal(leaderSeoFollowupMultiRetry.body.order_strategy_requested, 'multi');
+assert.equal(leaderSeoFollowupMultiRetry.body.order_strategy_resolved, 'multi');
+assert.ok(leaderSeoFollowupMultiRetry.body.workflow_job_id, 'leader follow-up specialist retry should keep leader orchestration');
+assert.equal(leaderSeoFollowupMultiRetry.body.job_id, undefined);
+assert.ok(leaderSeoFollowupMultiRetry.body.routing_planned_task_types.includes('cmo_leader'));
+assert.ok(leaderSeoFollowupMultiRetry.body.routing_planned_task_types.includes('seo_gap'));
 
 const ambiguousWorkflowWaits = [];
 const ambiguousWorkflowPrompt = 'CMOとして、https://aiagent-marketplace.net の集客を実行まで。対象はAIツールを使う開発者と小規模SaaS創業者。目標は30日でGitHubログインとエージェント登録を増やすこと。現状は流入が少なく、広告費なし。GA4やSearch Consoleはなし、営業資料なし。納品は媒体プラン、投稿/掲載コピー、承認パケット。最後の実行フェイズはできる限りの複数アクションをする。';
@@ -1104,22 +1276,52 @@ const ambiguousWorkflowState = await request(`/api/jobs/${ambiguousWorkflow.body
 assert.equal(ambiguousWorkflowState.status, 200);
 const ambiguousWorkflowRuns = ambiguousWorkflowState.body.job.workflow.childRuns;
 const ambiguousWorkflowTaskOrder = ambiguousWorkflowRuns.map((run) => run.taskType);
-const ambiguousWorkflowActionTasks = ['directory_submission', 'x_post', 'reddit', 'indie_hackers', 'acquisition_automation']
+const ambiguousWorkflowPublishPrepTasks = ['reddit', 'indie_hackers', 'writing', 'seo_gap', 'landing']
   .filter((task) => ambiguousWorkflowTaskOrder.includes(task));
 assert.equal(ambiguousWorkflowTaskOrder.includes('data_analysis'), false, 'CMO workflow should skip data layer when GA4/Search Console are explicitly unavailable');
 assert.ok(ambiguousWorkflowTaskOrder.includes('research'), 'ambiguous CMO execution should still collect one research layer');
-assert.ok(ambiguousWorkflowTaskOrder.includes('media_planner'), 'ambiguous CMO execution should run Media Planner before action');
-assert.ok(ambiguousWorkflowTaskOrder.some((task) => ['writing', 'seo_gap', 'landing'].includes(task)), 'ambiguous CMO execution should prepare copy/assets before action');
-assert.ok(ambiguousWorkflowActionTasks.length >= 2, 'ambiguous CMO execution should include multiple approval-gated action candidates');
+assert.ok(ambiguousWorkflowTaskOrder.includes('media_planner'), 'ambiguous CMO execution should run Media Planner before publish preparation');
+assert.ok(ambiguousWorkflowTaskOrder.some((task) => ['writing', 'seo_gap', 'landing'].includes(task)), 'ambiguous CMO execution should prepare copy/assets before SaaS handoff');
+assert.equal(ambiguousWorkflowTaskOrder.some((task) => ['directory_submission', 'x_post', 'acquisition_automation'].includes(task)), false, 'CMO workflow should not dispatch publish/action workers');
+assert.ok(ambiguousWorkflowPublishPrepTasks.length >= 2, 'ambiguous CMO execution should include multiple publish-preparation candidates');
 assert.ok(
-  ambiguousWorkflowTaskOrder.indexOf('media_planner') < Math.min(...ambiguousWorkflowActionTasks.map((task) => ambiguousWorkflowTaskOrder.indexOf(task))),
-  'Media Planner should precede ambiguous action candidates'
+  ambiguousWorkflowTaskOrder.indexOf('media_planner') < Math.min(...ambiguousWorkflowPublishPrepTasks.map((task) => ambiguousWorkflowTaskOrder.indexOf(task))),
+  'Media Planner should precede ambiguous publish-preparation candidates'
 );
 assert.ok(
   ambiguousWorkflowRuns.some((run) => run.sequencePhase === 'checkpoint')
-  && ambiguousWorkflowRuns.some((run) => run.sequencePhase === 'action'),
-  'ambiguous CMO execution should include a checkpoint before final action phase'
+  && ambiguousWorkflowRuns.some((run) => run.sequencePhase === 'preparation'),
+  'ambiguous CMO execution should include a checkpoint before final preparation/SaaS handoff phase'
 );
+
+const legacyPlannerWorkflowWaits = [];
+const legacyPlannerWorkflow = await request('/api/jobs', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    parent_agent_id: 'qa-runner',
+    task_type: 'cmo_leader',
+    prompt: 'QA force legacy action planner: ユーザーを増やしたい。SNS、Reddit、Indie Hackers、自動化、ディレクトリまで含めて進めたい。',
+    order_strategy: 'multi',
+    async_dispatch: true,
+    skip_intake: true,
+    budget_cap: 500
+  })
+}, { waitUntilPromises: legacyPlannerWorkflowWaits, env: qaSearchEnv });
+assert.equal(legacyPlannerWorkflow.status, 201);
+const legacyPlannerTasks = legacyPlannerWorkflow.body.routing_planned_task_types || [];
+assert.equal(
+  legacyPlannerTasks.some((task) => ['x_post', 'instagram', 'directory_submission', 'acquisition_automation'].includes(task)),
+  false,
+  'CMO leader planner output must be normalized so legacy direct-action workers cannot re-enter the workflow'
+);
+assert.ok(legacyPlannerTasks.includes('writing'), 'legacy social/email action tasks should become writing/preparation work');
+assert.ok(
+  legacyPlannerTasks.some((task) => ['landing', 'growth', 'writing'].includes(task)),
+  'legacy acquisition automation should be retained only as non-action planning/preparation work'
+);
+assert.ok(legacyPlannerTasks.some((task) => ['reddit', 'indie_hackers'].includes(task)), 'community channels should remain preparation-layer copy packets');
+await Promise.allSettled(legacyPlannerWorkflowWaits);
 
 const preservedRetryTasks = ['cmo_leader', 'research', 'seo_gap'];
 const preservedRetryWaits = [];
@@ -1250,18 +1452,20 @@ const autoRetrySweep = await request('/api/dev/timeout-sweep', {
   body: JSON.stringify({ retry_limit: 1 })
 }, { env: qaSearchEnv });
 assert.equal(autoRetrySweep.status, 200);
-assert.equal(autoRetrySweep.body.retry.retried_count, 0, 'workflow child failures must not be retried in-place');
-assert.equal(autoRetrySweep.body.retry.restart_required_count, 1, 'retry sweep should convert retryable workflow child failures into full-order retry requirements');
-assert.ok(autoRetrySweep.body.retry.restart_required_job_ids.includes('qa-workflow-auto-retry-child'));
+assert.equal(autoRetrySweep.body.retry.retried_count, 1, 'retryable workflow child failures should be requeued in-place before full-order retry');
+assert.equal(autoRetrySweep.body.retry.restart_required_count, 0, 'retryable workflow child failures should not force full-order retry until retries are exhausted');
+assert.ok(autoRetrySweep.body.retry.job_ids.includes('qa-workflow-auto-retry-child'));
 const autoRetryState = await qaStorage.getState();
 const autoRetriedChild = autoRetryState.jobs.find((job) => job.id === 'qa-workflow-auto-retry-child');
 const autoRetryParent = autoRetryState.jobs.find((job) => job.id === 'qa-workflow-auto-retry-parent');
-assert.equal(autoRetriedChild?.status, 'failed', 'failed workflow child should stay terminal instead of being requeued');
-assert.equal(autoRetriedChild?.failureCategory, 'workflow_restart_required');
+assert.equal(autoRetriedChild?.status, 'queued', 'retryable workflow child should be requeued for another provider attempt');
+assert.equal(autoRetriedChild?.failureCategory, null);
 assert.equal(autoRetriedChild?.dispatch?.retryable, false);
-assert.equal(autoRetriedChild?.dispatch?.restartRequired, true);
-assert.equal(autoRetryParent?.status, 'failed', 'parent workflow should fail visibly when a child requires a full-order retry');
-assert.equal(autoRetryParent?.failureCategory, 'workflow_restart_required');
+assert.equal(autoRetriedChild?.dispatch?.restartRequired, false);
+assert.equal(autoRetryParent?.status, 'running', 'parent workflow should remain running while a child retry is queued');
+await qaStorage.mutate(async (draft) => {
+  draft.jobs = draft.jobs.filter((job) => !['qa-workflow-auto-retry-parent', 'qa-workflow-auto-retry-child'].includes(job.id));
+});
 
 await qaStorage.mutate(async (draft) => {
   draft.jobs.push(
@@ -1308,18 +1512,20 @@ const autoRetryPrepSweep = await request('/api/dev/timeout-sweep', {
   body: JSON.stringify({ retry_limit: 1 })
 }, { env: qaSearchEnv });
 assert.equal(autoRetryPrepSweep.status, 200);
-assert.equal(autoRetryPrepSweep.body.retry.retried_count, 0, 'preparation children must not be retried in-place');
-assert.equal(autoRetryPrepSweep.body.retry.restart_required_count, 1, 'retryable dispatch failures should become full-order retry requirements');
-assert.ok(autoRetryPrepSweep.body.retry.restart_required_job_ids.includes('qa-workflow-auto-retry-prep-child'));
+assert.equal(autoRetryPrepSweep.body.retry.retried_count, 1, 'retryable preparation children should be retried in-place before full-order retry');
+assert.equal(autoRetryPrepSweep.body.retry.restart_required_count, 0, 'retryable dispatch failures should not become full-order retry requirements before retries are exhausted');
+assert.ok(autoRetryPrepSweep.body.retry.job_ids.includes('qa-workflow-auto-retry-prep-child'));
 const autoRetryPrepState = await qaStorage.getState();
 const autoRetriedPrepChild = autoRetryPrepState.jobs.find((job) => job.id === 'qa-workflow-auto-retry-prep-child');
 const autoRetryPrepParent = autoRetryPrepState.jobs.find((job) => job.id === 'qa-workflow-auto-retry-prep-parent');
-assert.equal(autoRetriedPrepChild?.status, 'failed', 'failed preparation child should stay terminal instead of being requeued');
-assert.equal(autoRetriedPrepChild?.failureCategory, 'workflow_restart_required');
+assert.equal(autoRetriedPrepChild?.status, 'queued', 'failed preparation child should be requeued while retries remain');
+assert.equal(autoRetriedPrepChild?.failureCategory, null);
 assert.equal(autoRetriedPrepChild?.dispatch?.retryable, false);
-assert.equal(autoRetriedPrepChild?.dispatch?.restartRequired, true);
-assert.equal(autoRetryPrepParent?.status, 'failed', 'parent workflow should fail visibly when a preparation child requires a full-order retry');
-assert.equal(autoRetryPrepParent?.failureCategory, 'workflow_restart_required');
+assert.equal(autoRetriedPrepChild?.dispatch?.restartRequired, false);
+assert.equal(autoRetryPrepParent?.status, 'running', 'parent workflow should remain running while a preparation child retry is queued');
+await qaStorage.mutate(async (draft) => {
+  draft.jobs = draft.jobs.filter((job) => !['qa-workflow-auto-retry-prep-parent', 'qa-workflow-auto-retry-prep-child'].includes(job.id));
+});
 
 const asyncRawState = await qaStorage.getState();
 const asyncCheckpointLeader = asyncRawState.jobs.find((job) => (
@@ -2152,6 +2358,229 @@ const parallelLayerQueued = parallelLayerState.jobs.find((job) => job.id === par
 const parallelLayerNext = parallelLayerState.jobs.find((job) => job.id === parallelLayerNextId);
 assert.notEqual(parallelLayerQueued?.status, 'queued', 'queued same-layer child should dispatch even when a sibling is already running');
 assert.equal(parallelLayerNext?.status, 'queued', 'next-layer child should remain queued until earlier layer finishes');
+
+const sameLayerFanoutParentId = 'qa-same-layer-fanout-parent';
+const sameLayerFanoutResearchId = 'qa-same-layer-fanout-research';
+const sameLayerFanoutTeardownId = 'qa-same-layer-fanout-teardown';
+const sameLayerFanoutValidationId = 'qa-same-layer-fanout-validation';
+await qaStorage.mutate(async (draft) => {
+  const at = nowIso();
+  draft.jobs.push(
+    {
+      id: sameLayerFanoutParentId,
+      jobKind: 'workflow',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      prompt: 'same-layer fan-out dispatch qa',
+      status: 'running',
+      createdAt: at,
+      startedAt: at,
+      workflow: {
+        plannedTasks: ['cmo_leader', 'research', 'teardown', 'validation', 'growth'],
+        childRuns: []
+      },
+      logs: ['same-layer fan-out dispatch qa parent']
+    },
+    {
+      id: `${sameLayerFanoutParentId}-leader`,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      workflowTask: 'cmo_leader',
+      workflowAgentName: 'CMO Team Leader',
+      prompt: 'leader completed for same-layer fan-out dispatch qa',
+      status: 'completed',
+      assignedAgentId: 'agent_cmo_leader_01',
+      workflowParentId: sameLayerFanoutParentId,
+      createdAt: at,
+      startedAt: at,
+      completedAt: at,
+      input: { _broker: { workflow: { sequencePhase: 'initial' } } },
+      output: {
+        summary: 'Leader completed',
+        report: { summary: 'Leader completed', bullets: ['release layer 2 fan-out'], nextAction: 'Run research and teardown.' },
+        files: []
+      },
+      logs: ['leader completed']
+    },
+    {
+      id: sameLayerFanoutResearchId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'research',
+      workflowTask: 'research',
+      workflowAgentName: 'Research Agent',
+      prompt: 'queued research layer child should start in the same poll',
+      status: 'queued',
+      assignedAgentId: 'agent_research_01',
+      workflowParentId: sameLayerFanoutParentId,
+      createdAt: at,
+      input: { _broker: { workflow: { sequencePhase: 'research' } } },
+      logs: ['queued research layer child']
+    },
+    {
+      id: sameLayerFanoutTeardownId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'teardown',
+      workflowTask: 'teardown',
+      workflowAgentName: 'Competitor Teardown Agent',
+      prompt: 'queued teardown layer child should start in the same poll',
+      status: 'queued',
+      assignedAgentId: 'agent_teardown_01',
+      workflowParentId: sameLayerFanoutParentId,
+      createdAt: at,
+      input: { _broker: { workflow: { sequencePhase: 'research' } } },
+      logs: ['queued teardown layer child']
+    },
+    {
+      id: sameLayerFanoutValidationId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'validation',
+      workflowTask: 'validation',
+      workflowAgentName: 'Validation Agent',
+      prompt: 'queued validation layer child should start in the same poll',
+      status: 'queued',
+      assignedAgentId: 'agent_validation_01',
+      workflowParentId: sameLayerFanoutParentId,
+      createdAt: at,
+      input: { _broker: { workflow: { sequencePhase: 'research' } } },
+      logs: ['queued validation layer child']
+    }
+  );
+});
+const sameLayerFanoutPoll = await request(`/api/jobs/${sameLayerFanoutParentId}`);
+assert.equal(sameLayerFanoutPoll.status, 200);
+const sameLayerFanoutState = await qaStorage.getState();
+const sameLayerFanoutResearch = sameLayerFanoutState.jobs.find((job) => job.id === sameLayerFanoutResearchId);
+const sameLayerFanoutTeardown = sameLayerFanoutState.jobs.find((job) => job.id === sameLayerFanoutTeardownId);
+const sameLayerFanoutValidation = sameLayerFanoutState.jobs.find((job) => job.id === sameLayerFanoutValidationId);
+assert.notEqual(sameLayerFanoutResearch?.status, 'queued', 'first same-layer queued child should dispatch during the same progress poll');
+assert.notEqual(sameLayerFanoutTeardown?.status, 'queued', 'second same-layer queued child should dispatch during the same progress poll');
+assert.notEqual(sameLayerFanoutValidation?.status, 'queued', 'third same-layer queued child should dispatch during the same progress poll');
+
+const serialUserActionParentId = 'qa-serial-user-action-parent';
+const serialUserActionBlockedId = 'qa-serial-user-action-blocked';
+const serialUserActionQueuedId = 'qa-serial-user-action-queued';
+await qaStorage.mutate(async (draft) => {
+  const at = nowIso();
+  draft.jobs.push(
+    {
+      id: serialUserActionParentId,
+      jobKind: 'workflow',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      prompt: 'approval and OAuth waits should stay one at a time',
+      status: 'running',
+      createdAt: at,
+      startedAt: at,
+      workflow: {
+        plannedTasks: ['cmo_leader', 'research', 'media_planner', 'seo_gap', 'x_post', 'email_ops'],
+        childRuns: []
+      },
+      logs: ['serial user action qa parent']
+    },
+    {
+      id: `${serialUserActionParentId}-leader`,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      workflowTask: 'cmo_leader',
+      workflowAgentName: 'CMO Team Leader',
+      prompt: 'leader completed for serial user action qa',
+      status: 'completed',
+      assignedAgentId: 'agent_cmo_leader_01',
+      workflowParentId: serialUserActionParentId,
+      createdAt: at,
+      startedAt: at,
+      completedAt: at,
+      input: { _broker: { workflow: { sequencePhase: 'initial' } } },
+      output: {
+        summary: 'Leader completed',
+        report: { summary: 'Leader completed', bullets: ['release action layer'], nextAction: 'Run approval-gated actions.' },
+        files: []
+      },
+      logs: ['leader completed']
+    },
+    ...['research', 'media_planner', 'seo_gap'].map((task) => ({
+      id: `${serialUserActionParentId}-${task}`,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: task,
+      workflowTask: task,
+      workflowAgentName: task,
+      prompt: `${task} completed before action`,
+      status: 'completed',
+      assignedAgentId: task === 'research' ? 'agent_research_01' : (task === 'media_planner' ? 'agent_media_planner_01' : 'agent_seogap_01'),
+      workflowParentId: serialUserActionParentId,
+      createdAt: at,
+      startedAt: at,
+      completedAt: at,
+      input: { _broker: { workflow: { sequencePhase: task === 'research' ? 'research' : (task === 'media_planner' ? 'planning' : 'preparation') } } },
+      output: {
+        summary: `${task} completed`,
+        report: { summary: `${task} completed`, bullets: [`${task} complete`], nextAction: 'Continue.' },
+        files: []
+      },
+      logs: [`${task} completed`]
+    })),
+    {
+      id: serialUserActionBlockedId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'x_post',
+      workflowTask: 'x_post',
+      workflowAgentName: 'X Ops Connector Agent',
+      prompt: 'blocked X action lane',
+      status: 'blocked',
+      assignedAgentId: 'agent_x_launch_01',
+      workflowParentId: serialUserActionParentId,
+      createdAt: at,
+      input: { _broker: { workflow: { sequencePhase: 'action' } } },
+      output: {
+        summary: 'X OAuth is required.',
+        report: {
+          summary: 'X OAuth is required.',
+          bullets: ['X OAuth required.'],
+          nextAction: 'Connect X.',
+          authority_request: {
+            reason: 'X OAuth is required before posting.',
+            missing_connectors: ['x'],
+            missing_connector_capabilities: ['x.post'],
+            source: 'adaptive_agent_preflight'
+          }
+        },
+        files: []
+      },
+      failureReason: 'X OAuth is required before posting.',
+      failureCategory: 'blocked_waiting_for_approval',
+      dispatch: { completionStatus: 'blocked_waiting_for_approval', retryable: false },
+      logs: ['blocked waiting for authority approval']
+    },
+    {
+      id: serialUserActionQueuedId,
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'email_ops',
+      workflowTask: 'email_ops',
+      workflowAgentName: 'Email Ops Agent',
+      prompt: 'queued email action lane should not start while X OAuth is waiting',
+      status: 'queued',
+      assignedAgentId: 'agent_email_ops_01',
+      workflowParentId: serialUserActionParentId,
+      createdAt: at,
+      input: { _broker: { workflow: { sequencePhase: 'action' } } },
+      logs: ['queued email action lane']
+    }
+  );
+});
+const serialUserActionPoll = await request(`/api/jobs/${serialUserActionParentId}`);
+assert.equal(serialUserActionPoll.status, 200);
+const serialUserActionState = await qaStorage.getState();
+const serialUserActionQueued = serialUserActionState.jobs.find((job) => job.id === serialUserActionQueuedId);
+assert.equal(serialUserActionQueued?.status, 'queued', 'a second approval/OAuth lane should stay queued while another user-action wait is active');
+assert.equal(serialUserActionQueued?.dispatch?.completionStatus || '', '', 'queued approval/OAuth lane should not receive a dispatch lock while another wait is active');
 
 const cronGateParentId = 'qa-cron-gate-parent';
 const cronGateLeaderId = 'qa-cron-gate-leader';
@@ -3004,6 +3433,10 @@ async function completeAsyncWorkflowSpecialists(phase, nextAction) {
             ].filter(Boolean).join('\n');
         job.status = 'completed';
         job.completedAt = job.completedAt || nowIso();
+        job.failedAt = null;
+        job.timedOutAt = null;
+        job.failureReason = null;
+        job.failureCategory = null;
         job.output = {
           report: {
             summary: `qa ${phase} completed for ${job.taskType} with an action packet artifact using https://aiagent-marketplace.net/`,
@@ -3145,7 +3578,24 @@ const checkpointLeaderAfterPlanning = asyncAfterPlanningState.jobs.find((job) =>
   && Number(job.input?._broker?.workflow?.checkpointLayer || 0) === 3
   && Number(job.input?._broker?.workflow?.requiredBeforeLayer || 0) === 4
 ));
-assert.equal(checkpointLeaderAfterPlanning?.status, 'completed', 'planning-to-preparation checkpoint leader should complete before preparation dispatch');
+const planningCheckpointChildren = asyncAfterPlanningState.jobs
+  .filter((job) => job.workflowParentId === asyncWorkflow.body.workflow_job_id)
+  .map((job) => ({
+    id: job.id,
+    taskType: job.taskType,
+    status: job.status,
+    phase: job.input?._broker?.workflow?.sequencePhase,
+    layer: job.input?._broker?.workflow?.layer,
+    dispatchStatus: job.dispatch?.completionStatus
+  }));
+assert.equal(checkpointLeaderAfterPlanning?.status, 'completed', `planning-to-preparation checkpoint leader should complete before preparation dispatch: ${JSON.stringify({
+  status: checkpointLeaderAfterPlanning?.status,
+  failureReason: checkpointLeaderAfterPlanning?.failureReason,
+  failureCategory: checkpointLeaderAfterPlanning?.failureCategory,
+  dispatch: checkpointLeaderAfterPlanning?.dispatch,
+  logs: checkpointLeaderAfterPlanning?.logs,
+  children: planningCheckpointChildren
+})}`);
 const preparationWithPriorPlanning = asyncAfterPlanningState.jobs.find((job) => (
   job.workflowParentId === asyncWorkflow.body.workflow_job_id
   && job.input?._broker?.workflow?.sequencePhase === 'preparation'
@@ -3177,8 +3627,13 @@ const checkpointLeaderBeforeAction = asyncAfterPreparationState.jobs.find((job) 
   && Number(job.input?._broker?.workflow?.checkpointLayer || 0) === 4
   && Number(job.input?._broker?.workflow?.requiredBeforeLayer || 0) === 5
 ));
-assert.equal(checkpointLeaderBeforeAction?.status, 'completed', 'preparation-to-action checkpoint leader should complete before action dispatch');
-assert.equal(checkpointLeaderBeforeAction?.input?._broker?.workflow?.requiresUserApprovalBeforeAction, true, 'final action checkpoint should carry the user approval gate');
+assert.ok(
+  !checkpointLeaderBeforeAction || ['completed', 'blocked'].includes(String(checkpointLeaderBeforeAction.status || '')),
+  'preparation-to-action checkpoint leader should complete when an action layer exists; CMO SaaS handoff workflows may skip action dispatch entirely'
+);
+if (checkpointLeaderBeforeAction) {
+  assert.notEqual(checkpointLeaderBeforeAction.input?._broker?.workflow?.requiresUserApprovalBeforeAction, true, 'agent action layer release should not be blocked by publish approval; SaaS handoff owns publish approval');
+}
 const executionWithPriorAnalysis = asyncAfterPreparationState.jobs.find((job) => (
   job.workflowParentId === asyncWorkflow.body.workflow_job_id
   && job.input?._broker?.workflow?.sequencePhase === 'action'
@@ -3186,19 +3641,7 @@ const executionWithPriorAnalysis = asyncAfterPreparationState.jobs.find((job) =>
   && Array.isArray(job.input?._broker?.workflow?.leaderHandoff?.priorRuns)
   && job.input._broker.workflow.leaderHandoff.priorRuns.some((run) => ['teardown', 'data_analysis', 'media_planner', 'seo_gap', 'landing'].includes(run.taskType))
 ));
-assert.ok(executionWithPriorAnalysis, 'action-layer children should receive completed research/planning/preparation handoff before dispatch');
-const executionWithPriorAnalysisAdditional = String(executionWithPriorAnalysis.input?._broker?.workflow?.additionalPrompt || '');
-assert.ok(
-  !String(executionWithPriorAnalysis.prompt || '').includes('=== WORKFLOW HANDOFF CONTEXT ===')
-  && executionWithPriorAnalysisAdditional.includes('=== WORKFLOW HANDOFF CONTEXT ==='),
-  'action-layer child should keep the base prompt separate and store accumulated prior handoff context in additionalPrompt'
-);
-assert.ok(
-  executionWithPriorAnalysisAdditional.includes('Action packet')
-  || executionWithPriorAnalysisAdditional.includes('Post draft')
-  || executionWithPriorAnalysisAdditional.includes('https://aiagent-marketplace.net/'),
-  'action-layer child additionalPrompt should include concrete prior delivery artifact snippets'
-);
+assert.equal(executionWithPriorAnalysis, undefined, 'CMO action layer should not dispatch posting children; SaaS handoff owns publish/copy-paste execution');
 
 await completeAsyncWorkflowSpecialists('action', 'Return this to the CMO leader for synthesis.');
 const asyncFinalSummaryWaits = [];
@@ -3318,8 +3761,14 @@ const syntheticAgentTeamOutput = buildAgentTeamDeliveryOutput({
     }
   }
 ]);
-assert.equal(syntheticAgentTeamOutput.files?.[0]?.content_type, 'social_post_pack', 'approval-blocked action packet should be the first executable team deliverable');
-assert.equal(syntheticAgentTeamOutput.files?.[0]?.source_task_type, 'x_post', 'approval-blocked action packet should remain tied to the specialist that can resume execution');
+assert.ok(
+  syntheticAgentTeamOutput.files?.every((file) => file.raw_agent_delivery === true),
+  'agent team output should expose only raw child-agent delivery files'
+);
+assert.ok(
+  syntheticAgentTeamOutput.files?.some((file) => file.name === 'x-post-pack.md' && file.source_task_type === 'x_post'),
+  'approval-blocked action packet should remain visible as the raw specialist file'
+);
 assert.ok(
   syntheticAgentTeamOutput.files?.some((file) => file.name === 'leader-summary.md' && String(file.content || '').includes('Leader summary')),
   'agent team output should still include the final leader summary file'
@@ -3333,22 +3782,26 @@ assert.ok(
   'parent report bullets should summarize the actual content produced by each specialist'
 );
 assert.ok(
-  String(syntheticAgentTeamOutput.files?.[0]?.content || '').includes('## Delivered content summaries'),
-  'first executable delivery file should include content summaries before approval/execution'
+  syntheticAgentTeamOutput.files?.some((file) => String(file.content || '').includes('Launching now')),
+  'raw specialist delivery file should preserve the concrete execution artifact body'
 );
 assert.ok(
-  String(syntheticAgentTeamOutput.files?.[0]?.content || '').includes('Launching now'),
-  'first executable delivery file should preserve the concrete execution artifact body'
+  !syntheticAgentTeamOutput.files?.some((file) => ['all-deliverables.md', 'review-ready-delivery.md', 'supporting-specialist-deliverables.md'].includes(file.name)),
+  'agent team output must not expose generated delivery bundles as user-facing delivery files'
 );
-const syntheticSupportingBundle = syntheticAgentTeamOutput.files?.find((file) => file.name === 'supporting-specialist-deliverables.md');
-assert.ok(syntheticSupportingBundle, 'agent team output should keep specialist bundle internally for downstream context');
-assert.equal(syntheticSupportingBundle.delivery_visible, false, 'supporting specialist bundle should not be shown as a user-facing delivery file');
-assert.equal(syntheticSupportingBundle.user_visible, false, 'supporting specialist bundle should not be shown as a user-facing delivery file');
-assert.ok(syntheticSupportingBundle.content.includes('X post pack'), 'supporting bundle should include specialist file content, not only filenames');
-assert.ok(syntheticSupportingBundle.content.includes('Launching now'), 'supporting bundle should include the specialist deliverable body');
 
 const fallbackIntegratedFile = checkpointOnlyAgentTeamOutput.files?.find((file) => file.name === 'integrated-delivery.md');
-assert.equal(fallbackIntegratedFile?.delivery_visible, false, 'generated integrated status markdown should stay internal when final summary is not ready');
+assert.equal(fallbackIntegratedFile, undefined, 'generated integrated status markdown should not be attached as a delivery file');
+const checkpointReviewReadyFile = checkpointOnlyAgentTeamOutput.files?.find((file) => file.name === 'review-ready-delivery.md');
+assert.equal(checkpointReviewReadyFile, undefined, 'checkpoint-only workflow output should not attach a generated review-ready delivery file');
+const checkpointAllDeliverablesFile = checkpointOnlyAgentTeamOutput.files?.find((file) => file.name === 'all-deliverables.md');
+assert.equal(checkpointAllDeliverablesFile, undefined, 'checkpoint-only workflow output should not attach generated all-deliverables bundles');
+const checkpointPartialDeliveryFile = checkpointOnlyAgentTeamOutput.files?.find((file) => file.name === 'workflow-partial-delivery.md');
+assert.equal(checkpointPartialDeliveryFile, undefined, 'checkpoint-only workflow output should not attach generated partial delivery markdown');
+assert.ok(
+  checkpointOnlyAgentTeamOutput.files?.some((file) => file.name === 'checkpoint.md' && file.raw_agent_delivery === true && String(file.content || '').includes('# checkpoint')),
+  'checkpoint-only workflow output should expose the raw checkpoint leader file only'
+);
 
 const syntheticLeaderOnlyOutput = buildAgentTeamDeliveryOutput({
   workflow: { objective: 'Launch synthetic QA through action' },
@@ -3380,14 +3833,11 @@ const syntheticLeaderOnlyOutput = buildAgentTeamDeliveryOutput({
     }
   }
 ]);
-assert.equal(syntheticLeaderOnlyOutput.files?.[0]?.content_type, 'report_bundle', 'leader-only final output should be promoted from attachment to execution candidate');
-assert.equal(syntheticLeaderOnlyOutput.files?.[0]?.execution_candidate, true);
-assert.equal(syntheticLeaderOnlyOutput.files?.[0]?.draft_defaults?.nextStep, 'execution_order');
-assert.equal(syntheticLeaderOnlyOutput.files?.[0]?.draft_defaults?.channel, 'x');
+assert.equal(syntheticLeaderOnlyOutput.files?.[0]?.raw_agent_delivery, true, 'leader-only final output should keep the raw leader file as the delivery file');
 assert.equal(syntheticLeaderOnlyOutput.report?.execution_candidate?.type, 'report_bundle');
 assert.ok(
-  String(syntheticLeaderOnlyOutput.files?.[0]?.content || '').includes('## Delivered content summaries'),
-  'leader-only final execution candidate should include delivered content summaries at the top'
+  !String(syntheticLeaderOnlyOutput.files?.[0]?.content || '').includes('## Delivered content summaries'),
+  'raw leader delivery file must not be prefixed with generated delivered-content summaries'
 );
 
 const syntheticVagueLeaderApprovalOutput = buildAgentTeamDeliveryOutput({
@@ -3446,18 +3896,18 @@ assert.equal(connectorHandoffWorkflow.body.mode, 'workflow');
 let connectorHandoffState = await request(`/api/jobs/${connectorHandoffWorkflow.body.workflow_job_id}`, {}, { env: qaSearchEnv });
 assert.equal(connectorHandoffState.status, 200);
 let connectorHandoffRawState = await qaStorage.getState();
-let xHandoffJob = connectorHandoffRawState.jobs.find((job) => (
+let publisherPrepJob = connectorHandoffRawState.jobs.find((job) => (
   job.workflowParentId === connectorHandoffWorkflow.body.workflow_job_id
-  && job.workflowTask === 'x_post'
+  && job.workflowTask === 'writing'
 ));
-for (let attempt = 0; attempt < 6 && !['completed', 'blocked'].includes(String(xHandoffJob?.status || '')); attempt += 1) {
+for (let attempt = 0; attempt < 6 && !['completed', 'blocked'].includes(String(publisherPrepJob?.status || '')); attempt += 1) {
   const waits = [];
   connectorHandoffState = await request(`/api/jobs/${connectorHandoffWorkflow.body.workflow_job_id}`, {}, { waitUntilPromises: waits, env: qaSearchEnv });
   await Promise.allSettled(waits);
   connectorHandoffRawState = await qaStorage.getState();
-  xHandoffJob = connectorHandoffRawState.jobs.find((job) => (
+  publisherPrepJob = connectorHandoffRawState.jobs.find((job) => (
     job.workflowParentId === connectorHandoffWorkflow.body.workflow_job_id
-    && job.workflowTask === 'x_post'
+    && job.workflowTask === 'writing'
   ));
 }
 connectorHandoffState = await request(`/api/jobs/${connectorHandoffWorkflow.body.workflow_job_id}`, {}, { env: qaSearchEnv });
@@ -3465,16 +3915,117 @@ assert.equal(connectorHandoffState.status, 200);
 const connectorChildRuns = Array.isArray(connectorHandoffState.body.job.workflow?.childRuns)
   ? connectorHandoffState.body.job.workflow.childRuns
   : [];
-assert.ok(connectorChildRuns.some((run) => run.taskType === 'x_post'), 'CMO workflow should keep the X action specialist in the plan even without X OAuth');
-assert.equal(xHandoffJob?.status, 'blocked', 'connector-blocked X specialist should not be marked completed without X OAuth approval');
-assert.equal(xHandoffJob?.dispatch?.completionStatus, 'blocked_waiting_for_approval', 'connector-blocked X specialist should keep an approval-blocked completion status');
-assert.equal(xHandoffJob?.input?._broker?.agentPreflight?.authorityStatus, 'action_required', 'X specialist should receive connector authority context instead of being dropped');
-assert.equal(xHandoffJob?.output?.report?.authority_request?.missing_connector_capabilities?.[0], 'x.post', 'X specialist should emit a structured connector authority request');
-assert.equal(xHandoffJob?.executorState?.authorityRequired?.missingConnectorCapabilities?.[0], 'x.post', 'X specialist authority request should persist into executor state');
-assert.equal(connectorHandoffState.body.job.status, 'blocked', 'workflow parent should be blocked instead of completed while connector authority is missing');
-assert.equal(connectorHandoffState.body.job.dispatch?.completionStatus, 'blocked_waiting_for_approval', 'workflow parent should persist approval-blocked completion status');
-assert.equal(connectorHandoffState.body.job.output?.report?.authority_request?.missing_connector_capabilities?.[0], 'x.post', 'workflow parent should surface child connector authority requests');
-assert.equal(connectorHandoffState.body.job.executorState?.authorityRequired?.missingConnectorCapabilities?.[0], 'x.post', 'workflow parent should persist connector authority requests for delivery UI gating');
+assert.equal(connectorChildRuns.some((run) => run.taskType === 'x_post'), false, 'CMO workflow should not dispatch X action specialists; matched SaaS app handoff owns publishing');
+assert.ok(connectorChildRuns.some((run) => run.taskType === 'writing'), 'CMO workflow should keep publishable writing preparation in the plan');
+assert.notEqual(publisherPrepJob?.dispatch?.completionStatus, 'blocked_waiting_for_approval', 'writing preparation should not block chat workflow for publish approval; SaaS owns publish approval');
+assert.notEqual(connectorHandoffState.body.job.status, 'blocked', 'workflow parent should not be blocked by publish approval when SaaS handoff is available');
+assert.notEqual(connectorHandoffState.body.job.dispatch?.completionStatus, 'blocked_waiting_for_approval', 'workflow parent should not persist chat-level publish approval blocking');
+
+const legacyCmoActionParentId = 'qa-legacy-cmo-action-parent';
+const legacyCmoActionIds = ['qa-legacy-cmo-action-acq', 'qa-legacy-cmo-action-reddit', 'qa-legacy-cmo-action-ih'];
+await qaStorage.mutate(async (draft) => {
+  const at = nowIso();
+  draft.jobs.unshift(
+    {
+      id: legacyCmoActionParentId,
+      jobKind: 'workflow',
+      parentAgentId: 'qa-runner',
+      taskType: 'cmo_leader',
+      prompt: 'legacy CMO action layer should hand off to SaaS instead of asking chat approval',
+      input: {},
+      priority: 'normal',
+      status: 'running',
+      createdAt: at,
+      workflow: {
+        strategy: 'multi_agent',
+        plannedTasks: ['cmo_leader', 'data_analysis', 'research', 'media_planner', 'writing', 'acquisition_automation', 'reddit', 'indie_hackers'],
+        plannedChildRunCount: 3,
+        childRuns: []
+      },
+      logs: ['legacy cmo action parent qa']
+    },
+    {
+      id: legacyCmoActionIds[0],
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'acquisition_automation',
+      workflowTask: 'acquisition_automation',
+      workflowAgentName: 'Acquisition Automation Agent',
+      prompt: 'legacy action child',
+      input: { _broker: { workflow: { primaryTask: 'cmo_leader', sequencePhase: 'action', dispatchLayer: 5 } } },
+      priority: 'normal',
+      status: 'queued',
+      assignedAgentId: 'agent_acquisition_automation_01',
+      createdAt: at,
+      workflowParentId: legacyCmoActionParentId,
+      logs: ['legacy cmo action child qa']
+    },
+    {
+      id: legacyCmoActionIds[1],
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'reddit',
+      workflowTask: 'reddit',
+      workflowAgentName: 'Reddit',
+      prompt: 'legacy reddit action child',
+      input: { _broker: { workflow: { primaryTask: 'cmo_leader', sequencePhase: 'action', dispatchLayer: 5 } } },
+      priority: 'normal',
+      status: 'queued',
+      assignedAgentId: 'agent_reddit_01',
+      createdAt: at,
+      workflowParentId: legacyCmoActionParentId,
+      logs: ['legacy cmo reddit action child qa']
+    },
+    {
+      id: legacyCmoActionIds[2],
+      jobKind: 'workflow_child',
+      parentAgentId: 'qa-runner',
+      taskType: 'indie_hackers',
+      workflowTask: 'indie_hackers',
+      workflowAgentName: 'Indie Hackers',
+      prompt: 'legacy indie hackers action child',
+      input: { _broker: { workflow: { primaryTask: 'cmo_leader', sequencePhase: 'action', dispatchLayer: 5 } } },
+      priority: 'normal',
+      status: 'blocked',
+      failureCategory: 'blocked_waiting_for_approval',
+      failureReason: 'External posting requires approval.',
+      dispatch: { completionStatus: 'blocked_waiting_for_approval', retryable: false, nextRetryAt: null },
+      output: {
+        summary: 'External posting requires approval.',
+        report: {
+          summary: 'External posting requires approval.',
+          authority_request: {
+            reason: 'External posting requires approval before publishing to Indie Hackers.',
+            missing_connectors: ['indie_hackers'],
+            source: 'agent_delivery'
+          }
+        },
+        files: []
+      },
+      assignedAgentId: 'agent_indie_hackers_01',
+      createdAt: at,
+      workflowParentId: legacyCmoActionParentId,
+      logs: ['legacy cmo indie action child qa']
+    }
+  );
+});
+const legacyCmoActionPoll = await request(`/api/jobs/${legacyCmoActionParentId}`, {}, { env: qaSearchEnv });
+assert.equal(legacyCmoActionPoll.status, 200);
+assert.notEqual(legacyCmoActionPoll.body.job.status, 'blocked', 'legacy CMO action-layer children should not create chat approval waits after SaaS handoff policy');
+const legacyCmoActionSecondPoll = await request(`/api/jobs/${legacyCmoActionParentId}`, {}, { env: qaSearchEnv });
+assert.equal(legacyCmoActionSecondPoll.status, 200);
+const legacyCmoActionState = await qaStorage.getState();
+const legacyCmoActionChildren = legacyCmoActionState.jobs.filter((job) => legacyCmoActionIds.includes(job.id));
+assert.equal(
+  legacyCmoActionChildren.every((job) => job.status === 'completed' && job.dispatch?.completionStatus === 'saas_handoff_only'),
+  true,
+  `legacy CMO action-layer children should be completed as SaaS handoff-only steps: ${JSON.stringify(legacyCmoActionChildren.map((job) => ({ id: job.id, taskType: job.taskType, status: job.status, dispatch: job.dispatch?.completionStatus, failure: job.failureReason, report: job.output?.report }))) }`
+);
+assert.equal(
+  legacyCmoActionChildren.some((job) => job.output?.report?.authority_request),
+  false,
+  'SaaS handoff-only action children must not keep chat approval authority requests'
+);
 
 const manualParentId = 'qa-progress-parent';
 const manualChildAId = 'qa-progress-child-a';
@@ -4600,8 +5151,18 @@ try {
   assert.equal(deleteMergedSession.status, 200);
   assert.ok(
     Array.isArray(deleteMergedSession.body.cancelled_job_ids)
-      && deleteMergedSession.body.cancelled_job_ids.includes(unlinkedActiveOrder.body.job_id),
-    'deleting a prompt-merged chat session should stop its linked active work'
+      && !deleteMergedSession.body.cancelled_job_ids.length,
+    'deleting a prompt-merged chat session should not cancel linked active work'
+  );
+  const mergedOrderAfterDelete = await request(`/api/jobs/${unlinkedActiveOrder.body.job_id}`, {}, { sessionCookie: aliceSession });
+  assert.equal(mergedOrderAfterDelete.status, 200);
+  assert.notEqual(mergedOrderAfterDelete.body.job.status, 'failed', 'chat memory deletion should not mutate Order state');
+  const mergedMemoryAfterDelete = await request('/api/chat-memory', {}, { sessionCookie: aliceSession });
+  assert.equal(mergedMemoryAfterDelete.status, 200);
+  assert.equal(
+    (mergedMemoryAfterDelete.body.chatMemory || []).filter((item) => item.prompt === mergedPrompt).length,
+    0,
+    'deleted prompt-merged chat sessions should stay hidden from lightweight chat memory'
   );
 
   const linkedSessionId = `qa-linked-session-${Date.now()}`;
@@ -4636,12 +5197,25 @@ try {
     method: 'DELETE'
   }, { sessionCookie: aliceSession });
   assert.equal(deleteLinkedSession.status, 200);
-  assert.ok(Array.isArray(deleteLinkedSession.body.cancelled_job_ids) && deleteLinkedSession.body.cancelled_job_ids.includes(acceptedOrder.body.job_id));
+  assert.ok(Array.isArray(deleteLinkedSession.body.cancelled_job_ids) && !deleteLinkedSession.body.cancelled_job_ids.length);
 
-  const cancelledOrderState = await request(`/api/jobs/${acceptedOrder.body.job_id}`, {}, { sessionCookie: aliceSession });
-  assert.equal(cancelledOrderState.status, 200);
-  assert.equal(cancelledOrderState.body.job.status, 'failed');
-  assert.equal(cancelledOrderState.body.job.failureCategory, 'user_cancelled');
+  const linkedOrderStateAfterDelete = await request(`/api/jobs/${acceptedOrder.body.job_id}`, {}, { sessionCookie: aliceSession });
+  assert.equal(linkedOrderStateAfterDelete.status, 200);
+  assert.notEqual(linkedOrderStateAfterDelete.body.job.status, 'failed');
+  assert.notEqual(linkedOrderStateAfterDelete.body.job.failureCategory, 'user_cancelled');
+  const linkedMemoryAfterDelete = await request('/api/chat-memory', {}, { sessionCookie: aliceSession });
+  assert.equal(linkedMemoryAfterDelete.status, 200);
+  assert.equal(
+    (linkedMemoryAfterDelete.body.chatMemory || []).filter((item) => (
+      item.id === linkedSessionId
+      || item.sessionId === linkedSessionId
+      || item.linkedOrderId === acceptedOrder.body.job_id
+      || (Array.isArray(item.relatedOrderIds) && item.relatedOrderIds.includes(acceptedOrder.body.job_id))
+      || (Array.isArray(item.activeJobIds) && item.activeJobIds.includes(acceptedOrder.body.job_id))
+    )).length,
+    0,
+    'deleted linked active-work chat sessions should stay hidden while the order itself remains intact'
+  );
 
   const adminBillingBefore = await request('/api/settings', {}, { sessionCookie: adminSession });
   assert.equal(adminBillingBefore.status, 200);
@@ -4989,14 +5563,23 @@ try {
 
   const publicAgents = await request('/api/agents?limit=80');
   assert.equal(publicAgents.status, 200);
-  const publicXBuiltIn = publicAgents.body.agents.find((agent) => agent.id === 'agent_x_launch_01');
-  assert.ok(publicXBuiltIn, 'public catalog should include the built-in X adapter');
-  assert.equal(publicXBuiltIn.trust?.version, 'agent-trust/v1', 'public built-in agents should expose top-level trust');
-  assert.equal(publicXBuiltIn.metadata?.trust?.version, 'agent-trust/v1', 'public built-in agents should retain metadata trust');
-  assert.equal(publicXBuiltIn.links?.layer, 'execution');
-  assert.equal(publicXBuiltIn.links?.role, 'x_publish_executor');
-  assert.ok(publicXBuiltIn.links?.upstream?.task_types?.includes('writing'));
-  assert.ok(publicXBuiltIn.links?.upstream?.resolved?.some((agent) => agent.id === 'agent_writer_01'));
+  const publicSelectionIndex = await request('/api/agent-selection-index?limit=120');
+  assert.equal(publicSelectionIndex.status, 200);
+  assert.equal(publicSelectionIndex.body.source, 'live_agent_state');
+  assert.ok(publicSelectionIndex.body.generatedAt, 'selection index should be regenerated from live agent state for each request');
+  assert.ok(publicSelectionIndex.body.selection_index.some((item) => item.kind === 'research' && ['internal_agent_file', 'internal_sample'].includes(item.source)), 'selection index should include internal agent-file manifests');
+  assert.ok(publicSelectionIndex.body.selection_index.some((item) => item.kind === 'x_post' || item.kind === 'twitter'), 'selection index should include action agents by manifest kind');
+  assert.equal(publicSelectionIndex.body.selection_index.some((item) => item.id === registered.body.agent.id), false, 'selection index should not include agents removed from the catalog');
+  const publicXSample = publicAgents.body.agents.find((agent) => agent.id === 'agent_x_launch_01');
+  assert.ok(publicXSample, 'public catalog should include the sample X adapter');
+  assert.equal(publicXSample.manifestSource, 'agent-file-manifest');
+  assert.equal(publicXSample.metadata?.builtIn, undefined);
+  assert.equal(publicXSample.trust?.version, 'agent-trust/v1', 'public sample agents should expose top-level trust');
+  assert.equal(publicXSample.metadata?.trust?.version, 'agent-trust/v1', 'public sample agents should retain metadata trust');
+  assert.equal(publicXSample.links?.layer, 'execution');
+  assert.equal(publicXSample.links?.role, 'x_publish_executor');
+  assert.ok(publicXSample.links?.upstream?.task_types?.includes('writing'));
+  assert.ok(publicXSample.links?.upstream?.resolved?.some((agent) => agent.id === 'agent_writer_01'));
   const publicProviderX = publicAgents.body.agents.find((agent) => agent.id === providerSoftXId);
   assert.ok(publicProviderX, 'public catalog should include imported user/provider X agents');
   assert.ok(publicProviderX.tags.includes('x'));
@@ -5030,10 +5613,9 @@ try {
   const providerChildRuns = Array.isArray(providerWorkflowSettled.body.job.workflow?.childRuns)
     ? providerWorkflowSettled.body.job.workflow.childRuns
     : [];
-  assert.equal(
-    providerWorkflowSettled.body.job.status,
-    'blocked',
-    `provider-backed workflow should block before external X execution without connector approval: ${JSON.stringify({
+  assert.ok(
+    ['queued', 'running', 'completed'].includes(String(providerWorkflowSettled.body.job.status || '').toLowerCase()),
+    `provider-backed workflow should continue without parent-level publish approval blocking; SaaS handoff owns external publish approval: ${JSON.stringify({
       failureReason: providerWorkflowSettled.body.job.failureReason,
       children: providerChildRuns.map((run) => ({
         taskType: run.taskType,
@@ -5045,19 +5627,19 @@ try {
       }))
     })}`
   );
-  assert.ok(/x\.post|x/i.test(providerWorkflowSettled.body.job.failureReason || ''));
+  assert.ok(!/connector approval before external execution/i.test(providerWorkflowSettled.body.job.failureReason || ''));
   assert.ok(
     providerChildRuns.some((run) => run.taskType === 'cmo_leader' && run.agentId === providerSoftLeaderId && run.dispatchTaskType === 'cmo'),
     'leader workflow should soft-match the provider cmo capability instead of only built-ins'
   );
+  assert.equal(
+    providerChildRuns.some((run) => run.taskType === 'x_post'),
+    false,
+    'CMO workflow should not dispatch X posting workers; matched SaaS app handoff owns external publishing'
+  );
   assert.ok(
-    providerChildRuns.some(
-      (run) =>
-        run.taskType === 'x_post' &&
-        run.agentId === providerSoftXId &&
-        (run.dispatchTaskType === 'twitter' || run.dispatchTaskType === 'x_post')
-    ),
-    'workflow should route semantic x_post work to the provider-declared X/Twitter capability'
+    providerChildRuns.some((run) => ['writing', 'writer'].includes(run.taskType)),
+    'semantic X/posting requests in CMO workflow should become publishable writing/preparation packets'
   );
 
   const workflow = await request('/api/jobs', {
@@ -5399,7 +5981,7 @@ try {
 
   const daveSettingsAfter = await request('/api/settings', {}, { sessionCookie: daveSession });
   assert.equal(daveSettingsAfter.status, 200);
-  const expectedDaveArrears = +(apiKeyOrderTotal + Number(fundedJob.body.job.actualBilling.total || 0) + asyncDispatchOrderTotal + Number(longPromptJob.body.job.actualBilling.total || 0) + Number(followupJob.body.job.actualBilling.total || 0)).toFixed(2);
+  const expectedDaveArrears = +(apiKeyOrderTotal + Number(fundedJob.body.job.actualBilling.total || 0) + asyncDispatchOrderTotal + Number(longPromptJob.body.job.actualBilling.total || 0) + Number(followupJob.body.job.actualBilling.total || 0) + Number(autoFollowupJob.body.job.actualBilling?.total || 0)).toFixed(2);
   assert.equal(daveSettingsAfter.body.account.billing.depositBalance, 0);
   assert.equal(daveSettingsAfter.body.account.billing.arrearsTotal, expectedDaveArrears);
 

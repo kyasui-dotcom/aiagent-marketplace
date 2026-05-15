@@ -24,14 +24,22 @@ const workerSource = read('worker.js');
 const serverSource = read('server.js');
 const storageSource = read('lib/storage.js');
 const sharedSource = read('lib/shared.js');
+const orchestrationSource = read('lib/orchestration.js');
 const xConnectorSource = read('lib/x-connector.js');
 const exactActionsSource = read('lib/exact-actions.js');
 const externalWriteConfirmationSource = read('lib/external-write-confirmation.js');
 const httpPolicySource = read('lib/http-policy.js');
 const chatSource = read('public/chat.js');
+const clientSource = read('public/client.js');
+const cmoLeaderSource = read('lib/builtin-agents/agents/cmo-leader.js');
+const agentOrchestrationDisciplineSource = read('docs/AGENT_ORCHESTRATION_DISCIPLINE_JA.md');
 const deliveryActionContractSource = read('public/delivery-action-contract.js');
 const appContextSource = read('lib/app-context.js');
 const migrationSource = read('migrations/0001_init.sql');
+const workerLeaderFollowupFunction = workerSource.match(/function orderCreateSpecialistTaskForLeaderText[\s\S]*?\n}/)?.[0] || '';
+const workerConcreteRequirementFunction = workerSource.match(/function workflowTaskRequiresConcreteSpecialistArtifact[\s\S]*?\n}/)?.[0] || '';
+const workerPriorHandoffPayloadFunction = workerSource.match(/function workflowPriorHandoffCompletionPayload[\s\S]*?\n}\n\nfunction workflowPriorSourceResearchCompletionPayload/)?.[0] || '';
+const workerPriorSourceResearchGateFunction = workerSource.match(/function workflowShouldCompleteResearchFromPriorSourcePacket[\s\S]*?\n}/)?.[0] || '';
 
 function apiRoutesFromSource(source = '') {
   const routes = new Set();
@@ -135,6 +143,73 @@ assert.equal(
   false,
   'API route matcher should not match extra path segments'
 );
+
+const cmoBoundaryForbiddenPattern = /\b(?:cmo|cmo_leader|cait_cmo|marketing_leader|free_web_growth|agent_team_launch)\b|CMO|マーケ責任者|マーケティング責任者/;
+const cmoBoundarySources = [
+  ['worker.js', workerSource],
+  ['lib/shared.js', sharedSource.replace(/['"]agent_free_web_growth_leader_01['"]/g, '')],
+  ['lib/orchestration.js', orchestrationSource],
+  ['public/chat.js', chatSource],
+  ['public/client.js', clientSource]
+];
+for (const [fileName, source] of cmoBoundarySources) {
+  assert.equal(
+    cmoBoundaryForbiddenPattern.test(source),
+    false,
+    `${fileName} must not contain CMO/free-web-growth/agent-team special casing; agent-specific behavior belongs in the agent definition.`
+  );
+}
+assert.ok(
+  cmoLeaderSource.includes('normalizeWorkflowPlannedTasks: cmoNormalizeWorkflowPlannedTasks'),
+  'CMO workflow task normalization must be owned by cmo-leader.js.'
+);
+assert.ok(
+  cmoLeaderSource.includes('plannerAllowsCandidateAgentTasks: false'),
+  'CMO planner candidate policy must be owned by cmo-leader.js.'
+);
+assert.ok(
+  agentOrchestrationDisciplineSource.includes('worker / orchestration / client に、特定リーダーや特定エージェントの仕事定義を書かない'),
+  'Agent orchestration discipline must be documented so the boundary is persistent.'
+);
+assert.ok(
+  orchestrationSource.includes('leaderUsesSaasPublishHandoff'),
+  'SaaS publish handoff must be represented as a generic leader-profile capability, not CMO-specific worker branching.'
+);
+assert.ok(
+  cmoLeaderSource.includes('"externalActionMode": "saas_handoff_only"'),
+  'CMO SaaS publish handoff policy must be declared in cmo-leader.js.'
+);
+assert.equal(
+  /cmo|CMO|marketing_leader|free_web_growth/.test(workerSource.match(/function workflowUsesSaasPublishHandoff[\s\S]*?\n}/)?.[0] || ''),
+  false,
+  'workflowUsesSaasPublishHandoff must remain generic and must not mention CMO-specific task names.'
+);
+assert.equal(
+  /(?:seo_gap|landing|growth)/.test(workerLeaderFollowupFunction),
+  false,
+  'worker leader follow-up routing must use the leader definition, not worker-owned specialist regexes.'
+);
+assert.equal(
+  /function leaderFollowupSpecialistTaskForText/.test(chatSource),
+  false,
+  'chat must not own leader-specific follow-up specialist routing; the leader/provider definition owns that choice.'
+);
+assert.equal(
+  /(?:seo_gap|media_planner|x_post|reddit|indie_hackers)/.test(workerConcreteRequirementFunction),
+  false,
+  'worker must not hardcode specialist deliverable requirements; agent/leader contracts own concrete output conditions.'
+);
+assert.equal(
+  /(?:developer signup|SEO\/organic first|SNS via X\/Reddit)/.test(workerPriorHandoffPayloadFunction),
+  false,
+  'worker prior-handoff fallback must not synthesize CMO/growth-specific specialist content.'
+);
+assert.equal(
+  /return workflowPriorSourcePacketSourcesForJob\(job\)\.length > 0;/.test(workerPriorSourceResearchGateFunction)
+    && !/allowPriorSourceResearchCompletion/.test(workerPriorSourceResearchGateFunction),
+  false,
+  'search-required research must not auto-complete from prior source context unless an explicit contract allows it.'
+);
 assert.deepEqual(
   rateLimitSpecForPath(API_ROUTES.CONNECTORS_X_POST, 'POST'),
   { name: 'x-post', limit: 20, windowMs: 10 * 60_000 },
@@ -222,6 +297,7 @@ for (const route of [
   API_ROUTES.ADMIN_API_KEYS,
   API_ROUTES.SETTINGS_EXACT_ACTIONS,
   API_ROUTES.CONNECTORS_X_POST,
+  API_ROUTES.CONNECTORS_WORDPRESS_CREATE_DRAFT,
   API_ROUTES.DELIVERIES_EXECUTE,
   API_ROUTES.DELIVERIES_SCHEDULE,
   API_ROUTES.DELIVERY_ITEMS,
@@ -235,6 +311,9 @@ const methodAwareRouteKeys = [
   'SETTINGS_EXACT_ACTIONS',
   'CONNECTORS_X_STATUS',
   'CONNECTORS_X_POST',
+  'CONNECTORS_WORDPRESS_STATUS',
+  'CONNECTORS_WORDPRESS_CONNECT',
+  'CONNECTORS_WORDPRESS_CREATE_DRAFT',
   'CONNECTORS_INSTAGRAM_POST',
   'CONNECTORS_GOOGLE_SEND_GMAIL',
   'CONNECTORS_RESEND_SEND_EMAIL',
@@ -258,6 +337,8 @@ for (const routeKey of methodAwareRouteKeys) {
 
 for (const routeKey of [
   'CONNECTORS_X_POST',
+  'CONNECTORS_WORDPRESS_CONNECT',
+  'CONNECTORS_WORDPRESS_CREATE_DRAFT',
   'CONNECTORS_INSTAGRAM_POST',
   'CONNECTORS_GOOGLE_SEND_GMAIL',
   'CONNECTORS_RESEND_SEND_EMAIL',

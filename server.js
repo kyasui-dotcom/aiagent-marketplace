@@ -124,13 +124,17 @@ async function bootstrapInMemoryState() {
 }
 
 function buildWorkerEnv() {
+  const baseUrl = process.env.BASE_URL || `http://${process.env.HOST || '127.0.0.1'}:${process.env.PORT || 4323}`;
   const env = {
     ...process.env,
     APP_VERSION: process.env.APP_VERSION || '0.2.0',
     ALLOW_OPEN_WRITE_API: defaultTestFlag('ALLOW_OPEN_WRITE_API', '1'),
     ALLOW_GUEST_RUN_READ_API: defaultTestFlag('ALLOW_GUEST_RUN_READ_API', '1'),
     ALLOW_DEV_API: defaultTestFlag('ALLOW_DEV_API', '1'),
-    BASE_URL: process.env.BASE_URL || `http://${process.env.HOST || '127.0.0.1'}:${process.env.PORT || 4323}`,
+    BASE_URL: baseUrl,
+    SAMPLE_AGENT_ENDPOINT_BASE_URL: process.env.SAMPLE_AGENT_ENDPOINT_BASE_URL
+      || process.env.SAMPLE_AGENT_PROVIDER_BASE_URL
+      || `${baseUrl.replace(/\/+$/, '')}/sample-agents`,
     MY_BINDING: null,
     DB: null,
     ASSETS: createStaticAssetsBinding()

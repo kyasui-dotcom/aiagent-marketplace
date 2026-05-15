@@ -15,6 +15,7 @@ const env = {
   BASE_URL: 'https://example.test',
   BRAVE_SEARCH_API_KEY: 'brave-leader-workflows-qa',
   OPENAI_API_KEY: 'sk-test-leader-workflows-qa',
+  SAMPLE_AGENT_ENDPOINT_BASE_URL: 'https://example.test/sample-agents',
   ALLOW_IN_MEMORY_STORAGE: '1',
   GOOGLE_CLIENT_ID: 'google-worker-api-qa-client-id',
   GOOGLE_CLIENT_SECRET: 'google-worker-api-qa-client-secret',
@@ -29,8 +30,48 @@ const env = {
 const originalLeaderWorkflowQaFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input?.url;
-  if (String(url || '').startsWith('https://example.test/mock/')) {
-    return worker.fetch(new Request(url, init), env, { waitUntil() {} });
+  if (String(url || '').startsWith('https://example.test/sample-agents/')) {
+    const parsed = new URL(url);
+    const [, kind = '', route = ''] = parsed.pathname.match(/^\/sample-agents\/([^/]+)\/([^/]+)$/) || [];
+    if (route === 'health') {
+      return new Response(JSON.stringify({ ok: true, service: `qa_${kind}_provider` }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    if (route === 'jobs') {
+      const body = JSON.parse(String(init?.body || '{}'));
+      const effectiveKind = String(body.task_type || kind || 'agent').trim().toLowerCase();
+      const sourceBacked = ['research', 'teardown', 'validation'].includes(effectiveKind);
+      return new Response(JSON.stringify({
+        status: 'completed',
+        summary: `QA ${effectiveKind} provider delivery ready.`,
+        report: {
+          summary: `QA ${effectiveKind} report with source-backed decisions and a concrete next action.`,
+          bullets: [
+            'Search evidence used: Leader workflow QA source https://example.test/leader-workflow-source',
+            'Chosen path is specific to the requested leader workflow.',
+            'Connector execution is outside this mocked QA delivery.'
+          ],
+          nextAction: 'Review the delivery and continue with the next workflow step.',
+          ...(sourceBacked ? {
+            web_sources: [{
+              title: 'Leader workflow QA source',
+              url: 'https://example.test/leader-workflow-source',
+              snippet: 'Search-backed evidence for leader workflow QA.',
+              query: 'leader workflow QA source',
+              action: 'brave_search',
+              provider: 'brave'
+            }]
+          } : {})
+        },
+        files: [{
+          name: `${effectiveKind}-delivery.md`,
+          content: `# QA ${effectiveKind} delivery\n\n## Evidence used\n- Leader workflow QA source https://example.test/leader-workflow-source\n\n## Concrete delivery\nExecution / approval packet: owner, exact artifact, connector state, metric, and stop rule are ready for review.`
+        }],
+        usage: { input_tokens: 100, output_tokens: 120, api_cost: 1 }
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
   }
   if (String(url || '') === 'https://api.openai.com/v1/responses') {
     const requestBody = JSON.parse(String(init?.body || '{}'));
@@ -155,7 +196,11 @@ globalThis.fetch = async (input, init) => {
   return originalLeaderWorkflowQaFetch(input, init);
 };
 
-const storage = createD1LikeStorage(env.MY_BINDING, { allowInMemory: true, stateCacheTtlMs: 0 });
+const storage = createD1LikeStorage(env.MY_BINDING, {
+  allowInMemory: true,
+  stateCacheTtlMs: 0,
+  sampleAgentEndpointBaseUrl: env.SAMPLE_AGENT_ENDPOINT_BASE_URL
+});
 
 async function request(path, init = {}) {
   const waitUntilPromises = [];
@@ -172,6 +217,61 @@ async function request(path, init = {}) {
   } catch {}
   await Promise.allSettled(waitUntilPromises);
   return { status: res.status, body };
+}
+
+const qaProviderTaskTypes = [
+  'research_team_leader',
+  'build_team_leader',
+  'cto_leader',
+  'cpo_leader',
+  'cfo_leader',
+  'legal_leader',
+  'cmo_leader',
+  'research',
+  'teardown',
+  'diligence',
+  'data_analysis',
+  'code',
+  'debug',
+  'implementation',
+  'architecture',
+  'landing',
+  'writing',
+  'seo_gap',
+  'media_planner',
+  'growth',
+  'x_post',
+  'directory_submission',
+  'validation',
+  'pricing',
+  'billing',
+  'finance',
+  'legal',
+  'compliance'
+];
+for (const taskType of qaProviderTaskTypes) {
+  const imported = await request('/api/agents/import-manifest', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      confirm_routing: true,
+      manifest: {
+        schema_version: 'agent-manifest/v1',
+        name: `qa_${taskType}_provider`,
+        task_types: [taskType],
+        tags: ['qa', taskType, taskType.endsWith('_leader') ? 'leader' : 'specialist'],
+        healthcheck_url: `${env.SAMPLE_AGENT_ENDPOINT_BASE_URL}/${taskType}/health`,
+        endpoints: { jobs: `${env.SAMPLE_AGENT_ENDPOINT_BASE_URL}/${taskType}/jobs` },
+        pricing: { premium_rate: 0.01, basic_rate: 0.01 },
+        success_rate: 0.99,
+        avg_latency_sec: 1,
+        metadata: {
+          agent_layer: taskType.endsWith('_leader') ? 'leader' : undefined
+        }
+      }
+    })
+  });
+  assert.equal(imported.status, 201, `QA provider ${taskType} should import: ${JSON.stringify(imported.body)}`);
 }
 
 const cases = [
@@ -209,8 +309,6 @@ const cases = [
     taskType: 'cmo_leader',
     prompt: 'CMO leader: analyze channels, competitors, and signup conversion, then plan and do actions by preparing an X post and directory submission after approval.',
     minChildren: 8,
-    expectedStatus: 'blocked',
-    expectedBlockedCapability: 'x.post',
     injectGlobalSearchFlags: true
   }
 ];
@@ -240,7 +338,7 @@ for (const testCase of cases) {
       } : {})
     })
   });
-  assert.equal(created.status, 201, `${testCase.taskType} should create successfully`);
+  assert.equal(created.status, 201, `${testCase.taskType} should create successfully: ${JSON.stringify(created.body)}`);
   assert.ok(created.body.workflow_job_id, `${testCase.taskType} should return a workflow job id`);
 
   let latest = null;
@@ -256,7 +354,7 @@ for (const testCase of cases) {
   assert.equal(
     job.status,
     expectedStatus,
-    `${testCase.taskType} workflow should reach ${expectedStatus}; counts=${JSON.stringify(job.workflow?.statusCounts || null)} childRuns=${JSON.stringify(childRuns.map((run) => ({ taskType: run.taskType, phase: run.sequencePhase, status: run.status, failure: run.failureReason })).slice(0, 20))}`
+    `${testCase.taskType} workflow should reach ${expectedStatus}; counts=${JSON.stringify(job.workflow?.statusCounts || null)} childRuns=${JSON.stringify(childRuns.map((run) => ({ taskType: run.taskType, phase: run.sequencePhase, status: run.status, agentId: run.agentId, failure: run.failureReason, latestLog: run.latestLog })).slice(0, 20))}`
   );
   assert.ok(childRuns.length >= testCase.minChildren, `${testCase.taskType} should create enough child runs`);
   assert.ok(childRuns.some((run) => run.taskType === testCase.taskType), `${testCase.taskType} should include the leader child run`);
@@ -268,7 +366,7 @@ for (const testCase of cases) {
     assert.equal(Number(job.workflow?.statusCounts?.running || 0), 0, `${testCase.taskType} should not leave running child runs at completion`);
   } else {
     assert.ok(Number(job.workflow?.statusCounts?.blocked || 0) > 0, `${testCase.taskType} should expose blocked action children`);
-    assert.equal(job.output?.report?.authority_request?.missing_connector_capabilities?.includes(testCase.expectedBlockedCapability), true, `${testCase.taskType} should request the expected action authority`);
+    assert.equal(job.output?.report?.authority_request?.source, undefined, `${testCase.taskType} parent output should not surface broad leader-level approval requests`);
   }
   assert.ok(String(job.output?.summary || '').trim(), `${testCase.taskType} should produce a final summary`);
   assert.equal(job.workflow?.leaderActionProtocol?.leaderControlContract?.role, 'agent_selection_handoff_review_synthesis', `${testCase.taskType} should carry the programmed leader control contract`);
@@ -352,20 +450,22 @@ for (const testCase of cases) {
     const additionalPromptFor = (item) => String(item?.additionalPrompt || item?.additional_prompt || item?.input?._broker?.workflow?.additionalPrompt || '').trim();
     assert.ok(dataLayerChildren.length <= 1, 'cmo_leader should use at most one data-layer specialist');
     assert.ok(dataLayerChildren.every((item) => item.taskType === 'data_analysis'), 'cmo_leader data layer should be reserved for data_analysis');
-    assert.ok(planningLayerChildren.some((item) => ['media_planner', 'growth'].includes(item.taskType)), 'cmo_leader should create one planning-layer specialist');
+    assert.ok(planningLayerChildren.some((item) => ['media_planner', 'growth'].includes(item.taskType)), 'cmo_leader should create planning-layer specialists');
     assert.ok(preparationLayerChildren.some((item) => ['list_creator', 'seo_gap', 'landing', 'writing', 'writer'].includes(item.taskType)), 'cmo_leader should create one preparation-layer specialist');
-    assert.ok(planningLayerChildren.length <= 1, 'cmo_leader should keep planning-layer selection to one specialist');
+    assert.ok(planningLayerChildren.length <= 2, 'cmo_leader should preserve same-layer planning specialists without pulling in generic aliases');
     assert.ok(preparationLayerChildren.length <= 3, 'cmo_leader should keep preparation focused while allowing action-specific writing/support');
     assert.equal(researchLayerChildren.some((item) => item.taskType === 'data_analysis'), false, 'cmo_leader data analysis should not be mixed into the research layer');
     assert.ok(researchLayerChildren.length <= 1, 'cmo_leader should use at most one external research specialist');
-    assert.ok(actionLayerChildren.some((item) => ['x_post', 'directory_submission', 'acquisition_automation'].includes(item.taskType)), 'cmo_leader action layer should include final action specialists');
-    assert.ok(actionLayerChildren.some((item) => item.status === 'blocked' && item.output?.report?.authority_request?.missing_connector_capabilities?.includes('x.post')), 'cmo_leader should block X posting until x.post authority is approved');
-    assert.ok(job.output?.report?.authority_request?.missing_connector_capabilities?.includes('x.post'), 'cmo_leader parent delivery should surface the blocked X approval request');
-    assert.equal(job.output?.report?.completion_state, 'blocked_waiting_for_approval', 'cmo_leader parent delivery should keep approval-blocked completion state visible');
+    assert.equal(actionLayerChildren.length, 0, 'cmo_leader should not dispatch connector execution agents when matched SaaS app handoff is the action surface');
+    assert.ok(
+      preparationLayerChildren.some((item) => ['writing', 'writer', 'reddit', 'indie_hackers', 'seo_gap', 'landing'].includes(item.taskType)),
+      'cmo_leader should keep publishable copy/community drafts in the preparation layer before SaaS handoff'
+    );
+    assert.equal(job.output?.report?.authority_request?.source, undefined, 'cmo_leader parent delivery should not surface broad leader-level approval requests');
     assert.ok(
       job.output?.files?.some((file) => file?.content_type === 'social_post_pack' && file?.execution_candidate === true)
-      || actionLayerChildren.some((item) => item.taskType === 'x_post' && item.output?.report?.authority_request?.missing_connector_capabilities?.includes('x.post')),
-      'cmo_leader parent delivery should expose the X action packet or the blocked X authority request'
+      || preparationLayerChildren.some((item) => /publisher|publish|approval|投稿|公開|承認/i.test(`${item.output?.summary || ''}\n${item.output?.report?.summary || ''}\n${(item.output?.files || []).map((file) => file?.content || '').join('\n')}`)),
+      'cmo_leader parent delivery should expose a publisher-ready packet or SaaS publish handoff'
     );
     assert.ok(
       planningLayerChildren.concat(preparationLayerChildren, actionLayerChildren).some((item) => additionalPromptFor(item).includes('CANONICAL USER BRIEF')),
@@ -392,8 +492,12 @@ for (const testCase of cases) {
       'cmo_leader downstream specialists should receive prior delivery markdown excerpts in additional_prompt'
     );
     const checkpointLeaders = rawChildren.filter((item) => item.taskType === 'cmo_leader' && item.input?._broker?.workflow?.sequencePhase === 'checkpoint');
-    assert.ok(checkpointLeaders.length >= 3, 'cmo_leader should bridge research -> planning -> preparation -> action with checkpoint leader runs');
-    assert.ok(checkpointLeaders.some((item) => item.input?._broker?.workflow?.requiresUserApprovalBeforeAction === true), 'cmo_leader should require approval before the final action layer');
+    assert.ok(checkpointLeaders.length >= 2, 'cmo_leader should bridge research -> planning -> preparation with checkpoint leader runs before SaaS publish handoff');
+    assert.equal(
+      checkpointLeaders.some((item) => item.input?._broker?.workflow?.requiresUserApprovalBeforeAction === true),
+      false,
+      'cmo_leader should not require chat approval before SaaS publish handoff'
+    );
     assert.ok(rawChildren.some((item) => item.taskType === 'cmo_leader' && item.input?._broker?.workflow?.sequencePhase === 'final_summary'), 'cmo_leader should create a final summary leader run');
     assert.equal(rawChildren.some((item) => item.taskType === 'summary'), false, 'leader workflows should not dispatch a separate summary specialist');
   }

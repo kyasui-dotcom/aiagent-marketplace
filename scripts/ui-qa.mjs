@@ -33,12 +33,16 @@ const chatCssPath = new URL('../public/chat.css', import.meta.url);
 const stylesCssPath = new URL('../public/styles.css', import.meta.url);
 const chatEnginePath = new URL('../public/chat-engine.js', import.meta.url);
 const deliveryActionContractPath = new URL('../public/delivery-action-contract.js', import.meta.url);
+const workActionRegistryPath = new URL('../public/work-action-registry.js', import.meta.url);
+const workIntentResolverPath = new URL('../public/work-intent-resolver.js', import.meta.url);
 const workerPath = new URL('../worker.js', import.meta.url);
+const cmoLeaderPath = new URL('../lib/builtin-agents/agents/cmo-leader.js', import.meta.url);
 const serverPath = new URL('../server.js', import.meta.url);
 const mcpPath = new URL('../lib/mcp.js', import.meta.url);
 const httpPolicyPath = new URL('../lib/http-policy.js', import.meta.url);
 const wranglerPath = new URL('../wrangler.jsonc', import.meta.url);
 const publicHeadersPath = new URL('../public/_headers', import.meta.url);
+const agentOrchestrationDisciplinePath = new URL('../docs/AGENT_ORCHESTRATION_DISCIPLINE_JA.md', import.meta.url);
 
 execFileSync(process.execPath, ['--check', fileURLToPath(chatJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(appsJsPath)], { stdio: 'pipe' });
@@ -53,6 +57,8 @@ execFileSync(process.execPath, ['--check', fileURLToPath(deliveryManagerJsPath)]
 execFileSync(process.execPath, ['--check', fileURLToPath(caitAppBridgePath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatEnginePath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(deliveryActionContractPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(workActionRegistryPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(workIntentResolverPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(mcpPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(httpPolicyPath)], { stdio: 'pipe' });
 
@@ -83,14 +89,18 @@ const deliveryManagerJs = readFileSync(deliveryManagerJsPath, 'utf8');
 const caitAppBridge = readFileSync(caitAppBridgePath, 'utf8');
 const loginJs = readFileSync(loginJsPath, 'utf8');
 const chatEngine = readFileSync(chatEnginePath, 'utf8');
+const workActionRegistry = readFileSync(workActionRegistryPath, 'utf8');
+const workIntentResolver = readFileSync(workIntentResolverPath, 'utf8');
 const chatCss = readFileSync(chatCssPath, 'utf8');
 const stylesCss = readFileSync(stylesCssPath, 'utf8');
 const worker = readFileSync(workerPath, 'utf8');
+const cmoLeader = readFileSync(cmoLeaderPath, 'utf8');
 const server = readFileSync(serverPath, 'utf8');
 const mcp = readFileSync(mcpPath, 'utf8');
 const httpPolicy = readFileSync(httpPolicyPath, 'utf8');
 const wrangler = readFileSync(wranglerPath, 'utf8');
 const publicHeaders = readFileSync(publicHeadersPath, 'utf8');
+const agentOrchestrationDiscipline = readFileSync(agentOrchestrationDisciplinePath, 'utf8');
 const appSurfaceSources = [
   appsHtml,
   appsJs,
@@ -137,8 +147,9 @@ assert.ok(siteMapHtml.includes('href="/legal-notice.html"'), 'Site map HTML shou
 assert.ok(!html.includes('id="promptInput"'), 'Root should not render the chat composer.');
 assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load chat JS.');
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
-assert.ok(chatHtml.includes('/chat.css?v=20260510b'), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(/type="module"\s+src="\/chat\.js\?v=20260511[a-z0-9]+"/.test(chatHtml), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(chatHtml.includes('/analytics-loader.js?v=20260514a'), 'Chat page should load the shared GA4 analytics loader before chat interactions.');
+assert.ok(/\/chat\.css\?v=202605[0-9]{2}[a-z0-9]+/.test(chatHtml), 'Chat page should load root chat CSS, not /chatux assets.');
+assert.ok(/type="module"\s+src="\/chat\.js\?v=202605[0-9]{2}[a-z0-9]+"/.test(chatHtml), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -155,10 +166,25 @@ assert.ok(chatHtml.includes('href="/admin" id="adminNavLink" hidden'), 'Chat sho
 assert.ok(chatJs.includes('appendThinkingMessage'), 'Chat should show a transient thinking state while OpenAI intent classification is running.');
 assert.ok(chatJs.includes('Thinking...'), 'Chat thinking state should use English copy on the English chat page.');
 assert.ok(chatJs.includes('removeMessage(thinkingMessage)'), 'Chat should remove the transient thinking state after OpenAI returns or fails.');
+assert.ok(chatJs.includes('prepareAccumulatedOrderIfReady'), 'Chat should prepare an order once enough work context accumulates across turns.');
+assert.ok(chatJs.includes('accumulatedWorkOrderReadiness'), 'Chat should have a generic accumulated-context readiness gate before asking another clarification.');
+assert.ok(chatJs.includes('aquire') && chatJs.includes('aquitisition'), 'Chat accumulated-context readiness should tolerate common acquisition typos.');
+assert.ok(chatJs.includes('prepareObviousStepIntakeIfNeeded'), 'Short growth/acquisition requests should enter step intake before OpenAI freeform clarification.');
+assert.ok(chatJs.indexOf('prepareObviousStepIntakeIfNeeded(prompt)') < chatJs.indexOf('handleChatIntentWithLlm(prompt)'), 'Obvious acquisition intake should run before OpenAI chat clarification.');
+assert.ok(chatJs.includes('bestCatalogLeaderTaskTypeForSpecialistTask') && chatJs.includes('leaderDownstreamTaskTypesFromAgent'), 'Short acquisition intake should choose a leader from the agent catalog instead of hardcoded client branching.');
+assert.ok(!chatJs.includes("return 'cmo_leader'"), 'Chat should not hardcode a CMO leader for acquisition intake.');
+assert.ok(chatJs.includes('Do not ask another pre-order intake question just because the CTA is weak.'), 'Weak CTA details should become a planning assumption, not an endless pre-order clarification loop.');
+assert.ok(chatJs.includes('intakeAnswered: true') && chatJs.includes('skipOpenAiIntent: true'), 'Accumulated-context order prep should bypass repeated intake after the user has answered enough context.');
+assert.ok(chatJs.includes('taskTypeFromOpenChatIntent'), 'Open chat natural intents should map into normal order intake task types instead of freeform clarification loops.');
+assert.ok(chatJs.includes('openChatIntentShouldUseStepIntake'), 'Executable OpenAI clarification intents should hand off to step-by-step intake.');
+assert.ok(chatJs.includes("intent === 'natural_business_growth'") && chatJs.includes("return 'growth'"), 'Business-growth intent should enter generic growth intake without CMO-specific client branching.');
+assert.ok(chatJs.includes('intakeGroupOrder'), 'Step-by-step intake should use a stable question order instead of incidental regex insertion order.');
+assert.ok(chatJs.indexOf("['goal', 3]") < chatJs.indexOf("['audience', 4]"), 'Growth intake should ask goal/conversion before target audience.');
+assert.ok(chatJs.indexOf("['constraints', 5]") < chatJs.indexOf("['deliverable', 7]"), 'Growth intake should ask constraints/channels before output format.');
 assert.ok(chatJs.includes('conversationLanguage'), 'Chat should remember the language of the first user input for the conversation.');
 assert.ok(chatJs.includes('rememberConversationLanguage(prompt)'), 'Chat should set the conversation language from the first submitted prompt.');
 assert.ok(chatJs.includes('PROMPT_PLACEHOLDERS'), 'Chat composer placeholders should be able to follow the selected conversation language.');
-assert.ok(chatJs.includes('CAIt will not keep asking after this round'), 'Leader intake should tell users it will not repeat after the current round.');
+assert.ok(chatJs.includes('will ask one item at a time before dispatch'), 'Leader intake should ask one item at a time instead of dumping all questions at once.');
 assert.ok(chatJs.includes('growthLeaderNeedsDataHint'), 'Growth leader intake should point users toward connectors or source URLs instead of asking repeated data questions.');
 assert.ok(chatJs.includes('Connected Google analytics can be attached'), 'Growth order checks should surface connected Google analytics instead of silently skipping it.');
 assert.ok(chatJs.includes('Analytics was skipped for this prepared order'), 'Growth order checks should allow an explicit analytics skip only when the user chooses it.');
@@ -166,12 +192,18 @@ assert.ok(clientJs.includes("if (requested.length) url.searchParams.set('capabil
 assert.ok(clientJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
 assert.ok(chatJs.includes('googleAuthorityConnectGroups'), 'Chat Google approval should connect every requested Google source in one OAuth popup.');
 assert.ok(chatJs.includes('Connect GA4 + Search Console'), 'Chat Google approval should label combined GA4/Search Console requests clearly.');
-assert.ok(chatJs.includes('function xConnectLinkHtml'), 'Chat X connector links should be centralized for approval cards and action cards.');
-assert.ok(chatJs.includes('data-chat-oauth-popup="x"'), 'Chat X connector approval should open OAuth in a popup and keep the current order attached.');
-assert.ok(chatJs.includes('Resume X approval'), 'X authority cards should expose a functional resume action after the connector is ready.');
+assert.ok(chatJs.includes('function authorityRequestHandledBySaasHandoffInChat'), 'Chat should treat X/social publishing authority requests as SaaS handoffs, not chat approvals.');
+assert.ok(chatJs.includes('jobBlockedForSaasHandoff(job)'), 'SaaS handoff blockers should render as delivery/app-handoff states.');
+assert.ok(chatJs.includes("extractSocialPostTextFromDeliveryContent(file?.content || '', { maxLength: 1200 })"), 'Chat should route long X/social post packs into X Client Ops instead of hiding them as over-280 drafts.');
+assert.ok(chatJs.includes("accepts: ['article_draft', 'seo_page_artifact', 'landing_page_change', 'site_publish_packet', 'wordpress_draft_packet', 'directory_packet', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'approval_request']"), 'Publisher app handoff should accept media-separated site and social post packets as external-app content.');
+assert.ok(!chatJs.includes("normalizeUsageId(entry.id) === 'x-client-ops' && hasXPostTool"), 'X Client Ops must remain visible as an app handoff when a post draft exists.');
+assert.ok(!chatJs.includes('Resume X approval'), 'Chat must not expose the old X approval resume action.');
 assert.ok(!chatJs.includes('href="${escapeHtml(openWorkHref)}"'), 'Open chat approval must not be a no-op anchor back to the same card.');
-assert.ok(chatJs.includes("source === 'leader_execution_approval' && status !== 'blocked'"), 'Future leader execution approval hints should not render as active chat approvals before the workflow is blocked.');
-assert.ok(chatJs.includes('Progress check temporarily failed'), 'Chat progress polling should retry transient 503-style failures instead of stopping the order.');
+assert.ok(chatJs.includes('approvalWaitingStatuses') && chatJs.includes("approvalWaitingStatuses.has(status)"), 'Future leader execution approval hints should only render as active chat approvals for blocked/waiting approval states.');
+assert.ok(chatJs.includes("leader_quality_gate_failed") && chatJs.includes("return false;"), 'Leader quality gate blockers must not render as connector approval cards.');
+assert.ok(chatJs.includes('function jobHasDeliveryResult') && chatJs.includes('jobBlockedByLeaderQualityGate(job)'), 'Leader quality gate blockers should render as failed delivery/retry states, not active waiting states.');
+assert.ok(chatJs.includes('nextProgressPollAt = Date.now() + retryDelayMs'), 'Chat polling should retry transient 503-style failures without stopping the order.');
+assert.ok(!chatJs.includes('Progress check temporarily failed'), 'Transient progress errors should not be posted into chat as worker-log noise.');
 assert.ok(chatJs.includes('answerSaysAnalyticsAvailable'), 'Chat intake should detect when the user says GA4/Search Console is available.');
 assert.ok(chatJs.includes('openAnalyticsConsoleForIntake'), 'Chat intake should open Analytics Console before dispatch when analytics data is available.');
 assert.ok(chatJs.includes('openAnalyticsConsoleForDraft'), 'Chat order checks should open Analytics Console and attach returned context to the prepared draft.');
@@ -205,15 +237,26 @@ assert.ok(chatJs.includes('requestSubmit()'), 'Chat should submit with Ctrl+Ente
 assert.ok(chatJs.includes('chat_required: false'), 'Scheduled chat work should be marked as background work that does not require the chat to stay open.');
 assert.ok(chatJs.includes('renderChatSessionSidebar'), 'Chat should render a ChatGPT-style session sidebar.');
 assert.ok(chatJs.includes('refreshChatSessionHistory'), 'Chat should restore signed-in chat history from the server.');
+assert.ok(chatJs.includes('chatViewRevision'), 'Chat should track the active chat view so stale async order restores cannot repopulate a new blank chat.');
+assert.ok(chatJs.includes('restoredSessionOrderContextIsCurrent'), 'Restored order context should be ignored when the user has switched to a different/new chat.');
+assert.ok(chatJs.includes('clearQueuedChatSessionSnapshot'), 'Starting a new chat should drop queued snapshots from the previous chat.');
+assert.ok(chatJs.includes('clearChatRestoreParamsFromUrl();'), 'Starting a new chat should remove URL restore params so reloads stay blank.');
 assert.ok(chatJs.includes('function applyAuthState'), 'Chat memory should hydrate lightweight auth without waiting for /auth/status.');
 assert.ok(chatJs.indexOf('void refreshChatSessionHistory({ force: true });') < chatJs.indexOf('void refreshAuth();'), 'Chat should start loading the session list before the full auth status request.');
-assert.ok(chatJs.includes("return '/api/chat-memory'"), 'Chat session history should use the lightweight chat-memory API instead of the full snapshot.');
+assert.ok(chatJs.includes("return '/api/chat-memory"), 'Chat session history should use the lightweight chat-memory API instead of the full snapshot.');
 assert.ok(!chatJs.includes("return '/api/snapshot'"), 'Chat session history should not fetch the full snapshot for the sidebar.');
 assert.ok(chatJs.includes('Promise.allSettled(ids.map((id) => fetchVisibleJob(id)))'), 'Restored order context should fetch related orders in parallel.');
 assert.ok(chatJs.includes('/api/analytics/chat-transcripts'), 'Chat should persist chat turns to the server transcript API.');
+assert.ok(analyticsLoaderJs.includes('window.caitTrackGa4Event'), 'Shared analytics loader should expose a safe GA4 event bridge for product flows.');
+assert.ok(analyticsLoaderJs.includes('primary_cta_click'), 'Shared analytics loader should track primary CTA clicks as GA4 events.');
+assert.ok(analyticsLoaderJs.includes('cait_ga4_auth_event'), 'Shared analytics loader should consume server auth completion cookies for GA4 login/sign_up events.');
+assert.ok(chatJs.includes('trackChatIntakeStarted') && chatJs.includes('chat_intake_started'), 'Chat should emit GA4 chat_intake_started when an order/intake flow starts.');
+assert.ok(chatJs.includes('order_submitted') && chatJs.includes('trackChatGa4Once(`order_submitted:'), 'Chat should emit GA4 order_submitted when an order is accepted.');
+assert.ok(worker.includes('GA4_AUTH_EVENT_COOKIE') && worker.includes('ga4AuthEventCookieForAccount'), 'Auth callbacks should hand browser-readable login/sign_up GA4 events to the next page.');
+assert.ok(clientJs.includes('CLIENT_GA4_EVENT_NAME_MAP') && clientJs.includes('purchase'), 'Legacy client analytics should map order, lead, checkout, and purchase events into GA4 names.');
 assert.ok(chatJs.includes('/api/settings/chat-memory/'), 'Chat sidebar delete should hide server chat memory, not just remove DOM rows.');
 assert.ok(chatJs.includes('session_id: chatSessionId'), 'Orders dispatched from chat should carry the active chat session id.');
-assert.ok(!chatJs.includes('localStorage.setItem'), 'Chat should not persist chat sessions in browser localStorage.');
+assert.ok(chatJs.includes('/api/chat-sessions'), 'Chat should persist recoverable chat sessions through the server.');
 assert.ok(chatCss.includes('.chat-session-sidebar'), 'Chat CSS should style the left session sidebar.');
 assert.ok(chatCss.includes('.chat-session-row.active'), 'Chat CSS should visibly mark the active chat session.');
 assert.ok(chatCss.includes('.message.thinking .message-body'), 'Chat should style the OpenAI thinking state as a visible assistant message.');
@@ -223,15 +266,15 @@ assert.ok(wrangler.includes('"* * * * *"') && wrangler.includes('"*/15 * * * *"'
 assert.ok(wrangler.includes('"QUEUED_DISPATCH_SWEEP_LIMIT": "12"'), 'Queued dispatch sweep should process enough jobs each minute.');
 assert.ok(wrangler.includes('"WORKFLOW_ORCHESTRATION_STALE_MS": "60000"'), 'Workflow watchdog should retry stale queued workflows quickly.');
 assert.ok(wrangler.includes('"WORKFLOW_ORCHESTRATION_BLOCKED_MS": "600000"'), 'Workflow watchdog should surface a visible blocker instead of leaving queued forever.');
-assert.ok(worker.includes('const layerLimits = new Map'), 'CMO leader task selection should cap upstream work per layer instead of using one global task limit.');
+assert.ok(cmoLeader.includes('const layerLimits = new Map'), 'CMO leader task selection should cap upstream work per layer instead of using one global task limit.');
 assert.ok(
-  worker.includes('[1, 1]')
-  && worker.includes('[2, 1]')
-  && worker.includes('[3, 1]')
-  && worker.includes('[4, actionRequested ? Math.max(1, preparationForRequestedActions.length || 1) : 1]')
-  && worker.includes('sourceBucketForTask')
-  && worker.includes("preferredCmoSourceTasks.includes('data_analysis')")
-  && worker.includes('maxExternalResearchTasks'),
+  cmoLeader.includes('[1, 1]')
+  && cmoLeader.includes('[2, cmoResearchLayerLimit]')
+  && cmoLeader.includes('[3, cmoPlanningLayerLimit]')
+  && cmoLeader.includes('[4, cmoPreparationLayerLimit]')
+  && cmoLeader.includes('sourceBucketForTask')
+  && cmoLeader.includes("preferredCmoSourceTasks.includes('data_analysis')")
+  && cmoLeader.includes('maxExternalResearchTasks'),
   'Leader upstream layers should keep data/research/planning capped while expanding action-specific preparation.'
 );
 assert.ok(worker.includes('DISPATCH_SCHEDULE_TIMEOUT_MS'), 'Scheduled dispatch attempts should have a timeout instead of refreshing forever.');
@@ -260,11 +303,16 @@ assert.ok(adminHtml.includes('type="module" src="/admin.js?v=20260510c"'), 'Admi
 assert.ok(adminHtml.includes('id="adminRegistrationsMetric"'), 'Admin should show member registration counts.');
 assert.ok(adminHtml.includes('id="accountsTable"'), 'Admin should include a user/account table.');
 assert.ok(adminHtml.includes('id="downloadAccountsBtn"'), 'Admin should provide account CSV download.');
-assert.ok(adminHtml.includes('href="/delivery-manager.html"'), 'Admin header should link to the built-in Deliveries feature.');
+assert.ok(adminHtml.includes('href="/delivery-manager.html"'), 'Admin header should link to the CAIt Deliveries feature.');
 assert.ok(appsHtml.includes('CAIt Apps'), 'Apps hub should list CAIt app consoles.');
-assert.ok(appsHtml.includes('href="/delivery-manager.html"'), 'Apps hub header should link to the built-in Deliveries feature.');
+assert.ok(appsHtml.includes('href="/delivery-manager.html"'), 'Apps hub header should link to the CAIt Deliveries feature.');
+assert.ok(appsHtml.includes('Deliveries feature, not in the app registry'), 'Apps hub should state Deliveries is a CAIt feature, not an app.');
+assert.ok(!appsHtml.includes('Register your own app'), 'Apps hub should not imply self-service user app registration is open.');
+assert.ok(appsHtml.includes('Self-service app registration is not open yet'), 'Apps hub should set the short-term app registration boundary.');
 assert.ok(appsHtml.includes('data-featured-app-list'), 'Apps hub should render featured workflows from the app registry.');
-assert.ok(appsJs.includes('sameOriginAppUrl'), 'Apps hub should normalize built-in app URLs to the current origin.');
+assert.ok(appsJs.includes('sameOriginAppUrl'), 'Apps hub should normalize CAIt-managed app URLs to the current origin.');
+assert.ok(appsJs.includes("owner: 'cait-managed'"), 'CAIt-managed app surfaces should not be labeled as built-in apps.');
+assert.ok(appsJs.includes("verificationStatus: 'cait_managed'"), 'CAIt-managed app surfaces should have explicit verification status.');
 assert.ok(appsJs.includes('analytics-console'), 'Apps hub registry rendering should include Analytics Console.');
 assert.ok(appsJs.includes('publisher-approval-studio'), 'Apps hub registry rendering should include Publisher and Approval Studio.');
 assert.ok(appsJs.includes('lead-ops-console'), 'Apps hub registry rendering should include Lead Ops.');
@@ -298,16 +346,23 @@ assert.ok(analyticsHtml.includes('id="analyticsQueriesCount"'), 'Analytics Conso
 assert.ok(publisherHtml.includes('Publisher & Approval'), 'Publisher and Approval Studio should be a first-class app page.');
 assert.ok(publisherHtml.includes('href="/apps.html"'), 'Publisher Studio should link back to the apps hub.');
 assert.ok(publisherHtml.includes('id="approvalTable"'), 'Publisher Studio should include an approval queue.');
-assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260511a'), 'Publisher Studio should load the app-context receiving controller.');
+assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260514c'), 'Publisher Studio should load the app-context receiving controller.');
 assert.ok(publisherHtml.includes('id="publisherStepApproval"'), 'Publisher Studio should show approval progress before handoff.');
+assert.ok(publisherHtml.includes('id="channelSelect"'), 'Publisher Studio should expose media/channel separation.');
+assert.ok(publisherHtml.includes('id="connectorInput"'), 'Publisher Studio should expose the publish connector per channel.');
+assert.ok(publisherHtml.includes('id="connectorCapabilityInput"'), 'Publisher Studio should expose the publish connector capability per channel.');
+assert.ok(publisherHtml.includes('id="publishMethodInput"'), 'Publisher Studio should expose the publish method per channel.');
 assert.ok(publisherHtml.includes('id="connectGithubBtn"'), 'Publisher Studio should expose GitHub connection.');
 assert.ok(publisherHtml.includes('id="repoSelect"'), 'Publisher Studio should expose repository selection.');
 assert.ok(publisherHtml.includes('id="createPrBtn"'), 'Publisher Studio should expose PR handoff creation.');
+assert.ok(publisherHtml.includes('id="connectWordpressBtn"'), 'Publisher Studio should expose WordPress Application Password connection.');
+assert.ok(publisherHtml.includes('id="createWordpressDraftBtn"'), 'Publisher Studio should expose WordPress draft creation.');
+assert.ok(publisherHtml.includes('id="wordpressPostTypeSelect"'), 'Publisher Studio should separate WordPress post/page draft handoff.');
 assert.ok(publisherHtml.includes('id="publisherDestinationCount"'), 'Publisher Studio side navigation counts should come from runtime data.');
 assert.ok(leadOpsHtml.includes('Lead Ops'), 'Lead Ops should be a first-class app page.');
 assert.ok(leadOpsHtml.includes('href="/apps.html"'), 'Lead Ops should link back to the apps hub.');
 assert.ok(leadOpsHtml.includes('id="sendLeadContextBtn"'), 'Lead Ops should send context to CAIt.');
-assert.ok(leadOpsHtml.includes('/lead-ops.js?v=20260511a'), 'Lead Ops should load the app-context receiving controller.');
+assert.ok(leadOpsHtml.includes('/lead-ops.js?v=20260514a'), 'Lead Ops should load the app-context receiving controller.');
 assert.ok(leadOpsHtml.includes('id="approveLeadBtn"'), 'Lead Ops should provide a direct approval action.');
 assert.ok(leadOpsHtml.includes('id="scheduleLeadBtn"'), 'Lead Ops should provide scheduled outreach planning.');
 assert.ok(leadOpsHtml.includes('id="triggerLeadBtn"'), 'Lead Ops should provide event-triggered outreach planning.');
@@ -326,7 +381,7 @@ assert.ok(deliveryManagerHtml.includes('id="readinessList"'), 'Delivery Manager 
 assert.ok(deliveryManagerJs.includes('requestedDeliveryIdFromUrl'), 'Delivery Manager should support direct order/job/deep-linked delivery loading.');
 assert.ok(deliveryManagerJs.includes('/api/jobs/${encodeURIComponent(safeId)}'), 'Delivery Manager should fetch a deep-linked delivery by job id when it is outside the latest list.');
 
-const builtInAppEntries = [
+const caitManagedSurfaceEntries = [
   {
     name: 'Analytics Console',
     html: analyticsHtml,
@@ -353,10 +408,10 @@ const builtInAppEntries = [
   }
 ];
 
-for (const app of builtInAppEntries) {
+for (const app of caitManagedSurfaceEntries) {
   assert.ok(app.html.includes(`type="module" src="${app.ownScript}`), `${app.name} should load its own dedicated app controller.`);
   for (const forbiddenScript of app.forbiddenScripts) {
-    assert.ok(!app.html.includes(`src="${forbiddenScript}`), `${app.name} should not load ${forbiddenScript}; built-in app controllers must stay split by app.`);
+    assert.ok(!app.html.includes(`src="${forbiddenScript}`), `${app.name} should not load ${forbiddenScript}; CAIt-managed app controllers must stay split by app.`);
   }
 }
 
@@ -486,6 +541,11 @@ assert.ok(analyticsJs.includes('No server-side app context is loaded yet.'), 'An
 assert.ok(!/japan esim|best esim|tokyo esim|starter data/i.test(analyticsJs), 'Analytics Console should not ship built-in sample analytics rows.');
 assert.ok(publisherJs.includes('source_app: \'publisher_approval_studio\''), 'Publisher Studio should create publisher approval context.');
 assert.ok(publisherJs.includes('approval_requests'), 'Publisher Studio should include approval requests.');
+assert.ok(publisherJs.includes('PUBLISH_DESTINATION_PROFILES'), 'Publisher Studio should normalize media destinations before connector handoff.');
+assert.ok(publisherJs.includes('connectorCapability'), 'Publisher Studio should carry per-media connector capabilities.');
+assert.ok(publisherJs.includes('publishMethod'), 'Publisher Studio should carry per-media publish methods.');
+assert.ok(publisherJs.includes('wordpress_application_password'), 'Publisher Studio should expose WordPress as an external-app style publish connector.');
+assert.ok(publisherJs.includes('/api/connectors/wordpress/create-draft'), 'Publisher Studio should create WordPress drafts through the connector API.');
 assert.ok(publisherJs.includes('fetchCaitAppContextFromUrl'), 'Publisher Studio should receive CAIt contexts through the server context API.');
 assert.ok(publisherJs.includes('applyInboundContext'), 'Publisher Studio should map inbound context into editable approval packets.');
 assert.ok(publisherJs.includes('/api/github/repos'), 'Publisher Studio should load GitHub repositories from the server.');
@@ -505,6 +565,8 @@ assert.ok(leadOpsJs.includes('/api/deliveries/schedule'), 'Lead Ops should use t
 assert.ok(leadOpsJs.includes("action_kind: 'resend_send'"), 'Lead Ops should route email sends through CAIt Resend.');
 assert.ok(leadOpsJs.includes('fetchCaitAppContextFromUrl'), 'Lead Ops should receive CAIt contexts through the server context API.');
 assert.ok(leadOpsJs.includes('applyInboundContext'), 'Lead Ops should map inbound context into reviewable lead rows.');
+assert.ok(leadOpsJs.includes('parseLeadRowsFromMarkdown'), 'Lead Ops should parse List Creator Markdown tables into lead rows.');
+assert.ok(leadOpsJs.includes('Reviewable lead rows') || leadOpsJs.includes('company_name'), 'Lead Ops should recognize reviewable lead-row tables from agent deliveries.');
 assert.ok(leadOpsJs.includes('leadAllNavCount'), 'Lead Ops should update side navigation counts from runtime rows.');
 assert.ok(leadOpsJs.includes('No lead rows loaded.'), 'Lead Ops should render an explicit empty state before server context is loaded.');
 assert.ok(!/Travel Creator|Remote Japan|Airport Arrival|example\.com\/japan-travel/i.test(leadOpsJs), 'Lead Ops should not ship built-in sample lead rows.');
@@ -527,7 +589,7 @@ assert.ok(chatJs.includes('/api/app-contexts'), 'Chat should read app context hi
 assert.ok(chatJs.includes('BroadcastChannel'), 'Chat should receive app context handoffs from a separate same-origin app window.');
 assert.ok(chatJs.includes('data-app-context-load'), 'Chat should let users load a server-side app context back into the composer.');
 assert.ok(chatJs.includes('refreshRecentJobs'), 'Chat history should be derived from the server job API.');
-assert.ok(!chatJs.includes('localStorage'), 'Chat should not persist order, app, or agent history in browser localStorage.');
+assert.ok(chatJs.includes('compactChatRuntimeSnapshot'), 'Chat should compact runtime restore snapshots instead of using localStorage as order state.');
 assert.ok(chatJs.includes('analytics-console'), 'Chat app catalog should include Analytics Console.');
 assert.ok(chatJs.includes('publisher-approval-studio'), 'Chat app catalog should include Publisher and Approval Studio.');
 assert.ok(chatJs.includes('lead-ops-console'), 'Chat app catalog should include Lead Ops Console.');
@@ -542,13 +604,15 @@ assert.ok(chatJs.includes("url.searchParams.set('cait_order_id', orderId)"), 'Ch
 assert.ok(chatJs.includes("url.searchParams.set('cait_oauth_popup', '1')"), 'Chat Google connector return paths should mark popup OAuth returns.');
 assert.ok(chatJs.includes('data-chat-oauth-popup="google"'), 'Chat Google connector approval links should open OAuth outside the active chat tab.');
 assert.ok(chatJs.includes('function openChatOAuthPopup'), 'Chat should keep the active thread open while Google OAuth runs in a separate window.');
+assert.ok(chatJs.includes('function ensureAuthRefreshProgress') && chatJs.includes('window.setTimeout(ensureAuthRefreshProgress, 8000)'), 'Chat should retry auth refresh if startup remains stuck at Checking session.');
 assert.ok(chatJs.includes("type: 'cait-oauth-return'"), 'OAuth popup returns should notify the original chat window.');
 assert.ok(chatJs.includes('handleOAuthPopupReturnMessage'), 'Original chat should refresh connector/order state after popup OAuth completes.');
 assert.ok(chatJs.includes('restoreChatOAuthReturnStateFromUrl'), 'Chat should restore the active thread immediately after Google OAuth returns.');
 assert.ok(chatJs.includes('restoreRequestedChatSessionFromHistory'), 'Chat should fall back to server chat memory when the OAuth snapshot is unavailable.');
 assert.ok(chatJs.includes("saveChatOAuthReturnState('oauth_link_click')"), 'Chat should save the latest runtime state immediately before OAuth navigation.');
-assert.ok(chatJs.includes('function xAuthHref'), 'X OAuth links should be built centrally.');
-assert.ok(!chatJs.includes('href="/auth/x">Connect X'), 'Chat should not use bare X OAuth links.');
+assert.ok(!chatJs.includes('/auth/x'), 'Chat must not expose X OAuth; X auth/publish belongs to the SaaS handoff surface.');
+assert.ok(!chatJs.includes('data-chat-oauth-popup="x"'), 'Chat must not open X OAuth popups.');
+assert.ok(!chatJs.includes('Connect X'), 'Chat must not show Connect X actions.');
 assert.ok(chatJs.includes('maybeRenderAuthorityNotice(job'), 'Chat should render approval or connector requests while an order is still running.');
 assert.ok(chatJs.includes("['failed', 'timed_out'].includes(String(job.status || '').trim().toLowerCase())"), 'Chat should not show stale connector approval cards on failed or timed-out orders.');
 assert.ok(chatJs.includes('googleAuthHrefForAuthority'), 'Chat approval cards should link directly to the required Google connector scope.');
@@ -556,48 +620,76 @@ assert.ok(chatJs.includes("Connect Search Console") && chatJs.includes("Connect 
 assert.ok(!chatJs.includes('/chatux/'), 'Chat JS must not navigate users to /chatux.');
 assert.ok(chatJs.includes('function showChatListPanel'), 'Chat should expose recent chat/order list modal.');
 assert.ok(chatJs.includes('function showWorkerListPanel'), 'Chat should expose worker/agent list modal.');
-assert.ok(chatJs.includes('function initialAgentMapHtml'), 'Chat should render an initial agent map after workflow order acceptance.');
-assert.ok(chatJs.includes('workflowCurrentLocationLabel'), 'Chat progress should show the current workflow phase and active agent.');
-assert.ok(chatJs.includes('internalLeaderActive'), 'Chat progress should surface internal leader checkpoint runs instead of appearing stuck on the previous specialist.');
-assert.ok(chatJs.includes("checkpoint: 'Leader checkpoint'"), 'Chat progress should label leader checkpoints explicitly.');
-assert.ok(chatJs.includes('includeInternalLeaderSequence: workflowChildIsInternalLeaderSequenceRun'), 'Chat progress maps should include internal checkpoint nodes when they are the active run.');
-assert.ok(chatJs.includes('function workflowPhaseProgressMapHtml'), 'Chat should render a progress map when the workflow phase changes.');
-assert.ok(chatJs.includes('function workflowAgentProgressCounts'), 'Chat progress counts should use a dedicated helper instead of only the currently released layer total.');
-assert.ok(chatJs.includes('workflow.plannedCandidateAgentRunCount'), 'Chat progress should preserve planned later agent layers in the visible total.');
-assert.ok(chatJs.includes('data-progress-narrator-stream'), 'Chat progress should render a live text activity stream during running orders.');
-assert.ok(chatJs.includes('function syncProgressNarratorAnimation'), 'Chat progress should animate narrator text independently of poll responses.');
-assert.ok(chatJs.includes('function stopLiveProgressNarrator'), 'Chat progress should stop the narrator stream when live order status tracking stops.');
-assert.ok(chatJs.includes('liveProgressStoppedOrderIds'), 'Chat progress should remember intentionally stopped orders so backfill does not restart polling loops.');
+assert.ok(chatJs.includes('function notifyOrderMilestone'), 'Chat should project Order state through a centralized milestone notifier.');
+assert.ok(chatJs.includes('function orderMilestoneState'), 'Chat milestone state should be derived from the fetched Order object.');
+assert.ok(chatJs.includes('orderMilestoneNoticeKeys'), 'Chat milestone notifications should be idempotent per order state.');
+assert.ok(chatJs.includes('orderMilestoneChatExists'), 'Reloaded chats should not duplicate already-rendered milestone messages.');
+assert.ok(!chatJs.includes('Sending order. I will keep polling and post progress here.'), 'Chat should not post worker-log style send/progress noise.');
+assert.ok(chatJs.includes('function renderInitialAgentMap'), 'Chat should render the initial Agent map immediately after order creation.');
+assert.ok(chatJs.includes('renderInitialAgentMap(created'), 'Send order should attach the initial Agent map to accepted/recovered workflow orders.');
+assert.ok(chatJs.includes('showWorkflowProgressMap(job);'), 'Polling/backfill should keep the Agent map progress tree updated in chat.');
+assert.ok(chatJs.includes('data-agent-run-open'), 'Agent map nodes should open a per-agent status and intermediate-deliverable detail panel.');
+assert.ok(chatJs.includes('function openAgentRunDetail'), 'Agent map clicks should fetch and render the selected child run detail.');
+assert.ok(chatJs.includes('function renderAgentRunDetailHtml'), 'Agent map run details should render status, logs, text, and files from the child job.');
+assert.ok(chatCss.includes('.agent-run-detail-panel'), 'Chat CSS should style the Agent map run detail panel.');
+assert.ok(chatJs.includes('notifyOrderMilestone(job)'), 'Polling/backfill should notify chat only through Order milestones.');
+assert.ok(chatJs.includes('function authorityRequestFromText'), 'Chat should recover approval controls from legacy text-only approval deliveries.');
+assert.ok(chatJs.includes('executorState.authorityRequired'), 'Chat should render approval controls from executorState authority requests.');
+assert.ok(chatJs.includes('data-chat-order-approve'), 'Chat approval cards should use a dedicated approval action instead of a status-only refresh.');
+assert.ok(chatJs.includes('/approve'), 'Chat approval action should call the server approval resume endpoint.');
+assert.ok(chatJs.includes("fetchVisibleJob(orderId, { force: true })"), 'Explicit Check status clicks should bypass cached jobs and fetch fresh order state.');
+assert.ok(chatJs.includes('appendOrderStatusCheck(job)'), 'Explicit Check status clicks should visibly report the refreshed order state.');
 assert.ok(chatCss.includes('.message-meta') && chatCss.includes('text-transform: none'), 'Chat message labels should preserve CAIt casing instead of rendering CAIT.');
 assert.ok(chatJs.includes('function threadIsNearBottom'), 'Chat should only auto-scroll progress updates when the reader is already near the latest message.');
 assert.ok(chatJs.includes('includeAdaptivePending: true'), 'Agent maps should show adaptive planned later layers instead of hiding all future action work.');
-assert.ok(chatJs.includes('function leaderTextHasCmoSignal'), 'Chat intake routing should identify signup/channel/growth requests as CMO work.');
-assert.ok(chatJs.includes('function leaderTextHasSpecificCpoSignal'), 'Chat intake routing should not treat generic Product/service labels as CPO work.');
-assert.ok(chatJs.includes('function leaderTextHasSpecificCtoSignal'), 'Chat intake routing should require specific CTO/build architecture wording before choosing CTO.');
-assert.ok(chatJs.indexOf("if (leaderTextHasCmoSignal(text, intent)) return 'cmo_leader';") < chatJs.indexOf("if (leaderTextHasSpecificCpoSignal(text)) return 'cpo_leader';"), 'Chat intake routing should prefer CMO over CPO when growth and product wording both appear.');
-assert.ok(chatJs.indexOf("if (leaderTextHasCmoSignal(text, intent)) return 'cmo_leader';") < chatJs.indexOf("if (leaderTextHasSpecificCtoSignal(text)) return 'cto_leader';"), 'Chat intake routing should prefer explicit CMO growth intent before CTO wording.');
+assert.ok(chatJs.includes('function explicitLeaderTaskTypeFromText'), 'Chat intake routing should use a narrow explicit-leader helper instead of broad role-specific fallbacks.');
+assert.ok(!chatJs.includes('function leaderTextHasCmoSignal'), 'Chat client must not keep broad CMO intent routing outside the CMO leader definition.');
+assert.ok(!workIntentResolver.includes('isBroadMarketingGrowthIntentText'), 'Shared client intent resolver must not route broad growth/marketing prompts directly to CMO.');
+assert.ok(!clientJs.includes('pushCmoGrowthTasks'), 'Open Chat client must not duplicate CMO workflow task expansion.');
+assert.ok(!clientJs.includes('pushAgentTeamLaunchTasks'), 'Open Chat client must not duplicate CMO launch-team task expansion.');
+assert.ok(!chatJs.includes('function leaderTextHasSpecificCpoSignal'), 'Chat client must not keep broad CPO product-strategy routing outside the CPO leader definition.');
+assert.ok(!chatJs.includes('function leaderTextHasSpecificCtoSignal'), 'Chat client must not keep broad CTO architecture routing outside the CTO leader definition.');
+assert.ok(!chatJs.includes('function leaderTextHasSpecificBuildSignal'), 'Chat client must not keep broad Build leader routing outside the Build leader definition.');
 assert.ok(chatJs.includes('activeLeaderLocked: false'), 'Chat should track when a leader has been confirmed and locked.');
 assert.ok(chatJs.includes('function lockedLeaderOwnerForPrompt'), 'Chat should preserve a confirmed leader unless the user explicitly asks to change it.');
-assert.ok(chatJs.includes('leaderFollowupSpecialistTaskForText'), 'Leader follow-up artifact requests should draft specialist orders instead of single leader orders.');
-assert.ok(chatJs.includes('suppressLeaderLock'), 'Specialist follow-up drafts should not be rewritten back to the locked leader on SEND ORDER.');
+assert.ok(!chatJs.includes('function leaderFollowupSpecialistTaskForText'), 'Chat must not own leader follow-up specialist routing; server/leader definitions decide specialist follow-ups.');
+assert.ok(chatJs.includes('suppressLeaderLock'), 'Server/leader-routed specialist follow-up drafts should not be rewritten back to the locked leader on SEND ORDER.');
+assert.ok(chatJs.includes('function explicitActiveOrderFollowupRequestText'), 'Active-order follow-ups must require explicit continuation wording.');
+assert.ok(chatJs.includes('return explicitActiveOrderFollowupRequestText(compact);'), 'Generic messages in an active order chat should start new intake/order work instead of becoming follow-ups.');
+assert.ok(chatJs.includes('function draftIsExplicitFollowupContinuation'), 'Send order should only preserve followup_to_job_id for explicitly requested continuations.');
+assert.ok(chatJs.includes('userExplicitContinuation: true'), 'Explicit follow-up drafts should carry an auditable continuation flag.');
+assert.ok(chatJs.includes('Start a new request'), 'Active-order composer copy should say new requests start fresh by default.');
 assert.ok(chatJs.includes('function suggestLeaderChangeIfNeeded'), 'Chat should ask before changing away from a confirmed leader.');
 assert.ok(chatJs.includes('data-chat-action="keep-leader"'), 'Chat should offer a keep-current-leader action when a different leader is suggested.');
 assert.ok(chatJs.includes('data-chat-action="switch-leader"'), 'Chat should offer an explicit switch-leader action instead of automatically changing the leader.');
 assert.ok(chatJs.includes('leaderChangeRequested'), 'Chat should mark explicit user leader-change requests separately from automatic reclassification.');
 assert.ok(chatJs.includes("chat-engine.js?v=20260509a"), 'Chat should cache-bust the chat engine when retry payload fields change.');
 assert.ok(chatJs.includes('function retryDraftFromJob'), 'Chat should prepare retries from the previous persisted order.');
+assert.ok(chatJs.includes("fetchVisibleJob(safeId, { force: true, progress: false, inspectOnly: true })"), 'Prepare retry should inspect the saved order without triggering progress side effects.');
 assert.ok(chatJs.includes('function handleRetryCommand'), 'Chat should treat typed retry commands as explicit retry preparation instead of a new order.');
 assert.ok(chatJs.includes('retryCommandText(compact)'), 'Chat should prevent typed retry commands from becoming running-order followups.');
 assert.ok(chatJs.indexOf('await handleRetryCommand(prompt)') < chatJs.indexOf('activeOrderFollowupAllowedText(prompt)'), 'Typed retry should be handled before active-order followup routing.');
+assert.ok(chatJs.includes('Retry as new order'), 'Retry actions should clearly say they create a new order, not continue the selected order.');
+assert.ok(chatJs.includes('CHATUX_RETRY_MODE_NEW_ORDER'), 'Retry drafts should carry an explicit new-order retry mode.');
+assert.ok(chatJs.includes('draftIsSameContentNewOrderRetry'), 'Send order should distinguish same-content new-order retries from follow-up requests.');
+assert.ok(chatJs.includes('sameContentRetryAsNewOrder') && chatJs.includes('delete payload.followup_to_job_id'), 'Same-content retries must strip follow-up ids before dispatch.');
+assert.ok(chatJs.includes('既存オーダー') && chatJs.includes('続きではありません'), 'Japanese retry confirmation should explicitly say the retry is not a continuation.');
 assert.ok(chatJs.includes('preservePrompt: true'), 'Retry drafts should preserve the previous order prompt instead of redrafting from the retry message.');
 assert.ok(chatJs.includes('preservePlan: plannedTasks.length > 0'), 'Retry drafts should mark previous workflow plans for preservation.');
 assert.ok(chatJs.includes('workflowPlannedTasks: plannedTasks'), 'Retry drafts should carry previous workflow planned tasks.');
+assert.ok(chatJs.includes('function renderRetryReuseControls'), 'Failed deliveries should expose optional user-selected artifact reuse controls.');
+assert.ok(chatJs.includes('data-retry-reuse-artifact'), 'Retry reuse must require an explicit checkbox selection per completed artifact.');
+assert.ok(chatJs.includes('selectedRetryReuseArtifactsForOrder'), 'Retry preparation should carry only the selected completed artifacts.');
+assert.ok(chatJs.includes('retryReuseArtifacts'), 'Retry drafts should preserve selected artifacts for the new order payload.');
 assert.ok(chatEngine.includes('active_leader_locked'), 'Chat engine should send active leader lock state in prepare and job payloads.');
 assert.ok(chatEngine.includes('fallbackLeaderLocked'), 'Chat engine should ignore unlocked active leader fallbacks when deriving the conversation owner.');
 assert.ok(chatEngine.includes('workflow_planned_tasks'), 'Chat engine should send preserved workflow planned tasks when retrying a workflow order.');
 assert.ok(worker.includes('function applyActiveLeaderLockToOrderBody'), 'Worker should enforce locked chat leader routing server-side.');
 assert.ok(worker.includes('function workflowPlannedTasksFromOrderBody'), 'Worker should read preserved workflow plans from retry order payloads.');
 assert.ok(worker.includes('preservePlannedTasks'), 'Worker should bypass workflow plan expansion when retrying with a preserved plan.');
+assert.ok(worker.includes('function workflowReuseArtifactsFromOrderBody'), 'Worker should read user-selected retry reuse artifacts from the order payload.');
+assert.ok(worker.includes('reused_completed_artifact'), 'Worker should mark selected retry artifacts as completed reused child runs instead of dispatching the agent again.');
+assert.ok(worker.includes('The assigned agent was not dispatched for this step in the new order.'), 'Reused child outputs should clearly state that the agent step was skipped.');
 assert.ok(chatJs.includes('function showAppListPanel'), 'Chat should expose app list modal.');
 assert.ok(chatJs.includes('registeredApps: []'), 'Chat should keep registered marketplace apps in state.');
 assert.ok(chatJs.includes('const CHATUX_CATALOG_PAGE_SIZE = 10'), 'Workers and apps should initially load only ten catalog rows.');
@@ -641,19 +733,36 @@ assert.ok(chatJs.includes('function chatText'), 'Chat user-facing status text sh
 assert.ok(chatJs.includes('I will prepare an order in chat using'), 'Worker Use status should have an English UI copy path.');
 assert.ok(chatJs.includes('prepared_in_chat: true'), 'Approved chat orders should mark the intake/preparation gate as already completed.');
 assert.ok(chatJs.includes("await api('/api/jobs'"));
-assert.ok(chatJs.includes("await api('/api/connectors/x/status'"));
-assert.ok(chatJs.includes("await api('/api/connectors/x/post'"));
-assert.ok(chatJs.includes('confirm_post: true'));
-assert.ok(chatJs.includes('approved_x_username'));
-assert.ok(chatJs.includes('approved_text'));
+assert.ok(!chatJs.includes("await api('/api/connectors/x/post'"), 'Chat should hand publishable X drafts to the SaaS surface instead of posting directly.');
+assert.ok(!chatJs.includes('data-x-post-submit'), 'Chat should not render direct X post buttons; publishing belongs to the SaaS surface.');
+assert.ok(!chatJs.includes('confirm_post: true'), 'Chat should not send direct X connector confirmation payloads.');
+assert.ok(!chatJs.includes('approved_x_username'), 'Chat should not collect connector posting account fields for direct X posting.');
+assert.ok(!chatJs.includes('approved_text'), 'Chat should not send direct X connector approved_text payloads.');
+assert.ok(!chatJs.includes("xConnectLinkHtml('Connect X', 'primary')"), 'X authority cards must not request X OAuth in chat; publish auth belongs to SaaS.');
+assert.ok(chatJs.includes('X account connection and final publishing are handled inside X Client Ops'), 'X handoff copy should tell users final auth/publish happens in SaaS.');
 assert.ok(chatJs.includes('Final action: X Client Ops'), 'X Client Ops delivery card should use English copy.');
 assert.ok(chatJs.includes('CAIt has attached the X post draft and strategy context prepared during the workflow.'), 'X Client Ops explanation should be English.');
 assert.ok(chatJs.includes('function renderAppHandoffTools'), 'Chat deliveries should expose generic app handoff cards.');
-assert.ok(chatJs.includes("String(job.status || '').trim().toLowerCase() !== 'completed'"), 'Chat app handoffs should only render for completed deliveries.');
+assert.ok(chatJs.includes('function renderAppHandoffTree'), 'Chat deliveries should render the preparation artifact to app routing tree.');
+assert.ok(chatJs.includes('Preparation data routing'), 'App handoff cards should label the preparation data routing tree.');
+assert.ok(chatJs.includes('appHandoffEntryMatchesArtifact'), 'App handoff routing tree should use the same contract matching as the app handoff cards.');
+assert.ok(chatJs.includes('destinationConnectors'), 'App handoff routing tree should show destination connector/capability hints from app manifests.');
+assert.ok(chatJs.includes("['completed', 'failed', 'blocked', 'waiting'].includes(status)"), 'Chat app handoffs should render when preparation data exists for completed or partial deliveries.');
 assert.ok(chatJs.includes('function appHandoffRelevanceScore'), 'Generic app handoff cards should score relevance against the current delivery before rendering.');
+assert.ok(chatJs.includes('function appHandoffSpecificityScore'), 'Generic app handoff cards should rank specialized apps ahead of generic CAIt-managed surfaces.');
+assert.ok(chatJs.includes('handoffSpecificityScore'), 'Generic app handoff candidates should carry a specificity score.');
+assert.ok(chatJs.includes('function appHandoffIsCaitManagedSurface'), 'App handoff ranking should distinguish CAIt-managed surfaces from future external apps without making them internal features.');
+assert.ok(chatJs.includes('broadContractPenalty'), 'App handoff ranking should avoid letting broad generic apps outrank specialized apps by accepting everything.');
+assert.ok(chatJs.includes('function deliveryHandoffArtifactTypes'), 'App handoff scoring should derive explicit artifact types from the delivery.');
+assert.ok(chatJs.includes('function appHandoffFileLooksLikeAnalytics'), 'App handoff scoring should only route Analytics Console from analytics-shaped delivery files.');
+assert.ok(chatJs.includes('function appHandoffFileLooksLikeLeadOps'), 'App handoff scoring should only route Lead Ops from lead-shaped delivery files.');
+assert.ok(chatJs.includes('landing page change|landing-page-delivery|landing_page_change'), 'LP detection should use explicit artifact markers instead of loose lp/landing tokens.');
+assert.ok(chatJs.includes('entry.inputContract?.accepts'), 'External app handoff matching should use app input contracts.');
+assert.ok(chatJs.includes('Number(entry.handoffRelevanceScore || 0) < 50'), 'App handoff matching should require a strong contract/capability match.');
+assert.ok(!chatJs.includes('appTokens') && !chatJs.includes('jobTokens'), 'App handoff matching must not display apps based on loose token overlap.');
 assert.ok(chatJs.includes('handoffRelevanceScore'), 'Generic app handoff candidates should carry a relevance score.');
 assert.ok(!chatJs.includes("id === 'delivery-manager'"), 'Generic app handoffs should not score Deliveries as an app handoff candidate.');
-assert.ok(chatJs.includes('Only apps matched to this delivery'), 'App handoff copy should explain that unrelated apps are filtered out.');
+assert.ok(chatJs.includes('Preparation-layer delivery data is already available to matching SaaS apps'), 'App handoff copy should explain SaaS publish/copy-paste action.');
 assert.ok(!chatJs.includes('return appManifestSources()\\n    .filter((entry) => {\\n      if (!entry?.id || (!entry.entryUrl && !entry.baseUrl && !entry.handoff?.createUrl)) return false;'), 'App handoff should not display the raw app catalog for every delivery.');
 assert.ok(chatJs.includes('data-app-agent-handoff'), 'Generic app handoff cards should be actionable from delivery chat.');
 assert.ok(chatJs.includes('cait-app-agent-transfer/v1'), 'Generic app handoffs should use the CAIt transfer payload contract.');
@@ -667,33 +776,59 @@ assert.ok(chatJs.includes('/api/app-contexts'), 'Generic app handoff fallback sh
 assert.ok(!chatJs.includes('appAgentFallbackHandoffUrl'), 'Generic app handoffs should not keep the legacy URL payload fallback helper.');
 assert.ok(!chatJs.includes('cait_transfer'), 'Generic app handoffs should not embed serialized transfer payloads in URLs.');
 assert.ok(!chatJs.includes('data-app-agent-open-transfer'), 'Generic app handoff cards should not expose transfer-payload fallback links.');
+assert.ok(agentOrchestrationDiscipline.includes('`Deliveries` / `delivery-manager` は app ではなく CAIt の中核機能'), 'Agent discipline should define Deliveries as a CAIt feature, not an app.');
+assert.ok(agentOrchestrationDiscipline.includes('CAIt が同梱・管理していても app surface として扱う'), 'Agent discipline should treat CAIt-managed app surfaces as app surfaces, not internal privileges.');
+assert.ok(agentOrchestrationDiscipline.includes('`inputContract.accepts` と `capabilities`'), 'Agent discipline should require contract-based app matching.');
+assert.ok(agentOrchestrationDiscipline.includes('専門appを先に出す'), 'Agent discipline should prefer specialized external app candidates over generic CAIt-managed apps.');
+assert.ok(agentOrchestrationDiscipline.includes('価格、無料CAIt管理app、専門性、手数料/レベニューシェア'), 'Agent discipline should preserve future paid-app selection and revenue-share requirements.');
+assert.ok(agentOrchestrationDiscipline.includes('CAIt session cookieを直接共有しない'), 'Agent discipline should require scoped auth delegation for future external apps.');
 assert.ok(!chatJs.includes('最終アクション: X Client Ops'), 'X Client Ops delivery card should not show Japanese heading copy.');
 assert.ok(!chatJs.includes('過程で作成されたX投稿案'), 'X Client Ops delivery card should not show Japanese description copy.');
 assert.ok(chatJs.includes('URL.createObjectURL'));
 assert.ok(chatJs.includes('navigator.clipboard'));
 assert.ok(chatJs.includes('state.trackedOrderIds:') || chatJs.includes('trackedOrderIds: new Set()'), 'Tracked orders should be in-memory only for the active chat session.');
+assert.ok(chatJs.includes('function clearActiveOrderMemory'), 'Chat should have a single helper for clearing active order-only runtime state.');
+assert.ok(chatJs.includes('state.trackedOrderIds.clear();'), 'Reset/new chat should clear tracked orders so old order history cannot attach to a blank chat.');
+assert.ok(chatJs.includes('state.pendingRecoveryPayloads = [];'), 'Reset/new chat should clear create-recovery candidates before a new blank chat starts.');
+const resetChatSource = chatJs.slice(chatJs.indexOf('function resetChat()'), chatJs.indexOf('async function handleInboundAppContext'));
+assert.ok(resetChatSource.includes('startNewChatSession();'), 'Reset should still create a blank chat surface.');
+assert.ok(!resetChatSource.includes('startDeliveryBackfillLoop'), 'Reset should not immediately backfill old order history into the blank chat.');
 assert.ok(chatJs.includes('renderRestoredSessionOrderContext'), 'Restored chat sessions should render related order status/results inside the chat.');
 assert.ok(chatJs.includes('data-chat-order-retry'), 'Restored order cards should offer an explicit retry confirmation path.');
 assert.ok(chatJs.includes('deliveryOrderActionsHtml'), 'Terminal delivery updates should keep status/retry actions visible after connector returns.');
 assert.ok(chatJs.includes("return ['completed', 'failed', 'timed_out'].includes"), 'Blocked approval waits should stay progress states, not terminal deliveries.');
-assert.ok(chatJs.includes('restored-order-progress'), 'Restored order cards should keep progress details visible.');
+assert.ok(!chatJs.includes('restored-order-progress'), 'Restored order cards should not dump worker progress details into chat.');
 assert.ok(chatCss.includes('.restored-order-card'), 'Chat CSS should style restored order history cards.');
 assert.ok(chatJs.includes('recentJobsApiPath'), 'Recent chat/order history should come from the server job API.');
 assert.ok(chatJs.includes('CHATUX_PROGRESS_MAX_POLLS'), 'Chat polling should have an explicit long-running order limit.');
-assert.ok(chatJs.includes('Live progress polling reached its limit'), 'Chat polling pause copy should explain the background history fallback.');
-assert.ok(chatJs.includes("status: 'paused'"), 'Chat polling limit should freeze the progress narrator instead of animating forever.');
+assert.ok(!chatJs.includes('Live progress polling reached its limit'), 'Polling limits should switch to background checks without posting progress noise.');
+assert.ok(chatJs.includes('pollCount >= CHATUX_PROGRESS_MAX_POLLS'), 'Chat polling should still have an explicit long-running order limit.');
+assert.ok(chatJs.includes('progress-narrator-bar') && chatJs.includes('role="progressbar"'), 'Live order progress should render a visible progress bar.');
+assert.ok(chatJs.includes('showProgressNarrator(progressNarratorTextForJob(job), progressNarratorOptionsForJob(job))'), 'Polling should update the live progress bar from job progress.');
 assert.ok(chatCss.includes('.progress-narrator.ok .progress-narrator-caret'), 'Chat CSS should stop the narrator caret animation when progress is done or paused.');
+assert.ok(chatCss.includes('.progress-narrator-bar') && chatCss.includes('--progress-value'), 'Chat CSS should style the live order progress bar.');
 assert.ok(chatJs.includes('isNonOrderConversationIntentText'), 'Chat should keep pause/status/help messages out of order dispatch.');
+assert.ok(workIntentResolver.includes('isDeliveryHistoryQuestionIntentText'), 'Shared intent resolver should keep delivery/history display requests out of order dispatch.');
+assert.ok(workIntentResolver.includes('completedの納品物') || worker.includes('completedの納品物を見せてください'), 'OpenAI intent prompt should treat completed delivery display as chat, not intake.');
+assert.ok(workActionRegistry.includes('completed delivery') && workActionRegistry.includes('納品物'), 'Static work commands should recognize completed delivery display requests.');
+assert.ok(chatJs.includes('showDeliveryHistoryForPrompt') && chatJs.includes('await showDeliveryHistoryForPrompt(prompt)'), 'Chat should display existing completed deliveries before OpenAI intake/order routing.');
+const submitHandlerSource = chatJs.slice(chatJs.indexOf("els.composer.addEventListener('submit'"), chatJs.indexOf("els.chatThread.addEventListener"));
+assert.ok(submitHandlerSource.indexOf('await showDeliveryHistoryForPrompt(prompt)') < submitHandlerSource.indexOf('handleNonOrderConversation(prompt)'), 'Completed delivery display requests must be handled before generic non-order chat.');
+assert.ok(submitHandlerSource.indexOf('handleNonOrderConversation(prompt)') < submitHandlerSource.indexOf('state.pendingIntake)'), 'Explicit pause/cancel chat controls must still work while intake is open.');
 assert.ok(chatJs.includes('const matchesTracked = state.trackedOrderIds.has(safeId)'), 'Chat backfill should only auto-deliver explicitly tracked orders or active recovery candidates.');
 assert.ok(chatJs.includes('if (!matchesTracked && !matchesRecovery) continue;'), 'Chat backfill should not dump every historical chatux job into a new chat.');
 assert.ok(chatJs.includes('_caitRecoveryStartedAt'), 'Chat recovery matching should ignore older same-session jobs from before the current send attempt.');
 assert.ok(chatJs.includes('client_order_id'), 'Chat order create should include a client order id for idempotent recovery.');
 assert.ok(chatJs.includes('orderCreateRequestBody(payload)'), 'Chat order create should strip local recovery markers before POSTing.');
-assert.ok(chatJs.includes('Retrying the same idempotent order request once'), 'Chat recovery should safely retry the same idempotent create request once.');
+assert.ok(chatJs.includes('payload._caitRecoveryRetried = true'), 'Chat recovery should safely retry the same idempotent create request once without chat noise.');
 assert.ok(clientJs.includes('client_order_id'), 'Open Chat order create should include a client order id for idempotent recovery.');
 assert.ok(clientJs.includes('orderCreateRequestBody(payload)'), 'Open Chat order create should strip local recovery markers before POSTing.');
 assert.ok(clientJs.includes('same idempotent order request once'), 'Open Chat recovery should safely retry the same idempotent create request once.');
 assert.ok(chatJs.includes('visibleDeliveryFiles(candidates)'), 'Chat delivery should hide internal workflow markdown bundles from user-facing files.');
+assert.ok(chatJs.includes('internalAllDeliverablesFallbackFile'), 'Chat delivery should expose old internal specialist bundles only as readable agent bundles.');
+assert.ok(chatJs.includes('agent-deliverables-${id}.md'), 'Chat delivery should expose readable agent deliverables without synthesizing review-ready files.');
+assert.ok(!chatJs.includes('review-ready-delivery-${id}.md'), 'Chat delivery must not expose generated review-ready files for old internal specialist bundles.');
+assert.ok(!chatJs.includes('delivery-summary-${id}.md'), 'Chat delivery must not synthesize downloadable summary markdown when no real agent file exists.');
 assert.ok(clientJs.includes('visibleDeliveryFiles(run.output?.files)'), 'Open Chat delivery should hide internal workflow markdown bundles from user-facing files.');
 assert.ok(deliveryManagerJs.includes('visibleDeliveryFiles(output.files)'), 'Delivery Manager should hide internal workflow markdown bundles from user-facing files.');
 assert.ok(chatJs.includes('includeHistoricalTracked'), 'Chat backfill should ignore historical tracked orders while a current order is attached.');
@@ -714,6 +849,7 @@ assert.ok(chatCss.includes('.x-post-card'));
 assert.ok(chatCss.includes('.app-handoff-card'));
 assert.ok(chatCss.includes('.app-context-card'), 'Chat should style context returned by CAIt apps.');
 assert.ok(chatCss.includes('.app-handoff-row'));
+assert.ok(chatCss.includes('.app-handoff-tree'), 'Chat CSS should style the preparation artifact to app routing tree.');
 assert.ok(chatCss.includes('.usage-panel'));
 assert.ok(chatCss.includes('.file-actions'));
 assert.ok(!chatCss.includes('radial-gradient'));

@@ -1,0 +1,38 @@
+[
+  {
+    "match": "home",
+    "caption": "CAIt is an AI agent marketplace. The user starts from the public home page and chooses START or Chat."
+  },
+  {
+    "match": "apps",
+    "caption": "The Apps page lets users open SaaS-style context apps. For Google OAuth, the user opens Analytics Console."
+  },
+  {
+    "match": "analytics-before-connect",
+    "caption": "Analytics Console asks the user to connect GA4 or Search Console before loading any Google data."
+  },
+  {
+    "match": "google-account-chooser",
+    "caption": "Google shows the account chooser. The user selects the Google account that owns the GA4 property or Search Console site."
+  },
+  {
+    "match": "google-consent",
+    "caption": "The consent screen asks for Google access. CAIt uses read-only scopes to view GA4 reports and Search Console performance data."
+  },
+  {
+    "match": "analytics-connected",
+    "caption": "After consent, CAIt returns to Analytics Console and lists only the GA4 properties and Search Console sites the user can access."
+  },
+  {
+    "match": "analytics-report-loaded",
+    "caption": "The user loads a report. CAIt displays summarized metrics such as sessions, search clicks, conversions, and conversion rate."
+  },
+  {
+    "match": "chat-context-received",
+    "caption": "When the user sends to CAIt, the summarized Google evidence is attached to chat for SEO, CMO, or growth agent work."
+  },
+  {
+    "match": "*",
+    "caption": "CAIt uses Google OAuth data only for user-initiated analytics evidence. It does not edit, delete, or publish Google data."
+  }
+]

@@ -148,32 +148,69 @@ async function apiJson(path = '', options = {}) {
 }
 
 function artifactRows(context = {}, type = '') {
-  const match = (Array.isArray(context.artifacts) ? context.artifacts : [])
-    .find((artifact) => String(artifact?.type || '').toLowerCase() === String(type || '').toLowerCase());
-  return Array.isArray(match?.rows) ? match.rows : [];
+  return (Array.isArray(context.artifacts) ? context.artifacts : [])
+    .filter((artifact) => String(artifact?.type || '').toLowerCase() === String(type || '').toLowerCase())
+    .flatMap((artifact) => (Array.isArray(artifact?.rows) ? artifact.rows : []));
 }
 
-function applyInboundContext(context = null) {
-  if (!context) return;
-  importedContext = context;
-  const leadRows = artifactRows(context, 'lead_rows');
-  const emailDraft = (Array.isArray(context.artifacts) ? context.artifacts : [])
-    .find((artifact) => String(artifact?.type || '').toLowerCase() === 'email_draft') || {};
-  const outreachPlan = (Array.isArray(context.artifacts) ? context.artifacts : [])
-    .find((artifact) => String(artifact?.type || '').toLowerCase() === 'outreach_plan') || {};
-  const outreachSteps = Array.isArray(outreachPlan.steps) ? outreachPlan.steps : [];
-  const importedLeads = leadRows.map((row, index) => ({
-    id: String(row.id || `imported-lead-${index + 1}`),
-    company: String(row.company || row.company_name || row.name || `Imported lead ${index + 1}`),
-    segment: String(row.segment || row.persona || row.category || 'Imported lead'),
-    contact: String(firstText(row.contact, row.email, row.phone, row.form_url, row.crm_id, row.contact_path) || ''),
-    evidenceUrl: String(row.evidenceUrl || row.evidence_url || row.source_url || row.contact_source_url || row.url || ''),
-    fit: String(row.fit || row.why_fit || row.observed_signal || ''),
-    status: String(row.status || row.review_status || 'review'),
-    owner: String(row.owner || row.agent || 'CAIt'),
-    nextAction: String(row.nextAction || row.next_action || row.review_note || 'Review source evidence and approval state.'),
+function markdownCellText(value = '') {
+  return String(value || '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/\\\|/g, '|')
+    .replace(/\*\*/g, '')
+    .replace(/`/g, '')
+    .trim();
+}
+
+function splitMarkdownRow(line = '') {
+  return String(line || '')
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split(/(?<!\\)\|/g)
+    .map(markdownCellText);
+}
+
+function normalizedHeader(value = '') {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+function rowValue(row = {}, keys = []) {
+  for (const key of keys) {
+    const normalized = normalizedHeader(key);
+    const direct = row[key];
+    const normalizedValue = row[normalized];
+    if (String(direct || '').trim()) return String(direct).trim();
+    if (String(normalizedValue || '').trim()) return String(normalizedValue).trim();
+  }
+  return '';
+}
+
+function normalizeLeadRow(row = {}, index = 0, source = {}) {
+  const company = rowValue(row, ['company', 'company_name', 'name', 'lead', 'lead_name']);
+  const website = rowValue(row, ['website', 'url', 'company_url', 'domain']);
+  const contact = rowValue(row, ['contact', 'email', 'public_email', 'public_email_or_contact_path', 'contact_path', 'form_url', 'crm_id', 'recipient']);
+  const evidenceUrl = rowValue(row, ['evidenceUrl', 'evidence_url', 'source_url', 'contact_source_url', 'source', 'url']) || website;
+  const whyFit = rowValue(row, ['fit', 'why_fit', 'observed_signal', 'signal']);
+  const observedSignal = rowValue(row, ['observed_signal', 'signal']);
+  const targetRole = rowValue(row, ['target_role_hypothesis', 'target_role', 'persona', 'segment']);
+  const angle = rowValue(row, ['company_specific_angle', 'personalization_seed', 'next_action', 'review_note']);
+  const note = rowValue(row, ['review_note', 'status', 'review_status', 'notes']);
+  const blocked = /blocked_missing_source_rows|source_required|public_contact_required/i.test([company, website, contact, evidenceUrl, whyFit, note].join(' '));
+  if (!company) return null;
+  return {
+    id: String(row.id || row.lead_id || `${source.id || 'lead'}-${index + 1}`).trim(),
+    company,
+    website,
+    segment: String(targetRole || row.segment || row.persona || source.segment || 'Imported lead'),
+    contact,
+    evidenceUrl,
+    fit: [whyFit, observedSignal && observedSignal !== whyFit ? observedSignal : ''].filter(Boolean).join(' / '),
+    status: String(row.status || row.review_status || (blocked ? 'blocked' : 'review')),
+    owner: String(row.owner || row.agent || source.owner || 'CAIt'),
+    nextAction: String(row.nextAction || row.next_action || angle || note || 'Review source evidence and approval state.'),
     channel: normalizeChannel(row.channel || row.outreach_channel || row.message_channel || ''),
-    consent: String(row.consent || row.legal_basis || row.consent_basis || 'needs_review'),
+    consent: String(row.consent || row.legal_basis || row.consent_basis || (contact ? 'public_business_contact' : 'needs_review')),
     sendMode: normalizeSendMode(row.sendMode || row.send_mode || row.execution_mode || ''),
     scheduleAt: String(row.scheduleAt || row.schedule_at || row.scheduled_at || ''),
     triggerEvent: String(row.triggerEvent || row.trigger_event || 'none'),
@@ -182,7 +219,110 @@ function applyInboundContext(context = null) {
     replyToEmail: String(row.replyToEmail || row.reply_to_email || row.replyTo || row.reply_to || ''),
     subject: String(row.subject || ''),
     body: String(row.body || '')
-  }));
+  };
+}
+
+function parseLeadRowsFromMarkdown(markdown = '', source = {}) {
+  const lines = String(markdown || '').replace(/\r\n/g, '\n').split('\n');
+  const rows = [];
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const line = lines[index];
+    const next = lines[index + 1] || '';
+    if (!/^\s*\|/.test(line) || !/^\s*\|?\s*:?-{3,}:?\s*\|/.test(next)) continue;
+    const headers = splitMarkdownRow(line).map(normalizedHeader);
+    if (!headers.some((header) => ['company', 'company_name', 'lead', 'name'].includes(header))) continue;
+    if (!headers.some((header) => /contact|email|source|evidence|website|url|why_fit|observed_signal/.test(header))) continue;
+    for (let rowIndex = index + 2; rowIndex < lines.length; rowIndex += 1) {
+      const rowLine = lines[rowIndex] || '';
+      if (!/^\s*\|/.test(rowLine)) break;
+      const cells = splitMarkdownRow(rowLine);
+      if (!cells.length || cells.every((cell) => !cell)) continue;
+      const row = {};
+      headers.forEach((header, cellIndex) => {
+        row[header] = cells[cellIndex] || '';
+      });
+      const lead = normalizeLeadRow(row, rows.length, source);
+      if (lead) rows.push(lead);
+    }
+    if (rows.length) break;
+  }
+  return rows.length ? rows : parseCollapsedLeadTable(markdown, source);
+}
+
+function parseCollapsedLeadTable(markdown = '', source = {}) {
+  const cells = String(markdown || '').split('|').map(markdownCellText);
+  const companyHeaderIndex = cells.findIndex((cell) => ['company', 'company_name', 'lead', 'lead_name'].includes(normalizedHeader(cell)));
+  if (companyHeaderIndex < 0) return [];
+  const possibleIndexHeader = normalizedHeader(cells[companyHeaderIndex - 1] || '');
+  const headerStart = ['', 'no', 'number', 'index'].includes(possibleIndexHeader) ? Math.max(0, companyHeaderIndex - 1) : companyHeaderIndex;
+  const headers = [];
+  for (let index = headerStart; index < cells.length; index += 1) {
+    const header = normalizedHeader(cells[index]);
+    if (!header && headers.length) break;
+    if (/^-+$/.test(header)) break;
+    headers.push(header);
+  }
+  const usefulHeaders = headers.filter(Boolean);
+  if (!usefulHeaders.includes('company_name') && !usefulHeaders.includes('company') && !usefulHeaders.includes('lead')) return [];
+  if (!usefulHeaders.some((header) => /contact|email|source|evidence|website|url|why_fit|observed_signal/.test(header))) return [];
+  let cursor = headerStart + headers.length;
+  while (cursor < cells.length && !cells[cursor]) cursor += 1;
+  if (headers.length && cells.slice(cursor, cursor + headers.length).every((cell) => /^:?-{3,}:?$/.test(cell))) {
+    cursor += headers.length;
+  }
+  const rows = [];
+  while (cursor < cells.length) {
+    while (cursor < cells.length && !cells[cursor]) cursor += 1;
+    const chunk = cells.slice(cursor, cursor + headers.length);
+    if (chunk.length < headers.length) break;
+    cursor += headers.length;
+    if (chunk.every((cell) => !cell || /^:?-{3,}:?$/.test(cell))) continue;
+    const row = {};
+    headers.forEach((header, index) => {
+      if (header) row[header] = chunk[index] || '';
+    });
+    const lead = normalizeLeadRow(row, rows.length, source);
+    if (lead) rows.push(lead);
+  }
+  return rows;
+}
+
+function leadRowsFromContextArtifacts(context = {}) {
+  const structured = artifactRows(context, 'lead_rows')
+    .map((row, index) => normalizeLeadRow(row, index, { id: context.id || 'structured-lead', owner: context.source_app_label || context.source_app || 'CAIt' }))
+    .filter(Boolean);
+  const markdownSources = [
+    ...(Array.isArray(context.artifacts) ? context.artifacts : []),
+    ...(Array.isArray(context.delivery_files) ? context.delivery_files : [])
+  ];
+  const parsed = markdownSources.flatMap((artifact, index) => {
+    const content = String(artifact?.content || artifact?.body || artifact?.text || artifact?.markdown || artifact?.summary || '').trim();
+    if (!content) return [];
+    return parseLeadRowsFromMarkdown(content, {
+      id: artifact?.id || artifact?.name || `artifact-${index + 1}`,
+      owner: artifact?.owner || context.source_app_label || context.source_app || 'CAIt',
+      segment: artifact?.segment || artifact?.type || 'Imported lead'
+    });
+  });
+  const seen = new Set();
+  return [...structured, ...parsed].filter((lead) => {
+    const key = `${String(lead.company || '').toLowerCase()}|${String(lead.evidenceUrl || lead.website || '').toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function applyInboundContext(context = null) {
+  if (!context) return;
+  importedContext = context;
+  const leadRows = leadRowsFromContextArtifacts(context);
+  const emailDraft = (Array.isArray(context.artifacts) ? context.artifacts : [])
+    .find((artifact) => String(artifact?.type || '').toLowerCase() === 'email_draft') || {};
+  const outreachPlan = (Array.isArray(context.artifacts) ? context.artifacts : [])
+    .find((artifact) => String(artifact?.type || '').toLowerCase() === 'outreach_plan') || {};
+  const outreachSteps = Array.isArray(outreachPlan.steps) ? outreachPlan.steps : [];
+  const importedLeads = leadRows;
   if (!importedLeads.length) {
     importedLeads.push({
       id: String(context.id || 'imported-lead-context'),
@@ -268,11 +408,44 @@ function leadFromDeliveryItem(item = {}, index = 0) {
   };
 }
 
+function leadRowsFromDeliveryItem(item = {}, index = 0) {
+  const metadata = item.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+  const content = String(item.body || item.summary || '').trim();
+  const parsed = parseLeadRowsFromMarkdown(content, {
+    id: item.id || `delivery-lead-${index + 1}`,
+    owner: item.workflowAgentName || metadata.owner || 'CAIt',
+    segment: item.workflowTask || metadata.segment || 'Saved CAIt delivery item'
+  });
+  if (parsed.length) return parsed;
+  const normalized = normalizeLeadRow({
+    id: item.id,
+    company: metadata.company || metadata.company_name || metadata.lead || item.title,
+    segment: metadata.segment || metadata.persona || item.workflowTask,
+    contact: firstText(metadata.contact, metadata.recipient, metadata.email, metadata.contact_path),
+    evidence_url: firstText(metadata.evidence_url, metadata.source_url, metadata.url, item.source?.job_id ? `/delivery-manager.html?order_id=${item.source.job_id}` : ''),
+    fit: metadata.fit || metadata.why_fit || item.summary,
+    status: item.status,
+    owner: item.workflowAgentName || metadata.owner,
+    next_action: metadata.next_action || item.summary,
+    channel: metadata.channel,
+    consent: metadata.consent || metadata.consent_basis,
+    send_mode: metadata.send_mode || metadata.execution_mode,
+    schedule_at: metadata.schedule_at || metadata.scheduled_at,
+    trigger_event: metadata.trigger_event,
+    trigger_condition: metadata.trigger_condition,
+    sender_email: metadata.sender_email || metadata.from,
+    reply_to_email: metadata.reply_to_email || metadata.replyTo,
+    subject: metadata.subject,
+    body: /email|outreach/.test(String(item.itemType || '').toLowerCase()) ? item.body : ''
+  }, index, { id: item.id || `delivery-lead-${index + 1}`, owner: item.workflowAgentName || metadata.owner || 'CAIt' });
+  return normalized ? [normalized] : [leadFromDeliveryItem(item, index)];
+}
+
 async function loadLeadDeliveryItems() {
   try {
     const payload = await apiJson('/api/delivery-items?surface=lead&limit=100');
     const imported = (Array.isArray(payload.items) ? payload.items : [])
-      .map(leadFromDeliveryItem)
+      .flatMap(leadRowsFromDeliveryItem)
       .filter((lead) => lead.company || lead.body || lead.fit);
     if (!imported.length) return;
     const existing = new Set(leads.map((lead) => String(lead.id || '')));
@@ -305,9 +478,10 @@ function saveEditor() {
 }
 
 function leadRowsPayload() {
-  return leads.map(({ id, company, segment, contact, evidenceUrl, fit, status, owner, nextAction, channel, consent, sendMode, scheduleAt, triggerEvent, triggerCondition, senderEmail, replyToEmail }) => ({
+  return leads.map(({ id, company, website, segment, contact, evidenceUrl, fit, status, owner, nextAction, channel, consent, sendMode, scheduleAt, triggerEvent, triggerCondition, senderEmail, replyToEmail }) => ({
     id,
     company,
+    website,
     segment,
     contact,
     evidenceUrl,
@@ -560,7 +734,7 @@ function renderTable() {
   if (!rows.some((lead) => lead.id === selectedId) && rows[0]) selectedId = rows[0].id;
   els.leadTable.innerHTML = rows.length ? [
     '<thead><tr><th>Lead</th><th>Channel</th><th>Mode</th><th>Status</th></tr></thead><tbody>',
-    ...rows.map((lead) => `<tr class="${lead.id === selectedId ? 'active-row' : ''}" data-lead="${escapeHtml(lead.id)}"><td><strong>${escapeHtml(lead.company)}</strong><br>${escapeHtml(lead.contact || lead.evidenceUrl || 'missing contact path')}</td><td>${escapeHtml(lead.channel || 'email')}<br>${escapeHtml(lead.consent || 'needs_review')}</td><td>${escapeHtml(lead.sendMode || 'manual_approval')}<br>${escapeHtml(lead.scheduleAt || (lead.triggerEvent && lead.triggerEvent !== 'none' ? lead.triggerEvent : 'manual'))}</td><td><span class="status-pill ${statusClass(lead.status)}">${escapeHtml(statusLabel(lead.status))}</span></td></tr>`),
+    ...rows.map((lead) => `<tr class="${lead.id === selectedId ? 'active-row' : ''}" data-lead="${escapeHtml(lead.id)}"><td><strong>${escapeHtml(lead.company)}</strong><br>${escapeHtml(lead.contact || lead.evidenceUrl || lead.website || 'missing contact path')}</td><td>${escapeHtml(lead.channel || 'email')}<br>${escapeHtml(lead.consent || 'needs_review')}</td><td>${escapeHtml(lead.sendMode || 'manual_approval')}<br>${escapeHtml(lead.scheduleAt || (lead.triggerEvent && lead.triggerEvent !== 'none' ? lead.triggerEvent : 'manual'))}</td><td><span class="status-pill ${statusClass(lead.status)}">${escapeHtml(statusLabel(lead.status))}</span></td></tr>`),
     '</tbody>'
   ].join('') : '<tbody><tr><td colspan="4"><div class="empty-state"><strong>No lead rows loaded.</strong><span>Open this app from a CAIt context handoff or ask List Creator / CMO Leader to produce public-source rows.</span></div></td></tr></tbody>';
 }

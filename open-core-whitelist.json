@@ -26,7 +26,8 @@
       "source": "LICENSE",
       "target": "LICENSE"
     },
-    "lib/builtin-agents.js",
+    "lib/builtin-agents/agents",
+    "lib/agent-selection-index.js",
     "lib/agent-review.js",
     "lib/github-adapter.js",
     "lib/manifest.js",

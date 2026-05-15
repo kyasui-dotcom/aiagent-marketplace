@@ -270,11 +270,22 @@ function deliveryChildBlockerType(child = {}) {
 function isInternalDeliveryFile(file = {}) {
   const name = String(file?.name || file?.filename || '').trim().toLowerCase();
   const content = String(file?.content || file?.body || '').trim();
+  const contentType = String(file?.content_type || file?.contentType || '').trim().toLowerCase();
   const visibility = String(file?.visibility || file?.delivery_visibility || file?.deliveryVisibility || '').trim().toLowerCase();
   if (file?.internal === true || file?.user_visible === false || file?.userVisible === false || file?.delivery_visible === false || file?.deliveryVisible === false) return true;
   if (['internal', 'hidden', 'system'].includes(visibility)) return true;
+  if ([
+    'supporting_specialist_deliverables',
+    'workflow_integrated_delivery',
+    'partial_workflow_delivery',
+    'all_deliverables_bundle',
+    'review_ready_delivery'
+  ].includes(contentType)) return true;
   if (name === 'supporting-specialist-deliverables.md') return true;
   if (name === 'integrated-delivery.md' && /#\s+Integrated delivery|##\s+Supporting work products|##\s+Integrated next actions/i.test(content)) return true;
+  if (name === 'workflow-partial-delivery.md') return true;
+  if (name === 'all-deliverables.md' || /^all-deliverables-[^.]+\.md$/i.test(name)) return true;
+  if (name === 'review-ready-delivery.md' || /^review-ready-delivery-[^.]+\.md$/i.test(name)) return true;
   return false;
 }
 

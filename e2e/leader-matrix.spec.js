@@ -157,7 +157,7 @@ test.describe('all CAIt leaders', () => {
       await expect(page.getByRole('button', { name: 'Send order' })).toBeVisible();
 
       await page.getByRole('button', { name: 'Send order' }).click();
-      await expect(page.locator('#chatThread')).toContainText('Order accepted.', { timeout: chatResponseTimeout });
+      await expect(page.locator('#chatThread')).toContainText('Agent map', { timeout: chatResponseTimeout });
       await expect(page.locator('#chatThread')).toContainText('Delivery update', { timeout: 60_000 });
       await expect(page.locator('#chatThread')).toContainText(`${leader.label} E2E delivery completed.`);
 

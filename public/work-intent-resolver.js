@@ -11,12 +11,26 @@ export function isNonOrderConversationIntentText(prompt = '') {
     .replace(/[?？!！。.,、\s]+$/g, '')
     .trim();
   if (!text) return false;
+  if (isDeliveryHistoryQuestionIntentText(text)) return true;
   if (isLeaderCatalogQuestionIntentText(text)) return true;
   if (/^(pause|hold|stop|later|not now|cancel|status|help|what now|where are we|continue chatting)$/i.test(text)) return true;
   if (/^(一旦保留|いったん保留|保留|あとで|後で|また後で|ストップ|止めて|中断|キャンセル|やめる|やっぱやめる|今はやめる|状況|現状|今どこ|何待ち|ヘルプ|相談だけ)$/i.test(text)) return true;
   if (/^(pause|hold|stop|later|not now|cancel)\s*(please|pls)?$/i.test(text)) return true;
   if (/^(いや|いえ|no|nope|nah)[、。,.!\s-]*(pause|hold|stop|later|not now|cancel|保留|あとで|後で|やめる|中断)$/i.test(text)) return true;
   return false;
+}
+
+export function isDeliveryHistoryQuestionIntentText(prompt = '') {
+  const raw = String(prompt || '').replace(/\s+/g, ' ').trim();
+  const text = normalizeWorkIntentText(raw)
+    .replace(/[?？!！。.,、\s]+$/g, '')
+    .trim();
+  if (!text) return false;
+  if (/(納品形式|納品は|納品を(?:リスク|シナリオ|優先|検証|計画|メモ|表|一覧のどれがよい))/i.test(raw)) return false;
+  const target = /(?:\b(?:orders?|order history|deliver(?:y|ies|able|ables)|results?|completed|complete|done|finished)\b|注文|注文履歴|納品|納品物|成果物|履歴|結果|完了|完了済)/i.test(text);
+  const viewAction = /(?:見る|見たい|見せ|表示|出して|確認|開く|開いて|一覧|リスト|探|show|view|open|list|display|inspect|review)/i.test(raw);
+  const creationAction = /(?:作って|作成|生成|改善|書いて|発注|注文して|実行|調べて|分析して|\b(?:create|build|write|draft|prepare|run|execute|research|analy[sz]e|improve)\b)/i.test(raw);
+  return target && viewAction && !creationAction;
 }
 
 export function isLeaderCatalogQuestionIntentText(prompt = '') {
@@ -43,13 +57,26 @@ export function isRepoBackedCodeIntentText(prompt = '', taskType = '') {
   ]);
 }
 
-function isBroadMarketingGrowthIntentText(prompt = '') {
+function isExplicitCmoLeaderIntentText(prompt = '') {
   const text = normalizeWorkIntentText(prompt);
   if (!text) return false;
   return hasAnyPattern(text, [
-    /(growth|go[-\s]?to[-\s]?market|gtm|customer acquisition|acquisition|activation|retention|signup|signups|more users|new customers?|get customers?|grow customers?|grow users|more sales|increase sales|increase revenue|increase purchases?|more purchases?|more leads?|marketing help|marketing plan|organic growth|organic acquisition|launch growth)/i,
-    /(集客|登録数|会員登録|ユーザー獲得|流入|顧客獲得|問い合わせ.*増|購入.*増|CVR|コンバージョン|売上.*増|収益.*増|マーケ|営業|グロース|自然流入|オーガニック.*(?:集客|流入|成長))/i
+    /(?:\bcmo\b|chief marketing officer|chief marketing|marketing leader|マーケ責任者|マーケティング責任者|cmoリーダー|cmoとして)/i
   ]);
+}
+
+function explicitLeaderTaskTypeFromText(prompt = '') {
+  const text = normalizeWorkIntentText(prompt);
+  if (!text) return '';
+  if (isExplicitCmoLeaderIntentText(text)) return 'cmo_leader';
+  if (hasAnyPattern(text, [/(research team|analysis team|decision team|research leader|調査チーム|分析チーム|調査リーダー|リサーチリーダー)/i])) return 'research_team_leader';
+  if (hasAnyPattern(text, [/(build team|coding team|implementation team|engineering team|build leader|開発チーム|実装チーム|ビルドリーダー)/i])) return 'build_team_leader';
+  if (hasAnyPattern(text, [/(?:\bcto\b|chief technology|technical leader|ctoリーダー|技術責任者|開発責任者)/i])) return 'cto_leader';
+  if (hasAnyPattern(text, [/(?:\bcpo\b|chief product|product leader|cpoリーダー|プロダクト責任者)/i])) return 'cpo_leader';
+  if (hasAnyPattern(text, [/(?:\bcfo\b|chief financial|finance leader|cfoリーダー|財務責任者)/i])) return 'cfo_leader';
+  if (hasAnyPattern(text, [/(legal leader|legal counsel|compliance leader|法務リーダー|legalリーダー|法務責任者)/i])) return 'legal_leader';
+  if (hasAnyPattern(text, [/(secretary leader|executive secretary|executive assistant|assistant ops|秘書リーダー|秘書チーム)/i])) return 'secretary_leader';
+  return '';
 }
 
 const LEADER_TASK_TYPES = new Set([
@@ -116,26 +143,15 @@ export function leaderTaskTypeForInitialWork(taskType = '', prompt = '') {
   const task = normalizeWorkIntentText(taskType);
   const text = normalizeWorkIntentText(prompt);
   if (LEADER_TASK_TYPES.has(task)) return task;
-  if (hasAnyPattern(`${task}\n${text}`, [/(legal leader|legal counsel|compliance review|terms and privacy|privacy policy|lawyer|法務|規約|プライバシー|特商法|契約|コンプライアンス|法務レビュー)/i])) return 'legal_leader';
-  if (hasAnyPattern(`${task}\n${text}`, [/(finance leader|financial model|pricing strategy|price strategy|unit economics|cash flow|cfo|値付け|価格戦略|財務|収支|資金繰り|ユニットエコノミクス)/i])) return 'cfo_leader';
-  if (hasAnyPattern(`${task}\n${text}`, [/(product leader|product strategy|roadmap|ux strategy|feature priorit|mvp roadmap|cpo|プロダクト責任者|プロダクト戦略|ロードマップ|機能優先|ux戦略|仮説検証計画|アイデア検証計画)/i])) return 'cpo_leader';
-  if (hasAnyPattern(`${task}\n${text}`, [/(secretary leader|assistant ops|executive assistant|inbox.*schedule|reply.*schedule|calendar coordination|meeting workflow|秘書|日程.*返信|返信.*日程|会議.*調整|予定.*調整)/i])) return 'secretary_leader';
-  if (hasAnyPattern(`${task}\n${text}`, [/(cmo|chief marketing|marketing leader|growth plan|go[-\s]?to[-\s]?market|gtm|customer acquisition|organic acquisition|new customers?|get customers?|grow customers?|launch campaign|no[-\s]?ads?|without ads|マーケ責任者|マーケ部長|集客|顧客獲得|会員登録|自然流入|オーガニック|広告費.*(なし|使わない|ゼロ)|ローンチ.*施策)/i])) return 'cmo_leader';
-  if (hasAnyPattern(`${task}\n${text}`, [/(build team|coding team|implementation team|engineering team|開発チーム|実装チーム|複数.*(実装|修正|開発)|コード.*運用.*テスト)/i])) return 'build_team_leader';
-  if (hasAnyPattern(`${task}\n${text}`, [/(cto|chief technology|technical leader|architecture|system design|repo-wide|repository-wide|implementation plan|deploy plan|rollback|技術責任者|開発責任者|アーキテクチャ|全体設計|実装計画|デプロイ計画|ロールバック)/i])) return 'cto_leader';
-  if (hasAnyPattern(`${task}\n${text}`, [/(research team|analysis team|decision team|multi[-\s]?source research|evidence plan|調査チーム|分析チーム|複数.*(調査|分析)|意思決定.*調査|根拠.*整理)/i])) return 'research_team_leader';
-  return '';
+  return explicitLeaderTaskTypeFromText(`${task}\n${text}`);
 }
 
 export function inferWorkIntentTaskType(prompt = '') {
   const text = normalizeWorkIntentText(prompt);
   if (!text) return 'research';
   if (isRepoBackedCodeIntentText(prompt, 'code')) return 'code';
-  if (isBroadMarketingGrowthIntentText(prompt)) return 'cmo_leader';
-  if (hasAnyPattern(text, [/(research team|analysis team|decision team|調査チーム|分析チーム)/i])) return 'research_team_leader';
-  if (hasAnyPattern(text, [/(build team|coding team|implementation team|engineering team|開発チーム|実装チーム)/i])) return 'build_team_leader';
-  if (hasAnyPattern(text, [/(?:\bcmo\b|chief marketing|marketing leader|マーケ責任者|マーケティング責任者)/i])) return 'cmo_leader';
-  if (hasAnyPattern(text, [/(?:\bcto\b|chief technology|technical leader|技術責任者|開発責任者|アーキテクチャ)/i])) return 'cto_leader';
+  const explicitLeader = explicitLeaderTaskTypeFromText(prompt);
+  if (explicitLeader) return explicitLeader;
   if (hasAnyPattern(text, [/(x\.com|\bx post\b|\bx thread\b|twitter|tweet|tweets|ツイート|x投稿|ポスト|スレッド)/i])) return 'x_post';
   if (hasAnyPattern(text, [/(gmail|email|mail|メール|送信メール|営業メール)/i])) return 'email_ops';
   if (hasAnyPattern(text, [/(data analysis|analytics|metrics|kpi|dashboard|cohort|funnel analysis|ga4|gsc|search console|データ分析|アクセス解析|指標|計測|ファネル)/i])) return 'data_analysis';
@@ -145,7 +161,7 @@ export function inferWorkIntentTaskType(prompt = '') {
   if (hasAnyPattern(text, [/(pricing|price model|unit economics|ltv|cac|margin|financial model|価格|値付け|料金|財務|収支|粗利|利益)/i])) return 'pricing';
   if (hasAnyPattern(text, [/(validate|validation|idea validation|user interview|mvp|仮説検証|アイデア検証|需要検証|ユーザー調査)/i])) return 'validation';
   if (hasAnyPattern(text, [/(summari[sz]e|summary|要約|まとめ)/i])) return 'summary';
-  if (hasAnyPattern(text, [/(growth|go[-\s]?to[-\s]?market|gtm|acquisition|activation|retention|signup|signups|more users|new customers?|get customers?|grow customers?|more sales|increase sales|increase revenue|increase purchases?|outreach|community|product hunt|marketing|sales|revenue|集客|登録数|会員登録|ユーザー獲得|顧客獲得|問い合わせ.*増|購入.*増|マーケ|営業|グロース)/i])) return 'growth';
+  if (hasAnyPattern(text, [/(growth|go[-\s]?to[-\s]?market|gtm|acquisition|aquisition|aquitisition|aquire|activation|retention|signup|signups|more users|new customers?|get customers?|grow customers?|more sales|increase sales|increase revenue|increase purchases?|outreach|community|product hunt|marketing|sales|revenue|集客|登録数|会員登録|ユーザー獲得|顧客獲得|問い合わせ.*増|購入.*増|マーケ|営業|グロース)/i])) return 'growth';
   if (hasAnyPattern(text, [/(fix|bug|debug|実装|修正|直し|直して|コード|バグ|不具合|\bapi\b|server|worker|deploy|billing|\bui\b)/i])) return 'code';
   if (hasAnyPattern(text, [/(research|compare|analysis|investigate|市場|比較|調査|戦略)/i])) return 'research';
   return 'research';

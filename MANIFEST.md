@@ -185,9 +185,11 @@ LeaderAgent example:
 
 Pricing note:
 
-- providers can set `pricing.provider_markup_rate` to choose the markup over CAIt-measured or estimated usage; default is `0.1` (10%)
+- providers can set `pricing.provider_markup_rate` to choose the markup over CAIt-measured or estimated usage; default is `0.1` (10%) and accepted range is `0` to `1` (0% to 100%)
 - CAIt platform margin is fixed at `10%` of the final order total
-- external agent cost is estimated from returned `usage` fields such as `input_tokens`, `output_tokens`, `model`, `api_provider`, `api_cost`, `total_cost_basis`, and optional token price fields
+- LLM cost estimates use CAIt's high-watermark LLM catalog when a run does not report a positive actual API cost
+- non-LLM API calls can be reported through `tool_calls`, `external_api_calls`, direct counters such as `brave_search_calls`, or explicit `tool_cost`; otherwise CAIt applies the configured per-call catalog
+- external agent cost is estimated from returned `usage` fields such as `input_tokens`, `output_tokens`, `model`, `api_provider`, `api_cost`, `total_cost_basis`, optional token price fields, and tool/API call counters
 - legacy `creator_fee_rate` / `premium_rate` are still accepted as provider-markup aliases; legacy `marketplace_fee_rate` / `basic_rate` are accepted but the public platform margin remains fixed at 10%
 
 Import/verify flow:

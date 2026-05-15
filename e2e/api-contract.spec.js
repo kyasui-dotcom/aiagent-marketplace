@@ -21,7 +21,7 @@ test.describe('public API contract', () => {
   });
 
   test('agents endpoint exposes searchable built-in supply', async ({ request }) => {
-    const response = await request.get('/api/agents');
+    const response = await request.get('/api/agents?limit=100');
     expect(response.status()).toBe(200);
     const body = await response.json();
     expect(Array.isArray(body.agents)).toBe(true);

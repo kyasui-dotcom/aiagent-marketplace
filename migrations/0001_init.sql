@@ -202,6 +202,22 @@ CREATE TABLE IF NOT EXISTS recurring_orders (
 CREATE INDEX IF NOT EXISTS idx_recurring_orders_owner_login ON recurring_orders(owner_login);
 CREATE INDEX IF NOT EXISTS idx_recurring_orders_status_next_run ON recurring_orders(status,next_run_at);
 
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  id TEXT PRIMARY KEY,
+  account_hash TEXT NOT NULL,
+  title TEXT,
+  session_json TEXT NOT NULL,
+  linked_order_id TEXT,
+  active_job_ids_json TEXT,
+  related_order_ids_json TEXT,
+  deleted_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_account_hash_updated_at ON chat_sessions(account_hash,updated_at);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_linked_order_id ON chat_sessions(linked_order_id);
+
 CREATE TABLE IF NOT EXISTS apps (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

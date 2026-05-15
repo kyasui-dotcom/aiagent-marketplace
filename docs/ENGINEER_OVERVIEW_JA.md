@@ -66,8 +66,8 @@
 | `lib/external-write-confirmation.js` | `confirm_post`、`confirm_send`、`confirm_repo_write` など外部 write confirmation の共有判定。 |
 | `lib/storage.js` | D1 / in-memory storage の抽象化、schema、seed、state migration 相当の処理。 |
 | `lib/shared.js` | agent routing、billing、account、recurring order、prompt inference などの共有ドメインロジック。 |
-| `lib/builtin-agents.js` | built-in agent の実行ランタイム。OpenAI 呼び出し、mock/sample output、agent 別ポリシーを含む。 |
-| `lib/builtin-agents/agents/` | built-in agent 定義。research、writer、CMO leader、CTO leader など。 |
+| `lib/agent-selection-index.js` | leader が読むための内部/外部 agent manifest 要約一覧。選択補助専用で、実行制御や agent 固有処理は持たない。 |
+| `lib/builtin-agents/agents/` | sample agent 定義、manifest、agent 固有 provider。research、writer、CMO leader、CTO leader など。 |
 | `lib/orchestration.js` | leader workflow、layer、quality gate、connector execution policy の定義。 |
 | `lib/manifest.js` | 外部 agent manifest の読み込み、正規化、検証、安全性チェック。 |
 | `lib/apps.js` | app manifest と app registry のドメインロジック。 |
@@ -103,10 +103,11 @@ flowchart TD
 設計上の固定方針:
 
 - CAIt の orchestration は、外部エージェントだけで成立する前提にする。
-- built-in agent / leader も例外扱いせず、登録済み agent の `job_endpoint` 契約で dispatch する。
+- sample agent / leader も例外扱いせず、登録済み agent の `job_endpoint` 契約で dispatch する。
+- leader 用の agent 一覧は `lib/agent-selection-index.js` に置く。ただしここは manifest 要約の読み取り専用で、agent 固有の制御・action・provider 実行を置いてはならない。
 - `worker.js` は job 作成、dispatch、retry、timeout、completion、progress、approval wait など「完遂監視」を担当する。
 - `lib/orchestration.js` は leader workflow の layer、情報受け渡し、品質 gate、connector execution policy を担当する。
-- built-in 専用の二段 Queue、専用 provider-run message、専用 completion path を追加してはならない。必要な場合も agent endpoint 契約を通す。
+- sample agent 専用の二段 Queue、専用 provider-run message、専用 completion path を追加してはならない。必要な場合も agent endpoint 契約を通す。
 
 ## 6. 注文から納品までの主な流れ
 
@@ -115,8 +116,8 @@ flowchart TD
 3. 曖昧な依頼なら `needs_input` が返り、チャット上で追加質問する。
 4. 注文確定時に `/api/jobs` へ job を作成する。
 5. `performSingleJobCreate` または `handleCreateWorkflowJob` 系の処理で billing reservation、agent selection、workflow plan を作る。
-6. すべての agent は manifest / metadata の `job_endpoint` に dispatch される。built-in agent も `/mock/<kind>/jobs` という登録済み endpoint を通る。
-7. `/mock/<kind>/jobs` は外部 agent と同じ `completed` / `blocked` / `accepted` 形式で応答し、Worker 側に built-in 専用の completion 経路を作らない。
+6. すべての agent は manifest / metadata の `job_endpoint` に dispatch される。sample agent も `/mock/<kind>/jobs` という登録済み endpoint を通る。
+7. `/mock/<kind>/jobs` は外部 agent と同じ `completed` / `blocked` / `accepted` 形式で応答し、Worker 側に sample agent 専用の completion 経路を作らない。
 8. connector write、投稿、PR、email send などは approval gate を通る。
 9. 結果は job output として保存され、chat / Delivery Manager / follow-up context に再利用される。
 
@@ -237,7 +238,7 @@ API route は `worker.js` と `lib/api-routes.js`、rate limit / CSRF exempt は
 
 ### 巨大ファイル化
 
-`worker.js`、`lib/shared.js`、`lib/builtin-agents.js` は非常に大きいです。改善時は関数単位で影響範囲を絞り、既存の helper を優先してください。`server.js` は小さい adapter のまま維持してください。
+`worker.js`、`lib/shared.js` は非常に大きいです。sample agent 固有の改善は対象 agent の `lib/builtin-agents/agents/*.js` に閉じ、`server.js` は小さい adapter のまま維持してください。
 
 ### External write の安全性
 
@@ -268,7 +269,7 @@ Job 作成、billing reservation、job failure、retry、timeout、completion �
 5. `worker.js` の `export default.fetch` 付近で API route を追う。
 6. `lib/storage.js` で state / D1 schema を確認する。
 7. `lib/shared.js` で agent routing、billing、account 周りを確認する。
-8. `lib/builtin-agents/agents/index.js` で built-in agent catalog を確認する。
+8. 対象の `lib/builtin-agents/agents/*.js` で agent 固有 manifest と provider を確認する。
 9. `scripts/*-qa.mjs` と `e2e/*.spec.js` で既存の保証範囲を確認する。
 
 ## 14. 代表的な改善テーマ

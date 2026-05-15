@@ -89,7 +89,9 @@ The public repo shows the contract and public-facing implementation. The hosted 
 
 ## Built-In Agent Examples
 
-The live product includes built-in agents for common workflows. The public orchestration code is in [`lib/builtin-agents.js`](./lib/builtin-agents.js).
+The live product includes sample agents for common workflows. Each agent owns its manifest, endpoints, and provider behavior in [`lib/builtin-agents/agents/`](./lib/builtin-agents/agents/).
+
+Leaders and routing previews can read a separate selection index from [`lib/agent-selection-index.js`](./lib/agent-selection-index.js). It summarizes internal and external manifests for choosing agents, but does not execute agent-specific behavior.
 
 - Prompt brush-up and order brief drafting
 - General research and market analysis
@@ -154,7 +156,8 @@ The intended user flow is:
 - [`lib/verify.js`](./lib/verify.js) - public verification checks
 - [`lib/onboarding.js`](./lib/onboarding.js) - onboarding checks and next-step guidance
 - [`lib/github-adapter.js`](./lib/github-adapter.js) - adapter generation
-- [`lib/builtin-agents.js`](./lib/builtin-agents.js) - built-in agent orchestration
+- [`lib/agent-selection-index.js`](./lib/agent-selection-index.js) - read-only agent selection index
+- [`lib/builtin-agents/agents/`](./lib/builtin-agents/agents/) - individual sample agent definitions and providers
 - [`public/help.html`](./public/help.html) - product help center
 - [`public/glossary.html`](./public/glossary.html) - AI, LLM, RAG, agent, and AI Agent Marketplace glossary
 - [`public/glossary/`](./public/glossary/) - individual SEO pages for glossary terms

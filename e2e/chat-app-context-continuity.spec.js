@@ -50,6 +50,9 @@ test.describe('CAIt app context continuity', () => {
     await page.locator('#promptInput').fill('集客したいです');
     await page.locator('#sendMessageBtn').click();
     await expect(page.locator('#activeLeaderStatus')).toContainText('Lead: CMO Leader', { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText(/質問 1\/|対象サービス|URL/, { timeout: chatResponseTimeout });
+    await page.locator('#promptInput').fill('https://example-shop.test の集客を増やしたいです');
+    await page.locator('#sendMessageBtn').click();
     await expect(page.locator('#chatThread')).toContainText(/GA4|Search Console|サーチコンソール/, { timeout: chatResponseTimeout });
 
     const popupPromise = page.waitForEvent('popup');
@@ -83,10 +86,19 @@ test.describe('CAIt app context continuity', () => {
       .map((button) => button.textContent?.trim() || button.getAttribute('data-intake-choice') || 'unknown'));
     expect(disabledIntakeChoices).toEqual([]);
     const intakeThread = page.locator('#chatThread');
-    await expect(intakeThread.getByRole('button', { name: /売上|購入|sales|revenue/i }).first()).toBeEnabled();
-    await intakeThread.getByRole('button', { name: /売上|購入|sales|revenue/i }).first().click();
+    await page.locator('#sendMessageBtn').click();
+    await expect(intakeThread).toContainText(/質問 3\/|主な目的|Main goal/, { timeout: chatResponseTimeout });
+    await expect(intakeThread.getByRole('button', { name: /売上|購入|sales|revenue/i }).last()).toBeEnabled();
+    await intakeThread.getByRole('button', { name: /売上|購入|sales|revenue/i }).last().click();
     await expect(page.locator('#chatThread')).not.toContainText('There is no active intake to answer.');
     await expect(page.locator('#promptInput')).toHaveValue(/主な目的|Main goal/);
+    await page.locator('#promptInput').fill([
+      '- 主な目的: 売上・購入を増やす',
+      '- 対象ユーザー: 一般消費者',
+      '- 納品形式: 実行チェックリスト',
+      '- 制約: 低予算優先',
+      '- 優先チャネル: 自然検索・SEO'
+    ].join('\n'));
     await page.locator('#sendMessageBtn').click();
     await expect(page.locator('#chatThread')).toContainText('Task: cmo_leader', { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText('Attached connector context');

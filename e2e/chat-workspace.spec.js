@@ -51,10 +51,9 @@ test.describe('CAIt Chat workspace', () => {
 
     await page.locator('#promptInput').fill('集客したいです');
     await page.locator('#sendMessageBtn').click();
-    await expect(page.locator('#chatThread')).toContainText(/Answer what you can|分かる範囲で回答してください|実行前に確認したい内容/, { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText(/1項目ずつ|質問 1\/|Question 1 of/, { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText(/URL|商材|サービス/, { timeout: chatResponseTimeout });
-    await expect(page.locator('#chatThread')).toContainText(/GA4|Search Console|サーチコンソール/, { timeout: chatResponseTimeout });
-    await expect(page.locator('#chatThread')).toContainText(/資料|sales deck|material|current acquisition|現在の集客|広告/i, { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).not.toContainText(/質問 2\/|Question 2 of/);
     await expect(page.locator('#chatThread')).toContainText(/Nothing has been dispatched yet\.|まだ実行も課金も発生していません/, { timeout: chatResponseTimeout });
 
     await page.locator('#promptInput').fill('pause?');
@@ -72,8 +71,18 @@ test.describe('CAIt Chat workspace', () => {
     await page.locator('#promptInput').fill('I run a Shopify store and need more sales. What should I do?');
     await page.locator('#sendMessageBtn').click();
     await expect(page.locator('#chatThread')).toContainText('CMO Leader', { timeout: chatResponseTimeout });
-    await expect(page.locator('#chatThread')).toContainText(/What product or service|URL|GA4|Search Console/, { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText(/Question 1 of|Product\/service|website|LP/, { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).not.toContainText(/Question 2 of/);
     await expect(page.locator('#chatThread')).not.toContainText('Task: research');
+    await page.locator('#promptInput').fill('https://example-shop.test sells travel accessories.');
+    await page.locator('#sendMessageBtn').click();
+    await expect(page.locator('#chatThread')).toContainText(/Question 2 of|Analytics data|GA4|Search Console/, { timeout: chatResponseTimeout });
+    await page.getByRole('button', { name: 'Skip analytics' }).click();
+    await page.locator('#sendMessageBtn').click();
+    await expect(page.locator('#chatThread')).toContainText(/Question 3 of|Main goal/, { timeout: chatResponseTimeout });
+    await page.getByRole('button', { name: 'Increase sales/revenue' }).click();
+    await page.locator('#sendMessageBtn').click();
+    await expect(page.locator('#chatThread')).toContainText(/Question 4 of|Target audience/, { timeout: chatResponseTimeout });
     await page.getByRole('button', { name: 'Founders/operators' }).click();
     await page.getByRole('button', { name: 'Marketing/growth teams' }).click();
     await expect(page.locator('#promptInput')).toHaveValue(/Founders\/operators/);
@@ -84,6 +93,864 @@ test.describe('CAIt Chat workspace', () => {
     await expect(page.locator('#promptInput')).not.toHaveValue(/Founders\/operators/);
     await expect(page.locator('#promptInput')).toHaveValue(/Marketing\/growth teams/);
     await expect(page.locator('#chatThread')).not.toContainText('Order accepted.');
+  });
+
+  test('shows completed deliveries without starting a new leader intake', async ({ page }) => {
+    test.skip(!canUseAuth, authSkipReason);
+
+    const completedJob = {
+      id: 'e2e-completed-delivery-history',
+      status: 'completed',
+      taskType: 'cmo_leader',
+      prompt: 'Task: cmo_leader\nGoal: E2E completed delivery source\nDeliver: Return a visible delivery.',
+      createdAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      output: {
+        summary: 'Completed delivery summary from E2E.',
+        report: { summary: 'Completed delivery summary from E2E.' },
+        files: [
+          {
+            name: 'completed-delivery-e2e.md',
+            content: '# Completed delivery\n\nVisible completed delivery body.'
+          }
+        ]
+      }
+    };
+
+    let openChatIntentCalls = 0;
+    let prepareOrderCalls = 0;
+    let jobListCalls = 0;
+    await page.route('**/api/open-chat/intent', async (route) => {
+      openChatIntentCalls += 1;
+      await route.fulfill({ status: 500, body: 'unexpected open-chat intent call' });
+    });
+    await page.route('**/api/work/prepare-order', async (route) => {
+      prepareOrderCalls += 1;
+      await route.fulfill({ status: 500, body: 'unexpected prepare-order call' });
+    });
+    await page.route(/\/api\/jobs(?:\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      jobListCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ jobs: [completedJob] })
+      });
+    });
+    await page.route(`**/api/jobs/${completedJob.id}**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ job: completedJob })
+      });
+    });
+
+    await openChat(page);
+
+    await page.locator('#promptInput').fill('completedの納品物を見せてください');
+    await page.locator('#sendMessageBtn').click();
+
+    await expect(page.locator('#chatThread')).toContainText('Delivery history', { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText('Visible completed delivery body', { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).not.toContainText(/Question 1 of|質問 1\/|CMO Leader will ask|Instruction that will be sent/);
+    await page.locator('#utilityModalCloseBtn').click();
+    await page.locator('#resetBtn').click();
+    await expect(page.locator('#chatThread')).toContainText(/What do you want done\?|何がしたいですか？/);
+    await page.waitForTimeout(800);
+    await expect(page.locator('#chatThread')).not.toContainText('Order history');
+    await expect(page.locator('#chatThread')).not.toContainText(`#${completedJob.id.slice(0, 8)}`);
+    await expect(page.locator('#chatThread')).not.toContainText('Visible completed delivery body');
+    expect(openChatIntentCalls).toBe(0);
+    expect(prepareOrderCalls).toBe(0);
+    expect(jobListCalls).toBeGreaterThan(0);
+  });
+
+  test('shows only contract-matched app handoffs for a delivery', async ({ page }) => {
+    test.skip(!canUseAuth, authSkipReason);
+
+    const seoJob = {
+      id: 'e2e-seo-app-handoff-filter',
+      status: 'completed',
+      taskType: 'seo_gap',
+      prompt: 'Task: seo_gap\nGoal: SEO page artifact handoff filtering',
+      createdAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      output: {
+        summary: 'SEO page artifact ready for publishing handoff.',
+        files: [
+          {
+            name: 'seo-agent-delivery.md',
+            content: [
+              '# SEO page artifact',
+              '',
+              '## H1 and metadata',
+              '- H1: AI agent marketplace for developers',
+              '- Meta description: Developer SEO landing page.',
+              '',
+              '## Page structure draft',
+              'Hero, proof, comparison, FAQ, and CTA copy.'
+            ].join('\n')
+          },
+          {
+            name: 'data-analysis-delivery.md',
+            content: [
+              '# 添付データコンテキストパケット',
+              '',
+              '## Data contexts',
+              '- GA4 property: properties/123',
+              '- Search Console site: sc-domain:example.test',
+              '- Sessions: 554',
+              '- Conversion rate: 0%'
+            ].join('\n')
+          }
+        ]
+      }
+    };
+
+    await page.route(/\/api\/jobs(?:\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ jobs: [seoJob] })
+      });
+    });
+    await page.route(`**/api/jobs/${seoJob.id}**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ job: seoJob })
+      });
+    });
+    await page.route(/\/api\/apps(?:\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          apps: [
+            {
+              id: 'specialized-seo-publisher',
+              name: 'Specialized SEO Publisher',
+              description: 'External partner app for SEO page artifact publishing.',
+              entryUrl: 'https://seo-publisher.example/',
+              capabilities: ['seo_page_artifact'],
+              inputContract: { accepts: ['seo_page_artifact'], returns: ['approval_requests', 'delivery_files'] },
+              status: 'active',
+              verificationStatus: 'verified',
+              owner: 'partner'
+            }
+          ],
+          total: 1,
+          hasMore: false
+        })
+      });
+    });
+
+    await openChat(page);
+
+    await page.locator('#promptInput').fill('completedの納品物を見せてください');
+    await page.locator('#sendMessageBtn').click();
+
+    await expect(page.locator('#chatThread')).toContainText('App handoff', { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText('Preparation data routing');
+    await expect(page.locator('#chatThread')).toContainText('SEO page artifact');
+    await expect(page.locator('#chatThread')).toContainText('Specialized SEO Publisher');
+    await expect(page.locator('#chatThread')).toContainText('Publisher & Approval Studio');
+    await expect(page.locator('#chatThread')).not.toContainText('Analytics Console');
+    await expect(page.locator('#chatThread')).not.toContainText('Lead Ops Console');
+    const handoffText = await page.locator('#chatThread').innerText();
+    expect(handoffText.indexOf('Specialized SEO Publisher')).toBeLessThan(handoffText.indexOf('Publisher & Approval Studio'));
+  });
+
+  test('opens Publisher with preparation delivery context from chat handoff', async ({ page, context }, testInfo) => {
+    test.skip(!canUseAuth, authSkipReason);
+
+    const preparationContent = [
+      '# Conversion copy artifact',
+      '',
+      '## H1 and metadata',
+      '- Meta title: E2E publisher landing page title',
+      '- Meta description: E2E publisher meta description for signup.',
+      '- Keywords: ai agent marketplace, signup workflow, publisher handoff',
+      '- H1: E2E publisher landing page H1',
+      '- Internal links: /agents.html, /apps.html, /help.html',
+      '- OG title: E2E publisher OG title',
+      '- OG description: E2E publisher OG description.',
+      '',
+      '## Hero copy',
+      '- Headline: E2E Publisher preparation headline',
+      '- Primary CTA: Start signup',
+      '- Secondary CTA: Review proof',
+      '',
+      '## Body draft',
+      'Unique publisher E2E preparation body from chat handoff.',
+      '',
+      '## FAQ',
+      'Explain why engineers should sign up.'
+    ].join('\n');
+    const preparationJob = {
+      id: 'e2e-prep-publisher-context',
+      status: 'completed',
+      taskType: 'writing',
+      prompt: 'Task: writing\nGoal: Preparation artifact for Publisher handoff',
+      createdAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      output: {
+        summary: 'Preparation-layer landing page copy is ready for publisher handoff.',
+        report: { summary: 'Preparation-layer landing page copy is ready for publisher handoff.' },
+        files: [
+          {
+            name: 'landing-page-critique-delivery.md',
+            type: 'text/markdown',
+            content: preparationContent
+          }
+        ]
+      }
+    };
+    let capturedContext = null;
+
+    await page.route(/\/api\/jobs(?:\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ jobs: [preparationJob] })
+      });
+    });
+    await page.route(`**/api/jobs/${preparationJob.id}**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ job: preparationJob })
+      });
+    });
+    await page.route(/\/api\/apps(?:\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ apps: [], total: 0, hasMore: false })
+      });
+    });
+    await context.route(/\/api\/app-contexts$/, async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+      const body = JSON.parse(route.request().postData() || '{}');
+      capturedContext = body.context;
+      expect(body.app_id).toBe('publisher-approval-studio');
+      expect(capturedContext?.artifacts?.some((artifact) => artifact.name === 'landing-page-critique-delivery.md')).toBeTruthy();
+      expect(JSON.stringify(capturedContext)).toContain('Unique publisher E2E preparation body from chat handoff.');
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          app_context_id: 'ctx-prep-publisher',
+          app_context_token: 'tok-prep-publisher'
+        })
+      });
+    });
+    await context.route(/\/api\/app-contexts\/ctx-prep-publisher(?:\?.*)?$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          app_context: {
+            id: 'ctx-prep-publisher',
+            context: capturedContext
+          }
+        })
+      });
+    });
+    await context.route(/\/api\/delivery-items\?surface=publisher&limit=100$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, items: [], total: 0, hasMore: false })
+      });
+    });
+    await context.route(/\/api\/github\/repos$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, repos: [] })
+      });
+    });
+    let capturedWordpressDraft = null;
+    await context.route(/\/api\/connectors\/wordpress\/status$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          wordpress: {
+            connected: false,
+            siteUrl: '',
+            username: '',
+            capabilities: ['wordpress.create_draft']
+          }
+        })
+      });
+    });
+    await context.route(/\/api\/connectors\/wordpress\/connect$/, async (route) => {
+      const body = JSON.parse(route.request().postData() || '{}');
+      expect(body.site_url).toBe('https://wp.example.test');
+      expect(body.username).toBe('editor');
+      expect(body.application_password).toBe('abcd efgh ijkl mnop');
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          wordpress: {
+            connected: true,
+            siteUrl: 'https://wp.example.test',
+            username: 'editor',
+            capabilities: ['wordpress.create_draft']
+          }
+        })
+      });
+    });
+    await context.route(/\/api\/connectors\/wordpress\/create-draft$/, async (route) => {
+      capturedWordpressDraft = JSON.parse(route.request().postData() || '{}');
+      expect(capturedWordpressDraft.confirm_create_draft).toBe(true);
+      expect(capturedWordpressDraft.connector).toBe('wordpress');
+      expect(capturedWordpressDraft.connector_capability).toBe('wordpress.create_draft');
+      expect(capturedWordpressDraft.publish_method).toBe('wordpress_application_password');
+      expect(capturedWordpressDraft.title).toBe('E2E publisher landing page title');
+      expect(capturedWordpressDraft.content).toContain('Unique publisher E2E preparation body from chat handoff.');
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          wordpress: {
+            connected: true,
+            siteUrl: 'https://wp.example.test',
+            username: 'editor',
+            capabilities: ['wordpress.create_draft']
+          },
+          draft: {
+            id: '456',
+            status: 'draft',
+            postType: 'posts',
+            editUrl: 'https://wp.example.test/wp-admin/post.php?post=456&action=edit',
+            link: 'https://wp.example.test/?p=456'
+          }
+        })
+      });
+    });
+
+    await openChat(page);
+
+    await page.locator('#promptInput').fill('completedの納品物を見せてください');
+    await page.locator('#sendMessageBtn').click();
+
+    await expect(page.locator('#chatThread')).toContainText('App handoff', { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText('Preparation data routing');
+    await expect(page.locator('#chatThread')).toContainText('Landing page change');
+    await expect(page.locator('#chatThread')).toContainText('owned site: github / github.write_pr / github_pr');
+    await expect(page.locator('#chatThread')).toContainText('wordpress site: wordpress / wordpress.create_draft / wordpress_application_password');
+    await expect(page.locator('#chatThread')).toContainText('Publisher & Approval Studio');
+    await page.locator('#utilityModalCloseBtn').click();
+    const deliveryFileCard = page.locator('details.file-card').filter({ hasText: 'landing-page-critique-delivery.md' });
+    await deliveryFileCard.locator('summary').click();
+    await expect(page.locator('#chatThread')).toContainText('Unique publisher E2E preparation body from chat handoff.', { timeout: chatResponseTimeout });
+    const chatScreenshotPath = testInfo.outputPath('agent-output-in-chat.png');
+    await page.locator('#chatThread').screenshot({ path: chatScreenshotPath });
+    await testInfo.attach('agent-output-in-chat', { path: chatScreenshotPath, contentType: 'image/png' });
+    const agentFileScreenshotPath = testInfo.outputPath('agent-output-file-card.png');
+    await deliveryFileCard.screenshot({ path: agentFileScreenshotPath });
+    await testInfo.attach('agent-output-file-card', { path: agentFileScreenshotPath, contentType: 'image/png' });
+    const publisherRow = page.locator('.app-handoff-row').filter({ hasText: 'Publisher & Approval Studio' });
+    const [publisherPage] = await Promise.all([
+      page.waitForEvent('popup'),
+      publisherRow.getByRole('button', { name: 'Open with context' }).click()
+    ]);
+
+    await publisherPage.waitForLoadState('domcontentloaded');
+    await expect(publisherPage).toHaveURL(/\/publisher-approval(?:\.html)?/);
+    await expect(publisherPage.locator('#contentList')).toContainText('E2E publisher landing page title', { timeout: chatResponseTimeout });
+    await expect(publisherPage.locator('#statusPill')).toContainText('needs approval');
+    await expect(publisherPage.locator('#destinationInput')).toHaveValue('Owned site / GitHub PR');
+    await expect(publisherPage.locator('#channelSelect')).toHaveValue('owned_site');
+    await expect(publisherPage.locator('#connectorInput')).toHaveValue('github');
+    await expect(publisherPage.locator('#connectorCapabilityInput')).toHaveValue('github.write_pr');
+    await expect(publisherPage.locator('#publishMethodInput')).toHaveValue('github_pr');
+    await expect(publisherPage.locator('#titleInput')).toHaveValue('E2E publisher landing page title');
+    await expect(publisherPage.locator('#slugInput')).toHaveValue('/e2e-publisher-landing-page-title');
+    await expect(publisherPage.locator('#metaInput')).toHaveValue('E2E publisher meta description for signup.');
+    await expect(publisherPage.locator('#keywordsInput')).toHaveValue('ai agent marketplace, signup workflow, publisher handoff');
+    await expect(publisherPage.locator('#h1Input')).toHaveValue('E2E publisher landing page H1');
+    await expect(publisherPage.locator('#primaryCtaInput')).toHaveValue('Start signup');
+    await expect(publisherPage.locator('#secondaryCtaInput')).toHaveValue('Review proof');
+    await expect(publisherPage.locator('#internalLinksInput')).toHaveValue('/agents.html, /apps.html, /help.html');
+    await expect(publisherPage.locator('#ogTitleInput')).toHaveValue('E2E publisher OG title');
+    await expect(publisherPage.locator('#ogDescriptionInput')).toHaveValue('E2E publisher OG description.');
+    await expect(publisherPage.locator('#bodyInput')).toHaveValue(/Unique publisher E2E preparation body from chat handoff\./);
+    await expect(publisherPage.locator('#packetPreview')).toContainText('Imported context');
+    await expect(publisherPage.locator('#connectWordpressBtn')).toBeVisible();
+    await publisherPage.locator('#channelSelect').selectOption('wordpress_site');
+    await expect(publisherPage.locator('#connectorInput')).toHaveValue('wordpress');
+    await expect(publisherPage.locator('#connectorCapabilityInput')).toHaveValue('wordpress.create_draft');
+    await expect(publisherPage.locator('#publishMethodInput')).toHaveValue('wordpress_application_password');
+    await publisherPage.locator('#approveSelectedBtn').click();
+    await publisherPage.locator('#wordpressSiteInput').fill('https://wp.example.test');
+    await publisherPage.locator('#wordpressUsernameInput').fill('editor');
+    await publisherPage.locator('#wordpressPasswordInput').fill('abcd efgh ijkl mnop');
+    await publisherPage.locator('#connectWordpressBtn').click();
+    await expect(publisherPage.locator('#wordpressStatusPill')).toContainText('WordPress connected');
+    await publisherPage.locator('#createWordpressDraftBtn').click();
+    await expect(publisherPage.locator('#wordpressStatusPill')).toContainText('WP draft created');
+    await expect(publisherPage.locator('#publishResultPreview')).toContainText('https://wp.example.test/wp-admin/post.php?post=456&action=edit');
+    expect(capturedWordpressDraft).toBeTruthy();
+    const publisherScreenshotPath = testInfo.outputPath('publisher-imported-context.png');
+    await publisherPage.locator('main').screenshot({ path: publisherScreenshotPath });
+    await testInfo.attach('publisher-imported-context', { path: publisherScreenshotPath, contentType: 'image/png' });
+    await publisherPage.close();
+  });
+
+  test('opens Lead Ops with List Creator markdown lead rows from chat handoff', async ({ page, context }, testInfo) => {
+    test.skip(!canUseAuth, authSkipReason);
+
+    const leadContent = [
+      '# List Creator delivery',
+      '',
+      '## Reviewable lead rows',
+      '| # | company_name | website | why_fit | observed_signal | target_role_hypothesis | public_email_or_contact_path | contact_source_url | company_specific_angle | review_note |',
+      '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+      '| 1 | E2E Lead Alpha | https://alpha.example | Public docs show agent workflow need | Docs mention workflow automation | Growth owner | contact@alpha.example | https://alpha.example/contact | Mention operational workflow quality | Review before outreach |',
+      '| 2 | E2E Lead Beta | https://beta.example | Public pricing page shows developer audience | Pricing page targets developers | Founder/operator | https://beta.example/contact | https://beta.example/contact | Mention developer onboarding | Review before outreach |'
+    ].join('\n');
+    const listCreatorJob = {
+      id: 'e2e-leadops-list-creator-context',
+      status: 'completed',
+      taskType: 'list_creator',
+      prompt: 'Task: list_creator\nGoal: Produce reviewable lead rows for Lead Ops',
+      createdAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      output: {
+        summary: 'List Creator produced reviewable lead rows.',
+        report: { summary: 'List Creator produced reviewable lead rows.' },
+        files: [
+          {
+            name: 'list-creator-delivery.md',
+            type: 'text/markdown',
+            content: leadContent
+          }
+        ]
+      }
+    };
+    let capturedContext = null;
+
+    await page.route(/\/api\/jobs(?:\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ jobs: [listCreatorJob] })
+      });
+    });
+    await page.route(`**/api/jobs/${listCreatorJob.id}**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ job: listCreatorJob })
+      });
+    });
+    await page.route(/\/api\/apps(?:\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ apps: [], total: 0, hasMore: false })
+      });
+    });
+    await context.route(/\/api\/app-contexts$/, async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+      const body = JSON.parse(route.request().postData() || '{}');
+      capturedContext = body.context;
+      expect(body.app_id).toBe('lead-ops-console');
+      expect(JSON.stringify(capturedContext)).toContain('E2E Lead Alpha');
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          app_context_id: 'ctx-leadops-list-creator',
+          app_context_token: 'tok-leadops-list-creator'
+        })
+      });
+    });
+    await context.route(/\/api\/app-contexts\/ctx-leadops-list-creator(?:\?.*)?$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          app_context: {
+            id: 'ctx-leadops-list-creator',
+            context: capturedContext
+          }
+        })
+      });
+    });
+    await context.route(/\/api\/delivery-items\?surface=lead&limit=100$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, items: [], total: 0, hasMore: false })
+      });
+    });
+
+    await openChat(page);
+
+    await page.locator('#promptInput').fill('completedの納品物を見せてください');
+    await page.locator('#sendMessageBtn').click();
+
+    await expect(page.locator('#chatThread')).toContainText('Lead Ops Console', { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText('Preparation data routing');
+    await expect(page.locator('#chatThread')).toContainText('Lead rows');
+    await expect(page.locator('#chatThread')).toContainText('capability: lead_rows / lead_management / crm_packet');
+    await expect(page.locator('#chatThread')).not.toContainText('Publisher & Approval Studio');
+    const maybeClose = page.locator('#utilityModalCloseBtn');
+    if (await maybeClose.isVisible().catch(() => false)) await maybeClose.click();
+    const leadOpsRow = page.locator('.app-handoff-row').filter({ hasText: 'Lead Ops Console' });
+    const [leadOpsPage] = await Promise.all([
+      page.waitForEvent('popup'),
+      leadOpsRow.getByRole('button', { name: 'Open with context' }).click()
+    ]);
+
+    await leadOpsPage.waitForLoadState('domcontentloaded');
+    await expect(leadOpsPage).toHaveURL(/\/lead-ops(?:\.html)?/);
+    await expect(leadOpsPage.locator('#leadTable')).toContainText('E2E Lead Alpha', { timeout: chatResponseTimeout });
+    await expect(leadOpsPage.locator('#leadTable')).toContainText('E2E Lead Beta');
+    await expect(leadOpsPage.locator('#leadContactInput')).toHaveValue('contact@alpha.example');
+    await expect(leadOpsPage.locator('#leadSourceInput')).toHaveValue('https://alpha.example/contact');
+    await expect(leadOpsPage.locator('#leadContextPreview')).toContainText('lead_rows');
+    const leadOpsScreenshotPath = testInfo.outputPath('leadops-list-creator-context.png');
+    await leadOpsPage.locator('main').screenshot({ path: leadOpsScreenshotPath });
+    await testInfo.attach('leadops-list-creator-context', { path: leadOpsScreenshotPath, contentType: 'image/png' });
+    await leadOpsPage.close();
+  });
+
+  test('routes other publisher-capable agent outputs into Publisher context', async ({ page, context }) => {
+    test.skip(!canUseAuth, authSkipReason);
+    test.setTimeout(liveMode ? 180_000 : 120_000);
+
+    const scenarios = [
+      {
+        key: 'seo',
+        taskType: 'seo_gap',
+        fileName: 'seo-agent-delivery.md',
+        content: [
+          '# SEO page artifact',
+          '',
+          '## Keyword and intent',
+          '- Keywords: seo agent publisher keyword, ai agent marketplace',
+          '',
+          '## H1 and metadata',
+          '- Meta title: SEO Agent Publisher Title',
+          '- Meta description: SEO Agent Publisher Description.',
+          '- H1: SEO Agent Publisher H1',
+          '- Primary CTA: Start SEO order',
+          '- Secondary CTA: Read SEO proof',
+          '- Internal links: /agents.html, /resources.html'
+        ].join('\n'),
+        expected: {
+          destination: 'Owned site / GitHub PR',
+          channel: 'owned_site',
+          connector: 'github',
+          connectorCapability: 'github.write_pr',
+          publishMethod: 'github_pr',
+          title: 'SEO Agent Publisher Title',
+          meta: 'SEO Agent Publisher Description.',
+          keywords: 'seo agent publisher keyword, ai agent marketplace',
+          h1: 'SEO Agent Publisher H1',
+          primaryCta: 'Start SEO order',
+          secondaryCta: 'Read SEO proof',
+          internalLinks: '/agents.html, /resources.html'
+        }
+      },
+      {
+        key: 'landing',
+        taskType: 'landing',
+        fileName: 'landing-page-delivery.md',
+        content: [
+          '# Landing page change',
+          '',
+          '- Meta title: Landing Agent Publisher Title',
+          '- Meta description: Landing Agent Publisher Description.',
+          '- Keywords: landing conversion, signup page',
+          '- H1: Landing Agent Publisher H1',
+          '- Primary CTA: Start landing trial',
+          '- Secondary CTA: See landing examples',
+          '- Internal links: /apps.html, /help.html',
+          '',
+          '## Draft',
+          'Landing agent body prepared for Publisher.'
+        ].join('\n'),
+        expected: {
+          destination: 'Owned site / GitHub PR',
+          channel: 'owned_site',
+          connector: 'github',
+          connectorCapability: 'github.write_pr',
+          publishMethod: 'github_pr',
+          title: 'Landing Agent Publisher Title',
+          meta: 'Landing Agent Publisher Description.',
+          keywords: 'landing conversion, signup page',
+          h1: 'Landing Agent Publisher H1',
+          primaryCta: 'Start landing trial',
+          secondaryCta: 'See landing examples',
+          internalLinks: '/apps.html, /help.html'
+        }
+      },
+      {
+        key: 'directory',
+        taskType: 'directory_submission',
+        fileName: 'directory-submission-delivery.md',
+        content: [
+          '# Directory submission packet',
+          '',
+          '- Title: Directory Publisher Listing Title',
+          '- Meta description: Directory Publisher Listing Description.',
+          '- Keywords: ai directory, agent listing',
+          '- Primary CTA: Visit listing',
+          '- Secondary CTA: Compare agents',
+          '',
+          'Directory submission copy prepared for Publisher.'
+        ].join('\n'),
+        expected: {
+          destination: 'Directory / listing',
+          channel: 'directory',
+          connector: 'directory_app',
+          connectorCapability: 'directory.submit',
+          publishMethod: 'saas_or_manual_submit',
+          title: 'Directory Publisher Listing Title',
+          meta: 'Directory Publisher Listing Description.',
+          keywords: 'ai directory, agent listing',
+          primaryCta: 'Visit listing',
+          secondaryCta: 'Compare agents'
+        }
+      },
+      {
+        key: 'reddit',
+        taskType: 'reddit',
+        fileName: 'reddit-launch-delivery.md',
+        content: [
+          '# Community post packet',
+          '',
+          '- Title: Reddit Publisher Post Title',
+          '- Keywords: reddit launch, community post',
+          '- Primary CTA: Try the workflow',
+          '',
+          'Reddit post draft prepared for Publisher review.'
+        ].join('\n'),
+        expected: {
+          destination: 'Reddit',
+          channel: 'reddit',
+          connector: 'reddit',
+          connectorCapability: 'reddit.post',
+          publishMethod: 'reddit_oauth_or_manual_copy',
+          title: 'Reddit Publisher Post Title',
+          keywords: 'reddit launch, community post',
+          primaryCta: 'Try the workflow'
+        }
+      },
+      {
+        key: 'xpost',
+        taskType: 'x_post',
+        fileName: 'x-post-delivery.md',
+        content: [
+          '# Social post pack',
+          '',
+          '- Title: X Publisher Draft Title',
+          '- Keywords: x launch, social copy',
+          '- Primary CTA: Start the order',
+          '',
+          'X post draft: One focused post prepared for Publisher or social SaaS review.'
+        ].join('\n'),
+        expected: {
+          destination: 'X',
+          channel: 'x',
+          connector: 'x',
+          connectorCapability: 'x.post',
+          publishMethod: 'x_oauth_or_x_saas',
+          title: 'X Publisher Draft Title',
+          keywords: 'x launch, social copy',
+          primaryCta: 'Start the order'
+        }
+      }
+    ];
+
+    let currentScenario = scenarios[0];
+    let currentJob = null;
+    const capturedContexts = new Map();
+
+    await context.route(/\/api\/jobs(?:\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ jobs: [currentJob] })
+      });
+    });
+    await context.route(/\/api\/jobs\/e2e-publisher-agent-matrix-[^/?]+(?:\?.*)?$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ job: currentJob })
+      });
+    });
+    await context.route(/\/api\/apps(?:\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ apps: [], total: 0, hasMore: false })
+      });
+    });
+    await context.route(/\/api\/app-contexts$/, async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+      const body = JSON.parse(route.request().postData() || '{}');
+      expect(body.app_id).toBe('publisher-approval-studio');
+      const artifact = body.context?.artifacts?.find((item) => item.name === currentScenario.fileName || item.title === currentScenario.expected.title);
+      expect(artifact).toBeTruthy();
+      expect(JSON.stringify(artifact)).toContain(currentScenario.expected.title);
+      capturedContexts.set(currentScenario.key, body.context);
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          app_context_id: `ctx-${currentScenario.key}`,
+          app_context_token: `tok-${currentScenario.key}`
+        })
+      });
+    });
+    await context.route(/\/api\/app-contexts\/ctx-([^/?]+)(?:\?.*)?$/, async (route) => {
+      const match = route.request().url().match(/\/api\/app-contexts\/ctx-([^/?]+)/);
+      const key = match?.[1] || '';
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          app_context: {
+            id: `ctx-${key}`,
+            context: capturedContexts.get(key)
+          }
+        })
+      });
+    });
+    await context.route(/\/api\/delivery-items\?surface=publisher&limit=100$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, items: [], total: 0, hasMore: false })
+      });
+    });
+    await context.route(/\/api\/github\/repos$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, repos: [] })
+      });
+    });
+    await context.route(/\/api\/connectors\/wordpress\/status$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, wordpress: { connected: false, capabilities: ['wordpress.create_draft'] } })
+      });
+    });
+
+    for (const scenario of scenarios) {
+      currentScenario = scenario;
+      currentJob = {
+        id: `e2e-publisher-agent-matrix-${scenario.key}`,
+        status: 'completed',
+        taskType: scenario.taskType,
+        prompt: `Task: ${scenario.taskType}\nGoal: Publisher matrix handoff`,
+        createdAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        output: {
+          summary: `${scenario.taskType} publisher matrix output ready.`,
+          files: [
+            {
+              name: scenario.fileName,
+              type: 'text/markdown',
+              content: scenario.content
+            }
+          ]
+        }
+      };
+
+      const scenarioPage = scenario === scenarios[0] ? page : await context.newPage();
+      await openChat(scenarioPage);
+      await scenarioPage.locator('#promptInput').fill(`completedの納品物を見せてください ${scenario.key}`);
+      await scenarioPage.locator('#sendMessageBtn').click();
+      await expect(scenarioPage.locator('#chatThread')).toContainText('Publisher & Approval Studio', { timeout: chatResponseTimeout });
+      await scenarioPage.locator('#utilityModalCloseBtn').click();
+      const publisherRow = scenarioPage.locator('.app-handoff-row').filter({ hasText: 'Publisher & Approval Studio' });
+      const [publisherPage] = await Promise.all([
+        scenarioPage.waitForEvent('popup'),
+        publisherRow.getByRole('button', { name: 'Open with context' }).click()
+      ]);
+      await publisherPage.waitForLoadState('domcontentloaded');
+      await expect(publisherPage.locator('#destinationInput')).toHaveValue(scenario.expected.destination);
+      await expect(publisherPage.locator('#channelSelect')).toHaveValue(scenario.expected.channel);
+      await expect(publisherPage.locator('#connectorInput')).toHaveValue(scenario.expected.connector);
+      await expect(publisherPage.locator('#connectorCapabilityInput')).toHaveValue(scenario.expected.connectorCapability);
+      await expect(publisherPage.locator('#publishMethodInput')).toHaveValue(scenario.expected.publishMethod);
+      await expect(publisherPage.locator('#titleInput')).toHaveValue(scenario.expected.title);
+      if (scenario.expected.meta) await expect(publisherPage.locator('#metaInput')).toHaveValue(scenario.expected.meta);
+      if (scenario.expected.keywords) await expect(publisherPage.locator('#keywordsInput')).toHaveValue(scenario.expected.keywords);
+      if (scenario.expected.h1) await expect(publisherPage.locator('#h1Input')).toHaveValue(scenario.expected.h1);
+      if (scenario.expected.primaryCta) await expect(publisherPage.locator('#primaryCtaInput')).toHaveValue(scenario.expected.primaryCta);
+      if (scenario.expected.secondaryCta) await expect(publisherPage.locator('#secondaryCtaInput')).toHaveValue(scenario.expected.secondaryCta);
+      if (scenario.expected.internalLinks) await expect(publisherPage.locator('#internalLinksInput')).toHaveValue(scenario.expected.internalLinks);
+      await expect(publisherPage.locator('#bodyInput')).toHaveValue(new RegExp(scenario.content.split('\n').at(-1).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      await publisherPage.close();
+      if (scenarioPage !== page) await scenarioPage.close();
+    }
   });
 
   test('shows order acceptance progress while Send order is creating the order', async ({ page }) => {
@@ -143,8 +1010,79 @@ test.describe('CAIt Chat workspace', () => {
 
     await page.getByRole('button', { name: 'Send order' }).click();
     await jobRequestSeen;
-    await expect(page.locator('#chatThread')).toContainText('Sending order. I will keep polling and post progress here.');
+    await expect(page.getByRole('button', { name: 'Send order' })).toBeDisabled();
     releaseJobRequest();
+    await expect(page.locator('#chatThread')).toContainText(/Order #e2e-dela?: Order submitted/i);
+    await expect(page.locator('.progress-narrator-bar')).toBeVisible({ timeout: chatResponseTimeout });
+    await expect(page.locator('.progress-narrator-bar')).toHaveAttribute('role', 'progressbar');
+    await expect(page.locator('.progress-narrator-bar-label')).toContainText(/Starting|running|Working|queued/i);
+  });
+
+  test('starts fresh work by default when a chat already has a running order', async ({ page }) => {
+    test.skip(!canUseAuth, authSkipReason);
+
+    const activeJobId = 'e2e-active-order-fresh-start';
+    const activeJob = {
+      id: activeJobId,
+      status: 'queued',
+      taskType: 'cmo_leader',
+      jobKind: 'workflow',
+      prompt: 'Task: cmo_leader\nGoal: Existing active E2E order',
+      workflow: { plannedTasks: ['cmo_leader', 'data_analysis', 'research'] }
+    };
+    let postCount = 0;
+    await page.route(/\/api\/jobs(?:\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ jobs: [activeJob] })
+        });
+        return;
+      }
+      postCount += 1;
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          job_id: activeJobId,
+          id: activeJobId,
+          status: 'queued',
+          mode: 'workflow',
+          async_dispatch: true
+        })
+      });
+    });
+    await page.route(`**/api/jobs/${activeJobId}**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ job: activeJob })
+      });
+    });
+
+    await openChat(page);
+
+    await page.locator('#promptInput').fill('I run a Shopify store and need more sales. What should I do?');
+    await page.locator('#sendMessageBtn').click();
+    await page.locator('#promptInput').fill([
+      '1. https://example-shop.test sells travel accessories.',
+      '2. Increase purchases from US shoppers.',
+      '3. Skip analytics.',
+      '4. No paid ads. Deliver an execution checklist and copy/assets draft.'
+    ].join('\n'));
+    await page.locator('#sendMessageBtn').click();
+    const sendOrderButton = page.getByRole('button', { name: 'Send order' }).last();
+    await expect(sendOrderButton).toBeVisible({ timeout: chatResponseTimeout });
+    await sendOrderButton.click();
+    await expect(page.locator('#chatThread')).toContainText(/Order #e2e-active|Order submitted/i, { timeout: chatResponseTimeout });
+
+    await page.locator('#promptInput').fill('Create a fresh SEO plan for https://fresh-start.example from the beginning.');
+    await page.locator('#sendMessageBtn').click();
+    await expect(page.locator('#chatThread')).not.toContainText(/add-on request for running order|Follow-up\/change request|への追加要望/);
+    await expect(page.locator('#chatThread')).toContainText(/Question 1 of|Order check|Task:/, { timeout: chatResponseTimeout });
+    expect(postCount).toBe(1);
   });
 
   test('keeps approval-required actions inside the chat workspace', async ({ page }) => {
@@ -176,7 +1114,7 @@ test.describe('CAIt Chat workspace', () => {
     await page.locator('#sendMessageBtn').click();
     const sendOrderButton = page.locator('[data-chat-action="send-order"]').last();
     if (!(await sendOrderButton.isVisible().catch(() => false))) {
-      await expect(page.locator('#chatThread')).toContainText(/Answer what you can|分かる範囲で回答してください|実行前に確認したい内容|What product or service|URL/i, { timeout: chatResponseTimeout });
+      await expect(page.locator('#chatThread')).toContainText(/Question 1 of|質問 1\/|Product\/service|対象サービス|URL/i, { timeout: chatResponseTimeout });
       await page.locator('#promptInput').fill([
         'Product/topic: CAIt launch post for https://aiagent-marketplace.net.',
         'Audience: founders and marketing teams.',
@@ -238,10 +1176,10 @@ test.describe('CAIt Chat workspace', () => {
     });
 
     await sendOrderButton.click();
-    await expect(page.locator('#chatThread')).toContainText(/承認が必要です|Action approval required/, { timeout: chatResponseTimeout });
-    const approvalAction = page.getByRole('button', { name: /Resume X approval|Open chat approval/ });
-    await expect(approvalAction).toHaveAttribute('data-chat-order-open', blockedJob.id);
-    await approvalAction.click();
+    await expect(page.locator('#chatThread')).toContainText('App handoff', { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText('X Client Ops', { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).not.toContainText(/Connect X|Resume X approval|Action approval required/);
+    await expect(page.locator('[data-app-agent-handoff="x-client-ops"], [data-x-client-ops-link]')).toBeVisible();
     await expect(page).toHaveURL(/\/chat(?:\.html)?(?:\?|#|$)/);
     expect(new URL(page.url()).pathname).toBe('/chat');
   });

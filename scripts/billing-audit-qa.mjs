@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 
 const PORT = Number(process.env.PORT || 4326);
 const BASE = `http://127.0.0.1:${PORT}`;
+const PROVIDER_PORT = Number(process.env.PROVIDER_PORT || (PORT + 100));
+const PROVIDER_BASE = `http://127.0.0.1:${PROVIDER_PORT}`;
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -30,7 +33,37 @@ async function waitForServer(timeoutMs = 8000) {
   throw new Error('Server did not become ready in time');
 }
 
+function startProviderServer() {
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url || '/', PROVIDER_BASE);
+    if (url.pathname === '/research/health') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, service: 'billing_research_provider' }));
+      return;
+    }
+    if (url.pathname === '/research/jobs') {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const payload = body ? JSON.parse(body) : {};
+      const taskType = String(payload.task_type || 'research').trim().toLowerCase();
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'completed',
+        summary: `Billing ${taskType} provider completed.`,
+        report: { summary: `Billing ${taskType} delivery.`, bullets: [], nextAction: 'Review billing audit.' },
+        files: [{ name: `${taskType}-delivery.md`, content: `# Billing ${taskType} delivery` }],
+        usage: { input_tokens: 100, output_tokens: 100, total_tokens: 200, api_cost: 2 }
+      }));
+      return;
+    }
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not found' }));
+  });
+  return new Promise((resolve) => server.listen(PROVIDER_PORT, '127.0.0.1', () => resolve(server)));
+}
+
 async function main() {
+  const provider = await startProviderServer();
   const child = spawn('node', ['server.js'], {
     cwd: process.cwd(),
     env: {
@@ -56,8 +89,8 @@ async function main() {
           name: 'billing_agent',
           task_types: ['research'],
           pricing: { premium_rate: 0.2, basic_rate: 0.1 },
-          healthcheck_url: `${BASE}/mock/research/health`,
-          job_endpoint: `${BASE}/mock/research/jobs`
+          healthcheck_url: `${PROVIDER_BASE}/research/health`,
+          job_endpoint: `${PROVIDER_BASE}/research/jobs`
         }
       })
     });
@@ -99,6 +132,7 @@ async function main() {
     console.log('billing audit qa passed');
   } finally {
     child.kill('SIGTERM');
+    provider.close();
     await sleep(300);
   }
 }

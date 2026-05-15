@@ -19,13 +19,26 @@ const env = {
 };
 
 const storage = createD1LikeStorage(env.MY_BINDING, { allowInMemory: true });
+const QA_AGENT_SUFFIX = '_worker_qa';
+const RESEARCH_AGENT_ID = `agent_research_01${QA_AGENT_SUFFIX}`;
+const CODE_AGENT_ID = `agent_code_01${QA_AGENT_SUFFIX}`;
+const GROWTH_AGENT_ID = `agent_growth_01${QA_AGENT_SUFFIX}`;
 
 function buildVerifiedAgents() {
   return DEFAULT_AGENT_SEEDS.map((agent, index) => ({
     ...structuredClone(agent),
+    id: `${agent.id}${QA_AGENT_SUFFIX}`,
+    online: true,
     verificationStatus: 'verified',
     verificationCheckedAt: `2026-04-05T07:0${index}:00.000Z`,
     verificationError: null,
+    agentReviewStatus: 'approved',
+    agentReview: {
+      status: 'approved',
+      source: 'worker-runs-qa',
+      reviewedAt: `2026-04-05T07:0${index}:00.000Z`,
+      reasons: []
+    },
     manifestSource: 'qa://worker-runs',
     metadata: {
       ...(agent.metadata || {}),
@@ -81,7 +94,7 @@ const created = await request('/api/jobs', {
 });
 assert.equal(created.status, 201);
 assert.equal(created.body.status, 'queued');
-assert.equal(created.body.matched_agent_id, 'agent_research_01');
+assert.equal(created.body.matched_agent_id, RESEARCH_AGENT_ID);
 
 const resolved = await request('/api/dev/resolve-job', {
   method: 'POST',
@@ -105,7 +118,7 @@ const manualJob = await request('/api/jobs', {
     parent_agent_id: 'qa-runner',
     task_type: 'code',
     prompt: 'worker manual result qa',
-    agent_id: 'agent_code_01',
+    agent_id: CODE_AGENT_ID,
     budget_cap: 260,
     deadline_sec: 60
   })
@@ -116,7 +129,7 @@ assert.equal(manualJob.body.status, 'queued');
 const claimed = await request(`/api/jobs/${manualJob.body.job_id}/claim`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ agent_id: 'agent_code_01' })
+  body: JSON.stringify({ agent_id: CODE_AGENT_ID })
 });
 assert.equal(claimed.status, 200);
 assert.equal(claimed.body.job.status, 'claimed');
@@ -125,7 +138,7 @@ const manualResult = await request(`/api/jobs/${manualJob.body.job_id}/result`, 
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({
-    agent_id: 'agent_code_01',
+    agent_id: CODE_AGENT_ID,
     status: 'completed',
     output: { summary: 'manual completion path works' },
     usage: { total_cost_basis: 140, compute_cost: 50, tool_cost: 20, labor_cost: 70 }
@@ -142,7 +155,7 @@ const callbackJob = await request('/api/jobs', {
     parent_agent_id: 'qa-runner',
     task_type: 'research',
     prompt: 'worker callback qa',
-    agent_id: 'agent_research_01',
+    agent_id: RESEARCH_AGENT_ID,
     budget_cap: 220,
     deadline_sec: 90
   })
@@ -152,7 +165,7 @@ assert.equal(callbackJob.status, 201);
 const callbackClaim = await request(`/api/jobs/${callbackJob.body.job_id}/claim`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ agent_id: 'agent_research_01' })
+  body: JSON.stringify({ agent_id: RESEARCH_AGENT_ID })
 });
 assert.equal(callbackClaim.status, 200);
 
@@ -165,7 +178,7 @@ const callbackCompletion = await request('/api/agent-callbacks/jobs', {
   headers: { 'content-type': 'application/json', authorization: `Bearer ${callbackToken}` },
   body: JSON.stringify({
     job_id: callbackJob.body.job_id,
-    agent_id: 'agent_research_01',
+    agent_id: RESEARCH_AGENT_ID,
     status: 'completed',
     report: { summary: 'callback completion path works' },
     usage: { total_cost_basis: 88, compute_cost: 28, tool_cost: 10, labor_cost: 50 }
@@ -204,7 +217,7 @@ const snapshotAfterFirstTimeout = await request('/api/snapshot');
 const firstTimeoutEvent = snapshotAfterFirstTimeout.body.events.find((event) => event.type === 'TIMEOUT' && event.meta?.jobId === timeoutCandidate.body.job_id);
 assert.ok(firstTimeoutEvent);
 assert.equal(firstTimeoutEvent.meta.retryable, true);
-assert.match(firstTimeoutEvent.message, /retry 1\/2 available/);
+assert.match(firstTimeoutEvent.message, /retry 1\/3 available/);
 
 const metricsAfterTimeout = await request('/api/metrics');
 assert.equal(metricsAfterTimeout.status, 200);
@@ -223,7 +236,7 @@ assert.equal(retried.body.job.status, 'queued');
 assert.equal(retried.body.job.dispatch.retryable, false);
 assert.equal(retried.body.job.dispatch.completionStatus, 'retry_queued');
 assert.equal(retried.body.job.dispatch.attempts, 1);
-assert.equal(retried.body.job.dispatch.maxRetries, 2);
+assert.equal(retried.body.job.dispatch.maxRetries, 3);
 
 await storage.mutate(async (draft) => {
   const job = draft.jobs.find((item) => item.id === timeoutCandidate.body.job_id);
@@ -262,14 +275,37 @@ const timedOutFinal = await request('/api/dev/timeout-sweep', {
 });
 assert.equal(timedOutFinal.status, 200);
 assert.equal(timedOutFinal.body.count, 1);
-assert.equal(timedOutFinal.body.swept[0].retryable, false);
-assert.equal(timedOutFinal.body.swept[0].maxRetries, 2);
+assert.equal(timedOutFinal.body.swept[0].retryable, true);
+assert.equal(timedOutFinal.body.swept[0].maxRetries, 3);
+
+const retriedFinal = await request('/api/dev/dispatch-retry', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ job_id: timeoutCandidate.body.job_id })
+});
+assert.equal(retriedFinal.status, 200);
+
+await storage.mutate(async (draft) => {
+  const job = draft.jobs.find((item) => item.id === timeoutCandidate.body.job_id);
+  job.status = 'dispatched';
+  job.dispatchedAt = new Date(Date.now() - 5_000).toISOString();
+});
+
+const timedOutExhausted = await request('/api/dev/timeout-sweep', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ stale_ms: 0 })
+});
+assert.equal(timedOutExhausted.status, 200);
+assert.equal(timedOutExhausted.body.count, 1);
+assert.equal(timedOutExhausted.body.swept[0].retryable, false);
+assert.equal(timedOutExhausted.body.swept[0].maxRetries, 3);
 
 const snapshotAfterFinalTimeout = await request('/api/snapshot');
 const finalTimeoutEvent = snapshotAfterFinalTimeout.body.events.find((event) => event.type === 'TIMEOUT' && event.meta?.jobId === timeoutCandidate.body.job_id && event.meta?.retryable === false);
 assert.ok(finalTimeoutEvent);
-assert.match(finalTimeoutEvent.message, /retries exhausted at 2\/2/);
-assert.equal(finalTimeoutEvent.meta.maxRetries, 2);
+assert.match(finalTimeoutEvent.message, /retries exhausted at 3\/3/);
+assert.equal(finalTimeoutEvent.meta.maxRetries, 3);
 
 const retryBlocked = await request('/api/dev/dispatch-retry', {
   method: 'POST',
@@ -321,7 +357,7 @@ await Promise.allSettled(cronWaitUntil);
 const cronTimedOut = await request(`/api/jobs/${cronTimeoutCandidate.body.job_id}`);
 assert.equal(cronTimedOut.status, 200);
 assert.equal(cronTimedOut.body.job.status, 'timed_out');
-assert.equal(cronTimedOut.body.job.failureCategory, 'deadline_timeout');
+assert.equal(cronTimedOut.body.job.failureCategory, 'dispatch_deadline_timeout');
 
 const cronSnapshot = await request('/api/snapshot');
 const cronTimeoutEvent = cronSnapshot.body.events.find((event) => event.type === 'TIMEOUT' && event.meta?.jobId === cronTimeoutCandidate.body.job_id);
@@ -359,7 +395,7 @@ await storage.mutate(async (draft) => {
       workflowAgentName: 'Growth Operator Agent',
       prompt: 'queued future workflow child should not timeout before dispatch turn',
       status: 'queued',
-      assignedAgentId: 'agent_growth_01',
+      assignedAgentId: GROWTH_AGENT_ID,
       deadlineSec: 1,
       createdAt: oldWorkflowAt,
       workflowParentId: 'qa-workflow-timeout-parent',
@@ -376,7 +412,7 @@ await storage.mutate(async (draft) => {
       workflowAgentName: 'Research Agent',
       prompt: 'running workflow child should use workflow timeout floor',
       status: 'running',
-      assignedAgentId: 'agent_research_01',
+      assignedAgentId: RESEARCH_AGENT_ID,
       deadlineSec: 1,
       createdAt: oldWorkflowAt,
       startedAt: oldWorkflowAt,
@@ -430,7 +466,7 @@ await storage.mutate(async (draft) => {
       workflowAgentName: 'Research Agent',
       prompt: 'queued child keeps parent alive',
       status: 'queued',
-      assignedAgentId: 'agent_research_01',
+      assignedAgentId: RESEARCH_AGENT_ID,
       createdAt: veryOldWorkflowAt,
       workflowParentId: 'qa-live-child-parent-timeout-guard',
       logs: ['queued child keeps parent alive']

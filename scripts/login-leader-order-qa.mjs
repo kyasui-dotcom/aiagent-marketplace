@@ -21,6 +21,7 @@ const env = {
   STRIPE_WEBHOOK_SECRET,
   STRIPE_DEFAULT_CURRENCY: 'USD',
   BASE_URL: BASE,
+  SAMPLE_AGENT_ENDPOINT_BASE_URL: `${BASE}/sample-agents`,
   BRAVE_SEARCH_API_KEY: 'brave-login-leader-qa',
   BUILTIN_AGENT_SAMPLE_FALLBACK: '1',
   MY_BINDING: null,
@@ -205,6 +206,13 @@ async function waitForWorkflowCompletion(workflowJobId, sessionCookie) {
 async function main() {
   globalThis.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input.url;
+    if (String(url || '').startsWith(`${BASE}/sample-agents/`)) {
+      return worker.fetch(new Request(url, init), env, {
+        waitUntil(promise) {
+          void Promise.resolve(promise);
+        }
+      });
+    }
     if (url === 'https://api.stripe.com/v1/setup_intents/seti_login_leader_card') {
       return new Response(JSON.stringify({
         id: 'seti_login_leader_card',
