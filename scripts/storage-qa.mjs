@@ -530,6 +530,45 @@ await deliveryItemStorage.upsertJobs([{
   completedAt: '2026-04-26T08:21:00.000Z'
 }]);
 await deliveryItemStorage.upsertJobs([{
+  id: 'job-landing-delivery',
+  parentAgentId: 'qa',
+  taskType: 'landing',
+  prompt: 'landing page critique',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'landing',
+  workflowAgentName: 'LANDING PAGE CRITIQUE AGENT',
+  output: {
+    report: { summary: 'Landing page ready' },
+    files: [{
+      name: 'landing-page-critique-delivery.md',
+      type: 'text/markdown',
+      content: [
+        '# landing page critique delivery',
+        '',
+        '## Request',
+        'Task: writing',
+        '=== WORKFLOW HANDOFF CONTEXT ===',
+        'CANONICAL USER BRIEF',
+        '- Product/service: - Product/service: https://example.com',
+        '- Main goal: - Main goal: Increase signups/trials',
+        '- Target audience: - Target audience: Developers/technical users',
+        '- Priority channel: - Priority channel: Organic search / SEO',
+        '=== END WORKFLOW HANDOFF CONTEXT ===',
+        '## Agent-owned behavior',
+        '- role: landing page build',
+        '## Expected output sections',
+        '- Replacement copy',
+        '## Review notes',
+        'internal prompt text'
+      ].join('\n')
+    }]
+  },
+  createdAt: '2026-04-26T08:21:10.000Z',
+  completedAt: '2026-04-26T08:21:30.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
   id: 'job-leader-package',
   parentAgentId: 'qa',
   taskType: 'cmo_leader',
@@ -581,10 +620,19 @@ await deliveryItemStorage.upsertJobs([{
   completedAt: '2026-04-26T08:27:00.000Z'
 }]);
 const publisherItems = await deliveryItemStorage.listDeliveryItems({ surface: 'publisher', ownerLogins: ['owner@example.com'] });
-assert.equal(publisherItems.length, 1);
-assert.equal(publisherItems[0].surface, 'publisher');
-assert.equal(publisherItems[0].itemType, 'seo_article');
-assert.equal(publisherItems[0].metadata.meta_description, 'Source-backed guide.');
+assert.equal(publisherItems.length, 2);
+const seoPublisherItem = publisherItems.find((item) => item.itemType === 'seo_article');
+const landingPublisherItem = publisherItems.find((item) => item.itemType === 'landing_page');
+assert.ok(seoPublisherItem);
+assert.equal(seoPublisherItem.surface, 'publisher');
+assert.equal(seoPublisherItem.metadata.meta_description, 'Source-backed guide.');
+assert.ok(landingPublisherItem);
+assert.equal(landingPublisherItem.surface, 'publisher');
+assert.equal(landingPublisherItem.title, 'example.com - signup landing page');
+assert.equal(landingPublisherItem.metadata.meta_description, 'Use example.com to show the offer, proof, and next step for Developers/technical users, then continue to signup or trial start.');
+assert.equal(landingPublisherItem.body.includes('WORKFLOW HANDOFF CONTEXT'), false);
+assert.equal(landingPublisherItem.body.includes('## Request'), false);
+assert.equal(landingPublisherItem.body.includes('Agent-owned behavior'), false);
 const analyticsItems = await deliveryItemStorage.listDeliveryItems({ surface: 'analytics', ownerLogins: ['owner@example.com'] });
 assert.equal(analyticsItems.length, 1);
 assert.equal(analyticsItems[0].surface, 'analytics');
