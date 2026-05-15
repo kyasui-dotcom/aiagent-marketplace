@@ -10,8 +10,8 @@
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/chat.css?v=20260501d" />
-  <link rel="stylesheet" href="/admin.css?v=20260510c" />
-  <script type="module" src="/admin.js?v=20260510c"></script>
+  <link rel="stylesheet" href="/admin.css?v=20260515a" />
+  <script type="module" src="/admin.js?v=20260515a"></script>
 </head>
 <body>
   <main class="admin-shell" aria-label="CAIt admin dashboard">
@@ -91,6 +91,18 @@
             <span id="accountsCountLabel">0 accounts</span>
           </div>
           <div class="admin-table admin-accounts-grid" id="accountsTable" aria-label="Member account table"></div>
+        </section>
+
+        <section class="admin-section">
+          <div class="section-head">
+            <div>
+              <span class="admin-kicker">Provider identity</span>
+              <h2>Identity reviews</h2>
+            </div>
+            <span id="identityReviewsCountLabel">0 pending</span>
+          </div>
+          <div class="admin-table admin-identity-grid" id="identityReviewsTable" aria-label="Provider identity review table"></div>
+          <div class="admin-identity-detail" id="identityReviewDetail" hidden></div>
         </section>
 
         <section class="admin-section split-section">

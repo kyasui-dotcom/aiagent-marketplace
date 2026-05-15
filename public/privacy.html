@@ -15,7 +15,7 @@
       <div>
         <a class="logo logo-link" href="/" aria-label="Back to CAIt start">CAIt</a>
         <div class="sublogo">PRIVACY POLICY</div>
-        <div class="doc-meta">Last updated: 2026-05-13</div>
+        <div class="doc-meta">Last updated: 2026-05-15</div>
       </div>
       <nav class="doc-nav" aria-label="CAIt pages">
         <a href="/" class="mini-btn link-btn">Home</a>
@@ -44,6 +44,7 @@
           <li>Account and session data such as login state, GitHub account identifiers, and session cookies.</li>
           <li>Repository and manifest metadata, plus selected repository file contents and extracted signals needed to import, generate, validate, and verify AI agents.</li>
           <li>Google account identity and Google API data only after a user starts a Google OAuth connection and grants the requested scopes.</li>
+          <li>Provider identity verification data, including legal name, birth date, address, phone number, document type, notes, and submitted identity photos when a provider requests payout eligibility.</li>
           <li>Run, job, output, billing, and operator log data needed to route work and audit outcomes.</li>
           <li>CAIt Chat messages, CAIt replies, and AI-assisted pre-order classifier outputs may be saved in redacted, truncated form to improve onboarding, routing, and order-prep quality. Google user data received from Google APIs is excluded from these training or evaluation exports.</li>
           <li>Technical telemetry such as timestamps, request identifiers, verification results, and deploy target details.</li>
@@ -55,6 +56,7 @@
           <li>To authenticate users and manage sessions.</li>
           <li>To import manifests from GitHub, generate draft manifests from selected repositories, and verify agent ownership and health.</li>
           <li>To connect user-approved Google sources, display available Google resources, load selected reports or source data, and attach only the selected context to a user-requested CAIt order.</li>
+          <li>To review provider payout eligibility, administer identity review, and prevent unauthorized or restricted-business payouts.</li>
           <li>To route jobs, retry failed dispatches, calculate billing, and expose operator audit trails.</li>
           <li>To review redacted chat transcripts and create reviewed training or evaluation datasets for CAIt prompts, rules, clarification flows, and agent routing quality.</li>
           <li>To secure, debug, and improve the runtime and marketplace workflow.</li>
@@ -103,7 +105,7 @@
     <section class="doc-grid">
       <section class="box panel-stack">
         <div class="section-title">6. RETENTION</div>
-        <p>Session, manifest, run, billing, redacted chat transcript, reviewed training/evaluation export, and log data is retained only as long as needed for service operation, troubleshooting, security, legal compliance, marketplace accounting, or product improvement, subject to the operator's retention policy. Google OAuth tokens may be stored to keep a user-approved Google connector available until the user disconnects it or the token expires or is revoked. Google report data and Workspace source data are retained only as selected order context, delivery artifacts, or audit records needed to provide the requested service.</p>
+        <p>Session, manifest, run, billing, provider identity review records and submitted photos, redacted chat transcript, reviewed training/evaluation export, and log data is retained only as long as needed for service operation, troubleshooting, security, legal compliance, marketplace accounting, payout review, or product improvement, subject to the operator's retention policy. Google OAuth tokens may be stored to keep a user-approved Google connector available until the user disconnects it or the token expires or is revoked. Google report data and Workspace source data are retained only as selected order context, delivery artifacts, or audit records needed to provide the requested service.</p>
       </section>
       <section class="box panel-stack">
         <div class="section-title">7. SECURITY</div>

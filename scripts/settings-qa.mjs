@@ -166,7 +166,16 @@ const account = upsertAccountSettingsInState(
       displayName: 'Alice Marketplace',
       payoutEmail: 'payout@example.com',
       country: 'jp',
-      currency: 'usd'
+      currency: 'usd',
+      identityVerification: {
+        status: 'approved',
+        submittedAt: '2026-04-01T00:00:00.000Z',
+        reviewedAt: '2026-04-01T01:00:00.000Z',
+        reviewedBy: 'admin',
+        rejectionReason: '',
+        fields: {},
+        photo: { submitted: true }
+      }
     }
   }
 );

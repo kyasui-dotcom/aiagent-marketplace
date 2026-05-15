@@ -1669,6 +1669,72 @@ function stripeConnectedAccountPatch(connectedAccountId, remoteAccount = null) {
   };
 }
 
+const PROVIDER_IDENTITY_PHOTO_MAX_CHARS = 900_000;
+const PROVIDER_IDENTITY_FIELD_MAX = 240;
+const PROVIDER_IDENTITY_STATUSES = new Set(['not_submitted', 'pending', 'approved', 'rejected']);
+
+function providerIdentityStatus(account = null) {
+  const status = String(account?.payout?.identityVerification?.status || 'not_submitted').trim().toLowerCase();
+  return PROVIDER_IDENTITY_STATUSES.has(status) ? status : 'not_submitted';
+}
+
+function cleanProviderIdentityField(value = '', max = PROVIDER_IDENTITY_FIELD_MAX) {
+  return String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+}
+
+function providerIdentityPhotoFromBody(body = {}) {
+  const dataUrl = cleanProviderIdentityField(body.photo_data_url || body.photoDataUrl || body.photo || '', PROVIDER_IDENTITY_PHOTO_MAX_CHARS);
+  if (!dataUrl) return { error: 'Photo is required.' };
+  const match = dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,[A-Za-z0-9+/=]+$/);
+  if (!match) return { error: 'Photo must be a JPEG, PNG, or WebP data URL.' };
+  if (dataUrl.length > PROVIDER_IDENTITY_PHOTO_MAX_CHARS) return { error: 'Photo is too large. Upload an image under about 650 KB.' };
+  return {
+    submitted: true,
+    mimeType: match[1],
+    size: Math.round((dataUrl.length - dataUrl.indexOf(',') - 1) * 0.75),
+    name: cleanProviderIdentityField(body.photo_name || body.photoName || 'identity-photo', 120),
+    dataUrl,
+    submittedAt: nowIso()
+  };
+}
+
+function sanitizeProviderIdentitySubmission(body = {}) {
+  const fields = {
+    fullName: cleanProviderIdentityField(body.full_name || body.fullName || body.legal_name || body.legalName),
+    birthDate: cleanProviderIdentityField(body.birth_date || body.birthDate, 20),
+    addressLine1: cleanProviderIdentityField(body.address_line1 || body.addressLine1),
+    addressLine2: cleanProviderIdentityField(body.address_line2 || body.addressLine2),
+    city: cleanProviderIdentityField(body.city),
+    region: cleanProviderIdentityField(body.region || body.prefecture || body.state),
+    postalCode: cleanProviderIdentityField(body.postal_code || body.postalCode, 40),
+    country: cleanProviderIdentityField(body.country || 'JP', 2).toUpperCase(),
+    phone: cleanProviderIdentityField(body.phone, 60),
+    documentType: cleanProviderIdentityField(body.document_type || body.documentType || 'photo_id', 80),
+    notes: cleanProviderIdentityField(body.notes, 500)
+  };
+  const missing = [];
+  for (const key of ['fullName', 'birthDate', 'addressLine1', 'city', 'postalCode', 'country', 'phone']) {
+    if (!fields[key]) missing.push(key);
+  }
+  if (fields.birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(fields.birthDate)) missing.push('birthDate:yyyy-mm-dd');
+  const photo = providerIdentityPhotoFromBody(body);
+  if (photo.error) missing.push('photo');
+  if (missing.length) return { error: `Identity verification is incomplete: ${missing.join(', ')}`, statusCode: 400 };
+  return {
+    status: 'pending',
+    submittedAt: nowIso(),
+    reviewedAt: null,
+    reviewedBy: '',
+    rejectionReason: '',
+    fields,
+    photo
+  };
+}
+
 function githubHeaders(token = '') {
   const headers = { accept: 'application/vnd.github+json', 'user-agent': 'aiagent2' };
   if (token) headers.authorization = `Bearer ${token}`;
@@ -7405,6 +7471,121 @@ async function saveSettingsSection(storage, request, env, section) {
   return { account: sanitizeAccountSettingsForClient(account), monthlySummary };
 }
 
+async function submitProviderIdentityVerification(storage, request, env) {
+  const current = await currentUserContext(request, env);
+  if (!current.user) return { error: 'Login required', statusCode: 401 };
+  if (!current.githubLinked) return { error: 'GitHub connection required for provider identity verification.', statusCode: 403 };
+  let body;
+  try {
+    body = await parseBody(request);
+  } catch (error) {
+    return { error: error.message, statusCode: 400 };
+  }
+  const identityVerification = sanitizeProviderIdentitySubmission(body || {});
+  if (identityVerification.error) return identityVerification;
+  let account = null;
+  await storage.mutate(async (draft) => {
+    const existing = accountSettingsForLogin(draft, current.login, current.user, current.authProvider);
+    account = upsertAccountSettingsInState(draft, current.login, current.user, current.authProvider, {
+      payout: {
+        ...(existing.payout || {}),
+        providerEnabled: true,
+        legalName: existing.payout?.legalName || identityVerification.fields.fullName,
+        payoutEmail: existing.payout?.payoutEmail || current.user?.email || current.login,
+        country: existing.payout?.country || identityVerification.fields.country || 'JP',
+        identityVerification
+      }
+    });
+  });
+  await touchEvent(storage, 'IDENTITY', `${current.login} submitted provider identity verification`, {
+    login: current.login,
+    status: 'pending'
+  });
+  return {
+    ok: true,
+    identity_verification: {
+      status: identityVerification.status,
+      submittedAt: identityVerification.submittedAt,
+      photoSubmitted: true
+    },
+    account: sanitizeAccountSettingsForClient(account)
+  };
+}
+
+async function getAdminProviderIdentityVerification(storage, request, env, login = '') {
+  const current = await currentUserContext(request, env);
+  if (!canViewAdminDashboard(current, env)) return { error: 'Admin access required', statusCode: 403 };
+  const targetLogin = decodeURIComponent(String(login || '').trim()).toLowerCase();
+  if (!targetLogin) return { error: 'login required', statusCode: 400 };
+  let account = null;
+  if (typeof storage.getAccountByLogin === 'function') {
+    account = await storage.getAccountByLogin(targetLogin);
+  } else {
+    const state = await storage.getState();
+    account = (Array.isArray(state.accounts) ? state.accounts : [])
+      .find((item) => String(item?.login || '').trim().toLowerCase() === targetLogin) || null;
+  }
+  if (!account?.login) return { error: 'Account not found', statusCode: 404 };
+  const identityVerification = account.payout?.identityVerification || { status: 'not_submitted' };
+  return {
+    ok: true,
+    login: account.login,
+    display_name: account.profile?.displayName || account.login,
+    identity_verification: identityVerification
+  };
+}
+
+async function reviewAdminProviderIdentityVerification(storage, request, env, login = '') {
+  const current = await currentUserContext(request, env);
+  if (!canViewAdminDashboard(current, env)) return { error: 'Admin access required', statusCode: 403 };
+  const targetLogin = decodeURIComponent(String(login || '').trim()).toLowerCase();
+  if (!targetLogin) return { error: 'login required', statusCode: 400 };
+  let body;
+  try {
+    body = await parseBody(request);
+  } catch (error) {
+    return { error: error.message, statusCode: 400 };
+  }
+  const decision = String(body?.decision || body?.status || '').trim().toLowerCase();
+  if (!['approved', 'rejected'].includes(decision)) return { error: 'decision must be approved or rejected', statusCode: 400 };
+  const rejectionReason = cleanProviderIdentityField(body?.rejection_reason || body?.rejectionReason || body?.reason || '', 500);
+  let account = null;
+  await storage.mutate(async (draft) => {
+    const existing = (Array.isArray(draft.accounts) ? draft.accounts : [])
+      .find((item) => String(item?.login || '').trim().toLowerCase() === targetLogin) || null;
+    if (!existing?.login) return;
+    const currentIdentity = existing.payout?.identityVerification && typeof existing.payout.identityVerification === 'object'
+      ? existing.payout.identityVerification
+      : { status: 'not_submitted' };
+    const reviewedAt = nowIso();
+    const identityVerification = {
+      ...currentIdentity,
+      status: decision,
+      reviewedAt,
+      reviewedBy: current.login,
+      rejectionReason: decision === 'rejected' ? rejectionReason : ''
+    };
+    account = upsertAccountSettingsInState(draft, targetLogin, null, existing.authProvider || 'github-app', {
+      payout: {
+        ...(existing.payout || {}),
+        identityVerification
+      }
+    });
+  });
+  if (!account) return { error: 'Account not found', statusCode: 404 };
+  await touchEvent(storage, 'IDENTITY', `${targetLogin} provider identity ${decision} by ${current.login}`, {
+    login: targetLogin,
+    reviewedBy: current.login,
+    decision
+  });
+  return {
+    ok: true,
+    login: targetLogin,
+    identity_verification: account.payout?.identityVerification || null,
+    account: sanitizeAccountSettingsForClient(account)
+  };
+}
+
 async function getExactMatchActions(storage, request, env) {
   const current = await currentUserContext(request, env);
   if (!canViewAdminDashboard(current, env)) return { error: 'Admin access required', statusCode: 403 };
@@ -8230,6 +8411,22 @@ async function createStripeProviderPayoutForCurrent(storage, request, env) {
   const account = accountSettingsForLogin(state, current.login, current.user, current.authProvider);
   if (!account?.payout?.providerEnabled) {
     return { error: 'Enable provider profile before requesting payout.', statusCode: 400 };
+  }
+  const manualIdentityStatus = providerIdentityStatus(account);
+  if (manualIdentityStatus !== 'approved') {
+    return {
+      error: manualIdentityStatus === 'rejected'
+        ? 'CAIt provider identity verification was rejected. Resubmit identity information and photo before withdrawing earnings.'
+        : 'CAIt provider identity verification and admin approval are required before provider earnings can be withdrawn.',
+      code: 'provider_identity_admin_approval_required',
+      identity_verification: {
+        status: manualIdentityStatus,
+        submitted_at: account?.payout?.identityVerification?.submittedAt || null,
+        reviewed_at: account?.payout?.identityVerification?.reviewedAt || null,
+        rejection_reason: account?.payout?.identityVerification?.rejectionReason || ''
+      },
+      statusCode: 409
+    };
   }
   const connectedAccountId = String(account?.stripe?.connectedAccountId || '').trim();
   if (!connectedAccountId) {
@@ -24323,6 +24520,16 @@ export default {
     if (url.pathname === '/api/admin/dashboard' && request.method === 'GET') {
       return handleAdminDashboardApi(request, env);
     }
+    if (apiRouteMatches(url.pathname, request.method, 'ADMIN_PROVIDER_IDENTITY', 'GET')) {
+      const result = await getAdminProviderIdentityVerification(storage, request, env, url.pathname.split('/')[4] || '');
+      if (result.error) return json({ error: result.error }, result.statusCode || 400);
+      return json(result);
+    }
+    if (apiRouteMatches(url.pathname, request.method, 'ADMIN_PROVIDER_IDENTITY', 'POST')) {
+      const result = await reviewAdminProviderIdentityVerification(storage, request, env, url.pathname.split('/')[4] || '');
+      if (result.error) return json({ error: result.error }, result.statusCode || 400);
+      return json(result);
+    }
     if (url.pathname === '/api/snapshot') {
       const payload = await snapshot(storage, request, env);
       const session = await getSession(request, env);
@@ -24670,6 +24877,11 @@ export default {
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
       return json({ ok: true, account: result.account, monthly_summary: result.monthlySummary, section: 'payout' });
     }
+    if (apiRouteMatches(url.pathname, request.method, 'SETTINGS_PROVIDER_IDENTITY', 'POST')) {
+      const result = await submitProviderIdentityVerification(storage, request, env);
+      if (result.error) return json({ error: result.error }, result.statusCode || 400);
+      return json(result, 201);
+    }
     if (url.pathname === '/api/settings/executor-preferences' && request.method === 'POST') {
       const result = await saveSettingsSection(storage, request, env, 'executorPreferences');
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
@@ -24820,6 +25032,8 @@ export default {
         '/admin.html',
         '/admin.css',
         '/admin.js',
+        '/provider-identity.html',
+        '/provider-identity.js',
         '/chat.html',
         '/home.css',
         '/chat.css',

@@ -6176,17 +6176,74 @@ try {
   assert.equal(openedConnect.body.account_id, 'acct_worker_qa_alice');
   assert.ok(String(openedConnect.body.onboarding_url || '').startsWith('https://connect.stripe.com/'));
 
-  const blockedPayoutBeforeIdentity = await request('/api/stripe/payout/run', {
+  const blockedPayoutBeforeProviderIdentity = await request('/api/stripe/payout/run', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({})
   }, { sessionCookie: aliceSession });
-  assert.equal(blockedPayoutBeforeIdentity.status, 409);
-  assert.equal(blockedPayoutBeforeIdentity.body.code, 'identity_verification_required');
-  assert.equal(blockedPayoutBeforeIdentity.body.onboarding_required, true);
-  assert.equal(blockedPayoutBeforeIdentity.body.identity_verification.verified, false);
-  assert.ok(blockedPayoutBeforeIdentity.body.identity_verification.missing.includes('payouts_enabled'));
-  assert.ok(blockedPayoutBeforeIdentity.body.identity_verification.missing.includes('transfers_capability_active'));
+  assert.equal(blockedPayoutBeforeProviderIdentity.status, 409);
+  assert.equal(blockedPayoutBeforeProviderIdentity.body.code, 'provider_identity_admin_approval_required');
+  assert.equal(blockedPayoutBeforeProviderIdentity.body.identity_verification.status, 'not_submitted');
+
+  const tinyIdentityPhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+  const submittedProviderIdentity = await request('/api/settings/provider-identity', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      full_name: 'Alice Example',
+      birth_date: '1990-01-02',
+      phone: '+81-3-0000-0000',
+      country: 'JP',
+      address_line1: '1-1-1 QA Street',
+      address_line2: 'Suite 2',
+      city: 'Tokyo',
+      region: 'Tokyo',
+      postal_code: '100-0001',
+      document_type: 'photo_id',
+      notes: 'Worker API QA provider identity submission.',
+      photo_name: 'alice-identity.png',
+      photo_data_url: tinyIdentityPhoto
+    })
+  }, { sessionCookie: aliceSession });
+  assert.equal(submittedProviderIdentity.status, 201);
+  assert.equal(submittedProviderIdentity.body.identity_verification.status, 'pending');
+  assert.equal(submittedProviderIdentity.body.identity_verification.photoSubmitted, true);
+  assert.equal(submittedProviderIdentity.body.account.payout.identityVerification.photo.dataUrl, undefined);
+
+  const adminProviderIdentity = await request('/api/admin/provider-identities/alice', {}, { sessionCookie: adminSession });
+  assert.equal(adminProviderIdentity.status, 200);
+  assert.equal(adminProviderIdentity.body.identity_verification.status, 'pending');
+  assert.equal(adminProviderIdentity.body.identity_verification.fields.fullName, 'Alice Example');
+  assert.ok(String(adminProviderIdentity.body.identity_verification.photo.dataUrl || '').startsWith('data:image/png;base64,'));
+
+  const blockedPayoutBeforeAdminApproval = await request('/api/stripe/payout/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({})
+  }, { sessionCookie: aliceSession });
+  assert.equal(blockedPayoutBeforeAdminApproval.status, 409);
+  assert.equal(blockedPayoutBeforeAdminApproval.body.code, 'provider_identity_admin_approval_required');
+  assert.equal(blockedPayoutBeforeAdminApproval.body.identity_verification.status, 'pending');
+
+  const approvedProviderIdentity = await request('/api/admin/provider-identities/alice', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ decision: 'approved' })
+  }, { sessionCookie: adminSession });
+  assert.equal(approvedProviderIdentity.status, 200);
+  assert.equal(approvedProviderIdentity.body.identity_verification.status, 'approved');
+
+  const blockedPayoutBeforeStripeIdentity = await request('/api/stripe/payout/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({})
+  }, { sessionCookie: aliceSession });
+  assert.equal(blockedPayoutBeforeStripeIdentity.status, 409);
+  assert.equal(blockedPayoutBeforeStripeIdentity.body.code, 'identity_verification_required');
+  assert.equal(blockedPayoutBeforeStripeIdentity.body.onboarding_required, true);
+  assert.equal(blockedPayoutBeforeStripeIdentity.body.identity_verification.verified, false);
+  assert.ok(blockedPayoutBeforeStripeIdentity.body.identity_verification.missing.includes('payouts_enabled'));
+  assert.ok(blockedPayoutBeforeStripeIdentity.body.identity_verification.missing.includes('transfers_capability_active'));
 
   workerQaConnectedAccountIdentityReady = true;
   const completedPayoutAfterIdentity = await request('/api/stripe/payout/run', {

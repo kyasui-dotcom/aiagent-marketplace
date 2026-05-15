@@ -306,6 +306,92 @@
   grid-template-columns: minmax(170px, 1fr) minmax(180px, 1fr) minmax(120px, 0.7fr);
 }
 
+.admin-identity-grid .admin-row {
+  grid-template-columns: minmax(170px, 1fr) minmax(120px, 0.6fr) minmax(150px, 0.8fr) minmax(120px, 0.6fr) minmax(220px, 1fr);
+}
+
+.admin-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-inline-btn {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 10px;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.admin-inline-btn.primary {
+  border-color: #b7d8c7;
+  background: #e8f4ee;
+  color: var(--ok);
+}
+
+.admin-inline-btn.danger {
+  border-color: #e5b7b7;
+  background: #fff0f0;
+  color: var(--danger);
+}
+
+.admin-identity-detail {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: #ffffff;
+}
+
+.admin-identity-detail[hidden] {
+  display: none;
+}
+
+.identity-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.identity-detail-grid div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  background: #f9fbf9;
+  overflow-wrap: anywhere;
+}
+
+.identity-detail-grid span,
+.identity-photo-wrap span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.identity-photo-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.identity-photo-wrap img {
+  max-width: min(460px, 100%);
+  max-height: 360px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  object-fit: contain;
+  background: #f6f7f5;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -347,6 +433,7 @@
   }
 
   .admin-accounts-grid .admin-row,
+  .admin-identity-grid .admin-row,
   .admin-orders-grid .admin-row,
   .admin-chats-grid .admin-row,
   .admin-agents-grid .admin-row,
@@ -378,7 +465,8 @@
   }
 
   .metric-grid,
-  .split-section {
+  .split-section,
+  .identity-detail-grid {
     grid-template-columns: 1fr;
   }
 }

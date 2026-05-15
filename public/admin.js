@@ -22,7 +22,10 @@ const els = {
   chatsCountLabel: $('chatsCountLabel'),
   agentsCountLabel: $('agentsCountLabel'),
   appsCountLabel: $('appsCountLabel'),
+  identityReviewsCountLabel: $('identityReviewsCountLabel'),
   accountsTable: $('accountsTable'),
+  identityReviewsTable: $('identityReviewsTable'),
+  identityReviewDetail: $('identityReviewDetail'),
   ordersTable: $('ordersTable'),
   chatsTable: $('chatsTable'),
   agentsTable: $('agentsTable'),
@@ -144,6 +147,14 @@ function statusClass(status = '') {
   if (['completed', 'ready', 'verified', 'resolved', 'live', 'active'].includes(value)) return 'ok';
   if (['failed', 'timed_out', 'blocked', 'rejected', 'error'].includes(value)) return 'error';
   if (['queued', 'claimed', 'running', 'dispatched', 'reviewing', 'pending', 'waiting'].includes(value)) return 'warn';
+  return '';
+}
+
+function identityStatusClass(status = '') {
+  const value = String(status || '').toLowerCase();
+  if (value === 'approved') return 'ok';
+  if (value === 'rejected') return 'error';
+  if (value === 'pending') return 'warn';
   return '';
 }
 
@@ -275,6 +286,99 @@ function renderAccounts(accounts = []) {
   }
 }
 
+function identityReviewCandidates(accounts = []) {
+  return (Array.isArray(accounts) ? accounts : [])
+    .filter((account) => {
+      const status = String(account.providerIdentityStatus || 'not_submitted').toLowerCase();
+      return status !== 'not_submitted' || account.providerEnabled || Number(account.pendingProviderBalance || 0) > 0;
+    })
+    .sort((left, right) => {
+      const leftPending = String(left.providerIdentityStatus || '').toLowerCase() === 'pending' ? 0 : 1;
+      const rightPending = String(right.providerIdentityStatus || '').toLowerCase() === 'pending' ? 0 : 1;
+      if (leftPending !== rightPending) return leftPending - rightPending;
+      return Date.parse(right.providerIdentitySubmittedAt || right.updatedAt || '') - Date.parse(left.providerIdentitySubmittedAt || left.updatedAt || '');
+    });
+}
+
+function renderIdentityReviews(accounts = []) {
+  const candidates = identityReviewCandidates(accounts);
+  const pendingCount = candidates.filter((account) => String(account.providerIdentityStatus || '').toLowerCase() === 'pending').length;
+  setText(els.identityReviewsCountLabel, `${number(pendingCount)} pending / ${number(candidates.length)} providers`);
+  const rows = candidates.slice(0, 80).map((account) => {
+    const login = String(account.login || '').trim();
+    const status = String(account.providerIdentityStatus || 'not_submitted').toLowerCase();
+    const actions = [
+      `<button class="admin-inline-btn" type="button" data-identity-action="view" data-login="${escapeHtml(login)}">View</button>`,
+      `<button class="admin-inline-btn primary" type="button" data-identity-action="approve" data-login="${escapeHtml(login)}"${status === 'pending' ? '' : ' disabled'}>Approve</button>`,
+      `<button class="admin-inline-btn danger" type="button" data-identity-action="reject" data-login="${escapeHtml(login)}"${status === 'pending' ? '' : ' disabled'}>Reject</button>`
+    ].join('');
+    return [
+      `<strong>${escapeHtml(login || account.displayName || '-')}</strong><small>${escapeHtml(account.email || account.id || '-')}</small>`,
+      `<span class="status-pill ${identityStatusClass(status)}">${escapeHtml(status)}</span><small>${account.providerEnabled ? 'provider enabled' : 'provider not enabled'}</small>`,
+      `<strong>${escapeHtml(relativeDate(account.providerIdentitySubmittedAt))}</strong><small>${escapeHtml(formatDate(account.providerIdentitySubmittedAt))}</small>`,
+      `<strong>${account.providerIdentityPhotoSubmitted ? 'yes' : 'no'}</strong><small>photo submitted</small>`,
+      `<div class="admin-action-row">${actions}</div><small>${escapeHtml(account.providerIdentityReviewedAt ? `reviewed ${relativeDate(account.providerIdentityReviewedAt)}` : 'awaiting review')}</small>`
+    ];
+  });
+  if (els.identityReviewsTable) {
+    els.identityReviewsTable.innerHTML = tableHtml(['Provider', 'Status', 'Submitted', 'Photo', 'Action'], rows, 'No provider identity reviews yet.');
+  }
+}
+
+function identityDetailHtml(payload = {}) {
+  const identity = payload.identity_verification || {};
+  const fields = identity.fields || {};
+  const photo = identity.photo || {};
+  const fieldRows = [
+    ['Full name', fields.fullName],
+    ['Birth date', fields.birthDate],
+    ['Phone', fields.phone],
+    ['Country', fields.country],
+    ['Address 1', fields.addressLine1],
+    ['Address 2', fields.addressLine2],
+    ['City', fields.city],
+    ['Region', fields.region],
+    ['Postal code', fields.postalCode],
+    ['Document type', fields.documentType],
+    ['Notes', fields.notes],
+    ['Rejection reason', identity.rejectionReason]
+  ].map(([label, value]) => `<div><span>${escapeHtml(label)}</span>${escapeHtml(value || '-')}</div>`).join('');
+  const image = photo.dataUrl
+    ? `<div class="identity-photo-wrap"><span>Submitted photo</span><img src="${escapeHtml(photo.dataUrl)}" alt="Provider submitted identity photo" /><small>${escapeHtml(photo.mimeType || 'image')} / ${number(photo.size || 0)} bytes / ${escapeHtml(photo.name || '-')}</small></div>`
+    : '<div class="identity-photo-wrap"><span>Submitted photo</span><small>No photo submitted.</small></div>';
+  return [
+    `<div class="section-head compact"><div><span class="admin-kicker">Identity detail</span><h2>${escapeHtml(payload.display_name || payload.login || '-')}</h2></div><span class="status-pill ${identityStatusClass(identity.status)}">${escapeHtml(identity.status || 'not_submitted')}</span></div>`,
+    `<p><strong>Submitted:</strong> ${escapeHtml(formatDate(identity.submittedAt))} / <strong>Reviewed:</strong> ${escapeHtml(formatDate(identity.reviewedAt))} / <strong>Reviewer:</strong> ${escapeHtml(identity.reviewedBy || '-')}</p>`,
+    `<div class="identity-detail-grid">${fieldRows}</div>`,
+    image
+  ].join('');
+}
+
+async function loadIdentityReview(login = '') {
+  if (!login) return;
+  const detail = await api(`/api/admin/provider-identities/${encodeURIComponent(login)}`);
+  if (els.identityReviewDetail) {
+    els.identityReviewDetail.hidden = false;
+    els.identityReviewDetail.innerHTML = identityDetailHtml(detail);
+  }
+}
+
+async function reviewIdentity(login = '', decision = '') {
+  if (!login || !decision) return;
+  let rejectionReason = '';
+  if (decision === 'rejected') {
+    rejectionReason = window.prompt('Reason for rejection') || '';
+    if (!rejectionReason.trim()) return;
+  }
+  await api(`/api/admin/provider-identities/${encodeURIComponent(login)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ decision, rejection_reason: rejectionReason })
+  });
+  await loadAdminDashboard();
+  await loadIdentityReview(login);
+}
+
 function renderOrders(orders = []) {
   const groups = groupedOrders(orders).slice(0, 30);
   const rows = groups.map((group) => {
@@ -349,6 +453,7 @@ function render(snapshot = {}) {
   state.dashboard = dashboard;
   renderMetrics(dashboard, apps);
   renderAccounts(Array.isArray(dashboard.accounts) ? dashboard.accounts : []);
+  renderIdentityReviews(Array.isArray(dashboard.accounts) ? dashboard.accounts : []);
   renderOrders(Array.isArray(dashboard.orders) ? dashboard.orders : []);
   renderChats(Array.isArray(dashboard.chats) ? dashboard.chats : []);
   renderAgents(Array.isArray(dashboard.agents) ? dashboard.agents : []);
@@ -420,5 +525,24 @@ els.refreshBtn?.addEventListener('click', () => {
 });
 
 els.downloadAccountsBtn?.addEventListener('click', downloadAccountsCsv);
+
+els.identityReviewsTable?.addEventListener('click', (event) => {
+  const button = event.target?.closest?.('[data-identity-action][data-login]');
+  if (!button) return;
+  const login = button.getAttribute('data-login') || '';
+  const action = button.getAttribute('data-identity-action') || '';
+  button.disabled = true;
+  const work = action === 'view'
+    ? loadIdentityReview(login)
+    : reviewIdentity(login, action === 'approve' ? 'approved' : 'rejected');
+  void work.catch((error) => {
+    if (els.identityReviewDetail) {
+      els.identityReviewDetail.hidden = false;
+      els.identityReviewDetail.innerHTML = `<strong>Identity review action failed.</strong><span>${escapeHtml(error?.message || 'Unknown error')}</span>`;
+    }
+  }).finally(() => {
+    button.disabled = false;
+  });
+});
 
 void loadAdminDashboard();

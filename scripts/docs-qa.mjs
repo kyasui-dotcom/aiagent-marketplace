@@ -21,6 +21,7 @@ const qaHtml = read('public/qa.html');
 const newsHtml = read('public/news.html');
 const termsHtml = read('public/terms.html');
 const privacyHtml = read('public/privacy.html');
+const providerIdentityHtml = read('public/provider-identity.html');
 const manifestDoc = read('MANIFEST.md');
 const listAgentAuthHref = '/auth/github?mode=link&amp;return_to=%2Fpublish-ai-agents.html&amp;login_source=list_agent';
 
@@ -36,7 +37,8 @@ for (const [name, html] of [
   ['qa', qaHtml],
   ['news', newsHtml],
   ['terms', termsHtml],
-  ['privacy', privacyHtml]
+  ['privacy', privacyHtml],
+  ['provider-identity', providerIdentityHtml]
 ]) {
   assert.ok(html.includes(`<a class="logo logo-link" href="/" aria-label="Back to ${SITE_NAME} start">${SITE_NAME}</a>`), `${name} logo should link back to start`);
 }
@@ -174,18 +176,28 @@ assert.ok(termsHtml.includes('Self-serve registration, agent listing, manifest v
 assert.ok(termsHtml.includes('AI agents that discuss pricing, finance, legal, compliance, medical, security, acquisition, outreach, or growth topics may provide general operational assistance only'));
 assert.ok(termsHtml.includes('FEES, BILLING, AND PROVIDER PAYOUTS'));
 assert.ok(termsHtml.includes('connected accounts that have completed required payment-provider identity verification and payout requirements'));
+assert.ok(termsHtml.includes('CAIt provider identity verification requires personal information and a submitted identity photo'));
 assert.ok(read('public/ai-agent-payouts.html').includes('required identity verification is complete'));
+assert.ok(read('public/ai-agent-payouts.html').includes('/provider-identity.html'));
 assert.ok(read('public/ai-agent-monetization.html').includes('Stripe Connect identity verification'));
 
 assert.ok(privacyHtml.includes('PRIVACY POLICY'));
+assert.ok(privacyHtml.includes('2026-05-15'));
 assert.ok(privacyHtml.includes('Cloudflare'));
 assert.ok(privacyHtml.includes('GitHub'));
+assert.ok(privacyHtml.includes('Provider identity verification data, including legal name, birth date, address, phone number, document type, notes, and submitted identity photos'));
+assert.ok(privacyHtml.includes('provider identity review records and submitted photos'));
 assert.ok(privacyHtml.includes('GOOGLE USER DATA AND OAUTH SCOPES'));
 assert.ok(privacyHtml.includes('https://www.googleapis.com/auth/analytics.readonly'));
 assert.ok(privacyHtml.includes('https://www.googleapis.com/auth/webmasters.readonly'));
 assert.ok(privacyHtml.includes('Limited Use requirements'));
 assert.ok(privacyHtml.includes('does not sell Google user data'));
 assert.ok(/use Google\s+Workspace API data to develop, improve, or train generalized AI or ML models/.test(privacyHtml));
+
+assert.ok(providerIdentityHtml.includes('Provider Identity Verification'));
+assert.ok(providerIdentityHtml.includes('id="providerIdentityForm"'));
+assert.ok(providerIdentityHtml.includes('type="file" accept="image/png,image/jpeg,image/webp"'));
+assert.ok(providerIdentityHtml.includes('/provider-identity.js?v=20260515a'));
 
 assert.ok(manifestDoc.includes('kind`: `agent` (default), `composite_agent`, or `agent_group`'));
 assert.ok(manifestDoc.includes('Default: register each AI agent separately'));
