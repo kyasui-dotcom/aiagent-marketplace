@@ -272,6 +272,110 @@ test.describe('CAIt Chat workspace', () => {
     expect(handoffText.indexOf('Specialized SEO Publisher')).toBeLessThan(handoffText.indexOf('Publisher & Approval Studio'));
   });
 
+  test('retries a failed delivery as a fresh order even if source inspect read fails', async ({ page }) => {
+    test.skip(!canUseAuth, authSkipReason);
+
+    const sourceJob = {
+      id: 'e2e-failed-retry-source',
+      status: 'failed',
+      taskType: 'cmo_leader',
+      orderStrategy: 'multi',
+      prompt: 'Task: cmo_leader\nGoal: Retry-new-order E2E source',
+      originalPrompt: 'Retry-new-order E2E source',
+      failureReason: 'Research source collection failed.',
+      workflow: {
+        objective: 'Retry-new-order E2E source',
+        plannedTasks: ['cmo_leader', 'research', 'seo_gap']
+      },
+      input: {
+        _broker: {
+          conversationOwner: { type: 'leader', taskType: 'cmo_leader', label: 'CMO Leader' },
+          activeLeader: { taskType: 'cmo_leader', label: 'CMO Leader' },
+          activeLeaderLocked: true
+        }
+      },
+      output: {
+        summary: 'Failed source order with partial research delivery.',
+        files: [{
+          name: 'research-delivery.md',
+          type: 'text/markdown',
+          content: '# Research delivery\n\nPartial work that may be reviewed before retry.',
+          source_task_type: 'research',
+          source_run_id: 'e2e-research-run',
+          source_agent_name: 'Research Agent'
+        }]
+      }
+    };
+    const retryJob = {
+      id: 'e2e-fresh-retry-created',
+      status: 'queued',
+      taskType: 'cmo_leader',
+      jobKind: 'workflow',
+      workflow: { plannedTasks: ['cmo_leader', 'research', 'seo_gap'], childRuns: [] },
+      output: { summary: '' }
+    };
+    let createPayload = null;
+    let prepareOrderCalled = false;
+
+    await page.route('**/api/work/prepare-order', async (route) => {
+      prepareOrderCalled = true;
+      await route.fulfill({ status: 500, body: 'prepare-order should not be called for retry command' });
+    });
+    await page.route(/\/api\/jobs(?:\?.*)?$/, async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ jobs: [sourceJob] })
+        });
+        return;
+      }
+      createPayload = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          workflow_job_id: retryJob.id,
+          status: 'queued',
+          mode: 'workflow',
+          routing_reason: 'Retry-new-order E2E accepted.'
+        })
+      });
+    });
+    await page.route(`**/api/jobs/${sourceJob.id}**`, async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'simulated stale inspect failure' })
+      });
+    });
+    await page.route(`**/api/jobs/${retryJob.id}**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ job: retryJob })
+      });
+    });
+
+    await openChat(page);
+    await page.locator('#promptInput').fill('retry');
+    await page.locator('#sendMessageBtn').click();
+    await expect(page.locator('#chatThread')).toContainText('NEW order', { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText('will not continue', { timeout: chatResponseTimeout });
+    await page.getByRole('button', { name: 'Send order' }).click();
+    await expect.poll(() => createPayload).toBeTruthy();
+    expect(prepareOrderCalled).toBe(false);
+    expect(createPayload.followup_to_job_id).toBeFalsy();
+    expect(createPayload.followupToJobId).toBeFalsy();
+    expect(createPayload.order_strategy).toBe('multi');
+    expect(createPayload.workflow_planned_tasks).toEqual(['cmo_leader', 'research', 'seo_gap']);
+    expect(createPayload.input?._broker?.retry?.mode).toBe('same_content_new_order');
+    expect(createPayload.input?._broker?.retry?.continuesOrder).toBe(false);
+    expect(createPayload.input?._broker?.conversation?.followupToJobId).toBeFalsy();
+    await expect(page.locator('#chatThread')).toContainText('Order submitted.', { timeout: chatResponseTimeout });
+  });
+
   test('opens Publisher with preparation delivery context from chat handoff', async ({ page, context }, testInfo) => {
     test.skip(!canUseAuth, authSkipReason);
 

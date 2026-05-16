@@ -196,8 +196,13 @@ assert.ok(chatJs.includes('googleAuthorityConnectGroups'), 'Chat Google approval
 assert.ok(chatJs.includes('Connect GA4 + Search Console'), 'Chat Google approval should label combined GA4/Search Console requests clearly.');
 assert.ok(chatJs.includes('function authorityRequestHandledBySaasHandoffInChat'), 'Chat should treat X/social publishing authority requests as SaaS handoffs, not chat approvals.');
 assert.ok(chatJs.includes('jobBlockedForSaasHandoff(job)'), 'SaaS handoff blockers should render as delivery/app-handoff states.');
+assert.ok(chatJs.includes('function sanitizeDeliveryMarkdownForUser'), 'Chat delivery rendering should sanitize internal workflow prompt text before display or download.');
+assert.ok(chatJs.includes('sanitizeDeliveryFileForUser(file'), 'Chat delivery file cards should register sanitized files, not raw provider markdown.');
+assert.ok(chatJs.includes('sanitizeDeliveryMarkdownForUser(cleanReadableBundleContent'), 'Chat delivery bundles should strip internal handoff prompt sections.');
+assert.ok(chatJs.includes('USER_DELIVERY_INTERNAL_MARKERS'), 'Chat delivery sanitization should cover workflow handoff and prior specialist markers.');
+assert.ok(chatJs.includes('deliveryLineLooksInternal'), 'Chat delivery sanitization should remove provider implementation self-reporting lines.');
 assert.ok(chatJs.includes("extractSocialPostTextFromDeliveryContent(file?.content || '', { maxLength: 1200 })"), 'Chat should route long X/social post packs into X Client Ops instead of hiding them as over-280 drafts.');
-assert.ok(chatJs.includes("accepts: ['article_draft', 'seo_page_artifact', 'landing_page_change', 'site_publish_packet', 'wordpress_draft_packet', 'directory_packet', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'approval_request']"), 'Publisher app handoff should accept media-separated site and social post packets as external-app content.');
+assert.ok(chatJs.includes('x_post_packet') && chatJs.includes('reddit_post_packet') && chatJs.includes('indie_hackers_packet') && chatJs.includes('instagram_post_packet'), 'Publisher app handoff should accept media-separated site and social post packets as external-app content.');
 assert.ok(!chatJs.includes("normalizeUsageId(entry.id) === 'x-client-ops' && hasXPostTool"), 'X Client Ops must remain visible as an app handoff when a post draft exists.');
 assert.ok(!chatJs.includes('Resume X approval'), 'Chat must not expose the old X approval resume action.');
 assert.ok(!chatJs.includes('href="${escapeHtml(openWorkHref)}"'), 'Open chat approval must not be a no-op anchor back to the same card.');
@@ -324,7 +329,7 @@ assert.ok(appsHtml.includes('cait-app-context/v1'), 'Apps hub should explain the
 assert.ok(analyticsHtml.includes('Analytics Console'), 'Analytics Console should be a first-class app page.');
 assert.ok(analyticsHtml.includes('href="/apps.html"'), 'Analytics Console should link back to the apps hub.');
 assert.ok(analyticsHtml.includes('id="sendContextBtn"'), 'Analytics Console should send context to CAIt.');
-assert.ok(analyticsHtml.includes('/analytics-console.js?v=20260511a'), 'Analytics Console should load the app-context receiving controller.');
+assert.ok(analyticsHtml.includes('/analytics-console.js?v=20260516a'), 'Analytics Console should load the app-context receiving controller.');
 assert.ok(analyticsHtml.includes('/app-console.css?v=20260507a'), 'Analytics Console should load the current shared app console CSS.');
 assert.ok(analyticsHtml.includes('id="analyticsStepSources"'), 'Analytics Console should show a compact workflow state strip.');
 assert.ok(analyticsHtml.includes('id="connectGoogleBtn"'), 'Analytics Console should expose a Google OAuth connection button.');
@@ -348,7 +353,7 @@ assert.ok(analyticsHtml.includes('id="analyticsQueriesCount"'), 'Analytics Conso
 assert.ok(publisherHtml.includes('Publisher & Approval'), 'Publisher and Approval Studio should be a first-class app page.');
 assert.ok(publisherHtml.includes('href="/apps.html"'), 'Publisher Studio should link back to the apps hub.');
 assert.ok(publisherHtml.includes('id="approvalTable"'), 'Publisher Studio should include an approval queue.');
-assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260514c'), 'Publisher Studio should load the app-context receiving controller.');
+assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260516a'), 'Publisher Studio should load the app-context receiving controller.');
 assert.ok(publisherHtml.includes('id="publisherStepApproval"'), 'Publisher Studio should show approval progress before handoff.');
 assert.ok(publisherHtml.includes('id="channelSelect"'), 'Publisher Studio should expose media/channel separation.');
 assert.ok(publisherHtml.includes('id="connectorInput"'), 'Publisher Studio should expose the publish connector per channel.');
@@ -364,7 +369,7 @@ assert.ok(publisherHtml.includes('id="publisherDestinationCount"'), 'Publisher S
 assert.ok(leadOpsHtml.includes('Lead Ops'), 'Lead Ops should be a first-class app page.');
 assert.ok(leadOpsHtml.includes('href="/apps.html"'), 'Lead Ops should link back to the apps hub.');
 assert.ok(leadOpsHtml.includes('id="sendLeadContextBtn"'), 'Lead Ops should send context to CAIt.');
-assert.ok(leadOpsHtml.includes('/lead-ops.js?v=20260514a'), 'Lead Ops should load the app-context receiving controller.');
+assert.ok(leadOpsHtml.includes('/lead-ops.js?v=20260516a'), 'Lead Ops should load the app-context receiving controller.');
 assert.ok(leadOpsHtml.includes('id="approveLeadBtn"'), 'Lead Ops should provide a direct approval action.');
 assert.ok(leadOpsHtml.includes('id="scheduleLeadBtn"'), 'Lead Ops should provide scheduled outreach planning.');
 assert.ok(leadOpsHtml.includes('id="triggerLeadBtn"'), 'Lead Ops should provide event-triggered outreach planning.');
@@ -375,7 +380,7 @@ assert.ok(leadOpsHtml.includes('id="leadAllNavCount"'), 'Lead Ops side navigatio
 assert.ok(deliveryManagerHtml.includes('Deliveries'), 'Deliveries should be a first-class CAIt feature page.');
 assert.ok(deliveryManagerHtml.includes('href="/chat"'), 'Deliveries should link back to chat.');
 assert.ok(deliveryManagerHtml.includes('id="downloadSelectedBtn"'), 'Delivery Manager should expose downloadable delivery files.');
-assert.ok(deliveryManagerHtml.includes('/delivery-manager.js?v=20260511a'), 'Delivery Manager should load the app-context receiving controller.');
+assert.ok(deliveryManagerHtml.includes('/delivery-manager.js?v=20260516a'), 'Delivery Manager should load the app-context receiving controller.');
 assert.ok(deliveryManagerHtml.includes('id="deliverySearchInput"'), 'Delivery Manager should expose delivery search.');
 assert.ok(deliveryManagerHtml.includes('id="deliverySortSelect"'), 'Delivery Manager should expose delivery sorting.');
 assert.ok(deliveryManagerHtml.includes('data-tab="files"'), 'Delivery Manager should expose file and context tabs.');
@@ -418,7 +423,7 @@ for (const app of caitManagedSurfaceEntries) {
 }
 
 assert.ok(analyticsJs.includes("source_app: 'analytics_console'"), 'Analytics app logic should stay in analytics-console.js.');
-assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260508e"), 'Analytics Console should load the latest CAIt app bridge.');
+assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260516a"), 'Analytics Console should load the latest CAIt app bridge.');
 assert.ok(caitAppBridge.includes("`${origin}/auth/status`"), 'CAIt app bridge should read auth status before same-origin context handoff.');
 assert.ok(caitAppBridge.includes("headers['x-aiagent2-csrf'] = csrfToken"), 'CAIt app bridge should attach CSRF token to same-origin context handoff writes.');
 assert.ok(caitAppBridge.includes('createServerAppContextWithRetry'), 'CAIt app bridge should retry server-side app context writes.');
@@ -546,6 +551,12 @@ assert.ok(publisherJs.includes('approval_requests'), 'Publisher Studio should in
 assert.ok(publisherJs.includes('PUBLISH_DESTINATION_PROFILES'), 'Publisher Studio should normalize media destinations before connector handoff.');
 assert.ok(publisherJs.includes('connectorCapability'), 'Publisher Studio should carry per-media connector capabilities.');
 assert.ok(publisherJs.includes('publishMethod'), 'Publisher Studio should carry per-media publish methods.');
+assert.ok(publisherJs.includes("key: 'x'"), 'Publisher Studio should keep X as its own publish destination.');
+assert.ok(publisherJs.includes("key: 'reddit'"), 'Publisher Studio should keep Reddit as its own publish destination.');
+assert.ok(publisherJs.includes("key: 'indie_hackers'"), 'Publisher Studio should keep Indie Hackers as its own publish destination.');
+assert.ok(publisherJs.includes("key: 'instagram'"), 'Publisher Studio should keep Instagram as its own publish destination.');
+assert.ok(publisherJs.includes('manual_social_copy'), 'Publisher Studio should keep generic social copy out of GitHub PR fallback.');
+assert.ok(publisherJs.includes('Generic publishing packet'), 'Publisher Studio should not default ambiguous packets to GitHub PR.');
 assert.ok(publisherJs.includes('wordpress_application_password'), 'Publisher Studio should expose WordPress as an external-app style publish connector.');
 assert.ok(publisherJs.includes('/api/connectors/wordpress/create-draft'), 'Publisher Studio should create WordPress drafts through the connector API.');
 assert.ok(publisherJs.includes('fetchCaitAppContextFromUrl'), 'Publisher Studio should receive CAIt contexts through the server context API.');
@@ -583,7 +594,7 @@ assert.ok(!deliveryManagerJs.includes('local delivery samples'), 'Delivery Manag
 
 assert.ok(chatJs.includes("from './chat-engine.js?v=20260509a'"), 'Chat JS should use root-relative shared chat engine import.');
 assert.ok(chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should use root-relative delivery action import.');
-assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260508e'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
+assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260516a'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
 assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
 assert.ok(chatJs.includes('await consumeCaitAppContextForChat()'), 'Chat should await server-side app context retrieval before filling the composer.');
 assert.ok(chatJs.includes('refreshAppContexts'), 'Chat Apps panel should load reusable app contexts from the server.');
@@ -744,6 +755,8 @@ assert.ok(!chatJs.includes("xConnectLinkHtml('Connect X', 'primary')"), 'X autho
 assert.ok(chatJs.includes('X account connection and final publishing are handled inside X Client Ops'), 'X handoff copy should tell users final auth/publish happens in SaaS.');
 assert.ok(chatJs.includes('Final action: X Client Ops'), 'X Client Ops delivery card should use English copy.');
 assert.ok(chatJs.includes('CAIt has attached the X post draft and strategy context prepared during the workflow.'), 'X Client Ops explanation should be English.');
+assert.ok(chatJs.includes('authorityRequestHandledBySaasHandoffInChat(authorityRequestFromJob(job))'), 'X authority waits should become SaaS app handoff candidates instead of chat approval dead-ends.');
+assert.ok(chatJs.includes('x-post-approval'), 'X approval artifacts should still route to X Client Ops app handoff.');
 assert.ok(chatJs.includes('function renderAppHandoffTools'), 'Chat deliveries should expose generic app handoff cards.');
 assert.ok(chatJs.includes('function renderAppHandoffTree'), 'Chat deliveries should render the preparation artifact to app routing tree.');
 assert.ok(chatJs.includes('function renderAppHandoffRoutingPreview'), 'Agent map progress should preview SaaS routing before final delivery.');
@@ -777,6 +790,7 @@ assert.ok(chatJs.includes('appContextFromTransferPayload'), 'Generic app handoff
 assert.ok(chatJs.includes('createAppAgentContextOpenUrl'), 'Generic app handoff fallback should create a server-side context open URL.');
 assert.ok(chatJs.includes('cait_app_context_id'), 'Generic app handoff fallback should pass only context identifiers in the app URL.');
 assert.ok(chatJs.includes('/api/app-contexts'), 'Generic app handoff fallback should use the server-side app context API.');
+assert.ok(chatJs.includes("message.role === 'system' ? 'system' : 'ok'"), 'Chat transcript tracking should not send empty status for system handoff messages.');
 assert.ok(!chatJs.includes('appAgentFallbackHandoffUrl'), 'Generic app handoffs should not keep the legacy URL payload fallback helper.');
 assert.ok(!chatJs.includes('cait_transfer'), 'Generic app handoffs should not embed serialized transfer payloads in URLs.');
 assert.ok(!chatJs.includes('data-app-agent-open-transfer'), 'Generic app handoff cards should not expose transfer-payload fallback links.');

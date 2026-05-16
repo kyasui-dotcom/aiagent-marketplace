@@ -1372,6 +1372,76 @@ assert.equal(
   'workflow retry should not add action agents that were not in the previous plan'
 );
 
+const heavyReuseMarker = `QA_HEAVY_REUSE_CONTENT_MARKER_${Date.now()}`;
+const heavyReuseContent = `${heavyReuseMarker}\n${'reused artifact body '.repeat(5000)}`;
+const reusedArtifactRetryWorkflow = await request('/api/jobs', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    parent_agent_id: 'qa-runner',
+    task_type: 'cmo_leader',
+    prompt: 'Retry the previous CMO order and reuse the completed research artifact.',
+    order_strategy: 'multi',
+    async_dispatch: true,
+    skip_intake: true,
+    budget_cap: 500,
+    workflow_planned_tasks: preservedRetryTasks,
+    input: {
+      _broker: {
+        activeLeaderLocked: true,
+        activeLeader: { taskType: 'cmo_leader', label: 'CMO Leader' },
+        conversationOwner: { type: 'leader', taskType: 'cmo_leader', label: 'CMO Leader' },
+        retry: {
+          sourceOrderId: 'qa-prior-workflow',
+          preservePrompt: true,
+          preservePlan: true,
+          plannedTasks: preservedRetryTasks,
+          reuseArtifacts: [{
+            task_type: 'research',
+            taskType: 'research',
+            source_order_id: 'qa-prior-workflow',
+            sourceOrderId: 'qa-prior-workflow',
+            source_run_id: 'qa-prior-research-run',
+            sourceRunId: 'qa-prior-research-run',
+            file_name: 'research-delivery.md',
+            fileName: 'research-delivery.md',
+            content: heavyReuseContent,
+            type: 'text/markdown',
+            user_selected: true
+          }]
+        }
+      }
+    }
+  })
+}, { env: qaSearchEnv });
+assert.equal(reusedArtifactRetryWorkflow.status, 201);
+const reusedArtifactRetryState = await request(`/api/jobs/${reusedArtifactRetryWorkflow.body.workflow_job_id}`, {}, { env: qaSearchEnv });
+assert.equal(reusedArtifactRetryState.status, 200);
+const reusedParentBrokerJson = JSON.stringify(reusedArtifactRetryState.body.job.input?._broker || {});
+assert.equal(
+  reusedParentBrokerJson.includes(heavyReuseMarker),
+  false,
+  'retry reuse artifact body should not be duplicated into workflow parent broker metadata'
+);
+assert.ok(
+  reusedParentBrokerJson.includes('content_chars'),
+  'retry reuse broker metadata should retain artifact size without storing the full body'
+);
+const reusedResearchRun = (reusedArtifactRetryState.body.job.workflow.childRuns || [])
+  .find((run) => run.taskType === 'research' || run.task_type === 'research');
+assert.ok(reusedResearchRun?.id, 'reused research child run should be present');
+const reusedResearchChild = await request(`/api/jobs/${reusedResearchRun.id}`, {}, { env: qaSearchEnv });
+assert.equal(reusedResearchChild.status, 200);
+assert.ok(
+  JSON.stringify(reusedResearchChild.body.job.output?.files || []).includes(heavyReuseMarker),
+  'the reused child job should keep the selected artifact body as the actual delivery file'
+);
+assert.equal(
+  JSON.stringify(reusedResearchChild.body.job.input?._broker || {}).includes(heavyReuseMarker),
+  false,
+  'retry reuse artifact body should not be duplicated into reused child broker metadata'
+);
+
 const qaStorage = createD1LikeStorage(env.MY_BINDING, { allowInMemory: true, stateCacheTtlMs: 0 });
 const mergeGuardStorage = createD1LikeStorage(null, { allowInMemory: true, stateCacheTtlMs: 0 });
 const mergeGuardJobId = `qa-completed-merge-guard-${Date.now()}`;
@@ -4748,6 +4818,19 @@ const chatTranscriptGuest = await request('/api/analytics/chat-transcripts', {
 });
 assert.equal(chatTranscriptGuest.status, 201, 'anonymous chat transcripts should be accepted without cookies');
 
+const chatTranscriptSystem = await request('/api/analytics/chat-transcripts', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    prompt: 'Show completed delivery',
+    answer: 'Sent CAIt transfer context to Publisher & Approval Studio and opened the handoff URL.',
+    answer_kind: 'system',
+    status: '',
+    visitor_id: 'worker-api-qa-chat'
+  })
+});
+assert.equal(chatTranscriptSystem.status, 201, 'system chat transcripts should be accepted with an empty client status');
+
 const transcriptUpsertId = 'worker-api-qa-chat-upsert';
 const chatTranscriptSubmitted = await request('/api/analytics/chat-transcripts', {
   method: 'POST',
@@ -4803,7 +4886,10 @@ assert.equal(JSON.stringify(analyticsSnapshot.body.chatTranscripts).includes('bu
 const upsertedTranscripts = analyticsSnapshot.body.chatTranscripts.filter((item) => item.id === transcriptUpsertId);
 assert.equal(upsertedTranscripts.length, 1, 'submitted and final transcript writes should not duplicate rows');
 assert.equal(upsertedTranscripts[0].answerKind, 'assist');
+assert.equal(upsertedTranscripts[0].status, 'assist');
 assert.equal(upsertedTranscripts[0].answer, 'Final answer ready.');
+const systemTranscript = analyticsSnapshot.body.chatTranscripts.find((item) => item.answerKind === 'system');
+assert.equal(systemTranscript?.status, 'system', 'system transcripts should not persist null/empty status');
 const adminSnapshot = await request('/api/snapshot', {}, { sessionCookie: adminSession });
 assert.equal(adminSnapshot.status, 200);
 assert.equal(adminSnapshot.body.auth.isPlatformAdmin, true);

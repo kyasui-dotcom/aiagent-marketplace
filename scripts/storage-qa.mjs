@@ -524,7 +524,7 @@ await deliveryItemStorage.upsertJobs([{
   workflowAgentName: 'SEO AGENT',
   output: {
     report: { summary: 'SEO article ready' },
-    files: [{ name: 'seo-agent-delivery.md', type: 'text/markdown', content: '# SEO article\n\nTitle: AI agent marketplace guide\n\nMeta description: Source-backed guide.\n\nLeader checkpointで確認する本文。' }]
+    files: [{ name: 'seo-agent-delivery.md', type: 'text/markdown', content: '# SEO article\n\nTitle: AI agent marketplace guide\n\nMeta description: Source-backed guide.\n\nSource: https://reddit.com/r/example\n\nLeader checkpointで確認する本文。' }]
   },
   createdAt: '2026-04-26T08:20:00.000Z',
   completedAt: '2026-04-26T08:21:00.000Z'
@@ -567,6 +567,57 @@ await deliveryItemStorage.upsertJobs([{
   },
   createdAt: '2026-04-26T08:21:10.000Z',
   completedAt: '2026-04-26T08:21:30.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-x-post-delivery',
+  parentAgentId: 'qa',
+  taskType: 'x_post',
+  prompt: 'x post copy',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'x_post',
+  workflowAgentName: 'X OPS CONNECTOR AGENT',
+  output: {
+    report: { summary: 'X post packet ready' },
+    files: [{ name: 'x-ops-connector-delivery.md', type: 'text/markdown', content: '# X post packet\n\nPost text: Engineers can compare AI agent workflows before signup.\n\nCTA: https://example.com' }]
+  },
+  createdAt: '2026-04-26T08:21:40.000Z',
+  completedAt: '2026-04-26T08:21:50.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-reddit-delivery',
+  parentAgentId: 'qa',
+  taskType: 'reddit',
+  prompt: 'reddit post copy',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'reddit',
+  workflowAgentName: 'REDDIT LAUNCH AGENT',
+  output: {
+    report: { summary: 'Reddit packet ready' },
+    files: [{ name: 'reddit-launch-delivery.md', type: 'text/markdown', content: '# Reddit launch packet\n\nSubreddit: r/SideProject\n\nPost text: I am testing an AI agent marketplace flow for technical users.' }]
+  },
+  createdAt: '2026-04-26T08:21:55.000Z',
+  completedAt: '2026-04-26T08:22:00.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-indie-hackers-delivery',
+  parentAgentId: 'qa',
+  taskType: 'indie_hackers',
+  prompt: 'indie hackers post copy',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'indie_hackers',
+  workflowAgentName: 'INDIE HACKERS LAUNCH AGENT',
+  output: {
+    report: { summary: 'Indie Hackers packet ready' },
+    files: [{ name: 'indie-hackers-launch-delivery.md', type: 'text/markdown', content: '# Indie Hackers launch packet\n\nPost text: Building a low-budget acquisition loop for an AI agent marketplace.' }]
+  },
+  createdAt: '2026-04-26T08:22:05.000Z',
+  completedAt: '2026-04-26T08:22:10.000Z'
 }]);
 await deliveryItemStorage.upsertJobs([{
   id: 'job-leader-package',
@@ -620,12 +671,17 @@ await deliveryItemStorage.upsertJobs([{
   completedAt: '2026-04-26T08:27:00.000Z'
 }]);
 const publisherItems = await deliveryItemStorage.listDeliveryItems({ surface: 'publisher', ownerLogins: ['owner@example.com'] });
-assert.equal(publisherItems.length, 2);
+assert.equal(publisherItems.length, 5);
 const seoPublisherItem = publisherItems.find((item) => item.itemType === 'seo_article');
 const landingPublisherItem = publisherItems.find((item) => item.itemType === 'landing_page');
+const xPublisherItem = publisherItems.find((item) => item.itemType === 'x_post');
+const redditPublisherItem = publisherItems.find((item) => item.itemType === 'reddit_post');
+const indieHackersPublisherItem = publisherItems.find((item) => item.itemType === 'indie_hackers_post');
 assert.ok(seoPublisherItem);
 assert.equal(seoPublisherItem.surface, 'publisher');
 assert.equal(seoPublisherItem.metadata.meta_description, 'Source-backed guide.');
+assert.equal(seoPublisherItem.metadata.channel_key, 'owned_site');
+assert.equal(seoPublisherItem.metadata.connector_capability, 'github.write_pr');
 assert.ok(landingPublisherItem);
 assert.equal(landingPublisherItem.surface, 'publisher');
 assert.equal(landingPublisherItem.title, 'example.com - signup landing page');
@@ -633,6 +689,16 @@ assert.equal(landingPublisherItem.metadata.meta_description, 'Use example.com to
 assert.equal(landingPublisherItem.body.includes('WORKFLOW HANDOFF CONTEXT'), false);
 assert.equal(landingPublisherItem.body.includes('## Request'), false);
 assert.equal(landingPublisherItem.body.includes('Agent-owned behavior'), false);
+assert.ok(xPublisherItem);
+assert.equal(xPublisherItem.metadata.channel_key, 'x');
+assert.equal(xPublisherItem.metadata.connector, 'x');
+assert.equal(xPublisherItem.metadata.action_type, 'x_post');
+assert.ok(redditPublisherItem);
+assert.equal(redditPublisherItem.metadata.channel_key, 'reddit');
+assert.equal(redditPublisherItem.metadata.connector_capability, 'reddit.post');
+assert.ok(indieHackersPublisherItem);
+assert.equal(indieHackersPublisherItem.metadata.channel_key, 'indie_hackers');
+assert.equal(indieHackersPublisherItem.metadata.publish_method, 'indie_hackers_connector_or_manual_copy');
 const analyticsItems = await deliveryItemStorage.listDeliveryItems({ surface: 'analytics', ownerLogins: ['owner@example.com'] });
 assert.equal(analyticsItems.length, 1);
 assert.equal(analyticsItems[0].surface, 'analytics');

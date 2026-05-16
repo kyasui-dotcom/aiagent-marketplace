@@ -26,18 +26,20 @@ const FALLBACK_BUILT_IN_APPS = [
     name: 'Publisher & Approval Studio',
     description: 'Content, page, metadata, media-separated publish packets, directory submission, PR draft, and approval queue studio for external action handoffs.',
     entryUrl: '/publisher-approval.html',
-    capabilities: ['content_management', 'approval_queue', 'directory_submission_packet', 'publisher_change_set', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'site_publish_packet', 'wordpress_draft_packet'],
+    capabilities: ['content_management', 'approval_queue', 'directory_submission_packet', 'publisher_change_set', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'instagram_post_packet', 'site_publish_packet', 'wordpress_draft_packet'],
     requiredConnectors: [],
-    requiresApprovalFor: ['publish_change', 'directory_submit', 'github_pr', 'wordpress_draft', 'x_post', 'reddit_post', 'indie_hackers_post', 'external_send'],
+    requiresApprovalFor: ['publish_change', 'directory_submit', 'github_pr', 'wordpress_draft', 'x_post', 'reddit_post', 'indie_hackers_post', 'instagram_post', 'external_send'],
     inputContract: {
-      accepts: ['article_draft', 'seo_page_artifact', 'landing_page_change', 'site_publish_packet', 'wordpress_draft_packet', 'directory_packet', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'approval_request'],
+      accepts: ['article_draft', 'seo_article', 'seo_page_artifact', 'landing_page', 'landing_page_change', 'site_publish_packet', 'wordpress_draft', 'wordpress_draft_packet', 'directory_submission', 'directory_packet', 'community_post_packet', 'social_copy_packet', 'social_post', 'x_post', 'x_post_packet', 'reddit_post', 'reddit_post_packet', 'indie_hackers_post', 'indie_hackers_packet', 'instagram_post', 'instagram_post_packet', 'approval_request'],
       destinationConnectors: {
         owned_site: { connector: 'github', capability: 'github.write_pr', method: 'github_pr' },
         wordpress_site: { connector: 'wordpress', capability: 'wordpress.create_draft', method: 'wordpress_application_password' },
         directory: { connector: 'directory_app', capability: 'directory.submit', method: 'saas_or_manual_submit' },
         x: { connector: 'x', capability: 'x.post', method: 'x_oauth_or_x_saas' },
         reddit: { connector: 'reddit', capability: 'reddit.post', method: 'reddit_oauth_or_manual_copy' },
-        indie_hackers: { connector: 'indie_hackers', capability: 'indie_hackers.post', method: 'indie_hackers_connector_or_manual_copy' }
+        indie_hackers: { connector: 'indie_hackers', capability: 'indie_hackers.post', method: 'indie_hackers_connector_or_manual_copy' },
+        instagram: { connector: 'instagram', capability: 'instagram.post', method: 'instagram_connector_or_manual_copy' },
+        social: { connector: 'manual', capability: 'manual.copy', method: 'manual_social_copy' }
       },
       returns: ['approval_requests', 'artifacts', 'delivery_files', 'recommended_next_actions']
     },

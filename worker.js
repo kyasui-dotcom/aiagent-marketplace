@@ -13492,6 +13492,70 @@ function workflowReuseArtifactsByTaskFromOrderBody(body = {}) {
   return new Map(workflowReuseArtifactsFromOrderBody(body).map((artifact) => [artifact.taskType, artifact]));
 }
 
+function workflowReuseArtifactStorageMeta(artifact = {}) {
+  const taskType = normalizeTaskTypes([artifact.taskType || artifact.task_type])[0] || '';
+  const fileName = String(artifact.fileName || artifact.file_name || `${taskType || 'artifact'}-delivery.md`).trim().slice(0, 160) || `${taskType || 'artifact'}-delivery.md`;
+  return {
+    taskType,
+    task_type: taskType,
+    sourceOrderId: String(artifact.sourceOrderId || artifact.source_order_id || '').trim(),
+    source_order_id: String(artifact.source_order_id || artifact.sourceOrderId || '').trim(),
+    sourceRunId: String(artifact.sourceRunId || artifact.source_run_id || '').trim(),
+    source_run_id: String(artifact.source_run_id || artifact.sourceRunId || '').trim(),
+    fileName,
+    file_name: fileName,
+    type: String(artifact.type || 'text/markdown').trim() || 'text/markdown',
+    contentType: String(artifact.contentType || artifact.content_type || 'reused_agent_delivery').trim() || 'reused_agent_delivery',
+    content_type: String(artifact.content_type || artifact.contentType || 'reused_agent_delivery').trim() || 'reused_agent_delivery',
+    contentChars: String(artifact.content || '').length,
+    content_chars: String(artifact.content || '').length,
+    sourceAgentName: String(artifact.sourceAgentName || artifact.source_agent_name || '').trim().slice(0, 160),
+    source_agent_name: String(artifact.source_agent_name || artifact.sourceAgentName || '').trim().slice(0, 160),
+    selectedAt: String(artifact.selectedAt || artifact.selected_at || '').trim().slice(0, 80),
+    selected_at: String(artifact.selected_at || artifact.selectedAt || '').trim().slice(0, 80),
+    userSelected: true,
+    user_selected: true
+  };
+}
+
+function compactRetryReuseArtifactsForJobStorage(input = {}, selectedReuseArtifacts = []) {
+  if (!input || typeof input !== 'object') return input;
+  const broker = input._broker && typeof input._broker === 'object' ? input._broker : null;
+  if (!broker) return input;
+  const metas = (Array.isArray(selectedReuseArtifacts) ? selectedReuseArtifacts : [])
+    .map(workflowReuseArtifactStorageMeta)
+    .filter((item) => item.taskType && item.sourceRunId)
+    .slice(0, 8);
+  const retry = broker.retry && typeof broker.retry === 'object' ? { ...broker.retry } : null;
+  if (retry) {
+    delete retry.reuseArtifacts;
+    delete retry.reuse_artifacts;
+    if (metas.length) {
+      retry.reuseArtifacts = metas;
+      retry.reuse_artifacts = metas;
+    }
+  }
+  const workflow = broker.workflow && typeof broker.workflow === 'object' ? { ...broker.workflow } : null;
+  if (workflow) {
+    delete workflow.reusedArtifacts;
+    delete workflow.reuseArtifacts;
+    delete workflow.retryReuseArtifacts;
+    delete workflow.retry_reuse_artifacts;
+    if (metas.length) {
+      workflow.reusedArtifacts = metas;
+      workflow.retryReuseArtifacts = metas;
+    }
+  }
+  return {
+    ...input,
+    _broker: {
+      ...broker,
+      ...(retry ? { retry } : {}),
+      ...(workflow ? { workflow } : {})
+    }
+  };
+}
+
 function isAutoWorkflowSpecialtyTask(taskType = '') {
   const task = String(taskType || '').trim().toLowerCase();
   return Boolean(task && !AUTO_WORKFLOW_SUPPORT_TASKS.has(task));
@@ -21637,6 +21701,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
   const selectedReuseArtifacts = [...reuseArtifactsByTask.values()]
     .filter((artifact) => plan.selections.some((selection) => String(selection.taskType || '').trim().toLowerCase() === artifact.taskType))
     .slice(0, 8);
+  const selectedReuseArtifactMetas = selectedReuseArtifacts.map(workflowReuseArtifactStorageMeta);
   const chargeableSelections = plan.selections.filter((selection) => !reuseArtifactsByTask.has(String(selection.taskType || '').trim().toLowerCase()));
   const requester = requesterContextFromUser(current.user, current.authProvider, {
     login: current.login,
@@ -21688,7 +21753,8 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
   const promptOptimization = optimizeOrderPromptForBroker(body, { taskType });
   const inputBase = body.input && typeof body.input === 'object' ? body.input : {};
   const inputSourceBase = mergeProtectedPromptSourceIntoInput(inputBase, promptOptimization);
-  const chatSessionId = String(body.session_id || body.sessionId || inputSourceBase.session_id || inputSourceBase.sessionId || '').trim().slice(0, 160);
+  const workflowStorageInputBase = compactRetryReuseArtifactsForJobStorage(inputSourceBase, selectedReuseArtifacts);
+  const chatSessionId = String(body.session_id || body.sessionId || workflowStorageInputBase.session_id || workflowStorageInputBase.sessionId || '').trim().slice(0, 160);
   const clientOrderId = clientOrderIdFromCreateBody(body);
   const promptOptimizationMeta = promptOptimization.optimized ? promptOptimization.metadata : null;
   const workflowPrimary = String(plan.plannedTasks?.[0] || taskType || '').trim().toLowerCase();
@@ -21699,8 +21765,8 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
     }
   };
   const workflowLeaderProtocol = workflowLeaderActionProtocol(workflowPseudoParent);
-  const brokerBase = (inputSourceBase && inputSourceBase._broker && typeof inputSourceBase._broker === 'object')
-    ? inputSourceBase._broker
+  const brokerBase = (workflowStorageInputBase && workflowStorageInputBase._broker && typeof workflowStorageInputBase._broker === 'object')
+    ? workflowStorageInputBase._broker
     : {};
   const workflowBase = brokerBase.workflow && typeof brokerBase.workflow === 'object'
     ? brokerBase.workflow
@@ -21712,16 +21778,16 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
     primaryTask: workflowPrimary,
     ...(workflowObjective ? { objective: workflowObjective, originalPrompt: workflowObjective } : {}),
     plannedTasks: Array.isArray(plan.plannedTasks) ? plan.plannedTasks.slice(0, 12) : [workflowPrimary],
-    ...(selectedReuseArtifacts.length ? { reusedArtifacts: selectedReuseArtifacts } : {}),
+    ...(selectedReuseArtifactMetas.length ? { reusedArtifacts: selectedReuseArtifactMetas } : {}),
     ...(chatSessionId ? { chatSessionId } : {}),
     ...(workflowLeaderProtocol ? { leaderActionProtocol: workflowLeaderProtocol } : {}),
     ...(workflowLeaderProtocol?.leaderControlContract ? { leaderControlContract: workflowLeaderProtocol.leaderControlContract } : {})
   };
   const parentInput = {
-    ...inputSourceBase,
-    ...(chatSessionId && !inputSourceBase.session_id && !inputSourceBase.sessionId ? { session_id: chatSessionId } : {}),
-    ...(clientOrderId && !inputSourceBase.client_order_id && !inputSourceBase.clientOrderId ? { client_order_id: clientOrderId } : {}),
-    ...(promptOptimizationMeta && !inputSourceBase.output_language && !inputSourceBase.outputLanguage
+    ...workflowStorageInputBase,
+    ...(chatSessionId && !workflowStorageInputBase.session_id && !workflowStorageInputBase.sessionId ? { session_id: chatSessionId } : {}),
+    ...(clientOrderId && !workflowStorageInputBase.client_order_id && !workflowStorageInputBase.clientOrderId ? { client_order_id: clientOrderId } : {}),
+    ...(promptOptimizationMeta && !workflowStorageInputBase.output_language && !workflowStorageInputBase.outputLanguage
       ? { output_language: promptOptimization.outputLanguageCode }
       : {}),
     _broker: {
@@ -21771,7 +21837,7 @@ async function handleCreateWorkflowJob(storage, request, env, current, body, opt
     const requiresSourceCollection = leaderTaskRequiresSourceCollection(workflowPrimary, safeTask);
     const requiresResearchSearch = requiresSourceCollection
       && leaderTaskUsesWebSearch(workflowPrimary, safeTask);
-    const childInputBase = body.input && typeof body.input === 'object' ? body.input : {};
+    const childInputBase = workflowStorageInputBase && typeof workflowStorageInputBase === 'object' ? workflowStorageInputBase : {};
     const childBrokerBase = childInputBase._broker && typeof childInputBase._broker === 'object'
       ? childInputBase._broker
       : {};

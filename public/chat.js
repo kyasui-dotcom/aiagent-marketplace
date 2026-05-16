@@ -12,7 +12,7 @@ import {
   caitAppContextChatPrompt,
   caitAppContextThreadHtml,
   consumeCaitAppContextForChat
-} from './cait-app-bridge.js?v=20260508e';
+} from './cait-app-bridge.js?v=20260516a';
 import {
   inferWorkIntentTaskType,
   isDeliveryHistoryQuestionIntentText,
@@ -85,18 +85,20 @@ const APP_AGENT_MANIFESTS = [
     description: 'Content, page, metadata, media-separated publish packets, directory submission, PR draft, and approval queue studio for external action handoffs.',
     baseUrl: '/publisher-approval.html',
     entryUrl: '/publisher-approval.html',
-    capabilities: ['content_management', 'approval_queue', 'directory_submission_packet', 'publisher_change_set', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'site_publish_packet', 'wordpress_draft_packet'],
-    requiresApprovalFor: ['publish_change', 'directory_submit', 'github_pr', 'wordpress_draft', 'x_post', 'reddit_post', 'indie_hackers_post', 'external_send'],
+    capabilities: ['content_management', 'approval_queue', 'directory_submission_packet', 'publisher_change_set', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'instagram_post_packet', 'site_publish_packet', 'wordpress_draft_packet'],
+    requiresApprovalFor: ['publish_change', 'directory_submit', 'github_pr', 'wordpress_draft', 'x_post', 'reddit_post', 'indie_hackers_post', 'instagram_post', 'external_send'],
     inputContract: {
       schemaVersion: 'cait-app-context/v1',
-      accepts: ['article_draft', 'seo_page_artifact', 'landing_page_change', 'site_publish_packet', 'wordpress_draft_packet', 'directory_packet', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'approval_request'],
+      accepts: ['article_draft', 'seo_article', 'seo_page_artifact', 'landing_page', 'landing_page_change', 'site_publish_packet', 'wordpress_draft', 'wordpress_draft_packet', 'directory_submission', 'directory_packet', 'community_post_packet', 'social_copy_packet', 'social_post', 'x_post', 'x_post_packet', 'reddit_post', 'reddit_post_packet', 'indie_hackers_post', 'indie_hackers_packet', 'instagram_post', 'instagram_post_packet', 'approval_request'],
       destinationConnectors: {
         owned_site: { connector: 'github', capability: 'github.write_pr', method: 'github_pr' },
         wordpress_site: { connector: 'wordpress', capability: 'wordpress.create_draft', method: 'wordpress_application_password' },
         directory: { connector: 'directory_app', capability: 'directory.submit', method: 'saas_or_manual_submit' },
         x: { connector: 'x', capability: 'x.post', method: 'x_oauth_or_x_saas' },
         reddit: { connector: 'reddit', capability: 'reddit.post', method: 'reddit_oauth_or_manual_copy' },
-        indie_hackers: { connector: 'indie_hackers', capability: 'indie_hackers.post', method: 'indie_hackers_connector_or_manual_copy' }
+        indie_hackers: { connector: 'indie_hackers', capability: 'indie_hackers.post', method: 'indie_hackers_connector_or_manual_copy' },
+        instagram: { connector: 'instagram', capability: 'instagram.post', method: 'instagram_connector_or_manual_copy' },
+        social: { connector: 'manual', capability: 'manual.copy', method: 'manual_social_copy' }
       },
       returns: ['approval_requests', 'artifacts', 'delivery_files', 'recommended_next_actions']
     },
@@ -1124,10 +1126,12 @@ function recordChatSessionMessage(role, body = '', options = {}) {
     state.lastTranscriptPrompt = text;
     state.lastTranscriptId = makeChatTranscriptId(state.currentChatSessionId);
   } else if (state.lastTranscriptPrompt) {
+    const transcriptAnswerKind = message.tone || message.role;
+    const transcriptStatus = message.tone || (message.role === 'system' ? 'system' : 'ok');
     void trackChatTranscript(state.lastTranscriptPrompt, text, {
       transcriptId: makeChatTranscriptId(state.currentChatSessionId),
-      answerKind: message.tone || message.role,
-      status: message.tone || ''
+      answerKind: transcriptAnswerKind,
+      status: transcriptStatus
     });
   }
   persistRuntimeChatSession();
@@ -1766,6 +1770,106 @@ function fileMimeType(name = '', content = '') {
   return 'text/plain;charset=utf-8';
 }
 
+const USER_DELIVERY_INTERNAL_MARKERS = [
+  '=== workflow handoff context ===',
+  '=== workflow additional prompt ===',
+  '=== end workflow handoff context ===',
+  'canonical user brief',
+  'process program',
+  'structured handoff digest',
+  'prior specialist deliverables',
+  'prior specialist deliverable:',
+  'required output behavior:'
+];
+
+const USER_DELIVERY_INTERNAL_SECTION_TITLES = new Set([
+  'request',
+  'workflow handoff context',
+  'workflow additional prompt',
+  'agent-owned behavior',
+  'expected output sections',
+  'input needs',
+  'acceptance checks',
+  'scope boundaries',
+  'specialist method',
+  'review notes'
+]);
+
+function cleanDeliverySectionTitle(line = '') {
+  return String(line || '')
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/\*\*/g, '')
+    .replace(/[:：]\s*$/, '')
+    .trim()
+    .toLowerCase();
+}
+
+function deliveryLineLooksInternal(line = '') {
+  const text = String(line || '').toLowerCase();
+  return /provider\.runjob|agent-file provider implementation|agent_file_provider_delivery|central built-in runner|future behavior changes should be made|共通\s*builtin\s*runner|agent ファイル内の provider|agent ファイルの provider 実装/.test(text);
+}
+
+function sanitizeDeliveryMarkdownForUser(content = '') {
+  const raw = String(content || '').replace(/\r\n/g, '\n');
+  if (!raw.trim()) return '';
+  let text = raw
+    .replace(/=== WORKFLOW HANDOFF CONTEXT ===[\s\S]*?=== END WORKFLOW HANDOFF CONTEXT ===/gi, '')
+    .replace(/=== WORKFLOW ADDITIONAL PROMPT ===[\s\S]*?(?=\n#{1,6}\s|\n\*\*|$)/gi, '');
+  const lines = text.split('\n');
+  const kept = [];
+  let skipping = false;
+  let skipFence = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const lower = trimmed.toLowerCase();
+    if (lower === '```markdown' && skipping) {
+      skipFence = true;
+      continue;
+    }
+    if (skipFence) {
+      if (lower === '```') skipFence = false;
+      continue;
+    }
+    if (USER_DELIVERY_INTERNAL_MARKERS.some((marker) => lower.includes(marker))) {
+      skipping = true;
+      continue;
+    }
+    const heading = trimmed.match(/^#{1,6}\s+(.+)$/);
+    if (heading) {
+      const title = cleanDeliverySectionTitle(trimmed);
+      if (USER_DELIVERY_INTERNAL_SECTION_TITLES.has(title) || title.startsWith('prior specialist deliverable')) {
+        skipping = true;
+        continue;
+      }
+      skipping = false;
+    }
+    if (skipping || deliveryLineLooksInternal(line)) continue;
+    kept.push(line);
+  }
+  const cleaned = kept.join('\n')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return cleaned || raw
+    .split('\n')
+    .filter((line) => !deliveryLineLooksInternal(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function sanitizeDeliveryFileForUser(file = {}, fallbackName = 'delivery.md') {
+  const rawContent = String(file?.content || file?.body || '');
+  const content = sanitizeDeliveryMarkdownForUser(rawContent);
+  const name = safeFileName(file?.name || file?.filename || fallbackName, fallbackName);
+  return {
+    ...(file && typeof file === 'object' ? file : {}),
+    name,
+    content,
+    type: String(file?.type || fileMimeType(name, content)).trim() || fileMimeType(name, content)
+  };
+}
+
 function isInternalDeliveryFile(file = {}) {
   const name = String(file?.name || file?.filename || '').trim().toLowerCase();
   const content = String(file?.content || file?.body || '').trim();
@@ -1834,7 +1938,7 @@ function internalAllDeliverablesFallbackFiles(job = {}, candidates = []) {
   if (!bundle) return [];
   const id = String(job?.id || '').trim().slice(0, 8) || 'order';
   const raw = String(bundle.content || bundle.body || '').trim();
-  const readable = cleanReadableBundleContent(raw);
+  const readable = sanitizeDeliveryMarkdownForUser(cleanReadableBundleContent(raw));
   return [
     {
       name: `agent-deliverables-${id}.md`,
@@ -1846,21 +1950,22 @@ function internalAllDeliverablesFallbackFiles(job = {}, candidates = []) {
 }
 
 function registerDeliveryFile(file = {}, fallbackName = 'delivery.md') {
-  const name = safeFileName(file.name || fallbackName, fallbackName);
-  const content = String(file.content || '');
+  const sanitized = sanitizeDeliveryFileForUser(file, fallbackName);
+  const name = safeFileName(sanitized.name || fallbackName, fallbackName);
+  const content = String(sanitized.content || '');
   const id = `file-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`;
   deliveryFileStore.set(id, {
-    ...(file && typeof file === 'object' ? file : {}),
+    ...(sanitized && typeof sanitized === 'object' ? sanitized : {}),
     name,
     content,
-    type: String(file.type || fileMimeType(name, content)).trim() || fileMimeType(name, content)
+    type: String(sanitized.type || fileMimeType(name, content)).trim() || fileMimeType(name, content)
   });
   while (deliveryFileStore.size > 80) {
     const first = deliveryFileStore.keys().next().value;
     if (!first) break;
     deliveryFileStore.delete(first);
   }
-  return { ...(file && typeof file === 'object' ? file : {}), id, name, content };
+  return { ...(sanitized && typeof sanitized === 'object' ? sanitized : {}), id, name, content };
 }
 
 async function copyTextToClipboard(text = '') {
@@ -1897,8 +2002,9 @@ function downloadTextFile(file = {}) {
 function combinedMarkdownFile(files = []) {
   const sections = (Array.isArray(files) ? files : [])
     .map((file, index) => {
-      const name = safeFileName(file?.name || `delivery-${index + 1}.md`, `delivery-${index + 1}.md`);
-      const content = String(file?.content || '').trim();
+      const sanitized = sanitizeDeliveryFileForUser(file, `delivery-${index + 1}.md`);
+      const name = safeFileName(sanitized.name || `delivery-${index + 1}.md`, `delivery-${index + 1}.md`);
+      const content = String(sanitized.content || '').trim();
       if (!content) return '';
       const fence = /\.html?$/i.test(name) ? 'html' : (/\.json$/i.test(name) ? 'json' : 'markdown');
       return [`## ${name}`, '', `\`\`\`${fence}`, content, '```'].join('\n');
@@ -2883,6 +2989,8 @@ function deliveryFiles(job = {}) {
   const seen = new Set();
   const files = visibleDeliveryFiles(candidates)
     .filter((file) => file && (file.content || file.name))
+    .map((file, index) => sanitizeDeliveryFileForUser(file, `delivery-${index + 1}.md`))
+    .filter((file) => file && (file.content || file.name))
     .filter((file) => {
       const key = `${file.name || ''}:${String(file.content || '').slice(0, 120)}`;
       if (seen.has(key)) return false;
@@ -2907,12 +3015,13 @@ function deliveryText(job = {}) {
   ].filter(Boolean).slice(0, 8);
   const failed = ['failed', 'timed_out'].includes(String(job.status || '').trim().toLowerCase());
   const failureReason = String(job.failureReason || job.failure_reason || report.failure_reason || report.error || output.error || '').trim();
-  return [
+  const text = [
     failed && failureReason ? `Failure reason: ${failureReason}` : '',
     output.summary || report.summary || delivery.summary || deliveryReport.summary || job.failureReason || '',
     bullets.length ? bullets.map((item) => `- ${item}`).join('\n') : '',
     report.nextAction || report.next_action || deliveryReport.nextAction || deliveryReport.next_action || ''
   ].filter(Boolean).join('\n\n').trim();
+  return sanitizeDeliveryMarkdownForUser(text);
 }
 
 function rememberAiAgentsFromDraft(draft = {}, created = {}, payload = {}) {
@@ -3954,6 +4063,9 @@ function deliveryHandoffArtifactTypes(job = {}) {
   if (xPostDraftFromJob(job)?.text) {
     add('post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet');
   }
+  if (authorityRequestHandledBySaasHandoffInChat(authorityRequestFromJob(job))) {
+    add('post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet');
+  }
 
   for (const file of files) {
     const sourceText = appHandoffFileSignalText(file);
@@ -3981,6 +4093,9 @@ function deliveryHandoffArtifactTypes(job = {}) {
       add('community_post_packet', 'social_copy_packet');
     }
     if (/(social post pack|x post draft|x-post-delivery|x_post_packet|post_text|tweet draft|x投稿ドラフト)/i.test(sourceText)) {
+      add('post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet');
+    }
+    if (/(x-post-approval|x post approval|x posting authority|x\.post|twitter posting authority)/i.test(sourceText)) {
       add('post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet');
     }
     if (/(approval_request|approval queue|approval packet|github pr packet|pull request packet|publish_change packet|external_send packet|承認パケット|公開前パケット)/i.test(sourceText)) {
@@ -5538,7 +5653,7 @@ function selectedRetryReuseArtifactsForOrder(orderId = '') {
         sourceRunId,
         file_name: file.name || `${taskType}-delivery.md`,
         fileName: file.name || `${taskType}-delivery.md`,
-        content: String(file.content || ''),
+        content: String(file.content || '').slice(0, 60000),
         type: file.type || 'text/markdown',
         content_type: file.content_type || file.contentType || 'reused_agent_delivery',
         source_agent_name: String(input.dataset.agentName || file.source_agent_name || file.sourceAgentName || '').trim(),
@@ -5548,6 +5663,47 @@ function selectedRetryReuseArtifactsForOrder(orderId = '') {
       };
     })
     .filter(Boolean);
+}
+
+function cachedVisibleJobForRetry(orderId = '') {
+  const safeId = String(orderId || '').trim();
+  if (!safeId) return null;
+  return (Array.isArray(state.recentJobs) ? state.recentJobs : [])
+    .find((job) => String(job?.id || '').trim() === safeId) || null;
+}
+
+function retryReuseArtifactMeta(item = {}) {
+  const taskType = String(item.task_type || item.taskType || '').trim().toLowerCase();
+  const fileName = String(item.file_name || item.fileName || `${taskType || 'artifact'}-delivery.md`).trim();
+  return {
+    task_type: taskType,
+    taskType,
+    source_order_id: String(item.source_order_id || item.sourceOrderId || '').trim(),
+    sourceOrderId: String(item.sourceOrderId || item.source_order_id || '').trim(),
+    source_run_id: String(item.source_run_id || item.sourceRunId || '').trim(),
+    sourceRunId: String(item.sourceRunId || item.source_run_id || '').trim(),
+    file_name: fileName || `${taskType || 'artifact'}-delivery.md`,
+    fileName: fileName || `${taskType || 'artifact'}-delivery.md`,
+    type: String(item.type || 'text/markdown').trim() || 'text/markdown',
+    content_type: String(item.content_type || item.contentType || 'reused_agent_delivery').trim() || 'reused_agent_delivery',
+    content_chars: String(item.content || '').length,
+    source_agent_name: String(item.source_agent_name || item.sourceAgentName || '').trim(),
+    user_selected: true,
+    userSelected: true,
+    selected_at: String(item.selected_at || item.selectedAt || '').trim()
+  };
+}
+
+function workflowRetryMetaForDraft(workflow = {}, reuseArtifacts = []) {
+  const next = workflow && typeof workflow === 'object' ? { ...workflow } : {};
+  delete next.reusedArtifacts;
+  delete next.reuseArtifacts;
+  delete next.retryReuseArtifacts;
+  delete next.retry_reuse_artifacts;
+  const metas = reuseArtifacts.map(retryReuseArtifactMeta).filter((item) => item.task_type && item.source_run_id);
+  return metas.length
+    ? { ...next, reusedArtifacts: metas, retryReuseArtifacts: metas }
+    : next;
 }
 
 function renderRetryReuseControls(job = {}) {
@@ -7676,6 +7832,10 @@ function retryDraftFromJob(job = {}, options = {}) {
       .filter((item) => item.task_type && item.source_run_id && String(item.content || '').trim())
       .slice(0, 8)
     : [];
+  const retryWorkflowMeta = workflowRetryMetaForDraft(
+    broker.workflow && typeof broker.workflow === 'object' ? broker.workflow : {},
+    reuseArtifacts
+  );
   return {
     taskType,
     task_type: taskType,
@@ -7720,14 +7880,7 @@ function retryDraftFromJob(job = {}, options = {}) {
           ...(reuseArtifacts.length ? { reuseArtifacts, reuse_artifacts: reuseArtifacts } : {}),
           preparedAt: new Date().toISOString()
         },
-        ...(reuseArtifacts.length ? {
-          workflow: {
-            ...(broker.workflow && typeof broker.workflow === 'object' ? broker.workflow : {}),
-            reusedArtifacts: reuseArtifacts,
-            reuseArtifacts,
-            retryReuseArtifacts: reuseArtifacts
-          }
-        } : {}),
+        ...(Object.keys(retryWorkflowMeta).length ? { workflow: retryWorkflowMeta } : {}),
         ...(ownerTaskType ? {
           conversationOwner: { type: 'leader', taskType: ownerTaskType, label: ownerLabel || taskLabel(ownerTaskType) },
           activeLeader: { taskType: ownerTaskType, label: ownerLabel || taskLabel(ownerTaskType) },
@@ -7744,7 +7897,17 @@ async function prepareRetryFromOrder(orderId = '', options = {}) {
   if (!safeId) return;
   setBusy(true);
   try {
-    const job = await fetchVisibleJob(safeId, { force: true, progress: false, inspectOnly: true });
+    let job = null;
+    try {
+      job = await fetchVisibleJob(safeId, { force: true, progress: false, inspectOnly: true });
+    } catch (error) {
+      const cached = cachedVisibleJobForRetry(safeId);
+      if (cached?.id && jobHasDeliveryResult(cached)) {
+        job = cached;
+      } else {
+        throw error;
+      }
+    }
     if (!job?.id) throw new Error('Order was not found.');
     renderDeliveryOnce(job, { force: true });
     const reuseArtifacts = Array.isArray(options.reuseArtifacts) ? options.reuseArtifacts : selectedRetryReuseArtifactsForOrder(safeId);

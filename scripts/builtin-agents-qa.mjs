@@ -54,6 +54,19 @@ const health = research.provider.health({ kind: 'research', definition: research
 assert.equal(health.provider, 'agent_file');
 assert.equal(health.kind, 'research');
 
+const leakedOutputContractPattern = /##\s*Delivery packet|Write sections for|Write a two-part Markdown delivery|Agent-owned behavior|provider\.runJob|agent-file provider implementation|WORKFLOW HANDOFF CONTEXT|STRUCTURED HANDOFF DIGEST/i;
+
+function assertUserFacingDelivery(result, label, requiredPatterns = []) {
+  const content = result.files?.[0]?.content || '';
+  assert.equal(result.status, 'completed', `${label} should complete`);
+  assert.ok(content.includes('Answer first') || content.includes('先に結論'), `${label} should be answer-first/user-facing`);
+  assert.ok(!leakedOutputContractPattern.test(content), `${label} must not expose output contracts or workflow prompt internals`);
+  assert.ok(!/provider delivery|agent-file provider implementation/i.test(result.summary || ''), `${label} summary must not expose provider implementation details`);
+  for (const pattern of requiredPatterns) {
+    assert.match(content, pattern, `${label} should include ${pattern}`);
+  }
+}
+
 const result = await research.provider.runJob({
   kind: 'research',
   definition: research,
@@ -66,7 +79,44 @@ const result = await research.provider.runJob({
 });
 assert.equal(result.status, 'completed');
 assert.equal(result.runtime?.provider, 'agent_file');
-assert.ok(result.files?.[0]?.content?.includes('Agent-owned behavior'));
+assertUserFacingDelivery(result, 'research generic delivery');
+
+const deliveryBody = {
+  prompt: [
+    'Task: cmo_leader',
+    'Goal: increase signups for https://aiagent-marketplace.net',
+    'Product/service: https://aiagent-marketplace.net',
+    'Analytics data: GA4 + Search Console connector context attached.',
+    'GA4 property: properties/531290961',
+    'Search Console site: sc-domain:aiagent-marketplace.net',
+    'Date range: 2026-04-15 to 2026-05-12',
+    'Sessions: 554',
+    'Conversions: 0',
+    'Conversion rate: 0%',
+    'Target audience: Developers/technical users',
+    'Constraints: No paid ads / organic only',
+    'Priority channel: Organic search / SEO'
+  ].join('\n'),
+  output_language: 'en'
+};
+
+for (const [kind, requiredPatterns] of [
+  ['data_analysis', [/Data quality check/i, /Sessions:\s*554/i, /Conversion rate:\s*0%/i]],
+  ['media_planner', [/Decision first/i, /Top 3 actions/i, /Publisher SaaS/i]],
+  ['seo_gap', [/SEO page recommendation/i, /Meta title/i, /Meta description/i]],
+  ['landing', [/Conversion goal/i, /Above-the-fold fix/i, /Measurement plan/i]],
+  ['cmo_leader', [/Decision first/i, /Top 3 actions/i, /Preparation handoff/i]]
+]) {
+  const definition = sampleAgentDefinitionForKind(kind);
+  const delivery = await definition.provider.runJob({
+    kind,
+    definition,
+    body: deliveryBody,
+    source: {},
+    manifest: definition.manifest
+  });
+  assertUserFacingDelivery(delivery, `${kind} delivery`, requiredPatterns);
+}
 
 const sourceBackedResearch = await research.provider.runJob({
   kind: 'research',

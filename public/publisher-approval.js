@@ -1,4 +1,4 @@
-import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260508e';
+import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260516a';
 
 let items = [];
 let selectedId = '';
@@ -26,40 +26,13 @@ let publishResult = null;
 
 const PUBLISH_DESTINATION_PROFILES = [
   {
-    key: 'owned_site',
-    label: 'Owned site / GitHub PR',
-    connector: 'github',
-    capability: 'github.write_pr',
-    method: 'github_pr',
-    actionType: 'article_publish',
-    patterns: [/seo[_ -]?gap/i, /\bseo\b/i, /landing/i, /article/i, /page/i, /meta title/i, /h1 and metadata/i, /owned site/i]
-  },
-  {
-    key: 'wordpress_site',
-    label: 'WordPress site',
-    connector: 'wordpress',
-    capability: 'wordpress.create_draft',
-    method: 'wordpress_application_password',
-    actionType: 'wordpress_draft',
-    patterns: [/wordpress/i, /\bwp\b/i, /wp-json/i]
-  },
-  {
-    key: 'directory',
-    label: 'Directory / listing',
-    connector: 'directory_app',
-    capability: 'directory.submit',
-    method: 'saas_or_manual_submit',
-    actionType: 'directory_submission',
-    patterns: [/directory/i, /listing/i, /submission/i, /directory-submission/i]
-  },
-  {
     key: 'x',
     label: 'X',
     connector: 'x',
     capability: 'x.post',
     method: 'x_oauth_or_x_saas',
     actionType: 'x_post',
-    patterns: [/\bx[_ -]?post\b/i, /\bx-post\b/i, /\btwitter\b/i, /\btweet\b/i, /\bx ops\b/i, /\bx publisher\b/i]
+    patterns: [/\bx[_ -]?post\b/i, /\bx-post\b/i, /\btwitter\b/i, /\btweet\b/i, /\bx ops\b/i, /\bx publisher\b/i, /\bx\.com\b/i]
   },
   {
     key: 'reddit',
@@ -78,6 +51,51 @@ const PUBLISH_DESTINATION_PROFILES = [
     method: 'indie_hackers_connector_or_manual_copy',
     actionType: 'indie_hackers_post',
     patterns: [/indie[\s_-]?hackers/i, /\bih\b/i]
+  },
+  {
+    key: 'instagram',
+    label: 'Instagram',
+    connector: 'instagram',
+    capability: 'instagram.post',
+    method: 'instagram_connector_or_manual_copy',
+    actionType: 'instagram_post',
+    patterns: [/instagram/i, /\binsta\b/i, /\big\b/i]
+  },
+  {
+    key: 'social',
+    label: 'Social copy packet',
+    connector: 'manual',
+    capability: 'manual.copy',
+    method: 'manual_social_copy',
+    actionType: 'social_post',
+    patterns: [/social_copy/i, /\bsocial\b/i, /\bsns\b/i, /community_post/i, /post text/i, /投稿/i]
+  },
+  {
+    key: 'directory',
+    label: 'Directory / listing',
+    connector: 'directory_app',
+    capability: 'directory.submit',
+    method: 'saas_or_manual_submit',
+    actionType: 'directory_submission',
+    patterns: [/directory/i, /listing/i, /submission/i, /directory-submission/i]
+  },
+  {
+    key: 'wordpress_site',
+    label: 'WordPress site',
+    connector: 'wordpress',
+    capability: 'wordpress.create_draft',
+    method: 'wordpress_application_password',
+    actionType: 'wordpress_draft',
+    patterns: [/wordpress/i, /\bwp\b/i, /wp-json/i]
+  },
+  {
+    key: 'owned_site',
+    label: 'Owned site / GitHub PR',
+    connector: 'github',
+    capability: 'github.write_pr',
+    method: 'github_pr',
+    actionType: 'article_publish',
+    patterns: [/seo[_ -]?gap/i, /seo_article/i, /seo page/i, /\bseo\b/i, /landing_page/i, /landing page/i, /\blanding\b/i, /article_draft/i, /\barticle\b/i, /meta title/i, /h1 and metadata/i, /owned site/i, /github_pr/i, /github\.write_pr/i]
   },
   {
     key: 'email',
@@ -301,6 +319,19 @@ function artifactProfileText(artifact = {}, type = '', body = '') {
     artifact.contentType,
     artifact.item_type,
     artifact.itemType,
+    artifact.channel_key,
+    artifact.channelKey,
+    artifact.medium_key,
+    artifact.mediumKey,
+    artifact.media_key,
+    artifact.mediaKey,
+    artifact.connector,
+    artifact.required_connector,
+    artifact.requiredConnector,
+    artifact.connector_capability,
+    artifact.connectorCapability,
+    artifact.publish_method,
+    artifact.publishMethod,
     artifact.task_type,
     artifact.taskType,
     artifact.workflow_task,
@@ -325,9 +356,52 @@ function artifactProfileText(artifact = {}, type = '', body = '') {
   ].filter(Boolean).join('\n');
 }
 
+function explicitProfileFromArtifact(artifact = {}, type = '') {
+  const values = [
+    artifact.channel_key,
+    artifact.channelKey,
+    artifact.medium_key,
+    artifact.mediumKey,
+    artifact.media_key,
+    artifact.mediaKey,
+    artifact.channel,
+    artifact.media,
+    artifact.platform,
+    artifact.connector,
+    artifact.required_connector,
+    artifact.requiredConnector,
+    artifact.connector_capability,
+    artifact.connectorCapability,
+    artifact.publish_method,
+    artifact.publishMethod,
+    artifact.action_type,
+    artifact.actionType,
+    artifact.item_type,
+    artifact.itemType,
+    artifact.type,
+    type
+  ].filter(Boolean).map((value) => String(value || '').trim());
+  for (const value of values) {
+    const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    const exact = PUBLISH_DESTINATION_PROFILES.find((profile) => (
+      profile.key === normalized
+      || profile.actionType === value
+      || profile.connector === value
+      || profile.capability === value
+      || profile.method === value
+    ));
+    if (exact && exact.key !== 'generic') return exact;
+  }
+  const text = values.join('\n');
+  return PUBLISH_DESTINATION_PROFILES.find((profile) => profile.key !== 'generic' && profile.patterns.some((pattern) => pattern.test(text))) || null;
+}
+
 function destinationProfileFromArtifact(artifact = {}, type = '', body = '') {
+  const explicitProfile = explicitProfileFromArtifact(artifact, type);
+  if (explicitProfile) return explicitProfile;
   const text = artifactProfileText(artifact, type, body);
-  return PUBLISH_DESTINATION_PROFILES.find((profile) => profile.patterns.some((pattern) => pattern.test(text)))
+  const directProfile = PUBLISH_DESTINATION_PROFILES.find((profile) => profile.key !== 'generic' && profile.patterns.some((pattern) => pattern.test(text)));
+  return directProfile
     || PUBLISH_DESTINATION_PROFILES.at(-1);
 }
 
@@ -350,7 +424,7 @@ function destinationFromArtifact(artifact = {}, type = '', profile = null) {
     artifact.target
   ) || '').trim();
   if (explicit && !isGenericDestination(explicit)) return explicit;
-  return String(profile?.label || (type === 'directory' ? 'Directory / listing' : 'Owned site / GitHub PR')).trim();
+  return String(profile?.label || (type === 'directory' ? 'Directory / listing' : 'Generic publishing packet')).trim();
 }
 
 function slugFromTitle(value = '') {
@@ -684,6 +758,8 @@ function contextItemFromArtifact(artifact = {}, index = 0) {
   const profile = destinationProfileFromArtifact(artifact, type, body);
   if (profile.key === 'directory') type = 'directory';
   if (profile.key === 'owned_site') type = 'page';
+  if (['x', 'reddit', 'indie_hackers', 'instagram', 'social'].includes(profile.key)) type = 'post';
+  if (profile.key === 'email') type = 'email';
   const extractedTitle = markdownFieldValue(body, ['Meta title', 'Page title', 'Title', 'H1', 'Headline']);
   const extractedMeta = markdownFieldValue(body, ['Meta description', 'Description']);
   const extractedH1 = markdownFieldValue(body, ['H1', 'Headline']);
