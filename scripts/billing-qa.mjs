@@ -174,6 +174,7 @@ assert.equal(fixedRunBilling.pricingModel, 'fixed_per_run');
 assert.equal(ledgerAmountToDisplayCurrency(fixedRunBilling.total), 12);
 assert.equal(ledgerAmountToDisplayCurrency(fixedRunBilling.platformRevenue), 1.2);
 assert.equal(ledgerAmountToDisplayCurrency(fixedRunBilling.agentPayout), 10.8);
+assert.equal(ledgerAmountToDisplayCurrency(WELCOME_CREDITS_GRANT_AMOUNT), 10);
 
 const subscriptionOnlyBilling = estimateBilling({
   pricingModel: 'subscription_required',
@@ -277,6 +278,23 @@ assert.equal(signupGrantAgain.status, 'skipped');
 const signupProfile = billingProfileForAccount(signupState.accounts[0], '', '2026-04');
 assert.equal(signupProfile.welcomeCreditsAvailable, 0);
 assert.equal(signupProfile.welcomeCreditsSignupGrantedTotal, 0);
+
+const signupDefaultState = { agents: [], jobs: [], accounts: [] };
+const signupDefaultUser = { login: 'signup-default-qa', name: 'Signup Default QA' };
+upsertAccountSettingsInState(signupDefaultState, signupDefaultUser.login, signupDefaultUser, 'google-oauth', {
+  billing: {
+    welcomeCreditsBalance: 500,
+    welcomeCreditsGrantedTotal: 500,
+    welcomeCreditsSignupGrantedTotal: 500,
+    welcomeCreditsSignupGrantedAt: '2026-04-01T00:00:00.000Z'
+  }
+});
+const signupTopup = maybeGrantWelcomeCreditsForSignupInState(signupDefaultState, signupDefaultUser.login, signupDefaultUser, 'google-oauth');
+assert.equal(signupTopup.status, 'topped_up');
+assert.equal(signupTopup.amount, WELCOME_CREDITS_GRANT_AMOUNT - 500);
+const signupDefaultProfile = billingProfileForAccount(signupDefaultState.accounts[0], '', '2026-04');
+assert.equal(signupDefaultProfile.welcomeCreditsAvailable, WELCOME_CREDITS_GRANT_AMOUNT);
+assert.equal(signupDefaultProfile.welcomeCreditsSignupGrantedTotal, WELCOME_CREDITS_GRANT_AMOUNT);
 
 const state = { agents: [], jobs: [], accounts: [] };
 const user = { login: 'alice', name: 'Alice Example' };

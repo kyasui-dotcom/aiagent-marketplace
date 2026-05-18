@@ -3,7 +3,7 @@ import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import worker from '../worker.js';
 import { createD1LikeStorage } from '../lib/storage.js';
-import { buildAgentTeamDeliveryOutput, nowIso, orderPreflightForAgent } from '../lib/shared.js';
+import { WELCOME_CREDITS_GRANT_AMOUNT, buildAgentTeamDeliveryOutput, nowIso, orderPreflightForAgent } from '../lib/shared.js';
 import { E2E_DEFAULT_ORDER_PROMPT, assertOrderScenarioQuality, buildOrderScenarioPayload } from './e2e-order-scenario.mjs';
 
 const workerSource = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
@@ -4683,7 +4683,7 @@ const guestOrder = await request('/api/jobs', {
     async_dispatch: true,
     skip_intake: true,
     visitor_id: guestVisitorId,
-    guest_trial: { enabled: true, visitor_id: guestVisitorId, credit_limit: 500 }
+    guest_trial: { enabled: true, visitor_id: guestVisitorId, credit_limit: WELCOME_CREDITS_GRANT_AMOUNT }
   })
 }, { waitUntilPromises: guestOrderWaits });
 assert.equal(guestOrder.status, 401);
@@ -5490,7 +5490,7 @@ try {
   assert.equal(imported.body.agent.verificationStatus, 'verified');
   assert.equal(imported.body.auto_verification.ok, true);
   assert.equal(imported.body.welcome_credits.status, 'granted');
-  assert.equal(imported.body.welcome_credits.amount, 500);
+  assert.equal(imported.body.welcome_credits.amount, WELCOME_CREDITS_GRANT_AMOUNT);
 
   const acceptedAgent = await request('/api/agents/import-manifest', {
     method: 'POST',
@@ -5806,7 +5806,7 @@ try {
 
   const fundedSnapshot = await request('/api/snapshot', {}, { sessionCookie: aliceSession });
   assert.equal(fundedSnapshot.status, 200);
-  assert.equal(Number(fundedSnapshot.body.accountSettings?.billing?.welcomeCreditsBalance || 0), 500);
+  assert.equal(Number(fundedSnapshot.body.accountSettings?.billing?.welcomeCreditsBalance || 0), WELCOME_CREDITS_GRANT_AMOUNT);
 
   const multiResearch = await request('/api/agents/import-manifest', {
     method: 'POST',
@@ -6119,7 +6119,7 @@ try {
   const daveSettingsBefore = await request('/api/settings', {}, { sessionCookie: daveSession });
   assert.equal(daveSettingsBefore.status, 200);
   assert.equal(daveSettingsBefore.body.account.billing.depositBalance, 0);
-  assert.equal(Number(daveSettingsBefore.body.account.billing.welcomeCreditsBalance || 0), 0);
+  assert.equal(Number(daveSettingsBefore.body.account.billing.welcomeCreditsBalance || 0), WELCOME_CREDITS_GRANT_AMOUNT);
 
   const unfundedNeedsInput = await request('/api/jobs', {
     method: 'POST',
@@ -6179,7 +6179,8 @@ try {
       parent_agent_id: 'qa-runner',
       agent_id: imported.body.agent.id,
       task_type: 'ops',
-      prompt: 'Run the ops task without funding.'
+      prompt: 'Run the ops task beyond the beta free allowance without funding.',
+      estimated_total_cost_basis: WELCOME_CREDITS_GRANT_AMOUNT * 2
     })
   }, { sessionCookie: daveSession });
   assert.equal(unfundedOrder.status, 402);
@@ -6268,8 +6269,8 @@ try {
   assert.equal(daveSettingsAfterApiKeyOrder.status, 200);
   assert.equal(
     daveSettingsAfterApiKeyOrder.body.account.billing.arrearsTotal,
-    apiKeyOrderTotal,
-    'CAIt API key usage should accrue to the same customer month-end billing as Web UI usage'
+    Math.max(0, +(apiKeyOrderTotal - WELCOME_CREDITS_GRANT_AMOUNT).toFixed(2)),
+    'CAIt API key usage should first consume the per-account welcome credits, then accrue to month-end billing'
   );
 
   const fundedOrder = await request('/api/jobs', {
@@ -6400,7 +6401,8 @@ try {
 
   const daveSettingsAfter = await request('/api/settings', {}, { sessionCookie: daveSession });
   assert.equal(daveSettingsAfter.status, 200);
-  const expectedDaveArrears = +(apiKeyOrderTotal + Number(fundedJob.body.job.actualBilling.total || 0) + asyncDispatchOrderTotal + Number(longPromptJob.body.job.actualBilling.total || 0) + Number(followupJob.body.job.actualBilling.total || 0) + Number(autoFollowupJob.body.job.actualBilling?.total || 0)).toFixed(2);
+  const expectedDaveGrossBilling = +(apiKeyOrderTotal + Number(fundedJob.body.job.actualBilling.total || 0) + asyncDispatchOrderTotal + Number(longPromptJob.body.job.actualBilling.total || 0) + Number(followupJob.body.job.actualBilling.total || 0) + Number(autoFollowupJob.body.job.actualBilling?.total || 0)).toFixed(2);
+  const expectedDaveArrears = Math.max(0, +(expectedDaveGrossBilling - WELCOME_CREDITS_GRANT_AMOUNT).toFixed(2));
   assert.equal(daveSettingsAfter.body.account.billing.depositBalance, 0);
   assert.equal(daveSettingsAfter.body.account.billing.arrearsTotal, expectedDaveArrears);
 

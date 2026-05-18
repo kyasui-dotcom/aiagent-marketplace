@@ -2629,7 +2629,7 @@ const ANALYTICS_PRODUCTION_HOSTS = new Set(['aiagent-marketplace.net', 'www.aiag
 const ANALYTICS_DISABLE_COOKIE_NAME = 'cait_disable_ga4';
 const ANALYTICS_DISABLE_PARAMS = ['no_ga', 'disable_ga', 'cait_no_ga', 'cait_disable_ga4', 'ga_opt_out'];
 const ANALYTICS_ENABLE_PARAMS = ['enable_ga', 'cait_enable_ga4', 'ga_opt_in'];
-const GUEST_TRIAL_CREDIT_LIMIT = 500;
+const GUEST_TRIAL_CREDIT_LIMIT = 1500;
 let runtimeVisitorId = '';
 let runtimeRememberedTab = '';
 let runtimeRememberedAuth = false;
@@ -2885,12 +2885,12 @@ function guestTrialPromoTextForDraft(draft = currentOrderDraft(), prompt = draft
   if (looksJapanese(prompt || draft?.prompt || '')) {
     return [
       '実行はログイン後のみです。',
-      '初回ログインで500ptが付与されるので、そのポイントで最初のトライアル実行ができます。'
+      '初回ログインで10ドル分の無料枠が付与されるので、その範囲で最初のトライアル実行ができます。'
     ].join('\n');
   }
   return [
     'Dispatch requires sign-in.',
-    'First-time sign-in grants 500 points, so you can use those credits for the first trial run.'
+    'First-time sign-in grants $10 in credits, so you can use those credits for the first trial run.'
   ].join('\n');
 }
 
@@ -7647,7 +7647,7 @@ function buildOpenChatNoLoginAnswer(prompt = '') {
         '',
         'ただし、実際にagentへ仕事を送る、支払い、納品履歴の保存、API key発行にはログインが必要です。',
         '',
-        '初回ログインで500Ptが付与されます。実行直前まで整理してからログインすれば、そのポイントを最初の発注に使えます。',
+        '初回ログインで10ドル分の無料枠が付与されます。実行直前まで整理してからログインすれば、その無料枠を最初の発注に使えます。',
         '',
         '今できること: 依頼内容をここで整理して、実行直前まで進める。実行する時だけGoogleログインに進む、という使い方ができます。'
       ].join('\n')
@@ -7656,12 +7656,12 @@ function buildOpenChatNoLoginAnswer(prompt = '') {
         '',
         'Login is required only for sending real work to agents, payment, saved delivery history, and API key issuance.',
         '',
-        'First-time sign-in grants 500 points. Prepare the request first, then use those points toward the first order when you are ready.',
+        'First-time sign-in grants $10 in credits. Prepare the request first, then use those credits toward the first order when you are ready.',
         '',
         'A practical path: prepare the request here first, then sign in with Google only when you are ready to run it.'
       ].join('\n'),
     actions: [
-      { action: 'connect_google', label: ja ? 'Googleでログインして500Ptを受け取る' : 'SIGN IN AND GET 500 POINTS' }
+      { action: 'connect_google', label: ja ? 'Googleでログインして10ドル無料枠を受け取る' : 'SIGN IN AND GET $10 CREDIT' }
     ],
     status: 'No-login path explained.\n\nNo order was created and no billing occurred.'
   };
@@ -23146,7 +23146,7 @@ function renderRunCreateStatus(snapshot = state.snapshot || {}) {
     buttonText = uiLabels.prepareOrder;
   } else if (!canOrderFromBrowser(auth)) {
     title = 'Login required to send order.';
-    body = `The CAIt Chat brief is ready. First-time sign-in grants 500 points, which can be used toward this order. Sign in when you want to dispatch paid work, then press ${uiLabels.sendOrder}.`;
+    body = `The CAIt Chat brief is ready. First-time sign-in grants $10 in credits, which can be used toward this order. Sign in when you want to dispatch paid work, then press ${uiLabels.sendOrder}.`;
     tone = 'warn';
     buttonText = uiLabels.sendOrder;
   } else if (state.pendingIntake && state.intakeConfirmed) {
@@ -24154,7 +24154,7 @@ function renderStripeTools(account = null, auth = null) {
       'Live billing: paused',
       `Charge model shown for activation readiness: ${displayMode}`,
       `Saved payment method: ${savedCard ? 'yes' : 'no'}`,
-      'Orders and account registration remain available without charging.',
+      'Orders and account registration remain available within the $10 per-account beta credit allowance.',
       'Activation: set BILLING_ACTIVATION_ENABLED=1 or BETA_BILLING_PAUSED=0 on the platform.'
     ].join('\n'));
     safeText(els.stripeProviderStatus, [
@@ -24165,7 +24165,7 @@ function renderStripeTools(account = null, auth = null) {
       `Withdrawable ledger balance: ${yen(providerPending)}`,
       'Provider identity/admin approval can be prepared now; payout movement stays locked until billing activation.'
     ].join('\n'));
-    safeText(els.stripeCustomerActionResult, 'Beta mode is active. Hosted checkout, card setup, monthly charges, PAY.JP charges, and subscription checkout are disabled, but the billing contracts remain ready for activation.');
+    safeText(els.stripeCustomerActionResult, 'Beta mode is active. Each account can use up to $10 in credits. Hosted checkout, card setup, monthly charges, PAY.JP charges, and subscription checkout are disabled, but the billing contracts remain ready for activation.');
     safeText(els.stripeProviderActionResult, connectReady
       ? 'Provider setup is ready. Payout movement remains paused during beta.'
       : 'Provider setup can be prepared, but payouts and provider monthly charges remain paused during beta.');

@@ -119,6 +119,8 @@ assert.equal(existsSync(fileURLToPath(new URL('../public/chatux/', import.meta.u
 
 assert.ok(html.includes('<main class="home-shell" aria-label="CAIt landing page">'), 'Root page should be the public landing page.');
 assert.ok(html.includes('Anyone can create high-quality AI agent output'), 'Root should lead with anyone-can-create-high-quality-output positioning.');
+assert.ok(html.includes('β版は無料開放中'), 'Root should disclose the beta free-access state at the top.');
+assert.ok(html.includes('各アカウント10ドル分まで無料'), 'Root should disclose the per-account $10 free allowance.');
 assert.ok(html.includes('scheduled work continue in the background'), 'Root should mention background scheduled work as supporting value, not the primary headline.');
 assert.ok(html.includes('/home.css?v=20260504b'), 'Root should load the home landing CSS.');
 assert.ok(html.includes('<p class="hero-read">'), 'Root hero should include a short read line between the catch and START.');

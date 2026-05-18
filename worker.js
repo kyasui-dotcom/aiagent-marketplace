@@ -3301,7 +3301,7 @@ async function maybeAutoVerifyImportedAgent(storage, agent, rewardLogin = '') {
   });
   if (verification.ok) {
     await touchEvent(storage, 'VERIFIED', `${agent.name} auto verification succeeded after import`);
-    if (result?.welcomeCredits?.status === 'granted') {
+    if (['granted', 'topped_up'].includes(String(result?.welcomeCredits?.status || ''))) {
       await touchEvent(storage, 'CREDIT', `${rewardLogin} earned ${WELCOME_CREDITS_GRANT_AMOUNT} welcome credits for ${agent.name}`);
     } else if (result?.welcomeCredits?.status === 'rejected') {
       await touchEvent(storage, 'CREDIT', `${agent.name} welcome credits rejected: ${result.welcomeCredits.reason}`);
@@ -3648,7 +3648,7 @@ async function persistAccountForIdentity(storage, env, user, authProvider) {
   const login = defaultLoginForAuthUser(user, authProvider);
   await mutateAccountByLogin(storage, login, async (draft) => {
     account = upsertAccountSettingsForIdentityInState(draft, user, authProvider, {});
-    signupCredits = maybeGrantWelcomeCreditsForSignupInState(draft, account.login, user, authProvider, 0);
+    signupCredits = maybeGrantWelcomeCreditsForSignupInState(draft, account.login, user, authProvider);
     account = accountSettingsForLogin(draft, account.login, user, authProvider);
   });
   const signupWelcomeClaim = await claimSignupWelcomeEmailAttempt(storage, account, user, authProvider);
@@ -3665,7 +3665,7 @@ async function persistAccountForIdentity(storage, env, user, authProvider) {
     });
     await maybeSendSignupWelcomeEmail(storage, env, account, user, authProvider, { alreadyClaimed: true });
   }
-  if (signupCredits?.status === 'granted') {
+  if (['granted', 'topped_up'].includes(String(signupCredits?.status || ''))) {
     await touchEvent(storage, 'CREDIT', `${account.login} earned ${signupCredits.amount} signup welcome credits`);
   }
   await trackAuthLoginCompletion(storage, authProvider, account, {
@@ -3692,12 +3692,12 @@ async function linkSessionIdentityToAccount(storage, env, targetLogin, user, aut
   await mutateAccountByLogin(storage, targetLogin, async (draft) => {
     result = linkIdentityToAccountInState(draft, targetLogin, user, authProvider);
     if (result?.ok) {
-      signupCredits = maybeGrantWelcomeCreditsForSignupInState(draft, result.account.login, { ...(user || {}), login: result.account.login }, authProvider, 0);
+      signupCredits = maybeGrantWelcomeCreditsForSignupInState(draft, result.account.login, { ...(user || {}), login: result.account.login }, authProvider);
       result.account = accountSettingsForLogin(draft, result.account.login, user, authProvider);
       return;
     }
   });
-  if (signupCredits?.status === 'granted') {
+  if (['granted', 'topped_up'].includes(String(signupCredits?.status || ''))) {
     await touchEvent(storage, 'CREDIT', `${result.account.login} earned ${signupCredits.amount} signup welcome credits`);
     await maybeSendSignupWelcomeEmail(storage, env, result.account, user, authProvider);
   }
@@ -3947,12 +3947,12 @@ function annotateGuestTrialOrderBody(body = {}, guestTrial = {}) {
   const input = body.input && typeof body.input === 'object' ? body.input : {};
   return {
     ...body,
-    budget_cap: Math.min(Number(body.budget_cap || 300), guestTrial.limit || 500),
+    budget_cap: Math.min(Number(body.budget_cap || 300), guestTrial.limit || WELCOME_CREDITS_GRANT_AMOUNT),
     guest_trial: {
       enabled: true,
       visitor_id: guestTrial.visitorId,
       visitor_hash: guestTrial.visitorHash,
-      credit_limit: guestTrial.limit || 500
+      credit_limit: guestTrial.limit || WELCOME_CREDITS_GRANT_AMOUNT
     },
     input: {
       ...input,
@@ -3960,7 +3960,7 @@ function annotateGuestTrialOrderBody(body = {}, guestTrial = {}) {
         ...((input && input._broker) || {}),
         guestTrial: {
           visitorHash: guestTrial.visitorHash,
-          creditLimit: guestTrial.limit || 500,
+          creditLimit: guestTrial.limit || WELCOME_CREDITS_GRANT_AMOUNT,
           signupDebit: true
         }
       }
@@ -3977,7 +3977,7 @@ async function prepareGuestTrialOrderContext(storage, current, body, resolved) {
     return { error: 'Invalid API key', statusCode: 401 };
   }
   return {
-    error: 'Login required. Guest trial ordering is disabled. Sign in to receive 500 welcome credits for the first run.',
+    error: 'Login required. Guest trial ordering is disabled. Sign in to receive $10 in welcome credits for the first runs.',
     code: 'login_required',
     statusCode: 401
   };
@@ -3985,7 +3985,7 @@ async function prepareGuestTrialOrderContext(storage, current, body, resolved) {
 
 async function handleGuestTrialClaim(storage, request, env) {
   return {
-    error: 'Guest trial claim is disabled. First-time sign-in now grants 500 welcome credits directly.',
+    error: 'Guest trial claim is disabled. First-time sign-in now grants $10 in welcome credits directly.',
     code: 'guest_trial_disabled',
     statusCode: 410
   };
@@ -8349,11 +8349,13 @@ async function revokeOrderApiKey(storage, request, env, keyId) {
 async function getStripeStatus(storage, request, env) {
   const current = await currentUserContext(request, env);
   if (!current.user) return { error: 'Login required', statusCode: 401 };
-  const state = await storage.getState();
-  const account = accountSettingsForLogin(state, current.login, current.user, current.authProvider);
+  const account = typeof storage.getAccountByLogin === 'function'
+    ? await storage.getAccountByLogin(current.login)
+    : accountSettingsForLogin({ accounts: [] }, current.login, current.user, current.authProvider);
+  const effectiveAccount = account || accountSettingsForLogin({ accounts: [] }, current.login, current.user, current.authProvider);
   return {
     stripe: {
-      ...stripeStateForClient(request, env, account),
+      ...stripeStateForClient(request, env, effectiveAccount),
       billingPaused: billingPausedForBeta(env),
       billingActivationEnabled: runtimePolicy(env).billingActivationEnabled
     }
@@ -8363,11 +8365,13 @@ async function getStripeStatus(storage, request, env) {
 async function getPayjpStatus(storage, request, env) {
   const current = await currentUserContext(request, env);
   if (!current.user) return { error: 'Login required', statusCode: 401 };
-  const state = await storage.getState();
-  const account = accountSettingsForLogin(state, current.login, current.user, current.authProvider);
+  const account = typeof storage.getAccountByLogin === 'function'
+    ? await storage.getAccountByLogin(current.login)
+    : accountSettingsForLogin({ accounts: [] }, current.login, current.user, current.authProvider);
+  const effectiveAccount = account || accountSettingsForLogin({ accounts: [] }, current.login, current.user, current.authProvider);
   return {
     payjp: {
-      ...payjpStateForClient(request, env, account),
+      ...payjpStateForClient(request, env, effectiveAccount),
       billingPaused: billingPausedForBeta(env),
       billingActivationEnabled: runtimePolicy(env).billingActivationEnabled
     }
@@ -9752,7 +9756,6 @@ async function appendBillingAudit(storage, job, billing, meta = {}) {
 }
 
 function billingModeForRequester(current, account = null, env = null) {
-  if (billingPausedForBeta(env)) return 'test';
   if (canViewAdminDashboard(current, env)) return 'test';
   const profile = billingProfileForAccount(account, current?.apiKey?.mode || '', billingPeriodId());
   return profile.mode || 'monthly_invoice';
@@ -21689,7 +21692,7 @@ async function performSingleJobCreate(storage, env, current, body, options = {})
     const guestLimitExceeded = current?.guestTrial && String(funding.code || '') === 'payment_required';
     return {
       error: guestLimitExceeded
-        ? `Guest trial covers one order up to ${current.guestTrial.limit || 500} points. Sign in to continue with this larger order.`
+        ? `Guest trial covers one order up to $${ledgerAmountToDisplayCurrency(current.guestTrial.limit || WELCOME_CREDITS_GRANT_AMOUNT).toFixed(2)}. Sign in to continue with this larger order.`
         : (stripeFunding?.error || funding.error),
       code: guestLimitExceeded ? 'guest_trial_limit_exceeded' : (stripeFunding?.code || funding.code),
       inferred_task_type: taskType,
@@ -24122,7 +24125,7 @@ async function handleVerifyAgent(storage, request, env, agentId) {
   if (result.error) return json({ error: result.error }, result.statusCode || 400);
   if (result.verification.ok) {
     await touchEvent(storage, 'VERIFIED', `${result.agent.name} verification succeeded`);
-    if (result.welcome_credits?.status === 'granted') {
+    if (['granted', 'topped_up'].includes(String(result.welcome_credits?.status || ''))) {
       await touchEvent(storage, 'CREDIT', `${authorization.agent.owner || current.login} earned ${WELCOME_CREDITS_GRANT_AMOUNT} welcome credits for ${result.agent.name}`);
     } else if (result.welcome_credits?.status === 'rejected') {
       await touchEvent(storage, 'CREDIT', `${result.agent.name} welcome credits rejected: ${result.welcome_credits.reason}`);

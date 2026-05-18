@@ -63,6 +63,14 @@ assert.ok(
   'development discipline must document beta billing pause behavior'
 );
 assert.ok(
+  disciplineDoc.includes('Each account may use the beta free allowance up to $10 in welcome credits'),
+  'development discipline must document the per-account beta free allowance'
+);
+assert.ok(
+  disciplineDoc.includes('do not create unlimited free test-mode order execution for normal users'),
+  'development discipline must prevent unlimited beta test-mode execution'
+);
+assert.ok(
   disciplineDoc.includes('Agent-specific boundaries must be documented in the relevant agent definition file'),
   'development discipline must keep agent-specific boundary details in agent files'
 );
