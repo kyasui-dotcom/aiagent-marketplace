@@ -169,8 +169,14 @@ assert.ok(storageSource.includes("jobIsApprovalBlockedForStorage(job) ? 'blocked
 assert.ok(workerSource.includes('function workflowConcreteDeliverableContractForJob'), 'concrete deliverable checks should be contract-driven instead of task-name driven.');
 assert.ok(!/function workflowTaskRequiresConcreteSpecialistArtifact[\s\S]*'seo_gap'/.test(workerSource), 'worker must not hardcode specialist deliverable requirements by task name.');
 assert.ok(workerSource.includes('if (workflowTaskRequiresConcreteSpecialistArtifact(job)) return false;'), 'prior-handoff fallback must respect explicit concrete-deliverable contracts.');
-assert.ok(workerSource.includes('completionBlocking: false'), 'incomplete specialist artifacts should surface as quality warnings without blocking workflow completion.');
-assert.ok(workerSource.includes('quality warning: missing required concrete deliverable'), 'reconcile should revalidate already-completed specialist children and surface missing-deliverable warnings.');
+assert.ok(!workerSource.includes('completionBlocking: false'), 'incomplete specialist artifacts must block completion and retry/fail instead of surfacing as non-blocking warnings.');
+assert.ok(workerSource.includes('function agentCompletionFailureReason'), 'worker must reject completed agent responses that do not include returned delivery artifacts.');
+assert.ok(workerSource.includes('markAgentCompletionFailedFreeInState'), 'missing-deliverable completions must fail without billing instead of becoming warnings.');
+assert.ok(workerSource.includes('billing released: agent did not complete a user-facing delivery'), 'agent-side missing-deliverable failures must release billing.');
+assert.ok(workerSource.includes('listRetryableDispatchJobs'), 'cron retry sweep must include retryable non-workflow agent jobs, not only workflow children.');
+assert.ok(workerSource.includes('function billingPausedForBeta'), 'worker must expose a beta billing pause policy.');
+assert.ok(workerSource.includes("code: 'beta_billing_paused'"), 'live checkout, charge, and payout routes must return a beta pause code when billing is disabled.');
+assert.ok(workerSource.includes("Set BILLING_ACTIVATION_ENABLED=1"), 'beta billing pause must document the activation switch.');
 assert.ok(sampleAgentDefinitionsSource.includes('SAMPLE_AGENT_MANIFESTS'), 'agent index should derive manifests from individual agent files.');
 assert.ok(sampleAgentDefinitionsSource.includes('sampleAgentDefinitionForKind'), 'agent index should resolve a definition by its own manifest kind.');
 assert.ok(!sampleAgentDefinitionsSource.includes('sampleAgentPayload'), 'agent index must not own cross-agent payload generation.');
@@ -214,6 +220,7 @@ const env = {
   ALLOW_DEV_API: '1',
   EXPOSE_JOB_SECRETS: '1',
   SESSION_SECRET: 'worker-api-qa-secret',
+  BILLING_ACTIVATION_ENABLED: '1',
   STRIPE_SECRET_KEY: 'sk_test_worker_qa',
   STRIPE_WEBHOOK_SECRET: 'whsec_worker_api_qa',
   STRIPE_DEFAULT_CURRENCY: 'USD',
@@ -617,6 +624,19 @@ assert.equal(ready.status, 200);
 assert.equal(ready.body.ready, true);
 assert.equal(ready.body.version, '0.2.0-test');
 
+const betaBillingEnv = { ...env, BILLING_ACTIVATION_ENABLED: '0', BETA_BILLING_PAUSED: '1' };
+const betaAuthStatus = await request('/auth/status', {}, { sessionCookie: daveSession, env: betaBillingEnv });
+assert.equal(betaAuthStatus.status, 200);
+assert.equal(betaAuthStatus.body.billingPaused, true, 'beta mode should expose billingPaused to the client');
+assert.equal(betaAuthStatus.body.canManagePayments, false, 'beta mode should keep account flows but hide live payment management');
+const betaStripeSetup = await request('/api/stripe/setup-session', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({})
+}, { sessionCookie: daveSession, env: betaBillingEnv });
+assert.equal(betaStripeSetup.status, 409);
+assert.equal(betaStripeSetup.body.code, 'beta_billing_paused', 'beta mode should block hosted payment-method setup');
+
 const targetedSampleStorage = createD1LikeStorage(null, {
   allowInMemory: true,
   sampleAgentEndpointBaseUrl: env.SAMPLE_AGENT_ENDPOINT_BASE_URL
@@ -642,8 +662,9 @@ const sampleProviderJob = await request('/sample-agents/writer/jobs', {
   })
 });
 assert.equal(sampleProviderJob.status, 200, `configured sample provider job route should return a provider response: ${JSON.stringify(sampleProviderJob.body)}`);
-assert.equal(sampleProviderJob.body.status, 'completed', 'sample provider job route should return a completed provider-contract payload');
-assert.ok(Array.isArray(sampleProviderJob.body.files) && sampleProviderJob.body.files.length, 'sample provider job route should return files through the normal provider contract');
+assert.equal(sampleProviderJob.body.status, 'failed', 'sample provider job route should fail instead of returning a fallback provider-contract payload');
+assert.match(sampleProviderJob.body.failure_reason || sampleProviderJob.body.error || '', /missing_required_deliverable/, 'sample provider job route should name the missing deliverable contract');
+assert.equal(Array.isArray(sampleProviderJob.body.files) ? sampleProviderJob.body.files.length : 0, 0, 'sample provider job route must not return fallback files');
 
 const unauthGoogleAssets = await request('/api/connectors/google/assets?include=gsc,ga4');
 assert.equal(unauthGoogleAssets.status, 401, 'Google source asset reads should fail fast with 401 before D1 state scans.');
@@ -5029,6 +5050,21 @@ assert.equal(registered.body.agent.name, 'QA_REGISTER');
 assert.equal(registered.body.agent.metadata.routing_confirmation.confirmed, true);
 assert.equal(registered.body.routing_confirmation.inferred.layer, 'research');
 
+const registeredWithMoneyLocked = await request('/api/agents', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    name: 'qa_money_locked_registration',
+    description: 'qa registered agent before provider money readiness is complete',
+    task_types: 'summary',
+    confirm_routing: true
+  })
+}, { sessionCookie: samuraiSession });
+assert.equal(registeredWithMoneyLocked.status, 201, 'agent registration should be allowed before provider money readiness is complete');
+assert.equal(registeredWithMoneyLocked.body.provider_money_readiness.money_actions_blocked, true);
+assert.ok(registeredWithMoneyLocked.body.provider_money_readiness.missing_billing_fields.includes('billingPaymentMethod'));
+assert.ok(registeredWithMoneyLocked.body.provider_money_readiness.missing_billing_fields.includes('providerIdentityApproved'));
+
 const deletedRegistered = await request(`/api/agents/${registered.body.agent.id}`, {
   method: 'DELETE'
 });
@@ -5036,6 +5072,12 @@ assert.equal(deletedRegistered.status, 200);
 assert.equal(deletedRegistered.body.ok, true);
 assert.equal(deletedRegistered.body.agent.id, registered.body.agent.id);
 assert.equal(deletedRegistered.body.soft_deleted, true, 'agent DELETE should hide the agent without deleting the database row');
+
+const deletedMoneyLockedRegistered = await request(`/api/agents/${registeredWithMoneyLocked.body.agent.id}`, {
+  method: 'DELETE'
+}, { sessionCookie: samuraiSession });
+assert.equal(deletedMoneyLockedRegistered.status, 200);
+assert.equal(deletedMoneyLockedRegistered.body.soft_deleted, true);
 
 const githubDraftUnauthorized = await request('/api/github/generate-manifest', {
   method: 'POST',
@@ -5175,21 +5217,29 @@ globalThis.fetch = async (input, init) => {
       })
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
-  if (url === 'https://api.stripe.com/v1/setup_intents/seti_worker_qa_card_1') {
+  if (url === 'https://api.stripe.com/v1/setup_intents/seti_worker_qa_card_1' || url === 'https://api.stripe.com/v1/setup_intents/seti_worker_qa_alice_card_1') {
+    const isAlice = url.includes('alice');
     return new Response(JSON.stringify({
-      id: 'seti_worker_qa_card_1',
+      id: isAlice ? 'seti_worker_qa_alice_card_1' : 'seti_worker_qa_card_1',
       object: 'setup_intent',
-      payment_method: 'pm_worker_qa_dave'
+      payment_method: isAlice ? 'pm_worker_qa_alice' : 'pm_worker_qa_dave'
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
-  if (url === 'https://api.stripe.com/v1/customers/cus_worker_qa_dave') {
+  if (url === 'https://api.stripe.com/v1/customers/cus_worker_qa_dave' || url === 'https://api.stripe.com/v1/customers/cus_worker_qa_alice') {
+    const isAlice = url.includes('alice');
     return new Response(JSON.stringify({
-      id: 'cus_worker_qa_dave',
+      id: isAlice ? 'cus_worker_qa_alice' : 'cus_worker_qa_dave',
       object: 'customer',
-      invoice_settings: { default_payment_method: 'pm_worker_qa_dave' }
+      invoice_settings: { default_payment_method: isAlice ? 'pm_worker_qa_alice' : 'pm_worker_qa_dave' }
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
   if (url === 'https://api.stripe.com/v1/accounts' && String(init?.method || 'GET').toUpperCase() === 'POST') {
+    const params = new URLSearchParams(String(init?.body || ''));
+    assert.equal(params.get('type'), 'standard');
+    assert.equal(params.get('capabilities[transfers][requested]'), 'true');
+    assert.equal(params.has('controller[stripe_dashboard][type]'), false);
+    assert.equal(params.has('controller[fees][payer]'), false);
+    assert.equal(params.has('controller[losses][payments]'), false);
     return new Response(JSON.stringify({
       id: 'acct_worker_qa_alice',
       object: 'account',
@@ -5305,6 +5355,78 @@ globalThis.fetch = async (input, init) => {
   }
   return originalFetch(input, init);
 };
+
+const aliceBillingReady = await request('/api/settings/billing', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    legalName: 'Alice Example LLC',
+    billingEmail: 'billing@example.com',
+    billingPhone: '+81-3-1234-5678',
+    billingPostalCode: '100-0001',
+    billingRegion: 'Tokyo',
+    billingCity: 'Chiyoda',
+    billingAddressLine1: '1-1 Chiyoda',
+    country: 'JP'
+  })
+}, { sessionCookie: aliceSession });
+assert.equal(aliceBillingReady.status, 200, 'agent registration QA account should have billing identity before import');
+
+const aliceSetupPayload = JSON.stringify({
+  id: 'evt_worker_qa_alice_setup_1',
+  type: 'checkout.session.completed',
+  data: {
+    object: {
+      id: 'cs_worker_qa_alice_setup_1',
+      customer: 'cus_worker_qa_alice',
+      setup_intent: 'seti_worker_qa_alice_card_1',
+      metadata: {
+        aiagent2_kind: 'payment_method_setup',
+        aiagent2_account_login: 'alice'
+      }
+    }
+  }
+});
+const aliceSetupWebhook = await request('/api/stripe/webhook', {
+  method: 'POST',
+  headers: {
+    'content-type': 'application/json',
+    'stripe-signature': stripeSignatureForPayload(aliceSetupPayload)
+  },
+  body: aliceSetupPayload
+});
+assert.equal(aliceSetupWebhook.status, 200, 'agent registration QA account should have a saved payment method before import');
+
+const tinyIdentityPhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+const aliceRegistrationIdentity = await request('/api/settings/provider-identity', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    full_name: 'Alice Example',
+    birth_date: '1990-01-02',
+    phone: '+81-3-0000-0000',
+    country: 'JP',
+    address_line1: '1-1-1 QA Street',
+    address_line2: 'Suite 2',
+    city: 'Tokyo',
+    region: 'Tokyo',
+    postal_code: '100-0001',
+    document_type: 'photo_id',
+    notes: 'Worker API QA provider identity submission before agent registration.',
+    photo_name: 'alice-identity.png',
+    photo_data_url: tinyIdentityPhoto
+  })
+}, { sessionCookie: aliceSession });
+assert.equal(aliceRegistrationIdentity.status, 201, 'agent registration QA account should submit provider identity before import');
+assert.equal(aliceRegistrationIdentity.body.identity_verification.status, 'pending');
+
+const aliceRegistrationIdentityApproval = await request('/api/admin/provider-identities/alice', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ decision: 'approved' })
+}, { sessionCookie: adminSession });
+assert.equal(aliceRegistrationIdentityApproval.status, 200, 'agent registration QA account should be admin-approved before import');
+assert.equal(aliceRegistrationIdentityApproval.body.identity_verification.status, 'approved');
 
 try {
   const openChatIntent = await request('/api/open-chat/intent', {
@@ -6312,16 +6434,15 @@ try {
   assert.equal(openedConnect.body.account_id, 'acct_worker_qa_alice');
   assert.ok(String(openedConnect.body.onboarding_url || '').startsWith('https://connect.stripe.com/'));
 
-  const blockedPayoutBeforeProviderIdentity = await request('/api/stripe/payout/run', {
+  const blockedPayoutBeforeStripeIdentityFromRegistrationApproval = await request('/api/stripe/payout/run', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({})
   }, { sessionCookie: aliceSession });
-  assert.equal(blockedPayoutBeforeProviderIdentity.status, 409);
-  assert.equal(blockedPayoutBeforeProviderIdentity.body.code, 'provider_identity_admin_approval_required');
-  assert.equal(blockedPayoutBeforeProviderIdentity.body.identity_verification.status, 'not_submitted');
+  assert.equal(blockedPayoutBeforeStripeIdentityFromRegistrationApproval.status, 409);
+  assert.equal(blockedPayoutBeforeStripeIdentityFromRegistrationApproval.body.code, 'identity_verification_required');
+  assert.equal(blockedPayoutBeforeStripeIdentityFromRegistrationApproval.body.identity_verification.verified, false);
 
-  const tinyIdentityPhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
   const submittedProviderIdentity = await request('/api/settings/provider-identity', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

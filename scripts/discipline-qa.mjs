@@ -43,6 +43,26 @@ assert.ok(
   'development discipline must document that internal/sample agents are not special-cased'
 );
 assert.ok(
+  disciplineDoc.includes('Only values returned by the agent/provider contract may be treated as delivery artifacts.'),
+  'development discipline must document that delivery artifacts come only from agent/provider returns'
+);
+assert.ok(
+  disciplineDoc.includes('Template guidance may only say to deliver in the user requested language in a clear, user-readable format.'),
+  'development discipline must keep template guidance minimal and non-prescriptive'
+);
+assert.ok(
+  disciplineDoc.includes('Built-in, sample, and external agents share the same completion policy'),
+  'development discipline must require the same no-fallback retry/fail policy for every agent source'
+);
+assert.ok(
+  disciplineDoc.includes('Agent-side failures and missing-deliverable failures are free to the requester.'),
+  'development discipline must document that failed agent deliveries are not billed'
+);
+assert.ok(
+  disciplineDoc.includes('During beta, account registration, provider identity, agent registration, and work execution may remain available, but live checkout, card setup, charges, and payout movement must stay paused.'),
+  'development discipline must document beta billing pause behavior'
+);
+assert.ok(
   disciplineDoc.includes('Agent-specific boundaries must be documented in the relevant agent definition file'),
   'development discipline must keep agent-specific boundary details in agent files'
 );
@@ -138,6 +158,10 @@ for (const fileName of agentFiles) {
   assert.ok(source.includes('health({'), `${fileName} must expose health behavior`);
   assert.ok(source.includes('async runJob({'), `${fileName} must expose jobs behavior`);
   assert.ok(source.includes('provider: AGENT_PROVIDER'), `${fileName} must export the provider`);
+  assert.ok(source.includes('missing_required_deliverable'), `${fileName} must fail when it cannot return an agent-owned delivery`);
+  assert.ok(source.includes('Deliver in the user requested language in a clear, user-readable format.'), `${fileName} must keep delivery formatting guidance minimal`);
+  assert.equal(source.includes('The agent could not produce a safe user-facing delivery'), false, `${fileName} must not convert failed generation into a shared template delivery`);
+  assert.equal(source.includes('Supplied request and available context.'), false, `${fileName} must not use generic fallback request text as delivery input`);
   assertNotIncludes(source, [
     'agent-provider-runtime',
     'sample-agent-provider',

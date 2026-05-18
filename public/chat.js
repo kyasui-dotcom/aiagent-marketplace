@@ -1930,25 +1930,6 @@ function cleanReadableBundleContent(value = '') {
   return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-function internalAllDeliverablesFallbackFiles(job = {}, candidates = []) {
-  const bundle = (Array.isArray(candidates) ? candidates : []).find((file) => {
-    const name = String(file?.name || file?.filename || '').trim().toLowerCase();
-    return name === 'supporting-specialist-deliverables.md' && String(file?.content || file?.body || '').trim();
-  });
-  if (!bundle) return [];
-  const id = String(job?.id || '').trim().slice(0, 8) || 'order';
-  const raw = String(bundle.content || bundle.body || '').trim();
-  const readable = sanitizeDeliveryMarkdownForUser(cleanReadableBundleContent(raw));
-  return [
-    {
-      name: `agent-deliverables-${id}.md`,
-      type: 'text/markdown',
-      content: readable || raw,
-      content_type: 'readable_agent_delivery_bundle'
-    }
-  ];
-}
-
 function registerDeliveryFile(file = {}, fallbackName = 'delivery.md') {
   const sanitized = sanitizeDeliveryFileForUser(file, fallbackName);
   const name = safeFileName(sanitized.name || fallbackName, fallbackName);
@@ -3101,9 +3082,6 @@ function deliveryFiles(job = {}) {
       return true;
     })
     .slice(0, 8);
-  if (files.length || !jobHasDeliveryResult(job)) return files;
-  const allDeliverables = internalAllDeliverablesFallbackFiles(job, candidates);
-  if (allDeliverables.length) return allDeliverables;
   return files;
 }
 

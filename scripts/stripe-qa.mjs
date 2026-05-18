@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { amountFromMinorUnits, amountToMinorUnits, stripeConfigFromEnv, stripePublicConfig, verifyStripeWebhookSignature } from '../lib/stripe.js';
 import { applyStripeRefundToAccount, applySubscriptionRefillToAccount, defaultAccountSettingsForUser, recordStripeTopupInAccount } from '../lib/shared.js';
+
+const stripeSource = readFileSync(new URL('../lib/stripe.js', import.meta.url), 'utf8');
+assert.ok(stripeSource.includes("type: 'standard'"), 'provider Connect onboarding must create Standard connected accounts');
+assert.equal(/stripe_dashboard:\s*\{\s*type:\s*['"]express['"]\s*\}/.test(stripeSource), false, 'provider Connect onboarding must not create Express connected accounts');
 
 const config = stripeConfigFromEnv({
   STRIPE_SECRET_KEY: 'sk_test_123',

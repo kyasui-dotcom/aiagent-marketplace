@@ -190,6 +190,10 @@ assert.ok(chatJs.includes('Connected Google analytics can be attached'), 'Growth
 assert.ok(chatJs.includes('Analytics was skipped for this prepared order'), 'Growth order checks should allow an explicit analytics skip only when the user chooses it.');
 assert.ok(clientJs.includes('Identity verified for payout'), 'Provider payout UI should show Stripe Connect identity verification state.');
 assert.ok(clientJs.includes('complete Stripe Connect identity verification'), 'Provider payout UI should block withdrawals until identity verification is complete.');
+assert.ok(clientJs.includes('const betaBillingPaused = Boolean(stripe?.billingPaused || auth?.billingPaused);'), 'Settings UI should detect beta billing pause from server policy.');
+assert.ok(clientJs.includes('Live billing: paused'), 'Settings UI should show that live billing is paused in beta.');
+assert.ok(clientJs.includes('BILLING_ACTIVATION_ENABLED=1'), 'Settings UI should document the billing activation switch.');
+assert.ok(clientJs.includes('Billing is paused during beta'), 'Stripe/PAY.JP action errors should present beta pause clearly.');
 assert.ok(clientJs.includes("if (requested.length) url.searchParams.set('capabilities', requested.join(','))"), 'Chat Google connector should pass exact required Google capabilities into OAuth without adding broad defaults.');
 assert.ok(clientJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
 assert.ok(chatJs.includes('googleAuthorityConnectGroups'), 'Chat Google approval should connect every requested Google source in one OAuth popup.');
@@ -198,7 +202,7 @@ assert.ok(chatJs.includes('function authorityRequestHandledBySaasHandoffInChat')
 assert.ok(chatJs.includes('jobBlockedForSaasHandoff(job)'), 'SaaS handoff blockers should render as delivery/app-handoff states.');
 assert.ok(chatJs.includes('function sanitizeDeliveryMarkdownForUser'), 'Chat delivery rendering should sanitize internal workflow prompt text before display or download.');
 assert.ok(chatJs.includes('sanitizeDeliveryFileForUser(file'), 'Chat delivery file cards should register sanitized files, not raw provider markdown.');
-assert.ok(chatJs.includes('sanitizeDeliveryMarkdownForUser(cleanReadableBundleContent'), 'Chat delivery bundles should strip internal handoff prompt sections.');
+assert.ok(!chatJs.includes('sanitizeDeliveryMarkdownForUser(cleanReadableBundleContent'), 'Chat delivery must not generate readable delivery bundles from internal handoff files.');
 assert.ok(chatJs.includes('USER_DELIVERY_INTERNAL_MARKERS'), 'Chat delivery sanitization should cover workflow handoff and prior specialist markers.');
 assert.ok(chatJs.includes('deliveryLineLooksInternal'), 'Chat delivery sanitization should remove provider implementation self-reporting lines.');
 assert.ok(chatJs.includes("extractSocialPostTextFromDeliveryContent(file?.content || '', { maxLength: 1200 })"), 'Chat should route long X/social post packs into X Client Ops instead of hiding them as over-280 drafts.');
@@ -855,8 +859,8 @@ assert.ok(clientJs.includes('client_order_id'), 'Open Chat order create should i
 assert.ok(clientJs.includes('orderCreateRequestBody(payload)'), 'Open Chat order create should strip local recovery markers before POSTing.');
 assert.ok(clientJs.includes('same idempotent order request once'), 'Open Chat recovery should safely retry the same idempotent create request once.');
 assert.ok(chatJs.includes('visibleDeliveryFiles(candidates)'), 'Chat delivery should hide internal workflow markdown bundles from user-facing files.');
-assert.ok(chatJs.includes('internalAllDeliverablesFallbackFile'), 'Chat delivery should expose old internal specialist bundles only as readable agent bundles.');
-assert.ok(chatJs.includes('agent-deliverables-${id}.md'), 'Chat delivery should expose readable agent deliverables without synthesizing review-ready files.');
+assert.ok(!chatJs.includes('internalAllDeliverablesFallbackFile'), 'Chat delivery must not synthesize readable bundles from internal workflow files.');
+assert.ok(!chatJs.includes('agent-deliverables-${id}.md'), 'Chat delivery must expose only agent-returned files, not generated readable bundles.');
 assert.ok(!chatJs.includes('review-ready-delivery-${id}.md'), 'Chat delivery must not expose generated review-ready files for old internal specialist bundles.');
 assert.ok(!chatJs.includes('delivery-summary-${id}.md'), 'Chat delivery must not synthesize downloadable summary markdown when no real agent file exists.');
 assert.ok(clientJs.includes('visibleDeliveryFiles(run.output?.files)'), 'Open Chat delivery should hide internal workflow markdown bundles from user-facing files.');
@@ -962,6 +966,14 @@ assert.ok(worker.includes("'/provider-identity.html'"));
 assert.ok(worker.includes("'/provider-identity.js'"));
 assert.ok(worker.includes('submitProviderIdentityVerification'), 'Worker should accept provider identity submissions.');
 assert.ok(worker.includes('reviewAdminProviderIdentityVerification'), 'Worker should let admins approve or reject provider identity submissions.');
+assert.ok(worker.includes('billingPostalCode: existing.billing?.billingPostalCode || identityVerification.fields.postalCode'), 'Provider identity submission should sync address data into billing identity.');
+assert.ok(worker.includes('providerRegistrationBillingStatus'), 'Worker should compute provider money readiness from billing identity and provider identity.');
+assert.ok(worker.includes("providerIdentityStatus(account) === 'approved'"), 'Provider money readiness should require CAIt admin-approved provider identity.');
+assert.ok(worker.includes('money_actions_blocked'), 'Agent registration should report locked provider money actions without blocking registration.');
+assert.ok(clientJs.includes('Listing can proceed, but money actions stay locked'), 'Agent registration UI copy should allow listing while warning that money actions are locked.');
+for (const field of ['billingPhone', 'billingPostalCode', 'billingRegion', 'billingCity', 'billingAddressLine1', 'billingAddressLine2']) {
+  assert.ok(clientJs.includes(field), `Settings UI should save provider registration billing field ${field}.`);
+}
 assert.ok(worker.includes("'/chat.js'"));
 assert.ok(worker.includes("'/chat.html'"));
 assert.ok(worker.includes("'/home.css'"));

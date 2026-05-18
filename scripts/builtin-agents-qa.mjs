@@ -68,6 +68,12 @@ function assertUserFacingDelivery(result, label, requiredPatterns = []) {
   }
 }
 
+function assertMissingConcreteDelivery(result, label) {
+  assert.equal(result.status, 'failed', `${label} should fail instead of returning a shared template delivery`);
+  assert.match(result.failure_reason || result.error || '', /missing_required_deliverable/, `${label} should name the missing deliverable contract`);
+  assert.equal((result.files || []).length, 0, `${label} should not attach fallback files`);
+}
+
 const result = await research.provider.runJob({
   kind: 'research',
   definition: research,
@@ -78,9 +84,8 @@ const result = await research.provider.runJob({
   source: {},
   manifest: research.manifest
 });
-assert.equal(result.status, 'completed');
+assertMissingConcreteDelivery(result, 'research generic delivery');
 assert.equal(result.runtime?.provider, 'agent_file');
-assertUserFacingDelivery(result, 'research generic delivery');
 
 const deliveryBody = {
   prompt: [
@@ -101,12 +106,12 @@ const deliveryBody = {
   output_language: 'en'
 };
 
-for (const [kind, requiredPatterns] of [
-  ['data_analysis', [/Data quality check/i, /Sessions:\s*554/i, /Conversion rate:\s*0%/i]],
-  ['media_planner', [/Decision first/i, /Top 3 actions/i, /Publisher SaaS/i]],
-  ['seo_gap', [/SEO page recommendation/i, /Meta title/i, /Meta description/i]],
-  ['landing', [/Conversion goal/i, /Above-the-fold fix/i, /Measurement plan/i]],
-  ['cmo_leader', [/Decision first/i, /Top 3 actions/i, /Preparation handoff/i]]
+for (const kind of [
+  'data_analysis',
+  'media_planner',
+  'seo_gap',
+  'landing',
+  'cmo_leader'
 ]) {
   const definition = sampleAgentDefinitionForKind(kind);
   const delivery = await definition.provider.runJob({
@@ -116,7 +121,7 @@ for (const [kind, requiredPatterns] of [
     source: {},
     manifest: definition.manifest
   });
-  assertUserFacingDelivery(delivery, `${kind} delivery`, requiredPatterns);
+  assertMissingConcreteDelivery(delivery, `${kind} delivery`);
 }
 
 const travelEsimBody = {
@@ -147,12 +152,12 @@ const travelEsimBody = {
 const wrongProductContextPattern = /AI agent workflows|AI-agent request|agent requests|turns agent requests/i;
 const malformedAudiencePattern = /対象ユーザー:.*制約|Target audience:.*Constraints/i;
 
-for (const [kind, requiredPatterns] of [
-  ['data_analysis', [/lead or inquiry/i, /primary_conversion_event/i]],
-  ['media_planner', [/organic search \/ SEO/i, /lead or inquiry/i]],
-  ['seo_gap', [/travel eSIM and connectivity service/i, /Meta title/i, /Request details/i]],
-  ['landing', [/travel eSIM and connectivity service/i, /Request details/i]],
-  ['cmo_leader', [/lead or inquiry/i, /organic search \/ SEO/i]]
+for (const kind of [
+  'data_analysis',
+  'media_planner',
+  'seo_gap',
+  'landing',
+  'cmo_leader'
 ]) {
   const definition = sampleAgentDefinitionForKind(kind);
   const delivery = await definition.provider.runJob({
@@ -163,7 +168,7 @@ for (const [kind, requiredPatterns] of [
     manifest: definition.manifest
   });
   const content = delivery.files?.[0]?.content || '';
-  assertUserFacingDelivery(delivery, `${kind} travel/eSIM delivery`, requiredPatterns);
+  assertMissingConcreteDelivery(delivery, `${kind} travel/eSIM delivery`);
   assert.ok(!wrongProductContextPattern.test(content), `${kind} travel/eSIM delivery must not use AI-agent-specific copy`);
   assert.ok(!malformedAudiencePattern.test(content), `${kind} travel/eSIM delivery must not leak adjacent intake labels into the audience`);
   assert.ok(!/signup or trial start/i.test(content), `${kind} travel/eSIM delivery should preserve lead/inquiry conversion intent`);
@@ -176,12 +181,12 @@ const travelEsimPurchaseBody = {
     .replace('問い合わせ・リード獲得を増やす', '売上・購入を増やす')
 };
 
-for (const [kind, requiredPatterns] of [
-  ['data_analysis', [/purchase or revenue action/i, /primary_conversion_event/i]],
-  ['media_planner', [/organic search \/ SEO/i, /purchase or revenue action/i]],
-  ['seo_gap', [/travel eSIM and connectivity service/i, /Start purchase/i, /purchase_complete_or_revenue_event/i]],
-  ['landing', [/travel eSIM and connectivity service/i, /Start purchase/i, /purchase_complete_or_revenue_event/i]],
-  ['cmo_leader', [/purchase or revenue action/i, /organic search \/ SEO/i]]
+for (const kind of [
+  'data_analysis',
+  'media_planner',
+  'seo_gap',
+  'landing',
+  'cmo_leader'
 ]) {
   const definition = sampleAgentDefinitionForKind(kind);
   const delivery = await definition.provider.runJob({
@@ -192,7 +197,7 @@ for (const [kind, requiredPatterns] of [
     manifest: definition.manifest
   });
   const content = delivery.files?.[0]?.content || '';
-  assertUserFacingDelivery(delivery, `${kind} travel/eSIM purchase delivery`, requiredPatterns);
+  assertMissingConcreteDelivery(delivery, `${kind} travel/eSIM purchase delivery`);
   assert.ok(!wrongProductContextPattern.test(content), `${kind} travel/eSIM purchase delivery must not use AI-agent-specific copy`);
   assert.ok(!malformedAudiencePattern.test(content), `${kind} travel/eSIM purchase delivery must not leak adjacent intake labels into the audience`);
   assert.ok(!/lead or inquiry|signup or trial start|inquiry_submit|signup_or_trial_start/i.test(content), `${kind} travel/eSIM purchase delivery should preserve purchase conversion intent`);
@@ -217,11 +222,7 @@ const sourceRequiredTeardown = await teardown.provider.runJob({
   source: {},
   manifest: teardown.manifest
 });
-assert.equal(sourceRequiredTeardown.status, 'completed', 'source-required non-research agents should complete when source URLs are supplied');
-assert.ok(
-  sourceRequiredTeardown.report.web_sources.some((item) => item.url === 'https://autowifi-travel.com/en/guide/airalo-vs-holafly'),
-  'source-required non-research agents should attach supplied URLs to report.web_sources'
-);
+assertMissingConcreteDelivery(sourceRequiredTeardown, 'source-required non-research teardown');
 
 const writer = sampleAgentDefinitionForKind('writer');
 const sourceBackedWriter = await writer.provider.runJob({

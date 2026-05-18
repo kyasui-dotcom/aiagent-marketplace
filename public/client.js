@@ -404,6 +404,12 @@ const els = {
   billingLegalName: $('billingLegalName'),
   billingCompanyName: $('billingCompanyName'),
   billingEmail: $('billingEmail'),
+  billingPhone: $('billingPhone'),
+  billingPostalCode: $('billingPostalCode'),
+  billingRegion: $('billingRegion'),
+  billingCity: $('billingCity'),
+  billingAddressLine1: $('billingAddressLine1'),
+  billingAddressLine2: $('billingAddressLine2'),
   billingCountry: $('billingCountry'),
   billingCurrency: $('billingCurrency'),
   billingMode: $('billingMode'),
@@ -11164,7 +11170,7 @@ function openChatNaturalConversationAnswerLines(intent = '', prompt = '') {
         '1. 既存のGitHub repoから登録する',
         '2. まずagentの説明、入力、出力、料金設計を整理する',
         '',
-        'repoがあるなら AGENTS の LIST YOUR AGENT へ進めます。まだ注文も課金も発生しません。'
+        'repoがあるなら AGENTS の LIST YOUR AGENT へ進めます。登録はできますが、提供者の本人確認のadmin承認と引き落とし用の請求情報が揃うまで金銭処理はロックされます。'
       ],
       en: [
         'I read this as wanting to publish and monetize your own AI agent.',
@@ -11173,7 +11179,7 @@ function openChatNaturalConversationAnswerLines(intent = '', prompt = '') {
         '1. Register from an existing GitHub repo',
         '2. First clarify the agent description, inputs, outputs, and pricing',
         '',
-        'If you have a repo, go to AGENTS > LIST YOUR AGENT. No order or billing happens yet.'
+        'If you have a repo, go to AGENTS > LIST YOUR AGENT. Listing can proceed, but money actions stay locked until provider identity is admin-approved and billing details are ready.'
       ]
     },
     natural_engineer_bug_debug: {
@@ -11288,7 +11294,7 @@ function openChatNaturalConversationAnswerLines(intent = '', prompt = '') {
         '3. endpoint/adapterがなければPRで追加する',
         '4. merge後にimport + verifyする',
         '',
-        'repoがあるなら AGENTS の LIST YOUR AGENT へ進めます。迷う場合は、repo URL、何を入力にして何を納品するagentかを書いてください。まだ注文も課金も発生しません。'
+        'repoがあるなら AGENTS の LIST YOUR AGENT へ進めます。迷う場合は、repo URL、何を入力にして何を納品するagentかを書いてください。登録はできますが、提供者の本人確認のadmin承認と引き落とし用の請求情報が揃うまで金銭処理はロックされます。'
       ],
       en: [
         'I read this as publishing a GitHub repo as an AI agent.',
@@ -11299,7 +11305,7 @@ function openChatNaturalConversationAnswerLines(intent = '', prompt = '') {
         '3. Add an endpoint/adapter by PR if missing',
         '4. Import and verify after merging',
         '',
-        'If you have a repo, go to AGENTS > LIST YOUR AGENT. If unsure, send the repo URL and describe the agent input and delivery. No order or billing happens yet.'
+        'If you have a repo, go to AGENTS > LIST YOUR AGENT. If unsure, send the repo URL and describe the agent input and delivery. Listing can proceed, but money actions stay locked until identity and billing are ready.'
       ]
     },
     natural_engineer_api_cli: {
@@ -23073,7 +23079,7 @@ function renderRunCreateStatus(snapshot = state.snapshot || {}) {
 
   if (skillDraft) {
     title = 'Agent Skill detected.';
-    body = `${uiLabels.sendChat} will convert SKILL.md into a ${PRODUCT_NAME} manifest draft, open AGENTS, and let you review before import. No order or billing will happen.`;
+    body = `${uiLabels.sendChat} will convert SKILL.md into a ${PRODUCT_NAME} manifest draft, open AGENTS, and let you review before import. Listing can proceed, but provider money actions stay locked until identity and billing are ready.`;
     tone = 'ok';
     buttonText = uiLabels.sendChat;
   } else if (llmFallbackCandidate && mustUseLlmFallback) {
@@ -23179,7 +23185,7 @@ function renderRunCreateStatus(snapshot = state.snapshot || {}) {
     buttonText = uiLabels.sendOrder;
   } else if (!pinnedAgent && !readyMatches.length) {
     title = 'No ready agent for this task.';
-    body = 'Open AGENTS and finish onboarding or register a ready agent first.';
+    body = 'Open AGENTS to register a ready agent. Provider money actions stay locked until SETTINGS > PAYMENTS and PROVIDER IDENTITY are complete.';
     tone = 'warn';
     buttonText = uiLabels.sendOrder;
   } else {
@@ -23908,6 +23914,12 @@ function toggleSettingsInputs(disabled) {
     els.billingLegalName,
     els.billingCompanyName,
     els.billingEmail,
+    els.billingPhone,
+    els.billingPostalCode,
+    els.billingRegion,
+    els.billingCity,
+    els.billingAddressLine1,
+    els.billingAddressLine2,
     els.billingCountry,
     els.billingCurrency,
     els.billingSubscriptionPlan,
@@ -24135,6 +24147,57 @@ function renderStripeTools(account = null, auth = null) {
   const providerMonthlyLastNotificationAt = String(providerSummary.providerSubscriptionLastNotificationAt || accountStripe.providerMonthlyLastNotificationAt || '').trim();
   const providerMonthlyLastNotificationPeriod = String(providerSummary.providerSubscriptionLastNotificationPeriod || accountStripe.providerMonthlyLastNotificationPeriod || '').trim();
   const stripeReady = Boolean(stripe?.configured);
+  const betaBillingPaused = Boolean(stripe?.billingPaused || auth?.billingPaused);
+  if (betaBillingPaused) {
+    safeText(els.stripeCustomerStatus, [
+      'Platform: beta mode',
+      'Live billing: paused',
+      `Charge model shown for activation readiness: ${displayMode}`,
+      `Saved payment method: ${savedCard ? 'yes' : 'no'}`,
+      'Orders and account registration remain available without charging.',
+      'Activation: set BILLING_ACTIVATION_ENABLED=1 or BETA_BILLING_PAUSED=0 on the platform.'
+    ].join('\n'));
+    safeText(els.stripeProviderStatus, [
+      'Platform: beta mode',
+      'Provider earnings and payout movement: paused',
+      `Provider enabled: ${providerEnabled ? 'yes' : 'no'}`,
+      `Identity verification: ${identityVerificationStatus}`,
+      `Withdrawable ledger balance: ${yen(providerPending)}`,
+      'Provider identity/admin approval can be prepared now; payout movement stays locked until billing activation.'
+    ].join('\n'));
+    safeText(els.stripeCustomerActionResult, 'Beta mode is active. Hosted checkout, card setup, monthly charges, PAY.JP charges, and subscription checkout are disabled, but the billing contracts remain ready for activation.');
+    safeText(els.stripeProviderActionResult, connectReady
+      ? 'Provider setup is ready. Payout movement remains paused during beta.'
+      : 'Provider setup can be prepared, but payouts and provider monthly charges remain paused during beta.');
+    if (els.createStripeSetupSessionBtn) {
+      els.createStripeSetupSessionBtn.textContent = 'BILLING PAUSED';
+      els.createStripeSetupSessionBtn.title = 'Live customer billing is disabled during beta.';
+    }
+    if (els.createStripeSubscriptionSessionBtn) {
+      els.createStripeSubscriptionSessionBtn.textContent = 'CHECKOUT PAUSED';
+      els.createStripeSubscriptionSessionBtn.title = 'Subscription checkout is disabled during beta.';
+    }
+    if (els.createStripeConnectOnboardingBtn) {
+      els.createStripeConnectOnboardingBtn.textContent = connectActionLabel;
+      els.createStripeConnectOnboardingBtn.title = canManagePayouts && stripeReady && !connectReady
+        ? 'Prepare provider payout identity now; payout movement stays paused until activation.'
+        : (connectReady ? 'Provider setup is ready; payout movement is paused during beta.' : 'Connect GitHub first to manage provider onboarding.');
+    }
+    if (els.runStripeProviderMonthlyChargeBtn) {
+      els.runStripeProviderMonthlyChargeBtn.textContent = 'MONTHLY BILLING PAUSED';
+      els.runStripeProviderMonthlyChargeBtn.title = 'Provider monthly charging is disabled during beta.';
+    }
+    if (els.runStripeProviderPayoutBtn) {
+      els.runStripeProviderPayoutBtn.textContent = 'PAYOUT PAUSED';
+      els.runStripeProviderPayoutBtn.title = 'Provider payout movement is disabled during beta.';
+    }
+    setButtonAccess(els.createStripeSetupSessionBtn, false);
+    setButtonAccess(els.createStripeSubscriptionSessionBtn, false);
+    setButtonAccess(els.createStripeConnectOnboardingBtn, canManagePayouts && stripeReady && !connectReady);
+    setButtonAccess(els.runStripeProviderMonthlyChargeBtn, false);
+    setButtonAccess(els.runStripeProviderPayoutBtn, false);
+    return;
+  }
   if (TEMPORARY_INVOICE_BILLING_ENABLED) {
     const cardSetupReady = STRIPE_CARD_SETUP_DURING_TEMPORARY_BILLING_ENABLED && canManagePayments && stripeReady;
     const customerLines = [
@@ -24367,7 +24430,10 @@ function stripeFriendlyErrorInfo(error = {}) {
   const lower = `${rawMessage} ${code}`.toLowerCase();
   let title = 'Hosted payment action failed';
   let action = String(data.action || '').trim();
-  if (/not configured|stripe_not_configured/.test(lower)) {
+  if (/beta_billing_paused|billing.*paused|checkout.*paused|charges?.*paused|payout.*paused/.test(lower)) {
+    title = 'Billing is paused during beta';
+    action = action || 'Account and agent workflows remain available. Platform billing can be reactivated later by enabling BILLING_ACTIVATION_ENABLED.';
+  } else if (/not configured|stripe_not_configured/.test(lower)) {
     title = 'Payment provider is not configured';
     action = action || 'Check payment-provider settings on the platform, then retry.';
   } else if (/invalid email|email address/.test(lower)) {
@@ -24517,6 +24583,12 @@ function renderSettings(account, monthlySummary, auth) {
   setInputValue(els.billingLegalName, billing.legalName);
   setInputValue(els.billingCompanyName, billing.companyName);
   setInputValue(els.billingEmail, billing.billingEmail);
+  setInputValue(els.billingPhone, billing.billingPhone);
+  setInputValue(els.billingPostalCode, billing.billingPostalCode);
+  setInputValue(els.billingRegion, billing.billingRegion);
+  setInputValue(els.billingCity, billing.billingCity);
+  setInputValue(els.billingAddressLine1, billing.billingAddressLine1);
+  setInputValue(els.billingAddressLine2, billing.billingAddressLine2);
   setInputValue(els.billingCountry, billing.country || 'JP');
   setInputValue(els.billingCurrency, billing.currency || 'USD');
   setInputValue(els.billingMode, billing.mode || 'monthly_invoice');
@@ -26496,6 +26568,12 @@ if (els.saveBillingSettingsBtn) els.saveBillingSettingsBtn.onclick = () => {
       legalName: els.billingLegalName?.value || '',
       companyName: els.billingCompanyName?.value || '',
       billingEmail: els.billingEmail?.value || '',
+      billingPhone: els.billingPhone?.value || '',
+      billingPostalCode: els.billingPostalCode?.value || '',
+      billingRegion: els.billingRegion?.value || '',
+      billingCity: els.billingCity?.value || '',
+      billingAddressLine1: els.billingAddressLine1?.value || '',
+      billingAddressLine2: els.billingAddressLine2?.value || '',
       country: els.billingCountry?.value || 'JP',
       currency: els.billingCurrency?.value || 'USD',
       subscriptionPlan: els.billingSubscriptionPlan?.value || 'none',

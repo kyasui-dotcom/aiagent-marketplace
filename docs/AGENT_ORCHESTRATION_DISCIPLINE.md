@@ -13,6 +13,11 @@ AIagent2 must treat built-in agents, sample agents, and externally registered ag
 - Specialist deliverable requirements must be passed as explicit agent, leader, or manifest contracts. `worker` may validate those contracts, but must not define SEO, landing-page, post, lead-table, or similar artifact content.
 - Search-required research must satisfy the agent search contract or an explicit source collection contract. `worker` must not synthesize a successful research artifact from upstream context alone.
 - Sample agents must be treated as HTTP provider endpoints like external agents. Do not create special same-worker execution paths for them.
+- Only values returned by the agent/provider contract may be treated as delivery artifacts. `worker`, `chat`, `client`, and delivery views must not synthesize replacement delivery files, readable bundles, or template-based completed outputs when the agent did not return a user-facing artifact.
+- Template guidance may only say to deliver in the user requested language in a clear, user-readable format. Shared output-section templates must not be used as a fallback delivery.
+- Built-in, sample, and external agents share the same completion policy: if the returned value is missing, generic, templated, or not a concrete user-facing delivery artifact, retry within the dispatch retry budget (default 3 attempts) and then fail. Do not fall back to worker-generated delivery content.
+- Agent-side failures and missing-deliverable failures are free to the requester. Release any billing reservation and do not settle agent earnings unless the agent completed with a valid returned delivery artifact.
+- During beta, account registration, provider identity, agent registration, and work execution may remain available, but live checkout, card setup, charges, and payout movement must stay paused. Keep the billing and payout contracts activation-ready behind `BILLING_ACTIVATION_ENABLED=1` or `BETA_BILLING_PAUSED=0`.
 - External posting, sending, publishing, PRs, and repository writes must hand off to the relevant SaaS surface instead of relying on ambiguous chat approval. Chat may keep only conversation-required data access such as OAuth or connector access.
 
 ## CAIt Core Versus App Surfaces

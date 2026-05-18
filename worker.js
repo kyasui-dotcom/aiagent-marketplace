@@ -38,6 +38,7 @@ import { agentPatternFitScore, applyGuestTrialSignupDebitInState, buildAgentTeam
 import { listCreatorUsageEstimateForOrder } from './lib/shared.js';
 import { orderBodyWithCommonQualityRules } from './lib/shared.js';
 import { amountFromMinorUnits, createConnectedAccount, createConnectedAccountTransfer, createConnectOnboardingLink, createOffSessionMonthlyInvoicePaymentIntent, createOffSessionProviderMonthlyPaymentIntent, createSetupCheckoutSession, createSubscriptionCheckoutSession, ensureStripeCustomer, resolveSubscriptionPlanFromPriceId, retrieveConnectedAccount, retrievePaymentIntent, retrieveSetupIntent, retrieveSubscription, stripeConfigFromEnv, stripeConfigured, stripePublicConfig, updateCustomerDefaultPaymentMethod, verifyStripeWebhookSignature } from './lib/stripe.js';
+import { createPayjpMarketplaceTenant, createPayjpPlatformChargeWith3DS, createPayjpTenantApplicationUrl, finishPayjpThreeDSecureCharge, payjpConfigFromEnv, payjpConfigured, payjpPublicConfig } from './lib/payjp.js';
 import { buildXAuthorizeUrl, buildXPkcePair, exchangeXOAuthCode, fetchXProfile, postXTweet, publicXConnectorStatus, validateXPostExecutionApproval, validateXPostText, xConnectorFromOAuthToken, xOAuthConfigured, xTokenEncryptionConfigured } from './lib/x-connector.js';
 import { createWordPressDraft, normalizeWordPressSiteUrl, publicWordPressConnectorStatus, testWordPressApplicationPassword, wordpressConnectorFromApplicationPassword } from './lib/wordpress-connector.js';
 import { connectorTokenEncryptionConfigured, decryptConnectorSecret, encryptConnectorSecret, githubConnectorFromOAuthToken, googleConnectorFromOAuthToken } from './lib/connector-secrets.js';
@@ -3861,6 +3862,60 @@ function requireAgentWriteAccess(current, env) {
   return { error: 'Login or CAIt API key required', statusCode: 401, current, policy };
 }
 
+function cleanRegistrationIdentityField(value = '', max = 240) {
+  return String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function providerRegistrationBillingStatus(current = {}, account = null) {
+  const authProvider = String(current?.authProvider || sessionAuthProvider(current?.session) || '').trim().toLowerCase();
+  if (authProvider === 'e2e') return { ok: true, missing: [], paymentMethodReady: true, authProvider };
+  const billing = account?.billing && typeof account.billing === 'object' ? account.billing : {};
+  const missing = [];
+  const legalName = cleanRegistrationIdentityField(billing.legalName || billing.companyName);
+  const billingEmail = cleanRegistrationIdentityField(billing.billingEmail).toLowerCase();
+  if (!legalName) missing.push('legalNameOrCompanyName');
+  if (!billingEmail || !validateEmailAddress(billingEmail)) missing.push('billingEmail');
+  if (!cleanRegistrationIdentityField(billing.billingPhone, 80)) missing.push('billingPhone');
+  if (!cleanRegistrationIdentityField(billing.billingPostalCode, 40)) missing.push('billingPostalCode');
+  if (!cleanRegistrationIdentityField(billing.billingRegion, 120)) missing.push('billingRegion');
+  if (!cleanRegistrationIdentityField(billing.billingCity, 120)) missing.push('billingCity');
+  if (!cleanRegistrationIdentityField(billing.billingAddressLine1, 240)) missing.push('billingAddressLine1');
+  if (!cleanRegistrationIdentityField(billing.country, 8)) missing.push('country');
+  const stripeReady = Boolean(account?.stripe?.defaultPaymentMethodId || String(account?.stripe?.defaultPaymentMethodStatus || '').toLowerCase() === 'ready');
+  const payjpReady = Boolean(account?.payjp?.customerId && String(account?.payjp?.defaultCardStatus || '').toLowerCase() === 'ready');
+  const paymentMethodReady = stripeReady || payjpReady;
+  if (!paymentMethodReady) missing.push('billingPaymentMethod');
+  const providerIdentityApproved = providerIdentityStatus(account) === 'approved';
+  if (!providerIdentityApproved) missing.push('providerIdentityApproved');
+  return {
+    ok: missing.length === 0,
+    missing,
+    paymentMethodReady,
+    providerIdentityApproved,
+    identityReady: missing.every((field) => field === 'billingPaymentMethod' || field === 'providerIdentityApproved'),
+    authProvider
+  };
+}
+
+async function providerMoneyReadinessForCurrent(storage, current = {}) {
+  if (!current?.user && current?.apiKeyStatus !== 'valid') return null;
+  let account = current?.account || null;
+  if (current?.apiKeyStatus !== 'valid' && current?.login && typeof storage?.getAccountByLogin === 'function') {
+    account = await storage.getAccountByLogin(current.login);
+  }
+  const status = providerRegistrationBillingStatus(current, account);
+  return {
+    ready: status.ok,
+    money_actions_blocked: !status.ok,
+    missing_billing_fields: status.missing,
+    payment_method_ready: Boolean(status.paymentMethodReady),
+    provider_identity_approved: Boolean(status.providerIdentityApproved),
+    next_step: status.ok
+      ? 'Provider money actions are available when each payment provider also accepts the requested action.'
+      : 'Agent registration is allowed, but provider money actions stay locked until SETTINGS -> PAYMENTS has billing details and a saved card, and PROVIDER IDENTITY is admin-approved.'
+  };
+}
+
 function guestTrialCurrentContext(guestTrial = {}) {
   const login = guestTrial.login || guestTrialLoginForVisitorId(guestTrial.visitorId);
   return {
@@ -3984,12 +4039,32 @@ function runtimePolicy(env) {
   const devApiEnabled = boolFlag(env?.ALLOW_DEV_API, false);
   const exposeJobSecrets = boolFlag(env?.EXPOSE_JOB_SECRETS, openWriteApiEnabled || devApiEnabled);
   const configuredStage = String(env?.RELEASE_STAGE || '').trim();
+  const billingActivationEnabled = boolFlag(env?.BILLING_ACTIVATION_ENABLED ?? env?.BILLING_ACTIVATED, false);
+  const betaBillingPaused = boolFlag(env?.BETA_BILLING_PAUSED ?? env?.BILLING_PAUSED, !billingActivationEnabled);
   return {
     releaseStage: configuredStage || ((openWriteApiEnabled || devApiEnabled) ? 'development' : 'public'),
     openWriteApiEnabled,
     guestRunReadEnabled,
     devApiEnabled,
-    exposeJobSecrets
+    exposeJobSecrets,
+    billingActivationEnabled,
+    billingPaused: betaBillingPaused
+  };
+}
+
+function billingPausedForBeta(env = {}) {
+  return runtimePolicy(env).billingPaused === true;
+}
+
+function betaBillingPausedResult(action = 'billing') {
+  return {
+    ok: false,
+    paused: true,
+    code: 'beta_billing_paused',
+    error: 'CAIt is currently in beta. Account registration and agent workflows are available, but live billing, charges, checkout, and payout movement are paused.',
+    action,
+    activation: 'Set BILLING_ACTIVATION_ENABLED=1, or BETA_BILLING_PAUSED=0, to reactivate billing.',
+    statusCode: 409
   };
 }
 function normalizedLoginList(raw = '') {
@@ -5330,6 +5405,9 @@ function topLevelAgentReportCandidate(body = {}) {
     body.markdown,
     body.deliverableMarkdown,
     body.deliverable_markdown,
+    Array.isArray(body.artifacts) && body.artifacts.length,
+    Array.isArray(body.approval_requests) && body.approval_requests.length,
+    Array.isArray(body.approvalRequests) && body.approvalRequests.length,
     Array.isArray(body.bullets) && body.bullets.length
   ].some(Boolean);
   return hasReportLikeTopLevel ? body : { summary: body.summary || 'No report provided.' };
@@ -5339,13 +5417,14 @@ function normalizeCallbackPayload(body = {}) {
   const payload = body && typeof body === 'object' ? body : {};
   const status = String(payload.status || (payload.failure_reason || payload.error ? 'failed' : 'completed')).trim().toLowerCase();
   const normalizedStatus = status === 'failed' ? 'failed' : (isBlockedAgentResultStatus(status) ? 'blocked' : 'completed');
-  const reportCandidate = payload.report || payload.output || {
+  const reportCandidate = payload.report || payload.output || topLevelAgentReportCandidate({
+    ...payload,
     summary: payload.summary || (
       normalizedStatus === 'failed'
         ? 'Agent reported failure'
-        : (normalizedStatus === 'blocked' ? 'Agent is blocked pending approval or connector setup' : 'No report provided.')
+        : (normalizedStatus === 'blocked' ? 'Agent is blocked pending approval or connector setup' : payload.summary)
     )
-  };
+  });
   const report = normalizeAgentReportPayload(payload, reportCandidate);
   const failureReason = payload.failure_reason
     || payload.failureReason
@@ -5761,7 +5840,7 @@ async function authStatus(request, env) {
       ])
     ],
     canOrder: loggedIn,
-    canManagePayments: loggedIn,
+    canManagePayments: loggedIn && !policy.billingPaused,
     canRegisterAgents: githubLinked,
     canUseGithubAgentFlow: githubAuthorized,
     canManagePayouts: githubLinked,
@@ -5770,6 +5849,8 @@ async function authStatus(request, env) {
     guestRunReadEnabled: policy.guestRunReadEnabled,
     devApiEnabled: policy.devApiEnabled,
     exposeJobSecrets: policy.exposeJobSecrets,
+    billingPaused: policy.billingPaused,
+    billingActivationEnabled: policy.billingActivationEnabled,
     isPlatformAdmin: canViewAdminDashboard(current, env),
     canReviewFeedbackReports: canReviewFeedbackReports(current, env),
     canReviewAgents: canReviewAgents(current, env),
@@ -7520,6 +7601,17 @@ async function submitProviderIdentityVerification(storage, request, env) {
   await storage.mutate(async (draft) => {
     const existing = accountSettingsForLogin(draft, current.login, current.user, current.authProvider);
     account = upsertAccountSettingsInState(draft, current.login, current.user, current.authProvider, {
+      billing: {
+        ...(existing.billing || {}),
+        legalName: existing.billing?.legalName || identityVerification.fields.fullName,
+        billingPhone: existing.billing?.billingPhone || identityVerification.fields.phone,
+        country: existing.billing?.country || identityVerification.fields.country || 'JP',
+        billingPostalCode: existing.billing?.billingPostalCode || identityVerification.fields.postalCode,
+        billingRegion: existing.billing?.billingRegion || identityVerification.fields.region,
+        billingCity: existing.billing?.billingCity || identityVerification.fields.city,
+        billingAddressLine1: existing.billing?.billingAddressLine1 || identityVerification.fields.addressLine1,
+        billingAddressLine2: existing.billing?.billingAddressLine2 || identityVerification.fields.addressLine2
+      },
       payout: {
         ...(existing.payout || {}),
         providerEnabled: true,
@@ -8259,7 +8351,166 @@ async function getStripeStatus(storage, request, env) {
   if (!current.user) return { error: 'Login required', statusCode: 401 };
   const state = await storage.getState();
   const account = accountSettingsForLogin(state, current.login, current.user, current.authProvider);
-  return { stripe: stripeStateForClient(request, env, account) };
+  return {
+    stripe: {
+      ...stripeStateForClient(request, env, account),
+      billingPaused: billingPausedForBeta(env),
+      billingActivationEnabled: runtimePolicy(env).billingActivationEnabled
+    }
+  };
+}
+
+async function getPayjpStatus(storage, request, env) {
+  const current = await currentUserContext(request, env);
+  if (!current.user) return { error: 'Login required', statusCode: 401 };
+  const state = await storage.getState();
+  const account = accountSettingsForLogin(state, current.login, current.user, current.authProvider);
+  return {
+    payjp: {
+      ...payjpStateForClient(request, env, account),
+      billingPaused: billingPausedForBeta(env),
+      billingActivationEnabled: runtimePolicy(env).billingActivationEnabled
+    }
+  };
+}
+
+async function createPayjpTenantOnboardingForCurrent(storage, request, env) {
+  const current = await currentUserContext(request, env);
+  if (!current.user) return { error: 'Login required', statusCode: 401 };
+  if (!current.githubLinked) return { error: 'GitHub connection required for provider actions.', statusCode: 403 };
+  const config = currentPayjpConfig(request, env);
+  if (!payjpConfigured(config)) return { error: 'PAY.JP is not configured', code: 'payjp_not_configured', statusCode: 503 };
+  let body;
+  try {
+    body = await parseBody(request);
+  } catch (error) {
+    return { error: error.message, statusCode: 400 };
+  }
+  const state = await storage.getState();
+  const account = accountSettingsForLogin(state, current.login, current.user, current.authProvider);
+  if (!account?.payout?.providerEnabled) {
+    return { error: 'Enable provider profile before opening PAY.JP tenant onboarding.', statusCode: 400 };
+  }
+  const tenant = await createPayjpMarketplaceTenant(config, {
+    account,
+    payout: { ...(account.payout || {}), ...(body?.payout || {}), ...(body || {}) },
+    tenantId: body?.tenantId || body?.tenant_id || account?.payjp?.tenantId || ''
+  });
+  const tenantId = tenant?.id || body?.tenantId || body?.tenant_id || account?.payjp?.tenantId || '';
+  const application = await createPayjpTenantApplicationUrl(config, { tenantId });
+  let updated = null;
+  await storage.mutate(async (draft) => {
+    const latest = accountSettingsForLogin(draft, current.login, current.user, current.authProvider);
+    updated = upsertAccountSettingsInState(draft, current.login, current.user, current.authProvider, {
+      payjp: {
+        ...(latest.payjp || {}),
+        tenantId,
+        tenantStatus: tenant?.status || 'pending_review',
+        tenantApplicationUrl: application?.url || application?.application_url || null,
+        tenantApplicationStatus: 'started',
+        threeDSecureRequired: true,
+        lastSyncAt: nowIso(),
+        mode: 'platform_marketplace'
+      }
+    });
+  });
+  await touchEvent(storage, 'PAYJP', `${current.login} opened PAY.JP tenant onboarding`);
+  return {
+    ok: true,
+    tenant_id: tenantId,
+    tenant_status: tenant?.status || 'pending_review',
+    application_url: application?.url || application?.application_url || null,
+    account: sanitizeAccountSettingsForClient(updated)
+  };
+}
+
+async function createPayjpPlatformChargeForCurrent(storage, request, env) {
+  const current = await currentUserContext(request, env);
+  if (!current.user) return { error: 'Login required', statusCode: 401 };
+  if (billingPausedForBeta(env)) return betaBillingPausedResult('PAY.JP platform charges are paused during beta.');
+  const config = currentPayjpConfig(request, env);
+  if (!payjpConfigured(config)) return { error: 'PAY.JP is not configured', code: 'payjp_not_configured', statusCode: 503 };
+  let body;
+  try {
+    body = await parseBody(request);
+  } catch (error) {
+    return { error: error.message, statusCode: 400 };
+  }
+  const state = await storage.getState();
+  const account = accountSettingsForLogin(state, current.login, current.user, current.authProvider);
+  const tenantId = String(body?.tenant_id || body?.tenantId || '').trim();
+  if (!tenantId) return { error: 'PAY.JP tenant_id is required for marketplace charges.', statusCode: 400 };
+  const amount = Number(body?.amount || 0);
+  const cardToken = String(body?.card_token || body?.cardToken || '').trim();
+  const platformFee = body?.platform_fee ?? body?.platformFee ?? null;
+  const charge = await createPayjpPlatformChargeWith3DS(config, {
+    tenantId,
+    amount,
+    cardToken,
+    platformFee,
+    currency: body?.currency || config.defaultCurrency || BILLING_DISPLAY_CURRENCY,
+    metadata: {
+      cait_buyer_login: current.login,
+      cait_job_id: String(body?.job_id || body?.jobId || ''),
+      cait_payment_flow: 'payjp_platform_marketplace_3ds'
+    }
+  });
+  let updated = null;
+  await storage.mutate(async (draft) => {
+    const latest = accountSettingsForLogin(draft, current.login, current.user, current.authProvider);
+    updated = upsertAccountSettingsInState(draft, current.login, current.user, current.authProvider, {
+      payjp: {
+        ...(latest.payjp || {}),
+        lastPlatformChargeId: charge?.id || null,
+        lastPlatformChargeStatus: charge?.paid ? 'paid' : (charge?.three_d_secure_status || charge?.status || 'requires_3ds'),
+        lastPlatformChargeAmount: amount,
+        lastPlatformChargePlatformFee: Number(platformFee || 0),
+        lastPlatformChargeTenantId: tenantId,
+        threeDSecureRequired: true,
+        lastSyncAt: nowIso(),
+        mode: 'platform_marketplace'
+      }
+    });
+  });
+  await touchEvent(storage, 'PAYJP', `${current.login} created PAY.JP platform charge ${charge?.id || ''}`);
+  return {
+    ok: true,
+    charge_id: charge?.id || null,
+    three_d_secure_status: charge?.three_d_secure_status || null,
+    three_d_secure_url: charge?.three_d_secure_url || charge?.tds_url || null,
+    account: sanitizeAccountSettingsForClient(updated)
+  };
+}
+
+async function finishPayjpPlatformCharge3DSForCurrent(storage, request, env) {
+  const current = await currentUserContext(request, env);
+  if (!current.user) return { error: 'Login required', statusCode: 401 };
+  if (billingPausedForBeta(env)) return betaBillingPausedResult('PAY.JP 3-D Secure charge completion is paused during beta.');
+  const config = currentPayjpConfig(request, env);
+  if (!payjpConfigured(config)) return { error: 'PAY.JP is not configured', code: 'payjp_not_configured', statusCode: 503 };
+  let body;
+  try {
+    body = await parseBody(request);
+  } catch (error) {
+    return { error: error.message, statusCode: 400 };
+  }
+  const chargeId = String(body?.charge_id || body?.chargeId || '').trim();
+  const charge = await finishPayjpThreeDSecureCharge(config, chargeId);
+  let updated = null;
+  await storage.mutate(async (draft) => {
+    const latest = accountSettingsForLogin(draft, current.login, current.user, current.authProvider);
+    updated = upsertAccountSettingsInState(draft, current.login, current.user, current.authProvider, {
+      payjp: {
+        ...(latest.payjp || {}),
+        lastPlatformChargeId: charge?.id || chargeId,
+        lastPlatformChargeStatus: charge?.paid ? 'paid' : (charge?.three_d_secure_status || charge?.status || 'finished'),
+        lastSyncAt: nowIso(),
+        mode: 'platform_marketplace'
+      }
+    });
+  });
+  await touchEvent(storage, 'PAYJP', `${current.login} finished PAY.JP 3DS charge ${charge?.id || chargeId}`);
+  return { ok: true, charge_id: charge?.id || chargeId, paid: Boolean(charge?.paid), account: sanitizeAccountSettingsForClient(updated) };
 }
 
 async function ensureStripeCustomerForCurrent(storage, request, env, current) {
@@ -8287,6 +8538,7 @@ async function ensureStripeCustomerForCurrent(storage, request, env, current) {
 async function createStripeSetupSessionForCurrent(storage, request, env) {
   const current = await currentUserContext(request, env);
   if (!current.user) return { error: 'Login required', statusCode: 401 };
+  if (billingPausedForBeta(env)) return betaBillingPausedResult('Stripe payment-method setup is paused during beta.');
   const ensured = await ensureStripeCustomerForCurrent(storage, request, env, current);
   if (ensured.error) return ensured;
   const session = await createSetupCheckoutSession(ensured.config, {
@@ -8315,6 +8567,7 @@ async function createStripeSetupSessionForCurrent(storage, request, env) {
 async function createStripeSubscriptionSessionForCurrent(storage, request, env) {
   const current = await currentUserContext(request, env);
   if (!current.user) return { error: 'Login required', statusCode: 401 };
+  if (billingPausedForBeta(env)) return betaBillingPausedResult('Stripe subscription checkout is paused during beta.');
   let body;
   try {
     body = await parseBody(request);
@@ -8432,6 +8685,7 @@ async function createStripeProviderPayoutForCurrent(storage, request, env) {
   const current = await currentUserContext(request, env);
   if (!current.user) return { error: 'Login required', statusCode: 401 };
   if (!current.githubLinked) return { error: 'GitHub connection required for provider actions.', statusCode: 403 };
+  if (billingPausedForBeta(env)) return betaBillingPausedResult('Provider payout movement is paused during beta.');
   const config = currentStripeConfig(request, env);
   if (!stripeConfigured(config)) return { error: 'Stripe is not configured', statusCode: 503 };
   let body;
@@ -8564,6 +8818,7 @@ async function createStripeProviderPayoutForCurrent(storage, request, env) {
 async function triggerStripeMonthlyInvoiceChargeForCurrent(storage, request, env) {
   const current = await currentUserContext(request, env);
   if (!current.user) return { error: 'Login required', statusCode: 401 };
+  if (billingPausedForBeta(env)) return betaBillingPausedResult('Month-end Stripe charges are paused during beta.');
   let body;
   try {
     body = await parseBody(request);
@@ -8641,6 +8896,7 @@ async function triggerStripeMonthlyInvoiceChargeForCurrent(storage, request, env
 async function triggerStripeProviderMonthlyChargeForCurrent(storage, request, env) {
   const current = currentUserContext(request, env);
   if (!current.user) return { error: 'Login required', statusCode: 401 };
+  if (billingPausedForBeta(env)) return betaBillingPausedResult('Provider monthly Stripe charges are paused during beta.');
   let body;
   try {
     body = await parseBody(request);
@@ -8738,6 +8994,9 @@ async function triggerStripeProviderMonthlyChargeForCurrent(storage, request, en
 }
 
 async function runProviderMonthlyBillingSweep(storage, env, options = {}) {
+  if (billingPausedForBeta(env)) {
+    return { ok: true, skipped: true, reason: 'beta_billing_paused', results: [] };
+  }
   const config = providerMonthlyBillingAutoConfig(env);
   if (!config.enabled) {
     return { ok: true, skipped: true, reason: 'provider_monthly_auto_disabled', results: [] };
@@ -9493,6 +9752,7 @@ async function appendBillingAudit(storage, job, billing, meta = {}) {
 }
 
 function billingModeForRequester(current, account = null, env = null) {
+  if (billingPausedForBeta(env)) return 'test';
   if (canViewAdminDashboard(current, env)) return 'test';
   const profile = billingProfileForAccount(account, current?.apiKey?.mode || '', billingPeriodId());
   return profile.mode || 'monthly_invoice';
@@ -12293,6 +12553,7 @@ async function handleGithubLoadManifest(storage, request, env) {
   const current = await currentAgentRequesterContext(storage, request, env);
   if (!current.user && current.apiKeyStatus === 'invalid') return json({ error: 'Invalid API key' }, 401);
   if (!current.user && current.apiKeyStatus !== 'valid') return json({ error: 'Login or CAIt API key required' }, 401);
+  const providerMoneyReadiness = await providerMoneyReadinessForCurrent(storage, current);
   const session = current.session;
   let body;
   try {
@@ -12363,7 +12624,8 @@ async function handleGithubLoadManifest(storage, request, env) {
         candidate_paths_checked: MANIFEST_CANDIDATE_PATHS.filter((path) => path.endsWith('.json')),
         attempts,
         safety,
-        review
+        review,
+        provider_money_readiness: providerMoneyReadiness
       }, 201);
     }
     if (!sessionHasGithubOauth(session)) return json({ error: 'GitHub connection required' }, 403);
@@ -12436,7 +12698,8 @@ async function handleGithubLoadManifest(storage, request, env) {
       candidate_paths_checked: MANIFEST_CANDIDATE_PATHS.filter((path) => path.endsWith('.json')),
       attempts,
       safety,
-      review
+      review,
+      provider_money_readiness: providerMoneyReadiness
     }, 201);
   } catch (error) {
     return json({ error: error.message }, 500);
@@ -14019,14 +14282,13 @@ async function reconcileWorkflowParent(storage, parentJobId) {
         };
       }
     }
-    let concreteArtifactWarnings = 0;
+    let concreteArtifactFailures = 0;
     for (const child of children) {
       if (String(child.status || '').trim().toLowerCase() !== 'completed') continue;
       const artifactFailure = workflowConcreteArtifactFailureReason(child);
       if (!artifactFailure) continue;
-      if (recordWorkflowConcreteArtifactWarning(child, artifactFailure, nowIso())) {
-        concreteArtifactWarnings += 1;
-      }
+      markAgentCompletionFailedFreeInState(state, child, artifactFailure, {}, { failedAt: nowIso() });
+      concreteArtifactFailures += 1;
     }
     expectedTotal = children.length;
     const childRuns = workflowChildSnapshot(children);
@@ -14052,9 +14314,9 @@ async function reconcileWorkflowParent(storage, parentJobId) {
       agentStatusCounts: workflowStatusCounts(visibleAgentChildren),
       internalStatusCounts: workflowStatusCounts(internalChildren),
       statusCounts: workflowStatusCounts(children, plannedRunCount),
-      ...(concreteArtifactWarnings ? {
-        concreteArtifactWarningAt: nowIso(),
-        concreteArtifactWarningCount: concreteArtifactWarnings
+      ...(concreteArtifactFailures ? {
+        concreteArtifactFailureAt: nowIso(),
+        concreteArtifactFailureCount: concreteArtifactFailures
       } : {})
     };
     const restartRequiredFailedChild = failed.find((item) => (
@@ -14691,7 +14953,7 @@ function normalizeDispatchResponse(responseBody = {}) {
     || body.failureReason
     || body.error
     || (failed ? (report.summary || body.summary || 'Agent failed without a detailed reason.') : null);
-  const hasArtifacts = Boolean(body.report || body.output || body.summary || synthesizedFileMarkdown || files.length);
+  const hasArtifacts = Boolean(body.report || body.output || synthesizedFileMarkdown || files.length);
   const accepted = !failed && (body.accepted === true || blocked || status === 'accepted' || status === 'queued' || status === 'running' || status === 'dispatched');
   const completed = !failed && !blocked && (status === 'completed' || ((!status || status === 'ok' || status === 'success') && hasArtifacts));
   return {
@@ -14712,8 +14974,11 @@ function normalizeDispatchResponse(responseBody = {}) {
 
 function classifyDispatchFailure(statusCode, errorMessage = '') {
   const msg = String(errorMessage || '').toLowerCase();
+  if (msg.includes('missing_required_deliverable') || msg.includes('missing required deliverable')) {
+    return { category: 'missing_required_deliverable', retryable: true };
+  }
   if (msg.includes('quality gate') || msg.includes('originality/source quality') || msg.includes('generic_template_left')) {
-    return { category: 'sample_agent_quality_gate_failed', retryable: false };
+    return { category: 'agent_quality_gate_failed', retryable: true };
   }
   if (msg.includes('source-required') || msg.includes('source required') || msg.includes('source urls were available before generation') || msg.includes('missing_required_search_sources')) {
     return { category: 'missing_required_sources', retryable: true };
@@ -14741,6 +15006,142 @@ function buildDispatchFailureMeta(job, statusCode, errorMessage = '') {
     attempts,
     nextRetryAt: retryable ? computeNextRetryAt(attempts) : null
   };
+}
+
+function agentReturnedDeliveryArtifactText(output = {}) {
+  if (!output || typeof output !== 'object') return '';
+  const report = output.report && typeof output.report === 'object' ? output.report : {};
+  const artifactCandidates = [
+    ...(Array.isArray(output.artifacts) ? output.artifacts : []),
+    ...(Array.isArray(report.artifacts) ? report.artifacts : []),
+    ...(Array.isArray(report.approval_requests) ? report.approval_requests : []),
+    ...(Array.isArray(report.approvalRequests) ? report.approvalRequests : [])
+  ];
+  const executionCandidate = report.execution_candidate || report.executionCandidate || null;
+  const markdownText = [
+    output.file_markdown,
+    output.markdown,
+    output.deliverableMarkdown,
+    output.deliverable_markdown,
+    report.file_markdown,
+    report.markdown,
+    report.deliverableMarkdown,
+    report.deliverable_markdown
+  ].map((item) => String(item || '').trim()).filter(Boolean);
+  const fileText = (Array.isArray(output.files) ? output.files : [])
+    .map((file) => String(file?.content || file?.body || '').trim())
+    .filter(Boolean);
+  const artifactText = artifactCandidates
+    .map((item) => String(item?.body || item?.content || item?.text || item?.markdown || '').trim())
+    .filter(Boolean);
+  const executionText = executionCandidate && typeof executionCandidate === 'object'
+    ? String(executionCandidate.body || executionCandidate.content || executionCandidate.markdown || executionCandidate.text || '').trim()
+    : '';
+  return [...fileText, ...artifactText, executionText, ...markdownText].filter(Boolean).join('\n\n');
+}
+
+function agentResultHasReturnedDeliveryArtifact(output = {}) {
+  return agentReturnedDeliveryArtifactText(output).trim().length > 0;
+}
+
+function agentCompletionFailureReason(job = {}) {
+  const concreteFailure = workflowConcreteArtifactFailureReason(job);
+  if (concreteFailure) return concreteFailure;
+  if (!agentResultHasReturnedDeliveryArtifact(job?.output || {})) {
+    const task = workflowTaskName(job) || job?.taskType || 'agent';
+    return `${task} did not return a user-facing delivery artifact.`;
+  }
+  return '';
+}
+
+function agentCompletionFailureRetryMeta(env = {}, job = {}) {
+  const attempts = Math.max(providerRunAttempts(job), Number(job?.dispatch?.attempts || 0) || 0, 1);
+  const maxRetries = workflowCompletionRetryLimitForJob(env, job);
+  const retryable = attempts < maxRetries;
+  return {
+    category: 'missing_required_deliverable',
+    attempts,
+    maxRetries,
+    retryable,
+    nextRetryAt: retryable ? computeNextRetryAt(attempts) : null
+  };
+}
+
+function currentPayjpConfig(_request, env) {
+  return payjpConfigFromEnv(env || {});
+}
+
+function payjpStateForClient(_request, env, account = null) {
+  const config = currentPayjpConfig(_request, env);
+  return {
+    ...payjpPublicConfig(config),
+    accountPayjp: account?.payjp || null,
+    billingProfile: billingProfileForAccount(account, '', billingPeriodId())
+  };
+}
+
+function payjpActionErrorPayload(error = {}, fallback = 'PAY.JP action failed.') {
+  const message = String(error?.message || fallback).trim() || fallback;
+  const details = error?.details && typeof error.details === 'object' ? error.details : {};
+  const payjpCode = String(details?.error?.code || error?.code || '').trim();
+  const lower = `${message} ${payjpCode}`.toLowerCase();
+  let code = payjpCode || 'payjp_action_failed';
+  let action = '';
+  if (/not configured/.test(lower)) {
+    code = 'payjp_not_configured';
+    action = 'Set PAYJP_SECRET_KEY and PAYJP_PUBLIC_KEY on the platform, then retry.';
+  } else if (/authentication|api key/.test(lower)) {
+    code = 'payjp_authentication_failed';
+    action = 'Check that the PAY.JP secret key belongs to the Platform account.';
+  } else if (/tenant|application|review|審査/.test(lower)) {
+    code = 'payjp_tenant_review_required';
+    action = 'Open the PAY.JP tenant application URL and finish tenant review before accepting marketplace payments.';
+  } else if (/3d|secure|tds|three/.test(lower)) {
+    code = 'payjp_3ds_required';
+    action = 'Complete EMV 3-D Secure authentication before finalizing the payment.';
+  }
+  return {
+    error: message,
+    code,
+    action: action || undefined,
+    payjp_status: Number(error?.statusCode || 0) || undefined,
+    statusCode: Number(error?.statusCode || 0) || 500
+  };
+}
+
+function markAgentCompletionFailedFreeInState(state, job, reason, env = {}, options = {}) {
+  if (!job) return null;
+  const failedAt = options.failedAt || nowIso();
+  const retryMeta = agentCompletionFailureRetryMeta(env, job);
+  job.status = 'failed';
+  job.completedAt = null;
+  job.failedAt = failedAt;
+  job.timedOutAt = null;
+  job.failureReason = reason || 'Agent did not return a required delivery artifact.';
+  job.failureCategory = 'missing_required_deliverable';
+  job.actualBilling = null;
+  job.deliveryQuality = null;
+  if (job.billingReservation && !job.billingSettlement?.settledAt && !job.billingReservation?.releasedAt) {
+    releaseBillingReservationInState(state, job);
+  }
+  job.dispatch = {
+    ...(job.dispatch || {}),
+    completionStatus: 'failed',
+    retryable: retryMeta.retryable,
+    attempts: retryMeta.attempts,
+    nextRetryAt: retryMeta.nextRetryAt,
+    maxRetries: retryMeta.maxRetries,
+    restartRequired: false
+  };
+  job.logs = [
+    ...(job.logs || []),
+    job.failureReason,
+    retryMeta.retryable
+      ? `failed before completion: missing agent delivery artifact; retry ${retryMeta.attempts + 1}/${retryMeta.maxRetries} scheduled`
+      : `failed before completion: missing agent delivery artifact; retries exhausted at ${retryMeta.attempts}/${retryMeta.maxRetries}`,
+    'billing released: agent did not complete a user-facing delivery'
+  ];
+  return retryMeta;
 }
 
 function sourceCollectionFailureRetryMeta(env = {}, job = {}, options = {}) {
@@ -14778,6 +15179,7 @@ function workflowBuiltInFailureRetryMeta(env = {}, job = {}, failureMeta = {}) {
     'dispatch_http_5xx',
     'dispatch_error',
     'dispatch_malformed_response',
+    'agent_quality_gate_failed',
     'leader_quality_gate_failed'
   ].includes(category);
   const qualitySourceRetry = workflowQualitySourceTask(job) && qualityRetryCategory;
@@ -15140,7 +15542,11 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
           draftJob.logs.push(sourceProofFailure, restartRequired ? 'full order retry required after missing search execution proof' : 'failed before completion: missing search execution proof');
           return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
         }
-        const concreteArtifactWarning = workflowConcreteArtifactFailureReason(draftJob);
+        const completionFailure = agentCompletionFailureReason(draftJob);
+        if (completionFailure) {
+          markAgentCompletionFailedFreeInState(draft, draftJob, completionFailure, env, { failedAt: nowIso() });
+          return { ok: true, mode: 'failed', job: cloneJob(draftJob), billing: null };
+        }
         const authorityRequest = syncJobAuthorityRequest(draftJob, draftAgent);
         if (shouldBlockCompletedJobForAuthorityRequest(draftJob, authorityRequest || explicitAuthorityRequest)) {
           markJobBlockedForAuthority(draftJob, authorityRequest || explicitAuthorityRequest, 'External execution is blocked waiting for connector approval.');
@@ -15154,9 +15560,6 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
           version: 'delivery-quality/v1',
           checkedAt: draftJob.completedAt
         };
-        if (concreteArtifactWarning) {
-          recordWorkflowConcreteArtifactWarning(draftJob, concreteArtifactWarning, draftJob.completedAt);
-        }
         draftJob.logs.push(`completed by dispatch response from ${dispatchAgent.id}`, billingLogLine(draftJob, billing), `delivery quality score=${draftJob.deliveryQuality.score}`);
         settleAgentEarnings(draftJob, draftAgent, billing);
         return { ok: true, mode: 'completed', job: cloneJob(draftJob), billing };
@@ -16245,9 +16648,9 @@ function recordWorkflowConcreteArtifactWarning(job = {}, reason = '', checkedAt 
     version: existing.version || 'delivery-quality/v1',
     checkedAt: existing.checkedAt || checkedAt,
     issues,
-    completionBlocking: false
+    completionBlocking: true
   };
-  const warningLine = `quality warning: missing required concrete deliverable (${checkedAt})`;
+  const warningLine = `quality failure: missing required concrete deliverable (${checkedAt})`;
   job.logs = Array.isArray(job.logs) && job.logs.includes(warningLine)
     ? job.logs
     : [...(Array.isArray(job.logs) ? job.logs : []), text, warningLine];
@@ -20689,22 +21092,86 @@ async function runWorkflowOrchestrationWatchdog(storage, env, options = {}) {
 
 async function runWorkflowTimeoutRetrySweep(storage, env, options = {}) {
   const limit = Math.max(1, Math.min(10, Number(options.limit || 3) || 3));
-  const targetedCandidates = typeof storage.listRetryableWorkflowChildren === 'function'
+  const workflowCandidates = typeof storage.listRetryableWorkflowChildren === 'function'
     ? await storage.listRetryableWorkflowChildren({
       limit: Math.max(limit * 4, 12),
       maxAgeMs: workflowDispatchMaxAgeMs(env)
     })
     : null;
+  const retryableCandidates = typeof storage.listRetryableDispatchJobs === 'function'
+    ? await storage.listRetryableDispatchJobs({
+      limit: Math.max(limit * 4, 12),
+      maxAgeMs: workflowDispatchMaxAgeMs(env)
+    })
+    : null;
+  const targetedCandidates = workflowCandidates || retryableCandidates
+    ? [...(workflowCandidates || []), ...(retryableCandidates || [])]
+      .filter((job, index, all) => job?.id && all.findIndex((item) => item?.id === job.id) === index)
+      .sort((left, right) => String(left?.dispatch?.nextRetryAt || left?.failedAt || left?.timedOutAt || left?.createdAt || '').localeCompare(String(right?.dispatch?.nextRetryAt || right?.failedAt || right?.timedOutAt || right?.createdAt || '')))
+    : null;
   const state = targetedCandidates ? null : await storage.getState();
   const candidates = targetedCandidates || state.jobs
     .filter((job) => ['timed_out', 'failed'].includes(String(job.status || '').trim().toLowerCase()))
-    .filter((job) => job.workflowParentId && job.dispatch?.retryable === true)
+    .filter((job) => job.assignedAgentId && job.dispatch?.retryable === true)
+    .filter((job) => {
+      const nextRetryMs = Date.parse(String(job?.dispatch?.nextRetryAt || ''));
+      return !Number.isFinite(nextRetryMs) || nextRetryMs <= Date.now();
+    })
     .sort((a, b) => String(a.timedOutAt || a.failedAt || a.createdAt || '').localeCompare(String(b.timedOutAt || b.failedAt || b.createdAt || '')));
   const restartRequired = [];
   const retried = [];
   for (const job of candidates) {
     if ((restartRequired.length + retried.length) >= limit) break;
-    if (!job?.workflowParentId) continue;
+    if (!job?.workflowParentId) {
+      const status = String(job?.status || '').trim().toLowerCase();
+      if (!['failed', 'timed_out'].includes(status)) continue;
+      const retryMeta = {
+        category: String(job.failureCategory || job.dispatch?.completionStatus || (status === 'timed_out' ? 'dispatch_deadline_timeout' : 'dispatch_error')).trim().toLowerCase(),
+        attempts: Number(job.dispatch?.attempts || 0) || 0,
+        maxRetries: maxDispatchRetriesForJob(job)
+      };
+      const queued = await storage.mutate(async (draft) => {
+        const draftJob = draft.jobs.find((item) => item.id === job.id);
+        if (!draftJob) return { error: 'Job not found', statusCode: 404 };
+        const queuedAt = nowIso();
+        draftJob.status = 'queued';
+        draftJob.startedAt = null;
+        draftJob.dispatchedAt = null;
+        draftJob.claimedAt = null;
+        draftJob.completedAt = null;
+        draftJob.failedAt = null;
+        draftJob.timedOutAt = null;
+        draftJob.failureReason = null;
+        draftJob.failureCategory = null;
+        draftJob.output = null;
+        draftJob.actualBilling = null;
+        draftJob.deliveryQuality = null;
+        draftJob.dispatch = {
+          ...(draftJob.dispatch || {}),
+          completionStatus: 'retry_queued',
+          retryable: false,
+          nextRetryAt: null,
+          restartRequired: false,
+          retryQueuedAt: queuedAt,
+          retrySource: 'agent-retry-sweep',
+          maxRetries: retryMeta.maxRetries
+        };
+        draftJob.logs = [...(draftJob.logs || []), `agent run requeued by retry sweep after ${retryMeta.category} (${retryMeta.attempts}/${retryMeta.maxRetries})`];
+        return { ok: true, job: cloneJob(draftJob) };
+      });
+      if (!queued?.error) {
+        retried.push(job.id);
+        await touchEvent(storage, 'RUNNING', `${job.taskType}/${job.id.slice(0, 6)} agent run requeued after ${retryMeta.category}`, {
+          kind: 'agent_run_retry_queued',
+          jobId: job.id,
+          taskType: job.workflowTask || job.taskType || '',
+          category: retryMeta.category,
+          attempts: retryMeta.attempts,
+          maxRetries: retryMeta.maxRetries
+        });
+      }
+      continue;
+    }
     const authorityRetryPause = await pauseTerminalWorkflowChildRetryForParentAuthority(storage, job);
     if (authorityRetryPause.paused) {
       await touchEvent(storage, 'RUNNING', `${job.taskType}/${job.id.slice(0, 6)} retry paused while parent waits for approval`, {
@@ -20869,7 +21336,7 @@ async function completeJobFromAgentResult(storage, jobId, agentId, payload = {},
       job.usage = usage;
       job.actualBilling = null;
       job.deliveryQuality = null;
-      if (job.billingReservation && !job.billingReservation?.releasedAt) {
+      if (job.billingReservation && !job.billingSettlement?.settledAt && !job.billingReservation?.releasedAt) {
         releaseBillingReservationInState(state, job);
       }
       job.dispatch = {
@@ -20889,7 +21356,12 @@ async function completeJobFromAgentResult(storage, jobId, agentId, payload = {},
       if (meta.source) job.logs.push(`completion source=${meta.source}`);
       return { ok: true, mode: 'failed', job: cloneJob(job), billing: null, workflowParentId: job.workflowParentId || null };
     }
-    const concreteArtifactWarning = targetStatus === 'completed' ? workflowConcreteArtifactFailureReason(job) : '';
+    const completionFailure = targetStatus === 'completed' ? agentCompletionFailureReason(job) : '';
+    if (completionFailure) {
+      markAgentCompletionFailedFreeInState(state, job, completionFailure, meta.env || {}, { failedAt: completionAt });
+      if (meta.source) job.logs.push(`completion source=${meta.source}`);
+      return { ok: true, mode: 'failed', job: cloneJob(job), billing: null, workflowParentId: job.workflowParentId || null };
+    }
     const authorityRequest = syncJobAuthorityRequest(job, agent);
     if (targetStatus === 'completed' && shouldBlockCompletedJobForAuthorityRequest(job, authorityRequest || explicitAuthorityRequest)) {
       targetStatus = 'blocked';
@@ -20912,9 +21384,6 @@ async function completeJobFromAgentResult(storage, jobId, agentId, payload = {},
           checkedAt: completionAt
         }
       : null;
-    if (targetStatus === 'completed' && concreteArtifactWarning) {
-      recordWorkflowConcreteArtifactWarning(job, concreteArtifactWarning, completionAt);
-    }
     job.dispatch = {
       ...(job.dispatch || {}),
       externalJobId: meta.externalJobId || job.dispatch?.externalJobId || null,
@@ -22965,6 +23434,7 @@ async function handleRegisterAgent(storage, request, env) {
   const current = await currentAgentRequesterContext(storage, request, env);
   const access = requireAgentWriteAccess(current, env);
   if (access.error) return json({ error: access.error }, access.statusCode || 400);
+  const providerMoneyReadiness = await providerMoneyReadinessForCurrent(storage, current);
   let body;
   try {
     body = await parseBody(request);
@@ -22985,7 +23455,7 @@ async function handleRegisterAgent(storage, request, env) {
   const agent = createAgentFromInput(body, ownerInfo);
   const state = await storage.getState();
   if (!agentRoutingConfirmationAccepted(body)) {
-    return json({ ...agentRoutingConfirmationResponse(agent, state, ownerInfo, 'manual-register'), safety }, 428);
+    return json({ ...agentRoutingConfirmationResponse(agent, state, ownerInfo, 'manual-register'), safety, provider_money_readiness: providerMoneyReadiness }, 428);
   }
   const confirmedRouting = applyConfirmedAgentRoutingToAgent(agent, {
     catalog: [agent, ...state.agents],
@@ -22997,13 +23467,14 @@ async function handleRegisterAgent(storage, request, env) {
   await storage.mutate(async (state) => { state.agents.unshift(agent); });
   await touchEvent(storage, 'REGISTERED', `${agent.name} registered with tasks ${agent.taskTypes.join(', ')}`);
   if (current.apiKey?.id) await recordOrderApiKeyUsage(storage, current, request);
-  return json({ ok: true, agent, safety, review, routing_confirmation: confirmedRouting.routing_confirmation }, 201);
+  return json({ ok: true, agent, safety, review, routing_confirmation: confirmedRouting.routing_confirmation, provider_money_readiness: providerMoneyReadiness }, 201);
 }
 
 async function handleImportManifest(storage, request, env) {
   const current = await currentAgentRequesterContext(storage, request, env);
   const access = requireAgentWriteAccess(current, env);
   if (access.error) return json({ error: access.error }, access.statusCode || 400);
+  const providerMoneyReadiness = await providerMoneyReadinessForCurrent(storage, current);
   let body;
   try {
     body = await parseBody(request);
@@ -23023,7 +23494,7 @@ async function handleImportManifest(storage, request, env) {
   });
   const state = await storage.getState();
   if (!agentRoutingConfirmationAccepted(body)) {
-    return json({ ...agentRoutingConfirmationResponse(agent, state, ownerInfo, 'manifest-json'), safety }, 428);
+    return json({ ...agentRoutingConfirmationResponse(agent, state, ownerInfo, 'manifest-json'), safety, provider_money_readiness: providerMoneyReadiness }, 428);
   }
   const confirmedRouting = applyConfirmedAgentRoutingToAgent(agent, {
     catalog: [agent, ...state.agents],
@@ -23036,7 +23507,7 @@ async function handleImportManifest(storage, request, env) {
   await touchEvent(storage, 'REGISTERED', `${agent.name} imported from manifest JSON (pending verification)`);
   const autoVerification = await maybeAutoVerifyImportedAgent(storage, agent, ownerInfo.owner);
   if (current.apiKey?.id) await recordOrderApiKeyUsage(storage, current, request);
-  return json({ ok: true, agent: autoVerification.agent, auto_verification: autoVerification.verification, welcome_credits: autoVerification.welcome_credits || null, safety, review, routing_confirmation: confirmedRouting.routing_confirmation }, 201);
+  return json({ ok: true, agent: autoVerification.agent, auto_verification: autoVerification.verification, welcome_credits: autoVerification.welcome_credits || null, safety, review, routing_confirmation: confirmedRouting.routing_confirmation, provider_money_readiness: providerMoneyReadiness }, 201);
 }
 
 function validateManifestUrlInput(manifestUrl, env) {
@@ -23071,6 +23542,7 @@ async function handleImportUrl(storage, request, env) {
   const current = await currentAgentRequesterContext(storage, request, env);
   const access = requireAgentWriteAccess(current, env);
   if (access.error) return json({ error: access.error }, access.statusCode || 400);
+  const providerMoneyReadiness = await providerMoneyReadinessForCurrent(storage, current);
   let body;
   try {
     body = await parseBody(request);
@@ -23095,7 +23567,7 @@ async function handleImportUrl(storage, request, env) {
   });
   const state = await storage.getState();
   if (!agentRoutingConfirmationAccepted(body)) {
-    return json({ ...agentRoutingConfirmationResponse(agent, state, ownerInfo, 'manifest-url'), import_mode: 'manifest-url', safety }, 428);
+    return json({ ...agentRoutingConfirmationResponse(agent, state, ownerInfo, 'manifest-url'), import_mode: 'manifest-url', safety, provider_money_readiness: providerMoneyReadiness }, 428);
   }
   const confirmedRouting = applyConfirmedAgentRoutingToAgent(agent, {
     catalog: [agent, ...state.agents],
@@ -23108,7 +23580,7 @@ async function handleImportUrl(storage, request, env) {
   await touchEvent(storage, 'REGISTERED', `${agent.name} manifest loaded from URL`);
   const autoVerification = await maybeAutoVerifyImportedAgent(storage, agent, ownerInfo.owner);
   if (current.apiKey?.id) await recordOrderApiKeyUsage(storage, current, request);
-  return json({ ok: true, agent: autoVerification.agent, auto_verification: autoVerification.verification, welcome_credits: autoVerification.welcome_credits || null, import_mode: 'manifest-url', owner: agent.owner, safety, review, routing_confirmation: confirmedRouting.routing_confirmation }, 201);
+  return json({ ok: true, agent: autoVerification.agent, auto_verification: autoVerification.verification, welcome_credits: autoVerification.welcome_credits || null, import_mode: 'manifest-url', owner: agent.owner, safety, review, routing_confirmation: confirmedRouting.routing_confirmation, provider_money_readiness: providerMoneyReadiness }, 201);
 }
 
 async function handleRegisterApp(storage, request, env) {
@@ -23727,7 +24199,9 @@ async function handleSubmitResult(storage, request, env, jobId) {
   if (authorization.error) return json({ error: authorization.error }, authorization.statusCode || 400);
   const result = await completeJobFromAgentResult(storage, jobId, requestedAgentId, body, { source: 'manual-result', targetStatus: body.status, env });
   if (result.error) return json({ error: result.error, code: result.code || null }, result.statusCode || 400);
-  if (result.mode === 'blocked') {
+  if (result.mode === 'failed') {
+    await touchEvent(storage, 'FAILED', `${result.job.taskType}/${result.job.id.slice(0, 6)} failed by connected agent: ${String(result.job.failureReason || '').slice(0, 120)}`);
+  } else if (result.mode === 'blocked') {
     await touchEvent(storage, 'RUNNING', `${result.job.taskType}/${result.job.id.slice(0, 6)} blocked by connected agent result`);
   } else {
     await touchEvent(storage, 'COMPLETED', `${result.job.taskType}/${result.job.id.slice(0, 6)} completed by connected agent`);
@@ -24044,6 +24518,11 @@ async function handleRetryDispatch(storage, request, env) {
         draftJob.failedAt = nowIso();
         draftJob.failureReason = restartRequired ? workflowRestartRequiredReason(draftJob, dispatch.failureReason) : dispatch.failureReason;
         draftJob.failureCategory = restartRequired ? 'workflow_restart_required' : failureMeta.category;
+        draftJob.actualBilling = null;
+        draftJob.deliveryQuality = null;
+        if (draftJob.billingReservation && !draftJob.billingSettlement?.settledAt && !draftJob.billingReservation?.releasedAt) {
+          releaseBillingReservationInState(draft, draftJob);
+        }
         draftJob.dispatch = {
           ...(draftJob.dispatch || {}),
           endpoint: dispatch.endpoint || draftJob.dispatch?.endpoint || null,
@@ -24108,6 +24587,9 @@ async function handleRetryDispatch(storage, request, env) {
           draftJob.failureCategory = restartRequired ? 'workflow_restart_required' : 'missing_required_sources';
           draftJob.actualBilling = null;
           draftJob.deliveryQuality = null;
+          if (draftJob.billingReservation && !draftJob.billingSettlement?.settledAt && !draftJob.billingReservation?.releasedAt) {
+            releaseBillingReservationInState(draft, draftJob);
+          }
           draftJob.dispatch = {
             ...(draftJob.dispatch || {}),
             completionStatus: restartRequired ? 'workflow_restart_required' : 'failed',
@@ -24119,6 +24601,11 @@ async function handleRetryDispatch(storage, request, env) {
           };
           draftJob.logs.push(sourceProofFailure, restartRequired ? 'full order retry required after missing search execution proof' : 'failed before retry completion: missing search execution proof');
           return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
+        }
+        const completionFailure = agentCompletionFailureReason(draftJob);
+        if (completionFailure) {
+          markAgentCompletionFailedFreeInState(draft, draftJob, completionFailure, env, { failedAt: nowIso() });
+          return { ok: true, mode: 'failed', job: cloneJob(draftJob), billing: null };
         }
         const authorityRequest = syncJobAuthorityRequest(draftJob, draftAgent);
         if (shouldBlockCompletedJobForAuthorityRequest(draftJob, authorityRequest || explicitAuthorityRequest)) {
@@ -25073,6 +25560,41 @@ export default {
       const result = await deleteAppSetting(storage, request, env, decodeURIComponent(url.pathname.split('/')[4] || ''));
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
       return json(result);
+    }
+    if (apiRouteMatches(url.pathname, request.method, 'PAYJP_STATUS', 'GET')) {
+      const result = await getPayjpStatus(storage, request, env);
+      if (result.error) return json({ error: result.error }, result.statusCode || 400);
+      return json(result);
+    }
+    if (apiRouteMatches(url.pathname, request.method, 'PAYJP_TENANT_ONBOARDING', 'POST')) {
+      try {
+        const result = await createPayjpTenantOnboardingForCurrent(storage, request, env);
+        if (result.error) return json({ error: result.error, code: result.code || null }, result.statusCode || 400);
+        return json(result, 201);
+      } catch (error) {
+        const payload = payjpActionErrorPayload(error);
+        return json(payload, payload.statusCode || 500);
+      }
+    }
+    if (apiRouteMatches(url.pathname, request.method, 'PAYJP_PLATFORM_CHARGE', 'POST')) {
+      try {
+        const result = await createPayjpPlatformChargeForCurrent(storage, request, env);
+        if (result.error) return json({ error: result.error, code: result.code || null }, result.statusCode || 400);
+        return json(result, 201);
+      } catch (error) {
+        const payload = payjpActionErrorPayload(error);
+        return json(payload, payload.statusCode || 500);
+      }
+    }
+    if (apiRouteMatches(url.pathname, request.method, 'PAYJP_PLATFORM_CHARGE_FINISH_3DS', 'POST')) {
+      try {
+        const result = await finishPayjpPlatformCharge3DSForCurrent(storage, request, env);
+        if (result.error) return json({ error: result.error, code: result.code || null }, result.statusCode || 400);
+        return json(result);
+      } catch (error) {
+        const payload = payjpActionErrorPayload(error);
+        return json(payload, payload.statusCode || 500);
+      }
     }
     if (url.pathname === '/api/stripe/status' && request.method === 'GET') {
       const result = await getStripeStatus(storage, request, env);

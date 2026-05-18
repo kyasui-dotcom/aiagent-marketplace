@@ -151,6 +151,12 @@ const account = upsertAccountSettingsInState(
       mode: 'deposit',
       legalName: 'Alice Example LLC',
       billingEmail: 'billing@example.com',
+      billingPhone: '+81-3-1234-5678',
+      billingPostalCode: '100-0001',
+      billingRegion: 'Tokyo',
+      billingCity: 'Chiyoda',
+      billingAddressLine1: '1-1 Chiyoda',
+      billingAddressLine2: 'Billing Desk',
       country: 'jp',
       currency: 'usd',
       dueDays: 21,
@@ -184,6 +190,12 @@ assert.equal(account.id, accountIdForLogin('alice'));
 assert.equal(account.billing.currency, 'USD');
 assert.equal(account.billing.country, 'JP');
 assert.equal(account.billing.mode, 'monthly_invoice');
+assert.equal(account.billing.billingPhone, '+81-3-1234-5678');
+assert.equal(account.billing.billingPostalCode, '100-0001');
+assert.equal(account.billing.billingRegion, 'Tokyo');
+assert.equal(account.billing.billingCity, 'Chiyoda');
+assert.equal(account.billing.billingAddressLine1, '1-1 Chiyoda');
+assert.equal(account.billing.billingAddressLine2, 'Billing Desk');
 assert.equal(account.billing.depositBalance, 1200);
 assert.equal(account.billing.autoTopupEnabled, false);
 assert.equal(account.billing.autoTopupThreshold, 0);
