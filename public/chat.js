@@ -2285,6 +2285,93 @@ function progressNarratorStreamText(text = '', options = {}, frame = 0) {
   return `${cursor} ${ordered.slice(0, count).join('  ·  ')}${dots}`;
 }
 
+function durationLabel(ms = 0, sample = '') {
+  const safeMs = Math.max(0, Number(ms || 0) || 0);
+  const totalSec = Math.round(safeMs / 1000);
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  const ja = chatLanguage([sample, state.conversationLanguage].join(' ')) === 'ja';
+  if (minutes <= 0) return ja ? `${seconds}秒` : `${seconds}s`;
+  if (minutes < 60) return ja ? `${minutes}分${seconds ? `${seconds}秒` : ''}` : `${minutes}m${seconds ? ` ${seconds}s` : ''}`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return ja ? `${hours}時間${restMinutes ? `${restMinutes}分` : ''}` : `${hours}h${restMinutes ? ` ${restMinutes}m` : ''}`;
+}
+
+function timestampMs(value = '') {
+  const ms = Date.parse(String(value || ''));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function workflowRunWaitStatus(run = {}, job = {}) {
+  if (!run || typeof run !== 'object') return null;
+  const sample = [
+    state.conversationLanguage,
+    job.prompt,
+    run.taskType,
+    run.agentName,
+    run.latestLog,
+    run.dispatchCompletionStatus
+  ].join(' ');
+  const ja = chatLanguage(sample) === 'ja';
+  const status = String(run.status || '').trim().toLowerCase();
+  const dispatchStatus = String(run.dispatchCompletionStatus || run.dispatch_completion_status || run.dispatch?.completionStatus || '').trim().toLowerCase();
+  const activeStatuses = new Set(['queued', 'running', 'claimed', 'dispatched']);
+  if (!activeStatuses.has(status) && !['dispatch_scheduled', 'dispatch_in_progress', 'accepted'].includes(dispatchStatus)) return null;
+  const at = timestampMs(
+    dispatchStatus === 'dispatch_in_progress'
+      ? (run.dispatchInProgressAt || run.dispatch_in_progress_at || run.startedAt)
+      : dispatchStatus === 'dispatch_scheduled'
+        ? (run.dispatchRequestedAt || run.dispatch_requested_at || run.startedAt || run.createdAt)
+        : dispatchStatus === 'accepted'
+          ? (run.providerQueueAcceptedAt || run.provider_queue_accepted_at || run.dispatchedAt || run.startedAt)
+          : (run.startedAt || run.dispatchedAt || run.createdAt)
+  );
+  const elapsedMs = at ? Math.max(0, Date.now() - at) : 0;
+  const elapsed = elapsedMs ? durationLabel(elapsedMs, sample) : '';
+  const timeoutMs = Math.max(0, Number(run.dispatchTimeoutMs || run.dispatch_timeout_ms || run.dispatch?.dispatchTimeoutMs || 0) || 0);
+  const windowLabel = timeoutMs ? durationLabel(timeoutMs, sample) : '';
+  if (dispatchStatus === 'dispatch_in_progress') {
+    return {
+      text: ja ? 'が納品物を生成中です' : 'is generating the deliverable',
+      detail: ja
+        ? `経過 ${elapsed || '確認中'}${windowLabel ? `。待機目安 ${windowLabel} 内です` : '。生成完了を待っています'}。`
+        : `Elapsed ${elapsed || 'checking'}${windowLabel ? `; still inside the ${windowLabel} wait window` : '; waiting for generation to finish'}.`,
+      step: ja ? '生成 provider の応答待ち' : 'Waiting for the generation provider response',
+      progressLabelSuffix: elapsed || ''
+    };
+  }
+  if (dispatchStatus === 'dispatch_scheduled') {
+    return {
+      text: ja ? 'を実行キューへ渡しています' : 'is being handed to the agent runtime',
+      detail: ja
+        ? `${elapsed ? `${elapsed}前に` : ''}dispatch を予約しました。拾われない場合は進捗チェックが再投入します。`
+        : `Dispatch was scheduled${elapsed ? ` ${elapsed} ago` : ''}. Progress checks will requeue it if the runtime misses it.`,
+      step: ja ? 'dispatch 予約済み' : 'Dispatch scheduled',
+      progressLabelSuffix: elapsed || ''
+    };
+  }
+  if (dispatchStatus === 'accepted' || status === 'dispatched') {
+    return {
+      text: ja ? 'の実行結果を待っています' : 'is waiting for the run result',
+      detail: ja
+        ? `実行側が受理済みです${elapsed ? `。経過 ${elapsed}` : ''}。`
+        : `The agent runtime accepted the job${elapsed ? `; elapsed ${elapsed}` : ''}.`,
+      step: ja ? '実行側の結果待ち' : 'Waiting for agent result',
+      progressLabelSuffix: elapsed || ''
+    };
+  }
+  if (status === 'running' || status === 'claimed') {
+    return {
+      text: ja ? 'が処理中です' : 'is working',
+      detail: elapsed ? (ja ? `処理開始から ${elapsed} 経過しています。` : `Running for ${elapsed}.`) : '',
+      step: ja ? '処理中' : 'Agent running',
+      progressLabelSuffix: elapsed || ''
+    };
+  }
+  return null;
+}
+
 function stopProgressNarratorAnimation(article = null) {
   if (article && state.progressNarratorTimerArticle && state.progressNarratorTimerArticle !== article) return;
   if (state.progressNarratorTimer) window.clearInterval(state.progressNarratorTimer);
@@ -2456,6 +2543,11 @@ function progressNarratorTextForJob(job = {}) {
   const agent = workflowChildDisplayLabel(current || {});
   const status = String(current?.status || job.status || '').trim().toLowerCase();
   const phaseLabel = workflowPhaseLabel(phase);
+  const wait = workflowRunWaitStatus(current, job);
+  if (current && wait?.text) {
+    const sentenceEnd = chatLanguage([state.conversationLanguage, wait.text].join(' ')) === 'ja' ? '。' : '.';
+    return `${phaseLabel}: ${agent || 'Agent'} ${wait.text}${sentenceEnd}`;
+  }
   if (current) return `${phaseLabel}: ${agent || 'Agent'} is ${statusDisplayLabel(status || 'queued').toLowerCase()}.`;
   if (status === 'completed') return 'The order is complete. Preparing the delivery for this chat.';
   if (status === 'failed' || status === 'timed_out') return 'The order stopped. Collecting the failure reason and next step.';
@@ -2469,19 +2561,22 @@ function progressNarratorOptionsForJob(job = {}) {
   const completed = counts.completed;
   const phase = workflowPhaseLabel(current?.sequencePhase || current?.sequence_phase || '');
   const status = statusDisplayLabel(job.status || 'running');
+  const wait = workflowRunWaitStatus(current, job);
+  const progressLabel = total ? `${completed}/${total} agents${wait?.progressLabelSuffix ? ` · ${wait.progressLabelSuffix}` : ''}` : status;
   return {
     key: String(job.id || state.orderId || 'progress'),
     phase,
     status,
-    detail: current ? `Current: ${workflowChildDisplayLabel(current)} / ${statusDisplayLabel(current.status || 'queued')}` : '',
+    detail: wait?.detail || (current ? `Current: ${workflowChildDisplayLabel(current)} / ${statusDisplayLabel(current.status || 'queued')}` : ''),
     total,
     completed,
     progressPercent: isTerminalStatus(job.status)
       ? 100
       : (total ? Math.max(8, Math.min(96, Math.round((completed / total) * 100))) : 12),
-    progressLabel: total ? `${completed}/${total} agents` : status,
+    progressLabel,
     steps: [
       total ? `${completed}/${total} agent runs complete` : '',
+      wait?.step || '',
       job.failureReason || job.failure_reason || ''
     ].filter(Boolean),
     done: isTerminalStatus(job.status)
@@ -2653,10 +2748,16 @@ function createdOrderChildRuns(created = {}, options = {}) {
     adaptivePending: workflowChildIsAdaptivePending(child),
     createdAt: String(child.createdAt || child.created_at || '').trim(),
     startedAt: String(child.startedAt || child.started_at || '').trim(),
+    dispatchedAt: String(child.dispatchedAt || child.dispatched_at || '').trim(),
     updatedAt: String(child.updatedAt || child.updated_at || '').trim(),
     completedAt: String(child.completedAt || child.completed_at || '').trim(),
     failedAt: String(child.failedAt || child.failed_at || '').trim(),
     failureReason: String(child.failureReason || child.failure_reason || '').trim(),
+    dispatchCompletionStatus: String(child.dispatchCompletionStatus || child.dispatch_completion_status || child.dispatch?.completionStatus || '').trim(),
+    dispatchRequestedAt: String(child.dispatchRequestedAt || child.dispatch_requested_at || child.dispatch?.dispatchRequestedAt || '').trim(),
+    dispatchInProgressAt: String(child.dispatchInProgressAt || child.dispatch_in_progress_at || child.dispatch?.dispatchInProgressAt || '').trim(),
+    dispatchTimeoutMs: Number(child.dispatchTimeoutMs || child.dispatch_timeout_ms || child.dispatch?.dispatchTimeoutMs || 0) || 0,
+    providerQueueAcceptedAt: String(child.providerQueueAcceptedAt || child.provider_queue_accepted_at || child.dispatch?.providerQueueAcceptedAt || '').trim(),
     latestLog: String(child.latestLog || child.latest_log || '').trim()
   })).filter((child) => child.taskType || child.agentName || child.agentId);
 }
@@ -2701,6 +2802,8 @@ function agentRunDetailRows(run = {}, job = null) {
     task ? ['Task', taskLabel(task)] : null,
     agent ? ['Agent', agent] : null,
     jobId ? ['Job ID', jobId.slice(0, 8)] : null,
+    (job?.dispatch?.completionStatus || run.dispatchCompletionStatus || run.dispatch_completion_status) ? ['Runtime', String(job?.dispatch?.completionStatus || run.dispatchCompletionStatus || run.dispatch_completion_status)] : null,
+    workflowRunWaitStatus(job || run, job || run)?.detail ? ['Wait', workflowRunWaitStatus(job || run, job || run).detail] : null,
     ...timestamps
   ].filter(Boolean);
 }
@@ -3776,12 +3879,17 @@ function makeChatHandoffId(prefix = 'chat-handoff') {
 }
 
 async function createAppAgentContextOpenUrl(appId = '', payload = {}) {
-  const result = await api('/api/app-contexts', {
+  const result = await apiWithRetry('/api/app-contexts', {
     method: 'POST',
     body: JSON.stringify({
       app_id: appId,
       context: appContextFromTransferPayload(appId, payload)
     })
+  }, {
+    maxAttempts: 3,
+    statuses: [408, 425, 429, 500, 502, 503, 504],
+    baseDelayMs: 700,
+    maxDelayMs: 4000
   });
   const openUrl = appAgentContextOpenUrl(appId, result, payload);
   if (!openUrl) throw new Error(`${appManifestById(appId)?.name || 'App'} does not have an entry URL for context handoff.`);

@@ -472,6 +472,22 @@ function repoOptionHtml(repo = null) {
 
 function itemMarkdown(item = null) {
   if (!item) return '';
+  const sourceEvidence = Array.isArray(item.sourceEvidence) ? item.sourceEvidence : [];
+  const eeatNotes = item.eeatNotes && typeof item.eeatNotes === 'object' ? item.eeatNotes : {};
+  const publishVariants = Array.isArray(item.publishVariants) ? item.publishVariants : [];
+  const sourceLines = sourceEvidence.length
+    ? sourceEvidence.map((source, index) => `${index + 1}. ${source.title || source.url || 'Source'}${source.url ? ` - ${source.url}` : ''}${source.source_type ? ` (${source.source_type})` : ''}`)
+    : [];
+  const eeatLines = Object.entries(eeatNotes)
+    .filter(([, value]) => String(value || '').trim())
+    .map(([key, value]) => `- ${key}: ${value}`);
+  const variantLines = publishVariants.map((variant, index) => [
+    `### Variant ${index + 1}: ${variant.label || variant.id || 'Draft option'}`,
+    variant.title ? `Title: ${variant.title}` : '',
+    variant.h1 ? `H1: ${variant.h1}` : '',
+    variant.body ? `Body: ${variant.body}` : '',
+    variant.cta ? `CTA: ${variant.cta}` : ''
+  ].filter(Boolean).join('\n'));
   return [
     `# ${item.title || 'Approved CAIt packet'}`,
     '',
@@ -491,10 +507,14 @@ function itemMarkdown(item = null) {
     item.ogTitle ? `OG title: ${item.ogTitle}` : null,
     item.ogDescription ? `OG description: ${item.ogDescription}` : null,
     item.risk ? `Risk / blocker: ${item.risk}` : '',
+    sourceLines.length ? `Original source count: ${sourceLines.length}` : '',
     '',
     '## Approved body',
     '',
     item.body || '',
+    variantLines.length ? '\n## Publish variants\n\n' + variantLines.join('\n\n') : '',
+    sourceLines.length ? '\n## Original source evidence\n\n' + sourceLines.join('\n') : '',
+    eeatLines.length ? '\n## E-E-A-T notes\n\n' + eeatLines.join('\n') : '',
     '',
     '## Approval notes',
     '',
@@ -797,6 +817,11 @@ function contextItemFromArtifact(artifact = {}, index = 0) {
     internalLinks: String(firstText(artifact.internal_links, artifact.internalLinks, extractedInternalLinks) || '').trim(),
     ogTitle: String(firstText(artifact.og_title, artifact.ogTitle, extractedOgTitle) || '').trim(),
     ogDescription: String(firstText(artifact.og_description, artifact.ogDescription, extractedOgDescription) || '').trim(),
+    sourceEvidence: Array.isArray(artifact.source_evidence) ? artifact.source_evidence : (Array.isArray(artifact.sourceEvidence) ? artifact.sourceEvidence : []),
+    publishVariants: Array.isArray(artifact.publish_variants) ? artifact.publish_variants : (Array.isArray(artifact.publishVariants) ? artifact.publishVariants : []),
+    eeatNotes: artifact.eeat_notes && typeof artifact.eeat_notes === 'object'
+      ? artifact.eeat_notes
+      : (artifact.eeatNotes && typeof artifact.eeatNotes === 'object' ? artifact.eeatNotes : {}),
     body,
     status: String(artifact.status || 'needs approval').trim(),
     target: String(artifact.target || destination || (type === 'directory' ? 'Directory submission' : 'Publisher handoff')).trim(),
@@ -823,6 +848,9 @@ function contextItemFromDeliveryItem(item = {}, index = 0) {
     market: metadata.market || metadata.region || '',
     locale: metadata.locale || metadata.language || '',
     risk: metadata.risk || metadata.blocker || 'Review this delivery item before external publishing.',
+    source_evidence: Array.isArray(metadata.source_evidence) ? metadata.source_evidence : [],
+    publish_variants: Array.isArray(metadata.publish_variants) ? metadata.publish_variants : [],
+    eeat_notes: metadata.eeat_notes && typeof metadata.eeat_notes === 'object' ? metadata.eeat_notes : {},
     source_job_id: item.jobId,
     source_delivery_item_id: item.id
   }, index);
@@ -964,7 +992,7 @@ function buildPacket() {
       'Publisher can create repository handoff PRs or WordPress drafts, but final publishing remains outside chat and approval-gated.'
     ],
     artifacts: [
-      { type: item.type, channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), action_type: itemActionType(item), market: itemMarket(item), locale: itemLocale(item), owner: item.owner || 'CAIt', title: item.title, slug: item.slug, meta: item.meta, keywords: item.keywords, h1: item.h1, primary_cta: item.primaryCta, secondary_cta: item.secondaryCta, internal_links: item.internalLinks, og_title: item.ogTitle, og_description: item.ogDescription, body: item.body, status: item.status, risk: item.risk },
+      { type: item.type, channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), action_type: itemActionType(item), market: itemMarket(item), locale: itemLocale(item), owner: item.owner || 'CAIt', title: item.title, slug: item.slug, meta: item.meta, keywords: item.keywords, h1: item.h1, primary_cta: item.primaryCta, secondary_cta: item.secondaryCta, internal_links: item.internalLinks, og_title: item.ogTitle, og_description: item.ogDescription, body: item.body, status: item.status, risk: item.risk, source_evidence: item.sourceEvidence || [], publish_variants: item.publishVariants || [], eeat_notes: item.eeatNotes || {} },
       { type: 'github_pr_handoff', repo: repo?.fullName || repo?.full_name || '', repo_path: String(els.repoPathInput?.value || '').trim(), pr_url: prUrl, status: repoStatus.message },
       { type: 'wordpress_draft_handoff', site_url: wordpressStatus?.result?.wordpress?.siteUrl || '', draft_url: wpDraftUrl, draft_id: wordpressStatus?.result?.draft?.id || '', post_type: String(els.wordpressPostTypeSelect?.value || 'posts'), status: wordpressStatus.message },
       { type: 'destination_profile', channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), market: itemMarket(item), locale: itemLocale(item), note: 'Destination profile holds publication rules, owner, CTA policy, compliance notes, OAuth connector, and execution method.' }

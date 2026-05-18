@@ -95,6 +95,10 @@ assert.ok(workerSource.includes('const COMPLETION_SWEEP_STALE_MS = 15 * 60 * 100
 assert.ok(workerSource.includes('function workflowBuiltInFailureRetryMeta'), 'workflow failures should preserve retry metadata for quality-critical research/data layers.');
 assert.ok(workerSource.includes('function workflowLeaderControlTask'), 'leader checkpoint/final-summary control jobs should have explicit retry handling.');
 assert.ok(workerSource.includes('function workflowCompletionRecoveryMinAgeMs'), 'leader control jobs should not be recovered as stale before their generation budget expires.');
+assert.ok(workerSource.includes('function workflowGenerationProviderTimeoutMs'), 'workflow generation should use a configurable provider wait budget instead of a fixed short OpenAI timeout.');
+assert.ok(workerSource.includes('DEFAULT_LONG_GENERATION_PROVIDER_TIMEOUT_MS = 5 * 60 * 1000'), 'long preparation/final-summary generation should be allowed to wait beyond the old 45s budget.');
+assert.ok(workerSource.includes('function endpointDispatchTimeoutMs'), 'external provider dispatch timeouts should be endpoint-contract based and configurable.');
+assert.ok(workerSource.includes('dispatchTimeoutMs'), 'endpoint dispatch locks should persist the provider wait budget so recovery does not double-dispatch active generation.');
 assert.ok(!/async function dispatchJobToAssignedAgent[\s\S]{0,1500}runBuiltInAgent/.test(workerSource), 'generic dispatch must not call the local sample runner directly.');
 assert.ok(workerSource.includes('prior specialist deliverable'), 'data context packets should instruct downstream agents to use upstream data.');
 assert.ok(workerSource.includes('&& !workflowJobRequiresSearch(job)'), 'data-unavailable shortcut must not bypass search-required data/research jobs.');
@@ -139,6 +143,8 @@ assert.ok(workerSource.includes('listQueuedWorkflowDispatchRoots'), 'cron queued
 assert.ok(workerSource.includes('listAcceptedEndpointDispatchJobs'), 'cron queued dispatch sweep must recover stale accepted endpoint dispatches.');
 assert.ok(workerSource.includes('listRetryableWorkflowChildren'), 'cron retry sweep must target active retryable workflow children instead of being starved by old failed jobs.');
 assert.ok(workerSource.includes("source: 'progress-poll'"), 'job progress polling should trigger retry sweeps so live orders do not wait only for cron.');
+assert.ok(/async function handleGetJob[\s\S]{0,5000}runQueuedEndpointDispatchSweep\(storage, env/.test(workerSource), 'live progress polling should also run the endpoint dispatch sweep so queued/running workflow children do not wait only for cron.');
+assert.ok(/async function handleGetJob[\s\S]{0,1800}awaitDispatch: false/.test(workerSource), 'D1 progress polling should persist safe dispatch scheduling synchronously without waiting for long provider generation.');
 assert.ok(workerSource.includes('pauseTerminalWorkflowChildRetryForParentAuthority'), 'retry sweeps must pause terminal child retries while the parent workflow is waiting for approval.');
 assert.ok(workerSource.includes('legacy accepted endpoint dispatch recovered'), 'accepted endpoint recovery should leave an auditable job log.');
 assert.ok(workerSource.includes('loadWorkflowDispatchState(jobId)'), 'workflow progress dispatch should load only the parent workflow and assigned agents when available.');
@@ -225,6 +231,7 @@ const env = {
   OPEN_CHAT_INTENT_LLM: 'openai',
   OPEN_CHAT_ALLOW_PLATFORM_OPENAI_FALLBACK: 'true',
   OPENAI_API_KEY: 'sk-test-worker-open-chat',
+  WORKFLOW_ENDPOINT_DISPATCH_TIMEOUT_MS: '10000',
   MY_BINDING: null,
   ASSETS: {
     async fetch() {
@@ -235,6 +242,7 @@ const env = {
 
 const originalWorkerApiQaFetch = globalThis.fetch;
 let workerApiQaSelfFetchEnv = env;
+let leaderIntakeQuestionCalls = 0;
 function workerApiQaOpenAiStructuredOutput(schemaName = '') {
   const name = String(schemaName || '').trim().toLowerCase();
   if (name.endsWith('_plan')) {
@@ -357,6 +365,23 @@ globalThis.fetch = async (input, init) => {
   if (String(url || '') === 'https://api.openai.com/v1/responses') {
     const requestBody = JSON.parse(String(init?.body || '{}'));
     const schemaName = requestBody?.text?.format?.name || '';
+    if (schemaName === 'cait_leader_intake_questions') {
+      leaderIntakeQuestionCalls += 1;
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          questions: [
+            '主な目的は問い合わせ・リード獲得、売上・購入、登録・トライアル、流入・認知のどれですか？',
+            '対象ユーザーと広告・SEO・SNSの制約を教えてください。',
+            '納品形式はKPI表、投稿文、LP改善案のどれですか？'
+          ]
+        }),
+        usage: {
+          input_tokens: 120,
+          output_tokens: 80,
+          total_tokens: 200
+        }
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
     if (schemaName === 'cait_preorder_intent') {
       const userPayload = JSON.parse(String(requestBody?.input?.find((item) => item?.role === 'user')?.content || '{}'));
       const prompt = String(userPayload.prompt || '').toLowerCase();
@@ -830,6 +855,31 @@ assert.ok(
 );
 assert.equal(selectedCmoPrepare.body.ownerType, 'leader', 'selected CMO leader should make the leader the chat owner.');
 assert.equal(selectedCmoPrepare.body.activeLeaderTaskType, 'cmo_leader', 'selected CMO leader should be exposed as the active chat lead.');
+assert.equal(leaderIntakeQuestionCalls, 0, 'agent-owned leader intake questions should not be overridden by the generic intake LLM by default');
+
+const selectedSecretaryPrepare = await request('/api/work/prepare-order', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    prompt: 'Secretary Leaderとして、受信箱整理、返信下書き、日程調整、フォローアップをまとめて運用したいです。',
+    task_type: 'secretary_leader',
+    selected_agent_id: 'agent_secretary_leader_01',
+    selected_agent_name: 'Secretary Leader',
+    requestedStrategy: 'auto'
+  })
+});
+assert.equal(selectedSecretaryPrepare.status, 200);
+assert.equal(selectedSecretaryPrepare.body.taskType, 'secretary_leader');
+assert.equal(selectedSecretaryPrepare.body.status, 'needs_input');
+assert.ok(
+  selectedSecretaryPrepare.body.questions.some((question) => /関係者|期限|承認者|メール|議事録|予定|資料/i.test(question)),
+  'Secretary Leader should use secretary-owned operations intake questions'
+);
+assert.ok(
+  !selectedSecretaryPrepare.body.questions.some((question) => /問い合わせ・リード|売上・購入|登録・トライアル|流入・認知|広告|SEO|SNS/i.test(question)),
+  'Secretary Leader intake must not be replaced with generic CMO/growth choices'
+);
+assert.equal(leaderIntakeQuestionCalls, 0, 'secretary leader intake should remain in the secretary agent definition');
 
 const lockedCmoPrepare = await request('/api/work/prepare-order', {
   method: 'POST',

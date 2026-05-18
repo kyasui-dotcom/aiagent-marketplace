@@ -7,6 +7,7 @@ import {
   sampleAgentDefinitionForKind
 } from '../lib/builtin-agents/agents/index.js';
 import { leaderReadableAgentSelectionIndex } from '../lib/agent-selection-index.js';
+import { deliveryItemsFromJob } from '../lib/delivery-items.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -117,6 +118,161 @@ for (const [kind, requiredPatterns] of [
   });
   assertUserFacingDelivery(delivery, `${kind} delivery`, requiredPatterns);
 }
+
+const travelEsimBody = {
+  prompt: [
+    'Task: cmo_leader',
+    'Goal: Original request:',
+    'acquire leads for https://autowifi-travel.com',
+    'User clarification:',
+    '- Product/service: - Product/service: https://autowifi-travel.com',
+    '- Analytics data: - Analytics data: GA4 + Search Console connector context attached.',
+    '- Main goal: - Main goal: 問い合わせ・リード獲得を増やす',
+    '- Target audience: - Target audience: 一般消費者',
+    '- Constraints: - Constraints: Depth and quality first',
+    '- Priority channel: - Priority channel: Organic search / SEO',
+    'Attached connector context:',
+    'GA4 property: properties/528967599',
+    'Search Console site: https://autowifi-travel.com/',
+    'Date range: 2026-04-18 to 2026-05-15',
+    'Sessions: 74',
+    'Conversions: 0',
+    'Conversion rate: 0%',
+    'Search Console query: add esim to iphone | https://autowifi-travel.com/en/guide/esim-iphone-setup | Landing page: https://autowifi-travel.com/en/guide/esim-iphone-setup',
+    'Search Console query: airalo vs holafly | https://autowifi-travel.com/en/guide/airalo-vs-holafly | Landing page: https://autowifi-travel.com/en/guide/airalo-vs-holafly'
+  ].join('\n'),
+  output_language: 'en'
+};
+
+const wrongProductContextPattern = /AI agent workflows|AI-agent request|agent requests|turns agent requests/i;
+const malformedAudiencePattern = /対象ユーザー:.*制約|Target audience:.*Constraints/i;
+
+for (const [kind, requiredPatterns] of [
+  ['data_analysis', [/lead or inquiry/i, /primary_conversion_event/i]],
+  ['media_planner', [/organic search \/ SEO/i, /lead or inquiry/i]],
+  ['seo_gap', [/travel eSIM and connectivity service/i, /Meta title/i, /Request details/i]],
+  ['landing', [/travel eSIM and connectivity service/i, /Request details/i]],
+  ['cmo_leader', [/lead or inquiry/i, /organic search \/ SEO/i]]
+]) {
+  const definition = sampleAgentDefinitionForKind(kind);
+  const delivery = await definition.provider.runJob({
+    kind,
+    definition,
+    body: travelEsimBody,
+    source: {},
+    manifest: definition.manifest
+  });
+  const content = delivery.files?.[0]?.content || '';
+  assertUserFacingDelivery(delivery, `${kind} travel/eSIM delivery`, requiredPatterns);
+  assert.ok(!wrongProductContextPattern.test(content), `${kind} travel/eSIM delivery must not use AI-agent-specific copy`);
+  assert.ok(!malformedAudiencePattern.test(content), `${kind} travel/eSIM delivery must not leak adjacent intake labels into the audience`);
+  assert.ok(!/signup or trial start/i.test(content), `${kind} travel/eSIM delivery should preserve lead/inquiry conversion intent`);
+}
+
+const travelEsimPurchaseBody = {
+  ...travelEsimBody,
+  prompt: travelEsimBody.prompt
+    .replace('acquire leads for https://autowifi-travel.com', 'increase purchases for https://autowifi-travel.com')
+    .replace('問い合わせ・リード獲得を増やす', '売上・購入を増やす')
+};
+
+for (const [kind, requiredPatterns] of [
+  ['data_analysis', [/purchase or revenue action/i, /primary_conversion_event/i]],
+  ['media_planner', [/organic search \/ SEO/i, /purchase or revenue action/i]],
+  ['seo_gap', [/travel eSIM and connectivity service/i, /Start purchase/i, /purchase_complete_or_revenue_event/i]],
+  ['landing', [/travel eSIM and connectivity service/i, /Start purchase/i, /purchase_complete_or_revenue_event/i]],
+  ['cmo_leader', [/purchase or revenue action/i, /organic search \/ SEO/i]]
+]) {
+  const definition = sampleAgentDefinitionForKind(kind);
+  const delivery = await definition.provider.runJob({
+    kind,
+    definition,
+    body: travelEsimPurchaseBody,
+    source: {},
+    manifest: definition.manifest
+  });
+  const content = delivery.files?.[0]?.content || '';
+  assertUserFacingDelivery(delivery, `${kind} travel/eSIM purchase delivery`, requiredPatterns);
+  assert.ok(!wrongProductContextPattern.test(content), `${kind} travel/eSIM purchase delivery must not use AI-agent-specific copy`);
+  assert.ok(!malformedAudiencePattern.test(content), `${kind} travel/eSIM purchase delivery must not leak adjacent intake labels into the audience`);
+  assert.ok(!/lead or inquiry|signup or trial start|inquiry_submit|signup_or_trial_start/i.test(content), `${kind} travel/eSIM purchase delivery should preserve purchase conversion intent`);
+}
+
+const teardown = sampleAgentDefinitionForKind('teardown');
+const sourceRequiredTeardown = await teardown.provider.runJob({
+  kind: 'teardown',
+  definition: teardown,
+  body: {
+    prompt: 'Teardown https://autowifi-travel.com/en/guide/airalo-vs-holafly using the attached source context. Answer in English.',
+    output_language: 'en',
+    input: {
+      _broker: {
+        workflow: {
+          forceWebSearch: true,
+          sequencePhase: 'research'
+        }
+      }
+    }
+  },
+  source: {},
+  manifest: teardown.manifest
+});
+assert.equal(sourceRequiredTeardown.status, 'completed', 'source-required non-research agents should complete when source URLs are supplied');
+assert.ok(
+  sourceRequiredTeardown.report.web_sources.some((item) => item.url === 'https://autowifi-travel.com/en/guide/airalo-vs-holafly'),
+  'source-required non-research agents should attach supplied URLs to report.web_sources'
+);
+
+const writer = sampleAgentDefinitionForKind('writer');
+const sourceBackedWriter = await writer.provider.runJob({
+  kind: 'writer',
+  definition: writer,
+  body: {
+    prompt: [
+      'Write a source-backed X post and blog draft for https://aiagent-marketplace.net.',
+      'Target audience: developers and technical users',
+      'Main goal: signup or trial start',
+      'X account: https://x.com/cait',
+      'Blog: https://aiagent-marketplace.net/news/demo-video-provider-flow.html'
+    ].join('\n'),
+    output_language: 'en',
+    input: {
+      files: [{
+        name: 'founder-note.md',
+        content: 'Founder note: CAIt preserves source evidence, specialist handoffs, and approval boundaries before publishing.'
+      }]
+    }
+  },
+  source: {},
+  manifest: writer.manifest
+});
+assert.equal(sourceBackedWriter.status, 'completed');
+const writerArtifact = sourceBackedWriter.report.artifacts.find((item) => item.id === 'writer-publisher-handoff');
+assert.ok(writerArtifact, 'writer should emit a Publisher handoff artifact');
+assert.equal(writerArtifact.destination, 'X');
+assert.ok(writerArtifact.body.includes('## Publisher handoff'), 'writer Publisher artifact should include a handoff section');
+assert.ok(writerArtifact.body.includes('## Draft variants'), 'writer Publisher artifact should include per-medium draft variants');
+assert.equal(writerArtifact.publish_variants.length, 3, 'writer should emit three variants for the selected X medium');
+assert.ok(writerArtifact.body.includes('## E-E-A-T source ledger'), 'writer Publisher artifact should include an E-E-A-T source ledger');
+assert.ok(writerArtifact.source_evidence.some((source) => source.source_type === 'x_post_or_account'), 'writer source evidence should preserve X source/account material');
+assert.ok(writerArtifact.source_evidence.some((source) => source.source_type === 'uploaded_file'), 'writer source evidence should preserve uploaded original notes');
+const ownedSiteWriterArtifact = sourceBackedWriter.report.artifacts.find((item) => item.channel_key === 'owned_site');
+assert.ok(ownedSiteWriterArtifact, 'writer should emit a separate Publisher artifact when a blog/article medium is requested too');
+assert.equal(ownedSiteWriterArtifact.publish_variants.length, 3, 'writer should emit three variants for the owned site/blog medium');
+const writerDeliveryItems = deliveryItemsFromJob({
+  id: 'qa-writer-publisher',
+  status: 'completed',
+  taskType: 'writer',
+  workflowTask: 'writer',
+  workflowAgentName: 'WRITING AGENT',
+  input: { _broker: { requester: { login: 'qa-writer' } } },
+  output: sourceBackedWriter
+});
+const publisherItem = writerDeliveryItems.find((item) => item.surface === 'publisher' && item.itemType === 'x_post');
+assert.ok(publisherItem, 'writer Publisher handoff artifact should become a publisher delivery item');
+assert.ok(Array.isArray(publisherItem.metadata.source_evidence), 'publisher delivery item should preserve writer source evidence');
+assert.equal(publisherItem.metadata.publish_variants.length, 3, 'publisher delivery item should preserve three publish variants');
+assert.ok(publisherItem.metadata.eeat_notes?.trust, 'publisher delivery item should preserve E-E-A-T notes');
 
 const sourceBackedResearch = await research.provider.runJob({
   kind: 'research',

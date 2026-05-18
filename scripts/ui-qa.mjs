@@ -42,7 +42,7 @@ const mcpPath = new URL('../lib/mcp.js', import.meta.url);
 const httpPolicyPath = new URL('../lib/http-policy.js', import.meta.url);
 const wranglerPath = new URL('../wrangler.jsonc', import.meta.url);
 const publicHeadersPath = new URL('../public/_headers', import.meta.url);
-const agentOrchestrationDisciplinePath = new URL('../docs/AGENT_ORCHESTRATION_DISCIPLINE_JA.md', import.meta.url);
+const agentOrchestrationDisciplinePath = new URL('../docs/AGENT_ORCHESTRATION_DISCIPLINE.md', import.meta.url);
 
 execFileSync(process.execPath, ['--check', fileURLToPath(chatJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(appsJsPath)], { stdio: 'pipe' });
@@ -558,6 +558,10 @@ assert.ok(publisherJs.includes("key: 'instagram'"), 'Publisher Studio should kee
 assert.ok(publisherJs.includes('manual_social_copy'), 'Publisher Studio should keep generic social copy out of GitHub PR fallback.');
 assert.ok(publisherJs.includes('Generic publishing packet'), 'Publisher Studio should not default ambiguous packets to GitHub PR.');
 assert.ok(publisherJs.includes('wordpress_application_password'), 'Publisher Studio should expose WordPress as an external-app style publish connector.');
+assert.ok(publisherJs.includes('sourceEvidence'), 'Publisher Studio should preserve source evidence from writing-agent handoff artifacts.');
+assert.ok(publisherJs.includes('publishVariants'), 'Publisher Studio should preserve three publish variants from writing-agent handoff artifacts.');
+assert.ok(publisherJs.includes('## Publish variants'), 'Publisher Studio should include publish variants in approval handoff Markdown.');
+assert.ok(publisherJs.includes('E-E-A-T notes'), 'Publisher Studio should include E-E-A-T notes in approval handoff Markdown.');
 assert.ok(publisherJs.includes('/api/connectors/wordpress/create-draft'), 'Publisher Studio should create WordPress drafts through the connector API.');
 assert.ok(publisherJs.includes('fetchCaitAppContextFromUrl'), 'Publisher Studio should receive CAIt contexts through the server context API.');
 assert.ok(publisherJs.includes('applyInboundContext'), 'Publisher Studio should map inbound context into editable approval packets.');
@@ -790,16 +794,20 @@ assert.ok(chatJs.includes('appContextFromTransferPayload'), 'Generic app handoff
 assert.ok(chatJs.includes('createAppAgentContextOpenUrl'), 'Generic app handoff fallback should create a server-side context open URL.');
 assert.ok(chatJs.includes('cait_app_context_id'), 'Generic app handoff fallback should pass only context identifiers in the app URL.');
 assert.ok(chatJs.includes('/api/app-contexts'), 'Generic app handoff fallback should use the server-side app context API.');
+assert.ok(
+  /apiWithRetry\('\/api\/app-contexts'[\s\S]{0,500}statuses:\s*\[408,\s*425,\s*429,\s*500,\s*502,\s*503,\s*504\]/.test(chatJs),
+  'Chat app-context handoff should retry transient server failures before falling back to a context-less app open.'
+);
 assert.ok(chatJs.includes("message.role === 'system' ? 'system' : 'ok'"), 'Chat transcript tracking should not send empty status for system handoff messages.');
 assert.ok(!chatJs.includes('appAgentFallbackHandoffUrl'), 'Generic app handoffs should not keep the legacy URL payload fallback helper.');
 assert.ok(!chatJs.includes('cait_transfer'), 'Generic app handoffs should not embed serialized transfer payloads in URLs.');
 assert.ok(!chatJs.includes('data-app-agent-open-transfer'), 'Generic app handoff cards should not expose transfer-payload fallback links.');
-assert.ok(agentOrchestrationDiscipline.includes('`Deliveries` / `delivery-manager` は app ではなく CAIt の中核機能'), 'Agent discipline should define Deliveries as a CAIt feature, not an app.');
-assert.ok(agentOrchestrationDiscipline.includes('CAIt が同梱・管理していても app surface として扱う'), 'Agent discipline should treat CAIt-managed app surfaces as app surfaces, not internal privileges.');
-assert.ok(agentOrchestrationDiscipline.includes('`inputContract.accepts` と `capabilities`'), 'Agent discipline should require contract-based app matching.');
-assert.ok(agentOrchestrationDiscipline.includes('専門appを先に出す'), 'Agent discipline should prefer specialized external app candidates over generic CAIt-managed apps.');
-assert.ok(agentOrchestrationDiscipline.includes('価格、無料CAIt管理app、専門性、手数料/レベニューシェア'), 'Agent discipline should preserve future paid-app selection and revenue-share requirements.');
-assert.ok(agentOrchestrationDiscipline.includes('CAIt session cookieを直接共有しない'), 'Agent discipline should require scoped auth delegation for future external apps.');
+assert.ok(agentOrchestrationDiscipline.includes('`Deliveries` and `delivery-manager` are CAIt core features, not apps.'), 'Agent discipline should define Deliveries as a CAIt feature, not an app.');
+assert.ok(agentOrchestrationDiscipline.includes('are app surfaces even when CAIt ships and manages them'), 'Agent discipline should treat CAIt-managed app surfaces as app surfaces, not internal privileges.');
+assert.ok(agentOrchestrationDiscipline.includes('`inputContract.accepts` and `capabilities`'), 'Agent discipline should require contract-based app matching.');
+assert.ok(agentOrchestrationDiscipline.includes('a specialized matching app should be shown first'), 'Agent discipline should prefer specialized external app candidates over generic CAIt-managed apps.');
+assert.ok(agentOrchestrationDiscipline.includes('price, free CAIt-managed option, specialization, fees, or revenue share'), 'Agent discipline should preserve future paid-app selection and revenue-share requirements.');
+assert.ok(agentOrchestrationDiscipline.includes('must not receive the CAIt session cookie directly'), 'Agent discipline should require scoped auth delegation for future external apps.');
 assert.ok(!chatJs.includes('最終アクション: X Client Ops'), 'X Client Ops delivery card should not show Japanese heading copy.');
 assert.ok(!chatJs.includes('過程で作成されたX投稿案'), 'X Client Ops delivery card should not show Japanese description copy.');
 assert.ok(chatJs.includes('URL.createObjectURL'));
@@ -823,6 +831,10 @@ assert.ok(!chatJs.includes('Live progress polling reached its limit'), 'Polling 
 assert.ok(chatJs.includes('pollCount >= CHATUX_PROGRESS_MAX_POLLS'), 'Chat polling should still have an explicit long-running order limit.');
 assert.ok(chatJs.includes('progress-narrator-bar') && chatJs.includes('role="progressbar"'), 'Live order progress should render a visible progress bar.');
 assert.ok(chatJs.includes('showProgressNarrator(progressNarratorTextForJob(job), progressNarratorOptionsForJob(job))'), 'Polling should update the live progress bar from job progress.');
+assert.ok(chatJs.includes('function workflowRunWaitStatus'), 'Chat progress should describe long-running provider/agent waits instead of looking stuck.');
+assert.ok(chatJs.includes('dispatchInProgressAt') && chatJs.includes('dispatchTimeoutMs'), 'Chat progress should show elapsed generation time and the configured wait window.');
+assert.ok(chatJs.includes('Waiting for the generation provider response'), 'Long generation waits should be visible in the live progress narrator.');
+assert.ok(worker.includes('dispatchCompletionStatus') && worker.includes('dispatchTimeoutMs'), 'Workflow child snapshots should expose generic dispatch wait state to chat progress.');
 assert.ok(chatCss.includes('.progress-narrator.ok .progress-narrator-caret'), 'Chat CSS should stop the narrator caret animation when progress is done or paused.');
 assert.ok(chatCss.includes('.progress-narrator-bar') && chatCss.includes('--progress-value'), 'Chat CSS should style the live order progress bar.');
 assert.ok(chatJs.includes('isNonOrderConversationIntentText'), 'Chat should keep pause/status/help messages out of order dispatch.');

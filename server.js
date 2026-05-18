@@ -128,7 +128,7 @@ function buildWorkerEnv() {
   const env = {
     ...process.env,
     APP_VERSION: process.env.APP_VERSION || '0.2.0',
-    ALLOW_OPEN_WRITE_API: defaultTestFlag('ALLOW_OPEN_WRITE_API', '1'),
+    ALLOW_OPEN_WRITE_API: defaultTestFlag('ALLOW_OPEN_WRITE_API', '0'),
     ALLOW_GUEST_RUN_READ_API: defaultTestFlag('ALLOW_GUEST_RUN_READ_API', '1'),
     ALLOW_DEV_API: defaultTestFlag('ALLOW_DEV_API', '1'),
     BASE_URL: baseUrl,

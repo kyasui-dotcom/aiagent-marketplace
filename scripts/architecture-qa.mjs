@@ -32,7 +32,7 @@ const httpPolicySource = read('lib/http-policy.js');
 const chatSource = read('public/chat.js');
 const clientSource = read('public/client.js');
 const cmoLeaderSource = read('lib/builtin-agents/agents/cmo-leader.js');
-const agentOrchestrationDisciplineSource = read('docs/AGENT_ORCHESTRATION_DISCIPLINE_JA.md');
+const agentOrchestrationDisciplineSource = read('docs/AGENT_ORCHESTRATION_DISCIPLINE.md');
 const deliveryActionContractSource = read('public/delivery-action-contract.js');
 const appContextSource = read('lib/app-context.js');
 const migrationSource = read('migrations/0001_init.sql');
@@ -167,9 +167,20 @@ assert.ok(
   cmoLeaderSource.includes('plannerAllowsCandidateAgentTasks: false'),
   'CMO planner candidate policy must be owned by cmo-leader.js.'
 );
+// Regression target:
+// Shared discipline docs must say only generic ownership rules. Single-agent
+// routing, channel policy, approval wording, action handoff, and templates are
+// verified in that agent's JS module instead.
 assert.ok(
-  agentOrchestrationDisciplineSource.includes('worker / orchestration / client に、特定リーダーや特定エージェントの仕事定義を書かない'),
+  agentOrchestrationDisciplineSource.includes('Do not put leader-specific or agent-specific work definitions in `worker`, `orchestration`, or `client` code.'),
   'Agent orchestration discipline must be documented so the boundary is persistent.'
+);
+const sharedDisciplineSpecificAgentBoundaryPattern =
+  /##\s+(?!Agent Definition Boundaries\b)[^\n]*(?:Leader|Agent)\s+Boundary\b|single-agent boundary|specific definitions belong in `?(?:lib[\\/])builtin-agents[\\/]agents[\\/][^`\s]+\.js`?|(?:lib[\\/])builtin-agents[\\/]agents[\\/][^`\s]+\.js/i;
+assert.equal(
+  sharedDisciplineSpecificAgentBoundaryPattern.test(agentOrchestrationDisciplineSource),
+  false,
+  'Agent orchestration discipline must stay agent-agnostic; single-agent boundaries belong in each agent JS module.'
 );
 assert.ok(
   orchestrationSource.includes('leaderUsesSaasPublishHandoff'),

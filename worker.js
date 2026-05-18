@@ -84,6 +84,9 @@ const APP_SHELL_ASSET_VERSION = '20260424c';
 const WORKFLOW_CHILD_TIMEOUT_FLOOR_MS = 15 * 60 * 1000;
 const WORKFLOW_ACTION_CHILD_TIMEOUT_FLOOR_MS = 30 * 60 * 1000;
 const WORKFLOW_PARENT_TIMEOUT_FLOOR_MS = 45 * 60 * 1000;
+const DEFAULT_GENERATION_PROVIDER_TIMEOUT_MS = 3 * 60 * 1000;
+const DEFAULT_LONG_GENERATION_PROVIDER_TIMEOUT_MS = 5 * 60 * 1000;
+const MAX_ENDPOINT_DISPATCH_WAIT_MS = 10 * 60 * 1000;
 const ORCHESTRATION_WATCHDOG_POLICY = Object.freeze({
   version: 'workflow-watchdog/v2',
   staleAfterMs: 60 * 1000,
@@ -1565,6 +1568,8 @@ async function generateLeaderIntakeQuestionsWithOpenAi(body = {}, preliminary = 
 async function buildIntakeClarificationWithAi(body = {}, options = {}, source = {}) {
   const preliminary = buildIntakeClarification(body, options);
   if (!preliminary || preliminary.reason !== 'leader_context_required') return preliminary;
+  const allowOverride = ['1', 'true', 'yes', 'on'].includes(String(openChatIntentEnvValue(source, 'LEADER_INTAKE_LLM_OVERRIDE_AGENT_QUESTIONS')).toLowerCase());
+  if (!allowOverride && preliminary?.intake?.questionSource === 'rules') return preliminary;
   const questions = await generateLeaderIntakeQuestionsWithOpenAi(body, preliminary, options.taskType || preliminary.inferred_task_type || body.task_type || body.taskType, source);
   if (questions.length < 2) return preliminary;
   return buildIntakeClarification(body, { ...options, dynamicIntakeQuestions: questions });
@@ -5388,15 +5393,44 @@ function dispatchScheduleIsFreshForAgent(job, agent, now = Date.now()) {
   return dispatchScheduleIsFresh(job, now, DISPATCH_SCHEDULE_STALE_MS);
 }
 
+function workflowGenerationProviderTimeoutMs(env = {}, job = {}) {
+  const configured = Number(
+    env?.GENERATION_PROVIDER_TIMEOUT_MS
+    || env?.PROVIDER_GENERATION_TIMEOUT_MS
+    || env?.WORKFLOW_GENERATION_PROVIDER_TIMEOUT_MS
+    || env?.BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS
+    || env?.BUILTIN_OPENAI_TIMEOUT_MS
+    || 0
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(45_000, Math.min(MAX_ENDPOINT_DISPATCH_WAIT_MS, configured));
+  }
+  const phase = String(workflowSequencePhaseForJob(job) || '').trim().toLowerCase();
+  if (['preparation', 'action', 'final_summary'].includes(phase)) return DEFAULT_LONG_GENERATION_PROVIDER_TIMEOUT_MS;
+  return DEFAULT_GENERATION_PROVIDER_TIMEOUT_MS;
+}
+
+function endpointDispatchTimeoutMs(env = {}, job = {}, agent = null) {
+  const configured = Number(env?.ENDPOINT_DISPATCH_TIMEOUT_MS || env?.WORKFLOW_ENDPOINT_DISPATCH_TIMEOUT_MS || 0);
+  const maxWait = Number.isFinite(configured) && configured > 0
+    ? Math.max(10_000, Math.min(MAX_ENDPOINT_DISPATCH_WAIT_MS, configured))
+    : workflowGenerationProviderTimeoutMs(env, job);
+  const deadline = effectiveTimeoutDeadlineMs(job, agent) || maxWait;
+  return Math.max(10_000, Math.min(MAX_ENDPOINT_DISPATCH_WAIT_MS, maxWait, deadline));
+}
+
+function dispatchInProgressFreshMs(job = {}, agent = null) {
+  const storedTimeoutMs = Number(job?.dispatch?.dispatchTimeoutMs || job?.dispatch?.timeoutMs || 0);
+  const deadlineMs = effectiveTimeoutDeadlineMs(job, agent) || DISPATCH_SCHEDULE_TIMEOUT_MS;
+  const budgetMs = Number.isFinite(storedTimeoutMs) && storedTimeoutMs > 0 ? storedTimeoutMs : deadlineMs;
+  return Math.max(DISPATCH_IN_PROGRESS_STALE_MS, Math.min(MAX_ENDPOINT_DISPATCH_WAIT_MS + 30_000, budgetMs + 30_000));
+}
+
 function dispatchExecutionIsFresh(job = {}, agent = null, now = Date.now()) {
   const status = String(job?.dispatch?.completionStatus || '').trim().toLowerCase();
   if (status !== 'dispatch_in_progress') return false;
   const at = Date.parse(String(job?.dispatch?.dispatchInProgressAt || job?.dispatch?.lastAttemptAt || job?.dispatch?.dispatchRequestedAt || ''));
-  const deadlineMs = effectiveTimeoutDeadlineMs(job, agent) || DISPATCH_SCHEDULE_TIMEOUT_MS;
-  const inProgressDeadlineMs = Math.min(
-    Math.max(DISPATCH_SCHEDULE_STALE_MS, deadlineMs),
-    DISPATCH_IN_PROGRESS_STALE_MS
-  );
+  const inProgressDeadlineMs = dispatchInProgressFreshMs(job, agent);
   return Number.isFinite(at) && now - at < inProgressDeadlineMs;
 }
 
@@ -5425,9 +5459,8 @@ function workflowCompletionRecoveryMinAgeMs(env = {}, job = {}) {
   if (!workflowLeaderControlTask(job)) return base;
   const configured = Number(env?.WORKFLOW_LEADER_CONTROL_RECOVERY_STALE_MS || env?.WORKFLOW_LEADER_CHECKPOINT_RECOVERY_STALE_MS || 0);
   if (Number.isFinite(configured) && configured > 0) return Math.max(base, configured);
-  const openAiBudget = Number(env?.BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS || env?.BUILTIN_OPENAI_TIMEOUT_MS || 45000);
-  const safeBudget = Number.isFinite(openAiBudget) && openAiBudget > 0 ? openAiBudget : 45000;
-  return Math.max(base, Math.min(5 * 60 * 1000, safeBudget * 2 + 30000));
+  const providerBudget = workflowGenerationProviderTimeoutMs(env, job);
+  return Math.max(base, Math.min(MAX_ENDPOINT_DISPATCH_WAIT_MS, providerBudget + 30000));
 }
 
 function workflowDispatchQueue(env = {}) {
@@ -13719,9 +13752,17 @@ function workflowChildSnapshot(children = []) {
     sequencePhase: workflowSequencePhaseForJob(job) || null,
     status: job.status,
     createdAt: job.createdAt,
+    startedAt: job.startedAt || null,
+    dispatchedAt: job.dispatchedAt || null,
     completedAt: job.completedAt || null,
     failedAt: job.failedAt || null,
+    lastCallbackAt: job.lastCallbackAt || null,
     failureReason: job.failureReason || null,
+    dispatchCompletionStatus: job.dispatch?.completionStatus || null,
+    dispatchRequestedAt: job.dispatch?.dispatchRequestedAt || null,
+    dispatchInProgressAt: job.dispatch?.dispatchInProgressAt || null,
+    dispatchTimeoutMs: Number(job.dispatch?.dispatchTimeoutMs || 0) || null,
+    providerQueueAcceptedAt: job.dispatch?.providerQueueAcceptedAt || null,
     qualityGate: job.qualityGate || null,
     adaptivePending: workflowChildIsAdaptivePending(job),
     adaptiveLayer: workflowChildAdaptiveLayer(job) || null,
@@ -14856,7 +14897,7 @@ async function dispatchJobToAssignedAgent(job, agent, env) {
   }
   const payload = buildDispatchPayload(job, agent);
   const dispatchHeaders = buildDispatchHeaders(agent);
-  const timeoutMs = Math.max(10000, Math.min(120000, effectiveTimeoutDeadlineMs(job, agent) || 10000));
+  const timeoutMs = endpointDispatchTimeoutMs(env, job, agent);
   const dispatchResult = await postJsonWithTimeout(dispatchEndpoint, payload, timeoutMs, dispatchHeaders);
   const { response, body } = dispatchResult;
   const observedEndpoint = dispatchEndpoint;
@@ -14967,12 +15008,14 @@ async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, 
     }
     const at = nowIso();
     const providerRunAttempt = providerRunAttempts(draftJob) + 1;
+    const dispatchTimeoutMs = endpointDispatchTimeoutMs(env, draftJob, draftAgent);
     draftJob.status = 'running';
     draftJob.startedAt = draftJob.startedAt || at;
     draftJob.dispatch = {
       ...(draftJob.dispatch || {}),
       endpoint: resolveAgentJobEndpoint(draftAgent),
       dispatchInProgressAt: at,
+      dispatchTimeoutMs,
       lastAttemptAt: at,
       completionStatus: 'dispatch_in_progress',
       retryable: false,
@@ -23849,25 +23892,73 @@ async function handleGetJob(storage, request, env, jobId, ctx = null) {
     || (job.jobKind === 'workflow' && workflowLeaderSequenceNeedsProgress(job))
   );
   if (shouldRunProgress) {
-    const progressWork = (async () => {
-      if (job.jobKind === 'workflow') {
-        await refreshWorkflowLeaderHandoffForJobId(storage, job.id);
-        await reconcileWorkflowParent(storage, job.id);
-        await runWorkflowTimeoutRetrySweep(storage, env, {
-          source: 'progress-poll',
-          limit: Math.min(4, Number(env?.WORKFLOW_TIMEOUT_RETRY_SWEEP_LIMIT || 4) || 4),
-          waitUntil
-        });
-      }
-      return scheduleProgressDispatchesForJobId(storage, env, waitUntil, job.id, 'progress poll', {
-        maxTargets: WORKFLOW_PROGRESS_DISPATCH_MAX_TARGETS,
-        awaitDispatch: !waitUntil,
-        refresh: job.jobKind === 'workflow'
-      });
-    })();
     if (waitUntil && storage.kind === 'd1') {
-      waitUntil(progressWork.catch((error) => touchEvent(storage, 'FAILED', `progress poll exception ${String(error?.message || error).slice(0, 120)}`)));
+      const fastProgress = await (async () => {
+        if (job.jobKind === 'workflow') {
+          await refreshWorkflowLeaderHandoffForJobId(storage, job.id);
+          await reconcileWorkflowParent(storage, job.id);
+        }
+        return scheduleProgressDispatchesForJobId(storage, env, waitUntil, job.id, 'progress poll', {
+          maxTargets: WORKFLOW_PROGRESS_DISPATCH_MAX_TARGETS,
+          awaitDispatch: false,
+          refresh: job.jobKind === 'workflow'
+        });
+      })().catch(async (error) => {
+        await touchEvent(storage, 'FAILED', `progress poll exception ${String(error?.message || error).slice(0, 120)}`);
+        return null;
+      });
+      if (job.jobKind === 'workflow' || fastProgress?.scheduled) {
+        job = await loadJob() || job;
+      }
+      waitUntil((async () => {
+        if (job.jobKind === 'workflow') {
+          await runWorkflowTimeoutRetrySweep(storage, env, {
+            source: 'progress-poll',
+            limit: Math.min(4, Number(env?.WORKFLOW_TIMEOUT_RETRY_SWEEP_LIMIT || 4) || 4),
+            waitUntil
+          });
+          await runQueuedEndpointDispatchSweep(storage, env, {
+            source: 'progress-poll',
+            limit: Math.min(8, Number(env?.QUEUED_DISPATCH_SWEEP_LIMIT || 8) || 8),
+            reason: 'progress poll dispatch sweep',
+            waitUntil
+          });
+          await runWorkflowOrchestrationWatchdog(storage, env, {
+            source: 'progress-poll',
+            limit: Math.min(5, Number(env?.WORKFLOW_ORCHESTRATION_WATCHDOG_LIMIT || 5) || 5),
+            staleAfterMs: Number(env?.WORKFLOW_ORCHESTRATION_STALE_MS || ORCHESTRATION_WATCHDOG_POLICY.staleAfterMs) || ORCHESTRATION_WATCHDOG_POLICY.staleAfterMs,
+            blockedAfterMs: Number(env?.WORKFLOW_ORCHESTRATION_BLOCKED_MS || ORCHESTRATION_WATCHDOG_POLICY.blockedAfterMs) || ORCHESTRATION_WATCHDOG_POLICY.blockedAfterMs,
+            reason: 'progress poll orchestration watchdog dispatch',
+            waitUntil
+          });
+        }
+      })().catch((error) => touchEvent(storage, 'FAILED', `progress poll recovery exception ${String(error?.message || error).slice(0, 120)}`)));
     } else {
+      const progressWork = (async () => {
+        if (job.jobKind === 'workflow') {
+          await refreshWorkflowLeaderHandoffForJobId(storage, job.id);
+          await reconcileWorkflowParent(storage, job.id);
+          await runWorkflowTimeoutRetrySweep(storage, env, {
+            source: 'progress-poll',
+            limit: Math.min(4, Number(env?.WORKFLOW_TIMEOUT_RETRY_SWEEP_LIMIT || 4) || 4),
+            waitUntil
+          });
+        }
+        const scheduled = await scheduleProgressDispatchesForJobId(storage, env, waitUntil, job.id, 'progress poll', {
+          maxTargets: WORKFLOW_PROGRESS_DISPATCH_MAX_TARGETS,
+          awaitDispatch: !waitUntil,
+          refresh: job.jobKind === 'workflow'
+        });
+        if (job.jobKind === 'workflow' && !scheduled?.scheduled) {
+          await runQueuedEndpointDispatchSweep(storage, env, {
+            source: 'progress-poll',
+            limit: Math.min(8, Number(env?.QUEUED_DISPATCH_SWEEP_LIMIT || 8) || 8),
+            reason: 'progress poll dispatch sweep',
+            waitUntil
+          });
+        }
+        return scheduled;
+      })();
       const scheduled = await progressWork.catch(async (error) => {
         await touchEvent(storage, 'FAILED', `progress poll exception ${String(error?.message || error).slice(0, 120)}`);
         return null;

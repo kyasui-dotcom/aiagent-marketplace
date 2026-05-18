@@ -3,11 +3,13 @@ import { defineConfig, devices } from '@playwright/test';
 const configuredBaseUrl = process.env.E2E_BASE_URL || `http://127.0.0.1:${process.env.PORT || 4323}`;
 const baseUrl = new URL(configuredBaseUrl);
 const useManagedLocalServer = !process.env.E2E_BASE_URL;
+const runOrderScenario = process.env.E2E_ORDER_SCENARIO === '1' || Boolean(process.env.E2E_ORDER_ID);
 const localPort = baseUrl.port || (baseUrl.protocol === 'https:' ? '443' : '80');
 const localHost = baseUrl.hostname || '127.0.0.1';
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: runOrderScenario ? [] : ['**/order-scenario.spec.js'],
   outputDir: 'test-results/e2e-artifacts',
   timeout: 60_000,
   expect: { timeout: 10_000 },
@@ -35,7 +37,7 @@ export default defineConfig({
       NODE_ENV: 'test',
       APP_VERSION: process.env.APP_VERSION || '0.2.0-test',
       ALLOW_IN_MEMORY_STORAGE: '1',
-      ALLOW_OPEN_WRITE_API: '1',
+      ALLOW_OPEN_WRITE_API: process.env.ALLOW_OPEN_WRITE_API || '0',
       ALLOW_GUEST_RUN_READ_API: '1',
       ALLOW_DEV_API: '1',
       EXPOSE_JOB_SECRETS: '1',

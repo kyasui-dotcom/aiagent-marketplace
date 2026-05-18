@@ -61,8 +61,13 @@ const defaultGroups = [
   ['e2e/app-local-data.spec.js', 'e2e/app-uiux.spec.js', 'e2e/chat-app-context-continuity.spec.js'],
   ['e2e/chat-workspace.spec.js'],
   ['e2e/chat-leader-handoff.spec.js', 'e2e/leader-matrix.spec.js'],
-  ['e2e/mcp.spec.js', 'e2e/production-chat.spec.js', 'e2e/order-scenario.spec.js']
+  ['e2e/mcp.spec.js', 'e2e/production-chat.spec.js']
 ];
+
+const shouldRunOrderScenario = env.E2E_ORDER_SCENARIO === '1' || Boolean(env.E2E_ORDER_ID);
+if (shouldRunOrderScenario) {
+  defaultGroups[defaultGroups.length - 1].push('e2e/order-scenario.spec.js');
+}
 
 function hasExplicitSpecArgs(args = []) {
   return args.some((arg) => /\.spec\.js$/i.test(String(arg)) || /^e2e[\\/]/i.test(String(arg)));
