@@ -2469,7 +2469,7 @@ function normalizeDeliveryPayloadFiles(files = [], fallbackTask = 'delivery') {
       ).trim();
       const safeContent = content === '[object Object]' ? '' : content;
       const name = String(file.name || file.filename || `${String(fallbackTask || 'delivery').slice(0, 80)}-${index + 1}.md`).trim();
-      if (!name && !safeContent) return null;
+      if (!safeContent) return null;
       return {
         ...file,
         name: name || `${String(fallbackTask || 'delivery').slice(0, 80)}-${index + 1}.md`,
