@@ -89,7 +89,7 @@ globalThis.fetch = async (input, init) => {
         : [];
       const planned = deterministic.length
         ? deterministic.slice(0, 10)
-        : ['cmo_leader', 'research', 'media_planner', 'seo_gap'];
+        : ['cmo_leader', 'research', 'media_planner', 'seo_specialist'];
       return new Response(JSON.stringify({
         output_text: JSON.stringify({
           planned_tasks: planned,
@@ -131,7 +131,7 @@ globalThis.fetch = async (input, init) => {
                     ? 'Reviewable lead rows: company_name, contact_source_url, public_email_or_contact_path, fit_reason, next_step, and approval_status rows.'
                     : kind === 'writing' || kind === 'writer'
                       ? 'Copy draft: landing-page hero promise, CTA copy, proof block, post-ready hook, metric, stop rule, and approval owner.'
-                      : kind === 'seo_gap' || kind === 'seo'
+                      : kind === 'seo_specialist' || kind === 'seo'
                         ? 'SEO page packet: target query, SERP intent, Meta title, H1, internal link, review checklist, metric, and stop rule.'
                     : kind === 'landing'
                       ? 'Destination page packet: Page structure, hero copy, CTA copy, proof module, objection handling, measurement event, and publish note.'
@@ -237,7 +237,7 @@ const qaProviderTaskTypes = [
   'architecture',
   'landing',
   'writing',
-  'seo_gap',
+  'seo_specialist',
   'media_planner',
   'growth',
   'x_post',
@@ -451,14 +451,14 @@ for (const testCase of cases) {
     assert.ok(dataLayerChildren.length <= 1, 'cmo_leader should use at most one data-layer specialist');
     assert.ok(dataLayerChildren.every((item) => item.taskType === 'data_analysis'), 'cmo_leader data layer should be reserved for data_analysis');
     assert.ok(planningLayerChildren.some((item) => ['media_planner', 'growth'].includes(item.taskType)), 'cmo_leader should create planning-layer specialists');
-    assert.ok(preparationLayerChildren.some((item) => ['list_creator', 'seo_gap', 'landing', 'writing', 'writer'].includes(item.taskType)), 'cmo_leader should create one preparation-layer specialist');
+    assert.ok(preparationLayerChildren.some((item) => ['list_creator', 'seo_specialist', 'landing', 'writing', 'writer'].includes(item.taskType)), 'cmo_leader should create one preparation-layer specialist');
     assert.ok(planningLayerChildren.length <= 2, 'cmo_leader should preserve same-layer planning specialists without pulling in generic aliases');
     assert.ok(preparationLayerChildren.length <= 3, 'cmo_leader should keep preparation focused while allowing action-specific writing/support');
     assert.equal(researchLayerChildren.some((item) => item.taskType === 'data_analysis'), false, 'cmo_leader data analysis should not be mixed into the research layer');
     assert.ok(researchLayerChildren.length <= 1, 'cmo_leader should use at most one external research specialist');
     assert.equal(actionLayerChildren.length, 0, 'cmo_leader should not dispatch connector execution agents when matched SaaS app handoff is the action surface');
     assert.ok(
-      preparationLayerChildren.some((item) => ['writing', 'writer', 'reddit', 'indie_hackers', 'seo_gap', 'landing'].includes(item.taskType)),
+      preparationLayerChildren.some((item) => ['writing', 'writer', 'reddit', 'indie_hackers', 'seo_specialist', 'landing'].includes(item.taskType)),
       'cmo_leader should keep publishable copy/community drafts in the preparation layer before SaaS handoff'
     );
     assert.equal(job.output?.report?.authority_request?.source, undefined, 'cmo_leader parent delivery should not surface broad leader-level approval requests');

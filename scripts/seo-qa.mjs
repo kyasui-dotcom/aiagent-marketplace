@@ -100,7 +100,7 @@ assert.ok(siteMap.includes('/sitemap.xml'), 'HTML site map should link XML sitem
 const agentCatalog = assertSeoPage('public/agents.html', '/agents.html', 'Built-In AI Agent Catalog');
 assert.ok(agentCatalog.includes('"@type":"ItemList"'), 'agent catalog should have ItemList schema');
 assert.ok(agentCatalog.includes('/agents/prompt-brushup-ai-agent.html'), 'agent catalog should link prompt brushup page');
-assert.ok(agentCatalog.includes('/agents/seo-gap-ai-agent.html'), 'agent catalog should link SEO gap page');
+assert.ok(agentCatalog.includes('/agents/seo-specialist-ai-agent.html'), 'agent catalog should link SEO Specialist page');
 assert.ok(agentCatalog.includes('/agents/landing-ai-agent.html'), 'agent catalog should link landing critique page');
 assert.ok(agentCatalog.includes('Trust:'), 'agent catalog should expose trust summary on agent cards');
 assert.ok(agentCatalog.includes('QUALITY FLOW'), 'agent catalog should explain the quality workflow');

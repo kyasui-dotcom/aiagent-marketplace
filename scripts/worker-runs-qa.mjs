@@ -141,12 +141,20 @@ const manualResult = await request(`/api/jobs/${manualJob.body.job_id}/result`, 
     agent_id: CODE_AGENT_ID,
     status: 'completed',
     output: { summary: 'manual completion path works' },
+    files: [
+      {
+        name: 'manual-completion.md',
+        type: 'text/markdown',
+        content: '# Manual completion\n\nmanual completion path works'
+      }
+    ],
     usage: { total_cost_basis: 140, compute_cost: 50, tool_cost: 20, labor_cost: 70 }
   })
 });
 assert.equal(manualResult.status, 200);
 assert.equal(manualResult.body.job.status, 'completed');
 assert.equal(manualResult.body.job.output.report.summary, 'manual completion path works');
+assert.equal(manualResult.body.job.output.files[0].name, 'manual-completion.md');
 
 const callbackJob = await request('/api/jobs', {
   method: 'POST',
@@ -181,12 +189,20 @@ const callbackCompletion = await request('/api/agent-callbacks/jobs', {
     agent_id: RESEARCH_AGENT_ID,
     status: 'completed',
     report: { summary: 'callback completion path works' },
+    files: [
+      {
+        name: 'callback-completion.md',
+        type: 'text/markdown',
+        content: '# Callback completion\n\ncallback completion path works'
+      }
+    ],
     usage: { total_cost_basis: 88, compute_cost: 28, tool_cost: 10, labor_cost: 50 }
   })
 });
 assert.equal(callbackCompletion.status, 200);
 assert.equal(callbackCompletion.body.job.status, 'completed');
 assert.equal(callbackCompletion.body.job.output.report.summary, 'callback completion path works');
+assert.equal(callbackCompletion.body.job.output.files[0].name, 'callback-completion.md');
 
 const timeoutCandidate = await request('/api/jobs', {
   method: 'POST',
@@ -479,7 +495,10 @@ const liveChildParentSweep = await request('/api/dev/timeout-sweep', {
   body: JSON.stringify({})
 });
 assert.equal(liveChildParentSweep.status, 200);
-assert.equal(liveChildParentSweep.body.count, 0, 'workflow parent should not time out while a child is still queued or running');
+assert.ok(
+  !liveChildParentSweep.body.swept.some((job) => job.id === 'qa-live-child-parent-timeout-guard' || job.id === 'qa-live-child-parent-timeout-guard-child'),
+  'workflow parent should not time out while a child is still queued or running'
+);
 const liveChildParentState = await storage.getState();
 assert.equal(liveChildParentState.jobs.find((job) => job.id === 'qa-live-child-parent-timeout-guard').status, 'running');
 

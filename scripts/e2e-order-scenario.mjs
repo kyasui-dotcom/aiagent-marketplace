@@ -251,7 +251,7 @@ export function assertOrderScenarioWorkflowShape(job = {}, options = {}) {
   }
   assert.ok(taskTypes.includes('research'), `CMO acquisition scenario must include one research layer; tasks=${taskTypes.join(',')}`);
   assert.ok(taskTypes.includes('media_planner') || taskTypes.includes('growth'), `CMO channel scenario must include planning; tasks=${taskTypes.join(',')}`);
-  assert.ok(taskTypes.some((task) => ['seo_gap', 'writing', 'landing'].includes(task)), `CMO channel scenario must include preparation work; tasks=${taskTypes.join(',')}`);
+  assert.ok(taskTypes.some((task) => ['seo_specialist', 'writing', 'landing'].includes(task)), `CMO channel scenario must include preparation work; tasks=${taskTypes.join(',')}`);
   assert.ok(
     taskTypes.some((task) => ['directory_submission', 'x_post', 'reddit', 'indie_hackers', 'acquisition_automation', 'instagram'].includes(task))
     || phases.includes('action')
@@ -272,7 +272,10 @@ function hasUnsafePlaceholderText(value = '') {
   while ((match = pattern.exec(text)) !== null) {
     const term = String(match[0] || '').toLowerCase();
     const before = text.slice(Math.max(0, match.index - 24), match.index).toLowerCase();
+    const after = text.slice(match.index + term.length, match.index + term.length + 32).toLowerCase();
     if (term === 'placeholder' && /\b(no|without|exclude|excluding|exclusions:\s*no)\s+$/.test(before)) continue;
+    if (term === 'todo' && /^(\s|-|:|：)*(list|items?|tasks?|優先度|リスト|一覧)/i.test(after)) continue;
+    if (term === 'todo' && /^(\s|\)|）|、|。)*(?:\r?\n|$)/.test(after)) continue;
     return true;
   }
   return false;
@@ -317,6 +320,27 @@ export function assertOrderScenarioQuality(job = {}, options = {}) {
   const minDeliveryChars = Number(options.minDeliveryChars || 900) || 900;
   assert.ok(deliveryText.length >= minDeliveryChars, `delivery is too thin (${deliveryText.length} chars); status=${summarizeOrderStatus(job)}`);
   assert.ok(!hasUnsafePlaceholderText(deliveryText), 'delivery must not contain placeholder text');
+  assert.ok(!/\[object Object\]/.test(deliveryText), 'delivery files must not serialize object payloads as [object Object]');
+  assert.ok(!/Integrated summary will appear here once the leader merge is ready/i.test(deliveryText), 'delivery must not expose unfinished leader merge placeholder text');
+  assert.ok(!/Open the raw per-agent delivery files to inspect what each agent actually produced/i.test(deliveryText), 'delivery must include the actual work product instead of telling the user to inspect raw files');
+  const visibleFiles = visibleDeliveryFiles(files);
+  const rawAgentFiles = visibleFiles.filter((file) => file.raw_agent_delivery === true || file.rawAgentDelivery === true);
+  assert.ok(
+    rawAgentFiles.every((file) => String(file.content || file.markdown || '').trim().length >= 250),
+    `raw agent delivery files must include substantial returned content: ${rawAgentFiles.map((file) => `${file.name}:${String(file.content || file.markdown || '').trim().length}`).join(', ')}`
+  );
+  assert.ok(
+    rawAgentFiles.every((file) => !/^##\s*verbosity\s+medium\s*$/i.test(String(file.content || file.markdown || '').trim())),
+    'raw agent delivery files must not expose Responses API text.verbosity metadata as the delivery'
+  );
+  assert.ok(
+    rawAgentFiles.every((file) => String(file.source_agent_name || file.sourceAgentName || '').trim() && String(file.source_task_type || file.sourceTaskType || '').trim() && String(file.source_run_id || file.sourceRunId || '').trim()),
+    `raw agent delivery files must carry source agent/task/run labels for review: ${rawAgentFiles.map((file) => file.name).join(', ')}`
+  );
+  if (rawAgentFiles.length > 1) {
+    const digest = String(output.report?.final_delivery_digest || output.report?.finalDeliveryDigest || '');
+    assert.ok(/Agent:\s+/i.test(digest) && /Task:\s+/i.test(digest), 'leader digest must identify the agent and task behind each delivered file');
+  }
   if (promptHas(prompt, /Output language:\s*Japanese|日本語|集客|問い合わせ|登録|トライアル/iu)) {
     assert.ok(/[\u3040-\u30ff\u3400-\u9fff]/u.test(deliveryText), 'Japanese scenario must produce Japanese-visible delivery');
   }
@@ -376,5 +400,5 @@ export function assertOrderScenarioQuality(job = {}, options = {}) {
     assertTextIncludesAny(deliveryText, ['承認', 'approval', 'approve', '外部実行'], 'delivery must keep external execution approval-gated');
   }
   assertTextIncludesAny(deliveryText, ['次', 'next', 'action', '実行', '承認'], 'delivery must include a next action');
-  return { deliveryText, visibleFiles: visibleDeliveryFiles(files) };
+  return { deliveryText, visibleFiles };
 }

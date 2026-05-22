@@ -153,14 +153,14 @@ export const WORK_COMMAND_COPY = Object.freeze({
     status: 'Go to SETTINGS > REPORTS.\n\nNo order was created and no billing occurred.'
   },
   open_delivery_history: {
-    ja: '注文履歴と納品は WORK タブで確認してください。完了した注文、納品、フォローアップをそこで見られます。',
-    en: 'Go to the WORK tab for order history and delivery. Review completed orders, deliveries, and follow-up actions there.',
-    status: 'Go to the WORK tab.\n\nNo order was created and no billing occurred.'
+    ja: '注文履歴と納品は Chat の履歴と Deliveries で確認してください。完了した注文、納品、フォローアップをそこから続けられます。',
+    en: 'Use Chat history and Deliveries for order history and delivery review. Continue completed orders, deliveries, and follow-up actions there.',
+    status: 'Open Chat history or Deliveries.\n\nNo order was created and no billing occurred.'
   },
   open_marketing_timeline: {
-    ja: '保存済みの Work timeline を開きます。完了済み run、今後の scheduled action、再実行候補をここで確認できます。',
-    en: 'Opening the stored Work timeline. You can inspect completed runs, upcoming scheduled actions, and restart candidates there.',
-    status: 'Opening Work timeline.\n\nNo order was created and no billing occurred.'
+    ja: '保存済みのスケジュールとキャンペーン運用状況を開きます。完了済み run、今後の scheduled action、再実行候補をここで確認できます。',
+    en: 'Opening saved schedules and campaign operations context. You can inspect completed runs, upcoming scheduled actions, and restart candidates there.',
+    status: 'Opening schedules and campaign operations.\n\nNo order was created and no billing occurred.'
   },
   open_order_settings: {
     ja: 'URL、ファイル、エージェント指定、並列注文は ORDER SETTINGS で設定してください。',

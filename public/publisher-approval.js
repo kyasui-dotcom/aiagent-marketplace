@@ -22,6 +22,12 @@ let wordpressStatus = {
   message: 'WordPress not checked',
   result: null
 };
+let xStatus = {
+  checked: false,
+  connected: false,
+  message: 'X not checked',
+  result: null
+};
 let publishResult = null;
 
 const PUBLISH_DESTINATION_PROFILES = [
@@ -90,12 +96,21 @@ const PUBLISH_DESTINATION_PROFILES = [
   },
   {
     key: 'owned_site',
-    label: 'Owned site / GitHub PR',
+    label: 'Owned site / Publisher',
+    connector: 'publisher',
+    capability: 'site_publish_packet',
+    method: 'publisher_review_or_selected_connector',
+    actionType: 'site_publish_packet',
+    patterns: [/seo[_ -]?gap/i, /seo_article/i, /seo page/i, /\bseo\b/i, /landing_page/i, /landing page/i, /\blanding\b/i, /article_draft/i, /\barticle\b/i, /meta title/i, /h1 and metadata/i, /owned site/i]
+  },
+  {
+    key: 'github_pr',
+    label: 'GitHub PR',
     connector: 'github',
     capability: 'github.write_pr',
     method: 'github_pr',
     actionType: 'article_publish',
-    patterns: [/seo[_ -]?gap/i, /seo_article/i, /seo page/i, /\bseo\b/i, /landing_page/i, /landing page/i, /\blanding\b/i, /article_draft/i, /\barticle\b/i, /meta title/i, /h1 and metadata/i, /owned site/i, /github_pr/i, /github\.write_pr/i]
+    patterns: [/github_pr/i, /github\.write_pr/i, /pull request/i, /\bpr\b/i]
   },
   {
     key: 'email',
@@ -166,6 +181,15 @@ const els = {
   saveDraftBtn: document.getElementById('saveDraftBtn'),
   requestChangesBtn: document.getElementById('requestChangesBtn'),
   blockBtn: document.getElementById('blockBtn'),
+  connectXBtn: document.getElementById('connectXBtn'),
+  refreshXBtn: document.getElementById('refreshXBtn'),
+  publishNowBtn: document.getElementById('publishNowBtn'),
+  schedulePostBtn: document.getElementById('schedulePostBtn'),
+  bulkPublishBtn: document.getElementById('bulkPublishBtn'),
+  scheduleAtInput: document.getElementById('scheduleAtInput'),
+  bulkScopeSelect: document.getElementById('bulkScopeSelect'),
+  xStatusPill: document.getElementById('xStatusPill'),
+  publishActionNote: document.getElementById('publishActionNote'),
   workSelect: document.getElementById('workSelect'),
   handoffTargetSelect: document.getElementById('handoffTargetSelect'),
   marketFilterSelect: document.getElementById('marketFilterSelect'),
@@ -406,7 +430,19 @@ function destinationProfileFromArtifact(artifact = {}, type = '', body = '') {
 }
 
 function isGenericDestination(value = '') {
-  return /^(?:delivery file|publisher handoff|unassigned destination|generic publishing packet)$/i.test(String(value || '').trim());
+  return /^(?:delivery file|publisher handoff|unassigned destination|generic publishing packet|unspecified|none|n\/a|\(?not provided\)?|\(?not specified\)?|unknown[-_\s\w]*destination|publisher[-_\s]+approval[-_\s]+studio)$/i.test(String(value || '').trim());
+}
+
+function shouldUseProfileDestinationLabel(explicit = '', profile = null) {
+  const value = String(explicit || '').trim();
+  if (!value || !profile) return false;
+  if (/^https?:\/\//i.test(value)) return false;
+  if (value.toLowerCase() === String(profile.key || '').toLowerCase()) return true;
+  if (value.toLowerCase() === String(profile.label || '').toLowerCase()) return true;
+  if (profile.key === 'owned_site') return /(?:publisher|owned\s*site|landing\s*page|seo\s*page|site\s*publish|article\s*draft)/i.test(value);
+  if (profile.key === 'directory') return /(?:directory|listing|submission)/i.test(value);
+  if (['x', 'reddit', 'indie_hackers', 'instagram', 'social'].includes(profile.key)) return true;
+  return false;
 }
 
 function destinationFromArtifact(artifact = {}, type = '', profile = null) {
@@ -423,6 +459,7 @@ function destinationFromArtifact(artifact = {}, type = '', profile = null) {
     artifact.domain,
     artifact.target
   ) || '').trim();
+  if (shouldUseProfileDestinationLabel(explicit, profile)) return String(profile.label || 'Owned site / Publisher').trim();
   if (explicit && !isGenericDestination(explicit)) return explicit;
   return String(profile?.label || (type === 'directory' ? 'Directory / listing' : 'Generic publishing packet')).trim();
 }
@@ -433,6 +470,33 @@ function slugFromTitle(value = '') {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return slug ? `/${slug}` : '';
+}
+
+function titleWithSlugTail(title = '', slug = '') {
+  const explicit = String(title || '').replace(/\s+/g, ' ').trim();
+  if (!explicit) return '';
+  const comparableExplicit = explicit.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  let rawSlug = String(slug || '').trim();
+  try {
+    if (/^https?:\/\//i.test(rawSlug)) rawSlug = new URL(rawSlug).pathname;
+  } catch {
+    // Keep the original slug-like value when URL parsing fails.
+  }
+  const pathOnly = rawSlug.split(/[?#]/)[0];
+  const leaf = pathOnly.split('/').filter(Boolean).at(-1) || '';
+  const slugWords = leaf
+    .replace(/\.[a-z0-9]+$/i, '')
+    .split(/[^a-z0-9]+/i)
+    .map((word) => word.trim())
+    .filter(Boolean);
+  const titleWords = comparableExplicit
+    .split(/\s+/)
+    .map((word) => word.replace(/[^a-z0-9]+/gi, '').trim())
+    .filter(Boolean);
+  if (!slugWords.length || !titleWords.length || slugWords.length <= titleWords.length) return explicit;
+  const samePrefix = titleWords.every((word, index) => word.toLowerCase() === slugWords[index].toLowerCase());
+  if (!samePrefix) return explicit;
+  return `${comparableExplicit} ${slugWords.slice(titleWords.length).join(' ')}`.trim();
 }
 
 function markdownFieldValue(markdown = '', labels = []) {
@@ -456,6 +520,14 @@ function githubConnectHref() {
   url.searchParams.set('mode', 'link');
   url.searchParams.set('return_to', '/publisher-approval.html');
   url.searchParams.set('login_source', 'publisher_approval');
+  return url.toString();
+}
+
+function xConnectHref() {
+  const url = new URL('/auth/x', window.location.origin);
+  url.searchParams.set('return_to', '/publisher-approval.html');
+  url.searchParams.set('login_source', 'publisher_approval');
+  url.searchParams.set('capabilities', 'x.post');
   return url.toString();
 }
 
@@ -557,6 +629,58 @@ async function apiJson(path = '', options = {}) {
   return payload;
 }
 
+async function refreshXStatus(options = {}) {
+  if (!els.refreshXBtn) return;
+  if (!options.silent) els.refreshXBtn.textContent = 'Checking';
+  try {
+    const payload = await apiJson('/api/connectors/x/status');
+    const status = payload?.x || {};
+    xStatus = {
+      checked: true,
+      connected: Boolean(status.connected),
+      message: status.connected ? `X connected: @${status.username}` : 'X is not connected',
+      result: payload
+    };
+  } catch (error) {
+    xStatus = {
+      checked: true,
+      connected: false,
+      message: String(error?.message || error || 'X connection required'),
+      result: error?.payload || null
+    };
+  } finally {
+    renderXControls();
+    if (!options.silent) els.refreshXBtn.textContent = 'Check X';
+  }
+}
+
+function approvedPublisherItem(item = null) {
+  return Boolean(item && String(item.status || '').trim().toLowerCase() === 'approved');
+}
+
+function xPostTextForItem(item = null) {
+  const text = String(item?.body || '').replace(/\r\n/g, '\n').trim();
+  if (text) return text;
+  return String(item?.title || '').trim();
+}
+
+function scheduleAtIso() {
+  const value = String(els.scheduleAtInput?.value || '').trim();
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : '';
+}
+
+function bulkCandidateItems() {
+  const scope = String(els.bulkScopeSelect?.value || 'visible');
+  const source = scope === 'all'
+    ? items
+    : scope === 'destination'
+      ? items.filter((item) => destinationFilter === 'all' || itemDestination(item) === destinationFilter)
+      : visibleItems();
+  return source.filter(approvedPublisherItem);
+}
+
 async function refreshGithubRepos(options = {}) {
   if (!options.silent) els.refreshReposBtn.textContent = 'Refreshing';
   try {
@@ -582,29 +706,27 @@ async function refreshGithubRepos(options = {}) {
   }
 }
 
-async function createGithubPrHandoff() {
-  persistSelectedFromFields();
-  const item = selectedItem();
+async function createGithubPrHandoffForItem(item = null, options = {}) {
   const repo = selectedRepo();
   if (!item) {
-    window.alert('Load a publisher packet first.');
-    return;
+    if (!options.silent) window.alert('Load a publisher packet first.');
+    return null;
   }
-  if (String(item.status || '').toLowerCase() !== 'approved') {
-    window.alert('Approve the selected packet before creating a GitHub PR handoff.');
-    return;
+  if (!approvedPublisherItem(item)) {
+    if (!options.silent) window.alert('Approve the selected packet before creating a GitHub PR handoff.');
+    return null;
   }
   if (!repo) {
-    window.alert('Select a GitHub repository first.');
-    return;
+    if (!options.silent) window.alert('Select a GitHub repository first.');
+    return null;
   }
   const fullName = String(repo.fullName || repo.full_name || '').trim();
   const [owner, repoName] = fullName.split('/');
   if (!owner || !repoName) {
-    window.alert('Selected repository is invalid.');
-    return;
+    if (!options.silent) window.alert('Selected repository is invalid.');
+    return null;
   }
-  els.createPrBtn.textContent = 'Creating PR';
+  if (options.updateButton !== false) els.createPrBtn.textContent = 'Creating PR';
   try {
     const payload = await apiJson('/api/deliveries/execute', {
       method: 'POST',
@@ -636,6 +758,7 @@ async function createGithubPrHandoff() {
       result: payload
     };
     publishResult = { kind: 'github_pr_handoff', payload };
+    return publishResult;
   } catch (error) {
     repoStatus = {
       checked: true,
@@ -644,11 +767,17 @@ async function createGithubPrHandoff() {
       result: error?.payload || null
     };
     publishResult = { kind: 'github_pr_handoff_failed', error: repoStatus.message, payload: repoStatus.result };
+    return publishResult;
   } finally {
-    els.createPrBtn.textContent = 'Create PR handoff';
+    if (options.updateButton !== false) els.createPrBtn.textContent = 'Create PR handoff';
     renderGithubControls();
-    render();
+    if (options.render !== false) render();
   }
+}
+
+async function createGithubPrHandoff() {
+  persistSelectedFromFields();
+  return createGithubPrHandoffForItem(selectedItem());
 }
 
 async function refreshWordpressStatus(options = {}) {
@@ -719,21 +848,19 @@ async function connectWordpress() {
   }
 }
 
-async function createWordpressDraftHandoff() {
-  persistSelectedFromFields();
-  const item = selectedItem();
+async function createWordpressDraftForItem(item = null, options = {}) {
   if (!item) {
-    window.alert('Load a publisher packet first.');
-    return;
+    if (!options.silent) window.alert('Load a publisher packet first.');
+    return null;
   }
-  if (String(item.status || '').toLowerCase() !== 'approved') {
-    window.alert('Approve the selected packet before creating a WordPress draft.');
-    return;
+  if (!approvedPublisherItem(item)) {
+    if (!options.silent) window.alert('Approve the selected packet before creating a WordPress draft.');
+    return null;
   }
   if (!wordpressStatus.connected) {
     await refreshWordpressStatus({ silent: true });
   }
-  els.createWordpressDraftBtn.textContent = 'Creating draft';
+  if (options.updateButton !== false) els.createWordpressDraftBtn.textContent = 'Creating draft';
   try {
     const payload = await apiJson('/api/connectors/wordpress/create-draft', {
       method: 'POST',
@@ -758,6 +885,7 @@ async function createWordpressDraftHandoff() {
       result: payload
     };
     publishResult = { kind: 'wordpress_draft', payload };
+    return publishResult;
   } catch (error) {
     wordpressStatus = {
       checked: true,
@@ -766,10 +894,194 @@ async function createWordpressDraftHandoff() {
       result: error?.payload || null
     };
     publishResult = { kind: 'wordpress_draft_failed', error: wordpressStatus.message, payload: wordpressStatus.result };
+    return publishResult;
   } finally {
-    els.createWordpressDraftBtn.textContent = 'Create WP draft';
+    if (options.updateButton !== false) els.createWordpressDraftBtn.textContent = 'Create WP draft';
+    if (options.render !== false) render();
+  }
+}
+
+async function createWordpressDraftHandoff() {
+  persistSelectedFromFields();
+  return createWordpressDraftForItem(selectedItem());
+}
+
+async function executeXPostForItem(item = null, options = {}) {
+  if (!item) return { ok: false, kind: 'x_post_failed', error: 'No item selected.' };
+  const text = xPostTextForItem(item);
+  if (!text) return { ok: false, kind: 'x_post_failed', error: 'X post text is empty.' };
+  if (text.length > 280) return { ok: false, kind: 'x_post_failed', error: `X post text is ${text.length} characters. Keep it within 280 characters.` };
+  if (!xStatus.connected) await refreshXStatus({ silent: true });
+  const username = String(xStatus?.result?.x?.username || '').trim();
+  if (!username) return { ok: false, kind: 'x_post_failed', error: 'Connect X before posting.' };
+  const payload = await apiJson('/api/deliveries/execute', {
+    method: 'POST',
+    body: JSON.stringify({
+      action_kind: 'x_post',
+      confirm_execute: true,
+      approved_x_username: username,
+      approved_text: text,
+      draft: {
+        postText: text,
+        approvedXUsername: username,
+        approvedText: text
+      },
+      deliverable: {
+        title: item.title || 'Publisher X post',
+        content: itemMarkdown(item)
+      },
+      source: 'publisher_approval_studio',
+      channel: item.channel,
+      connector: 'x',
+      connector_capability: 'x.post'
+    })
+  });
+  if (payload?.entity?.url || payload?.url) item.status = 'published';
+  publishResult = { kind: 'x_post', item_id: item.id, payload };
+  if (options.render !== false) render();
+  return publishResult;
+}
+
+async function scheduleXPostForItem(item = null, scheduledFor = '') {
+  if (!item) return { ok: false, kind: 'x_schedule_failed', error: 'No item selected.' };
+  const text = xPostTextForItem(item);
+  if (!text) return { ok: false, kind: 'x_schedule_failed', error: 'X post text is empty.' };
+  if (text.length > 280) return { ok: false, kind: 'x_schedule_failed', error: `X post text is ${text.length} characters. Keep it within 280 characters.` };
+  if (!scheduledFor) return { ok: false, kind: 'x_schedule_failed', error: 'Choose a schedule time first.' };
+  if (!xStatus.connected) await refreshXStatus({ silent: true });
+  const username = String(xStatus?.result?.x?.username || '').trim();
+  if (!username) return { ok: false, kind: 'x_schedule_failed', error: 'Connect X before scheduling.' };
+  const payload = await apiJson('/api/deliveries/schedule', {
+    method: 'POST',
+    body: JSON.stringify({
+      action_kind: 'x_post',
+      confirm_schedule: true,
+      scheduled_for: scheduledFor,
+      approved_x_username: username,
+      approved_text: text,
+      preview_text: text,
+      task_type: 'x_post',
+      draft: {
+        postText: text,
+        approvedXUsername: username,
+        approvedText: text
+      },
+      deliverable: {
+        title: item.title || 'Scheduled Publisher X post',
+        content: itemMarkdown(item)
+      },
+      source: 'publisher_approval_studio'
+    })
+  });
+  item.status = 'scheduled';
+  publishResult = { kind: 'x_post_scheduled', item_id: item.id, scheduled_for: scheduledFor, payload };
+  render();
+  return publishResult;
+}
+
+async function publishPublisherItemNow(item = null, options = {}) {
+  if (!item) return { ok: false, kind: 'publish_failed', error: 'No item selected.' };
+  if (!approvedPublisherItem(item)) return { ok: false, kind: 'publish_failed', item_id: item.id, title: item.title, error: 'Item is not approved.' };
+  const channel = String(item.channel || '').trim();
+  if (channel === 'x') return executeXPostForItem(item, options);
+  if (channel === 'wordpress_site') return createWordpressDraftForItem(item, { updateButton: false, render: options.render, silent: options.silent });
+  if (channel === 'github_pr' || channel === 'owned_site') return createGithubPrHandoffForItem(item, { updateButton: false, render: options.render, silent: options.silent });
+  return {
+    ok: true,
+    kind: 'manual_publish_packet',
+    item_id: item.id,
+    title: item.title,
+    channel,
+    message: 'This destination does not have a connected one-click publisher yet. Use the packet for manual publish/submit after approval.',
+    packet: itemMarkdown(item)
+  };
+}
+
+async function publishSelectedNow() {
+  persistSelectedFromFields();
+  const item = selectedItem();
+  if (!item) {
+    window.alert('Load a publisher packet first.');
+    return;
+  }
+  if (!approvedPublisherItem(item)) {
+    window.alert('Approve the selected item before publishing.');
+    return;
+  }
+  const text = item.channel === 'x' ? xPostTextForItem(item) : item.title;
+  if (!window.confirm(`Publish now?\n\n${itemProfile(item)?.label || item.channel}: ${text}`)) return;
+  els.publishNowBtn.textContent = 'Publishing';
+  try {
+    publishResult = await publishPublisherItemNow(item);
+  } catch (error) {
+    publishResult = { kind: 'publish_now_failed', item_id: item.id, error: String(error?.message || error), payload: error?.payload || null };
+  } finally {
+    els.publishNowBtn.textContent = 'Publish now';
     render();
   }
+}
+
+async function scheduleSelectedPost() {
+  persistSelectedFromFields();
+  const item = selectedItem();
+  const scheduledFor = scheduleAtIso();
+  if (!item) {
+    window.alert('Load a publisher packet first.');
+    return;
+  }
+  if (!approvedPublisherItem(item)) {
+    window.alert('Approve the selected item before scheduling.');
+    return;
+  }
+  if (item.channel !== 'x') {
+    window.alert('Scheduling currently supports connected X posts. Use Publish now for WordPress drafts and GitHub PR handoffs.');
+    return;
+  }
+  if (!scheduledFor) {
+    window.alert('Choose a schedule time first.');
+    return;
+  }
+  if (!window.confirm(`Schedule this X post for ${new Date(scheduledFor).toLocaleString()}?\n\n${xPostTextForItem(item)}`)) return;
+  els.schedulePostBtn.textContent = 'Scheduling';
+  try {
+    publishResult = await scheduleXPostForItem(item, scheduledFor);
+  } catch (error) {
+    publishResult = { kind: 'schedule_post_failed', item_id: item.id, error: String(error?.message || error), payload: error?.payload || null };
+    render();
+  } finally {
+    els.schedulePostBtn.textContent = 'Schedule post';
+  }
+}
+
+async function bulkPublishApproved() {
+  persistSelectedFromFields();
+  const candidates = bulkCandidateItems();
+  if (!candidates.length) {
+    window.alert('No approved items are available in the selected bulk scope.');
+    return;
+  }
+  if (!window.confirm(`Bulk publish ${candidates.length} approved item(s)?\n\nX posts may go live immediately. WordPress items create drafts. GitHub/owned-site items create PR handoffs.`)) return;
+  els.bulkPublishBtn.textContent = 'Publishing bulk';
+  const previousSelectedId = selectedId;
+  const results = [];
+  for (const item of candidates) {
+    try {
+      const result = await publishPublisherItemNow(item, { render: false, silent: true });
+      results.push(result ? { item_id: item.id, title: item.title, ...result } : { item_id: item.id, title: item.title, ok: false, kind: 'bulk_item_skipped', error: 'Required connector or destination selection is missing.' });
+    } catch (error) {
+      results.push({ item_id: item.id, title: item.title, ok: false, kind: 'bulk_item_failed', error: String(error?.message || error), payload: error?.payload || null });
+    }
+  }
+  selectedId = previousSelectedId;
+  publishResult = {
+    kind: 'bulk_publish',
+    total: candidates.length,
+    succeeded: results.filter((item) => item.ok !== false).length,
+    failed: results.filter((item) => item.ok === false).length,
+    results
+  };
+  els.bulkPublishBtn.textContent = 'Bulk publish approved';
+  render();
 }
 
 function contextItemFromArtifact(artifact = {}, index = 0) {
@@ -789,26 +1101,28 @@ function contextItemFromArtifact(artifact = {}, index = 0) {
   const extractedInternalLinks = markdownFieldValue(body, ['Internal links', 'Internal link', '内部リンク']);
   const extractedOgTitle = markdownFieldValue(body, ['OG title', 'Open Graph title']);
   const extractedOgDescription = markdownFieldValue(body, ['OG description', 'Open Graph description']);
-  const title = String(artifact.title || extractedTitle || artifact.name || artifact.slug || `Imported item ${index + 1}`).trim();
+  const artifactSlug = artifact.slug || artifact.path || artifact.url || artifact.target || '';
+  const title = String(extractedTitle || titleWithSlugTail(artifact.title, artifactSlug) || artifact.title || artifact.name || artifactSlug || `Imported item ${index + 1}`).trim();
   const destination = destinationFromArtifact(artifact, type, profile);
   const market = String(firstText(artifact.market, artifact.region, artifact.country, artifact.geo, marketFromValue(artifact.url || artifact.slug || artifact.target || '')) || 'Global').trim();
   const locale = String(firstText(artifact.locale, artifact.language, artifact.lang, artifact.content_locale, market === 'Japan' ? 'ja-JP' : 'en') || 'en').trim();
   const channel = String(firstText(artifact.channel_key, artifact.channelKey, artifact.medium_key, artifact.mediumKey, artifact.media_key, artifact.mediaKey, profile.key) || profile.key).trim();
   const selectedProfile = profileByKey(channel);
+  const profileOwnsConnector = selectedProfile.key !== 'generic';
   return {
     id: String(artifact.id || `imported-${index + 1}`).trim(),
     type,
     channel: selectedProfile.key,
     destination,
-    connector: String(firstText(artifact.connector, artifact.required_connector, artifact.requiredConnector, selectedProfile.connector) || selectedProfile.connector).trim(),
-    connectorCapability: String(firstText(artifact.connector_capability, artifact.connectorCapability, artifact.capability, selectedProfile.capability) || selectedProfile.capability).trim(),
-    publishMethod: String(firstText(artifact.publish_method, artifact.publishMethod, artifact.execution_method, artifact.executionMethod, selectedProfile.method) || selectedProfile.method).trim(),
-    actionType: String(firstText(artifact.action_type, artifact.actionType, selectedProfile.actionType) || selectedProfile.actionType).trim(),
+    connector: String(profileOwnsConnector ? selectedProfile.connector : (firstText(artifact.connector, artifact.required_connector, artifact.requiredConnector, selectedProfile.connector) || selectedProfile.connector)).trim(),
+    connectorCapability: String(profileOwnsConnector ? selectedProfile.capability : (firstText(artifact.connector_capability, artifact.connectorCapability, artifact.capability, selectedProfile.capability) || selectedProfile.capability)).trim(),
+    publishMethod: String(profileOwnsConnector ? selectedProfile.method : (firstText(artifact.publish_method, artifact.publishMethod, artifact.execution_method, artifact.executionMethod, selectedProfile.method) || selectedProfile.method)).trim(),
+    actionType: String(profileOwnsConnector ? selectedProfile.actionType : (firstText(artifact.action_type, artifact.actionType, selectedProfile.actionType) || selectedProfile.actionType)).trim(),
     market,
     locale,
     owner: String(firstText(artifact.owner, artifact.assignee, artifact.agent, artifact.source_agent, artifact.lead, 'CAIt') || 'CAIt').trim(),
     title,
-    slug: String(artifact.slug || artifact.path || artifact.url || artifact.target || slugFromTitle(title)).trim(),
+    slug: String(artifactSlug || slugFromTitle(title)).trim(),
     meta: String(artifact.meta || artifact.description || extractedMeta || artifact.summary || '').trim(),
     keywords: String(firstText(artifact.keywords, artifact.keyword, artifact.meta_keywords, artifact.target_keyword, artifact.targetQuery, extractedKeywords) || '').trim(),
     h1: String(firstText(artifact.h1, artifact.h_1, artifact.headline, extractedH1) || '').trim(),
@@ -856,6 +1170,21 @@ function contextItemFromDeliveryItem(item = {}, index = 0) {
   }, index);
 }
 
+function inboundItemSelectionScore(item = {}) {
+  let score = 0;
+  if (item.meta) score += 6;
+  if (item.h1) score += 5;
+  if (item.keywords) score += 4;
+  if (item.primaryCta) score += 3;
+  if (item.secondaryCta) score += 2;
+  if (item.internalLinks || item.ogTitle || item.ogDescription) score += 2;
+  if (/meta title|meta description|primary cta|secondary cta|internal links/i.test(String(item.body || ''))) score += 4;
+  if (/ready|summary|handoff|approve/i.test(String(item.title || ''))) score -= 5;
+  if (item.type === 'approval') score -= 4;
+  if (/delivery file/i.test(String(item.target || ''))) score -= 2;
+  return score;
+}
+
 async function loadPublisherDeliveryItems() {
   try {
     const payload = await apiJson('/api/delivery-items?surface=publisher&limit=100');
@@ -896,7 +1225,8 @@ function applyInboundContext(context = null) {
       status: 'needs approval',
       target: 'Delivery file'
     }, artifacts.length + approvals.length + index))
-  ].filter((item) => item.title || item.body);
+  ].filter((item) => item.title || item.body)
+    .sort((a, b) => inboundItemSelectionScore(b) - inboundItemSelectionScore(a));
   if (!importedItems.length) {
     importedItems.push(contextItemFromArtifact({
       id: context.id || 'imported-context',
@@ -941,7 +1271,7 @@ function persistSelectedFromFields() {
 
 function buildPacket() {
   const item = selectedItem();
-  const target = String(els.handoffTargetSelect.value || 'seo_gap');
+  const target = String(els.handoffTargetSelect.value || 'seo_specialist');
   const repo = selectedRepo();
   const prUrl = String(repoStatus?.result?.pull_request?.htmlUrl || repoStatus?.result?.entity?.pull_request?.htmlUrl || '').trim();
   const wpDraftUrl = String(wordpressStatus?.result?.draft?.editUrl || wordpressStatus?.result?.draft?.link || '').trim();
@@ -985,7 +1315,8 @@ function buildPacket() {
       `Risk: ${item.risk}`,
       repo ? `Selected GitHub repository: ${repo.fullName || repo.full_name}` : '',
       prUrl ? `Created PR: ${prUrl}` : '',
-      wpDraftUrl ? `Created WordPress draft: ${wpDraftUrl}` : ''
+      wpDraftUrl ? `Created WordPress draft: ${wpDraftUrl}` : '',
+      xStatus.connected ? `Connected X account: @${xStatus.result?.x?.username || ''}` : ''
     ].filter(Boolean),
     assumptions: [
       'Publishing, PR creation, external directory submission, or connector execution still requires explicit approval.',
@@ -995,6 +1326,7 @@ function buildPacket() {
       { type: item.type, channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), action_type: itemActionType(item), market: itemMarket(item), locale: itemLocale(item), owner: item.owner || 'CAIt', title: item.title, slug: item.slug, meta: item.meta, keywords: item.keywords, h1: item.h1, primary_cta: item.primaryCta, secondary_cta: item.secondaryCta, internal_links: item.internalLinks, og_title: item.ogTitle, og_description: item.ogDescription, body: item.body, status: item.status, risk: item.risk, source_evidence: item.sourceEvidence || [], publish_variants: item.publishVariants || [], eeat_notes: item.eeatNotes || {} },
       { type: 'github_pr_handoff', repo: repo?.fullName || repo?.full_name || '', repo_path: String(els.repoPathInput?.value || '').trim(), pr_url: prUrl, status: repoStatus.message },
       { type: 'wordpress_draft_handoff', site_url: wordpressStatus?.result?.wordpress?.siteUrl || '', draft_url: wpDraftUrl, draft_id: wordpressStatus?.result?.draft?.id || '', post_type: String(els.wordpressPostTypeSelect?.value || 'posts'), status: wordpressStatus.message },
+      { type: 'x_post_handoff', account_username: xStatus?.result?.x?.username || '', connected: Boolean(xStatus.connected), status: xStatus.message },
       { type: 'destination_profile', channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), market: itemMarket(item), locale: itemLocale(item), note: 'Destination profile holds publication rules, owner, CTA policy, compliance notes, OAuth connector, and execution method.' }
     ],
     approval_requests: items.map((entry) => ({
@@ -1024,6 +1356,7 @@ function buildPacket() {
       github_pr_url: prUrl,
       github_status: repoStatus,
       wordpress_status: wordpressStatus,
+      x_status: xStatus,
       publish_result: publishResult
     }
   });
@@ -1193,6 +1526,42 @@ function renderWordpressControls() {
     : escapeHtml(wordpressStatus.message || 'Use a WordPress Application Password to create a draft only. Publishing happens inside WordPress after review.');
 }
 
+function renderXControls() {
+  if (!els.xStatusPill) return;
+  const connected = Boolean(xStatus.connected);
+  const username = String(xStatus?.result?.x?.username || '').trim();
+  els.xStatusPill.textContent = connected && username
+    ? `X connected @${username}`
+    : (xStatus.checked ? 'X blocked' : 'X not checked');
+  els.xStatusPill.className = `status-pill ${connected ? 'approved' : (xStatus.checked ? 'blocked' : 'pending')}`;
+}
+
+function renderPublishActionControls() {
+  const item = selectedItem();
+  const approved = approvedPublisherItem(item);
+  const channel = String(item?.channel || '').trim();
+  const bulkCount = bulkCandidateItems().length;
+  if (els.publishNowBtn) {
+    els.publishNowBtn.disabled = !approved;
+    els.publishNowBtn.textContent = channel === 'wordpress_site'
+      ? 'Create draft now'
+      : (channel === 'github_pr' || channel === 'owned_site' ? 'Create PR now' : 'Publish now');
+  }
+  if (els.schedulePostBtn) els.schedulePostBtn.disabled = !approved || channel !== 'x';
+  if (els.bulkPublishBtn) {
+    els.bulkPublishBtn.disabled = bulkCount < 1;
+    els.bulkPublishBtn.textContent = bulkCount ? `Bulk publish approved (${bulkCount})` : 'Bulk publish approved';
+  }
+  if (els.publishActionNote) {
+    const xNote = channel === 'x'
+      ? 'X posting requires a connected OAuth account and exact post text approval.'
+      : 'Scheduling currently supports X posts. WordPress creates drafts; GitHub and owned-site items create PR handoffs.';
+    els.publishActionNote.textContent = approved
+      ? xNote
+      : 'Approve the selected item before executing. Bulk publish only uses approved items in the selected scope.';
+  }
+}
+
 function renderExecutionResult() {
   const current = publishResult || {
     next: 'Approve an item, then create a GitHub PR handoff or WordPress draft when the selected destination needs it.',
@@ -1211,6 +1580,8 @@ function render() {
   renderApprovalTable();
   renderGithubControls();
   renderWordpressControls();
+  renderXControls();
+  renderPublishActionControls();
   renderWorkflowState();
   renderExecutionResult();
   els.packetPreview.textContent = JSON.stringify(buildPacket(), null, 2);
@@ -1277,6 +1648,23 @@ els.saveDraftBtn.addEventListener('click', () => setSelectedStatus('draft'));
 els.requestChangesBtn.addEventListener('click', () => setSelectedStatus('changes requested'));
 els.blockBtn.addEventListener('click', () => setSelectedStatus('blocked'));
 els.approveSelectedBtn.addEventListener('click', () => setSelectedStatus('approved'));
+els.connectXBtn.addEventListener('click', () => {
+  window.location.href = xConnectHref();
+});
+els.refreshXBtn.addEventListener('click', () => {
+  void refreshXStatus();
+});
+els.publishNowBtn.addEventListener('click', () => {
+  void publishSelectedNow();
+});
+els.schedulePostBtn.addEventListener('click', () => {
+  void scheduleSelectedPost();
+});
+els.bulkPublishBtn.addEventListener('click', () => {
+  void bulkPublishApproved();
+});
+els.scheduleAtInput.addEventListener('change', () => renderPublishActionControls());
+els.bulkScopeSelect.addEventListener('change', () => renderPublishActionControls());
 els.connectGithubBtn.addEventListener('click', () => {
   window.location.href = githubConnectHref();
 });
@@ -1320,6 +1708,7 @@ async function bootstrap() {
   applyInboundContext(await fetchCaitAppContextFromUrl());
   await loadPublisherDeliveryItems();
   render();
+  void refreshXStatus({ silent: true });
   void refreshGithubRepos({ silent: true });
   void refreshWordpressStatus({ silent: true });
 }

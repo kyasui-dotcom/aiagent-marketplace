@@ -139,6 +139,54 @@ function routeOwnerForCait(taskType = '', reason = '') {
   };
 }
 
+const AGENT_TASK_LABELS = {
+  research: 'Research Agent',
+  writer: 'Writer Agent',
+  writing: 'Writer Agent',
+  code: 'Code Agent',
+  pricing: 'Pricing Agent',
+  teardown: 'Teardown Agent',
+  landing: 'Landing Page Critique Agent',
+  validation: 'Validation Agent',
+  growth: 'Growth Operator Agent',
+  media_planner: 'Media Planner Agent',
+  list_creator: 'List Creator Agent',
+  citation_ops: 'Citation Ops Agent',
+  data_analysis: 'Data Analysis Agent',
+  seo_specialist: 'SEO Specialist Agent',
+  x_post: 'X Ops Connector Agent',
+  email_ops: 'Email Ops Agent',
+  reddit: 'Reddit Agent',
+  indie_hackers: 'Indie Hackers Agent'
+};
+
+function routeOwnerForAgent(taskType = '', reason = '') {
+  const task = normalizeWorkIntentText(taskType) || 'research';
+  if (LEADER_TASK_TYPES.has(task)) return routeOwnerForLeader(task, reason);
+  const label = AGENT_TASK_LABELS[task] || task.split(/[_\s-]+/).filter(Boolean).map((part) => (
+    part.length <= 3 ? part.toUpperCase() : `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`
+  )).join(' ') || 'Agent';
+  return {
+    taskType: task,
+    strategyHint: 'single',
+    routeHint: 'agent_chat',
+    ownerType: 'agent',
+    activeLeaderTaskType: '',
+    activeLeaderName: '',
+    activeOwnerType: 'agent',
+    activeOwnerTaskType: task,
+    activeOwnerName: label,
+    activeOwnerLocked: true,
+    conversationOwner: {
+      type: 'agent',
+      taskType: task,
+      label,
+      reason: reason || 'CAIt handed this chat to the matching agent so the user can continue intake, drafting, and revisions with that agent.'
+    },
+    reason: reason || 'CAIt handed this chat to the matching agent so the user can continue intake, drafting, and revisions with that agent.'
+  };
+}
+
 export function leaderTaskTypeForInitialWork(taskType = '', prompt = '') {
   const task = normalizeWorkIntentText(taskType);
   const text = normalizeWorkIntentText(prompt);
@@ -156,7 +204,7 @@ export function inferWorkIntentTaskType(prompt = '') {
   if (hasAnyPattern(text, [/(gmail|email|mail|メール|送信メール|営業メール)/i])) return 'email_ops';
   if (hasAnyPattern(text, [/(data analysis|analytics|metrics|kpi|dashboard|cohort|funnel analysis|ga4|gsc|search console|データ分析|アクセス解析|指標|計測|ファネル)/i])) return 'data_analysis';
   if (hasAnyPattern(text, [/(landing page|lp copy|hero copy|sales page|ランディングページ|LP|ファーストビュー)/i])) return 'landing';
-  if (hasAnyPattern(text, [/(seo|keyword|search intent|content gap|meta|description|title|検索流入|検索意図|キーワード|コンテンツギャップ)/i])) return 'seo';
+  if (hasAnyPattern(text, [/(seo|keyword|search intent|content gap|meta|description|title|検索流入|検索意図|キーワード|コンテンツギャップ)/i])) return 'seo_specialist';
   if (hasAnyPattern(text, [/(write|writing|draft|copy|article|blog post|newsletter|rewrite|caption|文章|記事|ブログ|投稿文|コピー|下書き|書いて|リライト)/i])) return 'writing';
   if (hasAnyPattern(text, [/(pricing|price model|unit economics|ltv|cac|margin|financial model|価格|値付け|料金|財務|収支|粗利|利益)/i])) return 'pricing';
   if (hasAnyPattern(text, [/(validate|validation|idea validation|user interview|mvp|仮説検証|アイデア検証|需要検証|ユーザー調査)/i])) return 'validation';
@@ -176,9 +224,9 @@ export function inferWorkIntentRoute(prompt = '') {
       'CAIt handed this chat to the matching leader because the intent is broad enough to need intake, research, planning, approval, and specialist/app orchestration.'
     );
   }
-  return routeOwnerForCait(
+  return routeOwnerForAgent(
     inferredTaskType,
-    'CAIt will keep the chat and route directly to the best specialist unless a leader-level scope becomes clear.'
+    'CAIt handed this chat to the matching agent so the user can continue intake, drafting, and revisions with that agent.'
   );
 }
 
@@ -190,7 +238,7 @@ export function prepareWorkOrderSeed(prompt = '', requestedStrategy = 'auto', op
   const route = explicitTaskType
     ? (selectedWorker && !selectedWorkerIsLeader
         ? {
-            ...routeOwnerForCait(explicitTaskType, `Selected worker ${selectedAgentId} for task ${explicitTaskType}; preserving that specialist route for intake and dispatch.`),
+            ...routeOwnerForAgent(explicitTaskType, `Selected worker ${selectedAgentId} for task ${explicitTaskType}; preserving that agent route for intake and dispatch.`),
             routeHint: 'selected_worker'
           }
         : (leaderTaskTypeForInitialWork(explicitTaskType, prompt)
@@ -203,7 +251,7 @@ export function prepareWorkOrderSeed(prompt = '', requestedStrategy = 'auto', op
                 ),
                 routeHint: selectedWorker ? 'selected_leader' : 'leader_handoff'
               }
-            : routeOwnerForCait(explicitTaskType, `Selected task ${explicitTaskType}; CAIt will choose the best matching specialist agent.`)))
+            : routeOwnerForAgent(explicitTaskType, `Selected task ${explicitTaskType}; CAIt handed this chat to the matching agent.`)))
     : inferWorkIntentRoute(prompt);
   const requested = ['single', 'multi'].includes(String(requestedStrategy || '').trim().toLowerCase())
     ? String(requestedStrategy || '').trim().toLowerCase()
@@ -221,6 +269,10 @@ export function prepareWorkOrderSeed(prompt = '', requestedStrategy = 'auto', op
     ownerType: route.ownerType || 'cait',
     activeLeaderTaskType: route.activeLeaderTaskType || '',
     activeLeaderName: route.activeLeaderName || '',
+    activeOwnerType: route.activeOwnerType || route.ownerType || '',
+    activeOwnerTaskType: route.activeOwnerTaskType || (route.ownerType === 'leader' ? route.activeLeaderTaskType : ''),
+    activeOwnerName: route.activeOwnerName || (route.ownerType === 'leader' ? route.activeLeaderName : ''),
+    activeOwnerLocked: route.ownerType === 'agent' || route.ownerType === 'leader',
     conversationOwner: route.conversationOwner || { type: 'cait', label: 'CAIt' }
   };
 }

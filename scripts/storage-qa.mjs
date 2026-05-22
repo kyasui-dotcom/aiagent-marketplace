@@ -515,13 +515,13 @@ const deliveryItemStorage = createD1LikeStorage(null, { allowInMemory: true });
 await deliveryItemStorage.upsertJobs([{
   id: 'job-seo-delivery',
   parentAgentId: 'qa',
-  taskType: 'seo_gap',
+  taskType: 'seo_specialist',
   prompt: 'seo article',
   input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
   priority: 'normal',
   status: 'completed',
-  workflowTask: 'seo_gap',
-  workflowAgentName: 'SEO AGENT',
+  workflowTask: 'seo_specialist',
+  workflowAgentName: 'SEO SPECIALIST',
   output: {
     report: { summary: 'SEO article ready' },
     files: [{ name: 'seo-agent-delivery.md', type: 'text/markdown', content: '# SEO article\n\nTitle: AI agent marketplace guide\n\nMeta description: Source-backed guide.\n\nSource: https://reddit.com/r/example\n\nLeader checkpointで確認する本文。' }]
@@ -681,7 +681,9 @@ assert.ok(seoPublisherItem);
 assert.equal(seoPublisherItem.surface, 'publisher');
 assert.equal(seoPublisherItem.metadata.meta_description, 'Source-backed guide.');
 assert.equal(seoPublisherItem.metadata.channel_key, 'owned_site');
-assert.equal(seoPublisherItem.metadata.connector_capability, 'github.write_pr');
+assert.equal(seoPublisherItem.metadata.connector, 'publisher');
+assert.equal(seoPublisherItem.metadata.connector_capability, 'site_publish_packet');
+assert.equal(seoPublisherItem.metadata.publish_method, 'publisher_review_or_selected_connector');
 assert.ok(landingPublisherItem);
 assert.equal(landingPublisherItem.surface, 'publisher');
 assert.equal(landingPublisherItem.title, 'example.com - signup landing page');

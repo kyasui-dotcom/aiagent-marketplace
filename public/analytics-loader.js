@@ -5,6 +5,7 @@
   const AUTH_EVENT_COOKIE_NAME = 'cait_ga4_auth_event';
   const DISABLE_PARAMS = ['no_ga', 'disable_ga', 'cait_no_ga', 'cait_disable_ga4', 'ga_opt_out'];
   const ENABLE_PARAMS = ['enable_ga', 'cait_enable_ga4', 'ga_opt_in'];
+  const TEST_TRAFFIC_PARAMS = ['e2e', 'smoke', 'playwright', 'test', 'cait_test', 'qa'];
   const pendingEvents = [];
   let analyticsReady = false;
   let clickTrackingInstalled = false;
@@ -107,12 +108,37 @@
     return text || undefined;
   }
 
+  function isInternalTestTraffic() {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const explicit = String(params.get('traffic_type') || params.get('trafic_type') || '').trim().toLowerCase();
+      if (explicit === 'internal') return true;
+      if (TEST_TRAFFIC_PARAMS.some((key) => params.has(key))) return true;
+      const hints = [
+        params.get('login_source'),
+        params.get('source'),
+        params.get('utm_source'),
+        params.get('next'),
+        params.get('return_to')
+      ].join(' ');
+      if (/\b(?:playwright|e2e|smoke|test|qa)\b/i.test(hints)) return true;
+    } catch {}
+    return Boolean(window.navigator?.webdriver);
+  }
+
+  function internalTrafficParams() {
+    return isInternalTestTraffic()
+      ? { traffic_type: 'internal', trafic_type: 'internal' }
+      : {};
+  }
+
   function safeEventParams(params = {}) {
     const out = {
       page_path: window.location.pathname || '/',
       page_location: window.location.href,
       page_title: document.title || '',
-      event_source: 'web'
+      event_source: 'web',
+      ...internalTrafficParams()
     };
     if (!params || typeof params !== 'object') return out;
     for (const [key, value] of Object.entries(params)) {
@@ -121,6 +147,7 @@
       const safeValue = safeParamValue(value);
       if (safeValue !== undefined) out[safeKey] = safeValue;
     }
+    Object.assign(out, internalTrafficParams());
     return out;
   }
 
@@ -279,7 +306,7 @@
     script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(ANALYTICS_ID)}`;
     document.head.appendChild(script);
     window.gtag('js', new Date());
-    window.gtag('config', ANALYTICS_ID);
+    window.gtag('config', ANALYTICS_ID, internalTrafficParams());
     analyticsReady = true;
     flushPendingEvents();
     consumeAuthEventCookie();

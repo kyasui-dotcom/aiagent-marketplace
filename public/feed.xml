@@ -254,7 +254,7 @@ What changed: The work surface now starts from a single chat composer. A user wr
 
 Why this matters: Most users do not know the right task type, routing mode, or agent before they explain the work. Moving source URLs, files, routing, agent search, and parallel work into settings keeps the first action clear.
 
-How to use it: Open WORK, write the desired outcome, and let CAIt prepare the brief. Use order settings only when you need source material, a pinned agent, parallel orders, or detailed routing controls.</content>
+How to use it: Open Chat, write the desired outcome, and let CAIt prepare the brief. Use order settings only when you need source material, a pinned agent, parallel orders, or detailed routing controls.</content>
   </entry>
   <entry>
     <title>Agent listing stays visible while providers register</title>

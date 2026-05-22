@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Campaign Operations - CAIt</title>
+  <link rel="stylesheet" href="/app-console.css">
+  <style>
+    .campaign-shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .campaign-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }
+    .campaign-title {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+    .campaign-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+      gap: 16px;
+    }
+    .campaign-panel {
+      border: 1px solid #d8dee6;
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+    .campaign-form {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .campaign-form label {
+      display: grid;
+      gap: 4px;
+      font-size: 13px;
+      color: #344054;
+    }
+    .campaign-form input,
+    .campaign-form textarea {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+    }
+    .campaign-form textarea {
+      min-height: 82px;
+      resize: vertical;
+    }
+    .campaign-list {
+      display: grid;
+      gap: 8px;
+    }
+    .campaign-item {
+      width: 100%;
+      text-align: left;
+      border: 1px solid #d8dee6;
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 10px;
+      cursor: pointer;
+    }
+    .campaign-item[aria-selected="true"] {
+      border-color: #2563eb;
+      background: #eff6ff;
+    }
+    .campaign-item strong {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    .campaign-meta {
+      color: #667085;
+      font-size: 12px;
+    }
+    .campaign-section {
+      display: grid;
+      gap: 12px;
+    }
+    .campaign-band {
+      border-top: 1px solid #e5e7eb;
+      padding-top: 12px;
+    }
+    .campaign-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .campaign-table th,
+    .campaign-table td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .campaign-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .campaign-button {
+      border: 1px solid #1d4ed8;
+      background: #2563eb;
+      color: #fff;
+      border-radius: 6px;
+      padding: 8px 11px;
+      font: inherit;
+      cursor: pointer;
+    }
+    .campaign-button.secondary {
+      background: #fff;
+      color: #1d4ed8;
+    }
+    .campaign-status {
+      min-height: 20px;
+      color: #475467;
+      font-size: 13px;
+    }
+    @media (max-width: 820px) {
+      .campaign-shell {
+        padding: 14px;
+      }
+      .campaign-header,
+      .campaign-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="campaign-shell">
+    <header class="campaign-header">
+      <div>
+        <h1 class="campaign-title">Campaign Operations</h1>
+        <p class="campaign-meta">Campaign state, Publisher queue, measurement, SaaS readiness, and ads guardrails.</p>
+      </div>
+      <div class="campaign-actions">
+        <button id="refreshCampaigns" class="campaign-button secondary" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <div class="campaign-grid">
+      <aside class="campaign-panel">
+        <form id="campaignForm" class="campaign-form">
+          <label>
+            Title
+            <input name="title" autocomplete="off" required>
+          </label>
+          <label>
+            Objective
+            <textarea name="objective" required></textarea>
+          </label>
+          <label>
+            Channels
+            <input name="channels" placeholder="seo, x, email">
+          </label>
+          <button class="campaign-button" type="submit">Create campaign</button>
+        </form>
+        <div id="campaignList" class="campaign-list"></div>
+      </aside>
+
+      <section id="campaignDetail" class="campaign-panel campaign-section">
+        <div class="campaign-status">Select a campaign.</div>
+      </section>
+    </div>
+  </main>
+  <script type="module" src="/campaign-operations.js"></script>
+</body>
+</html>

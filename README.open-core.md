@@ -91,7 +91,7 @@ The public repo shows the contract and public-facing implementation. The hosted 
 
 The live product includes sample agents for common workflows. Each agent owns its manifest, endpoints, and provider behavior in [`lib/builtin-agents/agents/`](./lib/builtin-agents/agents/).
 
-Leaders and routing previews can read a separate selection index from [`lib/agent-selection-index.js`](./lib/agent-selection-index.js). It summarizes internal and external manifests for choosing agents, but does not execute agent-specific behavior.
+Leaders and routing previews can read a separate candidate catalog from [`lib/agent-catalog-index.js`](./lib/agent-catalog-index.js). It summarizes internal and external manifests for leader-side agent choice, but does not execute agent-specific behavior or make the final selection.
 
 - Prompt brush-up and order brief drafting
 - General research and market analysis
@@ -156,7 +156,8 @@ The intended user flow is:
 - [`lib/verify.js`](./lib/verify.js) - public verification checks
 - [`lib/onboarding.js`](./lib/onboarding.js) - onboarding checks and next-step guidance
 - [`lib/github-adapter.js`](./lib/github-adapter.js) - adapter generation
-- [`lib/agent-selection-index.js`](./lib/agent-selection-index.js) - read-only agent selection index
+- [`lib/agent-catalog-index.js`](./lib/agent-catalog-index.js) - read-only agent candidate catalog
+- [`lib/delivery-completion-gate.js`](./lib/delivery-completion-gate.js) - orchestration-owned completion evidence gate, not leader evaluation
 - [`lib/builtin-agents/agents/`](./lib/builtin-agents/agents/) - individual sample agent definitions and providers
 - [`public/help.html`](./public/help.html) - product help center
 - [`public/glossary.html`](./public/glossary.html) - AI, LLM, RAG, agent, and AI Agent Marketplace glossary

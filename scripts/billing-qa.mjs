@@ -420,13 +420,13 @@ welcomeState.agents.push({
   id: 'agent_welcome_1',
   name: 'SEO_AGENT',
   owner: 'hana',
-  description: 'Production SEO agent for ecommerce landing pages, technical audits, keyword clustering, and metadata suggestions.',
+  description: 'Production SEO SPECIALIST for ecommerce landing pages, technical audits, keyword clustering, and metadata suggestions.',
   taskTypes: ['seo'],
   manifestSource: 'manifest-url',
   metadata: {
     manifest: {
       name: 'SEO_AGENT',
-      description: 'Production SEO agent for ecommerce landing pages, technical audits, keyword clustering, and metadata suggestions.',
+      description: 'Production SEO SPECIALIST for ecommerce landing pages, technical audits, keyword clustering, and metadata suggestions.',
       task_types: ['seo'],
       healthcheckUrl: 'https://agent.example/health',
       endpoints: { jobs: 'https://agent.example/jobs' }
@@ -461,14 +461,14 @@ const combinedUser = { login: 'mika', name: 'Mika Example' };
 upsertAccountSettingsInState(combinedWelcomeState, 'mika', combinedUser, 'google-oauth', {});
 combinedWelcomeState.agents.push({
   id: 'agent_combined_welcome_1',
-  name: 'Mika SEO Agent',
+  name: 'Mika SEO SPECIALIST',
   owner: 'mika',
   description: 'Production SEO and market research agent for public landing pages, source-backed audits, and launch checklists.',
   taskTypes: ['seo'],
   manifestSource: 'manifest-url',
   metadata: {
     manifest: {
-      name: 'Mika SEO Agent',
+      name: 'Mika SEO SPECIALIST',
       description: 'Production SEO and market research agent for public landing pages, source-backed audits, and launch checklists.',
       task_types: ['seo'],
       healthcheckUrl: 'https://mika-agent.example/health',

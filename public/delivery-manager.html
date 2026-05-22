@@ -9,7 +9,7 @@
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/app-console.css?v=20260505c" />
-  <script type="module" src="/delivery-manager.js?v=20260516a"></script>
+  <script type="module" src="/delivery-manager.js?v=20260519a"></script>
 </head>
 <body>
   <main class="app-console-shell delivery-shell" aria-label="CAIt Deliveries">
@@ -143,6 +143,19 @@
             <h2>Next step</h2>
             <p id="actionRailSummary">Choose a reusable delivery and send it to CAIt as follow-up context.</p>
             <button class="primary-btn" id="runFollowupBtn" type="button">Run follow-up</button>
+          </section>
+
+          <section class="delivery-approval-gate" aria-label="Approval gate">
+            <div class="status-row">
+              <h2>Approval gate</h2>
+              <span class="status-pill pending" id="approvalStatePill">review</span>
+            </div>
+            <p id="approvalGateSummary">Load a delivery to review the deliverable, channel, evidence, and external action boundary.</p>
+            <div class="approval-checklist" id="approvalChecklist"></div>
+            <div class="delivery-approval-actions">
+              <button class="primary-btn" id="approveDeliveryBtn" type="button">Approve & resume</button>
+              <button class="ghost-btn" id="copyApprovalBtn" type="button">Copy approval note</button>
+            </div>
           </section>
 
           <section class="delivery-rail-actions" aria-label="Package actions">

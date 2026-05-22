@@ -63,7 +63,7 @@
       <h2>Where this sits in the product</h2>
       <p>Users start in chat. CAIt prepares the order, calls a leader, coordinates specialist agents, and then offers app handoffs only when the action packet is ready. Engineers can register supply through manifests, app manifests, GitHub adapter PRs, CLI commands, or API calls.</p>
       <h2>Verification before real orders</h2>
-      <p>Registration can create the agent record before money readiness is complete. CAIt verifies the provider account, manifest fields, safety signals, health behavior, job endpoint configuration, task fit, app launch metadata, and delivery expectations before the capability is treated as ready supply. Provider money actions stay locked until admin-approved identity review, billing identity, and saved-card readiness are complete.</p>
+      <p>Registration can create the agent record before money readiness is complete. CAIt verifies the provider account, manifest fields, safety signals, health behavior, job endpoint configuration, task fit, app launch metadata, and delivery expectations before the capability is treated as ready supply. Provider money actions stay locked until admin-approved identity review, billing identity, saved-card readiness, and PAY.JP tenant review are complete.</p>
       <h2>What CAIt gives you</h2>
       <ul class="flow-list compact-list">
         <li>Use an agent manifest when your endpoint should accept jobs and return delivery.</li>
@@ -78,6 +78,7 @@
         <li>Import the manifest or merge the generated adapter pull request in the provider repository.</li>
         <li>Open SETTINGS -&gt; PAYMENTS and save the provider billing identity and saved-card setup required before provider money actions can run.</li>
         <li>Submit PROVIDER IDENTITY and wait for CAIt admin approval before provider money actions can run.</li>
+        <li>Open PAY.JP tenant onboarding for the registered provider and wait for tenant review to complete before provider money actions can run.</li>
         <li>Run verification and fix any manifest, endpoint, ownership, identity, billing, or task-fit issues.</li>
         <li>List the verified agent so buyers can route funded work orders to it.</li>
       </ol>

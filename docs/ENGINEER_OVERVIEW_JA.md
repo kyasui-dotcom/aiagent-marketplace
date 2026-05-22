@@ -66,7 +66,8 @@
 | `lib/external-write-confirmation.js` | `confirm_post`、`confirm_send`、`confirm_repo_write` など外部 write confirmation の共有判定。 |
 | `lib/storage.js` | D1 / in-memory storage の抽象化、schema、seed、state migration 相当の処理。 |
 | `lib/shared.js` | agent routing、billing、account、recurring order、prompt inference などの共有ドメインロジック。 |
-| `lib/agent-selection-index.js` | leader が読むための内部/外部 agent manifest 要約一覧。選択補助専用で、実行制御や agent 固有処理は持たない。 |
+| `lib/agent-catalog-index.js` | leader が読むための内部/外部 agent manifest 要約一覧。候補カタログ専用で、選定判断・実行制御・agent 固有処理は持たない。 |
+| `lib/delivery-completion-gate.js` | orchestration が使う納品完了証跡の機械的 gate。leader の品質評価や評価メタデータは持たない。 |
 | `lib/builtin-agents/agents/` | sample agent 定義、manifest、agent 固有 provider。research、writer、CMO leader、CTO leader など。 |
 | `lib/orchestration.js` | leader workflow、layer、quality gate、connector execution policy の定義。 |
 | `lib/manifest.js` | 外部 agent manifest の読み込み、正規化、検証、安全性チェック。 |
@@ -104,7 +105,7 @@ flowchart TD
 
 - CAIt の orchestration は、外部エージェントだけで成立する前提にする。
 - sample agent / leader も例外扱いせず、登録済み agent の `job_endpoint` 契約で dispatch する。
-- leader 用の agent 一覧は `lib/agent-selection-index.js` に置く。ただしここは manifest 要約の読み取り専用で、agent 固有の制御・action・provider 実行を置いてはならない。
+- leader 用の agent 候補一覧は `lib/agent-catalog-index.js` に置く。ただしここは manifest 要約の読み取り専用で、選定判断・agent 固有の制御・action・provider 実行を置いてはならない。
 - `worker.js` は job 作成、dispatch、retry、timeout、completion、progress、approval wait など「完遂監視」を担当する。
 - `lib/orchestration.js` は leader workflow の layer、情報受け渡し、品質 gate、connector execution policy を担当する。
 - sample agent 専用の二段 Queue、専用 provider-run message、専用 completion path を追加してはならない。必要な場合も agent endpoint 契約を通す。
@@ -115,7 +116,7 @@ flowchart TD
 2. `public/chat.js` が `/api/work/prepare-order` を呼び、task type、leader 候補、intake 必要性を確認する。
 3. 曖昧な依頼なら `needs_input` が返り、チャット上で追加質問する。
 4. 注文確定時に `/api/jobs` へ job を作成する。
-5. `performSingleJobCreate` または `handleCreateWorkflowJob` 系の処理で billing reservation、agent selection、workflow plan を作る。
+5. `performSingleJobCreate` または `handleCreateWorkflowJob` 系の処理で billing reservation、agent assignment、workflow plan を作る。
 6. すべての agent は manifest / metadata の `job_endpoint` に dispatch される。sample agent も `/mock/<kind>/jobs` という登録済み endpoint を通る。
 7. `/mock/<kind>/jobs` は外部 agent と同じ `completed` / `blocked` / `accepted` 形式で応答し、Worker 側に sample agent 専用の completion 経路を作らない。
 8. connector write、投稿、PR、email send などは approval gate を通る。

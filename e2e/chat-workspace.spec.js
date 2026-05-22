@@ -174,8 +174,8 @@ test.describe('CAIt Chat workspace', () => {
     const seoJob = {
       id: 'e2e-seo-app-handoff-filter',
       status: 'completed',
-      taskType: 'seo_gap',
-      prompt: 'Task: seo_gap\nGoal: SEO page artifact handoff filtering',
+      taskType: 'seo_specialist',
+      prompt: 'Task: seo_specialist\nGoal: SEO page artifact handoff filtering',
       createdAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
       output: {
@@ -285,7 +285,7 @@ test.describe('CAIt Chat workspace', () => {
       failureReason: 'Research source collection failed.',
       workflow: {
         objective: 'Retry-new-order E2E source',
-        plannedTasks: ['cmo_leader', 'research', 'seo_gap']
+        plannedTasks: ['cmo_leader', 'research', 'seo_specialist']
       },
       input: {
         _broker: {
@@ -311,7 +311,7 @@ test.describe('CAIt Chat workspace', () => {
       status: 'queued',
       taskType: 'cmo_leader',
       jobKind: 'workflow',
-      workflow: { plannedTasks: ['cmo_leader', 'research', 'seo_gap'], childRuns: [] },
+      workflow: { plannedTasks: ['cmo_leader', 'research', 'seo_specialist'], childRuns: [] },
       output: { summary: '' }
     };
     let createPayload = null;
@@ -369,7 +369,7 @@ test.describe('CAIt Chat workspace', () => {
     expect(createPayload.followup_to_job_id).toBeFalsy();
     expect(createPayload.followupToJobId).toBeFalsy();
     expect(createPayload.order_strategy).toBe('multi');
-    expect(createPayload.workflow_planned_tasks).toEqual(['cmo_leader', 'research', 'seo_gap']);
+    expect(createPayload.workflow_planned_tasks).toEqual(['cmo_leader', 'research', 'seo_specialist']);
     expect(createPayload.input?._broker?.retry?.mode).toBe('same_content_new_order');
     expect(createPayload.input?._broker?.retry?.continuesOrder).toBe(false);
     expect(createPayload.input?._broker?.conversation?.followupToJobId).toBeFalsy();
@@ -572,7 +572,7 @@ test.describe('CAIt Chat workspace', () => {
     await expect(page.locator('#chatThread')).toContainText('App handoff', { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText('Preparation data routing');
     await expect(page.locator('#chatThread')).toContainText('Landing page change');
-    await expect(page.locator('#chatThread')).toContainText('owned site: github / github.write_pr / github_pr');
+    await expect(page.locator('#chatThread')).toContainText('owned site: publisher / site_publish_packet / publisher_review_or_selected_connector');
     await expect(page.locator('#chatThread')).toContainText('wordpress site: wordpress / wordpress.create_draft / wordpress_application_password');
     await expect(page.locator('#chatThread')).toContainText('Publisher & Approval Studio');
     await page.locator('#utilityModalCloseBtn').click();
@@ -595,11 +595,11 @@ test.describe('CAIt Chat workspace', () => {
     await expect(publisherPage).toHaveURL(/\/publisher-approval(?:\.html)?/);
     await expect(publisherPage.locator('#contentList')).toContainText('E2E publisher landing page title', { timeout: chatResponseTimeout });
     await expect(publisherPage.locator('#statusPill')).toContainText('needs approval');
-    await expect(publisherPage.locator('#destinationInput')).toHaveValue('Owned site / GitHub PR');
+    await expect(publisherPage.locator('#destinationInput')).toHaveValue('Owned site / Publisher');
     await expect(publisherPage.locator('#channelSelect')).toHaveValue('owned_site');
-    await expect(publisherPage.locator('#connectorInput')).toHaveValue('github');
-    await expect(publisherPage.locator('#connectorCapabilityInput')).toHaveValue('github.write_pr');
-    await expect(publisherPage.locator('#publishMethodInput')).toHaveValue('github_pr');
+    await expect(publisherPage.locator('#connectorInput')).toHaveValue('publisher');
+    await expect(publisherPage.locator('#connectorCapabilityInput')).toHaveValue('site_publish_packet');
+    await expect(publisherPage.locator('#publishMethodInput')).toHaveValue('publisher_review_or_selected_connector');
     await expect(publisherPage.locator('#titleInput')).toHaveValue('E2E publisher landing page title');
     await expect(publisherPage.locator('#slugInput')).toHaveValue('/e2e-publisher-landing-page-title');
     await expect(publisherPage.locator('#metaInput')).toHaveValue('E2E publisher meta description for signup.');
@@ -773,32 +773,32 @@ test.describe('CAIt Chat workspace', () => {
     const scenarios = [
       {
         key: 'seo',
-        taskType: 'seo_gap',
+        taskType: 'seo_specialist',
         fileName: 'seo-agent-delivery.md',
         content: [
           '# SEO page artifact',
           '',
           '## Keyword and intent',
-          '- Keywords: seo agent publisher keyword, ai agent marketplace',
+          '- Keywords: SEO SPECIALIST publisher keyword, ai agent marketplace',
           '',
           '## H1 and metadata',
-          '- Meta title: SEO Agent Publisher Title',
-          '- Meta description: SEO Agent Publisher Description.',
-          '- H1: SEO Agent Publisher H1',
+          '- Meta title: SEO SPECIALIST Publisher Title',
+          '- Meta description: SEO SPECIALIST Publisher Description.',
+          '- H1: SEO SPECIALIST Publisher H1',
           '- Primary CTA: Start SEO order',
           '- Secondary CTA: Read SEO proof',
           '- Internal links: /agents.html, /resources.html'
         ].join('\n'),
         expected: {
-          destination: 'Owned site / GitHub PR',
+          destination: 'Owned site / Publisher',
           channel: 'owned_site',
-          connector: 'github',
-          connectorCapability: 'github.write_pr',
-          publishMethod: 'github_pr',
-          title: 'SEO Agent Publisher Title',
-          meta: 'SEO Agent Publisher Description.',
-          keywords: 'seo agent publisher keyword, ai agent marketplace',
-          h1: 'SEO Agent Publisher H1',
+          connector: 'publisher',
+          connectorCapability: 'site_publish_packet',
+          publishMethod: 'publisher_review_or_selected_connector',
+          title: 'SEO SPECIALIST Publisher Title',
+          meta: 'SEO SPECIALIST Publisher Description.',
+          keywords: 'SEO SPECIALIST publisher keyword, ai agent marketplace',
+          h1: 'SEO SPECIALIST Publisher H1',
           primaryCta: 'Start SEO order',
           secondaryCta: 'Read SEO proof',
           internalLinks: '/agents.html, /resources.html'
@@ -823,11 +823,11 @@ test.describe('CAIt Chat workspace', () => {
           'Landing agent body prepared for Publisher.'
         ].join('\n'),
         expected: {
-          destination: 'Owned site / GitHub PR',
+          destination: 'Owned site / Publisher',
           channel: 'owned_site',
-          connector: 'github',
-          connectorCapability: 'github.write_pr',
-          publishMethod: 'github_pr',
+          connector: 'publisher',
+          connectorCapability: 'site_publish_packet',
+          publishMethod: 'publisher_review_or_selected_connector',
           title: 'Landing Agent Publisher Title',
           meta: 'Landing Agent Publisher Description.',
           keywords: 'landing conversion, signup page',

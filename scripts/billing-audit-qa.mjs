@@ -70,6 +70,7 @@ async function main() {
       ...process.env,
       NODE_ENV: 'test',
       ALLOW_IN_MEMORY_STORAGE: '1',
+      ALLOW_OPEN_WRITE_API: '1',
       BUILTIN_AGENT_SAMPLE_FALLBACK: '1',
       PORT: String(PORT)
     },

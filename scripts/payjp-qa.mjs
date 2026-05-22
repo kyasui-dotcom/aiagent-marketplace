@@ -4,6 +4,7 @@ import {
   createPayjpPlatformChargeWith3DS,
   createPayjpTenantApplicationUrl,
   finishPayjpThreeDSecureCharge,
+  normalizePayjpLocale,
   payjpAmountToMinorUnits,
   payjpConfigFromEnv,
   payjpPublicConfig
@@ -23,8 +24,13 @@ assert.deepEqual(payjpPublicConfig(config), {
   configured: true,
   publicKeyPresent: true,
   defaultCurrency: 'JPY',
-  platformFeeRate: 15
+  platformFeeRate: 15,
+  defaultLocale: 'ja',
+  payjpJsLocale: 'ja',
+  supportedLocales: ['ja', 'en']
 });
+assert.equal(normalizePayjpLocale('en-US'), 'en');
+assert.equal(normalizePayjpLocale('ja-JP'), 'ja');
 assert.equal(payjpAmountToMinorUnits(1234, 'JPY'), 1234);
 assert.equal(API_ROUTES.PAYJP_TENANT_ONBOARDING, '/api/payjp/platform/tenant/onboarding');
 assert.deepEqual(rateLimitSpecForPath(API_ROUTES.PAYJP_PLATFORM_CHARGE, 'POST'), { name: 'payjp-action', limit: 40, windowMs: 60_000 });
@@ -32,6 +38,8 @@ assert.deepEqual(rateLimitSpecForPath(API_ROUTES.PAYJP_PLATFORM_CHARGE, 'POST'),
 const account = defaultAccountSettingsForUser({ login: 'payjp-provider', name: 'PAY.JP Provider', email: 'payjp-provider@example.test' }, 'github');
 assert.equal(account.payjp.mode, 'platform_marketplace');
 assert.equal(account.payjp.threeDSecureRequired, true);
+assert.equal(account.payjp.tenantStatus, 'not_started');
+assert.equal(account.payjp.tenantApplicationStatus, 'not_started');
 
 const requests = [];
 globalThis.fetch = async (url, init = {}) => {

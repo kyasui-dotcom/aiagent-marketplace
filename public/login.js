@@ -19,8 +19,11 @@ let runtimeVisitorId = '';
 let authStatusChecked = false;
 let runtimeAuthBaseUrl = '';
 let runtimeUsesExternalAuth = false;
-const AUTH_STATUS_TIMEOUT_MS = 3500;
+const LOGIN_ACTION_WAIT_MS = 60 * 60 * 1000;
+const AUTH_STATUS_SOFT_REVEAL_MS = 3500;
+const LOGIN_ATTEMPT_STARTED_AT_KEY = 'cait.login.startedAt.v1';
 const CAIT_TRUSTED_AUTH_ORIGIN = 'https://aiagent-marketplace.net';
+const LOGIN_TEST_TRAFFIC_PARAMS = ['e2e', 'smoke', 'playwright', 'test', 'cait_test', 'qa'];
 
 function safeString(value = '', max = 100) {
   return String(value ?? '')
@@ -36,6 +39,30 @@ function visitorId() {
   const hinted = safeString(url.searchParams.get('visitor_id') || '', 80);
   runtimeVisitorId = hinted || window.crypto?.randomUUID?.() || `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
   return runtimeVisitorId;
+}
+
+function loginInternalTestTraffic() {
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    const explicit = String(params.get('traffic_type') || params.get('trafic_type') || '').trim().toLowerCase();
+    if (explicit === 'internal') return true;
+    if (LOGIN_TEST_TRAFFIC_PARAMS.some((key) => params.has(key))) return true;
+    const hints = [
+      params.get('login_source'),
+      params.get('source'),
+      params.get('utm_source'),
+      params.get('next'),
+      params.get('return_to')
+    ].join(' ');
+    if (/\b(?:playwright|e2e|smoke|test|qa)\b/i.test(hints)) return true;
+  } catch {}
+  return Boolean(window.navigator?.webdriver);
+}
+
+function loginInternalTrafficParams() {
+  return loginInternalTestTraffic()
+    ? { traffic_type: 'internal', trafic_type: 'internal' }
+    : {};
 }
 
 function normalizeLocalPath(value = '', fallback = '/') {
@@ -124,6 +151,20 @@ function flash(message = '', kind = 'info') {
   els.flash.textContent = safe;
 }
 
+function recordLoginAttemptStarted(provider = 'login', route = currentRoute()) {
+  const startedAt = Date.now();
+  try {
+    window.sessionStorage.setItem(LOGIN_ATTEMPT_STARTED_AT_KEY, JSON.stringify({
+      provider: safeString(provider, 40),
+      startedAt,
+      expiresAt: startedAt + LOGIN_ACTION_WAIT_MS,
+      next: postLoginPath(route.next),
+      source: safeString(route.source, 60)
+    }));
+  } catch {}
+  return startedAt;
+}
+
 function showLoginPanel(visible = true) {
   if (els.panel) els.panel.hidden = !visible;
   if (els.checkingPanel) els.checkingPanel.hidden = Boolean(visible);
@@ -148,10 +189,12 @@ async function track(event, meta = {}) {
         page_path: window.location.pathname || '/login.html',
         current_tab: '',
         source: 'web',
+        ...loginInternalTrafficParams(),
         meta: {
           source: safeString(meta.source || '', 60),
           status: safeString(meta.status || '', 60),
-          action: safeString(meta.action || '', 60)
+          action: safeString(meta.action || '', 60),
+          ...loginInternalTrafficParams()
         }
       })
     });
@@ -217,14 +260,33 @@ function gatedSourceTabLabel(source = '') {
 async function loadAuthStatus(route = currentRoute()) {
   authStatusChecked = false;
   showLoginPanel(false);
-  setCheckingStatus('Checking your session. This should only take a moment; if it times out, login options will appear.');
+  setCheckingStatus('Checking your session. Login options will remain available if the check takes longer than a few seconds.');
   applyProviderAvailability({});
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), AUTH_STATUS_TIMEOUT_MS);
+  const revealLoginOptionsDuringLongCheck = () => {
+    if (authStatusChecked) return;
+    authStatusChecked = true;
+    applyTrustedAuthOrigin({});
+    showLoginPanel(true);
+    if (els.emailInput) els.emailInput.disabled = false;
+    if (els.emailBtn) {
+      els.emailBtn.hidden = false;
+      els.emailBtn.disabled = false;
+    }
+    if (els.google) {
+      els.google.hidden = false;
+      els.google.disabled = false;
+    }
+    if (els.github) {
+      els.github.hidden = false;
+      els.github.disabled = false;
+    }
+    setCheckingStatus('Still checking your current session. You can also start a sign-in provider below.');
+    if (els.status) els.status.textContent = 'Still checking your session in the background. You can choose a provider now if needed.';
+  };
+  const softReveal = window.setTimeout(revealLoginOptionsDuringLongCheck, AUTH_STATUS_SOFT_REVEAL_MS);
   try {
     const response = await fetch('/auth/status', {
-      credentials: 'same-origin',
-      signal: controller.signal
+      credentials: 'same-origin'
     });
     if (!response.ok) throw new Error('Auth status check failed');
     const status = await response.json().catch(() => ({}));
@@ -270,13 +332,15 @@ async function loadAuthStatus(route = currentRoute()) {
     if (els.status) els.status.textContent = 'Could not verify login provider status. You can still try a provider below.';
     await track('sign_in_required_shown', { source: `login_page:${route.source}`, status: 'unknown' });
   } finally {
-    window.clearTimeout(timeout);
+    window.clearTimeout(softReveal);
   }
 }
 
 function bindProviderButton(button, provider, route = currentRoute()) {
   if (!button) return;
   button.onclick = () => {
+    recordLoginAttemptStarted(provider, route);
+    if (els.status) els.status.textContent = 'Login started. CAIt will wait up to 60 minutes from this login attempt.';
     void track(`${provider}_login_started`, {
       source: `login_page:${route.source}`,
       action: route.next
@@ -287,6 +351,7 @@ function bindProviderButton(button, provider, route = currentRoute()) {
 
 async function requestEmailLink(route = currentRoute()) {
   if (runtimeUsesExternalAuth) {
+    recordLoginAttemptStarted('email', route);
     window.location.href = buildOfficialLoginUrl(route);
     return;
   }
@@ -299,6 +364,7 @@ async function requestEmailLink(route = currentRoute()) {
   }
   if (els.emailBtn) els.emailBtn.disabled = true;
   if (els.status) els.status.textContent = 'Sending your sign-in link. The page stays here.';
+  recordLoginAttemptStarted('email', route);
   await track('email_login_started', {
     source: `login_page:${route.source}`,
     action: nextPath

@@ -1,91 +1,11 @@
+import {
+  BUILT_IN_APP_MANIFESTS as FALLBACK_BUILT_IN_APPS,
+  CORE_FEATURE_APP_IDS
+} from './app-manifest-registry.js?v=20260523a';
+
 const listEl = document.querySelector('[data-context-list]');
 const registryListEl = document.querySelector('[data-app-registry-list]');
 const featuredListEl = document.querySelector('[data-featured-app-list]');
-const CORE_FEATURE_APP_IDS = new Set(['delivery-manager']);
-const FALLBACK_BUILT_IN_APPS = [
-  {
-    id: 'analytics-console',
-    name: 'Analytics Console',
-    description: 'Old-GA-style acquisition, search query, landing page, conversion, country, channel, and post-run measurement console for CAIt leaders.',
-    entryUrl: '/analytics-console.html',
-    capabilities: ['analytics_context', 'search_console_packet', 'ga4_packet', 'post_run_measurement'],
-    requiredConnectors: ['google'],
-    requiresApprovalFor: [],
-    inputContract: {
-      accepts: ['metrics', 'search_queries', 'landing_pages', 'conversion_paths', 'channel_breakdown'],
-      returns: ['facts', 'metrics', 'artifacts', 'recommended_next_actions']
-    },
-    tags: ['analytics', 'seo', 'growth'],
-    owner: 'cait-managed',
-    status: 'active',
-    verificationStatus: 'cait_managed',
-    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] }
-  },
-  {
-    id: 'publisher-approval-studio',
-    name: 'Publisher & Approval Studio',
-    description: 'Content, page, metadata, media-separated publish packets, directory submission, PR draft, and approval queue studio for external action handoffs.',
-    entryUrl: '/publisher-approval.html',
-    capabilities: ['content_management', 'approval_queue', 'directory_submission_packet', 'publisher_change_set', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'instagram_post_packet', 'site_publish_packet', 'wordpress_draft_packet'],
-    requiredConnectors: [],
-    requiresApprovalFor: ['publish_change', 'directory_submit', 'github_pr', 'wordpress_draft', 'x_post', 'reddit_post', 'indie_hackers_post', 'instagram_post', 'external_send'],
-    inputContract: {
-      accepts: ['article_draft', 'seo_article', 'seo_page_artifact', 'landing_page', 'landing_page_change', 'site_publish_packet', 'wordpress_draft', 'wordpress_draft_packet', 'directory_submission', 'directory_packet', 'community_post_packet', 'social_copy_packet', 'social_post', 'x_post', 'x_post_packet', 'reddit_post', 'reddit_post_packet', 'indie_hackers_post', 'indie_hackers_packet', 'instagram_post', 'instagram_post_packet', 'approval_request'],
-      destinationConnectors: {
-        owned_site: { connector: 'github', capability: 'github.write_pr', method: 'github_pr' },
-        wordpress_site: { connector: 'wordpress', capability: 'wordpress.create_draft', method: 'wordpress_application_password' },
-        directory: { connector: 'directory_app', capability: 'directory.submit', method: 'saas_or_manual_submit' },
-        x: { connector: 'x', capability: 'x.post', method: 'x_oauth_or_x_saas' },
-        reddit: { connector: 'reddit', capability: 'reddit.post', method: 'reddit_oauth_or_manual_copy' },
-        indie_hackers: { connector: 'indie_hackers', capability: 'indie_hackers.post', method: 'indie_hackers_connector_or_manual_copy' },
-        instagram: { connector: 'instagram', capability: 'instagram.post', method: 'instagram_connector_or_manual_copy' },
-        social: { connector: 'manual', capability: 'manual.copy', method: 'manual_social_copy' }
-      },
-      returns: ['approval_requests', 'artifacts', 'delivery_files', 'recommended_next_actions']
-    },
-    tags: ['publisher', 'approval', 'seo'],
-    owner: 'cait-managed',
-    status: 'active',
-    verificationStatus: 'cait_managed',
-    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] }
-  },
-  {
-    id: 'lead-ops-console',
-    name: 'Lead Ops Console',
-    description: 'Lead rows, public source evidence, statuses, owners, next actions, and email draft management before approval.',
-    entryUrl: '/lead-ops.html',
-    capabilities: ['lead_management', 'email_draft', 'crm_packet', 'outreach_review'],
-    requiredConnectors: ['google'],
-    requiresApprovalFor: ['email_send', 'crm_write', 'external_send'],
-    inputContract: {
-      accepts: ['lead_rows', 'evidence_urls', 'email_drafts', 'next_actions'],
-      returns: ['artifacts', 'approval_requests', 'recommended_next_actions']
-    },
-    tags: ['crm', 'lead', 'email'],
-    owner: 'cait-managed',
-    status: 'active',
-    verificationStatus: 'cait_managed',
-    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] }
-  },
-  {
-    id: 'x-client-ops',
-    name: 'X Client Ops',
-    description: 'X post drafting, strategy context transfer, and approval-ready posting queue for CAIt action handoffs.',
-    entryUrl: 'https://x.niche-s.com/',
-    capabilities: ['x_post_draft', 'x_post_queue', 'social_action'],
-    requiredConnectors: ['x'],
-    requiresApprovalFor: ['post_now', 'send_external'],
-    inputContract: {
-      accepts: ['post_text', 'strategy', 'agent_context', 'delivery_summary', 'settings'],
-      returns: ['approval_requests', 'artifacts']
-    },
-    tags: ['social', 'x', 'posting'],
-    owner: 'cait-managed',
-    status: 'active',
-    verificationStatus: 'cait_managed',
-    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] }
-  }
-];
 
 function escapeHtml(value = '') {
   return String(value ?? '')

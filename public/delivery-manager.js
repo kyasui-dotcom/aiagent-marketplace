@@ -75,6 +75,11 @@ const els = {
   railDownloadBtn: document.getElementById('railDownloadBtn'),
   railCopyBtn: document.getElementById('railCopyBtn'),
   railJsonBtn: document.getElementById('railJsonBtn'),
+  approvalStatePill: document.getElementById('approvalStatePill'),
+  approvalGateSummary: document.getElementById('approvalGateSummary'),
+  approvalChecklist: document.getElementById('approvalChecklist'),
+  approveDeliveryBtn: document.getElementById('approveDeliveryBtn'),
+  copyApprovalBtn: document.getElementById('copyApprovalBtn'),
   actionRailSummary: document.getElementById('actionRailSummary'),
   readinessScore: document.getElementById('readinessScore'),
   readinessMeter: document.getElementById('readinessMeter'),
@@ -89,6 +94,284 @@ const els = {
 
 function selectedDelivery() {
   return deliveries.find((delivery) => delivery.id === selectedId) || deliveries[0] || null;
+}
+
+function safeList(value = [], maxItems = 12) {
+  const input = Array.isArray(value) ? value : (value ? [value] : []);
+  const seen = new Set();
+  return input
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, maxItems);
+}
+
+function safeBool(value) {
+  return value === true || value === 'true' || value === 1 || value === '1';
+}
+
+function normalizeAuthorityRequest(raw = null, fallback = {}) {
+  if (!raw || typeof raw !== 'object') return null;
+  const reason = String(raw.reason || raw.message || raw.error || fallback.reason || '').trim();
+  const missingConnectors = safeList(raw.missingConnectors || raw.missing_connectors || raw.connectors || fallback.missingConnectors || []);
+  const missingConnectorCapabilities = safeList(
+    raw.missingConnectorCapabilities
+      || raw.missing_connector_capabilities
+      || raw.capabilities
+      || fallback.missingConnectorCapabilities
+      || [],
+    16
+  );
+  const requiredGoogleSources = safeList(raw.requiredGoogleSources || raw.required_google_sources || raw.googleSourceTypes || raw.google_source_types || [], 8);
+  const requiredRepositorySelection = safeBool(raw.requiredRepositorySelection || raw.required_repository_selection);
+  const requiredChannelSelection = safeBool(raw.requiredChannelSelection || raw.required_channel_selection);
+  const repoCandidates = safeList(raw.repoCandidates || raw.repo_candidates || raw.repositories || [], 20);
+  const channelCandidates = safeList(raw.channelCandidates || raw.channel_candidates || raw.channels || [], 12);
+  const source = String(raw.source || raw.kind || fallback.source || '').trim();
+  if (
+    !reason
+    && !missingConnectors.length
+    && !missingConnectorCapabilities.length
+    && !requiredGoogleSources.length
+    && !requiredRepositorySelection
+    && !requiredChannelSelection
+  ) {
+    return null;
+  }
+  return {
+    reason: reason || 'Human approval is required before this execution can continue.',
+    missingConnectors,
+    missingConnectorCapabilities,
+    requiredGoogleSources,
+    requiredRepositorySelection,
+    requiredChannelSelection,
+    repoCandidates,
+    channelCandidates,
+    source,
+    ownerLabel: String(raw.ownerLabel || raw.owner_label || fallback.ownerLabel || '').trim(),
+    requestedAt: String(raw.requestedAt || raw.requested_at || fallback.requestedAt || '').trim()
+  };
+}
+
+function authorityRequestFromReport(report = {}) {
+  if (!report || typeof report !== 'object') return null;
+  return normalizeAuthorityRequest(
+    report.authority_request
+      || report.authorityRequest
+      || report.executor_request
+      || report.executorRequest
+      || (Array.isArray(report.approval_requests) ? report.approval_requests[0] : null)
+      || (Array.isArray(report.approvalRequests) ? report.approvalRequests[0] : null)
+      || null
+  );
+}
+
+function authorityRequestFromJob(job = {}) {
+  const report = job?.output?.report && typeof job.output.report === 'object' ? job.output.report : {};
+  const fromReport = authorityRequestFromReport(report);
+  if (fromReport) return fromReport;
+  const executorAuthority = job?.executorState?.authorityRequired || job?.executorState?.authority_required || null;
+  const fromExecutor = normalizeAuthorityRequest(executorAuthority, {
+    source: 'executor_state',
+    ownerLabel: job.workflowAgentName || job.assignedAgentId || job.taskType || ''
+  });
+  if (fromExecutor) return fromExecutor;
+  const failureText = [
+    job.failureCategory,
+    job.failureReason,
+    job.dispatch?.completionStatus,
+    report.completion_state,
+    report.summary
+  ].map((item) => String(item || '')).join(' ');
+  if (/blocked_waiting_for_approval|approval_required|authority|required|connector|oauth|publish|send|post|承認|接続|投稿|送信/i.test(failureText)) {
+    return normalizeAuthorityRequest({
+      reason: job.failureReason || report.summary || 'This run is waiting for explicit approval before it can continue.',
+      source: 'delivery_status'
+    }, {
+      ownerLabel: job.workflowAgentName || job.assignedAgentId || job.taskType || ''
+    });
+  }
+  return null;
+}
+
+function authorityRequestFromContext(context = {}) {
+  if (!context || typeof context !== 'object') return null;
+  const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
+  return normalizeAuthorityRequest(
+    context.authority_request
+      || context.authorityRequest
+      || raw.authority_request
+      || raw.authorityRequest
+      || raw.approval_gate?.authority_request
+      || raw.approval_gate?.authorityRequest
+      || null
+  );
+}
+
+function deliveryCombinedText(delivery = {}) {
+  return [
+    delivery.title,
+    delivery.summary,
+    delivery.nextAction,
+    delivery.agentName,
+    delivery.taskType,
+    delivery.workflowTask,
+    delivery.authorityRequest?.reason,
+    ...(delivery.authorityRequest?.missingConnectorCapabilities || []),
+    ...(delivery.files || []).map((file) => `${file.name}\n${file.content}`)
+  ].join('\n').toLowerCase();
+}
+
+function marketingDeliverableLabel(delivery = {}) {
+  const text = deliveryCombinedText(delivery);
+  if (/seo|article|blog|記事|meta description|h1/.test(text)) return 'SEO article or content draft';
+  if (/landing|lp|page|hero|cta|conversion|signup/.test(text)) return 'Landing page or conversion copy';
+  if (/x post|x_post|twitter|tweet|social|sns|instagram|reddit|indie hackers|投稿/.test(text)) return 'Social post package';
+  if (/email|gmail|cold mail|outreach|subject|recipient|送信/.test(text)) return 'Email or outreach package';
+  if (/lead|prospect|company list|リード|候補企業/.test(text)) return 'Lead list or prospecting package';
+  if (/analytics|ga4|search console|gsc|measurement/.test(text)) return 'Analytics or measurement report';
+  if (/research|competitive|competitor|market|調査/.test(text)) return 'Marketing research report';
+  return 'Reusable marketing delivery';
+}
+
+function marketingChannelLabel(delivery = {}) {
+  const text = deliveryCombinedText(delivery);
+  const channels = [];
+  if (/seo|organic search|search console|gsc|記事/.test(text)) channels.push('SEO');
+  if (/x post|x_post|twitter|tweet|\bx\b|投稿/.test(text)) channels.push('X');
+  if (/instagram|insta/.test(text)) channels.push('Instagram');
+  if (/reddit/.test(text)) channels.push('Reddit');
+  if (/indie hackers|indie_hackers/.test(text)) channels.push('Indie Hackers');
+  if (/email|gmail|resend|outreach|送信/.test(text)) channels.push('Email');
+  if (/landing|owned site|wordpress|publisher|lp/.test(text)) channels.push('Owned site');
+  if (/directory|listing|掲載/.test(text)) channels.push('Directory');
+  if (/lead|prospect|リード/.test(text)) channels.push('Lead Ops');
+  return channels.length ? channels.join(' / ') : 'Not fixed yet';
+}
+
+function evidenceLabel(delivery = {}) {
+  const text = deliveryCombinedText(delivery);
+  const urls = text.match(/https?:\/\/[^\s)>\]]+/gi) || [];
+  if (/ga4|google analytics|search console|gsc/.test(text)) return 'Analytics/source connector referenced';
+  if (/source|evidence|reference|引用|根拠/.test(text) && urls.length) return `${urls.length} source URL${urls.length === 1 ? '' : 's'} referenced`;
+  if (urls.length) return `${urls.length} URL${urls.length === 1 ? '' : 's'} included`;
+  return 'No explicit source evidence found';
+}
+
+function externalActionLabel(delivery = {}) {
+  const text = deliveryCombinedText(delivery);
+  if (/publish now|post now|send now|schedule|投稿|送信|公開|配信/.test(text)) return 'External publish/send action requested';
+  if (/prepare|draft|handoff|approval|review|承認|確認/.test(text)) return 'Preparation or approval handoff';
+  return 'Internal follow-up only';
+}
+
+function approvalGateForDelivery(delivery = selectedDelivery()) {
+  if (!delivery) {
+    return {
+      state: 'pending',
+      label: 'review',
+      summary: 'Load a delivery to review the deliverable, channel, evidence, and external action boundary.',
+      approveEnabled: false,
+      actionLabel: 'Approval not blocking',
+      note: 'No delivery selected.',
+      items: [
+        { label: 'Deliverable', value: 'No delivery selected', ok: false },
+        { label: 'Channel/action', value: 'No channel selected', ok: false },
+        { label: 'Evidence/source', value: 'No evidence loaded', ok: false },
+        { label: 'Human approval', value: 'Waiting for a delivery', ok: false }
+      ],
+      context: { state: 'pending', label: 'review', checkpoints: [] }
+    };
+  }
+  const authority = delivery.authorityRequest || null;
+  const status = String(delivery.status || '').trim().toLowerCase();
+  const approvalWaiting = Boolean(authority) || /blocked|approval|waiting/.test(status) && /approval|authority|connector|publish|send|post|承認|接続|投稿|送信/i.test(deliveryCombinedText(delivery));
+  const deliverable = marketingDeliverableLabel(delivery);
+  const channel = marketingChannelLabel(delivery);
+  const evidence = evidenceLabel(delivery);
+  const action = externalActionLabel(delivery);
+  const hasFiles = (delivery.files || []).length > 0;
+  const externalWrite = /external|publish|send|post|schedule|公開|投稿|送信|配信/i.test(action);
+  const canResumeApproval = delivery.jobKind !== 'app_context' && delivery.sourceLabel === 'Server job';
+  const state = approvalWaiting ? 'blocked' : (externalWrite ? 'pending' : 'approved');
+  const label = approvalWaiting ? 'approval needed' : (externalWrite ? 'review before action' : 'ready');
+  const humanApprovalValue = approvalWaiting
+    ? authority?.reason || 'Approve this delivery before resuming execution.'
+    : externalWrite
+      ? 'Approval is required before any external publish, post, send, or schedule step.'
+      : 'No external write is implied by this delivery.';
+  const items = [
+    { label: 'Deliverable', value: deliverable, ok: Boolean(String(delivery.title || delivery.summary || '').trim()) },
+    { label: 'Channel/action', value: channel === 'Not fixed yet' ? action : `${channel} - ${action}`, ok: channel !== 'Not fixed yet' || action !== 'Internal follow-up only' },
+    { label: 'Evidence/source', value: evidence, ok: !/^No explicit/.test(evidence) },
+    { label: 'Files/package', value: hasFiles ? `${delivery.files.length} file${delivery.files.length === 1 ? '' : 's'} attached` : 'No attached files', ok: hasFiles },
+    { label: 'Human approval', value: humanApprovalValue, ok: !approvalWaiting }
+  ];
+  if (authority?.missingConnectors?.length || authority?.missingConnectorCapabilities?.length) {
+    items.push({
+      label: 'Authority needed',
+      value: [
+        authority.missingConnectors.length ? `Connectors: ${authority.missingConnectors.join(', ')}` : '',
+        authority.missingConnectorCapabilities.length ? `Capabilities: ${authority.missingConnectorCapabilities.join(', ')}` : ''
+      ].filter(Boolean).join(' / '),
+      ok: false
+    });
+  }
+  if (authority?.requiredRepositorySelection || authority?.requiredChannelSelection) {
+    items.push({
+      label: 'Selection needed',
+      value: [
+        authority.requiredRepositorySelection ? 'Repository selection required' : '',
+        authority.requiredChannelSelection ? 'Channel selection required' : ''
+      ].filter(Boolean).join(' / '),
+      ok: false
+    });
+  }
+  const summary = approvalWaiting
+    ? canResumeApproval
+      ? 'This work is paused until a human approves the exact continuation boundary.'
+      : 'This context records an approval requirement. Send it to CAIt or open the source order to resume execution.'
+    : externalWrite
+      ? 'This delivery can be reused, but any external publish/send action still needs explicit approval.'
+      : 'This delivery is ready for internal follow-up context.';
+  const note = [
+    `Approval gate: ${label}`,
+    `Delivery id: ${delivery.id || '-'}`,
+    `Deliverable: ${deliverable}`,
+    `Channel/action: ${channel} - ${action}`,
+    `Evidence/source: ${evidence}`,
+    `Files: ${(delivery.files || []).length}`,
+    authority ? `Authority request: ${authority.reason}` : '',
+    authority?.missingConnectorCapabilities?.length ? `Capabilities: ${authority.missingConnectorCapabilities.join(', ')}` : '',
+    'Decision boundary: do not publish, post, send, schedule, or write externally unless the exact account, target, and copy are approved.'
+  ].filter(Boolean).join('\n');
+  return {
+    state,
+    label,
+    summary,
+    approveEnabled: Boolean(approvalWaiting && canResumeApproval && delivery.id),
+    actionLabel: approvalWaiting
+      ? (canResumeApproval ? 'Approve & resume' : 'Source order required')
+      : 'Approval not blocking',
+    note,
+    items,
+    context: {
+      state,
+      label,
+      summary,
+      deliverable,
+      channel,
+      evidence,
+      action,
+      authority_request: authority,
+      checkpoints: items.map((item) => ({ label: item.label, value: item.value, ok: item.ok }))
+    }
+  };
 }
 
 function deliverySearchBlob(delivery = {}) {
@@ -328,6 +611,9 @@ function normalizeJobDelivery(job = {}) {
     workflowTask: String(job.workflowTask || ''),
     workflowParentId: String(job.workflowParentId || ''),
     workflow: job.workflow && typeof job.workflow === 'object' ? job.workflow : null,
+    authorityRequest: authorityRequestFromJob(job),
+    failureCategory: String(job.failureCategory || ''),
+    dispatchCompletionStatus: String(job.dispatch?.completionStatus || ''),
     title: String(output.title || output.summary || job.task || `Order ${String(job.id || '').slice(0, 8)}` || 'Delivery'),
     status: String(job.status || 'updated'),
     summary: deliveryWorkflowSummary(job, output),
@@ -364,6 +650,9 @@ function deliveryFromAppContext(context = {}) {
     workflowTask: '',
     workflowParentId: '',
     workflow: null,
+    authorityRequest: authorityRequestFromContext(context),
+    failureCategory: '',
+    dispatchCompletionStatus: '',
     title: String(context.title || 'Imported CAIt context'),
     status: 'reusable',
     summary: String(context.summary || ''),
@@ -447,9 +736,10 @@ function buildContext() {
       summary: 'No delivery package is currently loaded. Refresh server jobs or open Deliveries from a CAIt context handoff.',
       facts: ['No delivery selected'],
       recommended_next_actions: ['Refresh server-side jobs or return to chat and select a delivery.'],
-      handoff_targets: ['cmo_leader', 'seo_gap', 'build_team_leader']
+      handoff_targets: ['cmo_leader', 'seo_specialist', 'build_team_leader']
     });
   }
+  const approvalGate = approvalGateForDelivery(delivery);
   return buildCaitAppContext({
     source_app: 'delivery_manager',
     source_app_label: 'CAIt Deliveries',
@@ -460,22 +750,29 @@ function buildContext() {
       `Delivery id: ${delivery.id}`,
       `Status: ${delivery.status}`,
       `Files: ${(delivery.files || []).length}`,
+      `Approval gate: ${approvalGate.label}`,
       delivery.updatedAt ? `Updated: ${delivery.updatedAt}` : ''
     ].filter(Boolean),
     assumptions: [
       importedContext ? 'Files and artifacts are loaded from a server-side CAIt context.' : 'Files are loaded from server-side job output when available.',
-      'Reusing a delivery creates a new CAIt context; it does not automatically execute follow-up work.'
+      'Reusing a delivery creates a new CAIt context; it does not automatically execute follow-up work.',
+      'External publishing, posting, sending, scheduling, or repository writes require explicit approval of the exact target and content.'
     ],
     artifacts: [
-      { type: 'delivery_package', id: delivery.id, status: delivery.status, summary: delivery.summary, next_action: delivery.nextAction }
+      { type: 'delivery_package', id: delivery.id, status: delivery.status, summary: delivery.summary, next_action: delivery.nextAction },
+      { type: 'approval_gate', id: `${delivery.id}-approval-gate`, status: approvalGate.state, summary: approvalGate.summary, checkpoints: approvalGate.context.checkpoints }
     ],
     delivery_files: (delivery.files || []).map((file) => ({ name: file.name, type: file.type, content: file.content })),
     recommended_next_actions: [
+      approvalGate.approveEnabled ? 'Approve and resume the paused execution lane from Delivery Manager.' : '',
       delivery.nextAction || 'Ask a leader to run follow-up with this delivery.',
       'Use external action tools only after approval and connector state are visible.'
-    ],
-    handoff_targets: ['cmo_leader', 'seo_gap', 'build_team_leader'],
-    raw_context: importedContext ? { received_context: importedContext } : {}
+    ].filter(Boolean),
+    handoff_targets: ['cmo_leader', 'seo_specialist', 'build_team_leader'],
+    raw_context: {
+      ...(importedContext ? { received_context: importedContext } : {}),
+      approval_gate: approvalGate.context
+    }
   });
 }
 
@@ -504,12 +801,14 @@ function readinessItems(delivery = selectedDelivery()) {
   const files = delivery?.files || [];
   const summary = String(delivery?.summary || '').trim();
   const context = buildContext();
+  const approvalGate = approvalGateForDelivery(delivery);
   return [
     ['Summary present', Boolean(summary)],
     ['Delivery selected', Boolean(delivery?.id)],
     ['Status visible', Boolean(delivery?.status)],
     ['Files attached', files.length > 0],
     ['Next action captured', Boolean(String(delivery?.nextAction || '').trim())],
+    ['Approval gate captured', Boolean(approvalGate?.context?.checkpoints?.length)],
     ['Reusable context built', Boolean(context?.source_app === 'delivery_manager')],
     ['No empty title', Boolean(String(delivery?.title || '').trim())]
   ];
@@ -718,11 +1017,31 @@ function renderReadiness() {
     : 'Complete the missing items before sending this package to a leader.';
 }
 
+function renderApprovalGate() {
+  const gate = approvalGateForDelivery();
+  els.approvalStatePill.textContent = gate.label;
+  els.approvalStatePill.className = `status-pill ${gate.state === 'blocked' ? 'blocked' : gate.state === 'approved' ? 'approved' : 'pending'}`;
+  els.approvalGateSummary.textContent = gate.summary;
+  els.approvalChecklist.innerHTML = gate.items.map((item) => [
+    `<div class="approval-item ${item.ok ? 'ready' : 'needs-review'}">`,
+    `<span>${item.ok ? 'Ready' : 'Review'}</span>`,
+    '<strong>',
+    escapeHtml(item.label),
+    `<small>${escapeHtml(item.value)}</small>`,
+    '</strong>',
+    '</div>'
+  ].join('')).join('');
+  els.approveDeliveryBtn.disabled = !gate.approveEnabled;
+  els.approveDeliveryBtn.textContent = gate.actionLabel;
+  els.copyApprovalBtn.disabled = !selectedDelivery();
+}
+
 function render() {
   renderCounts();
   renderList();
   renderTabs();
   renderSelected();
+  renderApprovalGate();
   renderReadiness();
   els.deliveryContextPreview.textContent = JSON.stringify(buildContext(), null, 2);
 }
@@ -767,6 +1086,62 @@ function sendFollowup() {
   void sendContextToCait(buildContext()).catch((error) => {
     window.alert(`CAIt context handoff failed: ${error.message}`);
   });
+}
+
+async function copyApprovalNote() {
+  const gate = approvalGateForDelivery();
+  await navigator.clipboard.writeText(gate.note);
+  const old = els.copyApprovalBtn.textContent;
+  els.copyApprovalBtn.textContent = 'Copied';
+  window.setTimeout(() => { els.copyApprovalBtn.textContent = old; }, 1200);
+}
+
+async function approveSelectedDelivery() {
+  saveEditor();
+  const delivery = selectedDelivery();
+  const gate = approvalGateForDelivery(delivery);
+  if (!delivery || !gate.approveEnabled) {
+    window.alert('This delivery is not currently blocked on approval.');
+    return;
+  }
+  const confirmed = window.confirm([
+    'Approve and resume this paused execution lane?',
+    '',
+    gate.note
+  ].join('\n'));
+  if (!confirmed) return;
+  const old = els.approveDeliveryBtn.textContent;
+  els.approveDeliveryBtn.disabled = true;
+  els.approveDeliveryBtn.textContent = 'Approving';
+  try {
+    const response = await fetchWithTimeout(`/api/jobs/${encodeURIComponent(delivery.id)}/approve`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        confirm_approval: true,
+        approval_note: gate.note,
+        source: 'delivery_manager'
+      })
+    }, 15000);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.error) throw new Error(payload.error || `approval ${response.status}`);
+    if (payload.job) {
+      const normalized = normalizeJobDelivery(payload.job);
+      upsertDelivery(normalized);
+      selectedId = normalized.id;
+      selectedFileIndex = 0;
+    } else {
+      await refreshDeliveries();
+      return;
+    }
+    render();
+  } catch (error) {
+    window.alert(`Approval failed: ${error.message}`);
+  } finally {
+    els.approveDeliveryBtn.textContent = old;
+    renderApprovalGate();
+  }
 }
 
 els.filterButtons.forEach((button) => {
@@ -838,6 +1213,8 @@ els.fileTable.addEventListener('click', (event) => {
 els.refreshDeliveriesBtn.addEventListener('click', refreshDeliveries);
 els.sendDeliveryContextBtn.addEventListener('click', sendFollowup);
 els.runFollowupBtn.addEventListener('click', sendFollowup);
+els.approveDeliveryBtn.addEventListener('click', approveSelectedDelivery);
+els.copyApprovalBtn.addEventListener('click', copyApprovalNote);
 els.downloadJsonBtn.addEventListener('click', downloadJson);
 els.railJsonBtn.addEventListener('click', downloadJson);
 els.downloadSelectedBtn.addEventListener('click', downloadPackage);

@@ -786,7 +786,7 @@ function buildContext() {
       'Use Publisher & Approval Studio for page/meta changes before external publishing.',
       'Run a 24h and 7d post-run measurement after the approved action is executed.'
     ],
-    handoff_targets: [target, 'seo_gap', 'growth'],
+    handoff_targets: [target, 'seo_specialist', 'growth'],
     raw_context: {
       ...(importedContext ? { received_context: importedContext } : {}),
       connector_type: state.ga4Property

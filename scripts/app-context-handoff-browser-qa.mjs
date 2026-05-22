@@ -86,7 +86,7 @@ try {
         rows: [{ query: 'imported japan esim', clicks: 88, position: 3.2, conversions: 4, note: 'imported note' }]
       }
     ],
-    handoff_targets: ['seo_gap']
+    handoff_targets: ['seo_specialist']
   });
   await page.waitForSelector('#primaryTable');
   await page.click('[data-section="queries"]');

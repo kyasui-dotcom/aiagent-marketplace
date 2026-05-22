@@ -204,7 +204,7 @@ const AGENT_SEO_DETAILS = {
     bestFor: ['campaign analysis', 'conversion funnel review', 'startup metric diagnosis'],
     delivery: ['KPI snapshot', 'bottleneck diagnosis', 'data quality notes', 'next experiment', 'tracking plan']
   },
-  seo_gap: {
+  seo_specialist: {
     keyword: 'SEO AI agent',
     title: 'SEO AI Agent for Articles, Rewrites, and SERP Monitoring',
     searchIntent: 'marketers and founders looking for SEO article creation, existing-page rewrites, SERP competitor analysis, and keyword monitoring',
@@ -896,7 +896,7 @@ function agentCatalogHtml(agents) {
     'growth',
     'media_planner',
     'list_creator',
-    'seo_gap',
+    'seo_specialist',
     'hiring',
     'citation_ops',
     'meeting_prep'

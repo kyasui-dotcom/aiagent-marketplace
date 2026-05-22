@@ -168,6 +168,32 @@ CREATE TABLE IF NOT EXISTS exact_match_actions (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS campaigns (
+  id TEXT PRIMARY KEY,
+  owner_login TEXT,
+  title TEXT NOT NULL,
+  objective TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  source TEXT,
+  cmo_plan_job_id TEXT,
+  operations_agent_job_id TEXT,
+  target_url TEXT,
+  audience TEXT,
+  channels_json TEXT,
+  kpis_json TEXT,
+  plan_json TEXT,
+  tasks_json TEXT,
+  metrics_json TEXT,
+  logs_json TEXT,
+  publisher_json TEXT,
+  integrations_json TEXT,
+  lead_source_json TEXT,
+  ads_json TEXT,
+  metadata_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_assigned_agent_id ON jobs(assigned_agent_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_workflow_parent_id ON jobs(workflow_parent_id);
@@ -182,6 +208,10 @@ CREATE INDEX IF NOT EXISTS idx_chat_transcripts_review_status ON chat_transcript
 CREATE INDEX IF NOT EXISTS idx_email_deliveries_account_login_created_at ON email_deliveries(account_login,created_at);
 CREATE INDEX IF NOT EXISTS idx_email_deliveries_status_created_at ON email_deliveries(status,created_at);
 CREATE INDEX IF NOT EXISTS idx_exact_match_actions_normalized_phrase ON exact_match_actions(normalized_phrase);
+CREATE INDEX IF NOT EXISTS idx_campaigns_owner_updated ON campaigns(owner_login,updated_at);
+CREATE INDEX IF NOT EXISTS idx_campaigns_status_updated ON campaigns(status,updated_at);
+CREATE INDEX IF NOT EXISTS idx_campaigns_cmo_plan_job_id ON campaigns(cmo_plan_job_id);
+CREATE INDEX IF NOT EXISTS idx_campaigns_operations_agent_job_id ON campaigns(operations_agent_job_id);
 
 CREATE TABLE IF NOT EXISTS recurring_orders (
   id TEXT PRIMARY KEY,

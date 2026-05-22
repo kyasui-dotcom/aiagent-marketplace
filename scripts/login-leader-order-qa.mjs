@@ -6,7 +6,7 @@ import {
   chatEngineBuildJobPayload,
   chatEngineBuildOrderDraft
 } from '../public/chat-engine.js';
-import { deliveryQualityScoreForJob } from '../lib/shared.js';
+import { deliveryCompletionEvidenceScoreForJob } from '../lib/delivery-completion-gate.js';
 
 const EMAIL_AUTH_SECRET = 'qa-login-leader-email-secret';
 const STRIPE_WEBHOOK_SECRET = 'whsec_login_leader_qa';
@@ -403,7 +403,7 @@ async function main() {
       completed.output?.report?.nextAction,
       ...completed.output.files.map((file) => `${file?.name || ''}\n${file?.content || ''}`)
     ].map((value) => typeof value === 'string' ? value : JSON.stringify(value || '')).join('\n');
-    assert.ok(deliveryQualityScoreForJob(completed) >= 75, 'final delivery should pass the delivery quality score gate');
+    assert.ok(deliveryCompletionEvidenceScoreForJob(completed) >= 75, 'final delivery should pass the delivery completion gate score gate');
     assert.match(deliveryText, /autowifi-travel\.com/i, 'delivery should preserve the product URL/domain');
     assert.match(deliveryText, /eSIM|esim/i, 'delivery should preserve the product category');
     assert.match(deliveryText, /purchase|paid conversion|購入|有料化/i, 'delivery should preserve the purchase conversion goal');

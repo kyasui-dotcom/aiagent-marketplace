@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { API_ROUTE_MANIFEST, API_ROUTE_METHODS, API_ROUTES, apiRouteManifestForRuntime, apiRouteMatches } from '../lib/api-routes.js';
@@ -26,6 +26,9 @@ const storageSource = read('lib/storage.js');
 const sharedSource = read('lib/shared.js');
 const orchestrationSource = read('lib/orchestration.js');
 const xConnectorSource = read('lib/x-connector.js');
+const connectorRoutesSource = read('lib/routes/connectors.js');
+const integrationRoutesSource = read('lib/routes/integrations.js');
+const deliveryRoutesSource = read('lib/routes/deliveries.js');
 const exactActionsSource = read('lib/exact-actions.js');
 const externalWriteConfirmationSource = read('lib/external-write-confirmation.js');
 const httpPolicySource = read('lib/http-policy.js');
@@ -145,9 +148,14 @@ assert.equal(
 );
 
 const cmoBoundaryForbiddenPattern = /\b(?:cmo|cmo_leader|cait_cmo|marketing_leader|free_web_growth|agent_team_launch)\b|CMO|マーケ責任者|マーケティング責任者/;
+assert.equal(
+  existsSync(path.join(root, 'lib/builtin-agents/runtime/cmo-workflow.js')),
+  false,
+  'CMO-specific workflow runtime must not live outside lib/builtin-agents/agents/cmo-leader.js.'
+);
 const cmoBoundarySources = [
   ['worker.js', workerSource],
-  ['lib/shared.js', sharedSource.replace(/['"]agent_free_web_growth_leader_01['"]/g, '')],
+  ['lib/shared.js', sharedSource],
   ['lib/orchestration.js', orchestrationSource],
   ['public/chat.js', chatSource],
   ['public/client.js', clientSource]
@@ -196,7 +204,7 @@ assert.equal(
   'workflowUsesSaasPublishHandoff must remain generic and must not mention CMO-specific task names.'
 );
 assert.equal(
-  /(?:seo_gap|landing|growth)/.test(workerLeaderFollowupFunction),
+  /(?:seo_specialist|landing|growth)/.test(workerLeaderFollowupFunction),
   false,
   'worker leader follow-up routing must use the leader definition, not worker-owned specialist regexes.'
 );
@@ -206,7 +214,7 @@ assert.equal(
   'chat must not own leader-specific follow-up specialist routing; the leader/provider definition owns that choice.'
 );
 assert.equal(
-  /(?:seo_gap|media_planner|x_post|reddit|indie_hackers)/.test(workerConcreteRequirementFunction),
+  /(?:seo_specialist|media_planner|x_post|reddit|indie_hackers)/.test(workerConcreteRequirementFunction),
   false,
   'worker must not hardcode specialist deliverable requirements; agent/leader contracts own concrete output conditions.'
 );
@@ -362,8 +370,9 @@ for (const routeKey of [
 }
 
 for (const [name, source] of [
-  ['worker', workerSource]
+  ['worker', `${workerSource}\n${deliveryRoutesSource}`]
 ]) {
+  const connectorRouteSource = `${source}\n${connectorRoutesSource}\n${integrationRoutesSource}`;
   assert.ok(source.includes("from './lib/http-policy.js'"), `${name} runtime should use shared HTTP policy helpers`);
   assert.ok(!source.includes('function rateLimitSpecForPath'), `${name} runtime should not duplicate rate-limit policy locally`);
   assert.ok(!source.includes('function csrfExemptPath'), `${name} runtime should not duplicate CSRF exempt policy locally`);
@@ -392,9 +401,9 @@ for (const [name, source] of [
   assert.ok(!source.includes('prepareDeliveryExecutionContractPayload'), `${name} runtime should not assemble delivery execution contract payloads locally`);
   assert.ok(!source.includes('prepareDeliveryPublishContractPayload'), `${name} runtime should not assemble delivery publish contract payloads locally`);
   assert.ok(!source.includes('deliveryPublishTargetInstruction'), `${name} runtime should not build delivery publish prompts locally`);
-  assert.ok(source.includes('confirm_post'), `${name} runtime should require explicit X post confirmation`);
-  assert.ok(source.includes('confirm_send'), `${name} runtime should require explicit email send confirmation`);
-  assert.ok(source.includes('confirm_repo_write'), `${name} runtime should require explicit repository write confirmation`);
+  assert.ok(connectorRouteSource.includes('confirm_post'), `${name} runtime should require explicit X post confirmation`);
+  assert.ok(connectorRouteSource.includes('confirm_send'), `${name} runtime should require explicit email send confirmation`);
+  assert.ok(connectorRouteSource.includes('confirm_repo_write'), `${name} runtime should require explicit repository write confirmation`);
 }
 assert.ok(!serverSource.includes('apiRouteMatches('), 'Node server should not keep method-aware route matching locally');
 assert.ok(!serverSource.includes("from './lib/http-policy.js'"), 'Node server should not import shared HTTP policy because worker.fetch owns it');

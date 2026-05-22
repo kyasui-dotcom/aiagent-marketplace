@@ -9,6 +9,69 @@ import {
 } from './chat-engine.js?v=20260509a';
 import { extractSocialPostTextFromDeliveryContent } from './delivery-action-contract.js?v=20260501a';
 import {
+  connectorGateApprovalAnchor,
+  connectorGateAuthorityHandledBySaasHandoff,
+  connectorGateAuthorityIsActionable,
+  connectorGateAuthorityNoticeKey,
+  connectorGateAuthorityRequestFromJob,
+  connectorGateHandleOAuthLinkClick,
+  connectorGateHandleOAuthPopupReturn,
+  connectorGateHandleOAuthPopupReturnMessage,
+  connectorGateOpenOAuthPopup,
+  connectorGateRenderAuthorityRequest,
+  connectorGateStartOAuthPopupMonitor
+} from './connector-gate.js?v=20260519a';
+import {
+  authAccountKey as chatSessionAuthAccountKey,
+  chatSessionSnapshotExpired,
+  chatSnapshotAccountKey as chatSessionSnapshotAccountKey,
+  compactChatRuntimeSnapshot as compactChatRuntimeSnapshotForSession,
+  normalizeChatAccountKey as normalizeChatSessionAccountKey,
+  safeLocalStorageGet as chatSessionSafeLocalStorageGet,
+  safeLocalStorageRemove as chatSessionSafeLocalStorageRemove,
+  safeLocalStorageSet as chatSessionSafeLocalStorageSet,
+  safeSessionStorageGet as chatSessionSafeSessionStorageGet,
+  safeSessionStorageRemove as chatSessionSafeSessionStorageRemove,
+  safeSessionStorageSet as chatSessionSafeSessionStorageSet
+} from './chat-session-state.js?v=20260519a';
+import {
+  orderRuntimeApprovalPayload,
+  orderRuntimeCachedJob,
+  orderRuntimePollingContextIsCurrent,
+  orderRuntimeShouldPauseForApproval,
+  orderRuntimeUpsertRecentJob,
+  recentJobsApiPath as orderRuntimeRecentJobsApiPath,
+  visibleJobApiPath
+} from './order-runtime.js?v=20260519a';
+import {
+  deliveryOrderActionsHtml as deliveryRendererOrderActionsHtml,
+  deliveryRendererMeta,
+  renderDeliveryBody
+} from './delivery-renderer.js?v=20260519a';
+import {
+  deliveryFileDisplayTitle,
+  deliveryFileProvenanceParts
+} from './delivery-provenance-utils.js?v=20260521a';
+import {
+  appHandoffArtifactLabel as appHandoffGateArtifactLabel,
+  appHandoffConnectorNotes as appHandoffGateConnectorNotes,
+  appHandoffEntryMatchesArtifact as appHandoffGateEntryMatchesArtifact,
+  renderAppHandoffTree as appHandoffGateRenderTree
+} from './app-handoff-gate.js?v=20260519a';
+import {
+  BUILT_IN_APP_MANIFESTS as APP_AGENT_MANIFESTS,
+  CORE_FEATURE_APP_IDS,
+  X_CLIENT_OPS_URL
+} from './app-manifest-registry.js?v=20260523a';
+import {
+  progressNarratorHtml as agentProgressNarratorHtml,
+  progressNarratorProgress as agentProgressNarratorProgress,
+  progressNarratorProgressLabel as agentProgressNarratorProgressLabel,
+  progressNarratorStreamSegments as agentProgressNarratorStreamSegments,
+  progressNarratorStreamText as agentProgressNarratorStreamText,
+  renderAgentRunDetailHtml as agentProgressRenderAgentRunDetailHtml
+} from './agent-progress-view.js?v=20260519a';
+import {
   caitAppContextChatPrompt,
   caitAppContextThreadHtml,
   consumeCaitAppContextForChat
@@ -26,14 +89,15 @@ const CHATUX_CATALOG_PAGE_SIZE = 10;
 const CHATUX_CATALOG_CACHE_TTL_MS = 60000;
 const CHATUX_PROGRESS_MAX_POLLS = 300;
 const CHATUX_OAUTH_RETURN_STATE_KEY = 'cait.chat.oauthReturnState.v1';
-const CHATUX_OAUTH_RETURN_MAX_AGE_MS = 30 * 60 * 1000;
+const CHATUX_CONNECT_WAIT_MS = 60 * 60 * 1000;
+const CHATUX_AUTH_STATUS_TIMEOUT_MS = 8000;
+const CHATUX_CONNECT_CHECK_INTERVAL_MS = 1500;
+const CHATUX_OAUTH_RETURN_MAX_AGE_MS = CHATUX_CONNECT_WAIT_MS;
 const CHATUX_RUNTIME_STATE_KEY = 'cait.chat.runtimeState.v1';
 const CHATUX_RUNTIME_STATE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const CHATUX_RETRY_MODE_NEW_ORDER = 'same_content_new_order';
 const CAIT_APP_CONTEXT_CHANNEL = 'cait-app-context';
 const CHATUX_WELCOME_TEXT = 'What do you want done?';
-const X_CLIENT_OPS_URL = 'https://x.niche-s.com/';
-const CORE_FEATURE_APP_IDS = new Set(['delivery-manager']);
 
 function leaderCatalogChatAnswer(prompt = '') {
   const ja = chatLanguage(prompt) === 'ja';
@@ -60,92 +124,6 @@ function leaderCatalogChatAnswer(prompt = '') {
       ].join('\n');
 }
 
-const APP_AGENT_MANIFESTS = [
-  {
-    id: 'analytics-console',
-    name: 'Analytics Console',
-    kind: 'application_agent',
-    description: 'Old-GA-style acquisition, search query, landing page, conversion, country, channel, and post-run measurement console for CAIt leaders.',
-    baseUrl: '/analytics-console.html',
-    entryUrl: '/analytics-console.html',
-    capabilities: ['analytics_context', 'search_console_packet', 'ga4_packet', 'post_run_measurement'],
-    requiresApprovalFor: [],
-    inputContract: {
-      schemaVersion: 'cait-app-context/v1',
-      accepts: ['metrics', 'search_queries', 'landing_pages', 'conversion_paths', 'channel_breakdown'],
-      returns: ['facts', 'metrics', 'artifacts', 'recommended_next_actions']
-    },
-    tags: ['analytics', 'seo', 'growth'],
-    reusePrompt: 'Open Analytics Console, review analytics evidence, then send the context to CAIt for the matching leader or data specialist.'
-  },
-  {
-    id: 'publisher-approval-studio',
-    name: 'Publisher & Approval Studio',
-    kind: 'application_agent',
-    description: 'Content, page, metadata, media-separated publish packets, directory submission, PR draft, and approval queue studio for external action handoffs.',
-    baseUrl: '/publisher-approval.html',
-    entryUrl: '/publisher-approval.html',
-    capabilities: ['content_management', 'approval_queue', 'directory_submission_packet', 'publisher_change_set', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'instagram_post_packet', 'site_publish_packet', 'wordpress_draft_packet'],
-    requiresApprovalFor: ['publish_change', 'directory_submit', 'github_pr', 'wordpress_draft', 'x_post', 'reddit_post', 'indie_hackers_post', 'instagram_post', 'external_send'],
-    inputContract: {
-      schemaVersion: 'cait-app-context/v1',
-      accepts: ['article_draft', 'seo_article', 'seo_page_artifact', 'landing_page', 'landing_page_change', 'site_publish_packet', 'wordpress_draft', 'wordpress_draft_packet', 'directory_submission', 'directory_packet', 'community_post_packet', 'social_copy_packet', 'social_post', 'x_post', 'x_post_packet', 'reddit_post', 'reddit_post_packet', 'indie_hackers_post', 'indie_hackers_packet', 'instagram_post', 'instagram_post_packet', 'approval_request'],
-      destinationConnectors: {
-        owned_site: { connector: 'github', capability: 'github.write_pr', method: 'github_pr' },
-        wordpress_site: { connector: 'wordpress', capability: 'wordpress.create_draft', method: 'wordpress_application_password' },
-        directory: { connector: 'directory_app', capability: 'directory.submit', method: 'saas_or_manual_submit' },
-        x: { connector: 'x', capability: 'x.post', method: 'x_oauth_or_x_saas' },
-        reddit: { connector: 'reddit', capability: 'reddit.post', method: 'reddit_oauth_or_manual_copy' },
-        indie_hackers: { connector: 'indie_hackers', capability: 'indie_hackers.post', method: 'indie_hackers_connector_or_manual_copy' },
-        instagram: { connector: 'instagram', capability: 'instagram.post', method: 'instagram_connector_or_manual_copy' },
-        social: { connector: 'manual', capability: 'manual.copy', method: 'manual_social_copy' }
-      },
-      returns: ['approval_requests', 'artifacts', 'delivery_files', 'recommended_next_actions']
-    },
-    tags: ['publisher', 'approval', 'seo'],
-    reusePrompt: 'Open Publisher & Approval Studio to edit, approve, or block the next external content/action packet before execution.'
-  },
-  {
-    id: 'lead-ops-console',
-    name: 'Lead Ops Console',
-    kind: 'application_agent',
-    description: 'Lead rows, public source evidence, statuses, owners, next actions, and email draft management before approval.',
-    baseUrl: '/lead-ops.html',
-    entryUrl: '/lead-ops.html',
-    capabilities: ['lead_management', 'email_draft', 'crm_packet', 'outreach_review'],
-    requiresApprovalFor: ['email_send', 'crm_write', 'external_send'],
-    inputContract: {
-      schemaVersion: 'cait-app-context/v1',
-      accepts: ['lead_rows', 'evidence_urls', 'email_drafts', 'next_actions'],
-      returns: ['artifacts', 'approval_requests', 'recommended_next_actions']
-    },
-    tags: ['crm', 'lead', 'email'],
-    reusePrompt: 'Open Lead Ops Console to review lead rows and email drafts, then send a lead packet back to CAIt.'
-  },
-  {
-    id: 'x-client-ops',
-    name: 'X Client Ops',
-    kind: 'application_agent',
-    description: 'Action app for X post drafts, strategy context, and pre-approval posting queues.',
-    baseUrl: X_CLIENT_OPS_URL,
-    entryUrl: X_CLIENT_OPS_URL,
-    capabilities: ['x_post_draft', 'x_post_queue', 'social_action'],
-    requiresApprovalFor: ['post_now', 'send_external'],
-    inputContract: {
-      schemaVersion: 'cait-app-agent-transfer/v1',
-      accepts: ['post_text', 'strategy', 'agent_context', 'delivery_summary', 'settings'],
-      settingsKeys: ['brandName', 'serviceLine', 'targetClient', 'defaultCta', 'destinationLink', 'serviceUrl', 'workspaceNotes', 'outputLanguage'],
-      requiredApprovalFor: ['post_now']
-    },
-    handoff: {
-      createUrl: `${X_CLIENT_OPS_URL.replace(/\/+$/, '')}/api/cait/handoff`,
-      method: 'POST',
-      openUrlParam: 'cait_handoff'
-    },
-    reusePrompt: 'Create an X post, reflect the strategy, and prepare the final handoff to X Client Ops.'
-  }
-];
-
 function makeVisitorId() {
   try {
     const bytes = new Uint8Array(8);
@@ -158,8 +136,14 @@ function makeVisitorId() {
 
 const state = {
   auth: null,
+  authAccountKey: '',
+  accountBoundaryRevision: 0,
+  restoredRuntimeAccountKey: '',
+  pendingChatRestoreSnapshot: null,
   draft: null,
   pendingIntake: null,
+  activeOwner: null,
+  activeOwnerLocked: false,
   activeLeader: null,
   activeLeaderLocked: false,
   pendingLeaderChange: null,
@@ -389,12 +373,29 @@ function normalizeChatSession(session = {}) {
     messages,
     activeLeader: session.activeLeader && typeof session.activeLeader === 'object'
       ? {
+          type: 'leader',
           taskType: String(session.activeLeader.taskType || session.activeLeader.task_type || '').trim(),
           label: String(session.activeLeader.label || session.activeLeader.name || '').trim(),
           reason: String(session.activeLeader.reason || '').trim()
         }
       : null,
     activeLeaderLocked: Boolean(session.activeLeaderLocked || session.active_leader_locked),
+    activeOwner: session.activeOwner && typeof session.activeOwner === 'object'
+      ? {
+          type: String(session.activeOwner.type || '').trim().toLowerCase() || 'agent',
+          taskType: String(session.activeOwner.taskType || session.activeOwner.task_type || '').trim(),
+          label: String(session.activeOwner.label || session.activeOwner.name || '').trim(),
+          reason: String(session.activeOwner.reason || '').trim()
+        }
+      : (session.activeLeader && typeof session.activeLeader === 'object'
+          ? {
+              type: 'leader',
+              taskType: String(session.activeLeader.taskType || session.activeLeader.task_type || '').trim(),
+              label: String(session.activeLeader.label || session.activeLeader.name || '').trim(),
+              reason: String(session.activeLeader.reason || '').trim()
+            }
+          : null),
+    activeOwnerLocked: Boolean(session.activeOwnerLocked || session.active_owner_locked || session.activeLeaderLocked || session.active_leader_locked),
     activeWork: Boolean(session.activeWork),
     linkedOrderId,
     activeJobIds,
@@ -431,6 +432,8 @@ function currentChatSessionPayload() {
     sessionId,
     title: chatSessionTitle(state.chatMessages),
     messages: state.chatMessages.slice(-80),
+    activeOwner: state.activeOwner ? safeJsonClone(state.activeOwner, { depth: 3, maxText: 600, maxArray: 4 }) : null,
+    activeOwnerLocked: Boolean(state.activeOwnerLocked && state.activeOwner?.taskType),
     activeLeader: state.activeLeader ? safeJsonClone(state.activeLeader, { depth: 3, maxText: 600, maxArray: 4 }) : null,
     activeLeaderLocked: Boolean(state.activeLeaderLocked && state.activeLeader?.taskType),
     linkedOrderId,
@@ -452,49 +455,43 @@ function persistRuntimeChatSession() {
 }
 
 function safeSessionStorageSet(key = '', value = '') {
-  try {
-    window.sessionStorage.setItem(key, value);
-    return true;
-  } catch {
-    return false;
-  }
+  return chatSessionSafeSessionStorageSet(key, value);
 }
 
 function safeSessionStorageGet(key = '') {
-  try {
-    return window.sessionStorage.getItem(key) || '';
-  } catch {
-    return '';
-  }
+  return chatSessionSafeSessionStorageGet(key);
 }
 
 function safeSessionStorageRemove(key = '') {
-  try {
-    window.sessionStorage.removeItem(key);
-  } catch {}
+  return chatSessionSafeSessionStorageRemove(key);
 }
 
 function safeLocalStorageSet(key = '', value = '') {
-  try {
-    window.localStorage.setItem(key, value);
-    return true;
-  } catch {
-    return false;
-  }
+  return chatSessionSafeLocalStorageSet(key, value);
 }
 
 function safeLocalStorageGet(key = '') {
-  try {
-    return window.localStorage.getItem(key) || '';
-  } catch {
-    return '';
-  }
+  return chatSessionSafeLocalStorageGet(key);
 }
 
 function safeLocalStorageRemove(key = '') {
-  try {
-    window.localStorage.removeItem(key);
-  } catch {}
+  return chatSessionSafeLocalStorageRemove(key);
+}
+
+function normalizeChatAccountKey(value = '') {
+  return normalizeChatSessionAccountKey(value);
+}
+
+function authAccountKey(auth = {}) {
+  return chatSessionAuthAccountKey(auth);
+}
+
+function currentChatAccountKey() {
+  return normalizeChatAccountKey(state.authAccountKey || authAccountKey(state.auth || {}));
+}
+
+function chatSnapshotAccountKey(snapshot = {}) {
+  return chatSessionSnapshotAccountKey(snapshot);
 }
 
 function safeJsonClone(value = null, fallbackOptions = {}) {
@@ -563,6 +560,7 @@ function chatRuntimeStateSnapshot(reason = '') {
   }
   return {
     version: 1,
+    accountKey: currentChatAccountKey(),
     savedAt: isoNow(),
     reason: String(reason || '').slice(0, 80),
     returnPath: currentChatReturnPath({ includeRestoreParams: false }),
@@ -573,6 +571,8 @@ function chatRuntimeStateSnapshot(reason = '') {
     pendingIntake: safeJsonClone(state.pendingIntake, { depth: 6, maxText: 2000, maxArray: 24 }),
     draft: safeJsonClone(state.draft, { depth: 7, maxText: 2600, maxArray: 24 }),
     pendingAppContext: safeJsonClone(state.pendingAppContext, { depth: 5, maxText: 1600, maxArray: 16 }),
+    activeOwner: safeJsonClone(state.activeOwner, { depth: 4, maxText: 900, maxArray: 12 }),
+    activeOwnerLocked: Boolean(state.activeOwnerLocked && state.activeOwner?.taskType),
     activeLeader: safeJsonClone(state.activeLeader, { depth: 4, maxText: 900, maxArray: 12 }),
     activeLeaderLocked: Boolean(state.activeLeaderLocked && state.activeLeader?.taskType),
     pendingLeaderChange: safeJsonClone(state.pendingLeaderChange, { depth: 3, maxText: 1000, maxArray: 4 }),
@@ -591,34 +591,12 @@ function saveChatRuntimeSnapshot(key = CHATUX_RUNTIME_STATE_KEY, reason = 'runti
 }
 
 function compactChatRuntimeSnapshot(snapshot = {}) {
-  const session = normalizeChatSession(snapshot.session || {});
-  return {
-    version: 1,
-    savedAt: snapshot.savedAt || isoNow(),
-    reason: String(snapshot.reason || 'runtime_compact').slice(0, 80),
-    returnPath: snapshot.returnPath || CHATUX_RETURN_PATH,
-    currentChatSessionId: String(snapshot.currentChatSessionId || session?.id || '').trim(),
-    session: session ? normalizeChatSession({
-      id: session.id,
-      sessionId: session.sessionId,
-      title: session.title,
-      messages: (Array.isArray(session.messages) ? session.messages : []).slice(-50),
-      linkedOrderId: session.linkedOrderId || snapshot.orderId || '',
-      activeJobIds: [],
-      relatedOrderIds: Array.isArray(session.relatedOrderIds) ? session.relatedOrderIds : [],
-      activeWork: false,
-      activeLeader: session.activeLeader || null,
-      activeLeaderLocked: session.activeLeaderLocked,
-      createdAt: session.createdAt,
-      updatedAt: session.updatedAt || isoNow()
-    }) : null,
-    orderId: String(snapshot.orderId || session?.linkedOrderId || '').trim(),
-    trackedOrderIds: Array.isArray(snapshot.trackedOrderIds) ? snapshot.trackedOrderIds.slice(-20) : [],
-    activeLeader: snapshot.activeLeader || session?.activeLeader || null,
-    activeLeaderLocked: Boolean(snapshot.activeLeaderLocked || session?.activeLeaderLocked),
-    conversationLanguage: String(snapshot.conversationLanguage || '').trim(),
-    promptValue: String(snapshot.promptValue || '').slice(0, 4000)
-  };
+  return compactChatRuntimeSnapshotForSession(snapshot, {
+    normalizeChatSession,
+    currentAccountKey: currentChatAccountKey(),
+    returnPath: CHATUX_RETURN_PATH,
+    nowIso
+  });
 }
 
 function saveChatRuntimeSnapshotObject(key = CHATUX_RUNTIME_STATE_KEY, snapshot = {}) {
@@ -698,10 +676,61 @@ function clearActiveOrderMemory() {
   agentMapRunStore.clear();
 }
 
+function stopChatRuntimeTimers() {
+  if (state.polling) window.clearInterval(state.polling);
+  if (state.deliveryBackfill) window.clearInterval(state.deliveryBackfill);
+  if (state.oauthPopupMonitor) window.clearInterval(state.oauthPopupMonitor);
+  if (state.authRefreshRetryTimer) window.clearTimeout(state.authRefreshRetryTimer);
+  state.polling = null;
+  state.deliveryBackfill = null;
+  state.oauthPopupMonitor = null;
+  state.authRefreshRetryTimer = null;
+}
+
+function purgeChatStateForAccountBoundary(reason = 'account_boundary') {
+  state.accountBoundaryRevision = (Number(state.accountBoundaryRevision) || 0) + 1;
+  stopChatRuntimeTimers();
+  stopProgressNarratorAnimation();
+  state.pendingChatRestoreSnapshot = null;
+  state.restoredRuntimeAccountKey = '';
+  state.currentChatSessionId = '';
+  state.chatMessages = [];
+  state.chatSessions = [];
+  state.lastTranscriptPrompt = '';
+  state.lastTranscriptId = '';
+  state.pendingIntake = null;
+  state.draft = null;
+  state.pendingAppContext = null;
+  state.activeOwner = null;
+  state.activeOwnerLocked = false;
+  state.activeLeader = null;
+  state.activeLeaderLocked = false;
+  state.pendingLeaderChange = null;
+  state.conversationLanguage = '';
+  state.chatSessionHistoryFetchedAt = 0;
+  state.chatSessionHistoryRequest = null;
+  state.draftRevision += 1;
+  clearActiveOrderMemory();
+  clearQueuedChatSessionSnapshot();
+  clearChatRuntimeState();
+  safeSessionStorageRemove(CHATUX_OAUTH_RETURN_STATE_KEY);
+  clearChatRestoreParamsFromUrl();
+  if (els.promptInput) els.promptInput.value = '';
+  if (els.chatThread) {
+    els.chatThread.innerHTML = '';
+    appendTextMessage('assistant', CHATUX_WELCOME_TEXT, { record: false });
+  }
+  renderActiveLeaderStatus();
+  updateComposerMode();
+  renderChatSessionSidebar();
+  return reason;
+}
+
 function serverChatSessionPayload(snapshot = {}) {
   const session = normalizeChatSession(snapshot.session || {});
   if (!session) return null;
   return {
+    accountKey: normalizeChatAccountKey(snapshot.accountKey || currentChatAccountKey()),
     session,
     orderId: String(snapshot.orderId || session.linkedOrderId || '').trim(),
     trackedOrderIds: Array.isArray(snapshot.trackedOrderIds) ? snapshot.trackedOrderIds.slice(-40) : []
@@ -761,6 +790,7 @@ function restoreChatMessagesFromSession(session = null) {
 function applyRestoredChatSnapshot(snapshot = {}, request = {}) {
   const session = normalizeChatSession(snapshot.session || {});
   if (!session && !snapshot.orderId && !snapshot.pendingIntake && !snapshot.draft) return false;
+  state.restoredRuntimeAccountKey = chatSnapshotAccountKey(snapshot);
   const viewRevision = bumpChatViewRevision();
   if (state.polling) window.clearInterval(state.polling);
   stopProgressNarratorAnimation();
@@ -777,8 +807,12 @@ function applyRestoredChatSnapshot(snapshot = {}, request = {}) {
   state.pendingIntake = snapshot.pendingIntake && typeof snapshot.pendingIntake === 'object' ? snapshot.pendingIntake : null;
   state.draft = snapshot.draft && typeof snapshot.draft === 'object' ? snapshot.draft : null;
   state.pendingAppContext = snapshot.pendingAppContext && typeof snapshot.pendingAppContext === 'object' ? snapshot.pendingAppContext : null;
-  state.activeLeader = snapshot.activeLeader && typeof snapshot.activeLeader === 'object' ? snapshot.activeLeader : null;
-  state.activeLeaderLocked = Boolean(snapshot.activeLeaderLocked && state.activeLeader?.taskType);
+  state.activeOwner = snapshot.activeOwner && typeof snapshot.activeOwner === 'object'
+    ? snapshot.activeOwner
+    : (session?.activeOwner && typeof session.activeOwner === 'object' ? session.activeOwner : null);
+  state.activeOwnerLocked = Boolean((snapshot.activeOwnerLocked || session?.activeOwnerLocked) && state.activeOwner?.taskType);
+  state.activeLeader = snapshot.activeLeader && typeof snapshot.activeLeader === 'object' ? snapshot.activeLeader : (state.activeOwner?.type === 'leader' ? state.activeOwner : null);
+  state.activeLeaderLocked = Boolean((snapshot.activeLeaderLocked || session?.activeLeaderLocked) && state.activeLeader?.taskType);
   state.pendingLeaderChange = snapshot.pendingLeaderChange && typeof snapshot.pendingLeaderChange === 'object' ? snapshot.pendingLeaderChange : null;
   state.conversationLanguage = String(snapshot.conversationLanguage || '').trim();
   state.draftRevision += 1;
@@ -813,6 +847,48 @@ function applyRestoredChatSnapshot(snapshot = {}, request = {}) {
   return true;
 }
 
+function restoreChatSnapshotForCurrentAccount(snapshot = {}, request = {}, options = {}) {
+  const snapshotKey = chatSnapshotAccountKey(snapshot);
+  const currentKey = currentChatAccountKey();
+  const storageKey = String(options.storageKey || CHATUX_RUNTIME_STATE_KEY);
+  if (!snapshotKey) {
+    if (storageKey === CHATUX_OAUTH_RETURN_STATE_KEY) safeSessionStorageRemove(CHATUX_OAUTH_RETURN_STATE_KEY);
+    else clearChatRuntimeState();
+    return false;
+  }
+  if (!currentKey) {
+    state.restoredRuntimeAccountKey = snapshotKey;
+    state.pendingChatRestoreSnapshot = {
+      snapshot,
+      request: request && typeof request === 'object' ? request : {},
+      storageKey
+    };
+    return false;
+  }
+  if (snapshotKey !== currentKey) {
+    if (storageKey === CHATUX_OAUTH_RETURN_STATE_KEY) safeSessionStorageRemove(CHATUX_OAUTH_RETURN_STATE_KEY);
+    else clearChatRuntimeState();
+    state.pendingChatRestoreSnapshot = null;
+    state.restoredRuntimeAccountKey = '';
+    return false;
+  }
+  const restored = applyRestoredChatSnapshot(snapshot, request);
+  if (restored) {
+    if (storageKey === CHATUX_OAUTH_RETURN_STATE_KEY) safeSessionStorageRemove(CHATUX_OAUTH_RETURN_STATE_KEY);
+    state.pendingChatRestoreSnapshot = null;
+    state.restoredRuntimeAccountKey = '';
+  }
+  return restored;
+}
+
+function restorePendingChatSnapshotForCurrentAccount() {
+  const pending = state.pendingChatRestoreSnapshot;
+  if (!pending?.snapshot) return false;
+  return restoreChatSnapshotForCurrentAccount(pending.snapshot, pending.request || {}, {
+    storageKey: pending.storageKey || CHATUX_RUNTIME_STATE_KEY
+  });
+}
+
 function restoreChatOAuthReturnStateFromUrl() {
   const request = chatRestoreRequestFromUrl();
   if (!request.requested) return false;
@@ -825,14 +901,15 @@ function restoreChatOAuthReturnStateFromUrl() {
     safeSessionStorageRemove(CHATUX_OAUTH_RETURN_STATE_KEY);
     return false;
   }
-  const savedMs = Date.parse(snapshot?.savedAt || '');
-  if (!Number.isFinite(savedMs) || Date.now() - savedMs > CHATUX_OAUTH_RETURN_MAX_AGE_MS) {
+  if (chatSessionSnapshotExpired(snapshot, CHATUX_OAUTH_RETURN_MAX_AGE_MS)) {
     safeSessionStorageRemove(CHATUX_OAUTH_RETURN_STATE_KEY);
     return false;
   }
   const savedSessionId = String(snapshot?.session?.id || snapshot?.session?.sessionId || snapshot?.currentChatSessionId || '').trim();
   if (request.sessionId && savedSessionId && request.sessionId !== savedSessionId) return false;
-  const restored = applyRestoredChatSnapshot(snapshot, request);
+  const restored = restoreChatSnapshotForCurrentAccount(snapshot, request, {
+    storageKey: CHATUX_OAUTH_RETURN_STATE_KEY
+  });
   if (restored) {
     safeSessionStorageRemove(CHATUX_OAUTH_RETURN_STATE_KEY);
     clearChatRestoreParamsFromUrl();
@@ -850,12 +927,13 @@ function restoreChatRuntimeState() {
     clearChatRuntimeState();
     return false;
   }
-  const savedMs = Date.parse(snapshot?.savedAt || '');
-  if (!Number.isFinite(savedMs) || Date.now() - savedMs > CHATUX_RUNTIME_STATE_MAX_AGE_MS) {
+  if (chatSessionSnapshotExpired(snapshot, CHATUX_RUNTIME_STATE_MAX_AGE_MS)) {
     clearChatRuntimeState();
     return false;
   }
-  return applyRestoredChatSnapshot({ ...snapshot, reason: snapshot.reason || 'runtime_reload' }, {});
+  return restoreChatSnapshotForCurrentAccount({ ...snapshot, reason: snapshot.reason || 'runtime_reload' }, {}, {
+    storageKey: CHATUX_RUNTIME_STATE_KEY
+  });
 }
 
 function restoreRequestedChatSessionFromHistory() {
@@ -981,6 +1059,8 @@ function startNewChatSession() {
   state.lastTranscriptId = '';
   state.draft = null;
   state.pendingIntake = null;
+  state.activeOwner = null;
+  state.activeOwnerLocked = false;
   state.activeLeader = null;
   state.activeLeaderLocked = false;
   state.pendingLeaderChange = null;
@@ -1015,7 +1095,11 @@ function loadChatSession(sessionId = '') {
   state.lastTranscriptId = '';
   state.draft = null;
   state.pendingIntake = null;
-  state.activeLeader = session.activeLeader && typeof session.activeLeader === 'object' ? session.activeLeader : null;
+  state.activeOwner = session.activeOwner && typeof session.activeOwner === 'object'
+    ? session.activeOwner
+    : (session.activeLeader && typeof session.activeLeader === 'object' ? { type: 'leader', ...session.activeLeader } : null);
+  state.activeOwnerLocked = Boolean(session.activeOwnerLocked && state.activeOwner?.taskType);
+  state.activeLeader = session.activeLeader && typeof session.activeLeader === 'object' ? session.activeLeader : (state.activeOwner?.type === 'leader' ? state.activeOwner : null);
   state.activeLeaderLocked = Boolean(session.activeLeaderLocked && state.activeLeader?.taskType);
   state.pendingLeaderChange = null;
   state.draftRevision += 1;
@@ -1062,8 +1146,18 @@ function chatSessionHistoryApiPath() {
 }
 
 function applyAuthState(auth = {}, options = {}) {
-  state.auth = auth || {};
   const loggedIn = Boolean(auth?.loggedIn || auth?.login || auth?.user);
+  const previousAccountKey = currentChatAccountKey();
+  const nextAccountKey = loggedIn ? authAccountKey(auth || {}) : '';
+  if (
+    (previousAccountKey && nextAccountKey && previousAccountKey !== nextAccountKey)
+    || (previousAccountKey && !loggedIn)
+  ) {
+    purgeChatStateForAccountBoundary('auth_account_changed');
+  }
+  state.auth = auth || {};
+  state.authAccountKey = nextAccountKey;
+  if (nextAccountKey) restorePendingChatSnapshotForCurrentAccount();
   if (!loggedIn && options.redirectIfGuest) {
     const loginUrl = new URL('/login', window.location.origin);
     const nextPath = `${window.location.pathname === '/chat.html' ? CHATUX_RETURN_PATH : window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -1087,12 +1181,16 @@ async function refreshChatSessionHistory(options = {}) {
   const force = options.force === true;
   if (!force && state.chatSessionHistoryFetchedAt && Date.now() - state.chatSessionHistoryFetchedAt < 60_000) return state.chatSessions;
   if (state.chatSessionHistoryRequest) return state.chatSessionHistoryRequest;
+  const requestBoundaryRevision = Number(state.accountBoundaryRevision) || 0;
   state.chatSessionHistoryRequest = api(chatSessionHistoryApiPath(), { method: 'GET' })
     .then((result) => {
+      if (requestBoundaryRevision !== (Number(state.accountBoundaryRevision) || 0)) return state.chatSessions;
       if (result?.auth && typeof result.auth === 'object') applyAuthState(result.auth);
       const serverSessions = (Array.isArray(result?.chatMemory) ? result.chatMemory : [])
         .map(chatSessionFromMemory)
         .filter(Boolean);
+      const currentSession = currentChatSessionPayload();
+      state.chatSessions = currentSession ? [currentSession] : [];
       for (const session of serverSessions) upsertChatSession(session);
       state.chatSessionHistoryFetchedAt = Date.now();
       renderChatSessionSidebar();
@@ -1367,7 +1465,7 @@ function taskLabel(taskType = '') {
     writing: 'Writing Agent',
     list_creator: 'List Creator Agent',
     landing: 'Landing Agent',
-    seo_gap: 'SEO Agent',
+    seo_specialist: 'SEO Specialist',
     acquisition_automation: 'Acquisition Automation Agent',
     directory_submission: 'Directory Submission Agent',
     x_post: 'X Ops Connector Agent'
@@ -1393,6 +1491,35 @@ function conversationOwnerFromPrepared(value = {}, fallback = {}) {
     || fallback.conversationOwner
     || {};
   const ownerType = String(owner.type || source.ownerType || source.owner_type || fallback.ownerType || '').trim().toLowerCase();
+  const sourceOwnerType = String(
+    source.activeOwnerType
+    || source.active_owner_type
+    || intake.activeOwnerType
+    || intake.active_owner_type
+    || fallback.activeOwnerType
+    || fallback.active_owner_type
+    || ''
+  ).trim().toLowerCase();
+  const effectiveOwnerType = ownerType || sourceOwnerType;
+  const sourceOwnerLocked = source.activeOwnerLocked === true
+    || source.active_owner_locked === true
+    || intake.activeOwnerLocked === true
+    || intake.active_owner_locked === true;
+  const fallbackOwnerLocked = fallback.activeOwnerLocked === true || fallback.active_owner_locked === true;
+  const sourceOwnerTaskType = String(
+    source.activeOwnerTaskType
+    || source.active_owner_task_type
+    || intake.activeOwnerTaskType
+    || intake.active_owner_task_type
+    || ''
+  ).trim().toLowerCase();
+  const sourceOwnerName = String(
+    source.activeOwnerName
+    || source.active_owner_name
+    || intake.activeOwnerName
+    || intake.active_owner_name
+    || ''
+  ).trim();
   const sourceLeaderLocked = source.activeLeaderLocked === true
     || source.active_leader_locked === true
     || intake.activeLeaderLocked === true
@@ -1414,23 +1541,37 @@ function conversationOwnerFromPrepared(value = {}, fallback = {}) {
   ).trim();
   const fallbackLeaderTaskType = ownerType ? '' : (fallbackLeaderLocked ? fallback.activeLeaderTaskType || '' : '');
   const fallbackLeaderName = ownerType ? '' : (fallbackLeaderLocked ? fallback.activeLeaderName || '' : '');
+  const fallbackOwnerTaskType = effectiveOwnerType ? String(fallback.activeOwnerTaskType || fallback.active_owner_task_type || '').trim().toLowerCase() : '';
+  const fallbackOwnerName = effectiveOwnerType ? String(fallback.activeOwnerName || fallback.active_owner_name || '').trim() : '';
   const taskType = String(
     owner.taskType
     || owner.task_type
-    || (ownerType === 'leader' || sourceLeaderLocked ? sourceLeaderTaskType : '')
+    || (effectiveOwnerType && effectiveOwnerType !== 'leader' ? sourceOwnerTaskType : '')
+    || (effectiveOwnerType === 'leader' || sourceLeaderLocked ? sourceLeaderTaskType : '')
+    || fallbackOwnerTaskType
     || fallbackLeaderTaskType
     || ''
   ).trim().toLowerCase();
   const label = String(
     owner.label
-    || (ownerType === 'leader' || sourceLeaderLocked ? sourceLeaderName : '')
+    || (effectiveOwnerType && effectiveOwnerType !== 'leader' ? sourceOwnerName : '')
+    || (effectiveOwnerType === 'leader' || sourceLeaderLocked ? sourceLeaderName : '')
+    || fallbackOwnerName
     || fallbackLeaderName
     || (taskType ? taskLabel(taskType) : 'CAIt')
   ).trim();
   const reason = String(owner.reason || source.reason || fallback.reason || '').trim();
-  if ((ownerType === 'leader' || owner.taskType || owner.task_type || sourceLeaderLocked || fallbackLeaderLocked) && taskType) {
+  if ((effectiveOwnerType === 'leader' || sourceLeaderLocked || fallbackLeaderLocked) && taskType) {
     return {
       type: 'leader',
+      taskType,
+      label: label || taskLabel(taskType),
+      reason
+    };
+  }
+  if ((effectiveOwnerType === 'agent' || effectiveOwnerType === 'specialist' || sourceOwnerLocked || fallbackOwnerLocked) && taskType) {
+    return {
+      type: 'agent',
       taskType,
       label: label || taskLabel(taskType),
       reason
@@ -1503,6 +1644,14 @@ function withLeaderOwner(value = {}, owner = null, extras = {}) {
     task_type: owner.taskType,
     ...(source.prompt ? { prompt: rewriteStructuredBriefLeader(source.prompt, owner) } : {}),
     conversationOwner: owner,
+    activeOwnerType: 'leader',
+    active_owner_type: 'leader',
+    activeOwnerTaskType: owner.taskType,
+    active_owner_task_type: owner.taskType,
+    activeOwnerName: owner.label || taskLabel(owner.taskType),
+    active_owner_name: owner.label || taskLabel(owner.taskType),
+    activeOwnerLocked: true,
+    active_owner_locked: true,
     activeLeaderTaskType: owner.taskType,
     active_leader_task_type: owner.taskType,
     activeLeaderName: owner.label || taskLabel(owner.taskType),
@@ -1522,6 +1671,55 @@ function lockedLeaderOwnerForPrompt(prompt = '', options = {}) {
 function currentLockedLeaderOwner() {
   if (!state.activeLeaderLocked || !state.activeLeader?.taskType) return null;
   return leaderOwner(state.activeLeader.taskType, state.activeLeader.reason || 'Leader already confirmed in this chat.');
+}
+
+function agentOwner(taskType = '', label = '', reason = '') {
+  const safeTaskType = String(taskType || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (!safeTaskType || isLeaderTaskType(safeTaskType)) return null;
+  return {
+    type: 'agent',
+    taskType: safeTaskType,
+    label: String(label || taskLabel(safeTaskType)).trim() || taskLabel(safeTaskType),
+    reason: String(reason || '').trim()
+  };
+}
+
+function lockedAgentOwnerForPrompt(prompt = '', options = {}) {
+  if (!state.activeOwnerLocked || state.activeOwner?.type !== 'agent' || !state.activeOwner?.taskType) return null;
+  if (options.allowLeaderChange === true || options.leaderChangeRequested === true || explicitLeaderChangeTaskTypeFromText(prompt)) return null;
+  return agentOwner(state.activeOwner.taskType, state.activeOwner.label, state.activeOwner.reason || 'Agent already confirmed in this chat.');
+}
+
+function currentLockedConversationOwner() {
+  return currentLockedLeaderOwner() || lockedAgentOwnerForPrompt('', {});
+}
+
+function withConversationOwner(value = {}, owner = null, extras = {}) {
+  if (!owner?.taskType) return value;
+  if (owner.type === 'leader') return withLeaderOwner(value, owner, extras);
+  const source = value && typeof value === 'object' ? value : {};
+  const label = owner.label || taskLabel(owner.taskType);
+  return {
+    ...source,
+    ...extras,
+    taskType: owner.taskType,
+    task_type: owner.taskType,
+    conversationOwner: owner,
+    activeOwnerType: 'agent',
+    active_owner_type: 'agent',
+    activeOwnerTaskType: owner.taskType,
+    active_owner_task_type: owner.taskType,
+    activeOwnerName: label,
+    active_owner_name: label,
+    activeOwnerLocked: true,
+    active_owner_locked: true,
+    activeLeaderTaskType: '',
+    active_leader_task_type: '',
+    activeLeaderName: '',
+    active_leader_name: '',
+    activeLeaderLocked: false,
+    active_leader_locked: false
+  };
 }
 
 function leaderChangeProposalHtml(currentOwner = {}, suggestedOwner = {}, sample = '') {
@@ -1603,6 +1801,13 @@ async function resolvePendingLeaderChange(accept = false, taskType = '') {
     return;
   }
   state.pendingLeaderChange = null;
+  state.activeOwner = {
+    type: 'leader',
+    taskType: owner.taskType,
+    label: owner.label || taskLabel(owner.taskType),
+    reason: owner.reason || ''
+  };
+  state.activeOwnerLocked = true;
   state.activeLeader = {
     taskType: owner.taskType,
     label: owner.label || taskLabel(owner.taskType),
@@ -1617,7 +1822,7 @@ async function resolvePendingLeaderChange(accept = false, taskType = '') {
     state.pendingIntake.conversationOwner = owner;
   }
   if (state.draft) {
-    state.draft = withLeaderOwner(state.draft, owner, {
+    state.draft = withConversationOwner(state.draft, owner, {
       leaderChangeRequested: accept,
       leader_change_requested: accept
     });
@@ -1655,7 +1860,14 @@ function sameConversationOwner(left = {}, right = {}) {
 
 function renderActiveLeaderStatus() {
   if (!els.activeLeaderStatus) return;
-  const leader = state.activeLeader;
+  const owner = state.activeOwner || (state.activeLeader ? { type: 'leader', ...state.activeLeader } : null);
+  if (owner?.type === 'agent' && owner.taskType) {
+    els.activeLeaderStatus.textContent = `Agent: ${owner.label || taskLabel(owner.taskType)}`;
+    els.activeLeaderStatus.dataset.owner = 'agent';
+    els.activeLeaderStatus.title = owner.reason || 'This agent is gathering details, drafting, and revising in this chat.';
+    return;
+  }
+  const leader = owner?.type === 'leader' ? owner : state.activeLeader;
   if (leader?.taskType) {
     els.activeLeaderStatus.textContent = `Lead: ${leader.label || taskLabel(leader.taskType)}`;
     els.activeLeaderStatus.dataset.owner = 'leader';
@@ -1668,19 +1880,36 @@ function renderActiveLeaderStatus() {
 }
 
 function setConversationOwnerFromPrepared(prepared = {}, options = {}) {
-  const previous = state.activeLeader
-    ? { type: 'leader', ...state.activeLeader }
-    : { type: 'cait', label: 'CAIt', taskType: '' };
+  const previous = state.activeOwner
+    ? { ...state.activeOwner }
+    : (state.activeLeader ? { type: 'leader', ...state.activeLeader } : { type: 'cait', label: 'CAIt', taskType: '' });
   const lockedStateLeader = state.activeLeaderLocked && state.activeLeader?.taskType
     ? state.activeLeader
     : null;
-  const lockedOwner = lockedLeaderOwnerForPrompt(options.sample || prepared.prompt || '', options);
+  const lockedStateOwner = state.activeOwnerLocked && state.activeOwner?.taskType
+    ? state.activeOwner
+    : null;
+  const lockedOwner = lockedLeaderOwnerForPrompt(options.sample || prepared.prompt || '', options)
+    || lockedAgentOwnerForPrompt(options.sample || prepared.prompt || '', options);
   const owner = lockedOwner || conversationOwnerFromPrepared(prepared, {
     activeLeaderTaskType: options.activeLeaderTaskType || lockedStateLeader?.taskType || '',
     activeLeaderName: options.activeLeaderName || lockedStateLeader?.label || '',
     activeLeaderLocked: options.activeLeaderLocked === true || Boolean(lockedStateLeader),
+    activeOwnerType: options.activeOwnerType || lockedStateOwner?.type || '',
+    activeOwnerTaskType: options.activeOwnerTaskType || lockedStateOwner?.taskType || '',
+    activeOwnerName: options.activeOwnerName || lockedStateOwner?.label || '',
+    activeOwnerLocked: options.activeOwnerLocked === true || Boolean(lockedStateOwner),
     conversationOwner: options.conversationOwner || null
   });
+  state.activeOwner = owner.type !== 'cait'
+    ? {
+        type: owner.type,
+        taskType: owner.taskType,
+        label: owner.label || taskLabel(owner.taskType),
+        reason: owner.reason || ''
+      }
+    : null;
+  state.activeOwnerLocked = Boolean(state.activeOwner?.taskType && (state.activeOwnerLocked || owner.type !== 'cait'));
   state.activeLeader = owner.type === 'leader'
     ? {
         taskType: owner.taskType,
@@ -1690,13 +1919,21 @@ function setConversationOwnerFromPrepared(prepared = {}, options = {}) {
     : null;
   state.activeLeaderLocked = Boolean(state.activeLeader?.taskType && (state.activeLeaderLocked || owner.type === 'leader'));
   renderActiveLeaderStatus();
-  const changed = !sameConversationOwner(previous, state.activeLeader ? { type: 'leader', ...state.activeLeader } : { type: 'cait', label: 'CAIt', taskType: '' });
+  const current = state.activeOwner || (state.activeLeader ? { type: 'leader', ...state.activeLeader } : { type: 'cait', label: 'CAIt', taskType: '' });
+  const changed = !sameConversationOwner(previous, current);
   if (options.announce === true && changed) {
     if (state.activeLeader) {
       const label = state.activeLeader.label || taskLabel(state.activeLeader.taskType);
       appendTextMessage('assistant', chatText(
         `${label} is now leading this order. CAIt will stay as the router, and ${label} will gather missing details, request approvals, and coordinate specialists/apps.`,
         `${label} にチャット主体を切り替えます。CAIt はルーターとして残り、${label} が不足情報の確認、承認ポイント、専門エージェント/アプリ連携を進めます。`,
+        options.sample || prepared.prompt || ''
+      ), { tone: 'ok', label: 'CAIt' });
+    } else if (state.activeOwner?.type === 'agent') {
+      const label = state.activeOwner.label || taskLabel(state.activeOwner.taskType);
+      appendTextMessage('assistant', chatText(
+        `${label} is now handling this chat. CAIt will stay as the router, and ${label} will gather details, draft, revise, and prepare the order.`,
+        `${label} がこのチャットを担当します。CAIt はルーターとして残り、${label} が不足情報の確認、作成、修正、発注準備を進めます。`,
         options.sample || prepared.prompt || ''
       ), { tone: 'ok', label: 'CAIt' });
     } else {
@@ -1707,11 +1944,11 @@ function setConversationOwnerFromPrepared(prepared = {}, options = {}) {
       ), { tone: 'ok', label: 'CAIt' });
     }
   }
-  return state.activeLeader;
+  return state.activeOwner || state.activeLeader;
 }
 
 function activeActorLabel(fallback = 'CAIt') {
-  return state.activeLeader?.label || fallback;
+  return state.activeOwner?.label || state.activeLeader?.label || fallback;
 }
 
 function agentUsageKey(entry = {}) {
@@ -1792,7 +2029,21 @@ const USER_DELIVERY_INTERNAL_SECTION_TITLES = new Set([
   'acceptance checks',
   'scope boundaries',
   'specialist method',
-  'review notes'
+  'delivery packet',
+  'review notes',
+  'original information used',
+  'upstream work used',
+  '受け渡し情報の利用',
+  'braveソース由来の補助分析',
+  'agent handoff',
+  '下流エージェント用handoff packet',
+  '後続エージェントへの制約',
+  '信頼性と品質保証',
+  '補助成果物',
+  'specialist成果物プレビュー',
+  '実行ステータス',
+  'supporting work products',
+  'delivered content summaries'
 ]);
 
 function cleanDeliverySectionTitle(line = '') {
@@ -1806,7 +2057,19 @@ function cleanDeliverySectionTitle(line = '') {
 
 function deliveryLineLooksInternal(line = '') {
   const text = String(line || '').toLowerCase();
-  return /provider\.runjob|agent-file provider implementation|agent_file_provider_delivery|central built-in runner|future behavior changes should be made|共通\s*builtin\s*runner|agent ファイル内の provider|agent ファイルの provider 実装/.test(text);
+  return /provider\.runjob|agent-file provider implementation|agent_file_provider_delivery|central built-in runner|future behavior changes should be made|共通\s*builtin\s*runner|agent ファイル内の provider|agent ファイルの provider 実装|handoff evidence attached|leader-owned prior work|external posting, sending, ad launch|leader checkpoint|deliveryで表示される要約|trust profile|根拠ゲート|実行ゲート|品質ゲート|受け入れ条件|レビュー条件|未保証|source run\s*:|_file content is available/.test(text);
+}
+
+function deliveryContentLooksTemplateOnly(content = '') {
+  const text = String(content || '').trim();
+  if (!text) return true;
+  const nonHeadingLines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !/^#{1,6}\s+/.test(line));
+  if (!nonHeadingLines.length) return true;
+  return /(^|\n)##\s+Delivery packet\s*\n\s*Write sections for/i.test(text)
+    && !/(answer first|evidence used|evidence status|decision first|seo page recommendation|replacement copy|hero copy|body draft|final delivery first|target and inputs|data quality check|measurement plan|next action)/i.test(text);
 }
 
 function sanitizeDeliveryMarkdownForUser(content = '') {
@@ -1850,12 +2113,8 @@ function sanitizeDeliveryMarkdownForUser(content = '') {
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  return cleaned || raw
-    .split('\n')
-    .filter((line) => !deliveryLineLooksInternal(line))
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  if (!deliveryContentLooksTemplateOnly(cleaned)) return cleaned;
+  return '';
 }
 
 function sanitizeDeliveryFileForUser(file = {}, fallbackName = 'delivery.md') {
@@ -1894,6 +2153,21 @@ function isInternalDeliveryFile(file = {}) {
 
 function visibleDeliveryFiles(files = []) {
   return (Array.isArray(files) ? files : []).filter((file) => file && !isInternalDeliveryFile(file));
+}
+
+function deliveryFilePriority(file = {}) {
+  const sourceTask = String(file?.source_task_type || file?.sourceTaskType || '').trim().toLowerCase();
+  const name = String(file?.name || file?.filename || '').trim().toLowerCase();
+  const contentType = String(file?.content_type || file?.contentType || '').trim().toLowerCase();
+  const text = `${sourceTask}\n${name}\n${contentType}`;
+  if (/_leader\b|team[-_\s]?leader|final/.test(text)) return 0;
+  if (/seo|landing|writing|writer|article|page/.test(text)) return 10;
+  if (/x_post|x-post|reddit|indie_hackers|instagram|directory/.test(text)) return 20;
+  if (/media_planner/.test(text)) return 30;
+  if (/research/.test(text)) return 40;
+  if (/data_analysis|analytics/.test(text)) return 50;
+  if (/list_creator|cold_email|email/.test(text)) return 80;
+  return 60;
 }
 
 function cleanReadableBundleContent(value = '') {
@@ -2063,7 +2337,7 @@ async function api(path, options = {}) {
       headers.set('x-aiagent2-csrf', state.auth.csrfToken);
     }
     if (state.visitorId) headers.set('x-aiagent2-visitor-id', state.visitorId);
-    const timeoutMs = Math.max(0, Number(options.timeoutMs || 0) || 0);
+    const timeoutMs = Math.max(0, Number(options.attemptTimeoutMs || options.timeoutMs || 0) || 0);
     const controller = timeoutMs && !options.signal ? new AbortController() : null;
     const timeout = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
     try {
@@ -2190,80 +2464,36 @@ function appendThinkingMessage(sample = '') {
 }
 
 function progressNarratorHtml(text = '', options = {}) {
-  const detail = String(options.detail || '').trim();
-  const status = String(options.status || '').trim();
-  const phase = String(options.phase || '').trim();
-  const steps = Array.isArray(options.steps) ? options.steps.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 4) : [];
-  const streamText = progressNarratorStreamText(text, options, 0);
-  const progress = progressNarratorProgress(options);
-  const progressLabel = progressNarratorProgressLabel(options, progress);
-  return [
-    '<div class="progress-narrator" data-progress-narrator>',
-    '<div class="progress-narrator-row">',
-    `<span class="progress-narrator-pulse" aria-hidden="true"></span>`,
-    `<strong data-progress-narrator-text>${escapeHtml(text || 'Working through the order...')}</strong>`,
-    '<span class="progress-narrator-caret" aria-hidden="true"></span>',
-    '</div>',
-    '<div class="progress-narrator-bar-row">',
-    `<div class="progress-narrator-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${escapeHtml(String(progress.percent))}" style="--progress-value: ${escapeHtml(String(progress.percent))}%"><span></span></div>`,
-    `<span class="progress-narrator-bar-label" data-progress-narrator-bar-label>${escapeHtml(progressLabel)}</span>`,
-    '</div>',
-    `<div class="progress-narrator-stream" data-progress-narrator-stream aria-live="off">${escapeHtml(streamText)}</div>`,
-    detail ? `<div class="progress-narrator-detail" data-progress-narrator-detail>${escapeHtml(detail)}</div>` : '<div class="progress-narrator-detail" data-progress-narrator-detail hidden></div>',
-    (status || phase) ? `<div class="progress-narrator-meta" data-progress-narrator-meta>${escapeHtml([phase, status].filter(Boolean).join(' / '))}</div>` : '<div class="progress-narrator-meta" data-progress-narrator-meta hidden></div>',
-    steps.length ? `<div class="progress-narrator-steps" data-progress-narrator-steps>${steps.map((step) => `<span>${escapeHtml(step)}</span>`).join('')}</div>` : '<div class="progress-narrator-steps" data-progress-narrator-steps hidden></div>',
-    '</div>'
-  ].join('\n');
+  return agentProgressNarratorHtml(text, {
+    ...options,
+    language: state.conversationLanguage,
+    isJapanese: (sample) => chatLanguage(sample) === 'ja',
+    escapeHtml
+  });
 }
 
 function progressNarratorProgress(options = {}) {
-  const explicit = Number(options.progressPercent ?? options.percent ?? options.progress?.percent);
-  if (Number.isFinite(explicit)) {
-    return { percent: Math.max(0, Math.min(100, Math.round(explicit))), known: true };
-  }
-  const total = Number(options.total ?? options.progress?.total);
-  const completed = Number(options.completed ?? options.progress?.completed);
-  if (Number.isFinite(total) && total > 0 && Number.isFinite(completed)) {
-    const percent = Math.round((Math.max(0, completed) / total) * 100);
-    return { percent: Math.max(options.done === true ? 100 : 6, Math.min(100, percent)), known: true };
-  }
-  return { percent: options.done === true ? 100 : 12, known: false };
+  return agentProgressNarratorProgress(options);
 }
 
 function progressNarratorProgressLabel(options = {}, progress = progressNarratorProgress(options)) {
-  const explicitLabel = String(options.progressLabel || options.progress?.label || '').trim();
-  if (explicitLabel) return explicitLabel;
-  const total = Number(options.total ?? options.progress?.total);
-  const completed = Number(options.completed ?? options.progress?.completed);
-  if (Number.isFinite(total) && total > 0 && Number.isFinite(completed)) {
-    return `${Math.max(0, Math.min(total, completed))}/${total}`;
-  }
-  if (options.done === true) return '100%';
-  return progress.known ? `${progress.percent}%` : 'Working';
+  return agentProgressNarratorProgressLabel(options, progress);
 }
 
 function progressNarratorStreamSegments(text = '', options = {}) {
-  const sample = [text, options.detail, options.phase, options.status, state.conversationLanguage].join(' ');
-  const ja = chatLanguage(sample) === 'ja';
-  const base = ja
-    ? ['進捗を更新中', 'エージェントツリーを同期中', '完了状況を確認中']
-    : ['updating progress', 'syncing agent map', 'checking completion'];
-  const specific = [
-    options.phase ? `${ja ? '現在' : 'now'}: ${options.phase}` : '',
-    options.status ? `${ja ? '状況' : 'status'}: ${options.status}` : '',
-    ...(Array.isArray(options.steps) ? options.steps : []).slice(0, 3)
-  ].map((item) => String(item || '').trim()).filter(Boolean);
-  return [...specific, ...base].filter(Boolean).slice(0, 5);
+  return agentProgressNarratorStreamSegments(text, {
+    ...options,
+    language: state.conversationLanguage,
+    isJapanese: (sample) => chatLanguage(sample) === 'ja'
+  });
 }
 
 function progressNarratorStreamText(text = '', options = {}, frame = 0) {
-  const segments = progressNarratorStreamSegments(text, options);
-  const cursor = ['|', '/', '-', '\\'][Math.abs(Number(frame || 0)) % 4];
-  const start = Math.abs(Number(frame || 0)) % Math.max(1, segments.length);
-  const ordered = [...segments.slice(start), ...segments.slice(0, start)];
-  const count = Math.min(3, Math.max(1, 1 + (Math.abs(Number(frame || 0)) % 2)));
-  const dots = '.'.repeat(1 + (Math.abs(Number(frame || 0)) % 3));
-  return `${cursor} ${ordered.slice(0, count).join('  ·  ')}${dots}`;
+  return agentProgressNarratorStreamText(text, {
+    ...options,
+    language: state.conversationLanguage,
+    isJapanese: (sample) => chatLanguage(sample) === 'ja'
+  }, frame);
 }
 
 function durationLabel(ms = 0, sample = '') {
@@ -2790,41 +3020,16 @@ function agentRunDetailRows(run = {}, job = null) {
 }
 
 function renderAgentRunDetailHtml(run = {}, job = null, options = {}) {
-  const loading = options.loading === true;
-  const error = String(options.error || '').trim();
-  const status = String(job?.status || run.status || 'planned').trim().toLowerCase();
-  const label = workflowChildDisplayLabel({
-    ...run,
-    agentName: job?.workflowAgentName || run.agentName || run.agent_name || ''
-  }) || 'Agent run';
-  const rows = agentRunDetailRows(run, job);
-  const latestLog = String(job?.logs?.slice?.(-1)?.[0] || run.latestLog || '').trim();
-  const failureReason = String(job?.failureReason || job?.failure_reason || run.failureReason || run.failure_reason || '').trim();
-  const text = job ? deliveryText(job) : '';
-  const files = job ? deliveryFiles(job) : [];
-  const detailBody = loading
-    ? '<div class="agent-run-empty">Loading this agent run...</div>'
-    : [
-        text ? `<pre class="agent-run-output-text">${escapeHtml(text)}</pre>` : '',
-        files.length ? renderFileCards(files) : '',
-        !text && !files.length ? '<div class="agent-run-empty">No intermediate deliverable has been recorded for this agent run yet.</div>' : ''
-      ].filter(Boolean).join('\n');
-  return [
-    '<div class="agent-run-detail-inner">',
-    '<div class="agent-run-detail-head">',
-    `<strong>${escapeHtml(label)}</strong>`,
-    `<span class="${escapeHtml(status.replace(/[^a-z0-9_-]+/g, '') || 'planned')}">${escapeHtml(statusDisplayLabel(status || 'planned'))}</span>`,
-    '</div>',
-    rows.length ? `<dl class="agent-run-meta">${rows.map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>` : '',
-    latestLog ? `<div class="chat-hint">Latest log: ${escapeHtml(latestLog)}</div>` : '',
-    failureReason ? `<div class="chat-hint error-text">Failure: ${escapeHtml(failureReason)}</div>` : '',
-    error ? `<div class="chat-hint error-text">Could not load live run detail: ${escapeHtml(error)}</div>` : '',
-    '<div class="agent-run-section">',
-    '<strong>Intermediate deliverables</strong>',
-    detailBody,
-    '</div>',
-    '</div>'
-  ].filter(Boolean).join('\n');
+  return agentProgressRenderAgentRunDetailHtml(run, job, {
+    ...options,
+    escapeHtml,
+    workflowChildDisplayLabel,
+    agentRunDetailRows,
+    deliveryText,
+    deliveryFiles,
+    renderFileCards,
+    statusDisplayLabel
+  });
 }
 
 function ensureAgentRunDetailPanel(button) {
@@ -3074,7 +3279,8 @@ function deliveryFiles(job = {}) {
   const files = visibleDeliveryFiles(candidates)
     .filter((file) => file && (file.content || file.name))
     .map((file, index) => sanitizeDeliveryFileForUser(file, `delivery-${index + 1}.md`))
-    .filter((file) => file && (file.content || file.name))
+    .filter((file) => file && String(file.content || '').trim())
+    .sort((left, right) => deliveryFilePriority(left) - deliveryFilePriority(right))
     .filter((file) => {
       const key = `${file.name || ''}:${String(file.content || '').slice(0, 120)}`;
       if (seen.has(key)) return false;
@@ -3291,232 +3497,12 @@ function registerAppTransferPayload(payload = {}) {
   return id;
 }
 
-function splitAuthorityList(value = '') {
-  return String(value || '')
-    .split(/[,、\n/]+/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 16);
-}
-
-function authorityTextField(text = '', label = '') {
-  const safeLabel = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = String(text || '').match(new RegExp(`(?:^|\\n)\\s*${safeLabel}\\s*[:：]\\s*([^\\n]+)`, 'i'));
-  return match ? match[1].trim() : '';
-}
-
-function authorityRequestFromText(text = '') {
-  const source = String(text || '').trim();
-  if (!/(Action approval required|承認が必要|approval\/connector setup|waiting for approval|approve\/resume)/i.test(source)) return null;
-  const required = splitAuthorityList(authorityTextField(source, 'Required'));
-  const googleSources = splitAuthorityList(authorityTextField(source, 'Google sources'))
-    .map((item) => item.toLowerCase().replace(/[\s-]+/g, '_'))
-    .filter((item) => ['ga4', 'gsc', 'gmail_send'].includes(item));
-  const inferredCapabilities = [
-    ...required.filter((item) => /\./.test(item)),
-    ...Array.from(source.matchAll(/\b(?:google\.(?:send_gmail|read_gsc|read_ga4)|github\.write_pr|x\.post)\b/gi)).map((match) => match[0])
-  ];
-  const capabilities = [...new Set(inferredCapabilities.map((item) => item.trim().toLowerCase()).filter(Boolean))];
-  const connectors = [...new Set([
-    ...required.filter((item) => /^(google|github|x)$/i.test(item)).map((item) => item.toLowerCase()),
-    ...capabilities.map((item) => item.split('.')[0]).filter((item) => ['google', 'github', 'x'].includes(item))
-  ])];
-  if (!required.length && !capabilities.length && !connectors.length && !googleSources.length) return null;
-  return {
-    reason: authorityTextField(source, 'Reason') || 'External action requires approval before execution.',
-    missing_connectors: connectors,
-    missing_connector_capabilities: capabilities,
-    required_google_sources: googleSources,
-    source: 'delivery_text_approval'
-  };
-}
-
-function authorityScanTextFromJob(job = {}) {
-  const output = job.output && typeof job.output === 'object' ? job.output : {};
-  const report = output.report && typeof output.report === 'object' ? output.report : {};
-  const delivery = output.delivery && typeof output.delivery === 'object' ? output.delivery : {};
-  const deliveryReport = delivery.report && typeof delivery.report === 'object' ? delivery.report : {};
-  const executorState = job.executorState && typeof job.executorState === 'object' ? job.executorState : {};
-  const executorAuthority = executorState.authorityRequired && typeof executorState.authorityRequired === 'object'
-    ? executorState.authorityRequired
-    : {};
-  return [
-    output.summary,
-    output.text,
-    output.markdown,
-    report.summary,
-    report.nextAction,
-    report.next_action,
-    report.final_delivery_digest,
-    report.finalDeliveryDigest,
-    delivery.summary,
-    delivery.markdown,
-    deliveryReport.summary,
-    deliveryReport.nextAction,
-    deliveryReport.next_action,
-    executorAuthority.reason,
-    executorAuthority.missingConnectors,
-    executorAuthority.missingConnectorCapabilities
-  ].map((item) => String(item || '').trim()).filter(Boolean).join('\n\n');
-}
-
 function authorityRequestFromJob(job = {}) {
-  const output = job.output && typeof job.output === 'object' ? job.output : {};
-  const report = output.report && typeof output.report === 'object' ? output.report : {};
-  const delivery = output.delivery && typeof output.delivery === 'object' ? output.delivery : {};
-  const deliveryReport = delivery.report && typeof delivery.report === 'object' ? delivery.report : {};
-  const executorState = job.executorState && typeof job.executorState === 'object' ? job.executorState : {};
-  const request = report.authority_request
-    || report.authorityRequest
-    || report.action_required
-    || report.actionRequired
-    || report.executor_request
-    || report.executorRequest
-    || output.authority_request
-    || output.authorityRequest
-    || output.action_required
-    || output.actionRequired
-    || deliveryReport.authority_request
-    || deliveryReport.authorityRequest
-    || deliveryReport.action_required
-    || deliveryReport.actionRequired
-    || executorState.authorityRequired
-    || executorState.authority_required
-    || null;
-  if (request && typeof request === 'object') return request;
-  return authorityRequestFromText(authorityScanTextFromJob(job));
-}
-
-function googleIncludeGroupsFromAuthority(request = null) {
-  if (!request || typeof request !== 'object') return [];
-  const explicit = listValues(
-    request.required_google_sources
-      || request.requiredGoogleSources
-      || request.google_source_types
-      || request.googleSourceTypes
-      || request.googleIncludeGroups
-  ).map((item) => {
-    const normalized = String(item || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-    if (['gsc', 'search_console', 'google_search_console', 'webmasters'].includes(normalized)) return 'gsc';
-    if (['ga4', 'analytics', 'google_analytics', 'google_analytics_4'].includes(normalized)) return 'ga4';
-    return '';
-  }).filter(Boolean);
-  if (explicit.length) return [...new Set(explicit)];
-  const capabilities = listValues(request.missing_connector_capabilities || request.missingConnectorCapabilities || request.capabilities);
-  const groups = [];
-  if (capabilities.some((item) => /^google\.read_ga4$/i.test(String(item || '')))) groups.push('ga4');
-  if (capabilities.some((item) => /^google\.read_gsc$/i.test(String(item || '')))) groups.push('gsc');
-  if (capabilities.some((item) => /^google\.send_gmail$/i.test(String(item || '')))) groups.push('gmail_send');
-  return [...new Set(groups)];
-}
-
-function googleAuthorityConnectGroups(request = null, preferredGroup = '') {
-  const groups = [];
-  const add = (group) => {
-    const normalized = String(group || '').trim().toLowerCase();
-    const safe = normalized === 'gsc' ? 'gsc' : (normalized === 'ga4' ? 'ga4' : '');
-    if (safe && !groups.includes(safe)) groups.push(safe);
-  };
-  for (const group of googleIncludeGroupsFromAuthority(request)) add(group);
-  const capabilities = listValues(request?.missing_connector_capabilities || request?.missingConnectorCapabilities || request?.capabilities);
-  if (capabilities.some((item) => /^google\.read_ga4$/i.test(String(item || '')))) add('ga4');
-  if (capabilities.some((item) => /^google\.read_gsc$/i.test(String(item || '')))) add('gsc');
-  if (capabilities.some((item) => /^google\.send_gmail$/i.test(String(item || '')))) add('gmail_send');
-  if (!groups.length) add(preferredGroup);
-  if (!groups.length) add('ga4');
-  return ['ga4', 'gsc', 'gmail_send'].filter((group) => groups.includes(group));
-}
-
-function googleCapabilitiesForGroups(groups = []) {
-  const normalized = Array.isArray(groups) ? groups : [];
-  const capabilities = [];
-  if (normalized.includes('ga4')) capabilities.push('google.read_ga4');
-  if (normalized.includes('gsc')) capabilities.push('google.read_gsc');
-  if (normalized.includes('gmail_send')) capabilities.push('google.send_gmail');
-  return capabilities;
-}
-
-function authGrantedGoogleCapabilities() {
-  return new Set(listValues(state.auth?.googleGrantedCapabilities || state.auth?.google_granted_capabilities).map((item) => String(item || '').trim().toLowerCase()));
-}
-
-function googleGroupAlreadyGranted(group = '') {
-  const normalized = String(group || '').trim().toLowerCase();
-  const capabilities = authGrantedGoogleCapabilities();
-  if (normalized === 'ga4') return capabilities.has('google.read_ga4');
-  if (normalized === 'gsc') return capabilities.has('google.read_gsc');
-  if (normalized === 'gmail_send') return capabilities.has('google.send_gmail');
-  return false;
-}
-
-function googleAuthorityMissingGroups(request = null, preferredGroup = '') {
-  return googleAuthorityConnectGroups(request, preferredGroup)
-    .filter((group) => !googleGroupAlreadyGranted(group));
-}
-
-function googleConnectLabelForGroups(groups = []) {
-  const normalized = Array.isArray(groups) ? groups : [];
-  if (normalized.includes('gmail_send')) return 'Connect Gmail send';
-  if (normalized.includes('ga4') && normalized.includes('gsc')) return 'Connect GA4 + Search Console';
-  if (normalized.includes('gsc')) return 'Connect Search Console';
-  return 'Connect GA4';
-}
-
-function githubAuthHrefForApproval() {
-  saveChatOAuthReturnState('github_approval');
-  const url = new URL('/auth/github', window.location.origin);
-  url.searchParams.set('mode', 'link');
-  url.searchParams.set('return_to', currentChatReturnPath({ oauthPopup: true, oauthProvider: 'github' }));
-  url.searchParams.set('login_source', 'chatux_github_approval');
-  url.searchParams.set('visitor_id', state.visitorId);
-  return `${url.pathname}${url.search}`;
-}
-
-function authorityNeedsApproval(request = null) {
-  if (!request || typeof request !== 'object') return false;
-  const missingConnectors = listValues(request.missing_connectors || request.missingConnectors || request.connectors);
-  const missingCapabilities = listValues(request.missing_connector_capabilities || request.missingConnectorCapabilities || request.capabilities);
-  const googleSources = listValues(request.required_google_sources || request.requiredGoogleSources || request.google_source_types || request.googleSourceTypes);
-  const reason = String(request.reason || request.message || request.summary || '').trim();
-  const source = String(request.source || request.reason_code || request.reasonCode || '').trim().toLowerCase();
-  if (source === 'leader_execution_approval') return false;
-  const requiredChannelSelection = Boolean(request.required_channel_selection || request.requiredChannelSelection);
-  const channelCandidates = listValues(request.channel_candidates || request.channelCandidates || request.channels);
-  const writeCapabilities = missingCapabilities.filter((item) => (
-    /(post|publish|send|write|submit|create|update|delete|calendar|gmail|email|x\.post|github\.write)/i.test(String(item || ''))
-    && !/^google\.read_/i.test(String(item || ''))
-  ));
-  if (
-    source === 'leader_execution_approval'
-    && requiredChannelSelection
-    && !channelCandidates.length
-    && !writeCapabilities.length
-  ) {
-    return false;
-  }
-  return Boolean(
-    missingConnectors.length
-    || missingCapabilities.length
-    || googleSources.length
-    || requiredChannelSelection
-    || /(approval|approve|connector|required|missing|connect|confirm|publish|send|post|承認|接続|未接続|確認|投稿|送信|必要)/i.test(reason)
-  );
+  return connectorGateAuthorityRequestFromJob(job);
 }
 
 function authorityRequestHandledBySaasHandoffInChat(request = null) {
-  if (!request || typeof request !== 'object') return false;
-  const missingConnectors = listValues(request.missing_connectors || request.missingConnectors || request.connectors)
-    .map((item) => String(item || '').trim().toLowerCase())
-    .filter(Boolean);
-  const missingCapabilities = listValues(request.missing_connector_capabilities || request.missingConnectorCapabilities || request.capabilities)
-    .map((item) => String(item || '').trim().toLowerCase())
-    .filter(Boolean);
-  const googleSources = googleIncludeGroupsFromAuthority(request);
-  const nonXConnectors = missingConnectors.filter((item) => !/^(x|twitter)$/.test(item));
-  const nonXCapabilities = missingCapabilities.filter((item) => !/^(x\.post|x\.write|twitter\.post|social\.post)$/.test(item));
-  const mentionsXPublish = [...missingConnectors, ...missingCapabilities, request.reason, request.summary, request.message]
-    .some((item) => /(^x$|x\.post|twitter|tweet)/i.test(String(item || '')));
-  return Boolean(mentionsXPublish && !googleSources.length && !nonXConnectors.length && !nonXCapabilities.length);
+  return connectorGateAuthorityHandledBySaasHandoff(request);
 }
 
 function jobBlockedForSaasHandoff(job = {}) {
@@ -3526,55 +3512,15 @@ function jobBlockedForSaasHandoff(job = {}) {
 }
 
 function authorityRequestIsActionableForJob(job = {}, request = null) {
-  if (!authorityNeedsApproval(request)) return false;
-  if (authorityRequestHandledBySaasHandoffInChat(request)) return false;
-  const source = String(request?.source || request?.reason_code || request?.reasonCode || '').trim().toLowerCase();
-  const status = String(job?.status || '').trim().toLowerCase();
-  const failureCategory = String(job?.failureCategory || job?.failure_category || '').trim().toLowerCase();
-  const completionStatus = String(job?.dispatch?.completionStatus || job?.dispatch?.completion_status || '').trim().toLowerCase();
-  if (
-    failureCategory === 'leader_quality_gate_failed'
-    || completionStatus === 'leader_quality_gate_failed'
-    || /leader quality gate/i.test(String(job?.failureReason || job?.failure_reason || ''))
-  ) return false;
-  const approvalWaitingStatuses = new Set(['blocked', 'waiting', 'action_required', 'needs_action', 'approval_required', 'connector_required', 'blocked_waiting_for_approval']);
-  if (source === 'leader_execution_approval' && status && !approvalWaitingStatuses.has(status)) return false;
-  return true;
-}
-
-function googleAuthHrefForAuthority(request = null, group = '') {
-  const groups = googleAuthorityConnectGroups(request, group);
-  const groupKey = groups.join('_') || 'ga4';
-  const capabilities = googleCapabilitiesForGroups(groups);
-  saveChatOAuthReturnState(`google_${groupKey}_approval`);
-  const url = new URL('/auth/google', window.location.origin);
-  url.searchParams.set('action', 'analytics_connect');
-  url.searchParams.set('return_to', currentChatReturnPath({ oauthPopup: true, oauthProvider: 'google' }));
-  url.searchParams.set('login_source', `chatux_${groupKey}_approval`);
-  url.searchParams.set('visitor_id', state.visitorId);
-  url.searchParams.set('scope_group', groups.join(','));
-  url.searchParams.set('capabilities', capabilities.join(','));
-  return `${url.pathname}${url.search}`;
+  return connectorGateAuthorityIsActionable(job, request);
 }
 
 function approvalAnchorForJob(job = {}) {
-  const safeJobId = String(job?.id || state.orderId || '').trim();
-  return safeJobId ? `approval-${safeJobId.replace(/[^a-z0-9_-]/gi, '')}` : 'chatThread';
+  return connectorGateApprovalAnchor(job, state.orderId);
 }
 
 function authorityNoticeKey(job = {}) {
-  const request = authorityRequestFromJob(job);
-  if (!authorityRequestIsActionableForJob(job, request)) return '';
-  const missingConnectors = listValues(request.missing_connectors || request.missingConnectors || request.connectors);
-  const missingCapabilities = listValues(request.missing_connector_capabilities || request.missingConnectorCapabilities || request.capabilities);
-  const googleSources = googleIncludeGroupsFromAuthority(request);
-  return [
-    String(job.id || '').trim(),
-    String(request.reason || request.message || request.summary || '').trim().slice(0, 180),
-    missingConnectors.join(','),
-    missingCapabilities.join(','),
-    googleSources.join(',')
-  ].join('|');
+  return connectorGateAuthorityNoticeKey(job);
 }
 
 function fileLooksLikeSocialPostPack(file = {}) {
@@ -3856,8 +3802,18 @@ function makeChatHandoffId(prefix = 'chat-handoff') {
   }
 }
 
-async function createAppAgentContextOpenUrl(appId = '', payload = {}) {
-  const result = await apiWithRetry('/api/app-contexts', {
+function shouldStartFreshChatFromUrl() {
+  try {
+    return new URL(window.location.href).searchParams.get('e2e') === 'chat-workspace';
+  } catch {
+    return false;
+  }
+}
+
+async function createAppAgentContextOpenUrl(appId = '', payload = {}, options = {}) {
+  const safeAppId = normalizeUsageId(appId || '');
+  const contextPath = options.contextPath || (safeAppId === 'publisher-approval-studio' ? '/api/publisher/context-ingest' : '/api/app-contexts');
+  const result = await apiWithRetry(contextPath, {
     method: 'POST',
     body: JSON.stringify({
       app_id: appId,
@@ -4203,93 +4159,39 @@ function deliveryHandoffArtifactTypes(job = {}) {
 }
 
 function appHandoffArtifactLabel(artifactType = '') {
-  const normalized = normalizeUsageId(artifactType);
-  return HANDOFF_ARTIFACT_LABELS[normalized] || normalized.replace(/_/g, ' ');
+  return appHandoffGateArtifactLabel(artifactType, {
+    normalizeUsageId,
+    labels: HANDOFF_ARTIFACT_LABELS
+  });
 }
 
 function appHandoffEntryMatchesArtifact(entry = {}, artifactType = '') {
-  const normalizedType = normalizeUsageId(artifactType);
-  if (!normalizedType) return false;
-  const accepts = new Set(listValues(entry.inputContract?.accepts).map(normalizeUsageId).filter(Boolean));
-  const capabilities = new Set(listValues(entry.capabilities).map(normalizeUsageId).filter(Boolean));
-  if (accepts.has(normalizedType) || capabilities.has(normalizedType)) return true;
-  return (HANDOFF_ARTIFACT_CAPABILITY_ALIASES[normalizedType] || [])
-    .map(normalizeUsageId)
-    .some((alias) => accepts.has(alias) || capabilities.has(alias));
+  return appHandoffGateEntryMatchesArtifact(entry, artifactType, {
+    normalizeUsageId,
+    listValues,
+    aliases: HANDOFF_ARTIFACT_CAPABILITY_ALIASES
+  });
 }
 
 function appHandoffConnectorNotes(entry = {}, artifactType = '') {
-  const normalizedType = normalizeUsageId(artifactType);
-  const destinationConnectors = entry.inputContract?.destinationConnectors && typeof entry.inputContract.destinationConnectors === 'object'
-    ? entry.inputContract.destinationConnectors
-    : null;
-  if (destinationConnectors) {
-    const keys = (HANDOFF_ARTIFACT_DESTINATION_HINTS[normalizedType] || Object.keys(destinationConnectors))
-      .filter((key, index, array) => key && array.indexOf(key) === index);
-    return keys
-      .map((key) => {
-        const destination = destinationConnectors[key];
-        if (!destination || typeof destination !== 'object') return '';
-        const connector = String(destination.connector || '').trim();
-        const capability = String(destination.capability || '').trim();
-        const method = String(destination.method || '').trim();
-        const detail = [connector, capability, method].filter(Boolean).join(' / ');
-        return detail ? `${key.replace(/_/g, ' ')}: ${detail}` : '';
-      })
-      .filter(Boolean)
-      .slice(0, 3);
-  }
-
-  const accepts = new Set(listValues(entry.inputContract?.accepts).map(normalizeUsageId).filter(Boolean));
-  const capabilities = new Set(listValues(entry.capabilities).map(normalizeUsageId).filter(Boolean));
-  const matchedCapabilities = [
-    normalizedType,
-    ...(HANDOFF_ARTIFACT_CAPABILITY_ALIASES[normalizedType] || []).map(normalizeUsageId)
-  ].filter((item, index, array) => item && array.indexOf(item) === index)
-    .filter((item) => capabilities.has(item) || accepts.has(item))
-    .slice(0, 3);
-  if (matchedCapabilities.length) return [`capability: ${matchedCapabilities.join(' / ')}`];
-
-  const requiredConnectors = listValues(entry.requiredConnectors).map(String).filter(Boolean).slice(0, 3);
-  if (requiredConnectors.length) return [`connector: ${requiredConnectors.join(' / ')}`];
-  return [];
+  return appHandoffGateConnectorNotes(entry, artifactType, {
+    normalizeUsageId,
+    listValues,
+    aliases: HANDOFF_ARTIFACT_CAPABILITY_ALIASES,
+    destinationHints: HANDOFF_ARTIFACT_DESTINATION_HINTS
+  });
 }
 
 function renderAppHandoffTree(job = {}, entries = []) {
-  const artifactTypes = Array.from(deliveryHandoffArtifactTypes(job));
-  const branches = artifactTypes
-    .map((artifactType) => {
-      const apps = entries
-        .filter((entry) => appHandoffEntryMatchesArtifact(entry, artifactType))
-        .map((entry) => ({
-          name: entry.name || entry.id || 'Registered app',
-          notes: appHandoffConnectorNotes(entry, artifactType)
-        }));
-      return apps.length ? { artifactType, apps } : null;
-    })
-    .filter(Boolean);
-  if (!branches.length) return '';
-
-  const branchHtml = branches.map((branch) => {
-    const appHtml = branch.apps.map((app) => {
-      const notes = app.notes.map((note) => `<span class="app-tree-connector">${escapeHtml(note)}</span>`).join('');
-      return `<li><span class="app-tree-app">${escapeHtml(app.name)}</span>${notes}</li>`;
-    }).join('');
-    return [
-      '<li>',
-      `<span class="app-tree-artifact">${escapeHtml(appHandoffArtifactLabel(branch.artifactType))}</span>`,
-      `<ul>${appHtml}</ul>`,
-      '</li>'
-    ].join('');
-  }).join('');
-
-  return [
-    '<div class="app-handoff-tree" aria-label="Preparation data app routing tree">',
-    '<strong>Preparation data routing</strong>',
-    '<div class="chat-hint">This shows which preparation artifact type will be sent to each matching app. Final publish/send actions still happen inside the app or connector.</div>',
-    `<ul>${branchHtml}</ul>`,
-    '</div>'
-  ].join('\n');
+  return appHandoffGateRenderTree(job, entries, {
+    escapeHtml,
+    normalizeUsageId,
+    listValues,
+    aliases: HANDOFF_ARTIFACT_CAPABILITY_ALIASES,
+    destinationHints: HANDOFF_ARTIFACT_DESTINATION_HINTS,
+    labels: HANDOFF_ARTIFACT_LABELS,
+    deliveryHandoffArtifactTypes
+  });
 }
 
 function renderAppHandoffRoutingPreview(job = {}) {
@@ -4690,10 +4592,11 @@ async function fetchAppContext(contextId = '') {
 }
 
 function recentJobsApiPath(options = {}) {
-  const url = new URL('/api/jobs', window.location.origin);
-  url.searchParams.set('limit', String(Math.max(1, Math.min(50, Number(options.limit || 30) || 30))));
-  if (state.visitorId) url.searchParams.set('visitor_id', state.visitorId);
-  return `${url.pathname}${url.search}`;
+  return orderRuntimeRecentJobsApiPath({
+    ...options,
+    origin: window.location.origin,
+    visitorId: state.visitorId
+  });
 }
 
 async function refreshRecentJobs(options = {}) {
@@ -4718,25 +4621,16 @@ async function fetchVisibleJob(jobId = '', options = {}) {
   const safeId = String(jobId || '').trim();
   if (!safeId) return null;
   if (options.force !== true) {
-    const cached = (Array.isArray(state.recentJobs) ? state.recentJobs : [])
-      .find((job) => String(job?.id || '').trim() === safeId);
+    const cached = orderRuntimeCachedJob(state.recentJobs, safeId);
     if (cached) return cached;
   }
-  const inspectOnly = options.progress === false || options.inspectOnly === true;
-  const query = new URLSearchParams({
-    visitor_id: state.visitorId
-  });
-  if (inspectOnly) {
-    query.set('progress', '0');
-    query.set('inspect_only', '1');
-  }
-  const result = await api(`/api/jobs/${encodeURIComponent(safeId)}?${query.toString()}`, { method: 'GET' });
+  const result = await api(visibleJobApiPath(safeId, {
+    ...options,
+    visitorId: state.visitorId
+  }), { method: 'GET' });
   const job = result?.job && typeof result.job === 'object' ? { ...result.job, id: result.job.id || safeId } : null;
   if (job?.id) {
-    state.recentJobs = [
-      job,
-      ...(Array.isArray(state.recentJobs) ? state.recentJobs.filter((item) => String(item?.id || '') !== String(job.id)) : [])
-    ].slice(0, 50);
+    state.recentJobs = orderRuntimeUpsertRecentJob(state.recentJobs, job, 50);
     state.recentJobsFetchedAt = Date.now();
     rememberAiAgentsFromJob(job);
   }
@@ -4764,11 +4658,7 @@ async function approveAndResumeOrder(orderId = '') {
   try {
     const result = await api(`/api/jobs/${encodeURIComponent(safeId)}/approve`, {
       method: 'POST',
-      body: JSON.stringify({
-        confirm_approval: true,
-        visitor_id: state.visitorId,
-        source: 'chat_approval_card'
-      })
+      body: JSON.stringify(orderRuntimeApprovalPayload(state.visitorId, 'chat_approval_card'))
     });
     const job = result?.job && typeof result.job === 'object'
       ? { ...result.job, id: result.job.id || safeId }
@@ -5494,7 +5384,7 @@ function showInfoPanel() {
     '<strong>Account</strong>',
     `<span class="utility-meta">${escapeHtml(login || 'Not signed in')}</span>`,
     '</div><div class="utility-actions">',
-    auth.loggedIn || login ? `${adminAction}<button class="ghost-btn file-action" type="button" data-chat-logout>Sign out</button>` : `<a class="ghost-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in</a>`,
+    auth.loggedIn || login ? `${adminAction}<a class="ghost-btn file-action" href="/account-settings.html">Account settings</a><button class="ghost-btn file-action" type="button" data-chat-logout>Sign out</button>` : `<a class="ghost-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in</a>`,
     '</div></div>',
     '<div class="utility-row"><div class="utility-main"><strong>Resources</strong><span class="utility-meta">Docs, terms, privacy, and help.</span></div><div class="utility-actions"><a class="ghost-btn file-action" href="/help.html">Help</a><a class="ghost-btn file-action" href="/resources.html">Resources</a></div></div>',
     '</div>'
@@ -5584,60 +5474,15 @@ async function reuseAiAgent(id = '') {
 }
 
 function renderAuthorityRequest(job = {}) {
-  if (['failed', 'timed_out'].includes(String(job.status || '').trim().toLowerCase())) return '';
-  const authority = authorityRequestFromJob(job);
-  if (!authorityRequestIsActionableForJob(job, authority)) return '';
-  const missingConnectors = listValues(authority.missing_connectors || authority.missingConnectors || authority.connectors);
-  const missingCapabilities = listValues(authority.missing_connector_capabilities || authority.missingConnectorCapabilities || authority.capabilities);
-  const googleSources = googleIncludeGroupsFromAuthority(authority);
-  const required = [...missingCapabilities, ...missingConnectors].filter(Boolean);
-  const reason = String(authority.reason || authority.message || authority.summary || job.failureReason || 'External action requires approval before execution.').trim();
-  const googleNeeded = required.some((item) => /^google\.|^google$/i.test(item)) || googleSources.length > 0;
-  const githubNeeded = required.some((item) => /^github(?:\.|$)|github\.write_pr|git hub/i.test(item));
-  const safeJobId = String(job.id || state.orderId || '').trim();
-  const approvalAnchor = approvalAnchorForJob(job);
-  const actionLinks = [];
-  if (googleNeeded && !state.auth?.loggedIn) {
-    actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in with Google</a>`);
-  } else if (googleNeeded) {
-    const nextGoogleGroup = missingCapabilities.includes('google.send_gmail')
-      ? 'gmail_send'
-      : (googleSources.includes('ga4') ? 'ga4' : (googleSources.includes('gsc') ? 'gsc' : (missingCapabilities.includes('google.read_gsc') ? 'gsc' : 'ga4')));
-    const googleGroups = googleAuthorityMissingGroups(authority, nextGoogleGroup);
-    if (googleGroups.length) {
-      const googleAuthority = {
-        ...(authority || {}),
-        required_google_sources: googleGroups,
-        missing_connector_capabilities: googleCapabilitiesForGroups(googleGroups)
-      };
-      actionLinks.push(`<a class="primary-btn inline-btn file-action" data-chat-oauth-popup="google" href="${escapeHtml(googleAuthHrefForAuthority(googleAuthority, googleGroups[0]))}">${escapeHtml(googleConnectLabelForGroups(googleGroups))}</a>`);
-    }
-  }
-  if (githubNeeded && !state.auth?.loggedIn) {
-    actionLinks.push(`<a class="primary-btn inline-btn file-action" href="${escapeHtml(loginHref('github'))}">Sign in with GitHub</a>`);
-  } else if (githubNeeded && !state.auth?.githubAuthorized && !state.auth?.githubLinked) {
-    actionLinks.push(`<a class="primary-btn inline-btn file-action" data-chat-oauth-popup="github" href="${escapeHtml(githubAuthHrefForApproval())}">Connect GitHub</a>`);
-  } else if (githubNeeded && !state.auth?.githubAuthorized) {
-    actionLinks.push(`<a class="primary-btn inline-btn file-action" data-chat-oauth-popup="github" href="${escapeHtml(githubAuthHrefForApproval())}">Refresh GitHub access</a>`);
-  }
-  if (safeJobId) {
-    const approvalLabel = actionLinks.length
-      ? 'I connected it. Resume order'
-      : 'Approve and resume order';
-    const style = actionLinks.length ? 'ghost' : 'primary';
-    actionLinks.push(`<button class="${style}-btn inline-btn file-action" type="button" data-chat-order-approve="${escapeHtml(safeJobId)}">${escapeHtml(approvalLabel)}</button>`);
-  }
-  return [
-    `<div class="approval-card" id="${escapeHtml(approvalAnchor)}">`,
-    '<strong>Step 1: 承認が必要です / Action approval required</strong>',
-    `<div>Reason: ${escapeHtml(reason)}</div>`,
-    required.length ? `<div>Required: ${escapeHtml(required.join(', '))}</div>` : '',
-    googleSources.length ? `<div>Google sources: ${escapeHtml(googleSources.join(', '))}</div>` : '',
-    '<div>Status: CAIt has not posted, sent, or published externally yet.</div>',
-    actionLinks.length ? `<div class="inline-actions">${actionLinks.join('')}</div>` : '',
-    '<span class="chat-hint">Connect or approve only the requested source. CAIt will keep the order in this chat and continue from the same order context.</span>',
-    '</div>'
-  ].filter(Boolean).join('\n');
+  return connectorGateRenderAuthorityRequest(job, {
+    auth: state.auth || {},
+    orderId: state.orderId,
+    visitorId: state.visitorId,
+    origin: window.location.origin,
+    returnPathForProvider: (provider) => currentChatReturnPath({ oauthPopup: true, oauthProvider: provider }),
+    loginHref,
+    saveOAuthState: saveChatOAuthReturnState
+  });
 }
 
 function maybeRenderAuthorityNotice(job = {}, options = {}) {
@@ -5674,6 +5519,8 @@ function renderFileCards(files = []) {
     const registered = registerDeliveryFile(file, `delivery-${index + 1}.md`);
     const name = registered.name;
     const content = registered.content.trim();
+    const displayTitle = deliveryFileDisplayTitle(file, name);
+    const metaParts = deliveryFileProvenanceParts(file, { taskLabel });
     const isHtml = /\.html?$/i.test(name) || /<!doctype html|<html[\s>]/i.test(content);
     const downloadLabel = isHtml ? 'Download HTML' : 'Download MD';
     const preview = isHtml
@@ -5681,7 +5528,8 @@ function renderFileCards(files = []) {
       : '';
     return [
       '<details class="file-card">',
-      `<summary>${escapeHtml(name)}</summary>`,
+      `<summary>${escapeHtml(displayTitle || name)}</summary>`,
+      metaParts.length ? `<div class="row-muted">${escapeHtml(metaParts.join(' · '))}</div>` : '',
       '<div class="file-actions">',
       `<button class="primary-btn inline-btn file-action" type="button" data-file-action="download" data-file-id="${escapeHtml(registered.id)}">${escapeHtml(downloadLabel)}</button>`,
       `<button class="ghost-btn inline-btn file-action" type="button" data-file-action="copy" data-file-id="${escapeHtml(registered.id)}">Copy</button>`,
@@ -5820,39 +5668,38 @@ function renderRetryReuseControls(job = {}) {
 }
 
 function deliveryOrderActionsHtml(job = {}) {
-  const orderId = String(job.id || '').trim();
-  if (!orderId || !jobHasDeliveryResult(job)) return '';
-  const status = String(job.status || '').trim().toLowerCase();
-  const failed = ['failed', 'timed_out'].includes(status) || jobBlockedByLeaderQualityGate(job);
-  const completed = status === 'completed';
-  const actions = [
-    `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(orderId)}">${escapeHtml(completed ? 'Review delivery' : 'Check status')}</button>`,
-    failed ? `<button class="primary-btn inline-btn file-action" type="button" data-chat-order-retry="${escapeHtml(orderId)}">Retry as new order</button>` : '',
-    completed ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-schedule="${escapeHtml(orderId)}">Schedule</button>` : ''
-  ].filter(Boolean).join('');
-  return actions ? `<div class="inline-actions">${actions}</div>` : '';
+  return deliveryRendererOrderActionsHtml(job, {
+    escapeHtml,
+    jobHasDeliveryResult,
+    jobBlockedByLeaderQualityGate
+  });
 }
 
 function renderDelivery(job = {}) {
   rememberAiAgentsFromJob(job);
   const files = deliveryFiles(job);
   const text = deliveryText(job) || `Order ${job.id || ''} is ${statusDisplayLabel(job.status || 'updated')}.`;
-  const status = String(job.status || '').trim().toLowerCase();
-  const failed = ['failed', 'timed_out'].includes(status) || jobBlockedByLeaderQualityGate(job);
-  const completed = status === 'completed';
-  const heading = failed ? 'Order failed' : 'Delivery update';
-  const body = [
-    renderAuthorityRequest(job),
-    renderRetryReuseControls(job),
-    deliveryOrderActionsHtml(job),
-    renderXPostTool(job),
-    renderAppHandoffTools(job),
-    `<strong>${escapeHtml(heading)}</strong>\n${escapeHtml(text)}`,
-    files.length ? renderFileCards(files) : ''
-  ].filter(Boolean).join('\n\n');
+  const meta = deliveryRendererMeta(job, {
+    jobBlockedByLeaderQualityGate,
+    jobHasDeliveryResult
+  });
+  const body = renderDeliveryBody(job, {
+    escapeHtml,
+    files,
+    text,
+    statusDisplayLabel,
+    jobBlockedByLeaderQualityGate,
+    jobHasDeliveryResult,
+    renderAuthorityRequest,
+    renderRetryReuseControls,
+    deliveryOrderActionsHtml,
+    renderXPostTool,
+    renderAppHandoffTools,
+    renderFileCards
+  });
   appendMessage(jobHasDeliveryResult(job) ? 'assistant' : 'system', body, {
-    tone: completed ? 'ok' : (failed ? 'error' : (job.status === 'blocked' ? 'warn' : '')),
-    label: completed ? 'Review' : (jobHasDeliveryResult(job) ? 'Delivery' : 'Order')
+    tone: meta.tone,
+    label: meta.label
   });
 }
 
@@ -6313,11 +6160,11 @@ function appendPendingIntakeStep(options = {}) {
   const step = intakeCurrentStep(intake);
   if (!step) return;
   const owner = intake.conversationOwner || { type: 'cait', label: 'Intake' };
-  const label = owner.type === 'leader' ? (owner.label || activeActorLabel('Intake')) : 'Intake';
-  const leadLine = options.includeLead === true && owner.type === 'leader'
+  const label = owner.type === 'leader' || owner.type === 'agent' ? (owner.label || activeActorLabel('Intake')) : 'Intake';
+  const leadLine = options.includeLead === true && (owner.type === 'leader' || owner.type === 'agent')
     ? chatText(
-        `${owner.label || 'The selected leader'} will ask one item at a time before dispatch.`,
-        `${owner.label || '選択されたリーダー'} が実行前に1項目ずつ確認します。`,
+        `${owner.label || 'The selected agent'} will ask one item at a time before dispatch.`,
+        `${owner.label || '選択されたエージェント'} が実行前に1項目ずつ確認します。`,
         sample
       )
     : '';
@@ -6393,9 +6240,10 @@ function startIntake(response = {}, originalPrompt = '') {
   trackChatIntakeStarted(originalPrompt, 'step_intake');
   const explicitLeaderTaskType = explicitLeaderChangeTaskTypeFromText(originalPrompt);
   const requestedLeaderOwner = explicitLeaderTaskType ? leaderOwner(explicitLeaderTaskType, 'User explicitly changed the leader.') : null;
-  const lockedOwner = lockedLeaderOwnerForPrompt(originalPrompt, { leaderChangeRequested: Boolean(requestedLeaderOwner) });
+  const lockedOwner = lockedLeaderOwnerForPrompt(originalPrompt, { leaderChangeRequested: Boolean(requestedLeaderOwner) })
+    || lockedAgentOwnerForPrompt(originalPrompt, { leaderChangeRequested: Boolean(requestedLeaderOwner) });
   const intakeResponse = requestedLeaderOwner || lockedOwner
-    ? withLeaderOwner(response, requestedLeaderOwner || lockedOwner, {
+    ? withConversationOwner(response, requestedLeaderOwner || lockedOwner, {
         leaderChangeRequested: Boolean(requestedLeaderOwner),
         leader_change_requested: Boolean(requestedLeaderOwner)
       })
@@ -6433,6 +6281,11 @@ function growthLeaderNeedsDataHint(taskType = '', sample = '') {
 function orderNeedsAnalyticsContext(taskType = '', prompt = '') {
   const text = String(prompt || '').toLowerCase();
   return /(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics|計測|流入|seo|cvr|conversion|コンバージョン)/i.test(`${taskType}\n${text}`);
+}
+
+function authGrantedGoogleCapabilities() {
+  return new Set(listValues(state.auth?.googleGrantedCapabilities || state.auth?.google_granted_capabilities)
+    .map((item) => String(item || '').trim().toLowerCase()));
 }
 
 function analyticsPreOrderHintHtml(taskType = '', prompt = '') {
@@ -7185,6 +7038,13 @@ async function answerPendingIntake(answer = '', options = {}) {
   const explicitLeaderTaskType = explicitLeaderChangeTaskTypeFromText(text);
   const changedLeaderOwner = explicitLeaderTaskType ? leaderOwner(explicitLeaderTaskType, 'User explicitly changed the leader during intake.') : null;
   if (changedLeaderOwner) {
+    state.activeOwner = {
+      type: 'leader',
+      taskType: changedLeaderOwner.taskType,
+      label: changedLeaderOwner.label,
+      reason: changedLeaderOwner.reason
+    };
+    state.activeOwnerLocked = true;
     state.activeLeader = {
       taskType: changedLeaderOwner.taskType,
       label: changedLeaderOwner.label,
@@ -7246,7 +7106,11 @@ function orderConfirmationHtml(options = {}) {
   const prompt = draft.prompt || '';
   const selectedAgent = String(draft.selectedAgentName || draft.selected_agent_name || draft.selectedAgentId || draft.selected_agent_id || '').trim();
   const owner = conversationOwnerFromPrepared(draft);
-  const lead = owner.type === 'leader' ? `${owner.label || taskLabel(owner.taskType)} (${owner.taskType})` : 'CAIt specialist router';
+  const lead = owner.type === 'leader'
+    ? `${owner.label || taskLabel(owner.taskType)} (${owner.taskType})`
+    : owner.type === 'agent'
+      ? `${owner.label || taskLabel(owner.taskType)} (${owner.taskType})`
+      : 'CAIt specialist router';
   const sameContentRetry = draftIsSameContentNewOrderRetry(draft);
   const retrySourceOrderId = retryDraftSourceOrderId(draft);
   const reuseArtifacts = Array.isArray(draft.retryReuseArtifacts || draft.retry_reuse_artifacts)
@@ -7731,10 +7595,11 @@ async function handleChatIntentWithLlm(prompt = '') {
   if (action === 'ask_clarifying_question') {
     const intakeQuestions = normalizeLlmIntakeQuestions(result.intake_questions || result.intakeQuestions || []);
     const explicitLeaderTaskType = explicitLeaderChangeTaskTypeFromText(prompt);
-    const lockedOwner = lockedLeaderOwnerForPrompt(prompt, { leaderChangeRequested: Boolean(explicitLeaderTaskType) });
+    const lockedOwner = lockedLeaderOwnerForPrompt(prompt, { leaderChangeRequested: Boolean(explicitLeaderTaskType) })
+      || lockedAgentOwnerForPrompt(prompt, { leaderChangeRequested: Boolean(explicitLeaderTaskType) });
     const automaticLeaderTaskType = leaderTaskTypeFromIntentResult(prompt, result);
     if (!explicitLeaderTaskType && suggestLeaderChangeIfNeeded(automaticLeaderTaskType, prompt, 'openai_intake', { preparedPrompt: prompt })) return true;
-    const leaderTaskType = explicitLeaderTaskType || lockedOwner?.taskType || automaticLeaderTaskType;
+    const leaderTaskType = explicitLeaderTaskType || (lockedOwner?.type === 'leader' ? lockedOwner.taskType : '') || automaticLeaderTaskType;
     if (leaderTaskType && intakeQuestions.length >= 2) {
       startIntake({
         status: 'needs_input',
@@ -7825,20 +7690,27 @@ function addChatAdjustmentToDraft(prompt = '') {
   const explicitLeaderTaskType = explicitLeaderChangeTaskTypeFromText(text);
   const changedLeaderOwner = explicitLeaderTaskType ? leaderOwner(explicitLeaderTaskType, 'User explicitly changed the leader for this draft.') : null;
   if (changedLeaderOwner) {
+    state.activeOwner = {
+      type: 'leader',
+      taskType: changedLeaderOwner.taskType,
+      label: changedLeaderOwner.label,
+      reason: changedLeaderOwner.reason
+    };
+    state.activeOwnerLocked = true;
     state.activeLeader = {
       taskType: changedLeaderOwner.taskType,
       label: changedLeaderOwner.label,
       reason: changedLeaderOwner.reason
     };
     state.activeLeaderLocked = true;
-    state.draft = withLeaderOwner(state.draft, changedLeaderOwner, {
+    state.draft = withConversationOwner(state.draft, changedLeaderOwner, {
       leaderChangeRequested: true,
       leader_change_requested: true
     });
     renderActiveLeaderStatus();
   } else {
-    const lockedOwner = lockedLeaderOwnerForPrompt(text);
-    if (lockedOwner) state.draft = withLeaderOwner(state.draft, lockedOwner);
+    const lockedOwner = lockedLeaderOwnerForPrompt(text) || lockedAgentOwnerForPrompt(text);
+    if (lockedOwner) state.draft = withConversationOwner(state.draft, lockedOwner);
   }
   const label = chatLanguage(text) === 'ja' ? '追加調整' : 'User adjustment';
   state.draft.prompt = [state.draft.prompt, `${label}:\n${text}`].filter(Boolean).join('\n\n');
@@ -8010,17 +7882,24 @@ async function prepareRetryFromOrder(orderId = '', options = {}) {
       ? leaderOwner(state.draft.conversationOwner.taskType, `Preserved from retry source order ${String(job.id || '').slice(0, 8)}.`)
       : null;
     if (retryOwner) {
+      state.activeOwner = {
+        type: 'leader',
+        taskType: retryOwner.taskType,
+        label: retryOwner.label,
+        reason: retryOwner.reason
+      };
+      state.activeOwnerLocked = true;
       state.activeLeader = {
         taskType: retryOwner.taskType,
         label: retryOwner.label,
         reason: retryOwner.reason
       };
       state.activeLeaderLocked = true;
-      state.draft = withLeaderOwner(state.draft, retryOwner);
+      state.draft = withConversationOwner(state.draft, retryOwner);
       renderActiveLeaderStatus();
     } else {
-      const lockedOwner = lockedLeaderOwnerForPrompt(state.draft.originalPrompt || state.draft.prompt);
-      if (lockedOwner) state.draft = withLeaderOwner(state.draft, lockedOwner);
+      const lockedOwner = currentLockedConversationOwner();
+      if (lockedOwner) state.draft = withConversationOwner(state.draft, lockedOwner);
     }
     setConversationOwnerFromPrepared(state.draft, { sample: state.draft.originalPrompt || state.draft.prompt });
     state.draftRevision += 1;
@@ -8231,6 +8110,13 @@ async function prepareOrder(prompt, options = {}) {
   const requestedLeaderOwner = explicitLeaderTaskType ? leaderOwner(explicitLeaderTaskType, 'User explicitly changed the leader.') : null;
   if (requestedLeaderOwner) {
     state.pendingLeaderChange = null;
+    state.activeOwner = {
+      type: 'leader',
+      taskType: requestedLeaderOwner.taskType,
+      label: requestedLeaderOwner.label,
+      reason: requestedLeaderOwner.reason
+    };
+    state.activeOwnerLocked = true;
     state.activeLeader = {
       taskType: requestedLeaderOwner.taskType,
       label: requestedLeaderOwner.label,
@@ -8248,9 +8134,14 @@ async function prepareOrder(prompt, options = {}) {
   }
   state.pendingLeaderChange = null;
   const lockedOwner = lockedLeaderOwnerForPrompt(prompt, { ...options, leaderChangeRequested });
-  const effectiveLeaderOwner = requestedLeaderOwner || lockedOwner || null;
+  const lockedAgentOwner = lockedAgentOwnerForPrompt(prompt, { ...options, leaderChangeRequested });
+  const effectiveConversationOwner = requestedLeaderOwner || lockedOwner || lockedAgentOwner || null;
+  const effectiveLeaderOwner = effectiveConversationOwner?.type === 'leader' ? effectiveConversationOwner : null;
   const lockedStateLeader = state.activeLeaderLocked && state.activeLeader?.taskType
     ? state.activeLeader
+    : null;
+  const lockedStateOwner = state.activeOwnerLocked && state.activeOwner?.taskType
+    ? state.activeOwner
     : null;
   const effectiveActiveLeaderTaskType = effectiveLeaderOwner?.taskType
     || options.activeLeaderTaskType
@@ -8263,6 +8154,22 @@ async function prepareOrder(prompt, options = {}) {
     || lockedStateLeader?.label
     || '';
   const activeLeaderLocked = Boolean(state.activeLeaderLocked && state.activeLeader?.taskType);
+  const effectiveActiveOwnerType = effectiveConversationOwner?.type
+    || options.activeOwnerType
+    || options.active_owner_type
+    || lockedStateOwner?.type
+    || '';
+  const effectiveActiveOwnerTaskType = effectiveConversationOwner?.taskType
+    || options.activeOwnerTaskType
+    || options.active_owner_task_type
+    || lockedStateOwner?.taskType
+    || '';
+  const effectiveActiveOwnerName = effectiveConversationOwner?.label
+    || options.activeOwnerName
+    || options.active_owner_name
+    || lockedStateOwner?.label
+    || '';
+  const activeOwnerLocked = Boolean((state.activeOwnerLocked && state.activeOwner?.taskType) || options.activeOwnerLocked === true || options.active_owner_locked === true);
   const skipOpenAiIntent = options.skipOpenAiIntent === true || options.skip_openai_intent === true;
   let prepared;
   try {
@@ -8270,9 +8177,13 @@ async function prepareOrder(prompt, options = {}) {
       method: 'POST',
       body: JSON.stringify(chatEngineBuildPrepareOrderPayload(prompt, {
       requestedStrategy: options.requestedStrategy || options.requested_strategy || 'auto',
-      taskType: effectiveLeaderOwner?.taskType || options.taskType || options.task_type || '',
+      taskType: effectiveConversationOwner?.taskType || options.taskType || options.task_type || '',
       selectedAgentId: options.selectedAgentId || options.selected_agent_id || '',
       selectedAgentName: options.selectedAgentName || options.selected_agent_name || '',
+      activeOwnerType: effectiveActiveOwnerType,
+      activeOwnerTaskType: effectiveActiveOwnerTaskType,
+      activeOwnerName: effectiveActiveOwnerName,
+      activeOwnerLocked,
       activeLeaderTaskType: effectiveActiveLeaderTaskType,
       activeLeaderName: effectiveActiveLeaderName,
       activeLeaderLocked,
@@ -8290,13 +8201,16 @@ async function prepareOrder(prompt, options = {}) {
     if (!skipOpenAiIntent || options.intakeAnswered === true) throw error;
     prepared = clientPrepareOrderIntakeFallback(prompt, {
       ...options,
-      taskType: effectiveLeaderOwner?.taskType || options.taskType || options.task_type || effectiveActiveLeaderTaskType,
+      taskType: effectiveConversationOwner?.taskType || options.taskType || options.task_type || effectiveActiveOwnerTaskType || effectiveActiveLeaderTaskType,
+      activeOwnerType: effectiveActiveOwnerType,
+      activeOwnerTaskType: effectiveActiveOwnerTaskType,
+      activeOwnerName: effectiveActiveOwnerName,
       activeLeaderTaskType: effectiveActiveLeaderTaskType,
       activeLeaderName: effectiveActiveLeaderName
     });
   }
-  const finalPrepared = effectiveLeaderOwner
-    ? withLeaderOwner(prepared, effectiveLeaderOwner, {
+  const finalPrepared = effectiveConversationOwner
+    ? withConversationOwner(prepared, effectiveConversationOwner, {
         leaderChangeRequested,
         leader_change_requested: leaderChangeRequested
       })
@@ -8306,6 +8220,10 @@ async function prepareOrder(prompt, options = {}) {
     activeLeaderTaskType: effectiveActiveLeaderTaskType,
     activeLeaderName: effectiveActiveLeaderName,
     activeLeaderLocked,
+    activeOwnerType: effectiveActiveOwnerType,
+    activeOwnerTaskType: effectiveActiveOwnerTaskType,
+    activeOwnerName: effectiveActiveOwnerName,
+    activeOwnerLocked,
     leaderChangeRequested,
     announce: true,
     sample: options.originalPrompt || prompt
@@ -8320,6 +8238,10 @@ async function prepareOrder(prompt, options = {}) {
     activeLeaderTaskType: effectiveActiveLeaderTaskType,
     activeLeaderName: effectiveActiveLeaderName,
     activeLeaderLocked: Boolean(state.activeLeaderLocked && state.activeLeader?.taskType),
+    activeOwnerType: effectiveActiveOwnerType,
+    activeOwnerTaskType: effectiveActiveOwnerTaskType,
+    activeOwnerName: effectiveActiveOwnerName,
+    activeOwnerLocked: Boolean(state.activeOwnerLocked && state.activeOwner?.taskType),
     leaderChangeRequested
   });
   const appContext = options.appContext || state.pendingAppContext || null;
@@ -8338,8 +8260,8 @@ async function sendOrder() {
     const chatSessionId = ensureChatSessionId({ force: true });
     const draftBroker = state.draft?.input?._broker && typeof state.draft.input._broker === 'object' ? state.draft.input._broker : {};
     const suppressLeaderLock = draftBroker.leaderFollowupSpecialistRouted === true;
-    const lockedOwner = suppressLeaderLock ? null : lockedLeaderOwnerForPrompt(state.draft?.originalPrompt || state.draft?.prompt || '');
-    const acceptedDraft = lockedOwner ? withLeaderOwner(state.draft, lockedOwner) : state.draft;
+    const lockedOwner = suppressLeaderLock ? null : currentLockedConversationOwner();
+    const acceptedDraft = lockedOwner ? withConversationOwner(state.draft, lockedOwner) : state.draft;
     state.draft = acceptedDraft;
     const analyticsStatus = draftAnalyticsContextStatus(acceptedDraft);
     if (draftExplicitlyRequestsAnalytics(acceptedDraft) && !analyticsStatus.loaded && !analyticsStatus.skipped) {
@@ -8520,10 +8442,11 @@ function startPolling(orderId) {
       progressLabel: 'Starting'
     });
   }
-  const pollingContextIsCurrent = () => (
-    (!viewRevision || Number(state.chatViewRevision || 0) === viewRevision)
-    && String(state.orderId || '').trim() === safeOrderId
-  );
+  const pollingContextIsCurrent = () => orderRuntimePollingContextIsCurrent({
+    state,
+    viewRevision,
+    orderId: safeOrderId
+  });
   const tick = async () => {
     if (!pollingContextIsCurrent()) return;
     pollCount += 1;
@@ -8542,7 +8465,7 @@ function startPolling(orderId) {
       showProgressNarrator(progressNarratorTextForJob(job), progressNarratorOptionsForJob(job));
       showWorkflowProgressMap(job);
       maybeRenderAuthorityNotice(job, { label: 'Approval required' });
-      if (approvalWaiting && String(job.status || '').trim().toLowerCase() === 'blocked') {
+      if (orderRuntimeShouldPauseForApproval(job, approvalWaiting)) {
         showProgressNarrator('Waiting for approval or connector access.', {
           ...progressNarratorOptionsForJob(job),
           status: 'waiting',
@@ -8634,6 +8557,8 @@ async function signOut() {
   try {
     const result = await api('/auth/logout', { method: 'POST' });
     state.auth = {};
+    state.authAccountKey = '';
+    purgeChatStateForAccountBoundary('sign_out');
     window.location.href = String(result?.redirect_to || '/').trim() || '/';
   } catch (error) {
     appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Sign out' });
@@ -8663,7 +8588,11 @@ async function refreshAuth(options = {}) {
   try {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
-        const auth = await api('/auth/status', { method: 'GET', timeoutMs: 15000 });
+        const auth = await api('/auth/status', {
+          method: 'GET',
+          timeoutMs: CHATUX_CONNECT_WAIT_MS,
+          attemptTimeoutMs: CHATUX_AUTH_STATUS_TIMEOUT_MS
+        });
         if (!applyAuthState(auth || {}, { redirectIfGuest: true })) return;
         warmUtilityCatalogs();
         if (!state.chatSessionHistoryFetchedAt && !state.chatSessionHistoryRequest) void refreshChatSessionHistory({ force: true });
@@ -8800,29 +8729,13 @@ async function hydrateAppContextFromUrl() {
   return handleInboundAppContext(context, { label: 'App context' });
 }
 
-function chatOAuthPopupFeatures() {
-  const width = 560;
-  const height = 760;
-  const left = Math.max(0, Math.round((window.screen?.width || width) / 2 - width / 2));
-  const top = Math.max(0, Math.round((window.screen?.height || height) / 2 - height / 2));
-  return [
-    'popup=yes',
-    `width=${width}`,
-    `height=${height}`,
-    `left=${left}`,
-    `top=${top}`,
-    'resizable=yes',
-    'scrollbars=yes'
-  ].join(',');
-}
-
 function startOAuthPopupMonitor(popup = null) {
   if (!popup) return;
   if (state.oauthPopupMonitor) window.clearInterval(state.oauthPopupMonitor);
-  let checks = 0;
-  state.oauthPopupMonitor = window.setInterval(() => {
-    checks += 1;
-    if (popup.closed || checks > 240) {
+  state.oauthPopupMonitor = connectorGateStartOAuthPopupMonitor(popup, {
+    waitMs: CHATUX_CONNECT_WAIT_MS,
+    intervalMs: CHATUX_CONNECT_CHECK_INTERVAL_MS,
+    onClosedOrTimedOut: () => {
       window.clearInterval(state.oauthPopupMonitor);
       state.oauthPopupMonitor = null;
       void refreshAuth();
@@ -8840,21 +8753,18 @@ function startOAuthPopupMonitor(popup = null) {
           .catch(() => startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false }));
       }
     }
-  }, 1500);
+  });
 }
 
 function openChatOAuthPopup(href = '', label = 'Google connection') {
   const target = String(href || '').trim();
   if (!target) return false;
   saveChatOAuthReturnState('oauth_popup_open');
-  const popup = window.open(target, 'cait_oauth_connect', chatOAuthPopupFeatures());
+  const popup = connectorGateOpenOAuthPopup(target);
   if (!popup) return false;
-  try {
-    popup.focus();
-  } catch {}
   appendTextMessage('system', chatText(
-    `${label} opened in a separate window. Keep this chat open; I will continue from here when the connection finishes.`,
-    `${label} を別ウィンドウで開きました。このチャットは開いたままにしてください。接続が終わったらここから続けます。`,
+    `${label} opened in a separate window. Keep this chat open; I will wait up to 60 minutes and continue from here when the connection finishes.`,
+    `${label} を別ウィンドウで開きました。このチャットは開いたままにしてください。最大60分待機し、接続が終わったらここから続けます。`,
     state.chatMessages[0]?.body || state.conversationLanguage
   ), { label: 'Connector' });
   startOAuthPopupMonitor(popup);
@@ -8862,80 +8772,45 @@ function openChatOAuthPopup(href = '', label = 'Google connection') {
 }
 
 async function handleOAuthPopupReturnMessage(data = {}) {
-  const status = String(data.status || '').trim().toLowerCase();
-  const provider = String(data.provider || '').trim().toLowerCase();
-  const connectorLabel = provider === 'x' ? 'X' : 'Google';
-  if (status === 'error') {
-    appendTextMessage('assistant', chatText(
-      `${connectorLabel} connection did not complete: ${data.error || 'auth_failed'}`,
-      `${connectorLabel}接続が完了しませんでした: ${data.error || 'auth_failed'}`,
-      state.chatMessages[0]?.body || state.conversationLanguage
-    ), { tone: 'error', label: 'Connector' });
-    return;
-  }
-  appendTextMessage('system', chatText(
-    `${connectorLabel} connection finished. Checking this order again from the original chat.`,
-    `${connectorLabel}接続が完了しました。元のチャットでこのオーダーを再確認します。`,
-    state.chatMessages[0]?.body || state.conversationLanguage
-  ), { label: 'Connector' });
-  state.authorityNoticeKeys.clear();
-  await refreshAuth();
-  if (state.orderId) {
-    try {
-      const job = await fetchVisibleJob(state.orderId);
-      maybeRenderAuthorityNotice(job, { label: 'Approval required' });
-      if (jobHasDeliveryResult(job)) renderDeliveryOnce(job, { force: true });
-      else {
-        resumeLiveProgress(job.id || state.orderId);
-        startPolling(job.id || state.orderId);
+  return connectorGateHandleOAuthPopupReturnMessage(data, {
+    onError: ({ connectorLabel, error }) => {
+      appendTextMessage('assistant', chatText(
+        `${connectorLabel} connection did not complete: ${error}`,
+        `${connectorLabel}接続が完了しませんでした: ${error}`,
+        state.chatMessages[0]?.body || state.conversationLanguage
+      ), { tone: 'error', label: 'Connector' });
+    },
+    onSuccess: ({ connectorLabel }) => {
+      appendTextMessage('system', chatText(
+        `${connectorLabel} connection finished. Checking this order again from the original chat.`,
+        `${connectorLabel}接続が完了しました。元のチャットでこのオーダーを再確認します。`,
+        state.chatMessages[0]?.body || state.conversationLanguage
+      ), { label: 'Connector' });
+      state.authorityNoticeKeys.clear();
+    },
+    refreshAuth,
+    afterRefresh: async () => {
+      if (state.orderId) {
+        try {
+          const job = await fetchVisibleJob(state.orderId);
+          maybeRenderAuthorityNotice(job, { label: 'Approval required' });
+          if (jobHasDeliveryResult(job)) renderDeliveryOnce(job, { force: true });
+          else {
+            resumeLiveProgress(job.id || state.orderId);
+            startPolling(job.id || state.orderId);
+          }
+        } catch {
+          startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
+        }
+      } else {
+        startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
       }
-    } catch {
-      startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
     }
-  } else {
-    startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
-  }
+  });
 }
 
 function handleChatOAuthPopupReturn() {
-  let url = null;
-  try {
-    url = new URL(window.location.href);
-  } catch {
-    return false;
-  }
-  if (url.searchParams.get('cait_oauth_popup') !== '1') return false;
-  const error = String(url.searchParams.get('auth_error') || '').trim();
-  const provider = String(url.searchParams.get('cait_oauth_provider') || 'google').trim().toLowerCase();
-  const connectorLabel = provider === 'x' ? 'X' : 'Google';
-  try {
-    window.opener?.postMessage({
-      type: 'cait-oauth-return',
-      provider,
-      status: error ? 'error' : 'ok',
-      error,
-      sessionId: String(url.searchParams.get('cait_chat_session_id') || '').trim(),
-      orderId: String(url.searchParams.get('cait_order_id') || '').trim()
-    }, window.location.origin);
-  } catch {}
-  document.body.innerHTML = [
-    `<main class="chatux-shell" aria-label="${escapeHtml(connectorLabel)} connection complete">`,
-    '<section class="chatux-panel">',
-    '<div class="chatux-thread">',
-    '<article class="message system">',
-    '<div class="message-meta">Connector</div>',
-    `<div class="message-body">${escapeHtml(error ? `${connectorLabel} connection failed: ${error}` : `${connectorLabel} connection completed. Return to the original chat window.`)}</div>`,
-    '</article>',
-    '</div>',
-    '</section>',
-    '</main>'
-  ].join('');
-  window.setTimeout(() => {
-    try {
-      window.close();
-    } catch {}
-  }, error ? 1800 : 600);
-  return true;
+  return connectorGateHandleOAuthPopupReturn();
 }
 
 els.composer.addEventListener('submit', async (event) => {
@@ -9005,16 +8880,11 @@ window.addEventListener('message', (event) => {
 });
 
 document.addEventListener('click', (event) => {
-  const oauthLink = event.target?.closest?.('a[href^="/auth/google"], a[href^="/auth/github"]');
-  if (!oauthLink) return;
-  saveChatOAuthReturnState('oauth_link_click');
-  if (oauthLink.dataset.chatOauthPopup) {
-    event.preventDefault();
-    const label = String(oauthLink.textContent || 'Google connection').trim() || 'Google connection';
-    if (!openChatOAuthPopup(oauthLink.href || oauthLink.getAttribute('href') || '', label)) {
-      window.location.href = oauthLink.href || oauthLink.getAttribute('href') || CHATUX_RETURN_PATH;
-    }
-  }
+  connectorGateHandleOAuthLinkClick(event, {
+    saveOAuthState: saveChatOAuthReturnState,
+    openOAuthPopup: openChatOAuthPopup,
+    fallbackReturnPath: CHATUX_RETURN_PATH
+  });
 }, { capture: true });
 
 els.authStatus?.addEventListener('click', (event) => {
@@ -9077,12 +8947,12 @@ els.chatThread.addEventListener('click', async (event) => {
       appendTextMessage('system', `Sent CAIt transfer context to ${manifest.name || 'the registered app'} and opened the handoff URL.`, { label: 'App handoff' });
     } catch (error) {
       try {
-        const contextUrl = await createAppAgentContextOpenUrl(appId, payload);
+        const contextUrl = await createAppAgentContextOpenUrl(appId, payload, { contextPath: '/api/app-contexts' });
         appHandoffRememberDetails(appId, payload, contextUrl, 'generic_app_context_fallback');
         window.open(contextUrl, '_blank', 'noopener,noreferrer');
         appendTextMessage('assistant', `${manifest.name || 'App'} handoff API failed, so I created a server-side CAIt app context and opened the app with only the context id/token in the URL.\n\n${String(error?.message || error || '')}`, { tone: 'warn', label: 'App handoff' });
       } catch (fallbackError) {
-        appendTextMessage('assistant', String(error?.message || error || 'App handoff failed.'), { tone: 'error', label: 'App handoff' });
+        appendTextMessage('assistant', `${String(error?.message || error || 'App handoff failed.')}\n\nFallback also failed: ${String(fallbackError?.message || fallbackError || 'unknown error')}`, { tone: 'error', label: 'App handoff' });
       }
     } finally {
       setBusy(false);
@@ -9598,7 +9468,11 @@ renderChatSessionSidebar();
 startAppContextBroadcastListener();
 if (!handleChatOAuthPopupReturn()) {
   const restoredFromOAuth = restoreChatOAuthReturnStateFromUrl();
-  if (!restoredFromOAuth && !chatRestoreRequestFromUrl().requested) restoreChatRuntimeState();
+  if (shouldStartFreshChatFromUrl()) {
+    startNewChatSession();
+  } else if (!restoredFromOAuth && !chatRestoreRequestFromUrl().requested) {
+    restoreChatRuntimeState();
+  }
   void hydrateAppContextFromUrl();
   void refreshChatSessionHistory({ force: true }).then(() => {
     restoreRequestedChatSessionFromHistory();

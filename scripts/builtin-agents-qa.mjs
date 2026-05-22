@@ -6,7 +6,7 @@ import {
   SAMPLE_AGENT_KINDS,
   sampleAgentDefinitionForKind
 } from '../lib/builtin-agents/agents/index.js';
-import { leaderReadableAgentSelectionIndex } from '../lib/agent-selection-index.js';
+import { leaderReadableAgentCatalogIndex } from '../lib/agent-catalog-index.js';
 import { deliveryItemsFromJob } from '../lib/delivery-items.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -34,6 +34,15 @@ for (const fileName of agentFiles) {
   assert.ok(!source.includes('agent-provider-runtime'), `${fileName} must not import a shared provider runtime`);
   assert.ok(!source.includes('sample-agent-provider'), `${fileName} must not call a central sample provider`);
   assert.ok(!source.includes('sample-agent-catalog'), `${fileName} must not call a central sample catalog`);
+  assert.ok(!source.includes('additionalProperties: true'), `${fileName} OpenAI strict schemas must not allow additionalProperties: true`);
+  assert.ok(!source.includes("name: 'cait_agent_delivery'"), `${fileName} must not require OpenAI to emit CAIt's internal delivery schema`);
+  assert.ok(!source.includes('Return valid JSON matching the schema'), `${fileName} must accept raw OpenAI delivery text instead of requiring JSON`);
+  assert.ok(!source.includes('agentProviderFallbackDelivery'), `${fileName} must not recover failed model output with an agent-definition fallback`);
+  assert.ok(!source.includes('agent_definition_packet'), `${fileName} must not mark fallback definition packets as completed deliveries`);
+  assert.ok(
+    !source.includes("required: ['summary', 'report_summary', 'bullets', 'next_action', 'file_markdown']"),
+    `${fileName} delivery generation schema must require every declared strict-schema property`
+  );
 }
 
 const workerSource = readFileSync(join(root, 'worker.js'), 'utf8');
@@ -51,16 +60,352 @@ assert.equal(research.manifest.kind, 'research');
 assert.equal(research.manifest.jobEndpoint, '/sample-agents/research/jobs');
 assert.equal(research.manifest.metadata.provider, 'agent_file');
 
+const seoSpecialist = sampleAgentDefinitionForKind('seo_specialist');
+const removedSeoKind = ['seo', 'gap'].join('_');
+assert.equal(seoSpecialist.manifest.kind, 'seo_specialist');
+assert.equal(seoSpecialist.manifest.agent_role, 'worker');
+assert.equal(seoSpecialist.manifest.jobEndpoint, '/sample-agents/seo_specialist/jobs');
+assert.equal(seoSpecialist.manifest.healthcheckUrl, '/sample-agents/seo_specialist/health');
+assert.equal(seoSpecialist.manifest.metadata.provider, 'agent_file');
+assert.equal(seoSpecialist.manifest.metadata.workflow_layer || seoSpecialist.seedProfile.metadata.workflow_layer, 'preparation');
+assert.ok(SAMPLE_AGENT_KINDS.includes('seo_specialist'), 'seo_specialist should be routable through its agent-file manifest');
+assert.equal(SAMPLE_AGENT_KINDS.includes(removedSeoKind), false, 'removed old SEO kind must not remain as a routable agent kind');
+assert.equal(sampleAgentDefinitionForKind(removedSeoKind)?.manifest.kind, 'seo_specialist', 'old seo_gap workflow endpoints should remain as non-catalog compatibility aliases');
+assert.equal(sampleAgentDefinitionForKind('seo')?.manifest.kind, 'seo_specialist', 'seo should route to the SEO specialist');
+assert.equal(sampleAgentDefinitionForKind('seo_leader_agent'), null, 'SEO must not be registered as a separate leader agent');
+assert.match(seoSpecialist.systemPrompt, /not a leader/i, 'seo_specialist should not be a leader');
+assert.match(seoSpecialist.systemPrompt, /do not delegate SEO work to other agents/i, 'seo_specialist should own SEO work inside its file');
+assert.match(seoSpecialist.systemPrompt, /URLs/i, 'seo_specialist should request user evidence URLs');
+assert.match(seoSpecialist.systemPrompt, /PDFs/i, 'seo_specialist should request user evidence PDFs');
+assert.match(seoSpecialist.systemPrompt, /X posts/i, 'seo_specialist should request user evidence X proof');
+assert.match(seoSpecialist.systemPrompt, /owned blog/i, 'seo_specialist should request user evidence blog proof');
+assert.match(seoSpecialist.systemPrompt, /estimate cost[\s\S]*explicit user approval/i, 'seo_specialist should require cost estimate and explicit approval before full-batch writing');
+assert.match(seoSpecialist.systemPrompt, /Publisher & Approval Studio batch handoff/i, 'seo_specialist should create Publisher batch handoff after approval');
+
 const health = research.provider.health({ kind: 'research', definition: research, source: {} });
 assert.equal(health.provider, 'agent_file');
 assert.equal(health.kind, 'research');
+
+const originalFetch = globalThis.fetch;
+let openAiDeliveryCalls = 0;
+globalThis.fetch = async (url, options = {}) => {
+  const target = String(url || '');
+  if (target.includes('/responses')) {
+    openAiDeliveryCalls += 1;
+    const request = JSON.parse(String(options.body || '{}'));
+    assert.equal(request.text?.format, undefined, 'OpenAI delivery generation must not require a structured internal schema');
+    const userContent = request.input?.find((item) => item.role === 'user')?.content?.[0]?.text || '{}';
+    const packet = JSON.parse(userContent);
+    const kind = packet.agent?.kind || 'agent';
+    const targetUrl = packet.target_url || 'la demande';
+    const cmoReportExtras = packet.leader_synthesis?.reportExtras || {};
+    const leaderEvaluationRequired = packet.leader_synthesis?.mode === 'llm_leader_evaluation_required'
+      || cmoReportExtras.leader_evaluation_required === true;
+    const specialistOutputs = Array.isArray(packet.leader_synthesis?.specialist_outputs)
+      ? packet.leader_synthesis.specialist_outputs
+      : [];
+    const selectedLane = cmoReportExtras.selected_lane || '';
+    const selectedNextOwner = cmoReportExtras.selected_next_owner || '';
+    const cmoMarkdown = leaderEvaluationRequired ? [
+      '# CMO leader final synthesis',
+      '',
+      '## Direct answer',
+      'The CMO leader evaluated all specialist outputs and integrated the usable work into one final recommendation.',
+      '',
+      '## Adoption matrix',
+      '| Agent | Decision | Reason |',
+      '| --- | --- | --- |',
+      ...specialistOutputs.slice(0, 5).map((item) => `| ${item.task_type || 'specialist'} | ${item.blocked ? 'held' : 'adopted'} | judged from the supplied content excerpt |`),
+      '',
+      '## Integrated final recommendation',
+      'Use the landing/SEO copy where substantiated, keep analytics tracking validation as the first required action, and hold blocked lead/list work.',
+      '',
+      '## Publisher draft status',
+      '- Publisher handoff draft prepared in chat',
+      '- External app ingest status: not verified',
+      '- Publish status: not published',
+      '',
+      '## Publisher handoff draft',
+      'Title: AI agent marketplace conversion page update',
+      'Primary CTA: Start signup',
+      '',
+      '## Blocked or not selected',
+      '- list_creator: blocked source gap'
+    ].join('\n') : (selectedLane ? [
+      '# Livraison CMO',
+      '',
+      '## Final selected lane',
+      `Final selected lane: **${selectedLane}**`,
+      '',
+      '## Publisher/SaaS handoff',
+      '- Connector: publisher',
+      '- Action type: site_publish_packet',
+      '',
+      '## Publisher body',
+      'Use the SEO page packet and exact generated copy.',
+      '',
+      '## Blocked or not selected',
+      '- list_creator: blocked source gap'
+    ].join('\n') : (selectedNextOwner ? [
+      '# Livraison CMO checkpoint',
+      '',
+      '## Checkpoint reviewed',
+      `Next owner: **${selectedNextOwner}**`,
+      '',
+      '## Planning',
+      'media_planner should receive the evidence-backed handoff.'
+    ].join('\n') : [
+      '# Livraison CMO',
+      '',
+      '## Publisher/SaaS handoff',
+      '- Connector: publisher',
+      '- Action type: site_publish_packet',
+      '',
+      '## Publisher body',
+      'Use the SEO page packet and exact generated copy.'
+    ].join('\n')));
+    const writerMarkdown = [
+      '# Livraison Publisher handoff',
+      '',
+      '## Publisher handoff',
+      '- Destination: X',
+      '- URL: https://aiagent-marketplace.net',
+      '',
+      '## Draft variants',
+      '1. Source-backed variant one for developers.',
+      '2. Source-backed variant two for trials.',
+      '3. Source-backed variant three for proof.',
+      '',
+      '## E-E-A-T source ledger',
+      '- Founder note: provided file evidence.',
+      '- X account/source: provided URL.'
+    ].join('\n');
+    const writerArtifacts = kind === 'writer' ? [
+      {
+        id: 'writer-publisher-handoff',
+        surface: 'publisher',
+        type: 'x_post',
+        item_type: 'x_post',
+        channel_key: 'x',
+        destination: 'X',
+        connector: 'x',
+        action_type: 'x_post_packet',
+        body: writerMarkdown,
+        publish_variants: ['variant one', 'variant two', 'variant three'],
+        source_evidence: [
+          { source_type: 'x_post_or_account', url: 'https://x.com/cait' },
+          { source_type: 'uploaded_file', name: 'founder-note.md' }
+        ],
+        eeat_notes: { trust: 'source evidence preserved' },
+        metadata: { source_evidence: [{ source_type: 'x_post_or_account' }], publish_variants: ['variant one', 'variant two', 'variant three'], eeat_notes: { trust: 'source evidence preserved' } }
+      },
+      {
+        id: 'writer-publisher-handoff-owned-site-article',
+        surface: 'publisher',
+        type: 'article',
+        item_type: 'article',
+        channel_key: 'owned_site',
+        destination: 'Owned site',
+        connector: 'publisher',
+        action_type: 'site_publish_packet',
+        body: writerMarkdown,
+        publish_variants: ['variant one', 'variant two', 'variant three'],
+        source_evidence: [{ source_type: 'uploaded_file', name: 'founder-note.md' }],
+        eeat_notes: { trust: 'source evidence preserved' },
+        metadata: { source_evidence: [{ source_type: 'uploaded_file' }], publish_variants: ['variant one', 'variant two', 'variant three'], eeat_notes: { trust: 'source evidence preserved' } }
+      }
+    ] : [];
+    const cmoArtifacts = kind === 'cmo_leader' && leaderEvaluationRequired ? [
+      {
+        id: 'cmo-leader-publisher-handoff-draft',
+        surface: 'publisher',
+        destination: 'Publisher & Approval Studio',
+        connector: 'publisher',
+        action_type: 'site_publish_packet',
+        content_type: 'site_publish_packet',
+        item_type: 'landing_page_change',
+        body: 'Title: AI agent marketplace conversion page update\nPrimary CTA: Start signup',
+        metadata: {
+          prepared_in_chat: true,
+          ingest_status: 'not_ingested',
+          publish_status: 'not_published'
+        }
+      }
+    ] : [];
+    const researchMarkdown = [
+      `# Livraison ${kind}`,
+      '',
+      '## Evidence status',
+      `Contenu généré en français pour ${targetUrl}.`,
+      '',
+      '## Décision',
+      'Utiliser ce brouillon comme sortie agent.'
+    ].join('\n');
+    const payload = {
+      summary: kind === 'cmo_leader' && leaderEvaluationRequired
+        ? { headline: `Livraison générée pour ${kind}` }
+        : `Livraison générée pour ${kind}`,
+      report_summary: kind === 'cmo_leader' && leaderEvaluationRequired
+        ? { headline: `Synthèse générée pour ${kind}` }
+        : `Synthèse générée pour ${kind}`,
+      bullets: [
+        'Le modèle a rédigé le contenu utilisateur.',
+        'La langue demandée est respectée sans limite à deux langues.'
+      ],
+      next_action: kind === 'cmo_leader' && leaderEvaluationRequired
+        ? { action: 'Vérifier le contenu généré puis poursuivre le flux.' }
+        : 'Vérifier le contenu généré puis poursuivre le flux.',
+      file_markdown: kind === 'cmo_leader' ? cmoMarkdown : (kind === 'writer' ? writerMarkdown : (kind === 'research' ? researchMarkdown : [
+        `# Livraison ${kind}`,
+        '',
+        '## Décision',
+        `Contenu généré en français pour ${targetUrl}.`,
+        '',
+        '## Action',
+        'Utiliser ce brouillon comme sortie agent.'
+      ].join('\n'))),
+      content_type: kind === 'cmo_leader' && leaderEvaluationRequired ? 'cmo_leader_delivery' : (kind === 'cmo_leader' && selectedLane ? 'site_publish_packet' : 'agent_delivery'),
+      artifacts: [...writerArtifacts, ...cmoArtifacts],
+      approval_requests: []
+    };
+    return new Response(JSON.stringify({ output_text: JSON.stringify(payload) }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
+  }
+  if (originalFetch) return originalFetch(url, options);
+  throw new Error(`Unexpected fetch call: ${target}`);
+};
+
+for (const kind of SAMPLE_AGENT_KINDS) {
+  const definition = sampleAgentDefinitionForKind(kind);
+  const delivery = await definition.provider.runJob({
+    kind,
+    definition,
+    body: {
+      prompt: `Créer une livraison concrète pour ${kind} et https://example.com.`,
+      output_language: 'fr-FR'
+    },
+    source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+    manifest: definition.manifest
+  });
+  const content = delivery.files?.[0]?.content || '';
+  assert.equal(delivery.status, 'completed', `${kind} should complete with OpenAI-generated delivery`);
+  assert.equal(delivery.runtime?.generation_provider, 'openai_responses', `${kind} should mark OpenAI generation`);
+  assert.match(content, /Livraison|Décision|français/i, `${kind} should use the OpenAI-generated non-English content`);
+  assert.doesNotMatch(content, /Answer first|先に結論|prepared a concrete work product/i, `${kind} should not fall back to hardcoded bilingual delivery text when OpenAI is configured`);
+}
+assert.ok(openAiDeliveryCalls >= SAMPLE_AGENT_KINDS.length, 'each sample agent should use OpenAI delivery generation when configured');
+
+const configuredOpenAiFetch = globalThis.fetch;
+globalThis.fetch = async (url, options = {}) => {
+  const target = String(url || '');
+  if (target.includes('/responses')) {
+    const request = JSON.parse(String(options.body || '{}'));
+    assert.equal(request.text?.format, undefined, 'raw OpenAI delivery path must not request a structured format');
+    return new Response(JSON.stringify({
+      output_text: '# Raw CMO delivery\n\n- This is direct model output.\n- It should become the user-facing delivery file.'
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
+  }
+  return configuredOpenAiFetch(url, options);
+};
+const cmoRawDefinition = sampleAgentDefinitionForKind('cmo_leader');
+const cmoRawDelivery = await cmoRawDefinition.provider.runJob({
+  kind: 'cmo_leader',
+  definition: cmoRawDefinition,
+  body: {
+    prompt: 'Task: cmo_leader\nGoal: return a raw model-authored delivery for https://aiagent-marketplace.net',
+    output_language: 'en'
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-raw-delivery' },
+  manifest: cmoRawDefinition.manifest
+});
+assert.equal(cmoRawDelivery.status, 'completed', 'raw OpenAI text should complete as the delivery');
+assert.equal(cmoRawDelivery.runtime?.generation_provider, 'openai_responses', 'raw OpenAI text should not fall back to an agent definition packet');
+assert.match(cmoRawDelivery.files?.[0]?.content || '', /Raw CMO delivery[\s\S]*direct model output/i, 'raw OpenAI text should be returned as the user-facing delivery file');
+
+globalThis.fetch = async (url, options = {}) => {
+  const target = String(url || '');
+  if (target.includes('/responses')) {
+    const request = JSON.parse(String(options.body || '{}'));
+    assert.equal(request.text?.format, undefined, 'Responses metadata extraction path must not request a structured format');
+    return new Response(JSON.stringify({
+      text: { format: { type: 'text' }, verbosity: 'medium' },
+      output: [{
+        content: [{
+          type: 'output_text',
+          text: '# Responses content delivery\n\n- This output came from output[].content[].text.\n- Top-level text.verbosity must not become the delivery file.'
+        }]
+      }]
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
+  }
+  return configuredOpenAiFetch(url, options);
+};
+const cmoResponsesContentDelivery = await cmoRawDefinition.provider.runJob({
+  kind: 'cmo_leader',
+  definition: cmoRawDefinition,
+  body: {
+    prompt: 'Task: cmo_leader\nGoal: verify Responses content extraction for https://aiagent-marketplace.net',
+    output_language: 'en'
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-responses-content' },
+  manifest: cmoRawDefinition.manifest
+});
+assert.equal(cmoResponsesContentDelivery.status, 'completed', 'Responses content array output should complete as the delivery');
+assert.match(cmoResponsesContentDelivery.files?.[0]?.content || '', /Responses content delivery[\s\S]*output\[\]\.content\[\]\.text/i, 'Responses content array text should become the user-facing delivery file');
+assert.doesNotMatch(cmoResponsesContentDelivery.files?.[0]?.content || '', /verbosity\s+medium/i, 'Responses top-level text metadata must not become the delivery file');
+
+globalThis.fetch = async (url, options = {}) => {
+  const target = String(url || '');
+  if (target.includes('/responses')) {
+    return new Response(JSON.stringify({ output_text: '{}' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
+  }
+  return configuredOpenAiFetch(url, options);
+};
+const cmoFailureDefinition = sampleAgentDefinitionForKind('cmo_leader');
+const cmoConfiguredFailure = await cmoFailureDefinition.provider.runJob({
+  kind: 'cmo_leader',
+  definition: cmoFailureDefinition,
+  body: {
+    prompt: 'Task: cmo_leader\nGoal: increase signups for https://aiagent-marketplace.net\nPriority channel: Organic search / SEO',
+    output_language: 'en'
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: cmoFailureDefinition.manifest
+});
+assert.equal(cmoConfiguredFailure.status, 'failed', 'configured CMO leader must fail malformed empty OpenAI output instead of using fallback delivery');
+assert.match(cmoConfiguredFailure.failure_reason || '', /openai_delivery_generation_failed|missing_required_deliverable/i, 'CMO malformed output should surface a delivery failure');
+assert.equal((cmoConfiguredFailure.files || []).length, 0, 'CMO malformed output must not attach fallback files');
+const dataFailureDefinition = sampleAgentDefinitionForKind('data_analysis');
+const dataConfiguredFailure = await dataFailureDefinition.provider.runJob({
+  kind: 'data_analysis',
+  definition: dataFailureDefinition,
+  body: {
+    prompt: 'GA4 property: properties/1\nSessions: 554\nConversions: 0\nConversion rate: 0%\nPriority channel: Organic search / SEO',
+    output_language: 'en'
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: dataFailureDefinition.manifest
+});
+assert.equal(dataConfiguredFailure.status, 'failed', 'configured data analysis must fail malformed empty OpenAI output instead of using fallback delivery');
+assert.match(dataConfiguredFailure.failure_reason || '', /openai_delivery_generation_failed/i, 'data analysis malformed output should surface generation failure');
+assert.equal((dataConfiguredFailure.files || []).length, 0, 'data analysis malformed output must not attach fallback files');
+globalThis.fetch = configuredOpenAiFetch;
 
 const leakedOutputContractPattern = /##\s*Delivery packet|Write sections for|Write a two-part Markdown delivery|Agent-owned behavior|provider\.runJob|agent-file provider implementation|WORKFLOW HANDOFF CONTEXT|STRUCTURED HANDOFF DIGEST/i;
 
 function assertUserFacingDelivery(result, label, requiredPatterns = []) {
   const content = result.files?.[0]?.content || '';
   assert.equal(result.status, 'completed', `${label} should complete`);
-  assert.ok(content.includes('Answer first') || content.includes('先に結論'), `${label} should be answer-first/user-facing`);
   assert.ok(!leakedOutputContractPattern.test(content), `${label} must not expose output contracts or workflow prompt internals`);
   assert.ok(!/provider delivery|agent-file provider implementation/i.test(result.summary || ''), `${label} summary must not expose provider implementation details`);
   for (const pattern of requiredPatterns) {
@@ -70,7 +415,7 @@ function assertUserFacingDelivery(result, label, requiredPatterns = []) {
 
 function assertMissingConcreteDelivery(result, label) {
   assert.equal(result.status, 'failed', `${label} should fail instead of returning a shared template delivery`);
-  assert.match(result.failure_reason || result.error || '', /missing_required_deliverable/, `${label} should name the missing deliverable contract`);
+  assert.match(result.failure_reason || result.error || '', /missing_required_deliverable|openai_delivery_generation_unavailable/, `${label} should name the missing delivery generation contract`);
   assert.equal((result.files || []).length, 0, `${label} should not attach fallback files`);
 }
 
@@ -109,7 +454,7 @@ const deliveryBody = {
 for (const kind of [
   'data_analysis',
   'media_planner',
-  'seo_gap',
+  'seo_specialist',
   'landing',
   'cmo_leader'
 ]) {
@@ -155,7 +500,7 @@ const malformedAudiencePattern = /対象ユーザー:.*制約|Target audience:.*
 for (const kind of [
   'data_analysis',
   'media_planner',
-  'seo_gap',
+  'seo_specialist',
   'landing',
   'cmo_leader'
 ]) {
@@ -184,7 +529,7 @@ const travelEsimPurchaseBody = {
 for (const kind of [
   'data_analysis',
   'media_planner',
-  'seo_gap',
+  'seo_specialist',
   'landing',
   'cmo_leader'
 ]) {
@@ -202,6 +547,132 @@ for (const kind of [
   assert.ok(!malformedAudiencePattern.test(content), `${kind} travel/eSIM purchase delivery must not leak adjacent intake labels into the audience`);
   assert.ok(!/lead or inquiry|signup or trial start|inquiry_submit|signup_or_trial_start/i.test(content), `${kind} travel/eSIM purchase delivery should preserve purchase conversion intent`);
 }
+
+const cmoLeaderFinal = sampleAgentDefinitionForKind('cmo_leader');
+const cmoLeaderFinalSynthesis = await cmoLeaderFinal.provider.runJob({
+  kind: 'cmo_leader',
+  definition: cmoLeaderFinal,
+  body: {
+    prompt: [
+      'Task: cmo_leader',
+      'Goal: increase signups for https://aiagent-marketplace.net',
+      'Product/service: https://aiagent-marketplace.net',
+      'Target audience: Developers/technical users',
+      'Main goal: Increase signups/trials',
+      'Priority channel: Organic search / SEO'
+    ].join('\n'),
+    output_language: 'en',
+    input: {
+      _broker: {
+        workflow: {
+          sequencePhase: 'final_summary',
+          leaderHandoff: {
+            priorRuns: [
+              {
+                taskType: 'data_analysis',
+                sequencePhase: 'data',
+                status: 'completed',
+                summary: 'GA4 sessions 554 and conversions 0.'
+              },
+              {
+                taskType: 'research',
+                sequencePhase: 'research',
+                status: 'completed',
+                summary: 'Research found signup visitors need proof before choosing an AI agent marketplace.',
+                webSources: [{ title: 'Target service', url: 'https://aiagent-marketplace.net/', snippet: 'AI agent marketplace target URL.' }]
+              },
+              {
+                taskType: 'media_planner',
+                sequencePhase: 'planning',
+                status: 'completed',
+                summary: 'Prioritize SEO first, then referral and social copy.'
+              },
+              {
+                taskType: 'seo_specialist',
+                sequencePhase: 'preparation',
+                status: 'completed',
+                summary: 'SEO page packet ready for Publisher.',
+                files: [{
+                  name: 'seo-agent-delivery.md',
+                  content: [
+                    '# SEO page packet',
+                    '## SEO page recommendation',
+                    '- H1: AI agent marketplace for developers',
+                    '- Meta title: AI agent marketplace for developer workflows',
+                    '- Meta description: Compare AI agents, review proof, and start signup.',
+                    '## Replacement copy',
+                    'Headline: AI agent marketplace for developers.',
+                    'Primary CTA: Start signup'
+                  ].join('\n')
+                }]
+              },
+              {
+                taskType: 'list_creator',
+                sequencePhase: 'preparation',
+                status: 'blocked',
+                summary: 'No public lead source was supplied.'
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: cmoLeaderFinal.manifest
+});
+assertUserFacingDelivery(cmoLeaderFinalSynthesis, 'cmo_leader final synthesis', [
+  /evaluated all specialist outputs|Adoption matrix/i,
+  /Publisher draft status/i,
+  /External app ingest status: not verified/i
+]);
+const cmoLeaderFinalContent = cmoLeaderFinalSynthesis.files?.[0]?.content || '';
+assert.match(cmoLeaderFinalContent, /Adoption matrix[\s\S]*seo_specialist/i, 'CMO final synthesis should require LLM judgment over the preparation artifact content');
+assert.match(cmoLeaderFinalContent, /Adoption matrix[\s\S]*data_analysis/i, 'CMO final synthesis should carry data_analysis as evidence for leader judgment');
+assert.match(cmoLeaderFinalContent, /Blocked or not selected[\s\S]*list_creator/i, 'CMO final synthesis should separate blocked lead/list work from adopted work');
+assert.match(cmoLeaderFinalContent, /Publisher handoff draft prepared in chat/i, 'CMO final synthesis should label Publisher material as a chat draft');
+assert.doesNotMatch(cmoLeaderFinalContent, /Landing page change packet prepared|Publish status:\s*prepared\s*\/\s*not/i, 'CMO final synthesis must not overclaim Publisher packet preparation');
+assert.doesNotMatch(JSON.stringify(cmoLeaderFinalSynthesis), /\[object Object\]/, 'CMO final synthesis must flatten object-shaped summary and next action fields');
+assert.equal(cmoLeaderFinalSynthesis.report?.leader_evaluation_required, true, 'CMO final report should mark LLM leader evaluation as required');
+assert.equal(cmoLeaderFinalSynthesis.report?.publisher_ingest_verified, false, 'CMO final report should not claim Publisher ingest without proof');
+assert.equal(cmoLeaderFinalSynthesis.files?.[0]?.content_type, 'cmo_leader_delivery', 'CMO final file should be typed as leader delivery, not an already-created publish packet');
+const cmoLeaderPublisherArtifact = cmoLeaderFinalSynthesis.report?.artifacts?.[0];
+assert.equal(cmoLeaderPublisherArtifact?.surface, 'publisher', 'CMO final synthesis should emit a Publisher artifact');
+assert.equal(cmoLeaderPublisherArtifact?.action_type, 'site_publish_packet', 'CMO final Publisher artifact should use site_publish_packet');
+assert.equal(cmoLeaderPublisherArtifact?.metadata?.ingest_status, 'not_ingested', 'CMO final Publisher artifact must say it is not ingested');
+assert.equal(cmoLeaderPublisherArtifact?.metadata?.publish_status, 'not_published', 'CMO final Publisher artifact must say it is not published');
+
+const cmoLeaderCheckpointSynthesis = await cmoLeaderFinal.provider.runJob({
+  kind: 'cmo_leader',
+  definition: cmoLeaderFinal,
+  body: {
+    prompt: 'CMO checkpoint for https://aiagent-marketplace.net after research. Answer in English.',
+    output_language: 'en',
+    input: {
+      _broker: {
+        workflow: {
+          sequencePhase: 'checkpoint',
+          leaderHandoff: {
+            priorRuns: [
+              { taskType: 'data_analysis', sequencePhase: 'data', status: 'completed', summary: 'Analytics context loaded.' },
+              { taskType: 'research', sequencePhase: 'research', status: 'completed', summary: 'Research found proof and comparison intent.', webSources: [{ title: 'Target service', url: 'https://aiagent-marketplace.net/' }] }
+            ]
+          }
+        }
+      }
+    }
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: cmoLeaderFinal.manifest
+});
+assertUserFacingDelivery(cmoLeaderCheckpointSynthesis, 'cmo_leader checkpoint synthesis', [
+  /Checkpoint reviewed/i,
+  /Next owner/i
+]);
+const cmoLeaderCheckpointContent = cmoLeaderCheckpointSynthesis.files?.[0]?.content || '';
+assert.doesNotMatch(cmoLeaderCheckpointContent, /Publisher\/SaaS handoff|site_publish_packet/i, 'CMO checkpoint before preparation must not pretend Publisher handoff is ready');
+assert.match(cmoLeaderCheckpointContent, /media_planner|planning/i, 'CMO checkpoint after research should choose planning as the next owner');
+assert.match(cmoLeaderCheckpointContent, /specialist|prior|synthesis|evidence|統合|専門成果物/i, 'CMO checkpoint should explicitly mention specialist synthesis so adaptive release gates can verify handoff use');
 
 const teardown = sampleAgentDefinitionForKind('teardown');
 const sourceRequiredTeardown = await teardown.provider.runJob({
@@ -244,7 +715,7 @@ const sourceBackedWriter = await writer.provider.runJob({
       }]
     }
   },
-  source: {},
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
   manifest: writer.manifest
 });
 assert.equal(sourceBackedWriter.status, 'completed');
@@ -290,7 +761,7 @@ const sourceBackedResearch = await research.provider.runJob({
       }
     }
   },
-  source: {},
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
   manifest: research.manifest
 });
 assert.equal(sourceBackedResearch.status, 'completed');
@@ -327,7 +798,7 @@ const sourceContractResearch = await research.provider.runJob({
       }
     }
   },
-  source: {},
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
   manifest: research.manifest
 });
 assert.equal(sourceContractResearch.status, 'completed', 'research should treat source_collection_contract as search-required and use attached connector context');
@@ -354,12 +825,12 @@ const missingSourceResearch = await research.provider.runJob({
 assert.equal(missingSourceResearch.status, 'failed', 'search-required research must fail instead of returning a generic completed delivery without sources');
 assert.match(missingSourceResearch.failure_reason, /missing_required_search_sources/);
 
-const selectionIndex = leaderReadableAgentSelectionIndex({
+const catalogIndex = leaderReadableAgentCatalogIndex({
   agents: [
     {
       id: 'external_qa_agent',
       name: 'External QA Agent',
-      description: 'External manifest agent for QA selection.',
+      description: 'External manifest agent for QA catalog.',
       online: true,
       verificationStatus: 'verified',
       manifestSource: 'manifest-json',
@@ -368,7 +839,7 @@ const selectionIndex = leaderReadableAgentSelectionIndex({
         manifest: {
           kind: 'external_qa',
           name: 'External QA Agent',
-          description: 'External manifest agent for QA selection.',
+          description: 'External manifest agent for QA catalog.',
           agent_role: 'worker',
           task_types: ['qa_external'],
           capabilities: ['external_check'],
@@ -400,9 +871,11 @@ const selectionIndex = leaderReadableAgentSelectionIndex({
   ],
   includeInternal: true
 });
-assert.ok(selectionIndex.some((item) => item.kind === 'research' && ['internal_agent_file', 'internal_sample'].includes(item.source)), 'selection index should include internal agent-file manifests');
-assert.ok(selectionIndex.some((item) => item.kind === 'external_qa' && item.source === 'external_manifest'), 'selection index should include external registered manifests');
-assert.equal(selectionIndex.some((item) => item.kind === 'deleted_qa'), false, 'selection index should automatically drop deleted or hidden agents');
-assert.ok(selectionIndex.every((item) => item.provider === undefined && item.manifest === undefined), 'selection index must stay a readable summary, not an execution surface');
+assert.ok(catalogIndex.some((item) => item.kind === 'research' && ['internal_agent_file', 'internal_sample'].includes(item.source)), 'agent catalog should include internal agent-file manifests');
+assert.ok(catalogIndex.some((item) => item.kind === 'seo_specialist' && item.role === 'worker' && item.workflow_layer === 'preparation' && item.source === 'internal_agent_file'), 'agent catalog should include seo_specialist as a preparation specialist from its internal agent-file manifest');
+assert.equal(catalogIndex.some((item) => item.kind === 'seo_leader_agent'), false, 'agent catalog must not expose SEO as a leader agent');
+assert.ok(catalogIndex.some((item) => item.kind === 'external_qa' && item.source === 'external_manifest'), 'agent catalog should include external registered manifests');
+assert.equal(catalogIndex.some((item) => item.kind === 'deleted_qa'), false, 'agent catalog should automatically drop deleted or hidden agents');
+assert.ok(catalogIndex.every((item) => item.provider === undefined && item.manifest === undefined), 'agent catalog must stay a readable summary, not an execution surface');
 
 console.log('builtin-agents-qa passed');

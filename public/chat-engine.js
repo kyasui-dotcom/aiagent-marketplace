@@ -15,11 +15,19 @@ export function chatEngineBuildPrepareOrderPayload(prompt = '', options = {}) {
   const activeLeaderTaskType = String(options.activeLeaderTaskType || options.active_leader_task_type || '').trim();
   const activeLeaderName = String(options.activeLeaderName || options.active_leader_name || '').trim();
   const activeLeaderLocked = options.activeLeaderLocked === true || options.active_leader_locked === true;
+  const activeOwnerType = String(options.activeOwnerType || options.active_owner_type || '').trim().toLowerCase();
+  const activeOwnerTaskType = String(options.activeOwnerTaskType || options.active_owner_task_type || '').trim();
+  const activeOwnerName = String(options.activeOwnerName || options.active_owner_name || '').trim();
+  const activeOwnerLocked = options.activeOwnerLocked === true || options.active_owner_locked === true;
   const leaderChangeRequested = options.leaderChangeRequested === true || options.leader_change_requested === true;
+  const lockedOwnerTaskType = activeOwnerLocked && activeOwnerType && activeOwnerType !== 'cait' && !leaderChangeRequested
+    ? activeOwnerTaskType
+    : '';
   const taskType = String(
     options.taskType
     || options.task_type
     || options.selectedTaskType
+    || lockedOwnerTaskType
     || (activeLeaderLocked && !leaderChangeRequested ? activeLeaderTaskType : '')
     || ''
   ).trim();
@@ -29,6 +37,10 @@ export function chatEngineBuildPrepareOrderPayload(prompt = '', options = {}) {
     ...(taskType ? { task_type: taskType } : {}),
     ...(selectedAgentId ? { selected_agent_id: selectedAgentId } : {}),
     ...(selectedAgentName ? { selected_agent_name: selectedAgentName } : {}),
+    ...(activeOwnerType ? { active_owner_type: activeOwnerType } : {}),
+    ...(activeOwnerTaskType ? { active_owner_task_type: activeOwnerTaskType } : {}),
+    ...(activeOwnerName ? { active_owner_name: activeOwnerName } : {}),
+    ...(activeOwnerLocked ? { active_owner_locked: true } : {}),
     ...(activeLeaderTaskType ? { active_leader_task_type: activeLeaderTaskType } : {}),
     ...(activeLeaderName ? { active_leader_name: activeLeaderName } : {}),
     ...(activeLeaderLocked ? { active_leader_locked: true } : {}),
@@ -41,6 +53,36 @@ export function chatEngineBuildPrepareOrderPayload(prompt = '', options = {}) {
 function chatEngineConversationOwner(response = {}, options = {}) {
   const owner = response?.conversationOwner || response?.conversation_owner || response?.intake?.conversationOwner || response?.intake?.conversation_owner || {};
   const ownerType = String(owner.type || response.ownerType || response.owner_type || '').trim().toLowerCase();
+  const responseOwnerType = String(
+    response.activeOwnerType
+    || response.active_owner_type
+    || response?.intake?.activeOwnerType
+    || response?.intake?.active_owner_type
+    || ''
+  ).trim().toLowerCase();
+  const responseOwnerLocked = response.activeOwnerLocked === true
+    || response.active_owner_locked === true
+    || response?.intake?.activeOwnerLocked === true
+    || response?.intake?.active_owner_locked === true;
+  const fallbackOwnerType = String(options.activeOwnerType || options.active_owner_type || '').trim().toLowerCase();
+  const fallbackOwnerLocked = options.activeOwnerLocked === true || options.active_owner_locked === true;
+  const activeOwnerType = ownerType || responseOwnerType || (fallbackOwnerLocked ? fallbackOwnerType : '');
+  const responseOwnerTaskType = String(
+    response.activeOwnerTaskType
+    || response.active_owner_task_type
+    || response?.intake?.activeOwnerTaskType
+    || response?.intake?.active_owner_task_type
+    || ''
+  ).trim();
+  const responseOwnerName = String(
+    response.activeOwnerName
+    || response.active_owner_name
+    || response?.intake?.activeOwnerName
+    || response?.intake?.active_owner_name
+    || ''
+  ).trim();
+  const fallbackOwnerTaskType = activeOwnerType ? (options.activeOwnerTaskType || options.active_owner_task_type || '') : '';
+  const fallbackOwnerName = activeOwnerType ? (options.activeOwnerName || options.active_owner_name || '') : '';
   const responseLeaderLocked = response.activeLeaderLocked === true
     || response.active_leader_locked === true
     || response?.intake?.activeLeaderLocked === true
@@ -62,6 +104,19 @@ function chatEngineConversationOwner(response = {}, options = {}) {
   ).trim();
   const fallbackLeaderTaskType = ownerType ? '' : (fallbackLeaderLocked ? options.activeLeaderTaskType || '' : '');
   const fallbackLeaderName = ownerType ? '' : (fallbackLeaderLocked ? options.activeLeaderName || '' : '');
+  const activeOwnerTaskType = String(
+    owner.taskType
+    || owner.task_type
+    || (activeOwnerType && activeOwnerType !== 'leader' ? responseOwnerTaskType : '')
+    || fallbackOwnerTaskType
+    || ''
+  ).trim();
+  const activeOwnerName = String(
+    owner.label
+    || (activeOwnerType && activeOwnerType !== 'leader' ? responseOwnerName : '')
+    || fallbackOwnerName
+    || ''
+  ).trim();
   const activeLeaderTaskType = String(
     owner.taskType
     || owner.task_type
@@ -75,11 +130,19 @@ function chatEngineConversationOwner(response = {}, options = {}) {
     || fallbackLeaderName
     || ''
   ).trim();
-  if ((ownerType === 'leader' || owner.taskType || owner.task_type || responseLeaderLocked || fallbackLeaderLocked) && activeLeaderTaskType) {
+  if ((activeOwnerType === 'leader' || responseLeaderLocked || fallbackLeaderLocked) && activeLeaderTaskType) {
     return {
       type: 'leader',
       taskType: activeLeaderTaskType,
       label: activeLeaderName || activeLeaderTaskType,
+      reason: String(owner.reason || response.reason || '').trim()
+    };
+  }
+  if ((activeOwnerType === 'agent' || activeOwnerType === 'specialist') && activeOwnerTaskType) {
+    return {
+      type: 'agent',
+      taskType: activeOwnerTaskType,
+      label: activeOwnerName || activeOwnerTaskType,
       reason: String(owner.reason || response.reason || '').trim()
     };
   }
@@ -122,6 +185,10 @@ export function chatEngineBuildIntakeState(response = {}, originalPrompt = '', o
     selectedAgentId: String(responseIntake.selectedAgentId || responseIntake.selected_agent_id || response.selectedAgentId || response.selected_agent_id || options.selectedAgentId || '').trim(),
     selectedAgentName: String(responseIntake.selectedAgentName || responseIntake.selected_agent_name || response.selectedAgentName || response.selected_agent_name || options.selectedAgentName || '').trim(),
     conversationOwner,
+    activeOwnerType: conversationOwner.type,
+    activeOwnerTaskType: conversationOwner.type !== 'cait' ? conversationOwner.taskType : '',
+    activeOwnerName: conversationOwner.label || '',
+    activeOwnerLocked: conversationOwner.type !== 'cait',
     activeLeaderTaskType: conversationOwner.type === 'leader' ? conversationOwner.taskType : '',
     activeLeaderName: conversationOwner.type === 'leader' ? conversationOwner.label : '',
     questions,
@@ -179,7 +246,11 @@ export function chatEngineDraftBrief(prompt = '', prepared = {}, options = {}) {
   return [
     `Task: ${task}`,
     `Goal: ${String(prompt || '').trim()}`,
-    owner.type === 'leader' ? `Conversation lead: ${owner.label} (${owner.taskType})` : 'Conversation lead: CAIt specialist router',
+    owner.type === 'leader'
+      ? `Conversation lead: ${owner.label} (${owner.taskType})`
+      : owner.type === 'agent'
+        ? `Conversation agent: ${owner.label} (${owner.taskType})`
+        : 'Conversation lead: CAIt specialist router',
     `Work split: ${route === 'multi' ? 'team workflow' : 'single agent'}`,
     'Inputs: chat request and any URLs or constraints in the message',
     'Constraints: keep the user-facing flow chat-first; do not claim external writes without connector proof',
@@ -208,6 +279,10 @@ export function chatEngineBuildOrderDraft(prompt = '', prepared = {}, options = 
     selectedAgentId: options.selectedAgentId || prepared.selectedAgentId || prepared.selected_agent_id || '',
     selectedAgentName: options.selectedAgentName || prepared.selectedAgentName || prepared.selected_agent_name || '',
     conversationOwner: owner,
+    activeOwnerType: owner.type,
+    activeOwnerTaskType: owner.type !== 'cait' ? owner.taskType : '',
+    activeOwnerName: owner.label || '',
+    activeOwnerLocked: owner.type !== 'cait',
     activeLeaderTaskType: owner.type === 'leader' ? owner.taskType : '',
     activeLeaderName: owner.type === 'leader' ? owner.label : '',
     activeLeaderLocked: activeLeaderLocked && owner.type === 'leader',
@@ -244,6 +319,12 @@ export function chatEngineBuildJobPayload(draft = {}, options = {}) {
       active_leader_name: owner.label,
       active_leader_locked: true
     } : {}),
+    ...(draft.activeOwnerLocked === true && owner.type !== 'cait' ? {
+      active_owner_type: owner.type,
+      active_owner_task_type: owner.taskType,
+      active_owner_name: owner.label,
+      active_owner_locked: true
+    } : {}),
     ...(draft.leaderChangeRequested === true ? { leader_change_requested: true } : {}),
     confirmation: {
       accepted: true,
@@ -259,6 +340,15 @@ export function chatEngineBuildJobPayload(draft = {}, options = {}) {
         ...((draft.input && typeof draft.input === 'object' && draft.input._broker && typeof draft.input._broker === 'object') ? draft.input._broker : {}),
         ...broker,
         conversationOwner: owner,
+        ...(draft.activeOwnerLocked === true && owner.type !== 'cait' ? {
+          activeOwnerLocked: true,
+          activeOwner: {
+            type: owner.type,
+            taskType: owner.taskType,
+            label: owner.label,
+            reason: owner.reason || ''
+          }
+        } : {}),
         ...(draft.activeLeaderLocked === true && owner.type === 'leader' ? { activeLeaderLocked: true } : {}),
         ...(draft.leaderChangeRequested === true ? { leaderChangeRequested: true } : {}),
         ...(owner.type === 'leader' ? {

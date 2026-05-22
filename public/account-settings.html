@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Account Settings - CAIt</title>
+  <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/account-settings.css?v=20260520a" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="CAIt">
+      <img src="/cait-icon.svg" alt="" />
+      <span>CAIt</span>
+    </a>
+    <nav aria-label="CAIt pages">
+      <a href="/chat">Chat</a>
+      <a href="/delivery-manager.html">Deliveries</a>
+      <a href="/help.html">Help</a>
+    </nav>
+  </header>
+
+  <main class="settings-shell">
+    <section class="settings-header">
+      <p class="eyebrow">Account</p>
+      <h1>Account settings</h1>
+      <p id="accountStatus">Checking session...</p>
+    </section>
+
+    <section class="settings-panel" aria-labelledby="profileTitle">
+      <h2 id="profileTitle">Profile</h2>
+      <dl class="profile-list">
+        <div>
+          <dt>Signed in as</dt>
+          <dd id="accountLogin">-</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="settings-panel danger" aria-labelledby="dangerTitle">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Danger zone</p>
+          <h2 id="dangerTitle">Delete account</h2>
+        </div>
+      </div>
+      <p class="muted">Deleting your account removes your CAIt profile, revokes order API keys, signs you out, and hides account-linked chat sessions. Operational records required for billing, security, and legal compliance may be retained without account login linkage.</p>
+      <label class="confirm-label" for="deleteConfirmInput">Type DELETE to confirm</label>
+      <div class="delete-controls">
+        <input id="deleteConfirmInput" type="text" autocomplete="off" spellcheck="false" placeholder="DELETE" />
+        <button id="deleteAccountBtn" class="danger-btn" type="button" disabled>Delete account</button>
+      </div>
+      <p id="deleteStatus" class="status-line" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+
+  <script src="/account-settings.js?v=20260520a"></script>
+</body>
+</html>

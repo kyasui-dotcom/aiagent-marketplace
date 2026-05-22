@@ -9,7 +9,7 @@
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/app-console.css?v=20260507b" />
-  <script type="module" src="/publisher-approval.js?v=20260516a"></script>
+  <script type="module" src="/publisher-approval.js?v=20260519a"></script>
 </head>
 <body>
   <main class="app-console-shell" aria-label="CAIt Publisher and Approval Studio">
@@ -50,7 +50,7 @@
                 <option value="needs_review">Needs review</option>
               </select>
               <select id="handoffTargetSelect" aria-label="Handoff target">
-                <option value="seo_gap">SEO Agent</option>
+                <option value="seo_specialist">SEO SPECIALIST</option>
                 <option value="cmo_leader">CMO Leader</option>
                 <option value="build_team_leader">Build Team Leader</option>
               </select>
@@ -155,6 +155,37 @@
                 <button class="primary-btn" id="saveDraftBtn" type="button">Save draft</button>
                 <button class="ghost-btn" id="requestChangesBtn" type="button">Request changes</button>
                 <button class="ghost-btn" id="blockBtn" type="button">Block</button>
+              </div>
+            </article>
+          </section>
+
+          <section class="split-main">
+            <article class="panel">
+              <div class="status-row">
+                <h2>Publishing execution</h2>
+                <span class="status-pill pending" id="xStatusPill">X not checked</span>
+              </div>
+              <div class="inline-actions" style="margin-bottom:12px">
+                <button class="ghost-btn" id="connectXBtn" type="button">Connect X</button>
+                <button class="ghost-btn" id="refreshXBtn" type="button">Check X</button>
+                <button class="primary-btn" id="publishNowBtn" type="button">Publish now</button>
+                <button class="ghost-btn" id="schedulePostBtn" type="button">Schedule post</button>
+                <button class="ghost-btn" id="bulkPublishBtn" type="button">Bulk publish approved</button>
+              </div>
+              <p class="muted" id="publishActionNote">Approve the selected item before executing. X posts use the connected OAuth account and exact-text approval; WordPress creates drafts; GitHub and owned-site items create PR handoffs.</p>
+              <div class="field-grid">
+                <div class="field-row">
+                  <label for="scheduleAtInput">Schedule time</label>
+                  <input id="scheduleAtInput" type="datetime-local" />
+                </div>
+                <div class="field-row">
+                  <label for="bulkScopeSelect">Bulk scope</label>
+                  <select id="bulkScopeSelect">
+                    <option value="visible">Visible approved items</option>
+                    <option value="all">All approved items</option>
+                    <option value="destination">Current destination only</option>
+                  </select>
+                </div>
               </div>
             </article>
           </section>

@@ -24,6 +24,16 @@ const workerSource = read('worker.js');
 const orchestrationSource = read('lib/orchestration.js');
 const sharedSource = read('lib/shared.js');
 const chatSource = read('public/chat.js');
+const connectorGateSource = read('public/connector-gate.js');
+const chatSessionStateSource = read('public/chat-session-state.js');
+const orderRuntimeSource = read('public/order-runtime.js');
+const deliveryRendererSource = read('public/delivery-renderer.js');
+const appHandoffGateSource = read('public/app-handoff-gate.js');
+const agentProgressViewSource = read('public/agent-progress-view.js');
+const clientSource = read('public/client.js');
+const campaignOperationsSource = read('lib/builtin-agents/agents/campaign-operations.js');
+const campaignRoutesSource = read('lib/routes/campaigns.js');
+const adsPlannerSource = read('lib/builtin-agents/agents/ads-planner.js');
 const disciplineDoc = read('docs/AGENT_ORCHESTRATION_DISCIPLINE.md');
 
 // Regression target:
@@ -47,12 +57,28 @@ assert.ok(
   'development discipline must document that delivery artifacts come only from agent/provider returns'
 );
 assert.ok(
+  disciplineDoc.includes('Agent/provider answer builders that define user-facing delivery content, task-specific output structure, work definitions, or approval wording belong in the relevant agent/provider definition.'),
+  'development discipline must document that true answer builders are agent/provider-owned'
+);
+assert.ok(
+  disciplineDoc.includes('Delivery follow-up order drafts must be prepared by server or agent/provider contracts.'),
+  'development discipline must document that delivery follow-up drafts are not client-owned'
+);
+assert.ok(
+  disciplineDoc.includes('`authority_request` / approval waits must be requested explicitly by the agent/provider result.'),
+  'development discipline must document that approval requests are agent/provider-owned'
+);
+assert.ok(
   disciplineDoc.includes('Template guidance may only say to deliver in the user requested language in a clear, user-readable format.'),
   'development discipline must keep template guidance minimal and non-prescriptive'
 );
 assert.ok(
   disciplineDoc.includes('Built-in, sample, and external agents share the same completion policy'),
   'development discipline must require the same no-fallback retry/fail policy for every agent source'
+);
+assert.ok(
+  disciplineDoc.includes('Workflow child assignment must resolve against the current agent list and manifest/task contract'),
+  'development discipline must forbid workflow child assignment from trusting historical concrete agent ids'
 );
 assert.ok(
   disciplineDoc.includes('Agent-side failures and missing-deliverable failures are free to the requester.'),
@@ -87,7 +113,7 @@ for (const [fileName, source] of [
   ['worker.js', workerSource],
   ['lib/orchestration.js', orchestrationSource],
   ['public/chat.js', chatSource],
-  ['lib/shared.js', sharedSource.replace(/['"]agent_free_web_growth_leader_01['"]/g, '')]
+  ['lib/shared.js', sharedSource]
 ]) {
   assert.equal(
     agentSpecificBoundaryPattern.test(source),
@@ -115,8 +141,115 @@ assertNotIncludes(workerSource, [
   'function workflowSourceCollectionSourcesForDispatch',
   'sourceCollectionAttachedBy',
   'raw_context: workflowSourceRawContextForDispatch(context)',
-  'const searchConsoleDomain = text.match'
+  'const searchConsoleDomain = text.match',
+  'function synthesizeAuthorityRequestFromDelivery',
+  'function deliveryAuthorityScanText',
+  'function inferredAuthorityChannelsFromText',
+  'function agentManifestConnectorAuthorityRequest',
+  'function mergeAuthorityRequests',
+  'delivery_text_inference',
+  'agent_manifest_connector_contract',
+  'function campaignNextActionFromMetrics',
+  "from './lib/builtin-agents/agents/campaign-operations.js'",
+  'campaignOperationsNextActionFromMetrics(',
+  "approvalOwner: 'ads_agent_and_campaign_operations'"
 ], 'worker.js');
+assert.ok(
+  campaignRoutesSource.includes('Send this metric summary to Campaign Operations; channel, Publisher, or Ads SaaS actions must be requested by the responsible owner.'),
+  'campaign metrics API must hand off next-action decisions instead of owning them'
+);
+for (const [fileName, source] of [
+  ['lib/builtin-agents/agents/campaign-operations.js', campaignOperationsSource],
+  ['lib/builtin-agents/agents/ads-planner.js', adsPlannerSource]
+]) {
+  assertNotIncludes(source, [
+    'and approval_requests',
+    'approvalRequests: Array.isArray(generated.approval_requests)',
+    'approval_requests: generated.approvalRequests'
+  ], fileName);
+}
+assert.equal(
+  adsPlannerSource.includes('approval packets'),
+  false,
+  'ads planner must describe approval boundaries, not create approval packets for the execution owner'
+);
+assert.ok(
+  chatSource.includes("from './connector-gate.js"),
+  'chat connector display must be delegated to the connector gate module'
+);
+assert.ok(
+  connectorGateSource.includes('connectorGateAuthorityRequestFromJob'),
+  'connector gate must own structured authority_request extraction for connector UI'
+);
+for (const [moduleName, symbol] of [
+  ['public/chat-session-state.js', 'compactChatRuntimeSnapshot'],
+  ['public/order-runtime.js', 'visibleJobApiPath'],
+  ['public/delivery-renderer.js', 'renderDeliveryBody'],
+  ['public/app-handoff-gate.js', 'renderAppHandoffTree'],
+  ['public/agent-progress-view.js', 'renderAgentRunDetailHtml']
+]) {
+  assert.ok(
+    chatSource.includes(`from './${moduleName.replace('public/', '')}`),
+    `chat must delegate ${moduleName} responsibilities to the split module`
+  );
+  const source = {
+    'public/chat-session-state.js': chatSessionStateSource,
+    'public/order-runtime.js': orderRuntimeSource,
+    'public/delivery-renderer.js': deliveryRendererSource,
+    'public/app-handoff-gate.js': appHandoffGateSource,
+    'public/agent-progress-view.js': agentProgressViewSource
+  }[moduleName];
+  assert.ok(source.includes(symbol), `${moduleName} must expose ${symbol}`);
+}
+assertNotIncludes(chatSource, [
+  'function authorityRequestFromText',
+  'function authorityScanTextFromJob',
+  'delivery_text_approval'
+], 'public/chat.js');
+
+assert.equal(
+  existsSync(join(root, 'public', 'client-basic-chat-answers.js')),
+  false,
+  'client basic answer builder module must not exist; true answer builders belong in agent/provider definitions'
+);
+assert.ok(
+  clientSource.includes('function buildOpenChatPreLlmGuardAnswer'),
+  'client pre-dispatch UI answers must remain visible in the client controller until renamed/scoped deliberately'
+);
+assert.ok(
+  clientSource.includes('pattern_server_leader_intake_contract'),
+  'client leader intake must render server/agent-owned intake contracts'
+);
+assert.ok(
+  clientSource.includes('/api/deliveries/prepare-followup-order'),
+  'client delivery follow-up order drafts must be prepared by the server route'
+);
+assertNotIncludes(clientSource, [
+  'function buildOpenChatLeaderOrderBrief',
+  'What should this leader help decide or accomplish?',
+  'このリーダーに最終的に何を判断・達成してほしいですか？',
+  'leader summary, specialist task split, assumptions, execution plan, concrete deliverables, risks, and acceptance criteria',
+  'Turn the user intake into an executable Team Leader order',
+  'pattern_leader_intake_followup',
+  'Turn this into an execution-ready social publishing order.',
+  'Use the social post pack from previous order',
+  'Turn this into an execution-ready email order.',
+  'Follow-up for previous order ${job.id}:',
+  'Use the previous order context, fold in this new answer, and produce the next best delivery.',
+  'Direct follow-up for previous order ${job.id}:',
+  'Use input._broker.conversation.previousJob as the prior delivery context.'
+], 'public/client.js');
+const publicFiles = readdirSync(join(root, 'public'))
+  .filter((name) => name.startsWith('client-') && name.endsWith('.js'))
+  .sort();
+for (const fileName of publicFiles) {
+  const source = readFileSync(join(root, 'public', fileName), 'utf8');
+  assert.equal(
+    /\bfunction\s+buildOpenChat[A-Za-z0-9_]*Answer\b/.test(source),
+    false,
+    `${fileName} must not extract buildOpenChat*Answer builders from client.js; keep true answer builders agent/provider-owned and client answers pre-dispatch only`
+  );
+}
 
 assertNotIncludes(orchestrationSource, [
   "from './lib/builtin-agents.js'",
@@ -158,9 +291,17 @@ const agentFiles = readdirSync(agentsDir)
   .filter((name) => name.endsWith('.js') && name !== 'index.js')
   .sort();
 
+const stripeProhibitedGamblingAgentPattern =
+  /\b(?:gambl(?:e|ing)|casino|sports betting|betting tips?|wager(?:ing)?|bookmaker|odds[-\s]?making|sportsbook|lotter(?:y|ies)|sweepstakes|poker|roulette|blackjack|staking plan|bankroll)\b|(?:ギャンブル|賭博|ベッティング|カジノ|ブックメーカー|競馬予想|スポーツ予想|宝くじ|オンラインカジノ)/i;
+
 assert.ok(agentFiles.length > 0, 'agent files must exist');
 for (const fileName of agentFiles) {
   const source = readFileSync(join(agentsDir, fileName), 'utf8');
+  assert.equal(
+    stripeProhibitedGamblingAgentPattern.test(source),
+    false,
+    `${fileName} must not define gambling, casino, betting, wagering, lottery, or odds-making agent behavior`
+  );
   assert.ok(source.includes('const AGENT_PROVIDER = Object.freeze({'), `${fileName} must own its provider behavior`);
   assert.ok(source.includes('AGENT_DEFINITION.manifest = Object.freeze({'), `${fileName} must own its manifest`);
   assert.ok(source.includes('health({'), `${fileName} must expose health behavior`);
