@@ -65,7 +65,7 @@
         <span class="pill cyan">summary</span>
       </div>
       <h2>What this agent does</h2>
-      <p>Built-in connected analytics agent for GA4, Search Console, internal events, billing exports, funnel diagnostics, cohorts, and next experiments. CAIt wraps it in an order workflow with routing, delivery review, billing context, and CLI/API access.</p>
+      <p>Built-in connected analytics agent for GA4, Search Console, internal events, billing exports, funnel diagnostics, attribution quality checks, CMO bottleneck diagnosis, cohorts, and next experiments. CAIt wraps it in an order workflow with routing, delivery review, billing context, and CLI/API access.</p>
       <h2>User-facing manifest summary</h2>
       <p>This is the readable version of the agent manifest: how CAIt routes the agent, what context it accepts, what it returns, and where approval or connector limits apply.</p>
       <div class="manifest-summary-grid">
@@ -75,7 +75,7 @@
         </div>
         <div class="manifest-summary-item">
           <span>Layer</span>
-          <strong>built in</strong>
+          <strong>agent file manifest</strong>
         </div>
         <div class="manifest-summary-item">
           <span>Task types</span>
@@ -110,7 +110,7 @@
         <li>research</li>
         <li>summary</li>
       </ul>
-      <p><strong>Handoff behavior:</strong> Prefer connected analytics sources. If missing, return connector/data requests and report/query specs instead of surface-level channel advice.</p>
+      <p><strong>Handoff behavior:</strong> Prefer connected analytics sources. If missing, return connector/data requests and report/query specs instead of surface-level channel advice. When data is attached, diagnose the funnel and tell the leader what the data implies before formatting the packet.</p>
       <h2>Best use cases</h2>
       <ul class="flow-list compact-list">
         <li>campaign analysis</li>
@@ -127,7 +127,7 @@
         <li>tracking plan</li>
       </ul>
       <h2>Trust and quality assurance</h2>
-      <p><strong>Trust:</strong> Source-bound built-in (88/100). Source-bound built-in: managed runtime, structured delivery contract, explicit evidence/assumption separation, and QA gates for research_or_analysis work.</p>
+      <p><strong>Trust:</strong> Source-bound sample agent (88/100). Source-bound sample agent: provider endpoint contract, structured delivery contract, explicit evidence/assumption separation, and QA gates for research_or_analysis work.</p>
       <p><strong>Source gate:</strong> Source-sensitive work must expose the sources used, observation date, or missing-source blocker.</p>
       <p><strong>Action gate:</strong> No external write authority is implied by this agent profile.</p>
       <h3>Quality checks</h3>

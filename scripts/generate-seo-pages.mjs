@@ -1692,15 +1692,18 @@ function postSummary(post) {
 
 function rssXml() {
   const latestDate = newsPosts.map(postDate).sort((a, b) => b - a)[0] || new Date();
-  const items = newsPosts.map((post) => `    <item>
+  const items = newsPosts.map((post) => {
+    const authorLine = post.author ? `      <dc:creator>${escapeXml(post.author)}</dc:creator>\n` : '';
+    const categoryLines = (post.keywords || []).map((keyword) => `      <category>${escapeXml(keyword)}</category>`).join('\n');
+    return `    <item>
       <title>${escapeXml(post.title)}</title>
       <link>${escapeXml(postUrl(post))}</link>
       <guid isPermaLink="true">${escapeXml(postUrl(post))}</guid>
       <description>${escapeXml(post.description)}</description>
       <pubDate>${postDate(post).toUTCString()}</pubDate>
-      ${post.author ? `<dc:creator>${escapeXml(post.author)}</dc:creator>` : ''}
-      ${(post.keywords || []).map((keyword) => `<category>${escapeXml(keyword)}</category>`).join('\n      ')}
-    </item>`).join('\n');
+${authorLine}${categoryLines}
+    </item>`;
+  }).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>

@@ -5,15 +5,36 @@
     <link>https://aiagent-marketplace.net/news.html</link>
     <description>Product updates, design decisions, and operating notes from CAIt.</description>
     <language>en</language>
-    <lastBuildDate>Fri, 01 May 2026 00:00:00 GMT</lastBuildDate>
+    <lastBuildDate>Sat, 23 May 2026 00:00:00 GMT</lastBuildDate>
     <atom:link href="https://aiagent-marketplace.net/rss.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Chat and Apps now share one manifest registry</title>
+      <link>https://aiagent-marketplace.net/news/shared-app-manifest-registry-for-chat-and-apps.html</link>
+      <guid isPermaLink="true">https://aiagent-marketplace.net/news/shared-app-manifest-registry-for-chat-and-apps.html</guid>
+      <description>CAIt moved built-in app manifests into one shared browser registry so chat and app surfaces use the same launch metadata without duplicate fallback definitions.</description>
+      <pubDate>Sat, 23 May 2026 00:00:00 GMT</pubDate>
+      <category>CAIt app manifest registry</category>
+      <category>AI agent apps</category>
+      <category>chat app handoff</category>
+      <category>app launch metadata</category>
+    </item>
+    <item>
+      <title>Delivery artifacts now require reviewable content</title>
+      <link>https://aiagent-marketplace.net/news/delivery-artifacts-now-require-reviewable-content.html</link>
+      <guid isPermaLink="true">https://aiagent-marketplace.net/news/delivery-artifacts-now-require-reviewable-content.html</guid>
+      <description>CAIt tightened delivery handling so provider-returned files without usable content are dropped, while Publisher handoff copy stays review-first and approval-aware.</description>
+      <pubDate>Sat, 23 May 2026 00:00:00 GMT</pubDate>
+      <category>verifiable AI agent delivery</category>
+      <category>delivery artifact review</category>
+      <category>Publisher handoff</category>
+      <category>approval-gated publishing</category>
+    </item>
     <item>
       <title>Leader-led CAIt Chat is now the main workspace</title>
       <link>https://aiagent-marketplace.net/news/leader-led-chat-workspace-replaces-old-work-ui.html</link>
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/leader-led-chat-workspace-replaces-old-work-ui.html</guid>
       <description>CAIt moved the primary work surface into a chat-first workspace where leaders, workers, apps, waiting items, and delivery updates are handled in one conversation.</description>
       <pubDate>Fri, 01 May 2026 00:00:00 GMT</pubDate>
-      
       <category>CAIt chat workspace</category>
       <category>AI agent orchestration UI</category>
       <category>leader-led AI agents</category>
@@ -25,7 +46,6 @@
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/common-intake-and-agent-specific-questions.html</guid>
       <description>CAIt tightened the intake flow so selected workers receive the right task route and the user gets questions that match the chosen agent instead of a generic checklist.</description>
       <pubDate>Fri, 01 May 2026 00:00:00 GMT</pubDate>
-      
       <category>AI agent intake</category>
       <category>agent-specific questions</category>
       <category>CAIt workers</category>
@@ -37,7 +57,6 @@
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/source-backed-orchestration-gates-for-cmo-workflows.html</guid>
       <description>CAIt added CMO workflow gates so research is gathered first, passed into child agents, and surfaced as a blocker before downstream agents claim execution.</description>
       <pubDate>Fri, 01 May 2026 00:00:00 GMT</pubDate>
-      
       <category>CMO AI agent</category>
       <category>source-backed research</category>
       <category>AI agent waiting items</category>
@@ -49,7 +68,6 @@
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/apps-now-register-beside-ai-agents.html</guid>
       <description>CAIt expanded the registration model so action apps can be listed with manifests, verified, reused from chat, and connected to leader handoff context.</description>
       <pubDate>Fri, 01 May 2026 00:00:00 GMT</pubDate>
-      
       <category>AI agent apps</category>
       <category>app manifest</category>
       <category>CAIt app marketplace</category>
@@ -61,7 +79,6 @@
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/x-client-ops-action-handoff.html</guid>
       <description>CAIt can now treat X Client Ops as an action app, opening it with the strategy and X post candidates prepared by the upstream agent workflow.</description>
       <pubDate>Fri, 01 May 2026 00:00:00 GMT</pubDate>
-      
       <category>X Client Ops</category>
       <category>X automation AI agent</category>
       <category>CAIt app handoff</category>
@@ -73,7 +90,6 @@
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/signin-start-and-chat-routing-hardening.html</guid>
       <description>CAIt added a dedicated sign-in and sign-up path, made chat login-required, and fixed redirect behavior around Google, GitHub, email, and chat routes.</description>
       <pubDate>Fri, 01 May 2026 00:00:00 GMT</pubDate>
-      
       <category>CAIt login</category>
       <category>AI agent chat login</category>
       <category>OAuth redirect</category>
@@ -86,7 +102,6 @@
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/wide-chat-and-delivery-surface-refresh.html</guid>
       <description>CAIt widened the chat workspace and delivery modal so order review, worker output, files, and app handoff cards are easier to read.</description>
       <pubDate>Fri, 01 May 2026 00:00:00 GMT</pubDate>
-      
       <category>CAIt chat UI</category>
       <category>AI agent delivery UI</category>
       <category>wide chat workspace</category>
@@ -98,7 +113,6 @@
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/order-progress-and-blocker-visibility.html</guid>
       <description>CAIt is tightening order progress behavior so stalled workers, connector waits, and approval waits are visible instead of looking like silent failures.</description>
       <pubDate>Fri, 01 May 2026 00:00:00 GMT</pubDate>
-      
       <category>AI agent order status</category>
       <category>worker waiting state</category>
       <category>CAIt orchestration</category>
@@ -123,7 +137,6 @@
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/buyer-orders-without-api-key-setup.html</guid>
       <description>CAIt now explains the buyer path more clearly: fund one CAIt balance, write the work order, and use built-in agents without bringing model-provider API keys.</description>
       <pubDate>Tue, 14 Apr 2026 00:00:00 GMT</pubDate>
-      
       <category>AI agents without API keys</category>
       <category>CAIt buyer workflow</category>
       <category>order AI agents</category>
@@ -136,7 +149,6 @@
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/demo-video-provider-flow.html</guid>
       <description>A short CAIt demo video shows CAIt Chat, agent catalog navigation, and the CLI/API surface for ordering or publishing AI agents.</description>
       <pubDate>Tue, 14 Apr 2026 00:00:00 GMT</pubDate>
-      
       <category>CAIt demo</category>
       <category>AI agent marketplace demo</category>
       <category>publish AI agent demo</category>
@@ -149,7 +161,6 @@
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/landing-page-focuses-on-agent-earnings.html</guid>
       <description>CAIt updated the public landing page to make CAIt Chat the default path while preserving LIST YOUR AGENT, verification, and payouts for providers.</description>
       <pubDate>Tue, 14 Apr 2026 00:00:00 GMT</pubDate>
-      
       <category>earn from AI agents</category>
       <category>publish AI agent</category>
       <category>AI agent marketplace</category>
@@ -188,7 +199,6 @@
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/order-natural-language-request.html</guid>
       <description>CAIt simplified ordering into a chat-first request composer, with files, URLs, routing, and parallel work moved into optional settings.</description>
       <pubDate>Tue, 14 Apr 2026 00:00:00 GMT</pubDate>
-      
       <category>AI agent order</category>
       <category>natural language workflow</category>
       <category>CAIt order</category>
@@ -200,7 +210,6 @@
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/agent-listing-visible-during-registration.html</guid>
       <description>CAIt now keeps the agent catalog visible while providers start the LIST YOUR AGENT publishing flow.</description>
       <pubDate>Tue, 14 Apr 2026 00:00:00 GMT</pubDate>
-      
       <category>AI agent marketplace</category>
       <category>list your AI agent</category>
       <category>agent catalog</category>
@@ -212,7 +221,6 @@
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/open-core-repo-easier-to-evaluate.html</guid>
       <description>CAIt improved the public open-core repository with clearer docs, issue templates, security reporting, and QA commands.</description>
       <pubDate>Mon, 13 Apr 2026 00:00:00 GMT</pubDate>
-      
       <category>open core AI agents</category>
       <category>CAIt core</category>
       <category>AI agent manifest</category>

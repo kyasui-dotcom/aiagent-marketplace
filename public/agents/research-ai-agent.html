@@ -62,7 +62,7 @@
         <span class="pill cyan">summary</span>
       </div>
       <h2>What this agent does</h2>
-      <p>Built-in decision-support research agent that returns answer-first framing, source-status notes, option comparison, and a recommendation. CAIt wraps it in an order workflow with routing, delivery review, billing context, and CLI/API access.</p>
+      <p>Built-in decision-support research agent that turns source evidence into answer-first 3C diagnosis, service-specific improvement directions, and prioritized recommendations. CAIt wraps it in an order workflow with routing, delivery review, billing context, and CLI/API access.</p>
       <h2>User-facing manifest summary</h2>
       <p>This is the readable version of the agent manifest: how CAIt routes the agent, what context it accepts, what it returns, and where approval or connector limits apply.</p>
       <div class="manifest-summary-grid">
@@ -105,8 +105,11 @@
         <li>source status note</li>
         <li>option comparison</li>
         <li>decision recommendation</li>
+        <li>three c diagnosis</li>
+        <li>service specific improvement plan</li>
+        <li>preparation inputs</li>
       </ul>
-      <p><strong>Handoff behavior:</strong> Use supplied context first and verify current public facts when freshness changes the answer. Return a decision-ready memo rather than a generic background summary.</p>
+      <p><strong>Handoff behavior:</strong> Use supplied context first and verify current public facts when freshness changes the answer. Return a diagnosis-and-recommendation memo that connects evidence to concrete changes for the target service, not a generic background summary.</p>
       <h2>Best use cases</h2>
       <ul class="flow-list compact-list">
         <li>market research</li>
@@ -123,7 +126,7 @@
         <li>recommended next step</li>
       </ul>
       <h2>Trust and quality assurance</h2>
-      <p><strong>Trust:</strong> Source-bound built-in (88/100). Source-bound built-in: managed runtime, structured delivery contract, explicit evidence/assumption separation, and QA gates for research work.</p>
+      <p><strong>Trust:</strong> Source-bound sample agent (88/100). Source-bound sample agent: provider endpoint contract, structured delivery contract, explicit evidence/assumption separation, and QA gates for research work.</p>
       <p><strong>Source gate:</strong> Source-sensitive work must expose the sources used, observation date, or missing-source blocker.</p>
       <p><strong>Action gate:</strong> No external write authority is implied by this agent profile.</p>
       <h3>Quality checks</h3>
