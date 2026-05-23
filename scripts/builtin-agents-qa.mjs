@@ -108,29 +108,29 @@ const productResearchContractExpectations = [
   {
     kind: 'pricing',
     actions: ['prepare_price_model', 'prepare_package_decision', 'prepare_sensitivity_decision'],
-    requiredSections: ['Value metric', 'Formula', 'Scenario table', 'Sensitivity table', 'Decision trigger', 'Rollback or continue rule'],
-    guidedSections: ['Sensitivity table', 'Rollback or continue rule'],
+    requiredSections: ['Pricing question', 'Value metric', 'Assumptions', 'Formula', 'Scenario table', 'Sensitivity table', 'Recommendation', 'Decision trigger', 'Rollback or continue rule'],
+    guidedSections: ['Pricing question', 'Value metric', 'Assumptions', 'Formula', 'Scenario table', 'Sensitivity table', 'Recommendation', 'Decision trigger', 'Rollback or continue rule'],
     forbiddenClaims: ['price test won without results']
   },
   {
     kind: 'validation',
     actions: ['prepare_falsification_plan', 'prepare_validation_next_step', 'prepare_interview_or_smoke_packet'],
-    requiredSections: ['Target user', 'Current workaround', 'Riskiest assumption', 'Test script or asset', 'False positives to ignore', 'Kill criteria'],
-    guidedSections: ['Test script or asset', 'False positives to ignore'],
+    requiredSections: ['Target user', 'Current workaround', 'Riskiest assumption', 'Test design', 'Test script or asset', 'Success threshold', 'Kill criteria', 'False positives to ignore', 'Next decision'],
+    guidedSections: ['Target user', 'Current workaround', 'Riskiest assumption', 'Test design', 'Test script or asset', 'Success threshold', 'Kill criteria', 'False positives to ignore', 'Next decision'],
     forbiddenClaims: ['respondents committed without evidence']
   },
   {
     kind: 'teardown',
     actions: ['prepare_competitor_comparison', 'prepare_differentiated_move', 'prepare_verification_queue'],
-    requiredSections: ['Competitor classification', 'Observed facts', 'Inferences', 'Verification queue', 'Evidence gaps'],
-    guidedSections: ['Verification queue'],
+    requiredSections: ['Competitor classification', 'Observed facts', 'Inferences', 'Comparison table', 'Wedge', 'First test', 'Verification queue', 'Evidence gaps'],
+    guidedSections: ['Competitor classification', 'Observed facts', 'Inferences', 'Comparison table', 'Wedge', 'First test', 'Verification queue', 'Evidence gaps'],
     forbiddenClaims: ['unverified competitor claim resolved']
   },
   {
     kind: 'research',
     actions: ['prepare_source_backed_memo', 'prepare_decision_recommendation', 'prepare_verification_queue'],
-    requiredSections: ['Answer first', 'Source status', 'Source ledger', 'Current vs inferred facts', 'Verification queue', 'Verification gaps'],
-    guidedSections: ['Verification queue'],
+    requiredSections: ['Answer first', 'Source status', 'Source ledger', 'Current vs inferred facts', 'Options', 'Recommendation', 'Verification queue', 'Verification gaps'],
+    guidedSections: ['Answer first', 'Source status', 'Source ledger', 'Current vs inferred facts', 'Options', 'Recommendation', 'Verification queue', 'Verification gaps'],
     forbiddenClaims: ['verification completed without source']
   }
 ];
