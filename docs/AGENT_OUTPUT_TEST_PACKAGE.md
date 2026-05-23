@@ -7,7 +7,7 @@ Fixture cases may name an agent file, kind, prompt, and input body only. They mu
 ## Files
 
 - `scripts/agent-output-regression.mjs` - snapshot and comparison runner.
-- `scripts/fixtures/agent-output-cases.json` - reusable input cases. The initial group is `marketing`.
+- `scripts/fixtures/agent-output-cases.json` - reusable input cases. It keeps one canonical case per built-in agent file, grouped as `marketing` and `non_marketing`; `--group all` runs the full set.
 - Output snapshots are written under `tmp/` by default and are ignored by Git.
 
 ## Default Stable Mode
@@ -17,6 +17,12 @@ The default mode uses a mock OpenAI `fetch` implementation. The mock reads the e
 ```bash
 npm run agent:test:snapshot -- --group marketing --out tmp/agent-before
 npm run agent:test:compare -- --group marketing --baseline tmp/agent-before/snapshot.json --out tmp/agent-after
+```
+
+Run every built-in agent case when checking the full purpose/action/delivery contract surface:
+
+```bash
+npm run agent:test:snapshot -- --group all --out tmp/agent-all
 ```
 
 Read:

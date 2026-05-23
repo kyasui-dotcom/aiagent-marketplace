@@ -21,6 +21,31 @@
       "citation-ops-local-profile",
       "list-creator-public-source-list",
       "growth-loop-experiment"
+    ],
+    "non_marketing": [
+      "agent-team-leader-roster",
+      "build-team-leader-implementation",
+      "cfo-leader-pricing-scenario",
+      "code-agent-patch-handoff",
+      "cpo-leader-mvp-slice",
+      "cto-leader-rollout",
+      "data-analysis-metric-audit",
+      "diligence-red-flag-review",
+      "follow-up-open-loop",
+      "hiring-role-scorecard",
+      "inbox-triage-owner-queue",
+      "legal-leader-policy-boundary",
+      "meeting-notes-action-log",
+      "meeting-prep-decision-brief",
+      "pricing-model-decision",
+      "prompt-brushup-intent-preservation",
+      "reply-draft-approval-gate",
+      "research-team-leader-source-plan",
+      "research-source-backed-memo",
+      "schedule-coordination-candidate-times",
+      "secretary-leader-ops-queue",
+      "teardown-competitor-wedge",
+      "validation-falsification-plan"
     ]
   },
   "cases": [
@@ -260,6 +285,277 @@
       "body": {
         "input": {
           "conversion_goal": "paid order"
+        }
+      }
+    },
+    {
+      "id": "agent-team-leader-roster",
+      "file": "agent-team-leader.js",
+      "kind": "agent_team_leader",
+      "prompt": "Plan a three-agent workflow for improving checkout conversion. Include specialist roster, non-overlap rules, merge criteria, and final acceptance checks.",
+      "body": {
+        "input": {
+          "objective": "improve checkout conversion",
+          "expected_specialists": ["research", "landing", "data_analysis"]
+        }
+      }
+    },
+    {
+      "id": "build-team-leader-implementation",
+      "file": "build-team-leader.js",
+      "kind": "build_team_leader",
+      "prompt": "Lead a repo-aware bug fix for an order status page. Include file ownership, execution slices, validation commands, rollback path, and PR handoff criteria.",
+      "body": {
+        "input": {
+          "affected_area": "order status page",
+          "validation_command": "npm run qa:ui"
+        }
+      }
+    },
+    {
+      "id": "cfo-leader-pricing-scenario",
+      "file": "cfo-leader.js",
+      "kind": "cfo_leader",
+      "prompt": "Create a unit-economics decision model for provider payouts and marketplace margin. Include assumptions, formulas, scenarios, sensitivity, and decision trigger.",
+      "body": {
+        "input": {
+          "monthly_orders": 120,
+          "provider_payout_rate": 0.7,
+          "target_margin": 0.25
+        }
+      }
+    },
+    {
+      "id": "code-agent-patch-handoff",
+      "file": "code.js",
+      "kind": "code",
+      "prompt": "Prepare an implementation handoff for fixing a delivery item renderer bug. Include affected files, patch plan, validation evidence, risks, rollback, and PR notes.",
+      "body": {
+        "input": {
+          "affected_files": ["public/delivery-renderer.js", "lib/delivery-items.js"],
+          "validation_command": "npm run qa:builtin-agents"
+        }
+      }
+    },
+    {
+      "id": "cpo-leader-mvp-slice",
+      "file": "cpo-leader.js",
+      "kind": "cpo_leader",
+      "prompt": "Choose an MVP slice for recurring agent orders. Include user problem, tradeoff matrix, rejected alternatives, experiment, acceptance threshold, and next decision.",
+      "body": {
+        "input": {
+          "user_segment": "solo founders",
+          "riskiest_assumption": "users want scheduled recurring work"
+        }
+      }
+    },
+    {
+      "id": "cto-leader-rollout",
+      "file": "cto-leader.js",
+      "kind": "cto_leader",
+      "prompt": "Decide how to roll out queue-backed agent dispatch. Include current-state evidence, architecture options, chosen path, validation gate, rollback trigger, and risks.",
+      "body": {
+        "input": {
+          "current_state": "direct dispatch with optional queue",
+          "rollback_trigger": "dispatch error rate above 2%"
+        }
+      }
+    },
+    {
+      "id": "data-analysis-metric-audit",
+      "file": "data-analysis.js",
+      "kind": "data_analysis",
+      "prompt": "Analyze a small funnel dataset for paid agent order conversion. Include dataset status, metric definitions, findings, caveats, query notes, and next decision.",
+      "body": {
+        "input": {
+          "columns": ["sessions", "signup", "order_started", "paid_order"],
+          "dataset_status": "sample rows supplied"
+        }
+      }
+    },
+    {
+      "id": "diligence-red-flag-review",
+      "file": "diligence.js",
+      "kind": "diligence",
+      "prompt": "Review a marketplace launch plan for blockers. Include red flag matrix, evidence map, verification queue, severity, and conditional recommendation.",
+      "body": {
+        "input": {
+          "plan": "launch provider marketplace with paid orders",
+          "known_gap": "provider verification evidence is incomplete"
+        }
+      }
+    },
+    {
+      "id": "follow-up-open-loop",
+      "file": "follow-up.js",
+      "kind": "follow_up",
+      "prompt": "Prepare follow-ups for three open customer loops. Include owner, deadline, relationship context, follow-up copy, timing, and next check.",
+      "body": {
+        "input": {
+          "open_loops": ["demo feedback", "invoice approval", "security questionnaire"]
+        }
+      }
+    },
+    {
+      "id": "hiring-role-scorecard",
+      "file": "hiring.js",
+      "kind": "hiring",
+      "prompt": "Prepare a role packet for a part-time QA engineer. Include scorecard, JD, must-haves, screening questions, evaluation rubric, and exclusion risks.",
+      "body": {
+        "input": {
+          "role": "part-time QA engineer",
+          "outcome": "own regression checks for agent delivery"
+        }
+      }
+    },
+    {
+      "id": "inbox-triage-owner-queue",
+      "file": "inbox-triage.js",
+      "kind": "inbox_triage",
+      "prompt": "Triage a mixed inbox into owner-ready queues. Include priority reason, reply-needed label, owner, deadline, risk flag, and next action.",
+      "body": {
+        "input": {
+          "messages": ["billing question", "provider approval request", "newsletter"]
+        }
+      }
+    },
+    {
+      "id": "legal-leader-policy-boundary",
+      "file": "legal-leader.js",
+      "kind": "legal_leader",
+      "prompt": "Prepare a policy review packet for marketplace provider terms. Include issue map, risk level, draft clauses, jurisdiction assumptions, and attorney-review flags.",
+      "body": {
+        "input": {
+          "jurisdiction": "Japan",
+          "policy": "provider marketplace terms"
+        }
+      }
+    },
+    {
+      "id": "meeting-notes-action-log",
+      "file": "meeting-notes.js",
+      "kind": "meeting_notes",
+      "prompt": "Turn meeting notes into minutes, decision log, accountable action items, owners, deadlines, and follow-up draft.",
+      "body": {
+        "input": {
+          "meeting_topic": "provider approval workflow",
+          "participants": ["ops", "engineering", "support"]
+        }
+      }
+    },
+    {
+      "id": "meeting-prep-decision-brief",
+      "file": "meeting-prep.js",
+      "kind": "meeting_prep",
+      "prompt": "Prepare a decision meeting brief for choosing billing provider fallback. Include agenda, participant context, decision points, pre-read checklist, and questions.",
+      "body": {
+        "input": {
+          "objective": "choose billing fallback",
+          "participants": ["founder", "engineering", "finance"]
+        }
+      }
+    },
+    {
+      "id": "pricing-model-decision",
+      "file": "pricing.js",
+      "kind": "pricing",
+      "prompt": "Recommend package pricing for managed agent orders. Include value metric, assumptions, cost basis, scenarios, sensitivity, and decision trigger.",
+      "body": {
+        "input": {
+          "value_metric": "completed agent order",
+          "cost_basis": "LLM plus provider payout"
+        }
+      }
+    },
+    {
+      "id": "prompt-brushup-intent-preservation",
+      "file": "prompt-brushup.js",
+      "kind": "prompt_brushup",
+      "prompt": "Improve a prompt for ordering market research while preserving intent. Include before/after prompt, intent ledger, constraints kept, rationale, and test cases.",
+      "body": {
+        "input": {
+          "original_prompt": "Research competitors and make it actionable without losing source caveats."
+        }
+      }
+    },
+    {
+      "id": "reply-draft-approval-gate",
+      "file": "reply-draft.js",
+      "kind": "reply_draft",
+      "prompt": "Draft a reply to a customer asking about data retention. Include relationship context, unresolved facts, tone rationale, send guardrail, and approval gate.",
+      "body": {
+        "input": {
+          "recipient": "customer security reviewer",
+          "unresolved_fact": "exact retention period"
+        }
+      }
+    },
+    {
+      "id": "research-team-leader-source-plan",
+      "file": "research-team-leader.js",
+      "kind": "research_team_leader",
+      "prompt": "Coordinate research on AI agent marketplace demand. Include research question, non-overlapping specialist split, evidence acceptance criteria, synthesis plan, and confidence grading.",
+      "body": {
+        "input": {
+          "research_question": "which buyer segment is ready to pay first"
+        }
+      }
+    },
+    {
+      "id": "research-source-backed-memo",
+      "file": "research.js",
+      "kind": "research",
+      "prompt": "Research the adoption of AI agent marketplaces for founders. Include answer-first summary, source ledger, current vs inferred split, options, recommendation, and verification gaps.",
+      "body": {
+        "input": {
+          "source_status": "user supplied URLs expected"
+        }
+      }
+    },
+    {
+      "id": "schedule-coordination-candidate-times",
+      "file": "schedule-coordination.js",
+      "kind": "schedule_coordination",
+      "prompt": "Prepare a scheduling packet for a demo with Tokyo and California participants. Include timezone, duration, availability source, candidate times, invite draft, and confirmation owner.",
+      "body": {
+        "input": {
+          "timezone": "Asia/Tokyo",
+          "duration_minutes": 30
+        }
+      }
+    },
+    {
+      "id": "secretary-leader-ops-queue",
+      "file": "secretary-leader.js",
+      "kind": "secretary_leader",
+      "prompt": "Coordinate executive assistant work across inbox, calendar, and meeting prep. Include operations queue, item owners, approval gates, connector gaps, and next action.",
+      "body": {
+        "input": {
+          "work_items": ["reply investor email", "schedule demo", "prepare board agenda"]
+        }
+      }
+    },
+    {
+      "id": "teardown-competitor-wedge",
+      "file": "teardown.js",
+      "kind": "teardown",
+      "prompt": "Teardown a competitor landing page for an AI agent marketplace. Include competitor classification, observed facts, inference, comparison table, wedge, and first test.",
+      "body": {
+        "input": {
+          "competitor_url": "https://example.com",
+          "decision": "positioning"
+        }
+      }
+    },
+    {
+      "id": "validation-falsification-plan",
+      "file": "validation.js",
+      "kind": "validation",
+      "prompt": "Validate an app idea for recurring AI agent orders. Include target user, current workaround, riskiest assumption, falsification test, success threshold, kill criteria, and next decision.",
+      "body": {
+        "input": {
+          "target_user": "solo founder",
+          "current_workaround": "manual freelancer tasks"
         }
       }
     }

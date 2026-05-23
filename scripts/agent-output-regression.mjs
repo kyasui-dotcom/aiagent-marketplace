@@ -106,8 +106,12 @@ function selectedCases(fixtures, args) {
     for (const id of String(args.case).split(',').map((item) => item.trim()).filter(Boolean)) ids.add(id);
   }
   if (args.group) {
-    const group = fixtures.groups?.[args.group] || [];
-    for (const id of group) ids.add(id);
+    if (args.group === 'all') {
+      for (const item of fixtures.cases || []) ids.add(item.id);
+    } else {
+      const group = fixtures.groups?.[args.group] || [];
+      for (const id of group) ids.add(id);
+    }
   }
   if (args.agent) {
     const agents = new Set(String(args.agent).split(',').map((item) => item.trim()).filter(Boolean));

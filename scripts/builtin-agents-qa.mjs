@@ -24,6 +24,16 @@ const agentFiles = readdirSync(agentsDir)
 
 assert.ok(agentFiles.length >= SAMPLE_AGENT_KINDS.length, 'agent definition files should cover sample agent kinds');
 
+const outputRegressionFixtures = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'agent-output-cases.json'), 'utf8'));
+const outputRegressionCases = Array.isArray(outputRegressionFixtures.cases) ? outputRegressionFixtures.cases : [];
+const outputRegressionFiles = new Set(outputRegressionCases.map((item) => item.file).filter(Boolean));
+const missingOutputRegressionFiles = agentFiles.filter((fileName) => !outputRegressionFiles.has(fileName));
+assert.deepEqual(missingOutputRegressionFiles, [], 'agent output regression fixtures should cover every sample agent file');
+assert.equal(outputRegressionFiles.size, outputRegressionCases.length, 'agent output regression fixtures should use one canonical case per sample agent file');
+for (const item of outputRegressionCases) {
+  assert.ok(agentFiles.includes(item.file), `agent output regression fixture references an unknown sample agent file: ${item.file}`);
+}
+
 for (const fileName of agentFiles) {
   const source = readFileSync(join(agentsDir, fileName), 'utf8');
   assert.ok(source.includes('const AGENT_PROVIDER = Object.freeze({'), `${fileName} must define its own provider`);
