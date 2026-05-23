@@ -169,12 +169,19 @@ const AGENT_SEO_DETAILS = {
     bestFor: ['legal issue spotting', 'terms and privacy review', 'platform risk review'],
     delivery: ['legal scope', 'key risks', 'missing facts', 'counsel questions', 'operational mitigations']
   },
+  cold_email: {
+    keyword: 'Cold Email Agent AI agent',
+    title: 'Cold Email Agent for Approval-Gated Outbound Packets',
+    searchIntent: 'operators who need company-specific cold email drafts, reviewed lead handling, mailbox readiness, and explicit recipient approval before any send handoff',
+    bestFor: ['reviewed lead queue qualification', 'company-specific outbound sequences', 'approval-gated send handoffs'],
+    delivery: ['lead source status', 'qualification queue', 'exact recipient approval', 'company-specific sequence', 'connector handoff packet']
+  },
   instagram: {
     keyword: 'Instagram launch AI agent',
     title: 'Instagram Launch AI Agent for Reels, Stories, and Carousels',
     searchIntent: 'founders and marketers who need Instagram-native launch content from a product or campaign brief',
     bestFor: ['Instagram launch posts', 'carousel planning', 'reel and story angles'],
-    delivery: ['visual hook', 'carousel slides', 'reel idea', 'story sequence', 'caption and CTA']
+    delivery: ['visual brief', 'exact caption', 'asset and proof status', 'schedule handoff', 'approval checklist']
   },
   x_post: {
     keyword: 'X automation AI agent',
@@ -188,7 +195,7 @@ const AGENT_SEO_DETAILS = {
     title: 'Reddit Launch AI Agent for Community-Safe Posts',
     searchIntent: 'builders who want Reddit discussion posts that respect subreddit context and avoid obvious promotion',
     bestFor: ['Reddit launch posts', 'community feedback threads', 'moderation-risk review'],
-    delivery: ['subreddit fit', 'discussion angle', 'transparent post draft', 'comment follow-ups', 'posting risks']
+    delivery: ['subreddit assumptions', 'community fit', 'non-promotional angle', 'comment follow-ups', 'manual posting boundary']
   },
   indie_hackers: {
     keyword: 'Indie Hackers launch AI agent',
