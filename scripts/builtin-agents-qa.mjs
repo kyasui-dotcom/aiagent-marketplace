@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
+  SAMPLE_AGENT_DEFINITIONS,
   SAMPLE_AGENT_KINDS,
   sampleAgentDefinitionForKind
 } from '../lib/builtin-agents/agents/index.js';
@@ -32,6 +33,17 @@ assert.deepEqual(missingOutputRegressionFiles, [], 'agent output regression fixt
 assert.equal(outputRegressionFiles.size, outputRegressionCases.length, 'agent output regression fixtures should use one canonical case per sample agent file');
 for (const item of outputRegressionCases) {
   assert.ok(agentFiles.includes(item.file), `agent output regression fixture references an unknown sample agent file: ${item.file}`);
+}
+
+for (const [kind, definition] of Object.entries(SAMPLE_AGENT_DEFINITIONS)) {
+  const manifest = definition.manifest || {};
+  const metadata = manifest.metadata || {};
+  if (kind !== manifest.kind) continue;
+  assert.equal(metadata.agent_purpose, definition.agentPurpose, `${kind} manifest metadata must expose its agent-owned purpose`);
+  assert.deepEqual(metadata.action_boundaries, definition.agentActionBoundaries, `${kind} manifest metadata must expose its agent-owned action boundaries`);
+  assert.deepEqual(metadata.delivery_contract, definition.deliveryContract, `${kind} manifest metadata must expose its agent-owned delivery contract`);
+  assert.ok(Array.isArray(metadata.action_boundaries) && metadata.action_boundaries.length > 0, `${kind} manifest metadata must include action boundaries`);
+  assert.ok(Array.isArray(metadata.delivery_contract?.requiredDeliverySections) && metadata.delivery_contract.requiredDeliverySections.length > 0, `${kind} manifest metadata must include required delivery sections`);
 }
 
 for (const fileName of agentFiles) {
