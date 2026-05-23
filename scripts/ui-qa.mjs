@@ -192,6 +192,11 @@ const onboardingJs = readFileSync(onboardingPath, 'utf8');
 const seoPages = readFileSync(seoPagesPath, 'utf8');
 const naturalLanguageNewsHtml = readFileSync(naturalLanguageNewsPath, 'utf8');
 const feedXml = readFileSync(feedXmlPath, 'utf8');
+const {
+  connectorGateAuthorityHandledBySaasHandoff,
+  connectorGateAuthorityIsActionable,
+  connectorGateAuthorityNeedsApproval
+} = await import(connectorGateJsPath.href);
 const appSurfaceSources = [
   appsHtml,
   appsJs,
@@ -320,6 +325,29 @@ assert.ok(chatJs.includes("from './connector-gate.js"), 'Chat connector approval
 assert.ok(connectorGateJs.includes('connectorGateGoogleAuthorityConnectGroups'), 'Chat Google approval should connect every requested Google source in one OAuth popup.');
 assert.ok(connectorGateJs.includes('Connect GA4 + Search Console'), 'Chat Google approval should label combined GA4/Search Console requests clearly.');
 assert.ok(chatJs.includes('function authorityRequestHandledBySaasHandoffInChat'), 'Chat should treat X/social publishing authority requests as SaaS handoffs, not chat approvals.');
+assert.ok(connectorGateJs.includes('explicitSaasHandoffSignals'), 'SaaS handoff waits should be detected from structured authority_request fields.');
+assert.ok(!connectorGateJs.includes('request.reason, request.summary, request.message'), 'SaaS handoff waits must not be inferred from free-text authority_request reason copy.');
+assert.ok(!connectorGateJs.includes('/(approval|approve|connector|required|missing|connect|confirm|publish|send|post|承認|接続|未接続|確認|投稿|送信|必要)/i.test(reason)'), 'Connector approval cards must not be inferred from authority_request reason copy.');
+assert.equal(
+  connectorGateAuthorityNeedsApproval({ reason: 'Connect GitHub before publishing this post.' }),
+  false,
+  'Reason-only authority_request objects must not become approval waits.'
+);
+assert.equal(
+  connectorGateAuthorityIsActionable({ status: 'blocked' }, { reason: '承認が必要です。' }),
+  false,
+  'Reason-only authority_request objects must not render chat approval cards.'
+);
+assert.equal(
+  connectorGateAuthorityNeedsApproval({ missing_connectors: ['github'], reason: 'Connect GitHub before publishing.' }),
+  true,
+  'Structured missing connector authority_request objects should still become approval waits.'
+);
+assert.equal(
+  connectorGateAuthorityHandledBySaasHandoff({ missing_connectors: ['x'], missing_connector_capabilities: ['x.post'], reason: 'Connect X.' }),
+  true,
+  'Structured X authority_request objects should still route to the SaaS handoff path.'
+);
 assert.ok(chatJs.includes('jobBlockedForSaasHandoff(job)'), 'SaaS handoff blockers should render as delivery/app-handoff states.');
 assert.ok(chatJs.includes('function sanitizeDeliveryMarkdownForUser'), 'Chat delivery rendering should sanitize internal workflow prompt text before display or download.');
 assert.ok(chatJs.includes('sanitizeDeliveryFileForUser(file'), 'Chat delivery file cards should register sanitized files, not raw provider markdown.');
@@ -934,7 +962,7 @@ assert.ok(chatJs.includes('X account connection and final publishing are handled
 assert.ok(chatJs.includes('Final action: X Client Ops'), 'X Client Ops delivery card should use English copy.');
 assert.ok(chatJs.includes('CAIt has attached the X post draft and strategy context prepared during the workflow.'), 'X Client Ops explanation should be English.');
 assert.ok(chatJs.includes('authorityRequestHandledBySaasHandoffInChat(authorityRequestFromJob(job))'), 'X authority waits should become SaaS app handoff candidates instead of chat approval dead-ends.');
-assert.ok(chatJs.includes('x-post-approval'), 'X approval artifacts should still route to X Client Ops app handoff.');
+assert.ok(appHandoffGateJs.includes('x_post_approval'), 'Explicit X approval artifact metadata should still route to X Client Ops app handoff.');
 assert.ok(chatJs.includes('function renderAppHandoffTools'), 'Chat deliveries should expose generic app handoff cards.');
 assert.ok(chatJs.includes('function renderAppHandoffTree'), 'Chat deliveries should render the preparation artifact to app routing tree.');
 assert.ok(chatJs.includes('function renderAppHandoffRoutingPreview'), 'Agent map progress should preview SaaS routing before final delivery.');
@@ -944,19 +972,37 @@ assert.ok(chatJs.includes('appHandoffEntryMatchesArtifact'), 'App handoff routin
 assert.ok(appHandoffGateJs.includes('destinationConnectors'), 'App handoff routing tree should show destination connector/capability hints from app manifests.');
 assert.ok(appManifestRegistryJs.includes("owned_site: { connector: 'publisher', capability: 'site_publish_packet', method: 'publisher_review_or_selected_connector' }"), 'Owned-site Publisher handoff should not default to GitHub PR authority.');
 assert.ok(chatJs.includes("['completed', 'failed', 'blocked', 'waiting'].includes(status)"), 'Chat app handoffs should render when preparation data exists for completed or partial deliveries.');
-assert.ok(chatJs.includes('function appHandoffRelevanceScore'), 'Generic app handoff cards should score relevance against the current delivery before rendering.');
-assert.ok(chatJs.includes('function appHandoffSpecificityScore'), 'Generic app handoff cards should rank specialized apps ahead of generic CAIt-managed surfaces.');
-assert.ok(chatJs.includes('handoffSpecificityScore'), 'Generic app handoff candidates should carry a specificity score.');
+assert.ok(appHandoffGateJs.includes('export function appHandoffRelevanceScore'), 'Generic app handoff cards should score relevance in the handoff gate module.');
+assert.ok(appHandoffGateJs.includes('export function appHandoffSpecificityScore'), 'Generic app handoff cards should rank specialized apps in the handoff gate module.');
+assert.ok(appHandoffGateJs.includes('export function appHandoffRankEntries'), 'App handoff candidate ranking should live with the handoff gate contract matching.');
+assert.ok(chatJs.includes('appHandoffGateRankEntries'), 'Chat should delegate app handoff candidate ranking to the handoff gate module.');
+assert.ok(!chatJs.includes('function appHandoffRelevanceScore'), 'Chat must not duplicate app handoff relevance scoring.');
+assert.ok(!chatJs.includes('function appHandoffSpecificityScore'), 'Chat must not duplicate app handoff specificity scoring.');
+assert.ok(appHandoffGateJs.includes('handoffSpecificityScore'), 'Generic app handoff candidates should carry a specificity score.');
 assert.ok(chatJs.includes('function appHandoffIsCaitManagedSurface'), 'App handoff ranking should distinguish CAIt-managed surfaces from future external apps without making them internal features.');
-assert.ok(chatJs.includes('broadContractPenalty'), 'App handoff ranking should avoid letting broad generic apps outrank specialized apps by accepting everything.');
+assert.ok(appHandoffGateJs.includes('broadContractPenalty'), 'App handoff ranking should avoid letting broad generic apps outrank specialized apps by accepting everything.');
 assert.ok(chatJs.includes('function deliveryHandoffArtifactTypes'), 'App handoff scoring should derive explicit artifact types from the delivery.');
-assert.ok(chatJs.includes('function appHandoffFileLooksLikeAnalytics'), 'App handoff scoring should only route Analytics Console from analytics-shaped delivery files.');
-assert.ok(chatJs.includes('function appHandoffFileLooksLikeLeadOps'), 'App handoff scoring should only route Lead Ops from lead-shaped delivery files.');
-assert.ok(chatJs.includes('landing page change|landing-page-delivery|landing_page_change'), 'LP detection should use explicit artifact markers instead of loose lp/landing tokens.');
-assert.ok(chatJs.includes('entry.inputContract?.accepts'), 'External app handoff matching should use app input contracts.');
-assert.ok(chatJs.includes('Number(entry.handoffRelevanceScore || 0) < 50'), 'App handoff matching should require a strong contract/capability match.');
+assert.ok(appHandoffGateJs.includes('function addExplicitHandoffArtifactType'), 'App handoff gate should own explicit delivery file artifact metadata normalization.');
+assert.ok(appHandoffGateJs.includes('function isGenericNonHandoffType'), 'App handoff gate should drop generic MIME/content types before app routing.');
+assert.ok(appHandoffGateJs.includes('text_markdown|text_md|text_html|application_json'), 'App handoff gate should not treat normalized MIME types as handoff artifacts.');
+assert.ok(appHandoffGateJs.includes('export function explicitHandoffArtifactTypesFromFile'), 'App handoff gate should expose explicit delivery file artifact metadata extraction.');
+assert.ok(appHandoffGateJs.includes('export function explicitHandoffArtifactTypesFromAuthorityRequest'), 'App handoff gate should expose structured authority_request artifact metadata extraction.');
+assert.ok(chatJs.includes('appHandoffGateExplicitArtifactTypesFromFile'), 'Chat app handoff scoring should consume explicit artifact metadata through the handoff gate.');
+assert.ok(chatJs.includes('appHandoffGateExplicitArtifactTypesFromAuthorityRequest'), 'Chat app handoff scoring should consume authority_request metadata through the handoff gate.');
+assert.ok(appHandoffGateJs.includes('DEFAULT_HANDOFF_ARTIFACT_CAPABILITY_ALIASES'), 'App handoff gate should own artifact capability aliases.');
+assert.ok(appHandoffGateJs.includes('DEFAULT_HANDOFF_ARTIFACT_LABELS'), 'App handoff gate should own artifact labels.');
+assert.ok(appHandoffGateJs.includes('DEFAULT_HANDOFF_ARTIFACT_DESTINATION_HINTS'), 'App handoff gate should own destination hints.');
+assert.ok(!chatJs.includes('function addExplicitHandoffArtifactType'), 'Chat must not duplicate explicit app handoff artifact metadata normalization.');
+assert.ok(!chatJs.includes('const HANDOFF_ARTIFACT_CAPABILITY_ALIASES'), 'Chat must not own app handoff alias policy.');
+assert.ok(!chatJs.includes('const HANDOFF_ARTIFACT_LABELS'), 'Chat must not own app handoff labels.');
+assert.ok(!chatJs.includes('const HANDOFF_ARTIFACT_DESTINATION_HINTS'), 'Chat must not own app handoff destination hints.');
+assert.ok(!chatJs.includes('function appHandoffFileSignalText'), 'App handoff scoring must not build body-token signal text from delivery content.');
+assert.ok(!chatJs.includes('reviewable lead rows|lead_rows|company_name'), 'Lead Ops handoff must not be inferred from delivery body keywords.');
+assert.ok(!chatJs.includes('sourceText'), 'App handoff scoring must not route apps from delivery body text tokens.');
+assert.ok(appHandoffGateJs.includes('entry.inputContract?.accepts'), 'External app handoff matching should use app input contracts.');
+assert.ok(appHandoffGateJs.includes('Number(entry.handoffRelevanceScore || 0) < threshold'), 'App handoff matching should require a strong contract/capability match.');
 assert.ok(!chatJs.includes('appTokens') && !chatJs.includes('jobTokens'), 'App handoff matching must not display apps based on loose token overlap.');
-assert.ok(chatJs.includes('handoffRelevanceScore'), 'Generic app handoff candidates should carry a relevance score.');
+assert.ok(appHandoffGateJs.includes('handoffRelevanceScore'), 'Generic app handoff candidates should carry a relevance score.');
 assert.ok(!chatJs.includes("id === 'delivery-manager'"), 'Generic app handoffs should not score Deliveries as an app handoff candidate.');
 assert.ok(chatJs.includes('Preparation-layer delivery data is already available to matching SaaS apps'), 'App handoff copy should explain SaaS publish/copy-paste action.');
 assert.ok(!chatJs.includes('return appManifestSources()\\n    .filter((entry) => {\\n      if (!entry?.id || (!entry.entryUrl && !entry.baseUrl && !entry.handoff?.createUrl)) return false;'), 'App handoff should not display the raw app catalog for every delivery.');

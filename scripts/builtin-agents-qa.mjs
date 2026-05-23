@@ -7,7 +7,7 @@ import {
   sampleAgentDefinitionForKind
 } from '../lib/builtin-agents/agents/index.js';
 import { leaderReadableAgentCatalogIndex } from '../lib/agent-catalog-index.js';
-import { deliveryItemsFromJob } from '../lib/delivery-items.js';
+import { deliveryItemsFromJob, sanitizeDeliveryItemForSurface } from '../lib/delivery-items.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -745,6 +745,23 @@ assert.ok(publisherItem, 'writer Publisher handoff artifact should become a publ
 assert.ok(Array.isArray(publisherItem.metadata.source_evidence), 'publisher delivery item should preserve writer source evidence');
 assert.equal(publisherItem.metadata.publish_variants.length, 3, 'publisher delivery item should preserve three publish variants');
 assert.ok(publisherItem.metadata.eeat_notes?.trust, 'publisher delivery item should preserve E-E-A-T notes');
+const seoPublisherItem = sanitizeDeliveryItemForSurface({
+  surface: 'publisher',
+  itemType: 'publish_asset',
+  title: 'SEO SPECIALIST',
+  workflowTask: 'seo_specialist',
+  body: [
+    '# SEO SPECIALIST',
+    'Canonical user brief: Product/service: https://example.com Main goal: signup trial start. Target audience: developers and technical buyers.',
+    '',
+    'Answer first: Build an SEO article around the proof-backed product workflow and keep the page grounded in the cited source URL.',
+    'Evidence used: https://example.com/pricing and customer proof notes.',
+    'Next action: Publish the reviewed article after confirmation.'
+  ].join('\n')
+});
+assert.notEqual(seoPublisherItem.title, 'SEO SPECIALIST', 'SEO specialist delivery items should not keep the generic specialist heading as the publisher title');
+assert.equal(seoPublisherItem.itemType, 'seo_article', 'SEO specialist delivery items should remain typed as SEO articles');
+assert.match(seoPublisherItem.title, /example\.com/i, 'SEO specialist delivery items should derive a publisher-facing title from the target URL');
 
 const sourceBackedResearch = await research.provider.runJob({
   kind: 'research',

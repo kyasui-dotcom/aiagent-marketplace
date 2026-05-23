@@ -56,8 +56,11 @@ import {
   appHandoffArtifactLabel as appHandoffGateArtifactLabel,
   appHandoffConnectorNotes as appHandoffGateConnectorNotes,
   appHandoffEntryMatchesArtifact as appHandoffGateEntryMatchesArtifact,
+  appHandoffRankEntries as appHandoffGateRankEntries,
+  explicitHandoffArtifactTypesFromAuthorityRequest as appHandoffGateExplicitArtifactTypesFromAuthorityRequest,
+  explicitHandoffArtifactTypesFromFile as appHandoffGateExplicitArtifactTypesFromFile,
   renderAppHandoffTree as appHandoffGateRenderTree
-} from './app-handoff-gate.js?v=20260519a';
+} from './app-handoff-gate.js?v=20260523a';
 import {
   BUILT_IN_APP_MANIFESTS as APP_AGENT_MANIFESTS,
   CORE_FEATURE_APP_IDS,
@@ -3393,6 +3396,7 @@ function appAgentDeliveryArtifactsFromJob(job = {}) {
   return deliveryFiles(job).map((file) => ({
     name: String(file?.name || 'delivery.md').trim(),
     contentType: String(file?.content_type || file?.contentType || file?.type || fileMimeType(file?.name || '', file?.content || '')).trim(),
+    artifactTypes: Array.from(explicitHandoffArtifactTypesFromFile(file)),
     summary: compactTransferText(file?.summary || file?.description || '', 280),
     contentPreview: compactTransferText(file?.content || '', 900)
   })).slice(0, 8);
@@ -3526,20 +3530,19 @@ function authorityNoticeKey(job = {}) {
 function fileLooksLikeSocialPostPack(file = {}) {
   const name = String(file?.name || '').toLowerCase();
   const type = String(file?.content_type || file?.contentType || file?.type || '').toLowerCase();
-  const content = String(file?.content || '').toLowerCase();
   return Boolean(
     /social[_-\s]?post|x[_-\s]?(?:post|ops)|tweet|twitter|post[-_\s]?pack|sns/.test(name)
     || /social[_-\s]?post|x[_-\s]?(?:post|ops)|tweet|twitter/.test(type)
-    || /x ops|x post draft|tweet text|post text|approval packet|投稿本文|投稿ドラフト/.test(content)
   );
 }
 
 function xPostDraftFromJob(job = {}) {
   const files = deliveryFiles(job);
-  const orderedFiles = [
-    ...files.filter(fileLooksLikeSocialPostPack),
-    ...files.filter((file) => !fileLooksLikeSocialPostPack(file))
-  ];
+  const orderedFiles = files.filter((file) => {
+    const explicitTypes = explicitHandoffArtifactTypesFromFile(file);
+    return fileLooksLikeSocialPostPack(file)
+      || ['post_text', 'social_post_pack', 'social_copy_packet', 'social_post', 'x_post', 'x_post_packet'].some((type) => explicitTypes.has(type));
+  });
   for (const file of orderedFiles) {
     const text = extractSocialPostTextFromDeliveryContent(file?.content || '', { maxLength: 1200 });
     if (text) {
@@ -3549,9 +3552,7 @@ function xPostDraftFromJob(job = {}) {
       };
     }
   }
-  const summaryText = deliveryText(job);
-  const text = extractSocialPostTextFromDeliveryContent(summaryText, { maxLength: 1200 });
-  return text ? { text, source: 'delivery summary' } : null;
+  return null;
 }
 
 function compactStrategyText(value = '', max = 1500) {
@@ -3960,199 +3961,26 @@ function appHandoffRememberDetails(appId = '', payload = {}, handoffUrl = '', so
   });
 }
 
-function appHandoffJobSignalText(job = {}) {
-  const files = deliveryFiles(job);
-  const authority = authorityRequestFromJob(job) || {};
-  const childRuns = visibleWorkflowChildRuns(job.workflow?.childRuns);
-  return [
-    job.taskType,
-    job.workflowTask,
-    job.workflow?.objective,
-    job.input?.original_prompt,
-    job.originalPrompt,
-    job.prompt,
-    deliveryText(job),
-    ...files.flatMap((file) => [file?.name, file?.type, file?.content_type, String(file?.content || '').slice(0, 1800)]),
-    ...childRuns.flatMap((child) => [child.taskType, child.dispatchTaskType, child.agentName, child.sequencePhase, child.failureReason]),
-    authority.reason,
-    authority.source,
-    ...listValues(authority.missing_connectors || authority.missingConnectors || authority.connectors),
-    ...listValues(authority.missing_connector_capabilities || authority.missingConnectorCapabilities || authority.capabilities),
-    ...listValues(authority.channel_candidates || authority.channelCandidates || authority.channels)
-  ].map((item) => String(item || '').trim()).filter(Boolean).join('\n').toLowerCase();
-}
-
-function appHandoffManifestSignalText(entry = {}) {
-  return [
-    entry.id,
-    entry.name,
-    entry.description,
-    ...(Array.isArray(entry.capabilities) ? entry.capabilities : []),
-    ...(Array.isArray(entry.tags) ? entry.tags : []),
-    ...(Array.isArray(entry.requiredConnectors) ? entry.requiredConnectors : []),
-    ...(Array.isArray(entry.requiresApprovalFor) ? entry.requiresApprovalFor : []),
-    ...(Array.isArray(entry.inputContract?.accepts) ? entry.inputContract.accepts : [])
-  ].map((item) => String(item || '').trim()).filter(Boolean).join('\n').toLowerCase();
-}
-
-const HANDOFF_ARTIFACT_CAPABILITY_ALIASES = {
-  metrics: ['analytics_context', 'ga4_packet'],
-  search_queries: ['search_console_packet', 'analytics_context'],
-  landing_pages: ['analytics_context'],
-  conversion_paths: ['analytics_context'],
-  channel_breakdown: ['analytics_context'],
-  article_draft: ['content_management'],
-  seo_page_artifact: ['content_management', 'publisher_change_set', 'site_publish_packet'],
-  landing_page_change: ['content_management', 'publisher_change_set', 'site_publish_packet'],
-  site_publish_packet: ['content_management', 'publisher_change_set'],
-  wordpress_draft_packet: ['content_management', 'publisher_change_set', 'site_publish_packet'],
-  directory_packet: ['directory_submission_packet', 'content_management'],
-  community_post_packet: ['community_post_packet', 'social_copy_packet', 'content_management'],
-  social_copy_packet: ['social_copy_packet', 'community_post_packet', 'content_management'],
-  social_post_pack: ['social_copy_packet', 'community_post_packet', 'x_post_draft', 'x_post_queue', 'social_action'],
-  x_post_packet: ['x_post_draft', 'x_post_queue', 'social_action', 'social_copy_packet'],
-  approval_request: ['approval_queue'],
-  lead_rows: ['lead_management', 'crm_packet'],
-  evidence_urls: ['lead_management', 'crm_packet'],
-  email_drafts: ['email_draft', 'outreach_review'],
-  next_actions: ['lead_management', 'outreach_review'],
-  post_text: ['x_post_draft', 'social_action'],
-  strategy: ['x_post_queue', 'social_action'],
-  delivery_summary: ['x_post_queue', 'social_action']
-};
-
-const HANDOFF_ARTIFACT_LABELS = {
-  metrics: 'Analytics metrics',
-  search_queries: 'Search query data',
-  landing_pages: 'Landing page data',
-  conversion_paths: 'Conversion path data',
-  channel_breakdown: 'Channel breakdown',
-  article_draft: 'Article draft',
-  seo_page_artifact: 'SEO page artifact',
-  landing_page_change: 'Landing page change',
-  site_publish_packet: 'Site publish packet',
-  wordpress_draft_packet: 'WordPress draft packet',
-  directory_packet: 'Directory submission packet',
-  community_post_packet: 'Community post packet',
-  social_copy_packet: 'Social copy packet',
-  social_post_pack: 'Social post pack',
-  x_post_packet: 'X post packet',
-  approval_request: 'Approval request',
-  lead_rows: 'Lead rows',
-  evidence_urls: 'Evidence URLs',
-  email_drafts: 'Email drafts',
-  next_actions: 'Next actions',
-  post_text: 'Post text',
-  strategy: 'Strategy context',
-  delivery_summary: 'Delivery summary'
-};
-
-const HANDOFF_ARTIFACT_DESTINATION_HINTS = {
-  article_draft: ['owned_site', 'wordpress_site'],
-  seo_page_artifact: ['owned_site', 'wordpress_site'],
-  landing_page_change: ['owned_site', 'wordpress_site'],
-  site_publish_packet: ['owned_site', 'wordpress_site'],
-  wordpress_draft_packet: ['wordpress_site'],
-  directory_packet: ['directory'],
-  community_post_packet: ['x', 'reddit', 'indie_hackers'],
-  social_copy_packet: ['x', 'reddit', 'indie_hackers'],
-  social_post_pack: ['x'],
-  x_post_packet: ['x'],
-  approval_request: ['owned_site', 'wordpress_site', 'directory', 'x', 'reddit', 'indie_hackers']
-};
-
-function appHandoffFileSignalText(file = {}) {
-  return [
-    file?.name,
-    file?.filename,
-    file?.type,
-    file?.content_type,
-    file?.contentType,
-    file?.summary,
-    file?.description,
-    String(file?.content || file?.body || '').slice(0, 5000)
-  ].map((item) => String(item || '').trim()).filter(Boolean).join('\n').toLowerCase();
-}
-
-function appHandoffFileLooksLikeAnalytics(file = {}, sourceText = '') {
-  const name = String(file?.name || file?.filename || '').trim().toLowerCase();
-  const contentType = String(file?.content_type || file?.contentType || file?.type || '').trim().toLowerCase();
-  const firstHeading = String(sourceText || '').match(/^#\s+(.+?)\s*$/m)?.[1] || '';
-  return /(^|[-_])data[-_]?analysis|analytics[-_]?context|ga4[-_]?packet|search[-_]?console[-_]?packet|metrics[-_]?packet/.test(name)
-    || /(analytics_context|ga4_packet|search_console_packet|metrics)/.test(contentType)
-    || /^(添付データコンテキストパケット|data context packet|acquisition analytics summary|analytics metrics)$/i.test(String(firstHeading || '').trim());
-}
-
-function appHandoffFileLooksLikeLeadOps(file = {}, sourceText = '') {
-  const name = String(file?.name || file?.filename || '').trim().toLowerCase();
-  const contentType = String(file?.content_type || file?.contentType || file?.type || '').trim().toLowerCase();
-  return /(list[-_]?creator|lead[-_]?ops|lead[-_]?rows|crm[-_]?packet)/.test(name)
-    || /(lead_rows|crm_packet|email_draft)/.test(contentType)
-    || /reviewable lead rows|lead_rows|company_name\s*\|\s*website|public_email_or_contact_path|contact_source_url|qualified lead rows|リード行/i.test(sourceText);
-}
+const explicitHandoffArtifactTypesFromFile = (file = {}) => appHandoffGateExplicitArtifactTypesFromFile(file, { normalizeUsageId, listValues });
+const explicitHandoffArtifactTypesFromAuthorityRequest = (request = null) => appHandoffGateExplicitArtifactTypesFromAuthorityRequest(request, { normalizeUsageId, listValues });
 
 function deliveryHandoffArtifactTypes(job = {}) {
   const types = new Set();
-  const analyticsTypes = new Set();
   const add = (...items) => {
     items.map(normalizeUsageId).filter(Boolean).forEach((item) => types.add(item));
-  };
-  const addAnalytics = (...items) => {
-    items.map(normalizeUsageId).filter(Boolean).forEach((item) => analyticsTypes.add(item));
   };
   const files = deliveryFiles(job);
 
   if (xPostDraftFromJob(job)?.text) {
     add('post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet');
   }
-  if (authorityRequestHandledBySaasHandoffInChat(authorityRequestFromJob(job))) {
-    add('post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet');
+  const authorityRequest = authorityRequestFromJob(job);
+  if (authorityRequestHandledBySaasHandoffInChat(authorityRequest)) {
+    for (const artifactType of explicitHandoffArtifactTypesFromAuthorityRequest(authorityRequest)) add(artifactType);
   }
 
   for (const file of files) {
-    const sourceText = appHandoffFileSignalText(file);
-    if (!sourceText) continue;
-
-    if (appHandoffFileLooksLikeAnalytics(file, sourceText) && /(ga4|google analytics|search console|\bgsc\b|search_queries|search_console_packet|ga4_packet|sessions|conversion_rate|channel_breakdown|landing_pages|analytics_context|サーチコンソール|アナリティクス)/i.test(sourceText)) {
-      addAnalytics('metrics', 'search_queries', 'landing_pages', 'conversion_paths', 'channel_breakdown');
-    }
-    if (/(seo page artifact|seo-agent-delivery|keyword and intent|meta description|page structure draft|h1 and metadata|search-intent landing page|seo_page_artifact)/i.test(sourceText)) {
-      add('seo_page_artifact', 'landing_page_change');
-    }
-    if (/(article draft|blog post|copy artifact|conversion copy artifact|body draft|hero copy|cta copy|原稿|記事案|本文ドラフト)/i.test(sourceText)) {
-      add('article_draft');
-    }
-    if (/(landing page change|landing-page-delivery|landing_page_change|page change|hero copy|primary cta|secondary cta|internal links|ランディングページ変更)/i.test(sourceText)) {
-      add('landing_page_change');
-    }
-    if (/(wordpress|wp-json|wp-admin|site_publish_packet|wordpress_draft_packet)/i.test(sourceText)) {
-      add('site_publish_packet', 'wordpress_draft_packet');
-    }
-    if (/(directory submission|directory submission packet|directory_packet|citation|掲載パケット|ディレクトリ)/i.test(sourceText)) {
-      add('directory_packet');
-    }
-    if (/(reddit|indie hackers|community post|social copy|social_copy_packet|community_post_packet|sns|投稿案|コミュニティ)/i.test(sourceText)) {
-      add('community_post_packet', 'social_copy_packet');
-    }
-    if (/(social post pack|x post draft|x-post-delivery|x_post_packet|post_text|tweet draft|x投稿ドラフト)/i.test(sourceText)) {
-      add('post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet');
-    }
-    if (/(x-post-approval|x post approval|x posting authority|x\.post|twitter posting authority)/i.test(sourceText)) {
-      add('post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet');
-    }
-    if (/(approval_request|approval queue|approval packet|github pr packet|pull request packet|publish_change packet|external_send packet|承認パケット|公開前パケット)/i.test(sourceText)) {
-      add('approval_request');
-    }
-    if (appHandoffFileLooksLikeLeadOps(file, sourceText)) {
-      add('lead_rows', 'evidence_urls', 'next_actions');
-    }
-    if (/(email draft|email_draft|cold email draft|outreach draft|営業メール下書き|メール下書き)/i.test(sourceText)) {
-      add('email_drafts', 'next_actions');
-    }
-  }
-
-  if (!types.size && analyticsTypes.size) {
-    analyticsTypes.forEach((item) => types.add(item));
+    for (const artifactType of explicitHandoffArtifactTypesFromFile(file)) add(artifactType);
   }
 
   return types;
@@ -4160,25 +3988,21 @@ function deliveryHandoffArtifactTypes(job = {}) {
 
 function appHandoffArtifactLabel(artifactType = '') {
   return appHandoffGateArtifactLabel(artifactType, {
-    normalizeUsageId,
-    labels: HANDOFF_ARTIFACT_LABELS
+    normalizeUsageId
   });
 }
 
 function appHandoffEntryMatchesArtifact(entry = {}, artifactType = '') {
   return appHandoffGateEntryMatchesArtifact(entry, artifactType, {
     normalizeUsageId,
-    listValues,
-    aliases: HANDOFF_ARTIFACT_CAPABILITY_ALIASES
+    listValues
   });
 }
 
 function appHandoffConnectorNotes(entry = {}, artifactType = '') {
   return appHandoffGateConnectorNotes(entry, artifactType, {
     normalizeUsageId,
-    listValues,
-    aliases: HANDOFF_ARTIFACT_CAPABILITY_ALIASES,
-    destinationHints: HANDOFF_ARTIFACT_DESTINATION_HINTS
+    listValues
   });
 }
 
@@ -4187,9 +4011,6 @@ function renderAppHandoffTree(job = {}, entries = []) {
     escapeHtml,
     normalizeUsageId,
     listValues,
-    aliases: HANDOFF_ARTIFACT_CAPABILITY_ALIASES,
-    destinationHints: HANDOFF_ARTIFACT_DESTINATION_HINTS,
-    labels: HANDOFF_ARTIFACT_LABELS,
     deliveryHandoffArtifactTypes
   });
 }
@@ -4215,89 +4036,18 @@ function renderAppHandoffRoutingPreview(job = {}) {
   ].filter(Boolean).join('\n');
 }
 
-function appHandoffRelevanceScore(entry = {}, job = {}, options = {}) {
-  const id = normalizeUsageId(entry.id || '');
-  const jobText = options.jobText || appHandoffJobSignalText(job);
-  const accepts = new Set(listValues(entry.inputContract?.accepts).map(normalizeUsageId).filter(Boolean));
-  const capabilities = new Set(listValues(entry.capabilities).map(normalizeUsageId).filter(Boolean));
-  const artifactTypes = deliveryHandoffArtifactTypes(job);
-  const score = { value: 0, reasons: [] };
-  const add = (value, reason) => {
-    if (!value) return;
-    score.value += value;
-    if (reason && !score.reasons.includes(reason)) score.reasons.push(reason);
-  };
-
-  for (const artifactType of artifactTypes) {
-    if (accepts.has(artifactType)) add(70, `accepts ${artifactType}`);
-    if (capabilities.has(artifactType)) add(44, `capability ${artifactType}`);
-    for (const alias of HANDOFF_ARTIFACT_CAPABILITY_ALIASES[artifactType] || []) {
-      const normalizedAlias = normalizeUsageId(alias);
-      if (accepts.has(normalizedAlias)) add(56, `accepts ${normalizedAlias}`);
-      if (capabilities.has(normalizedAlias)) add(32, `capability ${normalizedAlias}`);
-    }
-  }
-
-  if (id === 'x-client-ops' && xPostDraftFromJob(job)?.text) add(80, 'X post draft');
-  if (!accepts.size && !capabilities.size && /(^|\n)app_handoff:/i.test(jobText)) add(24, 'explicit handoff note');
-
-  return score;
-}
-
 function appHandoffIsCaitManagedSurface(entry = {}) {
   const id = normalizeUsageId(entry.id || '');
   return APP_AGENT_MANIFESTS.some((item) => normalizeUsageId(item.id) === id);
 }
 
-function appHandoffSpecificityScore(entry = {}, job = {}) {
-  const accepts = new Set(listValues(entry.inputContract?.accepts).map(normalizeUsageId).filter(Boolean));
-  const capabilities = new Set(listValues(entry.capabilities).map(normalizeUsageId).filter(Boolean));
-  const artifactTypes = deliveryHandoffArtifactTypes(job);
-  let directMatches = 0;
-  let aliasMatches = 0;
-
-  for (const artifactType of artifactTypes) {
-    if (accepts.has(artifactType)) directMatches += 1;
-    if (capabilities.has(artifactType)) directMatches += 1;
-    for (const alias of HANDOFF_ARTIFACT_CAPABILITY_ALIASES[artifactType] || []) {
-      const normalizedAlias = normalizeUsageId(alias);
-      if (accepts.has(normalizedAlias)) aliasMatches += 1;
-      if (capabilities.has(normalizedAlias)) aliasMatches += 1;
-    }
-  }
-
-  const contractSize = accepts.size + capabilities.size;
-  const narrowContractBonus = Math.max(0, 18 - Math.min(18, contractSize));
-  const externalAppBonus = appHandoffIsCaitManagedSurface(entry) ? 0 : 12;
-  const handoffEndpointBonus = entry.handoff?.createUrl ? 4 : 0;
-  const broadContractPenalty = Math.max(0, contractSize - 4) * 12;
-  return (directMatches * 40) + (aliasMatches * 18) + narrowContractBonus + externalAppBonus + handoffEndpointBonus - broadContractPenalty;
-}
-
 function appAgentHandoffCandidates(job = {}) {
-  const jobText = appHandoffJobSignalText(job);
-  return appManifestSources()
-    .map((entry) => {
-      const relevance = appHandoffRelevanceScore(entry, job, { jobText });
-      return {
-        ...entry,
-        handoffRelevanceScore: relevance.value,
-        handoffSpecificityScore: appHandoffSpecificityScore(entry, job),
-        handoffReason: relevance.reasons.slice(0, 2).join(' / ')
-      };
-    })
-    .filter((entry) => {
-      if (!entry?.id || (!entry.entryUrl && !entry.baseUrl && !entry.handoff?.createUrl)) return false;
-      if (String(entry.status || '').toLowerCase() === 'deprecated') return false;
-      if (Number(entry.handoffRelevanceScore || 0) < 50) return false;
-      return true;
-    })
-    .sort((left, right) => (
-      Number(right.handoffSpecificityScore || 0) - Number(left.handoffSpecificityScore || 0)
-      || Number(right.handoffRelevanceScore || 0) - Number(left.handoffRelevanceScore || 0)
-      || String(left.name || left.id || '').localeCompare(String(right.name || right.id || ''))
-    ))
-    .slice(0, 3);
+  return appHandoffGateRankEntries(appManifestSources(), job, {
+    normalizeUsageId,
+    listValues,
+    deliveryHandoffArtifactTypes,
+    isCaitManagedSurface: appHandoffIsCaitManagedSurface
+  });
 }
 
 function renderAppHandoffTools(job = {}) {
@@ -8006,53 +7756,60 @@ async function prepareFollowupForRunningOrder(prompt = '') {
   if (!text || !orderId) return false;
   const job = await fetchVisibleJob(orderId);
   if (!job?.id || jobHasDeliveryResult(job)) return false;
-  const baseTaskType = String(
-    (Array.isArray(job.workflow?.plannedTasks) ? job.workflow.plannedTasks[0] : '')
-    || job.taskType
-    || 'research'
-  ).trim().toLowerCase() || 'research';
-  const taskType = baseTaskType;
-  const isWorkflow = job.jobKind === 'workflow' || Boolean(job.workflow);
-  const followupPrompt = [
-    `Follow-up/change request for running order ${job.id}:`,
-    text,
-    '',
-    'Use the previous order context, completed specialist outputs, active blockers, and current workflow state. Treat this as an additive/revised instruction, not a separate unrelated request.'
-  ].join('\n');
-  const prepared = {
-    taskType,
-    task_type: taskType,
-    resolvedOrderStrategy: isWorkflow ? 'multi' : 'single',
-    resolved_order_strategy: isWorkflow ? 'multi' : 'single',
-    reason: `Prepared as an add-on request for running order ${job.id.slice(0, 8)}. It will not run until Send order is pressed.`,
-    conversationOwner: taskType.endsWith('_leader')
-      ? { type: 'leader', taskType, label: taskLabel(taskType), reason: 'Follow-up request for active leader workflow.' }
-      : { type: 'cait', label: 'CAIt', reason: 'Follow-up request for active order.' }
+  let prepared;
+  try {
+    prepared = await api('/api/deliveries/prepare-followup-order', {
+      method: 'POST',
+      body: JSON.stringify({
+        job_id: job.id,
+        answer: text,
+        mode: 'running',
+        allow_running: true
+      })
+    });
+  } catch (error) {
+    appendTextMessage('assistant', `${chatText('Could not prepare that as a follow-up for the running order.', '進行中オーダーへの追加要望として準備できませんでした。', text)} ${orderErrorMessage(error)}`, { tone: 'error', label: 'Follow-up' });
+    return true;
+  }
+  const conversationOwner = prepared?.conversation_owner && typeof prepared.conversation_owner === 'object'
+    ? prepared.conversation_owner
+    : prepared?.conversationOwner;
+  const draftSeed = {
+    ...(prepared || {}),
+    taskType: prepared?.task_type || prepared?.taskType || 'research',
+    task_type: prepared?.task_type || prepared?.taskType || 'research',
+    resolvedOrderStrategy: prepared?.order_strategy || prepared?.resolvedOrderStrategy || 'auto',
+    resolved_order_strategy: prepared?.order_strategy || prepared?.resolved_order_strategy || 'auto',
+    reason: prepared?.reason || `Prepared as an add-on request for running order ${job.id.slice(0, 8)}. It will not run until Send order is pressed.`,
+    conversationOwner
   };
-  state.draft = chatEngineBuildOrderDraft(followupPrompt, prepared, {
+  state.draft = chatEngineBuildOrderDraft(String(prepared?.prompt || text || '').trim(), draftSeed, {
     originalPrompt: text,
     intakeChecked: true,
     intakeAnswered: true,
-    conversationOwner: prepared.conversationOwner
+    conversationOwner
   });
   const broker = state.draft.input?._broker && typeof state.draft.input._broker === 'object' ? state.draft.input._broker : {};
+  const preparedBroker = prepared?.input?._broker && typeof prepared.input._broker === 'object' ? prepared.input._broker : {};
   state.draft.input = {
     ...(state.draft.input || {}),
+    ...(prepared?.input && typeof prepared.input === 'object' ? prepared.input : {}),
     _broker: {
+      ...preparedBroker,
       ...broker,
-        conversation: {
-          ...(broker.conversation && typeof broker.conversation === 'object' ? broker.conversation : {}),
-          mode: 'followup',
-          userExplicitContinuation: true,
-          explicitContinuation: true,
-          followupToJobId: job.id,
-          followup_to_job_id: job.id,
-          requestedAt: new Date().toISOString()
-        },
+      conversation: {
+        ...(preparedBroker.conversation && typeof preparedBroker.conversation === 'object' ? preparedBroker.conversation : {}),
+        ...(broker.conversation && typeof broker.conversation === 'object' ? broker.conversation : {}),
+        mode: 'followup',
+        userExplicitContinuation: true,
+        explicitContinuation: true,
+        followupToJobId: String(prepared?.followup_to_job_id || job.id),
+        followup_to_job_id: String(prepared?.followup_to_job_id || job.id)
+      },
     }
   };
-  state.draft.followupToJobId = job.id;
-  state.followupTargetOrderId = job.id;
+  state.draft.followupToJobId = String(prepared?.followup_to_job_id || job.id);
+  state.followupTargetOrderId = String(prepared?.followup_to_job_id || job.id);
   state.draftRevision += 1;
   setConversationOwnerFromPrepared(state.draft, { sample: text });
   appendTextMessage('assistant', chatText(

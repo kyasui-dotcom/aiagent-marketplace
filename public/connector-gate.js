@@ -126,29 +126,40 @@ export function connectorGateAuthorityNeedsApproval(request = null) {
   const missingConnectors = listValues(request.missing_connectors || request.missingConnectors || request.connectors);
   const missingCapabilities = listValues(request.missing_connector_capabilities || request.missingConnectorCapabilities || request.capabilities);
   const googleSources = listValues(request.required_google_sources || request.requiredGoogleSources || request.google_source_types || request.googleSourceTypes);
-  const reason = String(request.reason || request.message || request.summary || '').trim();
   const source = String(request.source || request.reason_code || request.reasonCode || '').trim().toLowerCase();
   if (source === 'leader_execution_approval') return false;
   const requiredChannelSelection = Boolean(request.required_channel_selection || request.requiredChannelSelection);
   const channelCandidates = listValues(request.channel_candidates || request.channelCandidates || request.channels);
-  const writeCapabilities = missingCapabilities.filter((item) => (
-    /(post|publish|send|write|submit|create|update|delete|calendar|gmail|email|x\.post|github\.write)/i.test(String(item || ''))
-    && !/^google\.read_/i.test(String(item || ''))
-  ));
-  if (
-    source === 'leader_execution_approval'
-    && requiredChannelSelection
-    && !channelCandidates.length
-    && !writeCapabilities.length
-  ) {
-    return false;
-  }
+  const actionKinds = listValues(
+    request.action_kinds
+      || request.actionKinds
+      || request.action_kind
+      || request.actionKind
+      || request.handoff_artifact_types
+      || request.handoffArtifactTypes
+      || request.handoff_artifact_type
+      || request.handoffArtifactType
+      || request.artifact_types
+      || request.artifactTypes
+      || request.artifact_type
+      || request.artifactType
+  );
+  const explicitApprovalFlag = request.approval_required === true
+    || request.approvalRequired === true
+    || request.requires_approval === true
+    || request.requiresApproval === true
+    || request.needs_approval === true
+    || request.needsApproval === true
+    || request.confirmation_required === true
+    || request.confirmationRequired === true;
   return Boolean(
     missingConnectors.length
     || missingCapabilities.length
     || googleSources.length
     || requiredChannelSelection
-    || /(approval|approve|connector|required|missing|connect|confirm|publish|send|post|承認|接続|未接続|確認|投稿|送信|必要)/i.test(reason)
+    || channelCandidates.length
+    || actionKinds.length
+    || explicitApprovalFlag
   );
 }
 
@@ -160,12 +171,31 @@ export function connectorGateAuthorityHandledBySaasHandoff(request = null) {
   const missingCapabilities = listValues(request.missing_connector_capabilities || request.missingConnectorCapabilities || request.capabilities)
     .map((item) => String(item || '').trim().toLowerCase())
     .filter(Boolean);
+  const channelCandidates = listValues(request.channel_candidates || request.channelCandidates || request.channels)
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter(Boolean);
+  const actionKinds = listValues(
+    request.action_kinds
+      || request.actionKinds
+      || request.action_kind
+      || request.actionKind
+      || request.handoff_artifact_types
+      || request.handoffArtifactTypes
+      || request.handoff_artifact_type
+      || request.handoffArtifactType
+      || request.artifact_types
+      || request.artifactTypes
+      || request.artifact_type
+      || request.artifactType
+  ).map((item) => String(item || '').trim().toLowerCase()).filter(Boolean);
   const googleSources = connectorGateGoogleIncludeGroupsFromAuthority(request);
   const nonXConnectors = missingConnectors.filter((item) => !/^(x|twitter)$/.test(item));
-  const nonXCapabilities = missingCapabilities.filter((item) => !/^(x\.post|x\.write|twitter\.post|social\.post)$/.test(item));
-  const mentionsXPublish = [...missingConnectors, ...missingCapabilities, request.reason, request.summary, request.message]
-    .some((item) => /(^x$|x\.post|twitter|tweet)/i.test(String(item || '')));
-  return Boolean(mentionsXPublish && !googleSources.length && !nonXConnectors.length && !nonXCapabilities.length);
+  const nonXCapabilities = missingCapabilities.filter((item) => !/^(x[._-]post|x[._-]write|twitter[._-]post|social[._-]post)$/.test(item));
+  const nonXChannels = channelCandidates.filter((item) => !/^(x|twitter|tweet)$/.test(item));
+  const explicitSaasHandoffSignals = [...missingConnectors, ...missingCapabilities, ...channelCandidates, ...actionKinds];
+  const mentionsXPublish = explicitSaasHandoffSignals
+    .some((item) => /(^x$|x[._-]post|twitter|tweet)/i.test(String(item || '')));
+  return Boolean(mentionsXPublish && !googleSources.length && !nonXConnectors.length && !nonXCapabilities.length && !nonXChannels.length);
 }
 
 export function connectorGateAuthorityIsActionable(job = {}, request = null) {

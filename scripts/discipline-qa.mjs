@@ -35,6 +35,37 @@ const campaignOperationsSource = read('lib/builtin-agents/agents/campaign-operat
 const campaignRoutesSource = read('lib/routes/campaigns.js');
 const adsPlannerSource = read('lib/builtin-agents/agents/ads-planner.js');
 const disciplineDoc = read('docs/AGENT_ORCHESTRATION_DISCIPLINE.md');
+const agentOutputCases = JSON.parse(read('scripts/fixtures/agent-output-cases.json'));
+
+function assertUnique(items = [], label = 'items') {
+  const seen = new Set();
+  for (const item of items) {
+    assert.ok(item, `${label} must not contain empty values`);
+    assert.equal(seen.has(item), false, `${label} must not contain duplicates: ${item}`);
+    seen.add(item);
+  }
+}
+
+function assertNoAgentContractKeys(value, label = 'fixture') {
+  if (!value || typeof value !== 'object') return;
+  for (const [key, child] of Object.entries(value)) {
+    assert.equal(
+      [
+        'agentPurpose',
+        'agentActionBoundaries',
+        'deliveryContract',
+        'action_boundaries',
+        'delivery_contract',
+        'requiredDeliverySections',
+        'forbiddenClaims',
+        'authorityBoundary'
+      ].includes(key),
+      false,
+      `${label} must not define agent contracts; keep purpose/action/delivery policy in the agent JS file`
+    );
+    assertNoAgentContractKeys(child, `${label}.${key}`);
+  }
+}
 
 // Regression target:
 // AGENT_ORCHESTRATION_DISCIPLINE.md is a shared, agent-agnostic discipline file.
@@ -107,6 +138,46 @@ assert.equal(
   false,
   'shared discipline doc must stay agent-agnostic; single-agent boundaries belong in that agent JS module'
 );
+
+assertUnique((agentOutputCases.cases || []).map((item) => item.id), 'agent output fixture ids');
+assertUnique((agentOutputCases.groups?.marketing || []), 'marketing fixture group ids');
+for (const [groupName, ids] of Object.entries(agentOutputCases.groups || {})) {
+  for (const caseId of ids || []) {
+    assert.ok(
+      (agentOutputCases.cases || []).some((item) => item.id === caseId),
+      `agent output fixture group ${groupName} references missing case ${caseId}`
+    );
+  }
+}
+for (const agentCase of agentOutputCases.cases || []) {
+  assertNoAgentContractKeys(agentCase, `agent output fixture ${agentCase.id || agentCase.file || 'unknown'}`);
+}
+
+for (const caseId of agentOutputCases.groups.marketing || []) {
+  const agentCase = agentOutputCases.cases.find((item) => item.id === caseId);
+  assert.ok(agentCase, `marketing agent output fixture ${caseId} must exist`);
+  const source = read(`lib/builtin-agents/agents/${agentCase.file}`);
+  assert.ok(
+    source.includes('agentPurpose:'),
+    `${agentCase.file} must own its agent purpose in the agent definition`
+  );
+  assert.ok(
+    source.includes('agentActionBoundaries:'),
+    `${agentCase.file} must own its action boundaries in the agent definition`
+  );
+  assert.ok(
+    source.includes('deliveryContract:'),
+    `${agentCase.file} must own its delivery contract in the agent definition`
+  );
+  assert.ok(
+    source.includes('action_boundaries: Array.isArray(definition.agentActionBoundaries) ? definition.agentActionBoundaries : []'),
+    `${agentCase.file} must pass structured action boundaries through provider health/run packets`
+  );
+  assert.ok(
+    source.includes('delivery_contract:'),
+    `${agentCase.file} must pass the delivery contract through provider health/run packets`
+  );
+}
 
 const agentSpecificBoundaryPattern = /\b(?:cmo|cmo_leader|cait_cmo|marketing_leader|free_web_growth|agent_team_launch)\b|CMO|マーケ責任者|マーケティング責任者/;
 for (const [fileName, source] of [
@@ -181,6 +252,48 @@ assert.ok(
   connectorGateSource.includes('connectorGateAuthorityRequestFromJob'),
   'connector gate must own structured authority_request extraction for connector UI'
 );
+assert.ok(
+  connectorGateSource.includes('explicitSaasHandoffSignals'),
+  'connector gate SaaS handoff detection must use structured connector/capability/channel/action fields'
+);
+assertNotIncludes(connectorGateSource, [
+  'request.reason, request.summary, request.message',
+  'request.reason, request.message, request.summary',
+  '/(approval|approve|connector|required|missing|connect|confirm|publish|send|post|承認|接続|未接続|確認|投稿|送信|必要)/i.test(reason)'
+], 'public/connector-gate.js');
+assert.ok(
+  appHandoffGateSource.includes('explicitHandoffArtifactTypesFromFile'),
+  'app handoff gate must own explicit artifact metadata extraction for app handoff routing'
+);
+assert.ok(
+  appHandoffGateSource.includes('explicitHandoffArtifactTypesFromAuthorityRequest'),
+  'app handoff gate must own structured authority_request artifact metadata extraction'
+);
+assert.ok(
+  appHandoffGateSource.includes('appHandoffRankEntries'),
+  'app handoff gate must own generic app handoff candidate ranking'
+);
+assert.ok(
+  chatSource.includes('appHandoffGateExplicitArtifactTypesFromFile'),
+  'chat app handoff routing must consume artifact metadata through app-handoff-gate'
+);
+assert.ok(
+  chatSource.includes('appHandoffGateExplicitArtifactTypesFromAuthorityRequest'),
+  'chat app handoff routing must consume authority_request artifact metadata through app-handoff-gate'
+);
+assert.ok(
+  chatSource.includes('appHandoffGateRankEntries'),
+  'chat app handoff routing must delegate candidate scoring through app-handoff-gate'
+);
+assertNotIncludes(chatSource, [
+  'function addExplicitHandoffArtifactType',
+  'function appHandoffRelevanceScore',
+  'function appHandoffSpecificityScore',
+  'const EXPLICIT_HANDOFF_TYPE_ALIASES',
+  'const HANDOFF_ARTIFACT_CAPABILITY_ALIASES',
+  'const HANDOFF_ARTIFACT_LABELS',
+  'const HANDOFF_ARTIFACT_DESTINATION_HINTS'
+], 'public/chat.js');
 for (const [moduleName, symbol] of [
   ['public/chat-session-state.js', 'compactChatRuntimeSnapshot'],
   ['public/order-runtime.js', 'visibleJobApiPath'],
@@ -224,6 +337,14 @@ assert.ok(
   clientSource.includes('/api/deliveries/prepare-followup-order'),
   'client delivery follow-up order drafts must be prepared by the server route'
 );
+assert.ok(
+  chatSource.includes('/api/deliveries/prepare-followup-order'),
+  'chat running-order follow-up drafts must be prepared by the server route'
+);
+assertNotIncludes(chatSource, [
+  'Follow-up/change request for running order ${job.id}:',
+  'Use the previous order context, completed specialist outputs, active blockers, and current workflow state.'
+], 'public/chat.js');
 assertNotIncludes(clientSource, [
   'function buildOpenChatLeaderOrderBrief',
   'What should this leader help decide or accomplish?',

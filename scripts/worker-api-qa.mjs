@@ -3,6 +3,7 @@ import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import worker from '../worker.js';
 import { createD1LikeStorage } from '../lib/storage.js';
+import { createBrokerAgentAssignmentHelpers } from '../lib/broker-agent-assignment.js';
 import { WELCOME_CREDITS_GRANT_AMOUNT, buildAgentTeamDeliveryOutput, nowIso, orderPreflightForAgent } from '../lib/shared.js';
 import { E2E_DEFAULT_ORDER_PROMPT, assertOrderScenarioQuality, buildOrderScenarioPayload } from './e2e-order-scenario.mjs';
 
@@ -133,6 +134,42 @@ assert.ok(brokerAgentAssignmentSource.includes('function selectedAgentTaskTypeFr
 assert.ok(brokerAgentAssignmentSource.includes('function resolveWorkflowAssignmentFromAgentList'), 'broker workflow child re-resolution should be owned by lib/broker-agent-assignment.js');
 assert.ok(brokerAgentAssignmentSource.includes('function leaderPlannerCandidateAgents'), 'leader planner candidate shaping should be owned by lib/broker-agent-assignment.js');
 assert.ok(brokerAgentAssignmentSource.includes('function leaderPlannerManifestCatalog'), 'leader planner marketplace candidate catalog shaping should be owned by lib/broker-agent-assignment.js');
+const qaNormalizeTaskTypes = (items = []) => [...new Set((Array.isArray(items) ? items : [items])
+  .map((item) => String(item || '').trim().toLowerCase().replace(/[\s-]+/g, '_'))
+  .filter(Boolean))];
+const qaBrokerAssignment = createBrokerAgentAssignmentHelpers({
+  agentLinksFromRecord: () => ({}),
+  agentPatternFitScore: () => 0,
+  agentTagsFromRecord: (agent = {}) => Array.isArray(agent.tags) ? agent.tags : [],
+  computeScore: (agent = {}) => Number(agent.score || 0),
+  isAgentVerified: (agent = {}) => agent.verified !== false,
+  isManagedSampleAgent: () => false,
+  isWorkflowLeaderTask: (task = '') => String(task || '').endsWith('_leader'),
+  leaderReadableAgentCatalogIndex: () => [],
+  leaderTaskLayer: () => null,
+  leaderTaskPhase: () => '',
+  normalizeAgentTags: qaNormalizeTaskTypes,
+  normalizeTaskTypes: qaNormalizeTaskTypes,
+  resolveAgentJobEndpoint: (agent = {}) => agent.endpoint || '',
+  workflowTagHintsForTask: () => [],
+  workflowTaskCandidateTokens: (value = '') => qaNormalizeTaskTypes(String(value || '').split(/[_\s-]+/)),
+  workflowTaskSoftMatchTokens: (value = '') => {
+    const tokens = qaNormalizeTaskTypes(String(value || '').split(/[_\s-]+/));
+    if (tokens.includes('growth')) tokens.push('marketing');
+    if (tokens.includes('seo_specialist')) tokens.push('seo');
+    return qaNormalizeTaskTypes(tokens);
+  }
+});
+const exactGrowthAssignment = qaBrokerAssignment.assignAgentForTask([
+  { id: 'agent_x', name: 'X Broad Marketing', taskTypes: ['marketing'], score: 99, endpoint: '/x/jobs', tags: ['marketing'], online: true },
+  { id: 'agent_growth', name: 'Growth Exact', taskTypes: ['growth'], score: 1, endpoint: '/growth/jobs', tags: ['growth'], online: true }
+], 'growth', 0, '', { allowSoftTaskMatch: true, requireEndpoint: true });
+assert.equal(exactGrowthAssignment.agent.id, 'agent_growth', 'broker assignment should prefer an exact current manifest task over a broader soft match');
+const exactSeoAssignment = qaBrokerAssignment.assignAgentForTask([
+  { id: 'agent_writer', name: 'Writer SEO Alias', taskTypes: ['seo'], score: 99, endpoint: '/writer/jobs', tags: ['seo'], online: true },
+  { id: 'agent_seo', name: 'SEO Specialist Exact', taskTypes: ['seo_specialist'], score: 1, endpoint: '/seo/jobs', tags: ['seo'], online: true }
+], 'seo_specialist', 0, '', { allowSoftTaskMatch: true, requireEndpoint: true });
+assert.equal(exactSeoAssignment.agent.id, 'agent_seo', 'broker assignment should not route seo_specialist workflow work to a generic SEO alias when an exact specialist exists');
 assert.ok(workflowPlanAssemblySource.includes('function planWorkflowAssignments'), 'workflow assignment planning should be owned by lib/workflow-plan-assembly.js');
 assert.ok(workflowPlanAssemblySource.includes('async function maybeRefineWorkflowPlanWithLeaderLlm'), 'leader LLM plan refinement should be owned by lib/workflow-plan-assembly.js');
 assert.ok(workflowPlanAssemblySource.includes('function workflowPlannedTasksFromOrderBody'), 'retry planned-task extraction should be owned by lib/workflow-plan-assembly.js');

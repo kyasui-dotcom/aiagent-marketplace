@@ -1,0 +1,267 @@
+{
+  "groups": {
+    "marketing": [
+      "cmo-leader-growth-plan",
+      "free-web-growth-no-paid-plan",
+      "launch-team-product-launch",
+      "campaign-operations-publisher-queue",
+      "ads-planner-budget-guardrails",
+      "seo-specialist-rewrite",
+      "writer-copy-packet",
+      "landing-rewrite",
+      "x-post-launch-packet",
+      "instagram-creative-packet",
+      "reddit-community-post",
+      "indie-hackers-founder-post",
+      "email-ops-lifecycle-draft",
+      "cold-email-source-backed-outreach",
+      "acquisition-automation-flow",
+      "media-planner-channel-fit",
+      "directory-submission-queue",
+      "citation-ops-local-profile",
+      "list-creator-public-source-list",
+      "growth-loop-experiment"
+    ]
+  },
+  "cases": [
+    {
+      "id": "cmo-leader-growth-plan",
+      "file": "cmo-leader.js",
+      "kind": "cmo_leader",
+      "prompt": "Create a marketing plan for https://aiagent-marketplace.net to increase paid agent orders from solo founders. Separate strategy, specialist work, Publisher handoff, and actions that need approval.",
+      "body": {
+        "input": {
+          "target_url": "https://aiagent-marketplace.net",
+          "conversion_goal": "paid agent order",
+          "audience": "solo founders"
+        }
+      }
+    },
+    {
+      "id": "free-web-growth-no-paid-plan",
+      "file": "free-web-growth-leader.js",
+      "kind": "free_web_growth",
+      "prompt": "Plan no-paid growth for an AI agent marketplace. Use SEO, community, directories, and owned media. Give a 24-hour and 7-day plan.",
+      "body": {
+        "input": {
+          "constraints": "no paid ads",
+          "target_url": "https://aiagent-marketplace.net"
+        }
+      }
+    },
+    {
+      "id": "launch-team-product-launch",
+      "file": "launch-team-leader.js",
+      "kind": "launch_team",
+      "prompt": "Launch a new Publisher Approval Studio feature for reviewing AI-generated articles before WordPress or GitHub publishing.",
+      "body": {
+        "input": {
+          "launch_date": "next week",
+          "desired_action": "signup"
+        }
+      }
+    },
+    {
+      "id": "campaign-operations-publisher-queue",
+      "file": "campaign-operations.js",
+      "kind": "campaign_operations",
+      "prompt": "Turn the CMO launch design into a Campaign record, Publisher queue, approval backlog, and measurement loop. Do not claim anything has been published.",
+      "body": {
+        "campaign": {
+          "objective": "increase signups",
+          "audience": "founders",
+          "targetUrl": "https://aiagent-marketplace.net"
+        }
+      }
+    },
+    {
+      "id": "ads-planner-budget-guardrails",
+      "file": "ads-planner.js",
+      "kind": "ads_planner",
+      "prompt": "Prepare a Google Ads plan for the marketplace with a $300 test budget, target CPA $30, and strict stop rules. Do not launch ads.",
+      "body": {
+        "ads": {
+          "provider": "google_ads",
+          "budgetCap": 300,
+          "targetCpa": 30
+        }
+      }
+    },
+    {
+      "id": "seo-specialist-rewrite",
+      "file": "seo-specialist.js",
+      "kind": "seo_specialist",
+      "prompt": "Rewrite the homepage for the keyword AI agent marketplace. Target English-speaking founders and signup conversion. Include SERP/source status and Publisher handoff boundary.",
+      "body": {
+        "input": {
+          "target_url": "https://aiagent-marketplace.net",
+          "keyword": "AI agent marketplace",
+          "market": "English"
+        }
+      }
+    },
+    {
+      "id": "writer-copy-packet",
+      "file": "writer.js",
+      "kind": "writing",
+      "prompt": "Create homepage copy for an AI agent marketplace. Audience: solo founders. CTA: start with one paid agent order. Include proof placeholders and two distinct variants.",
+      "body": {
+        "input": {
+          "audience": "solo founders",
+          "cta": "start paid agent order"
+        }
+      }
+    },
+    {
+      "id": "landing-rewrite",
+      "file": "landing.js",
+      "kind": "landing",
+      "prompt": "Improve the landing page hero and CTA for https://aiagent-marketplace.net. Provide replacement copy, trust block, and implementation handoff.",
+      "body": {
+        "input": {
+          "target_url": "https://aiagent-marketplace.net",
+          "conversion_goal": "signup"
+        }
+      }
+    },
+    {
+      "id": "x-post-launch-packet",
+      "file": "x-post.js",
+      "kind": "x_post",
+      "prompt": "Prepare X posts for launching Publisher Approval Studio. Include exact post text, replies, cadence, and approval/connector boundary. Do not claim it was posted.",
+      "body": {
+        "input": {
+          "account_handle": "@example",
+          "voice": "founder"
+        }
+      }
+    },
+    {
+      "id": "instagram-creative-packet",
+      "file": "instagram.js",
+      "kind": "instagram",
+      "prompt": "Prepare an Instagram carousel and caption for an AI agent marketplace launch. Include visual brief, hashtags, and schedule handoff boundary.",
+      "body": {
+        "input": {
+          "format": "carousel",
+          "audience": "founders"
+        }
+      }
+    },
+    {
+      "id": "reddit-community-post",
+      "file": "reddit.js",
+      "kind": "reddit",
+      "prompt": "Prepare a Reddit post for a founder community about safely using AI agents. Include subreddit fit, rule risk, post draft, and manual posting boundary.",
+      "body": {
+        "input": {
+          "community": "startup founders"
+        }
+      }
+    },
+    {
+      "id": "indie-hackers-founder-post",
+      "file": "indie-hackers.js",
+      "kind": "indie_hackers",
+      "prompt": "Prepare an Indie Hackers launch post for an AI agent marketplace. Make it founder-story led and avoid sounding like an ad.",
+      "body": {
+        "input": {
+          "community": "Indie Hackers"
+        }
+      }
+    },
+    {
+      "id": "email-ops-lifecycle-draft",
+      "file": "email-ops.js",
+      "kind": "email_ops",
+      "prompt": "Prepare a lifecycle email for users who created an account but have not ordered an agent. Include subject, body, CTA, approval checklist, and send boundary.",
+      "body": {
+        "input": {
+          "audience": "signed up but no order",
+          "sender": "CAIt team"
+        }
+      }
+    },
+    {
+      "id": "cold-email-source-backed-outreach",
+      "file": "cold-email.js",
+      "kind": "cold_email",
+      "prompt": "Prepare source-backed cold outreach to startup founders for AI agent marketplace demos. Include lead source status, consent boundary, and send handoff.",
+      "body": {
+        "input": {
+          "target_segment": "startup founders",
+          "sender": "founder"
+        }
+      }
+    },
+    {
+      "id": "acquisition-automation-flow",
+      "file": "acquisition-automation.js",
+      "kind": "acquisition_automation",
+      "prompt": "Design one acquisition automation flow from signup to first paid agent order. Include trigger, CRM states, messages, approval gates, stop rules, and measurement.",
+      "body": {
+        "input": {
+          "conversion_goal": "first paid agent order"
+        }
+      }
+    },
+    {
+      "id": "media-planner-channel-fit",
+      "file": "media-planner.js",
+      "kind": "media_planner",
+      "prompt": "Choose the top three free/owned channels for an AI agent marketplace. Include channel fit matrix, why-not list, and next channel handoff.",
+      "body": {
+        "input": {
+          "target_url": "https://aiagent-marketplace.net",
+          "conversion_goal": "orders"
+        }
+      }
+    },
+    {
+      "id": "directory-submission-queue",
+      "file": "directory-submission.js",
+      "kind": "directory_submission",
+      "prompt": "Prepare a directory submission queue for an AI agent marketplace. Include fit reasons, required fields, listing copy, and submission boundary.",
+      "body": {
+        "input": {
+          "category": "AI tools"
+        }
+      }
+    },
+    {
+      "id": "citation-ops-local-profile",
+      "file": "citation-ops.js",
+      "kind": "citation_ops",
+      "prompt": "Prepare local citation readiness for a Tokyo AI automation consultancy. Include canonical NAP, unverified fields, citation queue, and review flow.",
+      "body": {
+        "input": {
+          "business_name": "Example AI Automation",
+          "city": "Tokyo"
+        }
+      }
+    },
+    {
+      "id": "list-creator-public-source-list",
+      "file": "list-creator.js",
+      "kind": "list_creator",
+      "prompt": "Create a public-source prospect list brief for startup founders likely to buy AI agent setup. Include source trace and qualification reasons.",
+      "body": {
+        "input": {
+          "target_segment": "startup founders",
+          "source_policy": "public sources only"
+        }
+      }
+    },
+    {
+      "id": "growth-loop-experiment",
+      "file": "growth.js",
+      "kind": "growth",
+      "prompt": "Design one growth loop experiment for converting visitors into paid agent orders. Include metric, threshold, kill rule, and next decision.",
+      "body": {
+        "input": {
+          "conversion_goal": "paid order"
+        }
+      }
+    }
+  ]
+}

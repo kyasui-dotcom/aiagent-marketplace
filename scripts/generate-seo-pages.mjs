@@ -1744,6 +1744,12 @@ ${entries}
 `;
 }
 
+function latestNewsPostDate() {
+  return newsPosts
+    .map((post) => post.date)
+    .sort((a, b) => b.localeCompare(a))[0] || '2026-04-14';
+}
+
 function sitemapXml(allTerms, agents) {
   const urls = [
     '/',
@@ -1764,9 +1770,11 @@ function sitemapXml(allTerms, agents) {
     ...allTerms.map((term) => `/glossary/${term.slug}.html`)
   ];
   const newsPostByUrl = new Map(newsPosts.map((post) => [`/news/${post.slug}.html`, post.date]));
+  const latestNewsDate = latestNewsPostDate();
   const lastmodFor = (url) => {
     if (newsPostByUrl.has(url)) return newsPostByUrl.get(url);
-    if (['/', '/news.html', '/site-map.html', '/resources.html', '/demo.html'].includes(url)) return '2026-05-01';
+    if (url === '/news.html') return latestNewsDate;
+    if (['/', '/site-map.html', '/resources.html', '/demo.html'].includes(url)) return '2026-05-01';
     return '2026-04-14';
   };
   return `<?xml version="1.0" encoding="UTF-8"?>

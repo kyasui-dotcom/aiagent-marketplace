@@ -51,6 +51,8 @@
     "qa:payjp": "node scripts/payjp-qa.mjs",
     "qa:ui": "node scripts/ui-qa.mjs",
     "qa:agent-ops": "node scripts/agent-ops-qa.mjs",
+    "agent:test:snapshot": "node scripts/agent-output-regression.mjs snapshot",
+    "agent:test:compare": "node scripts/agent-output-regression.mjs compare",
     "qa:e2e-mock": "node scripts/e2e-mock-qa.mjs",
     "qa:e2e-contract": "node scripts/e2e-qa.mjs",
     "qa:e2e": "node scripts/e2e-qa.mjs && playwright test -c playwright.config.js",

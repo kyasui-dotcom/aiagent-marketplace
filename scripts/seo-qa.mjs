@@ -208,6 +208,8 @@ const sitemap = read('public/sitemap.xml');
 assert.ok(sitemap.includes(`${SITE_URL}/sitemap.xml`) === false, 'sitemap should contain page URLs, not itself');
 assert.ok(sitemap.includes(`${SITE_URL}/resources.html`), 'sitemap should include resources hub');
 assert.ok(sitemap.includes(`${SITE_URL}/site-map.html`), 'sitemap should include HTML site map');
+const latestNewsDate = newsPosts.map((post) => post.date).sort((a, b) => b.localeCompare(a))[0];
+assert.ok(sitemap.includes(`<loc>${SITE_URL}/news.html</loc>\n    <lastmod>${latestNewsDate}</lastmod>`), 'news index lastmod should match the latest news post date');
 for (const landingPage of seoLandingPages) {
   assert.ok(sitemap.includes(`${SITE_URL}/${landingPage.slug}.html`), `sitemap should include ${landingPage.slug}`);
 }
