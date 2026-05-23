@@ -511,6 +511,71 @@ function assertMissingConcreteDelivery(result, label) {
   assert.equal((result.files || []).length, 0, `${label} should not attach fallback files`);
 }
 
+const adsPlanner = sampleAgentDefinitionForKind('ads_planner');
+const fallbackAdsPlan = await adsPlanner.provider.runJob({
+  kind: 'ads_planner',
+  definition: adsPlanner,
+  body: {
+    prompt: [
+      'Plan a small Google Ads test for https://aiagent-marketplace.net.',
+      'Audience: developers and technical founders',
+      'Budget cap: 300',
+      'Target CPA: 20'
+    ].join('\n'),
+    output_language: 'en',
+    provider: 'google_ads',
+    budgetCap: 300,
+    targetCpa: 20,
+    input: { target_url: 'https://aiagent-marketplace.net' }
+  },
+  source: {},
+  manifest: adsPlanner.manifest
+});
+assertUserFacingDelivery(fallbackAdsPlan, 'ads_planner fallback delivery', [
+  /## Objective/i,
+  /## Audience/i,
+  /## Provider/i,
+  /## Campaign structure/i,
+  /## Budget cap and CPA assumption/i,
+  /## Stop rules/i,
+  /## Ads SaaS handoff/i,
+  /## Measurement plan/i
+]);
+const fallbackAdsContent = fallbackAdsPlan.files?.[0]?.content || '';
+assert.match(fallbackAdsContent, /not created, not submitted, not launched, not spent/i, 'ads_planner fallback must label execution status as not executed');
+assert.doesNotMatch(fallbackAdsContent, /created ads|launched ads|spent budget|changed bids/i, 'ads_planner fallback must not overclaim ad execution');
+
+const campaignOperations = sampleAgentDefinitionForKind('campaign_operations');
+const fallbackCampaignOps = await campaignOperations.provider.runJob({
+  kind: 'campaign_operations',
+  definition: campaignOperations,
+  body: {
+    prompt: 'Prepare campaign operations for the CMO plan.',
+    output_language: 'en',
+    campaign: {
+      title: 'Developer signup campaign',
+      objective: 'Increase qualified developer signups',
+      audience: 'developers and technical founders',
+      targetUrl: 'https://aiagent-marketplace.net',
+      channels: ['publisher', 'ads', 'analytics'],
+      kpis: ['qualified signups', 'trial starts']
+    }
+  },
+  source: {},
+  manifest: campaignOperations.manifest
+});
+assertUserFacingDelivery(fallbackCampaignOps, 'campaign_operations fallback delivery', [
+  /## Campaign state/i,
+  /## Publisher queue/i,
+  /## Approval backlog/i,
+  /## Connector readiness/i,
+  /## Measurement loop/i,
+  /## Next action owner/i
+]);
+const fallbackCampaignContent = fallbackCampaignOps.files?.[0]?.content || '';
+assert.match(fallbackCampaignContent, /Publisher ingest: not verified/i, 'campaign_operations fallback must label Publisher ingest as unverified');
+assert.doesNotMatch(fallbackCampaignContent, /\bpublished\b|\bsent\b|\blaunched\b/i, 'campaign_operations fallback must not claim external execution');
+
 const result = await research.provider.runJob({
   kind: 'research',
   definition: research,
