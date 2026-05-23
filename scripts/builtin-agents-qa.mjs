@@ -59,6 +59,44 @@ for (const [kind, definition] of Object.entries(SAMPLE_AGENT_DEFINITIONS)) {
   }
 }
 
+const engineeringContractExpectations = [
+  {
+    kind: 'code',
+    actions: ['prepare_patch_plan', 'implement_local_change', 'prepare_pr_handoff', 'verify_validation_evidence'],
+    requiredSections: ['Affected files', 'Validation evidence', 'Release risk label', 'Rollback path', 'PR handoff'],
+    forbiddenClaims: ['validation completed without command/result']
+  },
+  {
+    kind: 'build_team_leader',
+    actions: ['plan_implementation_team', 'resolve_parallel_work_boundaries', 'gate_validation_and_pr_handoff'],
+    requiredSections: ['File ownership', 'Shared files and sequencing', 'Integration gate', 'Risk and rollback path'],
+    forbiddenClaims: ['safe parallel execution without shared-file review']
+  },
+  {
+    kind: 'cto_leader',
+    actions: ['prepare_architecture_decision', 'prepare_rollout_packet', 'gate_migration_readiness'],
+    requiredSections: ['Current state evidence', 'Readiness gate', 'Validation gate', 'Fallback owner', 'Risk tradeoff'],
+    forbiddenClaims: ['production ready without readiness gate']
+  }
+];
+
+for (const expectation of engineeringContractExpectations) {
+  const definition = sampleAgentDefinitionForKind(expectation.kind);
+  assert.ok(definition, `${expectation.kind} should resolve from sample agent definitions`);
+  const actionIds = new Set((definition.agentActionBoundaries || []).map((action) => action.id));
+  for (const actionId of expectation.actions) {
+    assert.ok(actionIds.has(actionId), `${expectation.kind} must expose ${actionId} as an agent-owned action boundary`);
+  }
+  const requiredSections = new Set(definition.deliveryContract?.requiredDeliverySections || []);
+  for (const section of expectation.requiredSections) {
+    assert.ok(requiredSections.has(section), `${expectation.kind} delivery contract must require ${section}`);
+  }
+  const forbiddenClaims = new Set(definition.deliveryContract?.forbiddenClaims || []);
+  for (const claim of expectation.forbiddenClaims) {
+    assert.ok(forbiddenClaims.has(claim), `${expectation.kind} delivery contract must forbid "${claim}"`);
+  }
+}
+
 for (const fileName of agentFiles) {
   const source = readFileSync(join(agentsDir, fileName), 'utf8');
   assert.ok(source.includes('const AGENT_PROVIDER = Object.freeze({'), `${fileName} must define its own provider`);
