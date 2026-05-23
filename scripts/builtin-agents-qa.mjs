@@ -122,22 +122,22 @@ const externalCommunicationContractExpectations = [
   {
     kind: 'cold_email',
     actions: ['qualify_cold_lead_queue', 'draft_company_specific_sequence', 'prepare_cold_email_send_handoff'],
-    requiredSections: ['Lead source status', 'Qualification queue', 'Approval/send boundary', 'Connector handoff packet', 'Execution status labels'],
-    guidedSections: ['Lead source status and qualification queue', 'Approval/send boundary', 'Connector handoff packet', 'Execution status labels'],
+    requiredSections: ['Lead source status', 'Qualification queue', 'Exact recipient approval', 'Approval/send boundary', 'Connector handoff packet', 'Execution status labels'],
+    guidedSections: ['Lead source status and qualification queue', 'Exact recipient approval', 'Approval/send boundary', 'Connector handoff packet', 'Execution status labels'],
     forbiddenClaims: ['sent', 'queued', 'CRM imported']
   },
   {
     kind: 'instagram',
     actions: ['prepare_instagram_caption_packet', 'prepare_instagram_creative_brief', 'prepare_instagram_schedule_handoff'],
-    requiredSections: ['Format decision', 'Visual brief', 'Exact caption', 'Approval checklist', 'Connector boundary', 'Execution status labels'],
-    guidedSections: ['Exact caption', 'Approval checklist', 'Connector handoff boundary', 'Execution status labels'],
+    requiredSections: ['Format decision', 'Visual brief', 'Exact caption', 'Schedule handoff', 'Approval checklist', 'Connector boundary', 'Execution status labels'],
+    guidedSections: ['Exact caption', 'Schedule handoff', 'Approval checklist', 'Connector handoff boundary', 'Execution status labels'],
     forbiddenClaims: ['posted', 'scheduled', 'queued']
   },
   {
     kind: 'reddit',
     actions: ['prepare_subreddit_fit_packet', 'draft_reddit_discussion_packet', 'prepare_reddit_manual_posting_handoff'],
-    requiredSections: ['Community fit', 'Rule risk', 'Non-promotional angle', 'Manual posting boundary', 'Execution status labels'],
-    guidedSections: ['Manual posting boundary', 'Execution status labels'],
+    requiredSections: ['Subreddit assumptions', 'Community fit', 'Rule risk', 'Non-promotional angle', 'Manual posting boundary', 'Execution status labels'],
+    guidedSections: ['Subreddit assumptions', 'Manual posting boundary', 'Execution status labels'],
     forbiddenClaims: ['posted', 'submitted', 'queued']
   },
   {
