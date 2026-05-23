@@ -93,6 +93,9 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     inputContract: {
       schemaVersion: 'cait-app-agent-transfer/v1',
       accepts: ['post_text', 'strategy', 'agent_context', 'delivery_summary', 'settings'],
+      constraints: {
+        text: { minLength: 1, maxLength: 280 }
+      },
       settingsKeys: ['brandName', 'serviceLine', 'targetClient', 'defaultCta', 'destinationLink', 'serviceUrl', 'workspaceNotes', 'outputLanguage'],
       requiredApprovalFor: ['post_now'],
       returns: ['approval_requests', 'artifacts']

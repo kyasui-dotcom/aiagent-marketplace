@@ -41,8 +41,6 @@ const appContextSource = read('lib/app-context.js');
 const migrationSource = read('migrations/0001_init.sql');
 const workerLeaderFollowupFunction = workerSource.match(/function orderCreateSpecialistTaskForLeaderText[\s\S]*?\n}/)?.[0] || '';
 const workerConcreteRequirementFunction = workerSource.match(/function workflowTaskRequiresConcreteSpecialistArtifact[\s\S]*?\n}/)?.[0] || '';
-const workerPriorHandoffPayloadFunction = workerSource.match(/function workflowPriorHandoffCompletionPayload[\s\S]*?\n}\n\nfunction workflowPriorSourceResearchCompletionPayload/)?.[0] || '';
-const workerPriorSourceResearchGateFunction = workerSource.match(/function workflowShouldCompleteResearchFromPriorSourcePacket[\s\S]*?\n}/)?.[0] || '';
 
 function apiRoutesFromSource(source = '') {
   const routes = new Set();
@@ -219,15 +217,9 @@ assert.equal(
   'worker must not hardcode specialist deliverable requirements; agent/leader contracts own concrete output conditions.'
 );
 assert.equal(
-  /(?:developer signup|SEO\/organic first|SNS via X\/Reddit)/.test(workerPriorHandoffPayloadFunction),
+  /workflow(?:LeaderFinalHandoff|PriorHandoff|PriorSourceResearch|AttachedDataContext|DataUnavailable)CompletionPayload|workflowShouldComplete(?:ResearchFromPriorSourcePacket|FromPriorHandoffPacket|LeaderFinalFromPriorHandoffPacket|DataFromAttachedContext|DataUnavailable)|completeWorkflow(?:AttachedDataContext|DataUnavailable)Job/.test(workerSource),
   false,
-  'worker prior-handoff fallback must not synthesize CMO/growth-specific specialist content.'
-);
-assert.equal(
-  /return workflowPriorSourcePacketSourcesForJob\(job\)\.length > 0;/.test(workerPriorSourceResearchGateFunction)
-    && !/allowPriorSourceResearchCompletion/.test(workerPriorSourceResearchGateFunction),
-  false,
-  'search-required research must not auto-complete from prior source context unless an explicit contract allows it.'
+  'worker must not keep fallback completion packet generators; delivery artifacts must come from agent/provider returns.'
 );
 assert.deepEqual(
   rateLimitSpecForPath(API_ROUTES.CONNECTORS_X_POST, 'POST'),

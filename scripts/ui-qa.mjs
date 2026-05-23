@@ -372,6 +372,19 @@ assert.ok(chatJs.includes('choose the GA4 property and Search Console site'), 'C
 assert.ok(chatJs.includes('analyticsIntakeChoiceHtml'), 'Chat intake should render explicit analytics choice buttons.');
 assert.ok(chatJs.includes('data-chat-action="analytics-use"'), 'Chat intake should include a button to use GA4/Search Console.');
 assert.ok(chatJs.includes('data-chat-action="analytics-skip"'), 'Chat intake should include a button to skip GA4/Search Console.');
+const intakeChoiceHandlerSource = chatJs.slice(chatJs.indexOf("const intakeChoiceButton = event.target.closest('[data-intake-choice]');"), chatJs.indexOf("const button = event.target.closest('[data-chat-action]');"));
+assert.ok(
+  intakeChoiceHandlerSource.indexOf('appendIntakeChoiceToComposer(group, label);') < intakeChoiceHandlerSource.indexOf("if (action === 'analytics-use')"),
+  'Analytics intake choices should fill the answer composer before opening Analytics Console.'
+);
+assert.ok(chatJs.includes('singleChoice: config.singleChoice === true'), 'Intake groups should be able to declare mutually exclusive answers.');
+assert.ok(chatJs.includes("{ singleChoice: true }"), 'Analytics availability intake should be a single-choice group.');
+assert.ok(chatJs.includes("data-choice-mode=\"${group.singleChoice ? 'single' : 'multiple'}\""), 'Intake cards should expose whether a group is single- or multi-choice.');
+assert.ok(chatJs.includes('function resetIntakeChoiceGroup'), 'Single-choice intake groups should clear stale composer and confirmed answers.');
+assert.ok(
+  intakeChoiceHandlerSource.indexOf("if (groupElement?.dataset.choiceMode === 'single') resetIntakeChoiceGroup(groupElement, group);") < intakeChoiceHandlerSource.indexOf('appendIntakeChoiceToComposer(group, label);'),
+  'Single-choice intake selection should clear conflicting answers before writing the new answer.'
+);
 assert.ok(chatJs.includes('intakeChoiceGroups'), 'Chat intake should use generic concrete choice groups, not one-off question cards.');
 assert.ok(chatJs.includes('data-intake-choice'), 'Chat intake choices should be clickable buttons that fill the answer composer.');
 assert.ok(chatJs.includes('data-intake-other-input'), 'Chat intake should allow free-text Other answers inside each choice group.');
@@ -961,6 +974,16 @@ assert.ok(!chatJs.includes("xConnectLinkHtml('Connect X', 'primary')"), 'X autho
 assert.ok(chatJs.includes('X account connection and final publishing are handled inside X Client Ops'), 'X handoff copy should tell users final auth/publish happens in SaaS.');
 assert.ok(chatJs.includes('Final action: X Client Ops'), 'X Client Ops delivery card should use English copy.');
 assert.ok(chatJs.includes('CAIt has attached the X post draft and strategy context prepared during the workflow.'), 'X Client Ops explanation should be English.');
+assert.ok(chatJs.includes('function appTransferPayloadWithEditedText'), 'Editable SaaS handoff cards should update the generic transfer payload before opening the app.');
+assert.ok(chatJs.includes('data-app-transfer-editable="text"'), 'X draft edits should be carried through the generic app handoff path.');
+assert.ok(chatJs.includes("`Current edited handoff text:\\n${text || '[empty]'}`"), 'Editable SaaS handoff cards should preserve an intentionally emptied text field instead of falling back to stale payload text.');
+assert.ok(!chatJs.includes('if (!text) return payload;'), 'Editable SaaS handoff cards must not ignore cleared handoff text.');
+assert.ok(chatJs.includes('function appHandoffContractTextMinimum'), 'Generic app handoffs should validate manifest-declared required handoff text.');
+assert.ok(chatJs.includes('function appHandoffPayloadContractError'), 'Generic app handoffs should validate manifest-declared input constraints before opening the app.');
+assert.ok(appManifestRegistryJs.includes('constraints:') && appManifestRegistryJs.includes('minLength: 1, maxLength: 280'), 'X Client Ops text length should be declared in its app manifest contract.');
+assert.ok(chatJs.includes('requires handoff text before opening the app'), 'Required app handoff text should block empty SaaS handoffs before opening an external action app.');
+assert.ok(!chatJs.includes('data-x-client-ops-link'), 'X Client Ops must not keep a privileged chat-only handoff click path.');
+assert.ok(!chatJs.includes('createXClientOpsHandoffUrl'), 'X Client Ops handoff should use the generic manifest-declared app handoff proxy.');
 assert.ok(chatJs.includes('authorityRequestHandledBySaasHandoffInChat(authorityRequestFromJob(job))'), 'X authority waits should become SaaS app handoff candidates instead of chat approval dead-ends.');
 assert.ok(appHandoffGateJs.includes('x_post_approval'), 'Explicit X approval artifact metadata should still route to X Client Ops app handoff.');
 assert.ok(chatJs.includes('function renderAppHandoffTools'), 'Chat deliveries should expose generic app handoff cards.');

@@ -73,6 +73,7 @@ const deliveryActionContractSource = readFileSync(new URL('../public/delivery-ac
 const sampleAgentDefinitionsSource = readFileSync(new URL('../lib/builtin-agents/agents/index.js', import.meta.url), 'utf8');
 const orchestrationSource = readFileSync(new URL('../lib/orchestration.js', import.meta.url), 'utf8');
 const cmoLeaderSource = readFileSync(new URL('../lib/builtin-agents/agents/cmo-leader.js', import.meta.url), 'utf8');
+const dataAnalysisSource = readFileSync(new URL('../lib/builtin-agents/agents/data-analysis.js', import.meta.url), 'utf8');
 const agentOrchestrationDisciplineSource = readFileSync(new URL('../docs/AGENT_ORCHESTRATION_DISCIPLINE.md', import.meta.url), 'utf8');
 const storageSource = readFileSync(new URL('../lib/storage.js', import.meta.url), 'utf8');
 const integrationRoutesSource = readFileSync(new URL('../lib/routes/integrations.js', import.meta.url), 'utf8');
@@ -771,8 +772,8 @@ assert.ok(workerSource.includes('const DEFAULT_GENERATION_PROVIDER_TIMEOUT_MS = 
 assert.ok(workerSource.includes('const useAbort = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0'), 'endpoint dispatch should only abort through the explicit long-term provider wait budget.');
 assert.ok(workerSource.includes('dispatchTimeoutMs'), 'endpoint dispatch locks should persist the provider wait budget so recovery does not double-dispatch active generation.');
 assert.ok(!/async function dispatchJobToAssignedAgent[\s\S]{0,1500}runBuiltInAgent/.test(workerSource), 'generic dispatch must not call the local sample runner directly.');
-assert.ok(workerSource.includes('prior specialist deliverable'), 'data context packets should instruct downstream agents to use upstream data.');
-assert.ok(workerSource.includes('&& !workflowJobRequiresSearch(job)'), 'data-unavailable shortcut must not bypass search-required data/research jobs.');
+assert.ok(dataAnalysisSource.includes('return what the data layer implies for downstream research, planning, preparation, and app reflection'), 'data analysis agent should instruct downstream agents to use upstream data.');
+assert.ok(!workerSource.includes('function workflowShouldCompleteDataUnavailable'), 'worker must not keep a data-unavailable shortcut completion path.');
 assert.ok(/dispatchExistingJobToAssignedAgent\(storage,\s*env,\s*jobId,\s*agentId/.test(workerSource), 'endpoint queue consumer should use the normal endpoint dispatcher.');
 assert.ok(workerSource.includes("kind: 'endpoint_dispatch'"), 'workflow progress should queue normal endpoint dispatch work instead of draining every layer in one Worker request.');
 assert.ok(workerSource.includes("if (kind === 'endpoint_dispatch')"), 'queue consumer should process provider endpoint dispatch messages one job at a time.');
@@ -848,7 +849,7 @@ assert.ok(storageSource.includes('function jobIsApprovalBlockedForStorage'), 'D1
 assert.ok(storageSource.includes("jobIsApprovalBlockedForStorage(job) ? 'blocked'"), 'D1 must not persist running rows with blocked_waiting_for_approval metadata.');
 assert.ok(workerSource.includes('function workflowConcreteDeliverableContractForJob'), 'concrete deliverable checks should be contract-driven instead of task-name driven.');
 assert.ok(!/function workflowTaskRequiresConcreteSpecialistArtifact[\s\S]*'seo_specialist'/.test(workerSource), 'worker must not hardcode specialist deliverable requirements by task name.');
-assert.ok(workerSource.includes('if (workflowTaskRequiresConcreteSpecialistArtifact(job)) return false;'), 'prior-handoff fallback must respect explicit concrete-deliverable contracts.');
+assert.ok(!workerSource.includes('function workflowPriorHandoffCompletionPayload'), 'worker must not keep a prior-handoff fallback completion path.');
 assert.ok(!workerSource.includes('completionBlocking: false'), 'incomplete specialist artifacts must block completion and retry/fail instead of surfacing as non-blocking warnings.');
 assert.ok(workerSource.includes('function agentCompletionFailureReason'), 'worker must reject completed agent responses that do not include returned delivery artifacts.');
 assert.ok(workerSource.includes('markAgentCompletionFailedFreeInState'), 'missing-deliverable completions must fail without billing instead of becoming warnings.');

@@ -63,8 +63,7 @@ import {
 } from './app-handoff-gate.js?v=20260523a';
 import {
   BUILT_IN_APP_MANIFESTS as APP_AGENT_MANIFESTS,
-  CORE_FEATURE_APP_IDS,
-  X_CLIENT_OPS_URL
+  CORE_FEATURE_APP_IDS
 } from './app-manifest-registry.js?v=20260523a';
 import {
   progressNarratorHtml as agentProgressNarratorHtml,
@@ -3501,6 +3500,93 @@ function registerAppTransferPayload(payload = {}) {
   return id;
 }
 
+function appTransferPayloadWithEditedText(payload = {}, trigger = null) {
+  const editable = trigger?.closest?.('[data-app-transfer-edit-root]')?.querySelector?.('[data-app-transfer-editable]')
+    || trigger?.closest?.('.app-handoff-card, .x-post-card')?.querySelector?.('[data-app-transfer-editable]')
+    || null;
+  if (!editable) return payload;
+  const text = String('value' in editable ? editable.value : editable.textContent || '').trim();
+  const source = String(editable.dataset.appTransferSource || payload.source || payload.action?.source || 'CAIt chat action').trim();
+  const title = String(editable.dataset.appTransferTitle || payload.title || payload.action?.title || 'CAIt app handoff').trim();
+  const settings = payload.settings && typeof payload.settings === 'object' ? payload.settings : {};
+  return {
+    ...payload,
+    text,
+    source,
+    title,
+    action: {
+      ...(payload.action && typeof payload.action === 'object' ? payload.action : {}),
+      text,
+      source,
+      title
+    },
+    settings: {
+      ...settings,
+      workspaceNotes: compactTransferText([
+        settings.workspaceNotes || '',
+        `Current edited handoff text:\n${text || '[empty]'}`
+      ].filter(Boolean).join('\n\n'), 2200)
+    }
+  };
+}
+
+function appHandoffContractTextMinimum(manifest = {}) {
+  const inputContract = manifest?.inputContract && typeof manifest.inputContract === 'object' ? manifest.inputContract : {};
+  const constraints = inputContract.constraints && typeof inputContract.constraints === 'object' ? inputContract.constraints : {};
+  const text = constraints.text && typeof constraints.text === 'object' ? constraints.text : {};
+  const candidates = [
+    inputContract.minTextLength,
+    inputContract.textMinLength,
+    inputContract.min_text_length,
+    inputContract.text_min_length,
+    text.minLength,
+    text.min_length
+  ];
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value) && value > 0) return Math.floor(value);
+  }
+  return text.required === true || inputContract.textRequired === true || inputContract.text_required === true ? 1 : 0;
+}
+
+function appHandoffContractTextLimit(manifest = {}) {
+  const inputContract = manifest?.inputContract && typeof manifest.inputContract === 'object' ? manifest.inputContract : {};
+  const constraints = inputContract.constraints && typeof inputContract.constraints === 'object' ? inputContract.constraints : {};
+  const text = constraints.text && typeof constraints.text === 'object' ? constraints.text : {};
+  const candidates = [
+    inputContract.maxTextLength,
+    inputContract.textMaxLength,
+    inputContract.max_text_length,
+    inputContract.text_max_length,
+    text.maxLength,
+    text.max_length
+  ];
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value) && value > 0) return Math.floor(value);
+  }
+  return 0;
+}
+
+function appHandoffPayloadText(payload = {}) {
+  return String(payload.text || payload.action?.text || '').trim();
+}
+
+function appHandoffPayloadContractError(manifest = {}, payload = {}) {
+  const textMinimum = appHandoffContractTextMinimum(manifest);
+  const textLimit = appHandoffContractTextLimit(manifest);
+  const text = appHandoffPayloadText(payload);
+  if (textMinimum && text.length < textMinimum) {
+    return textMinimum === 1
+      ? `${manifest.name || 'App'} requires handoff text before opening the app. Add the exact text first.`
+      : `${manifest.name || 'App'} requires at least ${textMinimum} characters for this handoff text before opening the app.`;
+  }
+  if (textLimit && text && text.length > textLimit) {
+    return `${manifest.name || 'App'} accepts at most ${textLimit} characters for this handoff text. Shorten it before opening the app.`;
+  }
+  return '';
+}
+
 function authorityRequestFromJob(job = {}) {
   return connectorGateAuthorityRequestFromJob(job);
 }
@@ -3630,38 +3716,6 @@ function xStrategyContextFromJob(job = {}) {
 
 function xPostConnectHint() {
   return '<span class="chat-hint">X account connection and final publishing are handled inside X Client Ops, not in chat.</span>';
-}
-
-function xClientOpsHandoffUrl(jobId = '', draft = {}) {
-  const url = new URL(X_CLIENT_OPS_URL);
-  url.searchParams.set('cait_x_post', String(draft?.text || '').trim());
-  url.searchParams.set('cait_source', String(draft?.source || 'CAIt delivery').trim());
-  url.searchParams.set('cait_title', 'CAIt final X post draft');
-  if (draft?.strategy) url.searchParams.set('cait_strategy', String(draft.strategy).trim());
-  if (draft?.product) url.searchParams.set('cait_product', String(draft.product).trim());
-  if (draft?.audience) url.searchParams.set('cait_audience', String(draft.audience).trim());
-  if (draft?.goal) url.searchParams.set('cait_goal', String(draft.goal).trim());
-  if (draft?.channel) url.searchParams.set('cait_channel', String(draft.channel).trim());
-  if (draft?.url) url.searchParams.set('cait_url', String(draft.url).trim());
-  if (jobId) url.searchParams.set('cait_job', String(jobId).trim());
-  return url.toString();
-}
-
-function xClientOpsPayloadFromUrl(value = '') {
-  const url = new URL(value || X_CLIENT_OPS_URL, window.location.origin);
-  return {
-    schema_version: 'cait-app-agent-transfer/v1',
-    text: url.searchParams.get('cait_x_post') || '',
-    source: url.searchParams.get('cait_source') || 'CAIt delivery',
-    title: url.searchParams.get('cait_title') || 'CAIt final X post draft',
-    jobId: url.searchParams.get('cait_job') || '',
-    strategy: url.searchParams.get('cait_strategy') || '',
-    product: url.searchParams.get('cait_product') || '',
-    audience: url.searchParams.get('cait_audience') || '',
-    goal: url.searchParams.get('cait_goal') || '',
-    channel: url.searchParams.get('cait_channel') || '',
-    url: url.searchParams.get('cait_url') || ''
-  };
 }
 
 function appHandoffMarkdownFieldValue(markdown = '', labels = []) {
@@ -3841,11 +3895,7 @@ async function createAppAgentHandoffUrl(appId = '', payload = {}) {
   });
   const handoffUrl = data?.handoff_url || data?.handoffUrl || data?.open_url || data?.openUrl || data?.url || '';
   if (!handoffUrl) throw new Error(String(data?.error || `${manifest?.name || 'App agent'} handoff response did not include a URL.`));
-  return String(handoffUrl || manifest?.entryUrl || X_CLIENT_OPS_URL);
-}
-
-async function createXClientOpsHandoffUrl(payload = {}, fallbackUrl = '') {
-  return createAppAgentHandoffUrl('x-client-ops', payload, fallbackUrl);
+  return String(handoffUrl || manifest?.entryUrl || manifest?.baseUrl || '');
 }
 
 function xClientOpsTransferPayload(job = {}, draft = {}, strategy = {}) {
@@ -3883,7 +3933,7 @@ function renderXPostTool(job = {}) {
   const strategy = xStrategyContextFromJob(job);
   const transferPayload = xClientOpsTransferPayload(job, draft, strategy);
   const transferId = registerAppTransferPayload(transferPayload);
-  const xClientOpsUrl = xClientOpsHandoffUrl(jobId, { ...draft, ...strategy });
+  const xClientOpsUrl = appAgentLaunchUrl(appManifestById('x-client-ops')) || '/apps.html';
   rememberAppAgentUsage('x-client-ops', {
     title: 'CAIt final X post draft',
     lastHandoffUrl: xClientOpsUrl,
@@ -3904,14 +3954,14 @@ function renderXPostTool(job = {}) {
     lastTransfer: compactTransferObject(transferPayload, { depth: 4, maxText: 700, maxArray: 8 })
   }, { increment: false });
   return [
-    '<div class="x-post-card">',
+    '<div class="x-post-card" data-app-transfer-edit-root="1">',
     '<strong>Final action: X Client Ops</strong>',
     '<div class="chat-hint">CAIt has attached the X post draft and strategy context prepared during the workflow. Open X Client Ops to load the draft into the posting queue and use the strategy as context for this action.</div>',
     `<label class="x-post-label" for="x-post-${escapeHtml(jobId || 'draft')}">X post draft (${String(draft.text).length}/280)</label>`,
-    `<textarea class="x-post-editor" id="x-post-${escapeHtml(jobId || 'draft')}" data-x-post-text="${escapeHtml(jobId)}" data-x-post-source="${escapeHtml(draft.source)}" data-app-transfer-id="${escapeHtml(transferId)}" rows="5">${escapeHtml(draft.text)}</textarea>`,
+    `<textarea class="x-post-editor" id="x-post-${escapeHtml(jobId || 'draft')}" data-x-post-text="${escapeHtml(jobId)}" data-app-transfer-editable="text" data-app-transfer-source="${escapeHtml(draft.source)}" data-app-transfer-title="CAIt final X post draft" data-app-transfer-id="${escapeHtml(transferId)}" rows="5">${escapeHtml(draft.text)}</textarea>`,
     `<div class="chat-hint">Source: ${escapeHtml(draft.source)}${strategy.strategy ? ' / Strategy attached' : ''} / Agent-app transfer attached</div>`,
     '<div class="inline-actions">',
-    `<a class="primary-btn inline-btn file-action" href="${escapeHtml(xClientOpsUrl)}" target="_blank" rel="noopener noreferrer" data-x-client-ops-link="${escapeHtml(jobId)}" data-app-transfer-id="${escapeHtml(transferId)}">Open X Client Ops</a>`,
+    `<button class="primary-btn inline-btn file-action" type="button" data-app-agent-handoff="x-client-ops" data-app-transfer-id="${escapeHtml(transferId)}">Open X Client Ops</button>`,
     `<button class="ghost-btn inline-btn file-action" type="button" data-x-post-copy="${escapeHtml(jobId)}">Copy X draft</button>`,
     xPostConnectHint(),
     '</div>',
@@ -6196,6 +6246,7 @@ function intakeChoiceGroups(intake = {}, sample = '') {
       id,
       title: pick(titleEn, titleJa),
       hint: hintEn || hintJa ? pick(hintEn, hintJa) : '',
+      singleChoice: config.singleChoice === true,
       inputPlaceholder: config.inputPlaceholderEn || config.inputPlaceholderJa
         ? pick(config.inputPlaceholderEn || 'Other: type your own answer', config.inputPlaceholderJa || 'その他: 自由に入力')
         : '',
@@ -6230,7 +6281,8 @@ function intakeChoiceGroups(intake = {}, sample = '') {
       [
         { id: 'use', label: pick('Use GA4/Search Console', 'GA4/Search Consoleを使う'), action: 'analytics-use' },
         { id: 'skip', label: pick('Skip analytics', 'アナリティクスをスキップ'), action: 'analytics-skip' }
-      ]
+      ],
+      { singleChoice: true }
     );
   }
 
@@ -6333,7 +6385,7 @@ function intakeChoiceGroups(intake = {}, sample = '') {
   groups.forEach((group) => {
     group.initialChoices = (initialChoices[group.id] || [])
       .filter(Boolean)
-      .slice(0, 3);
+      .slice(0, group.singleChoice ? 1 : 3);
     if (group.id === 'analytics') {
       group.options.forEach((option) => {
         if (group.initialChoices.includes(option.label)) {
@@ -6364,7 +6416,7 @@ function intakeChoiceCardsHtml(intake = {}, sample = '', options = {}) {
   const includeInitialChoices = options.includeInitialChoices !== false;
   const initialSourceLabel = chatText('From initial request', '初回文面から', sample);
   const groupHtml = groups.map((group) => [
-    '<div class="intake-choice-group">',
+    `<div class="intake-choice-group" data-choice-mode="${group.singleChoice ? 'single' : 'multiple'}">`,
     `<div class="intake-choice-title">${escapeHtml(group.title)}</div>`,
     group.hint ? `<span>${escapeHtml(group.hint)}</span>` : '',
     group.options.length ? '<div class="inline-actions intake-choice-actions">' : '',
@@ -6430,6 +6482,19 @@ function removeIntakeChoiceFromComposer(group = '', choice = '') {
     })
     .join('\n');
   updateComposerMode();
+}
+
+function resetIntakeChoiceGroup(groupElement = null, group = '') {
+  const safeGroup = String(group || '').trim();
+  if (!safeGroup || !groupElement) return;
+  removeIntakeChoiceFromComposer(safeGroup);
+  groupElement.querySelectorAll('[data-intake-choice].selected').forEach((button) => {
+    button.classList.remove('selected');
+    button.setAttribute('aria-pressed', 'false');
+  });
+  const list = groupElement.querySelector('[data-intake-confirmed-list]');
+  list?.querySelectorAll('[data-confirmed-choice]').forEach((item) => item.remove());
+  if (list) list.hidden = true;
 }
 
 function intakeConfirmedChoiceHtml(group = '', choice = '', label = '', sample = '') {
@@ -8690,9 +8755,15 @@ els.chatThread.addEventListener('click', async (event) => {
     const appId = String(appHandoffButton.dataset.appAgentHandoff || '').trim();
     const transferId = String(appHandoffButton.dataset.appTransferId || '').trim();
     const manifest = appManifestById(appId);
-    const payload = appTransferStore.get(transferId) || null;
+    let payload = appTransferStore.get(transferId) || null;
     if (!manifest || !payload) {
       appendTextMessage('assistant', 'The app handoff context is no longer available. Reload the delivery or run the order again.', { tone: 'error', label: 'App handoff' });
+      return;
+    }
+    payload = appTransferPayloadWithEditedText(payload, appHandoffButton);
+    const contractError = appHandoffPayloadContractError(manifest, payload);
+    if (contractError) {
+      appendTextMessage('assistant', contractError, { tone: 'error', label: 'App handoff' });
       return;
     }
     setBusy(true);
@@ -8711,77 +8782,6 @@ els.chatThread.addEventListener('click', async (event) => {
       } catch (fallbackError) {
         appendTextMessage('assistant', `${String(error?.message || error || 'App handoff failed.')}\n\nFallback also failed: ${String(fallbackError?.message || fallbackError || 'unknown error')}`, { tone: 'error', label: 'App handoff' });
       }
-    } finally {
-      setBusy(false);
-    }
-    return;
-  }
-  const xClientOpsLink = event.target.closest('[data-x-client-ops-link]');
-  if (xClientOpsLink) {
-    event.preventDefault();
-    const card = xClientOpsLink.closest('.x-post-card');
-    const textarea = card?.querySelector('[data-x-post-text]');
-    const text = String(textarea?.value || '').trim();
-    if (!text) {
-      appendTextMessage('assistant', 'X post text is empty. Add the exact text first.', { tone: 'error', label: 'X action' });
-      return;
-    }
-    if (text.length > 280) {
-      appendTextMessage('assistant', `X post is ${text.length} characters. Shorten it to 280 or less before opening X Client Ops.`, { tone: 'error', label: 'X action' });
-      return;
-    }
-    const fallbackUrl = new URL(xClientOpsLink.href || X_CLIENT_OPS_URL);
-    fallbackUrl.searchParams.set('cait_x_post', text);
-    fallbackUrl.searchParams.set('cait_source', textarea?.dataset.xPostSource || 'CAIt chat action');
-    const transferId = String(xClientOpsLink.dataset.appTransferId || textarea?.dataset.appTransferId || '').trim();
-    const transferPayload = transferId ? appTransferStore.get(transferId) || null : null;
-    const payload = {
-      ...(transferPayload || {}),
-      ...xClientOpsPayloadFromUrl(fallbackUrl.toString()),
-      text,
-      source: textarea?.dataset.xPostSource || 'CAIt chat action',
-      transfer_id: transferPayload?.transfer_id || transferId || '',
-      settings: {
-        ...((transferPayload?.settings && typeof transferPayload.settings === 'object') ? transferPayload.settings : {}),
-        workspaceNotes: compactTransferText([
-          transferPayload?.settings?.workspaceNotes || '',
-          `Approved/current X draft:\n${text}`
-        ].filter(Boolean).join('\n\n'), 2200)
-      },
-      context: transferPayload?.context || transferPayload?.transfer?.context || transferPayload?.transfer || null
-    };
-    setBusy(true);
-    try {
-      const handoffUrl = await createXClientOpsHandoffUrl(payload, fallbackUrl.toString());
-      rememberAppAgentUsage('x-client-ops', {
-        title: payload.title || 'CAIt final X post draft',
-        lastHandoffUrl: handoffUrl,
-        lastOrderId: payload.jobId || '',
-        source: payload.source || 'CAIt chat action',
-        product: payload.product || '',
-        audience: payload.audience || '',
-        goal: payload.goal || '',
-        channel: payload.channel || '',
-        lastContext: payload,
-        lastTransfer: compactTransferObject(payload, { depth: 4, maxText: 700, maxArray: 8 })
-      });
-      window.open(handoffUrl, '_blank', 'noopener,noreferrer');
-      appendTextMessage('system', 'Called X Client Ops directly and opened the generated handoff URL.', { label: 'X action' });
-    } catch (error) {
-      rememberAppAgentUsage('x-client-ops', {
-        title: payload.title || 'CAIt final X post draft',
-        lastHandoffUrl: fallbackUrl.toString(),
-        lastOrderId: payload.jobId || '',
-        source: payload.source || 'CAIt chat action',
-        product: payload.product || '',
-        audience: payload.audience || '',
-        goal: payload.goal || '',
-        channel: payload.channel || '',
-        lastContext: payload,
-        lastTransfer: compactTransferObject(payload, { depth: 4, maxText: 700, maxArray: 8 })
-      });
-      window.open(fallbackUrl.toString(), '_blank', 'noopener,noreferrer');
-      appendTextMessage('assistant', `X Client Ops API call failed, so I opened the fallback URL handoff instead.\n\n${String(error?.message || error || '')}`, { tone: 'warn', label: 'X action' });
     } finally {
       setBusy(false);
     }
@@ -8911,8 +8911,10 @@ els.chatThread.addEventListener('click', async (event) => {
       input?.focus();
       return;
     }
+    const groupElement = intakeOtherButton.closest('.intake-choice-group');
+    if (groupElement?.dataset.choiceMode === 'single') resetIntakeChoiceGroup(groupElement, group);
     appendIntakeChoiceToComposer(group, value);
-    setIntakeConfirmedChoice(intakeOtherButton.closest('.intake-choice-group'), group, value);
+    setIntakeConfirmedChoice(groupElement, group, value);
     input.value = '';
     input.focus();
     return;
@@ -8924,18 +8926,20 @@ els.chatThread.addEventListener('click', async (event) => {
       return;
     }
     const action = String(intakeChoiceButton.dataset.chatAction || '').trim();
+    const group = String(intakeChoiceButton.dataset.choiceGroup || '').trim();
+    const label = String(intakeChoiceButton.dataset.choiceLabel || intakeChoiceButton.textContent || '').trim();
+    const groupElement = intakeChoiceButton.closest('.intake-choice-group');
+    if (groupElement?.dataset.choiceMode === 'single') resetIntakeChoiceGroup(groupElement, group);
+    intakeChoiceButton.classList.add('selected');
+    intakeChoiceButton.setAttribute('aria-pressed', 'true');
+    appendIntakeChoiceToComposer(group, label);
+    setIntakeConfirmedChoice(groupElement, group, label);
     if (action === 'analytics-use') {
       setBusy(true);
       void openAnalyticsConsoleForIntake(state.pendingIntake, chatText('GA4/Search Console is available.', 'GA4/Search Consoleがあります。', state.pendingIntake.originalPrompt))
         .finally(() => setBusy(false));
       return;
     }
-    const group = String(intakeChoiceButton.dataset.choiceGroup || '').trim();
-    const label = String(intakeChoiceButton.dataset.choiceLabel || intakeChoiceButton.textContent || '').trim();
-    intakeChoiceButton.classList.add('selected');
-    intakeChoiceButton.setAttribute('aria-pressed', 'true');
-    appendIntakeChoiceToComposer(group, label);
-    setIntakeConfirmedChoice(intakeChoiceButton.closest('.intake-choice-group'), group, label);
     return;
   }
   const button = event.target.closest('[data-chat-action]');
@@ -8980,16 +8984,18 @@ els.chatThread.addEventListener('click', async (event) => {
       appendTextMessage('assistant', 'There is no active intake or prepared order to continue.', { tone: 'error', label: 'Analytics' });
       return;
     }
-    appendIntakeChoiceToComposer(
-      chatText('Analytics data', 'アナリティクス', state.pendingIntake.originalPrompt),
-      chatText('Skip analytics', 'アナリティクスをスキップ', state.pendingIntake.originalPrompt)
-    );
+    const analyticsGroupName = chatText('Analytics data', 'アナリティクス', state.pendingIntake.originalPrompt);
+    const analyticsSkipChoice = chatText('Skip analytics', 'アナリティクスをスキップ', state.pendingIntake.originalPrompt);
     const analyticsGroup = [...els.chatThread.querySelectorAll('.intake-choice-group')]
-      .find((groupElement) => String(groupElement.querySelector('[data-intake-confirmed-list]')?.dataset.choiceGroup || '') === chatText('Analytics data', 'アナリティクス', state.pendingIntake.originalPrompt));
+      .find((groupElement) => String(groupElement.querySelector('[data-intake-confirmed-list]')?.dataset.choiceGroup || '') === analyticsGroupName);
+    if (analyticsGroup?.dataset.choiceMode === 'single') {
+      resetIntakeChoiceGroup(analyticsGroup, analyticsGroupName);
+    }
+    appendIntakeChoiceToComposer(analyticsGroupName, analyticsSkipChoice);
     setIntakeConfirmedChoice(
       analyticsGroup,
-      chatText('Analytics data', 'アナリティクス', state.pendingIntake.originalPrompt),
-      chatText('Skip analytics', 'アナリティクスをスキップ', state.pendingIntake.originalPrompt)
+      analyticsGroupName,
+      analyticsSkipChoice
     );
   }
 });

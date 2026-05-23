@@ -317,7 +317,10 @@ for (const [moduleName, symbol] of [
 assertNotIncludes(chatSource, [
   'function authorityRequestFromText',
   'function authorityScanTextFromJob',
-  'delivery_text_approval'
+  'delivery_text_approval',
+  'createXClientOpsHandoffUrl',
+  'data-x-client-ops-link',
+  'Called X Client Ops directly'
 ], 'public/chat.js');
 
 assert.equal(
