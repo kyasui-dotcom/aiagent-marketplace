@@ -544,6 +544,29 @@ assertUserFacingDelivery(fallbackAdsPlan, 'ads_planner fallback delivery', [
 const fallbackAdsContent = fallbackAdsPlan.files?.[0]?.content || '';
 assert.match(fallbackAdsContent, /not created, not submitted, not launched, not spent/i, 'ads_planner fallback must label execution status as not executed');
 assert.doesNotMatch(fallbackAdsContent, /created ads|launched ads|spent budget|changed bids/i, 'ads_planner fallback must not overclaim ad execution');
+const fallbackAdsPlanJa = await adsPlanner.provider.runJob({
+  kind: 'ads_planner',
+  definition: adsPlanner,
+  body: {
+    prompt: [
+      'https://aiagent-marketplace.net の Google 広告テストを計画してください。',
+      '対象: 開発者と技術系ファウンダー',
+      '予算上限: 300',
+      '目標CPA: 20'
+    ].join('\n'),
+    output_language: 'ja',
+    provider: 'google_ads',
+    budgetCap: 300,
+    targetCpa: 20,
+    input: { target_url: 'https://aiagent-marketplace.net' }
+  },
+  source: {},
+  manifest: adsPlanner.manifest
+});
+const fallbackAdsContentJa = fallbackAdsPlanJa.files?.[0]?.content || '';
+assert.match(fallbackAdsContentJa, /## 目的/i, 'ads_planner Japanese fallback should keep localized section headings');
+assert.match(fallbackAdsContentJa, /## Ads SaaS 引き継ぎ/i, 'ads_planner Japanese fallback should localize handoff section');
+assert.doesNotMatch(fallbackAdsContentJa, /## Objective|## Audience|## Campaign structure/i, 'ads_planner Japanese fallback must not fall back to English section headings');
 
 const campaignOperations = sampleAgentDefinitionForKind('campaign_operations');
 const fallbackCampaignOps = await campaignOperations.provider.runJob({
@@ -575,6 +598,28 @@ assertUserFacingDelivery(fallbackCampaignOps, 'campaign_operations fallback deli
 const fallbackCampaignContent = fallbackCampaignOps.files?.[0]?.content || '';
 assert.match(fallbackCampaignContent, /Publisher ingest: not verified/i, 'campaign_operations fallback must label Publisher ingest as unverified');
 assert.doesNotMatch(fallbackCampaignContent, /\bpublished\b|\bsent\b|\blaunched\b/i, 'campaign_operations fallback must not claim external execution');
+const fallbackCampaignOpsJa = await campaignOperations.provider.runJob({
+  kind: 'campaign_operations',
+  definition: campaignOperations,
+  body: {
+    prompt: 'CMO 設計をもとにキャンペーン運用計画を作成してください。',
+    output_language: 'ja',
+    campaign: {
+      title: '開発者向け登録キャンペーン',
+      objective: '有望な開発者登録を増やす',
+      audience: '開発者と技術系ファウンダー',
+      targetUrl: 'https://aiagent-marketplace.net',
+      channels: ['publisher', 'ads', 'analytics'],
+      kpis: ['qualified signups', 'trial starts']
+    }
+  },
+  source: {},
+  manifest: campaignOperations.manifest
+});
+const fallbackCampaignContentJa = fallbackCampaignOpsJa.files?.[0]?.content || '';
+assert.match(fallbackCampaignContentJa, /## キャンペーン状態/i, 'campaign_operations Japanese fallback should keep localized section headings');
+assert.match(fallbackCampaignContentJa, /## コネクタ準備状況/i, 'campaign_operations Japanese fallback should localize connector readiness');
+assert.doesNotMatch(fallbackCampaignContentJa, /## Campaign state|## Publisher queue|## Approval backlog/i, 'campaign_operations Japanese fallback must not fall back to English section headings');
 
 const result = await research.provider.runJob({
   kind: 'research',
