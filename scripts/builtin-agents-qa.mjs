@@ -104,6 +104,37 @@ const operationsContractExpectations = [
   }
 ];
 
+const productResearchContractExpectations = [
+  {
+    kind: 'pricing',
+    actions: ['prepare_price_model', 'prepare_package_decision', 'prepare_sensitivity_decision'],
+    requiredSections: ['Value metric', 'Formula', 'Scenario table', 'Sensitivity table', 'Decision trigger', 'Rollback or continue rule'],
+    guidedSections: ['Sensitivity table', 'Rollback or continue rule'],
+    forbiddenClaims: ['price test won without results']
+  },
+  {
+    kind: 'validation',
+    actions: ['prepare_falsification_plan', 'prepare_validation_next_step', 'prepare_interview_or_smoke_packet'],
+    requiredSections: ['Target user', 'Current workaround', 'Riskiest assumption', 'Test script or asset', 'False positives to ignore', 'Kill criteria'],
+    guidedSections: ['Test script or asset', 'False positives to ignore'],
+    forbiddenClaims: ['respondents committed without evidence']
+  },
+  {
+    kind: 'teardown',
+    actions: ['prepare_competitor_comparison', 'prepare_differentiated_move', 'prepare_verification_queue'],
+    requiredSections: ['Competitor classification', 'Observed facts', 'Inferences', 'Verification queue', 'Evidence gaps'],
+    guidedSections: ['Verification queue'],
+    forbiddenClaims: ['unverified competitor claim resolved']
+  },
+  {
+    kind: 'research',
+    actions: ['prepare_source_backed_memo', 'prepare_decision_recommendation', 'prepare_verification_queue'],
+    requiredSections: ['Answer first', 'Source status', 'Source ledger', 'Current vs inferred facts', 'Verification queue', 'Verification gaps'],
+    guidedSections: ['Verification queue'],
+    forbiddenClaims: ['verification completed without source']
+  }
+];
+
 const externalCommunicationContractExpectations = [
   {
     kind: 'x_post',
@@ -149,7 +180,7 @@ const externalCommunicationContractExpectations = [
   }
 ];
 
-for (const expectation of [...engineeringContractExpectations, ...operationsContractExpectations, ...externalCommunicationContractExpectations]) {
+for (const expectation of [...engineeringContractExpectations, ...operationsContractExpectations, ...productResearchContractExpectations, ...externalCommunicationContractExpectations]) {
   const definition = sampleAgentDefinitionForKind(expectation.kind);
   assert.ok(definition, `${expectation.kind} should resolve from sample agent definitions`);
   const actionIds = new Set((definition.agentActionBoundaries || []).map((action) => action.id));
