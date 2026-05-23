@@ -71,7 +71,7 @@ const engineeringContractExpectations = [
     kind: 'build_team_leader',
     actions: ['plan_implementation_team', 'resolve_parallel_work_boundaries', 'gate_validation_and_pr_handoff'],
     requiredSections: ['File ownership', 'Shared files and sequencing', 'Integration gate', 'Risk and rollback path'],
-    guidedSections: ['Shared files and sequencing', 'Integration gate', 'PR handoff criteria'],
+    guidedSections: ['File ownership', 'Shared files and sequencing', 'Execution slices', 'Integration gate', 'Validation commands', 'Risk and rollback path', 'PR handoff criteria'],
     forbiddenClaims: ['safe parallel execution without shared-file review']
   },
   {
@@ -104,7 +104,52 @@ const operationsContractExpectations = [
   }
 ];
 
-for (const expectation of [...engineeringContractExpectations, ...operationsContractExpectations]) {
+const externalCommunicationContractExpectations = [
+  {
+    kind: 'x_post',
+    actions: ['prepare_x_post_packet', 'prepare_x_schedule_packet', 'prepare_x_connector_handoff'],
+    requiredSections: ['Exact post text', 'Approval checklist', 'Connector handoff boundary', 'Execution status labels'],
+    guidedSections: ['Exact post text', 'Connector handoff boundary', 'Execution status labels'],
+    forbiddenClaims: ['posted', 'scheduled', 'queued']
+  },
+  {
+    kind: 'email_ops',
+    actions: ['prepare_lifecycle_email_packet', 'prepare_email_schedule_packet', 'prepare_email_send_handoff'],
+    requiredSections: ['Segment', 'Sender', 'Approval checklist', 'Send boundary', 'Execution status labels'],
+    guidedSections: ['Send boundary', 'Measurement plan', 'Execution status labels'],
+    forbiddenClaims: ['sent', 'scheduled', 'queued']
+  },
+  {
+    kind: 'cold_email',
+    actions: ['qualify_cold_lead_queue', 'draft_company_specific_sequence', 'prepare_cold_email_send_handoff'],
+    requiredSections: ['Lead source status', 'Qualification queue', 'Approval/send boundary', 'Connector handoff packet', 'Execution status labels'],
+    guidedSections: ['Lead source status and qualification queue', 'Approval/send boundary', 'Connector handoff packet', 'Execution status labels'],
+    forbiddenClaims: ['sent', 'queued', 'CRM imported']
+  },
+  {
+    kind: 'instagram',
+    actions: ['prepare_instagram_caption_packet', 'prepare_instagram_creative_brief', 'prepare_instagram_schedule_handoff'],
+    requiredSections: ['Format decision', 'Visual brief', 'Exact caption', 'Approval checklist', 'Connector boundary', 'Execution status labels'],
+    guidedSections: ['Exact caption', 'Approval checklist', 'Connector handoff boundary', 'Execution status labels'],
+    forbiddenClaims: ['posted', 'scheduled', 'queued']
+  },
+  {
+    kind: 'reddit',
+    actions: ['prepare_subreddit_fit_packet', 'draft_reddit_discussion_packet', 'prepare_reddit_manual_posting_handoff'],
+    requiredSections: ['Community fit', 'Rule risk', 'Non-promotional angle', 'Manual posting boundary', 'Execution status labels'],
+    guidedSections: ['Manual posting boundary', 'Execution status labels'],
+    forbiddenClaims: ['posted', 'submitted', 'queued']
+  },
+  {
+    kind: 'indie_hackers',
+    actions: ['prepare_indie_hackers_post_packet', 'prepare_indie_hackers_reply_plan', 'prepare_indie_hackers_publish_handoff'],
+    requiredSections: ['Founder story angle', 'Community fit', 'CTA softness', 'Manual publish boundary', 'Execution status labels'],
+    guidedSections: ['CTA softness', 'Manual publish boundary', 'Execution status labels'],
+    forbiddenClaims: ['published', 'posted', 'commented']
+  }
+];
+
+for (const expectation of [...engineeringContractExpectations, ...operationsContractExpectations, ...externalCommunicationContractExpectations]) {
   const definition = sampleAgentDefinitionForKind(expectation.kind);
   assert.ok(definition, `${expectation.kind} should resolve from sample agent definitions`);
   const actionIds = new Set((definition.agentActionBoundaries || []).map((action) => action.id));
