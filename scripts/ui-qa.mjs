@@ -385,6 +385,16 @@ assert.ok(
   intakeChoiceHandlerSource.indexOf("if (groupElement?.dataset.choiceMode === 'single') resetIntakeChoiceGroup(groupElement, group);") < intakeChoiceHandlerSource.indexOf('appendIntakeChoiceToComposer(group, label);'),
   'Single-choice intake selection should clear conflicting answers before writing the new answer.'
 );
+assert.ok(chatJs.includes('function findIntakeChoiceGroupElement'), 'Returned app context should locate the active intake group before updating composer state.');
+const inboundAppContextSource = chatJs.slice(chatJs.indexOf('async function handleInboundAppContext'), chatJs.indexOf('function handleInboundAppContextServerRecord'));
+assert.ok(
+  inboundAppContextSource.indexOf('resetIntakeChoiceGroup(analyticsGroupElement, analyticsGroupName);') < inboundAppContextSource.indexOf('appendIntakeChoiceToComposer(analyticsGroupName, analyticsContextChoice);'),
+  'Returned Analytics Console context should replace stale analytics intake choices before writing the concrete context answer.'
+);
+assert.ok(
+  inboundAppContextSource.includes('setIntakeConfirmedChoice(analyticsGroupElement, analyticsGroupName, analyticsContextChoice);'),
+  'Returned Analytics Console context should also refresh the confirmed intake choice UI.'
+);
 assert.ok(chatJs.includes('intakeChoiceGroups'), 'Chat intake should use generic concrete choice groups, not one-off question cards.');
 assert.ok(chatJs.includes('data-intake-choice'), 'Chat intake choices should be clickable buttons that fill the answer composer.');
 assert.ok(chatJs.includes('data-intake-other-input'), 'Chat intake should allow free-text Other answers inside each choice group.');
@@ -1038,7 +1048,7 @@ assert.ok(chatJs.includes('appContextFromTransferPayload'), 'Generic app handoff
 assert.ok(chatJs.includes('createAppAgentContextOpenUrl'), 'Generic app handoff fallback should create a server-side context open URL.');
 assert.ok(chatJs.includes('cait_app_context_id'), 'Generic app handoff fallback should pass only context identifiers in the app URL.');
 assert.ok(chatJs.includes('/api/app-contexts'), 'Generic app handoff fallback should use the server-side app context API.');
-assert.ok(chatJs.includes("{ contextPath: '/api/app-contexts' }"), 'Publisher handoff fallback should use the generic app-context API instead of retrying the failed Publisher ingest endpoint.');
+assert.ok(!chatJs.includes("{ contextPath: '/api/app-contexts' }"), 'Publisher handoff fallback should preserve app-specific context ingest routes instead of forcing the generic app-context endpoint.');
 assert.ok(
   /apiWithRetry\(contextPath[\s\S]{0,500}statuses:\s*\[408,\s*425,\s*429,\s*500,\s*502,\s*503,\s*504\]/.test(chatJs),
   'Chat app-context handoff should retry transient server failures before falling back to a context-less app open.'
@@ -1243,6 +1253,7 @@ assert.ok(appRoutes.includes('async function handleCreateAppContext'), 'App rout
 assert.ok(appRoutes.includes('async function handlePublisherContextIngest'), 'App routes should expose a Publisher-owned context ingest handler.');
 assert.ok(worker.includes('PUBLISHER_CONTEXT_INGEST'), 'Worker should route Publisher context ingest separately from generic app contexts.');
 assert.ok(chatJs.includes('/api/publisher/context-ingest'), 'Chat should push Publisher handoffs through the Publisher ingest endpoint.');
+assert.ok(!chatJs.includes("createAppAgentContextOpenUrl(appId, payload, { contextPath: '/api/app-contexts' })"), 'Chat handoff fallback must preserve app-specific context ingest routes instead of forcing the generic app-context endpoint.');
 assert.ok(publisherContext.includes('shapePublisherContextWithOpenAi'), 'Publisher context shaping should be owned by the Publisher context module.');
 assert.ok(publisherContext.includes('cait_publisher_context_shaper'), 'Publisher context shaping should use a dedicated structured-output schema.');
 assert.ok(publisherContext.includes('publisher_context_shape_status'), 'Publisher context shaping should persist a status marker for QA and debugging.');

@@ -6497,6 +6497,17 @@ function resetIntakeChoiceGroup(groupElement = null, group = '') {
   if (list) list.hidden = true;
 }
 
+function findIntakeChoiceGroupElement(group = '') {
+  const safeGroup = String(group || '').trim();
+  if (!safeGroup || !els.chatThread) return null;
+  return [...els.chatThread.querySelectorAll('.intake-choice-group')]
+    .find((groupElement) => {
+      const confirmedGroup = String(groupElement.querySelector('[data-intake-confirmed-list]')?.dataset.choiceGroup || '').trim();
+      const choiceGroup = String(groupElement.querySelector('[data-choice-group]')?.dataset.choiceGroup || '').trim();
+      return confirmedGroup === safeGroup || choiceGroup === safeGroup;
+    }) || null;
+}
+
 function intakeConfirmedChoiceHtml(group = '', choice = '', label = '', sample = '') {
   const safeGroup = String(group || '').trim();
   const safeChoice = String(choice || '').trim();
@@ -8471,10 +8482,14 @@ async function handleInboundAppContext(context = {}, options = {}) {
     state.pendingIntake.analyticsContextAttached = /analytics/i.test(sourceLabel) || /analytics/i.test(String(context.source_app || ''));
     state.pendingIntake.appContextPrompt = prompt;
     state.pendingIntake.appContext = context;
-    appendIntakeChoiceToComposer(
-      chatText('Analytics data', 'アナリティクス', state.pendingIntake.originalPrompt || prompt),
-      caitAppContextAnswerLine(context)
-    );
+    const analyticsGroupName = chatText('Analytics data', 'アナリティクス', state.pendingIntake.originalPrompt || prompt);
+    const analyticsContextChoice = caitAppContextAnswerLine(context);
+    const analyticsGroupElement = findIntakeChoiceGroupElement(analyticsGroupName);
+    if (analyticsGroupElement?.dataset.choiceMode === 'single') {
+      resetIntakeChoiceGroup(analyticsGroupElement, analyticsGroupName);
+    }
+    appendIntakeChoiceToComposer(analyticsGroupName, analyticsContextChoice);
+    setIntakeConfirmedChoice(analyticsGroupElement, analyticsGroupName, analyticsContextChoice);
     updateComposerMode();
     setBusy(false);
     appendTextMessage('system', chatText(
@@ -8775,7 +8790,7 @@ els.chatThread.addEventListener('click', async (event) => {
       appendTextMessage('system', `Sent CAIt transfer context to ${manifest.name || 'the registered app'} and opened the handoff URL.`, { label: 'App handoff' });
     } catch (error) {
       try {
-        const contextUrl = await createAppAgentContextOpenUrl(appId, payload, { contextPath: '/api/app-contexts' });
+        const contextUrl = await createAppAgentContextOpenUrl(appId, payload);
         appHandoffRememberDetails(appId, payload, contextUrl, 'generic_app_context_fallback');
         window.open(contextUrl, '_blank', 'noopener,noreferrer');
         appendTextMessage('assistant', `${manifest.name || 'App'} handoff API failed, so I created a server-side CAIt app context and opened the app with only the context id/token in the URL.\n\n${String(error?.message || error || '')}`, { tone: 'warn', label: 'App handoff' });
