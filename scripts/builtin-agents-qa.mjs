@@ -135,6 +135,37 @@ const productResearchContractExpectations = [
   }
 ];
 
+const workSupportContractExpectations = [
+  {
+    kind: 'prompt_brushup',
+    actions: ['prepare_prompt_rewrite', 'prepare_prompt_test_cases'],
+    requiredSections: ['Intent ledger', 'Original prompt', 'Rewritten prompt', 'Preserved constraints', 'Change rationale', 'Test cases', 'Failure modes'],
+    guidedSections: ['Intent ledger', 'Original prompt', 'Rewritten prompt', 'Preserved constraints', 'Change rationale', 'Test cases', 'Failure modes'],
+    forbiddenClaims: ['intent changed without label', 'tested claim without results']
+  },
+  {
+    kind: 'hiring',
+    actions: ['prepare_jd_packet', 'prepare_screening_rubric'],
+    requiredSections: ['Role outcomes', 'Scorecard', 'Job description', 'Must-have and nice-to-have', 'Screening questions', 'Evaluation rubric', 'Exclusion risks'],
+    guidedSections: ['Role outcomes', 'Scorecard', 'Job description', 'Must-have and nice-to-have', 'Screening questions', 'Evaluation rubric', 'Exclusion risks'],
+    forbiddenClaims: ['generic JD without scorecard', 'candidate decision without evidence']
+  },
+  {
+    kind: 'data_analysis',
+    actions: ['prepare_metric_audit', 'prepare_analysis_memo'],
+    requiredSections: ['Question', 'Dataset status', 'Metric definitions', 'Findings', 'Caveats', 'Analysis notes', 'Next decision'],
+    guidedSections: ['Question', 'Dataset status', 'Metric definitions', 'Findings', 'Caveats', 'Analysis notes', 'Next decision'],
+    forbiddenClaims: ['data-backed conclusion without dataset evidence', 'causal claim without test design']
+  },
+  {
+    kind: 'diligence',
+    actions: ['prepare_red_flag_review', 'prepare_verification_queue'],
+    requiredSections: ['Decision context', 'Evidence map', 'Red flag matrix', 'Fact vs inference', 'Verification queue', 'Blocker severity', 'Conditional recommendation'],
+    guidedSections: ['Decision context', 'Evidence map', 'Red flag matrix', 'Fact vs inference', 'Verification queue', 'Blocker severity', 'Conditional recommendation'],
+    forbiddenClaims: ['risk cleared without evidence', 'generic risk list without severity']
+  }
+];
+
 const externalCommunicationContractExpectations = [
   {
     kind: 'x_post',
@@ -180,7 +211,7 @@ const externalCommunicationContractExpectations = [
   }
 ];
 
-for (const expectation of [...engineeringContractExpectations, ...operationsContractExpectations, ...productResearchContractExpectations, ...externalCommunicationContractExpectations]) {
+for (const expectation of [...engineeringContractExpectations, ...operationsContractExpectations, ...productResearchContractExpectations, ...workSupportContractExpectations, ...externalCommunicationContractExpectations]) {
   const definition = sampleAgentDefinitionForKind(expectation.kind);
   assert.ok(definition, `${expectation.kind} should resolve from sample agent definitions`);
   const actionIds = new Set((definition.agentActionBoundaries || []).map((action) => action.id));
