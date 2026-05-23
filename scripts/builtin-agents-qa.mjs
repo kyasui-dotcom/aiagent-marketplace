@@ -64,18 +64,21 @@ const engineeringContractExpectations = [
     kind: 'code',
     actions: ['prepare_patch_plan', 'implement_local_change', 'prepare_pr_handoff', 'verify_validation_evidence'],
     requiredSections: ['Affected files', 'Validation evidence', 'Release risk label', 'Rollback path', 'PR handoff'],
+    guidedSections: ['Validation evidence', 'Release risk label', 'PR handoff'],
     forbiddenClaims: ['validation completed without command/result']
   },
   {
     kind: 'build_team_leader',
     actions: ['plan_implementation_team', 'resolve_parallel_work_boundaries', 'gate_validation_and_pr_handoff'],
     requiredSections: ['File ownership', 'Shared files and sequencing', 'Integration gate', 'Risk and rollback path'],
+    guidedSections: ['Shared files and sequencing', 'Integration gate', 'PR handoff criteria'],
     forbiddenClaims: ['safe parallel execution without shared-file review']
   },
   {
     kind: 'cto_leader',
     actions: ['prepare_architecture_decision', 'prepare_rollout_packet', 'gate_migration_readiness'],
     requiredSections: ['Current state evidence', 'Readiness gate', 'Validation gate', 'Fallback owner', 'Risk tradeoff'],
+    guidedSections: ['Readiness gate', 'Validation gate', 'Fallback owner', 'Risk tradeoff'],
     forbiddenClaims: ['production ready without readiness gate']
   }
 ];
@@ -115,6 +118,10 @@ for (const expectation of [...engineeringContractExpectations, ...operationsCont
   const forbiddenClaims = new Set(definition.deliveryContract?.forbiddenClaims || []);
   for (const claim of expectation.forbiddenClaims) {
     assert.ok(forbiddenClaims.has(claim), `${expectation.kind} delivery contract must forbid "${claim}"`);
+  }
+  const outputSections = new Set(definition.outputSections || []);
+  for (const section of expectation.guidedSections || []) {
+    assert.ok(outputSections.has(section), `${expectation.kind} output sections must guide the model to emit ${section}`);
   }
 }
 
