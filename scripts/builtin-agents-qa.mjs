@@ -135,6 +135,34 @@ globalThis.fetch = async (url, options = {}) => {
     const userContent = request.input?.find((item) => item.role === 'user')?.content?.[0]?.text || '{}';
     const packet = JSON.parse(userContent);
     const kind = packet.agent?.kind || 'agent';
+    const packetDefinition = sampleAgentDefinitionForKind(kind);
+    if (packetDefinition?.deliveryContract) {
+      assert.deepEqual(
+        packet.delivery_quality_gate?.required_sections,
+        Array.from(packetDefinition.deliveryContract.requiredDeliverySections || []),
+        `${kind} provider request must carry its agent-owned required delivery sections`
+      );
+      assert.deepEqual(
+        packet.delivery_quality_gate?.required_evidence,
+        Array.from(packetDefinition.deliveryContract.requiredEvidence || []),
+        `${kind} provider request must carry its agent-owned evidence requirements`
+      );
+      assert.deepEqual(
+        packet.delivery_quality_gate?.must_label,
+        Array.from(packetDefinition.deliveryContract.mustLabel || []),
+        `${kind} provider request must carry its agent-owned status labels`
+      );
+      assert.deepEqual(
+        packet.delivery_quality_gate?.forbidden_claims,
+        Array.from(packetDefinition.deliveryContract.forbiddenClaims || []),
+        `${kind} provider request must carry its agent-owned forbidden claims`
+      );
+      assert.equal(
+        packet.delivery_quality_gate?.valid_delivery_check,
+        packetDefinition.deliveryContract.validDeliveryCheck,
+        `${kind} provider request must carry its agent-owned valid delivery check`
+      );
+    }
     const targetUrl = packet.target_url || 'la demande';
     const cmoReportExtras = packet.leader_synthesis?.reportExtras || {};
     const leaderEvaluationRequired = packet.leader_synthesis?.mode === 'llm_leader_evaluation_required'
