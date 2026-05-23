@@ -912,6 +912,46 @@ const sourceContractResearch = await research.provider.runJob({
 });
 assert.equal(sourceContractResearch.status, 'completed', 'research should treat source_collection_contract as search-required and use attached connector context');
 assert.ok(sourceContractResearch.report.web_sources.some((item) => item.url === 'https://example.com/'), 'research should normalize Search Console sc-domain context into web_sources');
+const sourceContractQueryResearch = await research.provider.runJob({
+  kind: 'research',
+  definition: research,
+  body: {
+    prompt: 'Research the attached Search Console query evidence. Answer in English.',
+    output_language: 'en',
+    source_collection_contract: {
+      required: true,
+      required_output_field: 'report.web_sources'
+    },
+    input: {
+      _broker: {
+        workflow: {
+          sequencePhase: 'research'
+        },
+        appContexts: [
+          {
+            source_app: 'analytics-console',
+            title: 'GA4 + Search Console',
+            summary: 'Attached Search Console query context for example.com.',
+            artifacts: [
+              {
+                rows: [
+                  { query: 'ai agent marketplace', note: 'Search Console query row without a URL.' }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: research.manifest
+});
+assert.equal(sourceContractQueryResearch.status, 'completed', 'research should keep Search Console query-only context usable when source collection is required');
+assert.ok(
+  sourceContractQueryResearch.report.web_sources.some((item) => item.query === 'ai agent marketplace' && item.action === 'google_search_console'),
+  'research should preserve Search Console provenance for query-only analytics-console context rows'
+);
 
 const braveSearchBefore = braveSearchCalls;
 const braveBackedResearch = await research.provider.runJob({
