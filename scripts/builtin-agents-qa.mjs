@@ -44,6 +44,19 @@ for (const [kind, definition] of Object.entries(SAMPLE_AGENT_DEFINITIONS)) {
   assert.deepEqual(metadata.delivery_contract, definition.deliveryContract, `${kind} manifest metadata must expose its agent-owned delivery contract`);
   assert.ok(Array.isArray(metadata.action_boundaries) && metadata.action_boundaries.length > 0, `${kind} manifest metadata must include action boundaries`);
   assert.ok(Array.isArray(metadata.delivery_contract?.requiredDeliverySections) && metadata.delivery_contract.requiredDeliverySections.length > 0, `${kind} manifest metadata must include required delivery sections`);
+  assert.ok(Array.isArray(metadata.delivery_contract?.requiredEvidence) && metadata.delivery_contract.requiredEvidence.length > 0, `${kind} manifest metadata must include required evidence`);
+  assert.ok(Array.isArray(metadata.delivery_contract?.mustLabel) && metadata.delivery_contract.mustLabel.length > 0, `${kind} manifest metadata must include required assumption/status labels`);
+  assert.ok(Array.isArray(metadata.delivery_contract?.forbiddenClaims) && metadata.delivery_contract.forbiddenClaims.length > 0, `${kind} manifest metadata must include forbidden claims`);
+  assert.ok(String(metadata.delivery_contract?.validDeliveryCheck || '').trim(), `${kind} manifest metadata must include a valid delivery check`);
+  for (const action of metadata.action_boundaries) {
+    assert.ok(String(action?.id || '').trim(), `${kind} action boundaries must include an id`);
+    assert.ok(String(action?.mode || '').trim(), `${kind} action boundaries must include a mode`);
+    assert.ok(Array.isArray(action?.requires) && action.requires.length > 0, `${kind} action ${action?.id || '<missing>'} must include required inputs`);
+    assert.ok(Array.isArray(action?.prepares) && action.prepares.length > 0, `${kind} action ${action?.id || '<missing>'} must include prepared work`);
+    assert.ok(Array.isArray(action?.produces) && action.produces.length > 0, `${kind} action ${action?.id || '<missing>'} must include produced artifacts`);
+    assert.ok(Array.isArray(action?.cannotClaim) && action.cannotClaim.length > 0, `${kind} action ${action?.id || '<missing>'} must include forbidden execution claims`);
+    assert.ok(String(action?.authorityBoundary || '').trim(), `${kind} action ${action?.id || '<missing>'} must include an authority boundary`);
+  }
 }
 
 for (const fileName of agentFiles) {
