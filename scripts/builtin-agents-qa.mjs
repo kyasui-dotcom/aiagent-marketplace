@@ -80,7 +80,28 @@ const engineeringContractExpectations = [
   }
 ];
 
-for (const expectation of engineeringContractExpectations) {
+const operationsContractExpectations = [
+  {
+    kind: 'follow_up',
+    actions: ['prepare_open_loop_tracker', 'prepare_followup_draft', 'prepare_followup_send_handoff'],
+    requiredSections: ['Open-loop table', 'Follow-up copy', 'Approval/send handoff', 'Next check'],
+    forbiddenClaims: ['queued reminder without connector proof']
+  },
+  {
+    kind: 'meeting_notes',
+    actions: ['prepare_meeting_minutes', 'extract_action_items', 'prepare_minutes_distribution_handoff'],
+    requiredSections: ['Decision log', 'Action items', 'Follow-up draft', 'Distribution approval gate'],
+    forbiddenClaims: ['minutes distributed without proof']
+  },
+  {
+    kind: 'schedule_coordination',
+    actions: ['prepare_candidate_time_packet', 'prepare_invite_handoff', 'prepare_meeting_tool_handoff'],
+    requiredSections: ['Availability source', 'Candidate times', 'Invite draft', 'Meeting-link handoff'],
+    forbiddenClaims: ['meeting link created without proof']
+  }
+];
+
+for (const expectation of [...engineeringContractExpectations, ...operationsContractExpectations]) {
   const definition = sampleAgentDefinitionForKind(expectation.kind);
   assert.ok(definition, `${expectation.kind} should resolve from sample agent definitions`);
   const actionIds = new Set((definition.agentActionBoundaries || []).map((action) => action.id));
