@@ -66,6 +66,9 @@ for (const fileName of agentFiles) {
   assert.ok(source.includes('health({'), `${fileName} provider must own health response behavior`);
   assert.ok(source.includes('async runJob({'), `${fileName} provider must own job execution behavior`);
   assert.ok(source.includes('provider: AGENT_PROVIDER'), `${fileName} default export must expose its provider`);
+  assert.ok(source.includes('agent_purpose: AGENT_DEFINITION.agentPurpose'), `${fileName} manifest metadata must expose the agent-owned purpose inside the agent file`);
+  assert.ok(source.includes('action_boundaries: AGENT_DEFINITION.agentActionBoundaries'), `${fileName} manifest metadata must expose action boundaries inside the agent file`);
+  assert.ok(source.includes('delivery_contract: AGENT_DEFINITION.deliveryContract'), `${fileName} manifest metadata must expose the delivery contract inside the agent file`);
   assert.ok(!source.includes('agent-provider-runtime'), `${fileName} must not import a shared provider runtime`);
   assert.ok(!source.includes('sample-agent-provider'), `${fileName} must not call a central sample provider`);
   assert.ok(!source.includes('sample-agent-catalog'), `${fileName} must not call a central sample catalog`);
