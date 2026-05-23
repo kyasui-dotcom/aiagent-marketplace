@@ -59,6 +59,14 @@ const authTest = authenticateOrderApiKey(state, createdTest.apiKey.token);
 assert.ok(authTest);
 assert.equal(authTest.apiKey.mode, 'test');
 
+state.accounts[0].deletedAt = new Date().toISOString();
+assert.equal(
+  authenticateOrderApiKey(state, created.apiKey.token),
+  null,
+  'deleted accounts must not authenticate via retained API keys'
+);
+delete state.accounts[0].deletedAt;
+
 const touched = touchOrderApiKeyUsageInState(state, 'alice', auth.apiKey.id, {
   lastUsedPath: '/api/agents/import-manifest',
   lastUsedMethod: 'POST'
@@ -110,6 +118,14 @@ const afterStaleMerge = await storage.getState();
 assert.ok(
   authenticateOrderApiKey(afterStaleMerge, persistedToken),
   'stale sanitized account writes must not erase API key hashes'
+);
+await storage.mutate(async (draft) => {
+  draft.accounts[0].deletedAt = new Date().toISOString();
+});
+assert.equal(
+  await storage.authenticateOrderApiKey(persistedToken),
+  null,
+  'deleted persisted accounts must not authenticate through indexed API keys'
 );
 
 const parsedUserCli = parseApiKeyArgs(['create', '--label', 'codex-desktop', '--cookie', 'aiagent2_session=abc', '--export']);
