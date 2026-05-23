@@ -126,8 +126,34 @@ assert.equal(health.kind, 'research');
 
 const originalFetch = globalThis.fetch;
 let openAiDeliveryCalls = 0;
+let braveSearchCalls = 0;
 globalThis.fetch = async (url, options = {}) => {
   const target = String(url || '');
+  if (/api\.search\.brave\.com|\/res\/v1\/web\/search/i.test(target)) {
+    braveSearchCalls += 1;
+    const requestUrl = new URL(target);
+    const query = requestUrl.searchParams.get('q') || 'research query';
+    assert.ok(options.headers?.['x-subscription-token'], 'Brave source collection must send its API token');
+    return new Response(JSON.stringify({
+      web: {
+        results: [
+          {
+            title: `Brave result for ${query}`,
+            url: 'https://example.com/market-report',
+            description: 'Current market evidence from Brave Search.'
+          },
+          {
+            title: 'Competitor acquisition example',
+            url: 'https://competitor.example/case-study',
+            description: 'Competitor channel and positioning evidence.'
+          }
+        ]
+      }
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
+  }
   if (target.includes('/responses')) {
     openAiDeliveryCalls += 1;
     const request = JSON.parse(String(options.body || '{}'));
@@ -886,6 +912,34 @@ const sourceContractResearch = await research.provider.runJob({
 });
 assert.equal(sourceContractResearch.status, 'completed', 'research should treat source_collection_contract as search-required and use attached connector context');
 assert.ok(sourceContractResearch.report.web_sources.some((item) => item.url === 'https://example.com/'), 'research should normalize Search Console sc-domain context into web_sources');
+
+const braveSearchBefore = braveSearchCalls;
+const braveBackedResearch = await research.provider.runJob({
+  kind: 'research',
+  definition: research,
+  body: {
+    prompt: 'Research AI agent marketplace demand for founders. Answer in English.',
+    output_language: 'en',
+    input: {
+      _broker: {
+        workflow: {
+          forceWebSearch: true,
+          searchQueries: ['AI agent marketplace founder demand competitors'],
+          sequencePhase: 'research'
+        }
+      }
+    }
+  },
+  source: {
+    OPENAI_API_KEY: 'sk-test-openai-delivery',
+    BRAVE_API_KEY: 'brave-test-token'
+  },
+  manifest: research.manifest
+});
+assert.equal(braveBackedResearch.status, 'completed', 'research should collect Brave sources when search is required and Brave is configured');
+assert.ok(braveSearchCalls > braveSearchBefore, 'research should call Brave Search before OpenAI synthesis');
+assert.ok(braveBackedResearch.report.web_sources.some((item) => item.provider === 'brave_search'), 'research should expose Brave search results in report.web_sources');
+assert.ok(braveBackedResearch.report.web_sources.some((item) => item.action === 'brave_web_search'), 'research should label Brave source collection action');
 
 const missingSourceResearch = await research.provider.runJob({
   kind: 'research',
