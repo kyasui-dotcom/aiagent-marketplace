@@ -87,8 +87,9 @@ const operationsContractExpectations = [
   {
     kind: 'follow_up',
     actions: ['prepare_open_loop_tracker', 'prepare_followup_draft', 'prepare_followup_send_handoff'],
-    requiredSections: ['Open-loop table', 'Follow-up copy', 'Approval/send handoff', 'Next check'],
-    forbiddenClaims: ['queued reminder without connector proof']
+    requiredSections: ['Open-loop table', 'Owner', 'Deadline', 'Relationship context', 'Business impact', 'Follow-up copy', 'Approval condition', 'Approval/send handoff', 'Next check'],
+    guidedSections: ['Open-loop queue', 'Owner', 'Business impact', 'Approval condition', 'Approval/send handoff', 'Next action'],
+    forbiddenClaims: ['sent claim without connector proof', 'queued reminder without connector proof', 'follow-up complete without reply or owner confirmation']
   },
   {
     kind: 'meeting_notes',
@@ -351,7 +352,7 @@ globalThis.fetch = async (url, options = {}) => {
     const packetDefinition = sampleAgentDefinitionForKind(kind);
     if (packetDefinition?.deliveryContract) {
       if (
-        ['ads_planner', 'campaign_operations', 'cfo_leader', 'reply_draft'].includes(kind)
+        ['ads_planner', 'campaign_operations', 'cfo_leader', 'reply_draft', 'inbox_triage'].includes(kind)
         && Array.isArray(packetDefinition.outputSections)
         && packetDefinition.outputSections.length
       ) {
@@ -362,7 +363,7 @@ globalThis.fetch = async (url, options = {}) => {
         );
       }
       if (
-        ['ads_planner', 'campaign_operations', 'cfo_leader', 'reply_draft'].includes(kind)
+        ['ads_planner', 'campaign_operations', 'cfo_leader', 'reply_draft', 'inbox_triage'].includes(kind)
         && Array.isArray(packetDefinition.acceptanceChecks)
         && packetDefinition.acceptanceChecks.length
       ) {
