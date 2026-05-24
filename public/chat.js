@@ -3622,6 +3622,31 @@ function appHandoffPayloadContractError(manifest = {}, payload = {}) {
   return '';
 }
 
+function appHandoffQueryFallbackUrl(appId = '', payload = {}) {
+  const manifest = appManifestById(appId) || {};
+  const entryUrl = String(manifest.entryUrl || manifest.baseUrl || '').trim();
+  if (!entryUrl) return '';
+  if (normalizeUsageId(appId || manifest.id || '') !== 'x-client-ops') return '';
+  const text = appHandoffPayloadText(payload);
+  if (!text) return '';
+  const url = new URL(entryUrl, window.location.origin);
+  const setParam = (key, value) => {
+    const textValue = String(value || '').trim();
+    if (textValue) url.searchParams.set(key, textValue);
+  };
+  setParam('cait_x_post', text);
+  setParam('cait_source', payload.source || payload.action?.source || 'CAIt chat action');
+  setParam('cait_title', payload.title || payload.action?.title || 'CAIt final X post draft');
+  setParam('cait_strategy', payload.strategy);
+  setParam('cait_product', payload.product);
+  setParam('cait_audience', payload.audience);
+  setParam('cait_goal', payload.goal);
+  setParam('cait_channel', payload.channel);
+  setParam('cait_url', payload.url);
+  setParam('cait_job', payload.jobId || payload.order?.id || payload.context?.order?.id);
+  return url.toString();
+}
+
 function authorityRequestFromJob(job = {}) {
   return connectorGateAuthorityRequestFromJob(job);
 }
@@ -8874,13 +8899,20 @@ els.chatThread.addEventListener('click', async (event) => {
       window.open(handoffUrl, '_blank', 'noopener,noreferrer');
       appendTextMessage('system', `Sent CAIt transfer context to ${manifest.name || 'the registered app'} and opened the handoff URL.`, { label: 'App handoff' });
     } catch (error) {
-      try {
-        const contextUrl = await createAppAgentContextOpenUrl(appId, payload);
-        appHandoffRememberDetails(appId, payload, contextUrl, 'generic_app_context_fallback');
-        window.open(contextUrl, '_blank', 'noopener,noreferrer');
-        appendTextMessage('assistant', `${manifest.name || 'App'} handoff API failed, so I created a server-side CAIt app context and opened the app with only the context id/token in the URL.\n\n${String(error?.message || error || '')}`, { tone: 'warn', label: 'App handoff' });
-      } catch (fallbackError) {
-        appendTextMessage('assistant', `${String(error?.message || error || 'App handoff failed.')}\n\nFallback also failed: ${String(fallbackError?.message || fallbackError || 'unknown error')}`, { tone: 'error', label: 'App handoff' });
+      const directUrl = appHandoffQueryFallbackUrl(appId, payload);
+      if (directUrl) {
+        appHandoffRememberDetails(appId, payload, directUrl, 'generic_app_query_fallback');
+        window.open(directUrl, '_blank', 'noopener,noreferrer');
+        appendTextMessage('assistant', `${manifest.name || 'App'} handoff API failed, so I opened the app with the edited X draft in the URL fallback.\n\n${String(error?.message || error || '')}`, { tone: 'warn', label: 'App handoff' });
+      } else {
+        try {
+          const contextUrl = await createAppAgentContextOpenUrl(appId, payload);
+          appHandoffRememberDetails(appId, payload, contextUrl, 'generic_app_context_fallback');
+          window.open(contextUrl, '_blank', 'noopener,noreferrer');
+          appendTextMessage('assistant', `${manifest.name || 'App'} handoff API failed, so I created a server-side CAIt app context and opened the app with only the context id/token in the URL.\n\n${String(error?.message || error || '')}`, { tone: 'warn', label: 'App handoff' });
+        } catch (fallbackError) {
+          appendTextMessage('assistant', `${String(error?.message || error || 'App handoff failed.')}\n\nFallback also failed: ${String(fallbackError?.message || fallbackError || 'unknown error')}`, { tone: 'error', label: 'App handoff' });
+        }
       }
     } finally {
       setBusy(false);

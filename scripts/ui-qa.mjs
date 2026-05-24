@@ -1161,6 +1161,8 @@ assert.ok(chatJs.includes('appContextFromTransferPayload'), 'Generic app handoff
 assert.ok(chatJs.includes('createAppAgentContextOpenUrl'), 'Generic app handoff fallback should create a server-side context open URL.');
 assert.ok(chatJs.includes('cait_app_context_id'), 'Generic app handoff fallback should pass only context identifiers in the app URL.');
 assert.ok(chatJs.includes('/api/app-contexts'), 'Generic app handoff fallback should use the server-side app context API.');
+assert.ok(chatJs.includes('function appHandoffQueryFallbackUrl'), 'Chat should keep an app-specific emergency URL fallback when a managed app cannot ingest server-side app contexts.');
+assert.ok(chatJs.includes('cait_x_post'), 'X Client Ops fallback should preserve the edited X draft text in the emergency launch URL.');
 assert.ok(chatJs.includes('artifact_type: artifactTypes[0]') && chatJs.includes('artifact_types: artifactTypes'), 'App context handoff should preserve explicit delivery artifact type contracts for downstream apps.');
 assert.ok(chatJs.includes('contentType: String(artifactTypes[0]'), 'Agent-app transfer delivery artifacts should prefer explicit artifact types over MIME fallbacks.');
 assert.ok(!chatJs.includes("{ contextPath: '/api/app-contexts' }"), 'Publisher handoff fallback should preserve app-specific context ingest routes instead of forcing the generic app-context endpoint.');
