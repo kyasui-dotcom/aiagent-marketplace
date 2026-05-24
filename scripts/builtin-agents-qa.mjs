@@ -115,9 +115,9 @@ const operationsContractExpectations = [
   {
     kind: 'reply_draft',
     actions: ['prepare_reply_draft', 'prepare_send_guardrail', 'prepare_reply_followup_handoff'],
-    requiredSections: ['Sender and recipient', 'Desired outcome', 'Approval condition', 'Approval/send handoff', 'Follow-up timing'],
-    guidedSections: ['Sender and recipient', 'Desired outcome', 'Approval condition', 'Approval/send handoff', 'Follow-up timing'],
-    forbiddenClaims: ['approval complete without user or connector evidence', 'follow-up scheduled without connector proof']
+    requiredSections: ['Message/thread source and freshness', 'Sender and recipient', 'Desired outcome', 'Fact and commitment ledger', 'Recipient-visible context scope', 'Approval condition', 'Approval/send handoff', 'Execution status labels', 'Follow-up timing'],
+    guidedSections: ['Message/thread source and freshness', 'Sender and recipient', 'Desired outcome', 'Fact and commitment ledger', 'Recipient-visible context scope', 'Approval condition', 'Approval/send handoff', 'Execution status labels', 'Follow-up timing'],
+    forbiddenClaims: ['approval complete without user or connector evidence', 'commitment stated as fact without source or approval', 'private or internal context copied into recipient-visible draft without approval', 'follow-up scheduled without connector proof']
   },
   {
     kind: 'secretary_leader',
