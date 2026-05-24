@@ -372,6 +372,25 @@ assert.match(seoSpecialist.systemPrompt, /owned blog/i, 'seo_specialist should r
 assert.match(seoSpecialist.systemPrompt, /estimate cost[\s\S]*explicit user approval/i, 'seo_specialist should require cost estimate and explicit approval before full-batch writing');
 assert.match(seoSpecialist.systemPrompt, /Publisher & Approval Studio batch handoff/i, 'seo_specialist should create Publisher batch handoff after approval');
 
+const cmoLeaderSource = readFileSync(join(agentsDir, 'cmo-leader.js'), 'utf8');
+assert.ok(
+  cmoLeaderSource.includes('file_markdown must be one end-user-facing growth plan'),
+  'CMO leader LLM contract must treat file_markdown as an end-user growth plan, not an internal orchestration log'
+);
+assert.ok(
+  cmoLeaderSource.includes('never expose internal agent names'),
+  'CMO leader generation prompt must explicitly hide internal agent names from end-user Markdown'
+);
+assert.ok(
+  cmoLeaderSource.includes('report.artifacts') || cmoLeaderSource.includes('structured_artifact_contract'),
+  'CMO leader may keep machine handoff data only in structured artifacts/report metadata'
+);
+assert.equal(
+  /requiredDeliverySections:\s*Object\.freeze\(\[[\s\S]*?(Specialist adoption matrix|Publisher\/SaaS handoff status|Structured handoff digest|Manifest-matched SaaS app handoff packet)/.test(cmoLeaderSource),
+  false,
+  'CMO leader user-facing required sections must not require internal adoption, handoff, Publisher/SaaS, or manifest terms'
+);
+
 const health = research.provider.health({ kind: 'research', definition: research, source: {} });
 assert.equal(health.provider, 'agent_file');
 assert.equal(health.kind, 'research');

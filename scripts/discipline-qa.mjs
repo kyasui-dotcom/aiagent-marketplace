@@ -29,6 +29,7 @@ const chatSessionStateSource = read('public/chat-session-state.js');
 const orderRuntimeSource = read('public/order-runtime.js');
 const deliveryRendererSource = read('public/delivery-renderer.js');
 const appHandoffGateSource = read('public/app-handoff-gate.js');
+const appContextGateSource = read('public/app-context-gate.js');
 const agentProgressViewSource = read('public/agent-progress-view.js');
 const clientSource = read('public/client.js');
 const workActionRegistrySource = read('public/work-action-registry.js');
@@ -273,6 +274,29 @@ assert.ok(
 assert.ok(
   appHandoffGateSource.includes('appHandoffRankEntries'),
   'app handoff gate must own generic app handoff candidate ranking'
+);
+assert.ok(
+  appContextGateSource.includes('appContextMatchesManifest'),
+  'app context gate must own manifest-based app context matching'
+);
+assert.ok(
+  chatSource.includes("from './app-context-gate.js"),
+  'chat app context surface routing must consume manifest matching through app-context-gate'
+);
+assert.ok(
+  chatSource.includes('contextContract: app.contextContract || app.context_contract || manifest.contextContract || manifest.context_contract || null')
+    && chatSource.includes('contextContract: { ...(existing.contextContract || {}), ...(normalized.contextContract || {}) }'),
+  'chat app manifest normalization must preserve app context contracts instead of silently downgrading to token matching'
+);
+assert.equal(
+  chatSource.includes("new URL('/analytics-console.html'"),
+  false,
+  'chat must not hard-code a privileged Analytics Console fallback URL; use the app manifest launch URL'
+);
+assert.equal(
+  chatSource.includes("appManifestById('analytics-console')"),
+  false,
+  'chat measurement-evidence routing must not fall back to a privileged app id'
 );
 assert.ok(
   chatSource.includes('appHandoffGateExplicitArtifactTypesFromFile'),

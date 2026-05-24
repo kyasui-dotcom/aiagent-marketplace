@@ -18,6 +18,16 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
       accepts: ['metrics', 'search_queries', 'landing_pages', 'conversion_paths', 'channel_breakdown'],
       returns: ['facts', 'metrics', 'artifacts', 'recommended_next_actions']
     },
+    contextContract: {
+      sourceApps: ['analytics_console'],
+      connectorProviders: ['google'],
+      connectorServices: ['ga4', 'gsc', 'search_console', 'analytics'],
+      evidence: {
+        loadedFlags: ['googleReportLoaded'],
+        loadedArtifactTypes: ['google_report_status'],
+        summaryFields: ['googleGa4Property', 'googleSearchConsoleSite']
+      }
+    },
     tags: ['analytics', 'seo', 'growth'],
     directCommandAliases: ['analytics', 'ga4', 'google analytics', 'search console', 'google search console', 'analytics console', 'アナリティクス', 'サーチコンソール'],
     owner: 'cait-managed',

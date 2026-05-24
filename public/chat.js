@@ -66,6 +66,11 @@ import {
   renderAppHandoffTree as appHandoffGateRenderTree
 } from './app-handoff-gate.js?v=20260523a';
 import {
+  appContextAnswerLine as appContextGateAnswerLine,
+  appContextMatchesManifest as appContextGateMatchesManifest,
+  appContextStatusForDraft as appContextGateStatusForDraft
+} from './app-context-gate.js?v=20260524a';
+import {
   BUILT_IN_APP_MANIFESTS as APP_AGENT_MANIFESTS,
   CORE_FEATURE_APP_IDS
 } from './app-manifest-registry.js?v=20260523a';
@@ -847,8 +852,12 @@ function applyRestoredChatSnapshot(snapshot = {}, request = {}) {
       : 'Google接続から戻りました。チャットを復元し、現在のOrder状態を読み込みます。',
     state.chatMessages[0]?.body || state.conversationLanguage
   ), { label: 'Chat restored', record: false });
-  if (session) void renderRestoredSessionOrderContext(session, { viewRevision, sessionId: session.id || session.sessionId });
-  if (state.orderId) startPolling(state.orderId);
+  if (session) void renderRestoredSessionOrderContext(session, {
+    viewRevision,
+    sessionId: session.id || session.sessionId,
+    resumeActiveWork: true
+  });
+  if (!session && state.orderId && restoredSessionHasActiveWork({}, snapshot)) startPolling(state.orderId);
   startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
   return true;
 }
@@ -964,7 +973,7 @@ function restoreRequestedChatSessionFromHistory() {
     saveChatRuntimeState('runtime_order_restore');
     return true;
   }
-  loadChatSession(session.id || session.sessionId);
+  loadChatSession(session.id || session.sessionId, { resumeActiveWork: true });
   if (request.orderId && !state.orderId) {
     state.orderId = request.orderId;
     rememberTrackedOrder(request.orderId);
@@ -1085,7 +1094,7 @@ function startNewChatSession() {
   renderChatSessionSidebar();
 }
 
-function loadChatSession(sessionId = '') {
+function loadChatSession(sessionId = '', options = {}) {
   const session = state.chatSessions.find((item) => item.id === sessionId || item.sessionId === sessionId);
   if (!session) return;
   const viewRevision = bumpChatViewRevision();
@@ -1132,8 +1141,11 @@ function loadChatSession(sessionId = '') {
   renderChatSessionSidebar();
   state.chatSidebarOpen = false;
   renderChatSessionSidebar();
-  void renderRestoredSessionOrderContext(session, { viewRevision, sessionId: session.id || session.sessionId });
-  if (state.orderId) startPolling(state.orderId);
+  void renderRestoredSessionOrderContext(session, {
+    viewRevision,
+    sessionId: session.id || session.sessionId,
+    resumeActiveWork: options.resumeActiveWork === true
+  });
 }
 
 function deleteChatSession(sessionId = '') {
@@ -1384,6 +1396,7 @@ function normalizeAppAgentManifest(app = {}) {
     requiredConnectors: listValues(app.requiredConnectors || app.required_connectors || app.connectors || manifest.requiredConnectors || manifest.required_connectors || manifest.connectors || []),
     requiresApprovalFor: listValues(app.requiresApprovalFor || app.requires_approval_for || manifest.requiresApprovalFor || manifest.requires_approval_for || []),
     inputContract: app.inputContract || app.input_contract || manifest.inputContract || manifest.input_contract || null,
+    contextContract: app.contextContract || app.context_contract || manifest.contextContract || manifest.context_contract || null,
     contextIngestUrl: String(app.contextIngestUrl || app.context_ingest_url || manifest.contextIngestUrl || manifest.context_ingest_url || '').trim(),
     handoff: app.handoff || manifest.handoff || null,
     dedicatedDelivery: app.dedicatedDelivery || app.dedicated_delivery || manifest.dedicatedDelivery || manifest.dedicated_delivery || null,
@@ -1406,6 +1419,7 @@ function appManifestSources() {
       ...existing,
       ...normalized,
       inputContract: { ...(existing.inputContract || {}), ...(normalized.inputContract || {}) },
+      contextContract: { ...(existing.contextContract || {}), ...(normalized.contextContract || {}) },
       handoff: { ...(existing.handoff || {}), ...(normalized.handoff || {}) },
       dedicatedDelivery: normalized.dedicatedDelivery || existing.dedicatedDelivery || null
     });
@@ -2427,7 +2441,7 @@ function setBusy(next) {
   document.querySelectorAll('[data-chat-action="send-order"]').forEach((button) => {
     button.disabled = state.busy || !state.draft;
   });
-  document.querySelectorAll('[data-chat-action="analytics-use"], [data-chat-action="analytics-skip"], [data-intake-choice], [data-intake-other-add]').forEach((button) => {
+  document.querySelectorAll('[data-chat-action="app-context-use"], [data-chat-action="app-context-skip"], [data-intake-choice], [data-intake-other-add]').forEach((button) => {
     button.disabled = state.busy || !state.pendingIntake;
   });
   document.querySelectorAll('[data-chat-action="keep-leader"], [data-chat-action="switch-leader"]').forEach((button) => {
@@ -4824,6 +4838,15 @@ function restoredSessionOrderContextIsCurrent(sessionId = '', viewRevision = 0) 
   return true;
 }
 
+function restoredSessionHasActiveWork(session = {}, snapshot = {}) {
+  return Boolean(
+    session?.activeWork
+    || snapshot?.activeWork
+    || (Array.isArray(session?.activeJobIds) && session.activeJobIds.length)
+    || (Array.isArray(snapshot?.activeJobIds) && snapshot.activeJobIds.length)
+  );
+}
+
 async function renderRestoredSessionOrderContext(session = {}, options = {}) {
   const sessionId = String(options.sessionId || session.id || session.sessionId || '').trim();
   const viewRevision = Number(options.viewRevision || state.chatViewRevision || 0) || 0;
@@ -4852,7 +4875,7 @@ async function renderRestoredSessionOrderContext(session = {}, options = {}) {
   if (primary?.id) {
     if (!restoredSessionOrderContextIsCurrent(sessionId, viewRevision)) return;
     state.orderId = primary.id;
-    if (!isTerminalStatus(primary.status)) startPolling(primary.id);
+    if (options.resumeActiveWork === true && restoredSessionHasActiveWork(session) && !isTerminalStatus(primary.status)) startPolling(primary.id);
   }
 }
 
@@ -5722,14 +5745,15 @@ async function backfillChatDeliveries(options = {}) {
     rememberTrackedOrder(safeId);
     if (!state.orderId && matchesRecovery) state.orderId = safeId;
     notifyOrderMilestone(job);
-    showWorkflowProgressMap(job);
     if (jobHasDeliveryResult(job)) {
       if (options.renderTerminalDeliveries === false && !matchesRecovery) continue;
       if (renderDeliveryOnce(job, { force: options.force === true })) delivered += 1;
     } else if (!state.polling && safeId === state.orderId && !state.liveProgressStoppedOrderIds.has(safeId)) {
+      showWorkflowProgressMap(job);
       maybeRenderAuthorityNotice(job, { label: 'Approval required' });
       startPolling(safeId);
     } else {
+      showWorkflowProgressMap(job);
       maybeRenderAuthorityNotice(job, { label: 'Approval required' });
     }
   }
@@ -6161,16 +6185,40 @@ function startIntake(response = {}, originalPrompt = '') {
   });
 }
 
+function measurementEvidenceAppManifest() {
+  return appManifestSources().find((entry) => {
+    const contract = entry.contextContract && typeof entry.contextContract === 'object' ? entry.contextContract : {};
+    const evidence = contract.evidence && typeof contract.evidence === 'object' ? contract.evidence : {};
+    const capabilities = listValues(entry.capabilities).map(normalizeUsageId);
+    const connectors = listValues(entry.requiredConnectors || entry.required_connectors).map(normalizeUsageId);
+    const sourceApps = listValues(contract.sourceApps || contract.source_apps).map(normalizeUsageId);
+    const loadedFlags = listValues(evidence.loadedFlags || evidence.loaded_flags);
+    const loadedArtifactTypes = listValues(evidence.loadedArtifactTypes || evidence.loaded_artifact_types);
+    return capabilities.includes('analytics_context')
+      && connectors.includes('google')
+      && (sourceApps.length || loadedFlags.length || loadedArtifactTypes.length);
+  }) || null;
+}
+
+function measurementEvidenceAppId() {
+  return normalizeUsageId(measurementEvidenceAppManifest()?.id || '');
+}
+
+function measurementEvidenceAppName() {
+  return measurementEvidenceAppManifest()?.name || 'measurement evidence app';
+}
+
 function growthLeaderNeedsDataHint(taskType = '', sample = '') {
   if (!/(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics|計測|流入|seo|cvr|conversion|コンバージョン)/i.test(`${taskType}\n${sample}`)) return '';
+  const appName = measurementEvidenceAppName();
   return chatText(
-    'If you have GA4/Search Console, answer "yes, I have GA4" and I will open Analytics Console so you can choose the Google account, property, and site. If not, say "skip analytics" and CAIt will proceed with assumptions.',
-    'GA4/Search Console を持っている場合は「GA4あります」と答えてください。Analytics Console を開き、Googleアカウント、プロパティ、サイトを選べるようにします。使わない場合は「アナリティクスをスキップ」と答えれば、仮説で進めます。',
+    `If you have GA4/Search Console, answer "yes, I have GA4" and I will open ${appName} so you can choose the Google account, property, and site. If not, say "skip analytics" and CAIt will proceed with assumptions.`,
+    `GA4/Search Console を持っている場合は「GA4あります」と答えてください。${appName} を開き、Googleアカウント、プロパティ、サイトを選べるようにします。使わない場合は「アナリティクスをスキップ」と答えれば、仮説で進めます。`,
     sample
   );
 }
 
-function orderNeedsAnalyticsContext(taskType = '', prompt = '') {
+function orderNeedsMeasurementEvidence(taskType = '', prompt = '') {
   const text = String(prompt || '').toLowerCase();
   return /(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics|計測|流入|seo|cvr|conversion|コンバージョン)/i.test(`${taskType}\n${text}`);
 }
@@ -6180,12 +6228,13 @@ function authGrantedGoogleCapabilities() {
     .map((item) => String(item || '').trim().toLowerCase()));
 }
 
-function analyticsPreOrderHintHtml(taskType = '', prompt = '') {
-  if (!orderNeedsAnalyticsContext(taskType, prompt)) return '';
-  const status = draftAnalyticsContextStatus(state.draft);
+function measurementEvidencePreOrderHintHtml(taskType = '', prompt = '') {
+  if (!orderNeedsMeasurementEvidence(taskType, prompt)) return '';
+  const appName = measurementEvidenceAppName();
+  const status = measurementEvidenceContextStatus(state.draft);
   const granted = authGrantedGoogleCapabilities();
   const googleConnected = granted.has('google.read_ga4') || granted.has('google.read_gsc') || state.auth?.googleLinked || state.auth?.googleAuthorized;
-  const explicit = draftExplicitlyRequestsAnalytics(state.draft || { prompt });
+  const explicit = draftExplicitlyRequestsMeasurementEvidence(state.draft || { prompt });
   const title = status.loaded
     ? chatText('Analytics context attached', 'アナリティクス添付済み', prompt)
     : status.skipped
@@ -6198,13 +6247,13 @@ function analyticsPreOrderHintHtml(taskType = '', prompt = '') {
     : status.skipped
       ? chatText('This order will proceed without GA4/Search Console evidence because analytics was skipped for this draft.', 'このドラフトではアナリティクスをスキップしたため、GA4/Search Console根拠なしで進めます。', prompt)
       : googleConnected
-        ? chatText('Google OAuth is already connected. Open Analytics Console to choose the GA4 property/Search Console site and send the loaded report back to this draft. OAuth should not be requested again unless a missing scope is selected.', 'Google OAuth は接続済みです。Analytics Console でGA4プロパティ/Search Consoleサイトを選び、レポートを読み込んでこのドラフトへ戻してください。不足scopeを選ばない限りOAuthを再要求しません。', prompt)
-        : chatText('Open Analytics Console, connect the needed Google source once, choose the property/site, load the report, then send it back to this draft.', 'Analytics Console を開き、必要なGoogleソースを1回接続して、プロパティ/サイトを選び、レポートを読み込んでこのドラフトへ戻してください。', prompt);
+        ? chatText(`Google OAuth is already connected. Open ${appName} to choose the GA4 property/Search Console site and send the loaded report back to this draft. OAuth should not be requested again unless a missing scope is selected.`, `Google OAuth は接続済みです。${appName} でGA4プロパティ/Search Consoleサイトを選び、レポートを読み込んでこのドラフトへ戻してください。不足scopeを選ばない限りOAuthを再要求しません。`, prompt)
+        : chatText(`Open ${appName}, connect the needed Google source once, choose the property/site, load the report, then send it back to this draft.`, `${appName} を開き、必要なGoogleソースを1回接続して、プロパティ/サイトを選び、レポートを読み込んでこのドラフトへ戻してください。`, prompt);
   const actions = status.loaded || status.skipped
     ? []
     : [
-        `<button class="ghost-btn inline-btn" type="button" data-chat-action="analytics-use">${escapeHtml(googleConnected ? chatText('Use connected GA4/Search Console', '接続済みGA4/Search Consoleを使う', prompt) : chatText('Open Analytics Console', 'Analytics Consoleを開く', prompt))}</button>`,
-        explicit ? `<button class="ghost-btn inline-btn" type="button" data-chat-action="analytics-skip">${escapeHtml(chatText('Skip analytics for this order', 'この注文ではスキップ', prompt))}</button>` : ''
+        `<button class="ghost-btn inline-btn" type="button" data-chat-action="app-context-use">${escapeHtml(googleConnected ? chatText('Use connected GA4/Search Console', '接続済みGA4/Search Consoleを使う', prompt) : chatText(`Open ${appName}`, `${appName}を開く`, prompt))}</button>`,
+        explicit ? `<button class="ghost-btn inline-btn" type="button" data-chat-action="app-context-skip">${escapeHtml(chatText('Skip analytics for this order', 'この注文ではスキップ', prompt))}</button>` : ''
       ].filter(Boolean);
   return [
     '<div class="preflight-card">',
@@ -6213,14 +6262,6 @@ function analyticsPreOrderHintHtml(taskType = '', prompt = '') {
     actions.length ? `<div class="inline-actions">${actions.join('')}</div>` : '',
     '</div>'
   ].filter(Boolean).join('\n');
-}
-
-function analyticsIntakeChoiceHtml(sample = '') {
-  return intakeChoiceCardsHtml({
-    originalPrompt: sample,
-    taskType: 'data_analysis',
-    questions: [chatText('Do you want to use GA4/Search Console?', 'GA4/Search Consoleを使いますか？', sample)]
-  }, sample);
 }
 
 function intakeSourceText(intake = {}, sample = '') {
@@ -6363,16 +6404,17 @@ function intakeChoiceGroups(intake = {}, sample = '') {
     );
   }
 
-  if (intakeHasAnalyticsQuestion(intake)) {
+  if (intakeHasMeasurementEvidenceQuestion(intake)) {
+    const appName = measurementEvidenceAppName();
     pushGroup(
       'analytics',
       'Analytics data',
       'アナリティクス',
-      'Use CAIt Analytics Console first, or skip and proceed with assumptions.',
-      '先にCAIt Analytics Consoleを使うか、仮説で進めるかを選んでください。',
+      `Use ${appName} first, or skip and proceed with assumptions.`,
+      `先に${appName}を使うか、仮説で進めるかを選んでください。`,
       [
-        { id: 'use', label: pick('Use GA4/Search Console', 'GA4/Search Consoleを使う'), action: 'analytics-use' },
-        { id: 'skip', label: pick('Skip analytics', 'アナリティクスをスキップ'), action: 'analytics-skip' }
+        { id: 'use', label: pick('Use GA4/Search Console', 'GA4/Search Consoleを使う'), action: 'app-context-use' },
+        { id: 'skip', label: pick('Skip analytics', 'アナリティクスをスキップ'), action: 'app-context-skip' }
       ],
       { singleChoice: true }
     );
@@ -6638,74 +6680,20 @@ function pendingIntakeHasAttachedAppContext(intake = {}) {
   );
 }
 
-function contextRawContext(context = {}) {
-  return context?.raw_context && typeof context.raw_context === 'object'
-    ? context.raw_context
-    : (context?.rawContext && typeof context.rawContext === 'object' ? context.rawContext : {});
-}
-
-function appContextLooksLikeAnalytics(context = {}) {
-  if (!context || typeof context !== 'object') return false;
-  const raw = contextRawContext(context);
-  const text = [
-    context.source_app,
-    context.sourceApp,
-    context.source_app_label,
-    context.sourceAppLabel,
-    context.title,
-    context.summary,
-    raw.connector_provider,
-    raw.provider,
-    raw.connector_type,
-    raw.connectorType,
-    ...(Array.isArray(raw.connector_services) ? raw.connector_services : []),
-    raw.googleGa4Property,
-    raw.googleSearchConsoleSite,
-    raw.googleReportLoaded
-  ].filter(Boolean).join(' ');
-  return /(analytics|google analytics|ga4|search console|\bgsc\b|アナリティクス|サーチコンソール)/i.test(text);
-}
-
-function appContextHasLoadedAnalyticsEvidence(context = {}) {
-  if (!appContextLooksLikeAnalytics(context)) return false;
-  const raw = contextRawContext(context);
-  if (raw.googleReportLoaded === true || String(raw.googleReportLoaded || '').toLowerCase() === 'true') return true;
-  const artifacts = Array.isArray(context.artifacts) ? context.artifacts : [];
-  return artifacts.some((artifact) => {
-    if (String(artifact?.type || '').trim().toLowerCase() !== 'google_report_status') return false;
-    return (Array.isArray(artifact.rows) ? artifact.rows : []).some((row) => (
-      row?.loaded === true || String(row?.loaded || '').toLowerCase() === 'true'
-    ));
-  });
+function appContextMatchesMeasurementEvidenceApp(context = {}) {
+  const manifest = measurementEvidenceAppManifest();
+  return Boolean(manifest && appContextGateMatchesManifest(context, manifest));
 }
 
 function draftBroker(draft = null) {
   return draft?.input?._broker && typeof draft.input._broker === 'object' ? draft.input._broker : {};
 }
 
-function draftAnalyticsContexts(draft = null) {
-  const input = draft?.input && typeof draft.input === 'object' ? draft.input : {};
-  const broker = draftBroker(draft);
-  return [
-    ...(Array.isArray(broker.appContexts) ? broker.appContexts : []),
-    ...(Array.isArray(broker.connectorContexts) ? broker.connectorContexts : []),
-    ...(Array.isArray(input.appContexts) ? input.appContexts : []),
-    ...(Array.isArray(input.connectorContexts) ? input.connectorContexts : [])
-  ].filter((context) => context && typeof context === 'object' && appContextLooksLikeAnalytics(context));
+function measurementEvidenceContextStatus(draft = null) {
+  return appContextGateStatusForDraft(draft, measurementEvidenceAppManifest());
 }
 
-function draftAnalyticsContextStatus(draft = null) {
-  const contexts = draftAnalyticsContexts(draft);
-  const broker = draftBroker(draft);
-  return {
-    attached: contexts.length > 0,
-    loaded: contexts.some(appContextHasLoadedAnalyticsEvidence),
-    skipped: broker.analyticsContextSkipped === true || broker.analytics_context_skipped === true,
-    contexts
-  };
-}
-
-function draftExplicitlyRequestsAnalytics(draft = null) {
+function draftExplicitlyRequestsMeasurementEvidence(draft = null) {
   const text = [
     draft?.prompt,
     draft?.originalPrompt,
@@ -6749,7 +6737,7 @@ function attachAppContextToDraft(context = null) {
   const input = state.draft.input && typeof state.draft.input === 'object' ? state.draft.input : {};
   const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
   const appContexts = mergeUniqueContexts(broker.appContexts || input.appContexts || [], context);
-  const connectorContexts = appContextLooksLikeAnalytics(context)
+  const connectorContexts = appContextMatchesMeasurementEvidenceApp(context)
     ? mergeUniqueContexts(broker.connectorContexts || input.connectorContexts || [], context)
     : (Array.isArray(broker.connectorContexts) ? broker.connectorContexts : []);
   state.draft.input = {
@@ -6760,6 +6748,8 @@ function attachAppContextToDraft(context = null) {
       ...broker,
       appContexts,
       ...(connectorContexts.length ? { connectorContexts } : {}),
+      measurementEvidenceSkipped: false,
+      measurement_evidence_skipped: false,
       analyticsContextSkipped: false,
       analytics_context_skipped: false
     }
@@ -6769,7 +6759,7 @@ function attachAppContextToDraft(context = null) {
   return true;
 }
 
-function markDraftAnalyticsSkipped() {
+function markDraftMeasurementEvidenceSkipped() {
   if (!state.draft) return false;
   const input = state.draft.input && typeof state.draft.input === 'object' ? state.draft.input : {};
   const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
@@ -6777,6 +6767,8 @@ function markDraftAnalyticsSkipped() {
     ...input,
     _broker: {
       ...broker,
+      measurementEvidenceSkipped: true,
+      measurement_evidence_skipped: true,
       analyticsContextSkipped: true,
       analytics_context_skipped: true
     }
@@ -6787,35 +6779,24 @@ function markDraftAnalyticsSkipped() {
 }
 
 function caitAppContextAnswerLine(context = {}) {
-  const source = String(context?.source_app || '').toLowerCase();
-  const raw = context?.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
   const connectorPrompt = caitAppContextChatPrompt(context);
-  if (source === 'analytics_console' || raw.googleGa4Property || raw.googleSearchConsoleSite) {
-    const services = [
-      raw.googleGa4Property ? 'GA4' : '',
-      raw.googleSearchConsoleSite ? 'Search Console' : ''
-    ].filter(Boolean).join(' + ') || 'Google Analytics/Search Console';
-    const range = raw.googleReportDateRange?.start_date && raw.googleReportDateRange?.end_date
-      ? ` (${raw.googleReportDateRange.start_date} to ${raw.googleReportDateRange.end_date})`
-      : '';
-    return `${services} connector context attached${range}.`;
-  }
+  if (appContextMatchesMeasurementEvidenceApp(context)) return appContextGateAnswerLine(context, measurementEvidenceAppManifest());
   return connectorPrompt.split('\n').map((line) => line.trim()).filter(Boolean)[0]
     || `Attached context from ${context?.source_app_label || context?.source_app || 'app'}.`;
 }
 
-function intakeHasAnalyticsQuestion(intake = {}) {
+function intakeHasMeasurementEvidenceQuestion(intake = {}) {
   const explicitSource = [
     intake.originalPrompt,
     intake.taskType,
     intake.activeLeaderTaskType
   ].join('\n');
-  return orderNeedsAnalyticsContext(intake.taskType || intake.activeLeaderTaskType || '', intake.originalPrompt || explicitSource)
+  return orderNeedsMeasurementEvidence(intake.taskType || intake.activeLeaderTaskType || '', intake.originalPrompt || explicitSource)
     || /(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics console)/i.test(explicitSource)
-    || intakeShouldOfferAnalyticsChoice(intake);
+    || intakeShouldOfferMeasurementEvidenceChoice(intake);
 }
 
-function intakeShouldOfferAnalyticsChoice(intake = {}) {
+function intakeShouldOfferMeasurementEvidenceChoice(intake = {}) {
   const prompt = String(intake.originalPrompt || '').trim();
   if (!prompt) return false;
   const inferredTask = inferWorkIntentTaskType(prompt);
@@ -6832,16 +6813,27 @@ function answerSaysAnalyticsAvailable(answer = '') {
   return !negative && (mentionsAnalytics ? affirmative || /あり/i.test(text) : affirmative);
 }
 
-async function openAnalyticsConsoleForIntake(intake = {}, answer = '') {
+async function openMeasurementEvidenceAppForIntake(intake = {}, answer = '') {
+  const app = measurementEvidenceAppManifest();
+  const appId = measurementEvidenceAppId();
+  const appName = measurementEvidenceAppName();
+  if (!app || !appId) {
+    appendTextMessage('assistant', chatText(
+      'No registered measurement evidence app is available for this order. You can skip analytics or try again after the app manifest is restored.',
+      'この発注で使える計測根拠アプリが登録されていません。アナリティクスをスキップするか、アプリマニフェスト復旧後に再試行してください。',
+      answer
+    ), { tone: 'error', label: 'App context' });
+    return;
+  }
   const popup = window.open('about:blank', '_blank');
-  const handoffId = makeChatHandoffId('analytics-intake');
+  const handoffId = makeChatHandoffId('measurement-evidence-intake');
   const chatReturnTo = currentChatReturnPath();
   const payload = {
     schema_version: 'cait-app-agent-transfer/v1',
-    transfer_id: `analytics-intake-${Date.now().toString(36)}`,
-    title: 'Analytics evidence requested from chat intake',
+    transfer_id: `measurement-evidence-intake-${Date.now().toString(36)}`,
+    title: 'Measurement evidence requested from chat intake',
     source: 'CAIt Chat intake',
-    summary: 'The user said GA4/Search Console data is available. Connect the right Google account, select the GA4 property and Search Console site, load the report, then send the analytics context back to CAIt before dispatching the order.',
+    summary: 'The user said GA4/Search Console data is available. Connect the right Google account, select the GA4 property and Search Console site, load the report, then send the app context back to CAIt before dispatching the order.',
     action: {
       kind: 'analytics_report_load',
       title: 'Select the Google account/property/site and load GA4/Search Console before order dispatch',
@@ -6864,39 +6856,50 @@ async function openAnalyticsConsoleForIntake(intake = {}, answer = '') {
     }
   };
   try {
-    const href = await createAppAgentContextOpenUrl('analytics-console', payload);
+    const href = await createAppAgentContextOpenUrl(appId, payload);
     const url = new URL(href, window.location.origin);
     url.searchParams.set('chat_handoff_id', handoffId);
     url.searchParams.set('chat_return_to', chatReturnTo);
     if (popup) popup.location.href = url.toString();
     else window.open(url.toString(), '_blank');
     appendTextMessage('assistant', chatText(
-      'I opened Analytics Console. Connect the right Google account, choose the GA4 property and Search Console site, load the report, then press Send to CAIt. I will pause this order until analytics context comes back; if you want to skip analytics, type "skip analytics".',
-      'Analytics Console を開きました。正しいGoogleアカウント、GA4プロパティ、Search Consoleサイトを選び、レポートをLoadしてから Send to CAIt を押してください。この発注は分析コンテキストが戻るまで止めます。分析を使わない場合は「アナリティクスをスキップ」と入力してください。',
+      `I opened ${appName}. Connect the right Google account, choose the GA4 property and Search Console site, load the report, then press Send to CAIt. I will pause this order until app context comes back; if you want to skip analytics, type "skip analytics".`,
+      `${appName} を開きました。正しいGoogleアカウント、GA4プロパティ、Search Consoleサイトを選び、レポートをLoadしてから Send to CAIt を押してください。この発注はアプリコンテキストが戻るまで止めます。分析を使わない場合は「アナリティクスをスキップ」と入力してください。`,
       answer
     ), { tone: 'ok', label: 'Analytics' });
   } catch (error) {
-    const fallback = new URL('/analytics-console.html', window.location.origin);
+    const fallback = new URL(appAgentLaunchUrl(app) || '/apps.html', window.location.origin);
     fallback.searchParams.set('chat_handoff_id', handoffId);
     fallback.searchParams.set('chat_return_to', chatReturnTo);
     if (popup) popup.location.href = fallback.toString();
     else window.open(fallback.toString(), '_blank');
-    appendTextMessage('assistant', `${chatText('I opened Analytics Console, but could not attach the intake context automatically.', 'Analytics Consoleを開きましたが、ヒアリング文脈の自動添付には失敗しました。', answer)} ${orderErrorMessage(error)}`, { tone: 'error', label: 'Analytics' });
+    appendTextMessage('assistant', `${chatText(`I opened ${appName}, but could not attach the intake context automatically.`, `${appName}を開きましたが、ヒアリング文脈の自動添付には失敗しました。`, answer)} ${orderErrorMessage(error)}`, { tone: 'error', label: 'Analytics' });
   }
 }
 
-async function openAnalyticsConsoleForDraft(draft = null) {
+async function openMeasurementEvidenceAppForDraft(draft = null) {
+  const app = measurementEvidenceAppManifest();
+  const appId = measurementEvidenceAppId();
+  const appName = measurementEvidenceAppName();
   const sourceDraft = draft || state.draft || {};
   const sample = sourceDraft.originalPrompt || sourceDraft.prompt || state.conversationLanguage || '';
+  if (!app || !appId) {
+    appendTextMessage('assistant', chatText(
+      'No registered measurement evidence app is available for this prepared order. Skip analytics or restore the app manifest before sending the order.',
+      'この発注ドラフトで使える計測根拠アプリが登録されていません。アナリティクスをスキップするか、アプリマニフェストを復旧してから送信してください。',
+      sample
+    ), { tone: 'error', label: 'App context' });
+    return;
+  }
   const popup = window.open('about:blank', '_blank');
-  const handoffId = makeChatHandoffId('analytics-draft');
+  const handoffId = makeChatHandoffId('measurement-evidence-draft');
   const chatReturnTo = currentChatReturnPath();
   const payload = {
     schema_version: 'cait-app-agent-transfer/v1',
-    transfer_id: `analytics-draft-${Date.now().toString(36)}`,
-    title: 'Analytics evidence requested before order dispatch',
+    transfer_id: `measurement-evidence-draft-${Date.now().toString(36)}`,
+    title: 'Measurement evidence requested before order dispatch',
     source: 'CAIt Chat order check',
-    summary: 'The prepared order explicitly requests GA4/Search Console. Use the already connected Google account when possible, choose the exact property/site, load the report, then send the analytics context back to CAIt before dispatching the order.',
+    summary: 'The prepared order explicitly requests GA4/Search Console. Use the already connected Google account when possible, choose the exact property/site, load the report, then send the app context back to CAIt before dispatching the order.',
     action: {
       kind: 'analytics_report_load',
       title: 'Load GA4/Search Console evidence into this prepared order',
@@ -6918,24 +6921,24 @@ async function openAnalyticsConsoleForDraft(draft = null) {
     }
   };
   try {
-    const href = await createAppAgentContextOpenUrl('analytics-console', payload);
+    const href = await createAppAgentContextOpenUrl(appId, payload);
     const url = new URL(href, window.location.origin);
     url.searchParams.set('chat_handoff_id', handoffId);
     url.searchParams.set('chat_return_to', chatReturnTo);
     if (popup) popup.location.href = url.toString();
     else window.open(url.toString(), '_blank');
     appendTextMessage('assistant', chatText(
-      'I opened Analytics Console for this prepared order. If Google is already connected, choose the GA4 property/Search Console site, load the report, then press Send to CAIt. I will attach it to this draft; no order will be sent until you press Send order again.',
-      'この発注ドラフト用に Analytics Console を開きました。Google接続済みなら、GA4プロパティ/Search Consoleサイトを選び、レポートをLoadしてから Send to CAIt を押してください。戻ったコンテキストはこのドラフトに添付します。もう一度 Send order を押すまで発注は送信しません。',
+      `I opened ${appName} for this prepared order. If Google is already connected, choose the GA4 property/Search Console site, load the report, then press Send to CAIt. I will attach it to this draft; no order will be sent until you press Send order again.`,
+      `この発注ドラフト用に ${appName} を開きました。Google接続済みなら、GA4プロパティ/Search Consoleサイトを選び、レポートをLoadしてから Send to CAIt を押してください。戻ったコンテキストはこのドラフトに添付します。もう一度 Send order を押すまで発注は送信しません。`,
       sample
     ), { tone: 'ok', label: 'Analytics' });
   } catch (error) {
-    const fallback = new URL('/analytics-console.html', window.location.origin);
+    const fallback = new URL(appAgentLaunchUrl(app) || '/apps.html', window.location.origin);
     fallback.searchParams.set('chat_handoff_id', handoffId);
     fallback.searchParams.set('chat_return_to', chatReturnTo);
     if (popup) popup.location.href = fallback.toString();
     else window.open(fallback.toString(), '_blank');
-    appendTextMessage('assistant', `${chatText('I opened Analytics Console, but could not attach the prepared order context automatically.', 'Analytics Consoleを開きましたが、発注ドラフト文脈の自動添付には失敗しました。', sample)} ${orderErrorMessage(error)}`, { tone: 'error', label: 'Analytics' });
+    appendTextMessage('assistant', `${chatText(`I opened ${appName}, but could not attach the prepared order context automatically.`, `${appName}を開きましたが、発注ドラフト文脈の自動添付には失敗しました。`, sample)} ${orderErrorMessage(error)}`, { tone: 'error', label: 'Analytics' });
   }
 }
 
@@ -6949,8 +6952,8 @@ async function answerPendingIntake(answer = '', options = {}) {
       : 'Answer what you can first. Nothing has been dispatched yet.', { tone: 'error', label: 'Intake' });
     return true;
   }
-  if (options.skipAnalyticsRedirect !== true && !pendingIntakeHasAttachedAppContext(intake) && intakeHasAnalyticsQuestion(intake) && answerSaysAnalyticsAvailable(text)) {
-    await openAnalyticsConsoleForIntake(intake, text);
+  if (options.skipAnalyticsRedirect !== true && !pendingIntakeHasAttachedAppContext(intake) && intakeHasMeasurementEvidenceQuestion(intake) && answerSaysAnalyticsAvailable(text)) {
+    await openMeasurementEvidenceAppForIntake(intake, text);
     return true;
   }
   const explicitLeaderTaskType = explicitLeaderChangeTaskTypeFromText(text);
@@ -7049,7 +7052,7 @@ function orderConfirmationHtml(options = {}) {
       ? `Reuse selected artifacts: ${escapeHtml(reuseArtifacts.map((item) => item.task_type || item.taskType).join(', '))}`
       : '',
     '',
-    analyticsPreOrderHintHtml(task, prompt),
+    measurementEvidencePreOrderHintHtml(task, prompt),
     '<details class="file-card order-brief" open>',
     '<summary>Instruction that will be sent</summary>',
     `<pre>${escapeHtml(prompt)}</pre>`,
@@ -8179,9 +8182,9 @@ async function sendOrder() {
     const lockedOwner = suppressLeaderLock ? null : currentLockedConversationOwner();
     const acceptedDraft = lockedOwner ? withConversationOwner(state.draft, lockedOwner) : state.draft;
     state.draft = acceptedDraft;
-    const analyticsStatus = draftAnalyticsContextStatus(acceptedDraft);
-    if (draftExplicitlyRequestsAnalytics(acceptedDraft) && !analyticsStatus.loaded && !analyticsStatus.skipped) {
-      await openAnalyticsConsoleForDraft(acceptedDraft);
+    const measurementEvidenceStatus = measurementEvidenceContextStatus(acceptedDraft);
+    if (draftExplicitlyRequestsMeasurementEvidence(acceptedDraft) && !measurementEvidenceStatus.loaded && !measurementEvidenceStatus.skipped) {
+      await openMeasurementEvidenceAppForDraft(acceptedDraft);
       appendTextMessage('assistant', chatText(
         'This order explicitly asks to use GA4/Search Console, so I stopped dispatch until the loaded analytics context is attached. After Send to CAIt returns here, press Send order again.',
         'この注文は GA4/Search Console の利用を明示しているため、読み込み済みアナリティクスコンテキストが添付されるまで発注送信を止めました。Send to CAIt で戻った後、もう一度 Send order を押してください。',
@@ -8560,19 +8563,18 @@ async function handleInboundAppContext(context = {}, options = {}) {
   appendMessage('assistant', caitAppContextThreadHtml(context), { label: 'App context', tone: 'ok' });
   if (state.pendingIntake) {
     const prompt = caitAppContextChatPrompt(context);
-    const sourceLabel = String(context.source_app_label || context.source_app || 'app').trim();
     state.pendingIntake.appContextAttached = true;
-    state.pendingIntake.analyticsContextAttached = /analytics/i.test(sourceLabel) || /analytics/i.test(String(context.source_app || ''));
+    state.pendingIntake.analyticsContextAttached = appContextMatchesMeasurementEvidenceApp(context);
     state.pendingIntake.appContextPrompt = prompt;
     state.pendingIntake.appContext = context;
-    const analyticsGroupName = chatText('Analytics data', 'アナリティクス', state.pendingIntake.originalPrompt || prompt);
-    const analyticsContextChoice = caitAppContextAnswerLine(context);
-    const analyticsGroupElement = findIntakeChoiceGroupElement(analyticsGroupName);
-    if (analyticsGroupElement?.dataset.choiceMode === 'single') {
-      resetIntakeChoiceGroup(analyticsGroupElement, analyticsGroupName);
+    const contextGroupName = chatText('Analytics data', 'アナリティクス', state.pendingIntake.originalPrompt || prompt);
+    const contextChoice = caitAppContextAnswerLine(context);
+    const contextGroupElement = findIntakeChoiceGroupElement(contextGroupName);
+    if (contextGroupElement?.dataset.choiceMode === 'single') {
+      resetIntakeChoiceGroup(contextGroupElement, contextGroupName);
     }
-    appendIntakeChoiceToComposer(analyticsGroupName, analyticsContextChoice);
-    setIntakeConfirmedChoice(analyticsGroupElement, analyticsGroupName, analyticsContextChoice);
+    appendIntakeChoiceToComposer(contextGroupName, contextChoice);
+    setIntakeConfirmedChoice(contextGroupElement, contextGroupName, contextChoice);
     updateComposerMode();
     setBusy(false);
     appendTextMessage('system', chatText(
@@ -9032,9 +9034,9 @@ els.chatThread.addEventListener('click', async (event) => {
     intakeChoiceButton.setAttribute('aria-pressed', 'true');
     appendIntakeChoiceToComposer(group, label);
     setIntakeConfirmedChoice(groupElement, group, label);
-    if (action === 'analytics-use') {
+    if (action === 'app-context-use') {
       setBusy(true);
-      void openAnalyticsConsoleForIntake(state.pendingIntake, chatText('GA4/Search Console is available.', 'GA4/Search Consoleがあります。', state.pendingIntake.originalPrompt))
+      void openMeasurementEvidenceAppForIntake(state.pendingIntake, chatText('GA4/Search Console is available.', 'GA4/Search Consoleがあります。', state.pendingIntake.originalPrompt))
         .finally(() => setBusy(false));
       return;
     }
@@ -9057,19 +9059,19 @@ els.chatThread.addEventListener('click', async (event) => {
     void resolvePendingLeaderChange(true, button.dataset.leaderTask || '')
       .catch((error) => appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Leader choice' }))
       .finally(() => setBusy(false));
-  } else if (action === 'analytics-use') {
+  } else if (action === 'app-context-use') {
     setBusy(true);
     const analyticsOpen = state.pendingIntake
-      ? openAnalyticsConsoleForIntake(state.pendingIntake, chatText('GA4/Search Console is available.', 'GA4/Search Consoleがあります。', state.pendingIntake.originalPrompt))
+      ? openMeasurementEvidenceAppForIntake(state.pendingIntake, chatText('GA4/Search Console is available.', 'GA4/Search Consoleがあります。', state.pendingIntake.originalPrompt))
       : state.draft
-        ? openAnalyticsConsoleForDraft(state.draft)
+        ? openMeasurementEvidenceAppForDraft(state.draft)
         : Promise.reject(new Error('There is no active intake or prepared order to attach analytics to.'));
     void analyticsOpen
       .catch((error) => appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Analytics' }))
       .finally(() => setBusy(false));
-  } else if (action === 'analytics-skip') {
+  } else if (action === 'app-context-skip') {
     if (state.draft && !state.pendingIntake) {
-      markDraftAnalyticsSkipped();
+      markDraftMeasurementEvidenceSkipped();
       appendTextMessage('system', chatText(
         'Analytics was skipped for this prepared order. Press Send order to proceed without GA4/Search Console evidence.',
         'この発注ドラフトではアナリティクスをスキップしました。GA4/Search Console根拠なしで進める場合は Send order を押してください。',

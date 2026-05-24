@@ -30,6 +30,7 @@ const chatSessionStateJsPath = new URL('../public/chat-session-state.js', import
 const orderRuntimeJsPath = new URL('../public/order-runtime.js', import.meta.url);
 const deliveryRendererJsPath = new URL('../public/delivery-renderer.js', import.meta.url);
 const appHandoffGateJsPath = new URL('../public/app-handoff-gate.js', import.meta.url);
+const appContextGateJsPath = new URL('../public/app-context-gate.js', import.meta.url);
 const agentProgressViewJsPath = new URL('../public/agent-progress-view.js', import.meta.url);
 const appManifestRegistryPath = new URL('../public/app-manifest-registry.js', import.meta.url);
 const analyticsJsPath = new URL('../public/analytics-console.js', import.meta.url);
@@ -88,6 +89,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(chatSessionStateJsPath)
 execFileSync(process.execPath, ['--check', fileURLToPath(orderRuntimeJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(deliveryRendererJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(appHandoffGateJsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(appContextGateJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(agentProgressViewJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(appManifestRegistryPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(appsJsPath)], { stdio: 'pipe' });
@@ -141,6 +143,7 @@ const chatSessionStateJs = readFileSync(chatSessionStateJsPath, 'utf8');
 const orderRuntimeJs = readFileSync(orderRuntimeJsPath, 'utf8');
 const deliveryRendererJs = readFileSync(deliveryRendererJsPath, 'utf8');
 const appHandoffGateJs = readFileSync(appHandoffGateJsPath, 'utf8');
+const appContextGateJs = readFileSync(appContextGateJsPath, 'utf8');
 const agentProgressViewJs = readFileSync(agentProgressViewJsPath, 'utf8');
 const appManifestRegistryJs = readFileSync(appManifestRegistryPath, 'utf8');
 const appsDomainJs = readFileSync(appsDomainPath, 'utf8');
@@ -199,6 +202,10 @@ const {
   connectorGateAuthorityIsActionable,
   connectorGateAuthorityNeedsApproval
 } = await import(connectorGateJsPath.href);
+const {
+  appContextMatchesManifest,
+  appContextStatusForDraft
+} = await import(appContextGateJsPath.href);
 const appSurfaceSources = [
   appsHtml,
   appsJs,
@@ -398,16 +405,64 @@ assert.ok(chatJs.includes('function jobHasDeliveryResult') && chatJs.includes('j
 assert.ok(chatJs.includes('nextProgressPollAt = Date.now() + retryDelayMs'), 'Chat polling should retry transient 503-style failures without stopping the order.');
 assert.ok(!chatJs.includes('Progress check temporarily failed'), 'Transient progress errors should not be posted into chat as worker-log noise.');
 assert.ok(chatJs.includes('answerSaysAnalyticsAvailable'), 'Chat intake should detect when the user says GA4/Search Console is available.');
-assert.ok(chatJs.includes('openAnalyticsConsoleForIntake'), 'Chat intake should open Analytics Console before dispatch when analytics data is available.');
-assert.ok(chatJs.includes('openAnalyticsConsoleForDraft'), 'Chat order checks should open Analytics Console and attach returned context to the prepared draft.');
+assert.ok(chatJs.includes("from './app-context-gate.js"), 'Chat app-context matching should be delegated to the app context gate module.');
+assert.ok(appContextGateJs.includes('appContextMatchesManifest'), 'App context gate should own manifest-based app context matching.');
+assert.ok(appContextGateJs.includes('appContextStatusForDraft'), 'App context gate should own draft app-context status extraction.');
+assert.ok(appManifestRegistryJs.includes('contextContract'), 'Measurement evidence app matching should be declared in the app manifest.');
+assert.ok(chatJs.includes('contextContract: app.contextContract || app.context_contract || manifest.contextContract || manifest.context_contract || null'), 'Chat app manifest normalization should preserve app context contracts.');
+assert.ok(chatJs.includes('contextContract: { ...(existing.contextContract || {}), ...(normalized.contextContract || {}) }'), 'Chat app manifest merging should not drop app context contracts.');
+const analyticsContextManifest = {
+  id: 'analytics-console',
+  name: 'Analytics Console',
+  capabilities: ['analytics_context'],
+  requiredConnectors: ['google'],
+  inputContract: { accepts: ['metrics', 'search_queries'] },
+  contextContract: {
+    sourceApps: ['analytics_console'],
+    connectorProviders: ['google'],
+    connectorServices: ['ga4', 'gsc'],
+    evidence: {
+      loadedFlags: ['googleReportLoaded'],
+      loadedArtifactTypes: ['google_report_status']
+    }
+  }
+};
+assert.equal(
+  appContextMatchesManifest({
+    source_app: 'publisher_approval_studio',
+    artifacts: [{ type: 'metrics', loaded: true }]
+  }, analyticsContextManifest),
+  false,
+  'App context matching must not downgrade contextContract apps to generic metrics token matching.'
+);
+assert.equal(
+  appContextStatusForDraft({
+    input: {
+      _broker: {
+        appContexts: [{
+          source_app: 'analytics_console',
+          raw_context: { googleReportLoaded: true, connector_provider: 'google', connector_services: ['ga4'] },
+          artifacts: [{ type: 'google_report_status', rows: [{ loaded: true }] }]
+        }]
+      }
+    }
+  }, analyticsContextManifest).loaded,
+  true,
+  'App context gate should mark manifest-matched loaded evidence as loaded.'
+);
+assert.ok(chatJs.includes('openMeasurementEvidenceAppForIntake'), 'Chat intake should open the manifest-matched evidence app before dispatch when analytics data is available.');
+assert.ok(chatJs.includes('openMeasurementEvidenceAppForDraft'), 'Chat order checks should open the manifest-matched evidence app and attach returned context to the prepared draft.');
 assert.ok(chatJs.includes('attachAppContextToDraft'), 'Returned app context should attach to the current draft instead of only filling the composer.');
 assert.ok(chatJs.includes('choose the GA4 property and Search Console site'), 'Chat should instruct users to identify the exact analytics account, property, and site.');
-assert.ok(chatJs.includes('analyticsIntakeChoiceHtml'), 'Chat intake should render explicit analytics choice buttons.');
-assert.ok(chatJs.includes('data-chat-action="analytics-use"'), 'Chat intake should include a button to use GA4/Search Console.');
-assert.ok(chatJs.includes('data-chat-action="analytics-skip"'), 'Chat intake should include a button to skip GA4/Search Console.');
+assert.ok(chatJs.includes('intakeHasMeasurementEvidenceQuestion(intake)') && chatJs.includes("action: 'app-context-use'"), 'Chat intake should render measurement evidence choices from the generic intake choice group path.');
+assert.ok(chatJs.includes('data-chat-action="app-context-use"'), 'Chat intake should include a manifest-neutral button to use GA4/Search Console.');
+assert.ok(chatJs.includes('data-chat-action="app-context-skip"'), 'Chat intake should include a manifest-neutral button to skip GA4/Search Console.');
+assert.ok(!chatJs.includes("new URL('/analytics-console.html'"), 'Chat should not hard-code the Analytics Console fallback URL; use the app manifest launch URL.');
+assert.ok(!chatJs.includes("appManifestById('analytics-console')"), 'Measurement evidence app selection must not fall back to a privileged hard-coded app id.');
+assert.ok(!chatJs.includes("|| 'Analytics Console'"), 'Measurement evidence app copy should come from the selected app manifest.');
 const intakeChoiceHandlerSource = chatJs.slice(chatJs.indexOf("const intakeChoiceButton = event.target.closest('[data-intake-choice]');"), chatJs.indexOf("const button = event.target.closest('[data-chat-action]');"));
 assert.ok(
-  intakeChoiceHandlerSource.indexOf('appendIntakeChoiceToComposer(group, label);') < intakeChoiceHandlerSource.indexOf("if (action === 'analytics-use')"),
+  intakeChoiceHandlerSource.indexOf('appendIntakeChoiceToComposer(group, label);') < intakeChoiceHandlerSource.indexOf("if (action === 'app-context-use')"),
   'Analytics intake choices should fill the answer composer before opening Analytics Console.'
 );
 assert.ok(chatJs.includes('singleChoice: config.singleChoice === true'), 'Intake groups should be able to declare mutually exclusive answers.');
@@ -421,11 +476,11 @@ assert.ok(
 assert.ok(chatJs.includes('function findIntakeChoiceGroupElement'), 'Returned app context should locate the active intake group before updating composer state.');
 const inboundAppContextSource = chatJs.slice(chatJs.indexOf('async function handleInboundAppContext'), chatJs.indexOf('function handleInboundAppContextServerRecord'));
 assert.ok(
-  inboundAppContextSource.indexOf('resetIntakeChoiceGroup(analyticsGroupElement, analyticsGroupName);') < inboundAppContextSource.indexOf('appendIntakeChoiceToComposer(analyticsGroupName, analyticsContextChoice);'),
+  inboundAppContextSource.indexOf('resetIntakeChoiceGroup(contextGroupElement, contextGroupName);') < inboundAppContextSource.indexOf('appendIntakeChoiceToComposer(contextGroupName, contextChoice);'),
   'Returned Analytics Console context should replace stale analytics intake choices before writing the concrete context answer.'
 );
 assert.ok(
-  inboundAppContextSource.includes('setIntakeConfirmedChoice(analyticsGroupElement, analyticsGroupName, analyticsContextChoice);'),
+  inboundAppContextSource.includes('setIntakeConfirmedChoice(contextGroupElement, contextGroupName, contextChoice);'),
   'Returned Analytics Console context should also refresh the confirmed intake choice UI.'
 );
 assert.ok(chatJs.includes('intakeChoiceGroups'), 'Chat intake should use generic concrete choice groups, not one-off question cards.');
@@ -455,6 +510,11 @@ assert.ok(chatJs.includes('renderChatSessionSidebar'), 'Chat should render a Cha
 assert.ok(chatJs.includes('refreshChatSessionHistory'), 'Chat should restore signed-in chat history from the server.');
 assert.ok(chatJs.includes('chatViewRevision'), 'Chat should track the active chat view so stale async order restores cannot repopulate a new blank chat.');
 assert.ok(chatJs.includes('restoredSessionOrderContextIsCurrent'), 'Restored order context should be ignored when the user has switched to a different/new chat.');
+const loadChatSessionSource = chatJs.slice(chatJs.indexOf('function loadChatSession'), chatJs.indexOf('function deleteChatSession'));
+assert.ok(loadChatSessionSource.includes('resumeActiveWork: options.resumeActiveWork === true'), 'Manual chat-session loads should not auto-render live progress unless an OAuth/runtime restore explicitly asks to resume active work.');
+assert.ok(!loadChatSessionSource.includes('startPolling(state.orderId)'), 'Manual chat-session loads must not show the progress narrator just because the session has a linked order.');
+const restoredSessionOrderContextSource = chatJs.slice(chatJs.indexOf('async function renderRestoredSessionOrderContext'), chatJs.indexOf('async function showChatListPanel'));
+assert.ok(restoredSessionOrderContextSource.includes('options.resumeActiveWork === true'), 'Restored order context should only resume polling for explicit active-work restores.');
 assert.ok(chatJs.includes('clearQueuedChatSessionSnapshot'), 'Starting a new chat should drop queued snapshots from the previous chat.');
 assert.ok(chatJs.includes('clearChatRestoreParamsFromUrl();'), 'Starting a new chat should remove URL restore params so reloads stay blank.');
 assert.ok(chatJs.includes('function applyAuthState'), 'Chat memory should hydrate lightweight auth without waiting for /auth/status.');
@@ -1137,6 +1197,8 @@ assert.ok(chatJs.includes('data-chat-order-retry'), 'Restored order cards should
 assert.ok(chatJs.includes('deliveryOrderActionsHtml'), 'Terminal delivery updates should keep status/retry actions visible after connector returns.');
 assert.ok(chatJs.includes("return ['completed', 'failed', 'timed_out'].includes"), 'Blocked approval waits should stay progress states, not terminal deliveries.');
 assert.ok(!chatJs.includes('restored-order-progress'), 'Restored order cards should not dump worker progress details into chat.');
+const backfillChatDeliveriesSource = chatJs.slice(chatJs.indexOf('async function backfillChatDeliveries'), chatJs.indexOf('function startDeliveryBackfillLoop'));
+assert.ok(backfillChatDeliveriesSource.indexOf('if (jobHasDeliveryResult(job))') < backfillChatDeliveriesSource.indexOf('showWorkflowProgressMap(job);'), 'Delivery backfill should not show progress maps for terminal restored history before deciding whether to render a delivery.');
 assert.ok(chatCss.includes('.restored-order-card'), 'Chat CSS should style restored order history cards.');
 assert.ok(chatJs.includes('recentJobsApiPath'), 'Recent chat/order history should come from the server job API.');
 assert.ok(chatJs.includes('CHATUX_PROGRESS_MAX_POLLS'), 'Chat polling should have an explicit long-running order limit.');
