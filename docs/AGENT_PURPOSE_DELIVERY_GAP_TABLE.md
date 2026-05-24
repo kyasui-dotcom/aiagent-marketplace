@@ -9,14 +9,14 @@ This review is generated from the current sample-agent files and the all-agent d
 - Public orderable catalog: 40 agents.
 - Non-routable internal/legacy fixtures: 3 agents.
 - Ideal state: a user receives a reviewable delivery artifact that fully satisfies the specific order intent, includes the agent-owned required sections, labels evidence/assumptions/status, and avoids unproven execution claims.
-- Current state: Before and After delivery snapshots completed for the targeted X post case. This pass changed 1 case: `x_post` now requires account/link policy, pre-publish review, publish readiness handoff, and stricter no-ready/no-approved/no-queued claims without proof. Prior strengthened cases such as `seo_specialist`, `campaign_operations`, `landing`, `acquisition_automation`, `data_analysis`, `agent_team_leader`, `instagram`, `ads_planner`, `schedule_coordination`, `writer`, `follow_up`, `meeting_notes`, `meeting_prep`, and `secretary_leader` remain covered by the regression package.
+- Current state: Added a source-contract discipline check for CMO leader changes and tightened the CMO final Markdown contract so internal agent, handoff, connector, Publisher/SaaS, manifest, and snake_case routing terms stay out of the end-user delivery. Prior strengthened cases such as `x_post`, `seo_specialist`, `campaign_operations`, `landing`, `acquisition_automation`, `data_analysis`, `agent_team_leader`, `instagram`, `ads_planner`, `schedule_coordination`, `writer`, `follow_up`, `meeting_notes`, `meeting_prep`, and `secretary_leader` remain covered by the regression package.
 - Remaining delivery gap found by the regression package: none. Non-routable fixtures remain intentionally hidden from public ordering while still covered by tests.
 
 ## Test Evidence
 
 - Before snapshot: `tmp/automation-x-post-before-20260524-prepublish-handoff/snapshot.json`
 - After comparison: `tmp/automation-x-post-after-20260524-prepublish-handoff/comparison.md`
-- Delivery contract QA: `npm run qa:builtin-agents`
+- Source-contract discipline + delivery contract QA: `npm run qa:builtin-agents`
 - Public docs QA: `npm run qa:docs`
 
 ## Review Rules
@@ -30,7 +30,7 @@ This review is generated from the current sample-agent files and the all-agent d
 
 | Agent file | Manifest kind | Catalog status | Ideal delivery shape | Checked reality | Gap / next action | Regression case |
 |---|---|---|---|---|---|---|
-| `cmo-leader.js` | `cmo_leader` | 公開注文可 | Purpose: Lead marketing strategy and specialist orchestration while keeping channel execution, Publisher ingest, and SaaS a... Required: ICP and conversion goal / Positioning promise / Evidence and gaps / Specialist adoption matrix (+3) | Before completed / After completed / changed no; actions 16, sections 7, evidence 2, labels 3, forbidden 3 | 差分なし: 納品契約・回帰出力とも納品可能 | `cmo-leader-growth-plan (4a9f30d4894f3e24)` |
+| `cmo-leader.js` | `cmo_leader` | 公開注文可 | Purpose: Lead marketing strategy and specialist orchestration while keeping channel execution, Publisher ingest, and SaaS a... Required: Executive summary / Confirmed facts / Open questions / Priority diagnosis (+3) | Before completed / After completed / changed yes; actions 16, sections 7, evidence 2, labels 3, forbidden 3 | 契約強化: 外部Markdownを1本のGrowth改善提案に限定し、internal agent/handoff/connector/Publisher/SaaS/manifest/snake_case語彙を必須契約から排除。内部受け渡しはstructured artifact側に分離 | `cmo-leader-growth-plan (4a9f30d4894f3e24)` |
 | `free-web-growth-leader.js` | `free_web_growth_leader` | 非公開 fixture | Purpose: Lead no-paid growth by choosing organic channels, assigning specialist packets, and preparing handoffs without cla... Required: Growth goal / No-paid constraint / Channel priority / 24-hour plan (+4) | Before completed / After completed / changed no; actions 2, sections 8, evidence 2, labels 3, forbidden 5 | 公開注文から除外: 内部/legacy fixture として回帰対象に維持 | `free-web-growth-no-paid-plan (706d671a95be8766)` |
 | `launch-team-leader.js` | `launch_team_leader` | 非公開 fixture | Purpose: Lead product launch preparation by turning a feature or offer into launch sequence, asset queue, approval gates, a... Required: Launch objective / Audience and offer / Launch sequence / Asset queue (+4) | Before completed / After completed / changed no; actions 2, sections 8, evidence 3, labels 3, forbidden 5 | 公開注文から除外: 内部/legacy fixture として回帰対象に維持 | `launch-team-product-launch (6796b7985a7fe0f9)` |
 | `campaign-operations.js` | `campaign_operations` | 公開注文可 | Purpose: Operate campaign state from a CMO or marketing design by preparing Campaign records, Publisher intake queues, appr... Required: Campaign state / Publisher queue / Approval backlog / Connector readiness (+6) | Before completed / After completed / changed yes; actions 4, sections 10, evidence 5, labels 7, forbidden 10 | 契約強化: Next (Week 1-3) action window、Week 1-3 gating、未計測/未承認のexpansion claim禁止を追加。納品可能 | `campaign-operations-publisher-queue (8d9527f7a8b11ed8)` |

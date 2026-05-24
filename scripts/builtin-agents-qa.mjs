@@ -1130,15 +1130,15 @@ const cmoLeaderFinalSynthesis = await cmoLeaderFinal.provider.runJob({
   manifest: cmoLeaderFinal.manifest
 });
 assertUserFacingDelivery(cmoLeaderFinalSynthesis, 'cmo_leader final synthesis', [
-  /evaluated all specialist outputs|Adoption matrix/i,
-  /Publisher draft status/i,
-  /External app ingest status: not verified/i
+  /Growth improvement plan|Executive summary|Direct answer/i,
+  /Perspective review/i,
+  /Inputs needed next/i
 ]);
 const cmoLeaderFinalContent = cmoLeaderFinalSynthesis.files?.[0]?.content || '';
-assert.match(cmoLeaderFinalContent, /Adoption matrix[\s\S]*seo_specialist/i, 'CMO final synthesis should require LLM judgment over the preparation artifact content');
-assert.match(cmoLeaderFinalContent, /Adoption matrix[\s\S]*data_analysis/i, 'CMO final synthesis should carry data_analysis as evidence for leader judgment');
-assert.match(cmoLeaderFinalContent, /Blocked or not selected[\s\S]*list_creator/i, 'CMO final synthesis should separate blocked lead/list work from adopted work');
-assert.match(cmoLeaderFinalContent, /Publisher handoff draft prepared in chat/i, 'CMO final synthesis should label Publisher material as a chat draft');
+assert.match(cmoLeaderFinalContent, /SEO page work/i, 'CMO final synthesis should require LLM judgment over the preparation artifact content without exposing task ids');
+assert.match(cmoLeaderFinalContent, /Access analytics[\s\S]*554 sessions/i, 'CMO final synthesis should carry analytics evidence without exposing internal agent names');
+assert.match(cmoLeaderFinalContent, /Lead\/source list work[\s\S]*missing/i, 'CMO final synthesis should separate blocked lead/list work in user-facing language');
+assert.doesNotMatch(cmoLeaderFinalContent, /Adoption matrix|Specialist adoption matrix|DATA ANALYSIS AGENT|RESEARCH AGENT|LANDING PAGE CRITIQUE AGENT|seo_specialist|data_analysis|media_planner|list_creator|Publisher handoff draft prepared|External app ingest|Publisher\/SaaS|site_publish_packet|artifact_for_next_agent|recommended_next_owner|Downstream handoff/i, 'CMO final synthesis must not expose internal agent, routing, app, or handoff terms');
 assert.doesNotMatch(cmoLeaderFinalContent, /Landing page change packet prepared|Publish status:\s*prepared\s*\/\s*not/i, 'CMO final synthesis must not overclaim Publisher packet preparation');
 assert.doesNotMatch(JSON.stringify(cmoLeaderFinalSynthesis), /\[object Object\]/, 'CMO final synthesis must flatten object-shaped summary and next action fields');
 assert.equal(cmoLeaderFinalSynthesis.report?.leader_evaluation_required, true, 'CMO final report should mark LLM leader evaluation as required');
