@@ -214,10 +214,10 @@ const externalCommunicationContractExpectations = [
   },
   {
     kind: 'cold_email',
-    actions: ['qualify_cold_lead_queue', 'draft_company_specific_sequence', 'prepare_cold_email_send_handoff'],
-    requiredSections: ['Lead source status', 'Qualification queue', 'Exact recipient approval', 'Approval/send boundary', 'Connector handoff packet', 'Execution status labels'],
-    guidedSections: ['Lead source status and qualification queue', 'Exact recipient approval', 'Approval/send boundary', 'Connector handoff packet', 'Execution status labels'],
-    forbiddenClaims: ['sent', 'queued', 'CRM imported']
+    actions: ['qualify_cold_lead_queue', 'draft_company_specific_sequence', 'prepare_cold_email_send_handoff', 'prepare_cold_email_execution_proof_tracker'],
+    requiredSections: ['Lead source status', 'Qualification queue', 'Exact recipient approval', 'Approval owner', 'Approval/send boundary', 'ESP/CRM field map', 'Connector handoff packet', 'Execution proof tracker', 'Execution status labels'],
+    guidedSections: ['Lead source status and qualification queue', 'Exact recipient approval', 'Approval owner', 'Approval/send boundary', 'ESP/CRM field map', 'Connector handoff packet', 'Execution proof tracker', 'Execution status labels'],
+    forbiddenClaims: ['approved', 'sent', 'queued', 'CRM imported', 'delivered', 'reply handled', 'open or reply rate observed']
   },
   {
     kind: 'instagram',
