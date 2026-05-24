@@ -39,20 +39,20 @@ for (const agent of DEFAULT_AGENT_SEEDS) {
 }
 
 const expectedOutputContracts = new Map([
-  ['agent_ads_planner_01', ['objective', 'audience', 'provider', 'campaign_structure', 'budget_cap_and_cpa_assumption', 'stop_rules', 'ads_saas_handoff', 'measurement_plan']],
-  ['agent_campaign_operations_01', ['campaign_state', 'publisher_queue', 'approval_backlog', 'connector_readiness', 'measurement_loop', 'next_action_owner']],
+  ['agent_ads_planner_01', ['objective', 'audience', 'provider', 'campaign_structure', 'budget_cap_and_cpa_assumption', 'stop_rules', 'creative_asset_packet', 'ads_saas_handoff', 'approval_and_launch_boundary', 'execution_status_labels', 'measurement_plan']],
+  ['agent_campaign_operations_01', ['campaign_state', 'publisher_queue', 'approval_backlog', 'connector_readiness', 'planned_action_queue', 'now_week_0_1', 'next_week_1_3', 'waiting_conditions', 'measurement_loop', 'next_action_owner']],
   ['agent_cfo_leader_01', ['decision_question', 'assumption_table', 'source_to_model_ledger', 'formula_model', 'scenarios', 'sensitivity', 'decision_trigger', 'approval_owner', 'execution_proof_tracker', 'confidence_labels', 'risk_notes']],
   ['agent_research_01', ['answer_first', 'source_status', 'source_ledger', 'current_vs_inferred_facts', 'options', 'recommendation', 'verification_queue', 'verification_gaps']],
   ['agent_teardown_01', ['competitor_classification', 'observed_facts', 'inferences', 'comparison_table', 'wedge', 'first_test', 'verification_queue', 'evidence_gaps']],
   ['agent_validation_01', ['target_user', 'current_workaround', 'riskiest_assumption', 'test_design', 'test_script_or_asset', 'success_threshold', 'kill_criteria', 'false_positives_to_ignore', 'next_decision']],
   ['agent_pricing_01', ['pricing_question', 'value_metric', 'assumptions', 'formula', 'scenario_table', 'sensitivity_table', 'recommendation', 'decision_trigger', 'rollback_or_continue_rule']],
   ['agent_prompt_brushup_01', ['intent_ledger', 'original_prompt', 'rewritten_prompt', 'preserved_constraints', 'change_rationale', 'test_cases', 'failure_modes']],
-  ['agent_hiring_01', ['role_outcomes', 'scorecard', 'job_description', 'must_have_and_nice_to_have', 'screening_questions', 'evaluation_rubric', 'exclusion_risks']],
-  ['agent_data_analysis_01', ['question', 'dataset_status', 'metric_definitions', 'findings', 'caveats', 'analysis_notes', 'next_decision']],
+  ['agent_hiring_01', ['role_context/source_status', 'role_outcomes', 'scorecard', 'job_description', 'must_have_and_nice_to_have', 'screening_questions', 'evaluation_rubric', 'interview_loop_and_decision_thresholds', 'candidate_evidence_boundary', 'exclusion_risks', 'exclusion/legal_risks', 'hiring_owner_handoff_and_next_step']],
+  ['agent_data_analysis_01', ['question', 'dataset_status', 'conversion_instrumentation_verification', 'metric_definitions', 'findings', 'caveats', 'analysis_notes', 'next_decision']],
   ['agent_diligence_01', ['decision_context', 'evidence_map', 'red_flag_matrix', 'fact_vs_inference', 'verification_queue', 'blocker_severity', 'conditional_recommendation']],
   ['agent_follow_up_01', ['open_loop_id', 'waiting_on_party', 'owner', 'deadline_or_timing_status', 'relationship_context', 'business_impact', 'follow_up_copy', 'approval_condition', 'send_or_reminder_handoff', 'next_check']],
   ['agent_meeting_prep_01', ['agenda', 'briefing_notes', 'questions', 'decision_points', 'participant_visible_context_scope', 'calendar_send_boundary', 'execution_status_labels']],
-  ['agent_inbox_triage_01', ['inbox_scope', 'message_or_thread_source', 'priority', 'priority_reason', 'reply_needed_status', 'owner', 'deadline_or_timing_status', 'risk_flag', 'recommended_next_action', 'specialist_handoff', 'connector_state']],
+  ['agent_inbox_triage_01', ['inbox_scope', 'message_or_thread_source', 'priority', 'priority_reason', 'reply_needed_status', 'owner', 'deadline_or_timing_status', 'risk_flag', 'recommended_next_action', 'specialist_handoff', 'connector_state', 'snapshot_freshness', 'privacy_scope', 'approval_packet']],
   ['agent_reply_draft_01', ['message_or_thread_source', 'sender', 'recipient', 'relationship_context', 'desired_outcome', 'unresolved_facts', 'reply_draft', 'tone_rationale', 'approval_condition', 'send_handoff', 'follow_up_timing']],
   ['agent_schedule_coordination_01', ['schedule_request_source', 'participants', 'timezone', 'duration', 'meeting_purpose', 'availability_source', 'candidate_times', 'conflicts_or_constraints', 'invite_draft', 'participant_response_handoff', 'time_option_expiry', 'confirmation_owner', 'calendar_event_handoff', 'meeting_link_handoff', 'execution_status_labels', 'connector_state', 'next_check', 'draft_then_schedule']]
 ]);
@@ -120,3 +120,4 @@ assert.equal(researchConfirmation.inferred.layer, 'research');
 assert.ok(researchConfirmation.inferred.downstream.task_types.includes('writing'));
 
 console.log('agent routing contracts qa passed');
+
