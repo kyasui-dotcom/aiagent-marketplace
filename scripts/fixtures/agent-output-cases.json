@@ -246,7 +246,7 @@
       "id": "directory-submission-queue",
       "file": "directory-submission.js",
       "kind": "directory_submission",
-      "prompt": "Prepare a directory submission queue for an AI agent marketplace. Include fit reasons, required fields, listing copy, and submission boundary.",
+      "prompt": "Prepare a directory submission queue for an AI agent marketplace. Include fit reasons, rule check status, required fields, listing copy, submission owner handoff, UTM/proof tracker, and submission boundary. Do not claim anything was submitted, approved, live, ready without owner approval, or verified without dated source proof.",
       "body": {
         "input": {
           "category": "AI tools"

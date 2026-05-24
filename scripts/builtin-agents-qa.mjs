@@ -272,6 +272,13 @@ const marketingExecutionContractExpectations = [
     forbiddenClaims: ['creative approved without owner proof', 'conversion tracking verified without connector proof', 'campaign ready to launch without approval']
   },
   {
+    kind: 'directory_submission',
+    actions: ['prepare_directory_submission_queue', 'prepare_directory_submission_handoff', 'prepare_directory_submission_proof_tracker'],
+    requiredSections: ['Directory queue', 'Rule check status', 'Submission handoff packet', 'UTM and proof tracker', 'Submission boundary', 'Next owner'],
+    guidedSections: ['Rule check status', 'Submission handoff packet', 'UTM and proof tracker', 'Submission boundary'],
+    forbiddenClaims: ['rules verified without dated source', 'submission ready without owner approval', 'proof captured']
+  },
+  {
     kind: 'landing',
     actions: ['prepare_landing_conversion_packet', 'prepare_landing_implementation_handoff', 'prepare_signup_trial_cta_alignment_check'],
     requiredSections: ['Current page evidence status', 'Missing page copy/sections stop rule', 'Signup/trial CTA alignment check', 'Intent to CTA mapping', 'Revised CTA block draft', 'Proof block draft', 'Replacement copy status', 'Draft handoff plan', 'Implementation handoff'],
