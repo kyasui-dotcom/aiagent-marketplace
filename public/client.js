@@ -9565,8 +9565,7 @@ function buildOpenChatReusableToolsAnswer(prompt = '') {
         ].filter(Boolean).join('\n'),
     actions: [
       { action: 'open_work_tab', label: ja ? 'チャット履歴を開く' : 'OPEN CHAT' },
-      { action: 'browse_agents', label: ja ? 'AGENTSを開く' : 'OPEN AGENTS' },
-      { action: 'connect_x', label: ja ? 'X連携' : 'CONNECT X' }
+      { action: 'browse_agents', label: ja ? 'AGENTSを開く' : 'OPEN AGENTS' }
     ],
     status: 'Reusable app and agent library shown.\n\nNo order was created and no billing occurred.'
   };
@@ -10261,48 +10260,22 @@ function buildOpenChatMarketingAgentListAnswer(prompt = '') {
     ],
     body: ja
       ? [
-          'マーケティング系の主な sample agent はこのあたりです。',
+          'マーケティング系の agent 候補は登録済み agent manifest から選ばれます。',
           '',
-          'チームリーダー:',
-          '- Team Leader: 目的、根拠、担当分解、承認点、最終統合を管理する',
-          '- Launch Team Leader: 1つの告知を複数チャネル向けの下書きと計測計画に分解する',
+          '- BROWSE AGENTS: 現在登録されている agent の task types、capabilities、manifest を確認します。',
+          '- USE AGENT TEAM: CAIt が manifest と注文内容を照合して、必要な leader または specialist に渡します。',
+          '- Send order 前なら、まだ実行も課金も発生しません。',
           '',
-          '専門agent:',
-          '- GROWTH OPERATOR AGENT: 成長ボトルネックと7日実験を設計する',
-          '- DIRECTORY SUBMISSION AGENT: 無料掲載媒体、AIツールディレクトリ、投稿先、UTM、掲載管理表を作る',
-          '- ACQUISITION AUTOMATION AGENT: 許可済みチャネル、CRM状態、返信ハンドオフ、計測を設計する',
-          '- COMPETITOR TEARDOWN AGENT: 競合、差別化、ポジショニングを分析する',
-          '- LANDING PAGE CRITIQUE AGENT: LPの訴求、信頼材料、CTA、CV導線を改善する',
-          '- SEO SPECIALIST: 記事作成、既存ページリライト、順位/競合モニタリング、上位SERP分析を行う',
-          '- X OPS CONNECTOR AGENT: X投稿、スレッド、返信フックを作り、OAuth連携後は確認付きで投稿する',
-          '- REDDIT LAUNCH AGENT: subreddit向けに宣伝臭を抑えた議論投稿を作る',
-          '- INDIE HACKERS LAUNCH AGENT: founder投稿、返信、build-in-public文脈を作る',
-          '- INSTAGRAM LAUNCH AGENT: carousel、reel、story、captionの角度を作る',
-          '- DATA ANALYSIS AGENT: 流入、登録、注文、反応を見て次の改善を出す',
-          '',
-          '迷う場合は、やりたい成果をそのまま書けば CAIt がリーダーか専門エージェントかを判断します。まだ注文も課金も発生していません。'
+          '迷う場合は、対象サービス、目標、使いたいデータ、避けたい制約を書いてください。agent 固有の納品範囲や実行可否は各 manifest/provider contract に従います。'
         ].join('\n')
       : [
-          'Here are the main sample marketing agents.',
+          'Marketing agent candidates come from registered agent manifests.',
           '',
-          'Team Leaders:',
-          '- Team Leader: manages objective, evidence, task split, approval gates, and final merge.',
-          '- Launch Team Leader: turns one announcement into channel drafts and measurement planning.',
+          '- BROWSE AGENTS: inspect currently registered agent task types, capabilities, and manifests.',
+          '- USE AGENT TEAM: CAIt matches the order against manifests and hands it to the relevant leader or specialist.',
+          '- Before Send order, nothing has run and nothing has been billed.',
           '',
-          'Specialists:',
-          '- GROWTH OPERATOR AGENT: diagnoses the growth bottleneck and designs a 7-day experiment.',
-          '- DIRECTORY SUBMISSION AGENT: builds free listing targets, AI tool directories, reusable copy, UTM tags, and a submission tracker.',
-          '- ACQUISITION AUTOMATION AGENT: designs allowed channels, CRM states, reply handoff, and measurement.',
-          '- COMPETITOR TEARDOWN AGENT: analyzes competitors, differentiation, and positioning.',
-          '- LANDING PAGE CRITIQUE AGENT: improves promise, trust, CTA, and conversion path.',
-          '- SEO SPECIALIST: handles article creation, existing-page rewrites, ranking/competitor monitoring, and SERP analysis.',
-          '- X OPS CONNECTOR AGENT: drafts X posts, threads, reply hooks, and can post after X OAuth plus explicit confirmation.',
-          '- REDDIT LAUNCH AGENT: creates discussion-first subreddit-safe posts.',
-          '- INDIE HACKERS LAUNCH AGENT: drafts founder updates and replies.',
-          '- INSTAGRAM LAUNCH AGENT: creates carousel, reel, story, and caption angles.',
-          '- DATA ANALYSIS AGENT: reads traffic, signup, order, and campaign metrics.',
-          '',
-          'If unsure, describe the outcome you want and CAIt will choose a leader or specialist. No order or billing happened here.'
+          'If unsure, describe the target service, goal, available data, and constraints. Agent-specific scope and execution claims come from each manifest/provider contract.'
         ].join('\n'),
     status: 'Marketing agent list answered in chat.\n\nNo order was created and no billing occurred.'
   };
@@ -11667,7 +11640,6 @@ async function handleChatActionButton(action = '', detail = {}) {
     connect_github: async () => { openGithubSignIn(); },
     connect_google: async () => { openPrimaryGoogleSignIn({ capabilities: detail.googleCapabilities || detail.capabilities || '' }); },
     connect_x: async () => { connectXAccount({ capabilities: detail.xCapabilities || detail.capabilities || '' }); },
-    post_current_to_x: async () => { void postCurrentComposerToX(); },
     download_delivery_zip: async () => {
       const orderId = String(detail.orderId || state.selectedJobId || '').trim();
       const job = await loadJobForChatAction(orderId);
@@ -11761,67 +11733,6 @@ function connectXAccount(options = {}) {
   if (capabilities.length) url.searchParams.set('capabilities', capabilities.join(','));
   else url.searchParams.set('capabilities', 'x.post');
   window.location.href = `${url.pathname}${url.search}`;
-}
-
-function currentXComposerText() {
-  return String(els.jobPrompt?.value || '').trim();
-}
-
-async function postCurrentComposerToX() {
-  const auth = state.snapshot?.auth || {};
-  if (!auth.loggedIn) {
-    flash('Sign in first, then connect X before posting.', 'warn');
-    openLoginForProtectedAction('post_current_to_x', 'work');
-    return;
-  }
-  const account = state.snapshot?.accountSettings || null;
-  const status = connectorStatusForClient(auth, account);
-  if (!status.x) {
-    flash('Connect X with OAuth before posting.', 'warn');
-    connectXAccount();
-    return;
-  }
-  const text = currentXComposerText();
-  if (!text) {
-    flash('Write the exact X post text first.', 'warn');
-    return;
-  }
-  if (text.length > 280) {
-    flash(`X post is ${text.length} characters. Shorten it to 280 or less before posting.`, 'warn');
-    return;
-  }
-  const confirmed = window.confirm(deliveryExecutionPromptPresentation('x_post', {
-    postText: text,
-    xAccountLabel: xConnectorIdentityForClient(account).label
-  }).confirm);
-  if (!confirmed) return;
-  try {
-  const result = await api('/api/connectors/x/post', {
-    method: 'POST',
-    body: JSON.stringify({
-      text,
-      confirm_post: true,
-      ...xApprovalPayloadForClient(text),
-      source: 'work_chat'
-    })
-  });
-    if (state.snapshot?.accountSettings?.connectors && result.x) {
-      state.snapshot.accountSettings.connectors.x = result.x;
-    }
-    flash(`Posted to X: ${result.url || result.tweet_id}`, 'ok');
-    appendOrderChatExchange(text, {
-      kind: 'assist',
-      tone: 'ok',
-      body: [
-        'Posted to X after explicit confirmation.',
-        '',
-        result.url || `Tweet ID: ${result.tweet_id || ''}`
-      ].join('\n'),
-      status: 'X post completed.\n\nThe connected X account was used after confirmation.'
-    }, { nextPrompt: '' });
-  } catch (error) {
-    flash(error.message || 'X post failed.', 'error');
-  }
 }
 
 function openOrderTab() {
@@ -17255,76 +17166,6 @@ async function schedulePreparedGenericDeliverable(run = null, deliverable = null
   }
 }
 
-async function postExactTextToX(text = '', options = {}) {
-  const auth = state.snapshot?.auth || {};
-  const connectorStatus = connectorStatusForClient(auth, state.snapshot?.accountSettings || null);
-  const requirement = deliveryAuthorityRequirementForAction('x_post');
-  if (!auth.loggedIn) {
-    setGenericDeliverableAuthorityRequired(options.jobId, {
-      ...requirement,
-      reason: 'Sign in and connect X before CAIt can publish this post.'
-    });
-    if (options.jobId && state.selectedJobId === String(options.jobId)) renderRunDelivery(selectedJob());
-    flash('X executor paused. Sign in and connect X, then resume this delivery.', 'warn');
-    openLoginForProtectedAction('x_post_executor', 'work');
-    return;
-  }
-  if (!connectorStatus.x) {
-    setGenericDeliverableAuthorityRequired(options.jobId, {
-      ...requirement
-    });
-    if (options.jobId && state.selectedJobId === String(options.jobId)) renderRunDelivery(selectedJob());
-    flash('X executor paused until X is connected.', 'warn');
-    return;
-  }
-  const exactText = String(text || '').trim();
-  if (!exactText) {
-    flash('Write the exact X post text first.', 'warn');
-    return;
-  }
-  if (exactText.length > 280) {
-    flash(`X post is ${exactText.length} characters. Shorten it to 280 or less before posting.`, 'warn');
-    return;
-  }
-  const prompt = deliveryExecutionPromptPresentation('x_post', {
-    postText: exactText,
-    xAccountLabel: xConnectorIdentityForClient().label
-  });
-  const confirmed = window.confirm(prompt.confirm);
-  if (!confirmed) {
-    if (options.jobId) {
-      setGenericDeliverableExecutionStopped(options.jobId, true, 'user_cancelled');
-      if (state.selectedJobId === String(options.jobId)) renderRunDelivery(selectedJob());
-    }
-    if (prompt.stopped) flash(prompt.stopped, 'info');
-    return;
-  }
-  const result = await api('/api/connectors/x/post', {
-    method: 'POST',
-    body: JSON.stringify({
-      text: exactText,
-      confirm_post: true,
-      ...xApprovalPayloadForClient(exactText),
-      source: options.source || 'delivery_card'
-    })
-  });
-  setGenericDeliverableAuthorityRequired(options.jobId, null);
-  if (state.snapshot?.accountSettings?.connectors && result.x) {
-    state.snapshot.accountSettings.connectors.x = result.x;
-  }
-  flash(`Posted to X: ${result.url || result.tweet_id}`, 'ok');
-  appendOrderChatExchange(exactText, {
-    kind: 'assist',
-    tone: 'ok',
-    body: [
-      'Posted to X after explicit confirmation.',
-      '',
-      result.url || `Tweet ID: ${result.tweet_id || ''}`
-    ].join('\n'),
-    status: 'X post completed.\n\nThe connected X account was used after confirmation.'
-  }, { nextPrompt: '' });
-}
-
 async function postExactToInstagram(draft = {}, options = {}) {
   const auth = state.snapshot?.auth || {};
   if (!auth.loggedIn) {
@@ -19430,21 +19271,17 @@ function flexibleToolCandidates(prompt = String(els.jobPrompt?.value || ''), inp
 
   if (/(?:x\.com|\btwitter\b|\btweet(?:s|ing)?\b|\bx post\b|\bx thread\b|social post|ツイート|X投稿|ポスト|スレッド|返信投稿|sns投稿|ＳＮＳ投稿)/i.test(compact)
     || /(?:^|[\s　])x(?:[\s　]|で|に|へ|投稿|返信|dm|DM)/i.test(compact)) {
-    const xConnected = connectorStatusForClient().x;
     add({
       id: 'x_social',
-      title: 'X Ops Connector',
+      title: 'Social publishing handoff',
       tone: 'info',
       priority: 76,
-      body: xConnected
-        ? 'This looks like X work. CAIt should draft or refine the post first, then can publish only the confirmed text through your connected X account.'
-        : 'This looks like X work. Connect your X account with OAuth first; CAIt will draft safely and will not post until you explicitly confirm.',
-      requirements: 'Need: target account, audience, tone, post/reply/thread format, approval rule, and the exact text to publish.',
+      body: 'This looks like social publishing work. CAIt should collect the goal and source material, then route the order to an agent/provider contract that can return a SaaS-ready handoff packet.',
+      requirements: 'Need: target channel, audience, tone, source material, approval owner, and whether the final delivery should be a draft, schedule packet, or app handoff.',
       actions: [
-        { action: 'connect_x', label: xConnected ? 'X CONNECTED' : connectorActionLabel('connect_x') },
-        { action: 'add_social_draft_rule', label: 'DRAFT ONLY' },
-        { action: 'post_current_to_x', label: 'POST EXACT TEXT' },
-        { action: 'use_agent_team', label: 'AGENT TEAM' }
+        { action: 'use_agent_team', label: 'AGENT TEAM' },
+        { action: 'browse_agents', label: 'BROWSE AGENTS' },
+        { action: 'add_social_handoff_rule', label: 'ADD HANDOFF RULE' }
       ]
     });
   }
@@ -19716,10 +19553,6 @@ function handleFlexibleToolAction(action = '', actionLabel = '') {
     connectXAccount();
     return;
   }
-  if (kind === 'post_current_to_x') {
-    void postCurrentComposerToX();
-    return;
-  }
   if (kind === 'open_agents_github' || kind === 'list_agent') {
     openAgentListingFlow();
     return;
@@ -19742,7 +19575,7 @@ function handleFlexibleToolAction(action = '', actionLabel = '') {
   const instructionMap = {
     add_secure_requirement: 'Access rule: do not include production secrets in chat or delivery. Use OAuth/connector setup or provider-owned secret storage before execution.',
     add_pr_handoff: 'Delivery rule: if code changes are needed, use a sandbox branch and return a pull request URL, diff summary, and test results.',
-    add_social_draft_rule: 'Publishing rule: create draft social posts first. Do not auto-post until the connector is available and I explicitly confirm.',
+    add_social_handoff_rule: 'Social publishing rule: prepare a draft or SaaS handoff packet through the assigned agent/provider contract; do not publish directly from pre-dispatch chat.',
     use_agent_team: 'Routing preference: use an Agent Team with a Team Leader if multiple specialties or channels improve quality/cost.',
     add_schedule_rule: 'Schedule rule: ask me to confirm interval, timezone, stop condition, and failure notification before creating scheduled work.',
     add_source_rule: 'Source rule: rely only on the attached URLs/files and clearly separate source-backed facts from inference.',

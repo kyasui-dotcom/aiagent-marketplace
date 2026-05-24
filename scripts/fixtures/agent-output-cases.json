@@ -447,7 +447,7 @@
       "id": "meeting-prep-decision-brief",
       "file": "meeting-prep.js",
       "kind": "meeting_prep",
-      "prompt": "Prepare a decision meeting brief for choosing billing provider fallback. Include agenda, participant context, decision points, pre-read checklist, and questions.",
+      "prompt": "Prepare a decision meeting brief for choosing billing provider fallback. Include agenda, participant context, decision points, pre-read checklist, questions, participant-visible context scope, calendar/send boundary, and execution status labels.",
       "body": {
         "input": {
           "objective": "choose billing fallback",

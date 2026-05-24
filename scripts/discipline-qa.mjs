@@ -31,6 +31,7 @@ const deliveryRendererSource = read('public/delivery-renderer.js');
 const appHandoffGateSource = read('public/app-handoff-gate.js');
 const agentProgressViewSource = read('public/agent-progress-view.js');
 const clientSource = read('public/client.js');
+const workActionRegistrySource = read('public/work-action-registry.js');
 const campaignOperationsSource = read('lib/builtin-agents/agents/campaign-operations.js');
 const campaignRoutesSource = read('lib/routes/campaigns.js');
 const adsPlannerSource = read('lib/builtin-agents/agents/ads-planner.js');
@@ -363,6 +364,58 @@ assertNotIncludes(clientSource, [
   'Direct follow-up for previous order ${job.id}:',
   'Use input._broker.conversation.previousJob as the prior delivery context.'
 ], 'public/client.js');
+const clientMarketingAgentListAnswer = clientSource.slice(
+  clientSource.indexOf('function buildOpenChatMarketingAgentListAnswer'),
+  clientSource.indexOf('function buildOpenChatLeaderCatalogAnswer')
+);
+assert.ok(
+  clientMarketingAgentListAnswer.includes('registered agent manifests'),
+  'client marketing agent list answer should route users to registered manifests instead of hardcoding sample agent definitions'
+);
+assertNotIncludes(clientMarketingAgentListAnswer, [
+  'Launch Team Leader',
+  'GROWTH OPERATOR AGENT',
+  'DIRECTORY SUBMISSION AGENT',
+  'ACQUISITION AUTOMATION AGENT',
+  'INSTAGRAM LAUNCH AGENT',
+  'X OPS CONNECTOR AGENT',
+  'can post after X OAuth plus explicit confirmation',
+  'OAuth連携後は確認付きで投稿する'
+], 'public/client.js marketing agent list answer');
+const clientReusableToolsAnswer = clientSource.slice(
+  clientSource.indexOf('function buildOpenChatReusableToolsAnswer'),
+  clientSource.indexOf('function openChatLooksShortPromptSource')
+);
+assertNotIncludes(clientReusableToolsAnswer, [
+  "action: 'connect_x'",
+  'CONNECT X',
+  'X連携'
+], 'public/client.js reusable tools answer');
+const clientFlexibleToolCandidates = clientSource.slice(
+  clientSource.indexOf('function flexibleToolCandidates'),
+  clientSource.indexOf('function activeFlexibleTool')
+);
+assert.ok(
+  clientFlexibleToolCandidates.includes('Social publishing handoff'),
+  'client social publishing hints should be framed as SaaS/app handoff, not direct chat execution'
+);
+assertNotIncludes(clientFlexibleToolCandidates, [
+  "title: 'X Ops Connector'",
+  "action: 'connect_x'",
+  "action: 'post_current_to_x'",
+  'POST EXACT TEXT',
+  'DRAFT ONLY',
+  'can publish only the confirmed text through your connected X account',
+  'Connect your X account with OAuth first'
+], 'public/client.js flexible social publishing tool');
+assertNotIncludes(clientSource, [
+  'function postCurrentComposerToX',
+  "'/api/connectors/x/post'",
+  'Posted to X after explicit confirmation.'
+], 'public/client.js');
+assertNotIncludes(workActionRegistrySource, [
+  "post_current_to_x: { kind: 'executor' }"
+], 'public/work-action-registry.js');
 const publicFiles = readdirSync(join(root, 'public'))
   .filter((name) => name.startsWith('client-') && name.endsWith('.js'))
   .sort();

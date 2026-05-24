@@ -315,6 +315,27 @@ assert.ok(chatJs.includes('rememberConversationLanguage(prompt)'), 'Chat should 
 assert.ok(chatJs.includes('PROMPT_PLACEHOLDERS'), 'Chat composer placeholders should be able to follow the selected conversation language.');
 assert.ok(chatJs.includes('will ask one item at a time before dispatch'), 'Leader intake should ask one item at a time instead of dumping all questions at once.');
 assert.equal((clientJs.match(/seo_specialist:\s*'SEO Specialist'/g) || []).length, 1, 'Open chat task labels should not keep duplicate seo_specialist entries.');
+const clientMarketingAgentListAnswer = clientJs.slice(
+  clientJs.indexOf('function buildOpenChatMarketingAgentListAnswer'),
+  clientJs.indexOf('function buildOpenChatLeaderCatalogAnswer')
+);
+assert.ok(clientMarketingAgentListAnswer.includes('registered agent manifests'), 'Marketing agent list chat answer should point at registered manifests.');
+assert.ok(!/(Launch Team Leader|GROWTH OPERATOR AGENT|DIRECTORY SUBMISSION AGENT|ACQUISITION AUTOMATION AGENT|INSTAGRAM LAUNCH AGENT|X OPS CONNECTOR AGENT)/.test(clientMarketingAgentListAnswer), 'Client marketing agent list must not define sample-agent names or capabilities.');
+assert.ok(!/OAuth連携後は確認付きで投稿する|can post after X OAuth plus explicit confirmation/.test(clientMarketingAgentListAnswer), 'Client marketing agent list must not claim agent-specific external execution behavior.');
+const clientReusableToolsAnswer = clientJs.slice(
+  clientJs.indexOf('function buildOpenChatReusableToolsAnswer'),
+  clientJs.indexOf('function openChatLooksShortPromptSource')
+);
+assert.ok(!/action:\s*'connect_x'|CONNECT X|X連携/.test(clientReusableToolsAnswer), 'Reusable chat tools must not expose X OAuth from chat.');
+const clientFlexibleToolCandidates = clientJs.slice(
+  clientJs.indexOf('function flexibleToolCandidates'),
+  clientJs.indexOf('function activeFlexibleTool')
+);
+assert.ok(clientFlexibleToolCandidates.includes('Social publishing handoff'), 'Social publishing hints should point to SaaS/app handoff.');
+assert.ok(!/title:\s*'X Ops Connector'|action:\s*'connect_x'|action:\s*'post_current_to_x'|POST EXACT TEXT|DRAFT ONLY|connected X account|Connect your X account with OAuth first/.test(clientFlexibleToolCandidates), 'Flexible social publishing tools must not expose direct X OAuth or posting actions.');
+assert.ok(!clientJs.includes('function postCurrentComposerToX'), 'Client chat must not post composer text directly to X.');
+assert.ok(!clientJs.includes("'/api/connectors/x/post'"), 'Client chat must not call the X posting endpoint directly.');
+assert.ok(!workActionRegistry.includes("post_current_to_x: { kind: 'executor' }"), 'Work action registry must not expose direct chat-to-X execution.');
 assert.ok(chatJs.includes('growthLeaderNeedsDataHint'), 'Growth leader intake should point users toward connectors or source URLs instead of asking repeated data questions.');
 assert.ok(chatJs.includes('Connected Google analytics can be attached'), 'Growth order checks should surface connected Google analytics instead of silently skipping it.');
 assert.ok(chatJs.includes('Analytics was skipped for this prepared order'), 'Growth order checks should allow an explicit analytics skip only when the user chooses it.');
