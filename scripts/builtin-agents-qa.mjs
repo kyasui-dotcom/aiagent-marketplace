@@ -176,10 +176,10 @@ const workSupportContractExpectations = [
   },
   {
     kind: 'data_analysis',
-    actions: ['prepare_metric_audit', 'prepare_analysis_memo'],
-    requiredSections: ['Question', 'Dataset status', 'Metric definitions', 'Findings', 'Caveats', 'Analysis notes', 'Next decision'],
-    guidedSections: ['Question', 'Dataset status', 'Metric definitions', 'Findings', 'Caveats', 'Analysis notes', 'Next decision'],
-    forbiddenClaims: ['data-backed conclusion without dataset evidence', 'causal claim without test design']
+    actions: ['prepare_metric_audit', 'prepare_analysis_memo', 'verify_conversion_instrumentation'],
+    requiredSections: ['Question', 'Dataset status', 'Conversion instrumentation verification', 'Metric definitions', 'Findings', 'Caveats', 'Analysis notes', 'Next decision'],
+    guidedSections: ['Question', 'Dataset status', 'Conversion instrumentation verification', 'Analytics admin/access status', 'Metric definitions', 'Findings', 'Caveats', 'Analysis notes', 'Next decision'],
+    forbiddenClaims: ['data-backed conclusion without dataset evidence', 'causal claim without test design', 'conversion conclusion without instrumentation proof', 'GA4/Search Console verified without admin evidence']
   },
   {
     kind: 'diligence',
