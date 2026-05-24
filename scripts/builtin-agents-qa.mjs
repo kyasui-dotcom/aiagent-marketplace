@@ -184,6 +184,13 @@ const workSupportContractExpectations = [
 
 const externalCommunicationContractExpectations = [
   {
+    kind: 'writer',
+    actions: ['prepare_copy_packet', 'prepare_publisher_handoff_copy', 'prepare_claim_safe_downstream_handoff'],
+    requiredSections: ['Copy mode', 'Proof status', 'Claim use ledger', 'Downstream handoff packet'],
+    guidedSections: ['Claim use ledger', 'Downstream handoff packet'],
+    forbiddenClaims: ['claims verified without source review', 'copy approved by owner without evidence']
+  },
+  {
     kind: 'x_post',
     actions: ['prepare_x_post_packet', 'prepare_x_schedule_packet', 'prepare_x_connector_handoff'],
     requiredSections: ['Exact post text', 'Approval checklist', 'Connector handoff boundary', 'Execution status labels'],
@@ -1139,8 +1146,12 @@ assert.ok(writerArtifact.body.includes('## Publisher handoff'), 'writer Publishe
 assert.ok(writerArtifact.body.includes('## Draft variants'), 'writer Publisher artifact should include per-medium draft variants');
 assert.equal(writerArtifact.publish_variants.length, 3, 'writer should emit three variants for the selected X medium');
 assert.ok(writerArtifact.body.includes('## E-E-A-T source ledger'), 'writer Publisher artifact should include an E-E-A-T source ledger');
+assert.ok(writerArtifact.body.includes('## Claim use ledger'), 'writer Publisher artifact should include a claim-use ledger');
+assert.ok(writerArtifact.body.includes('## Downstream handoff packet'), 'writer Publisher artifact should include a downstream handoff packet');
 assert.ok(writerArtifact.source_evidence.some((source) => source.source_type === 'x_post_or_account'), 'writer source evidence should preserve X source/account material');
 assert.ok(writerArtifact.source_evidence.some((source) => source.source_type === 'uploaded_file'), 'writer source evidence should preserve uploaded original notes');
+assert.ok(writerArtifact.claim_use_ledger.some((item) => /source_supplied_needs_review|approved_or_supplied|assumption/.test(item.status || '')), 'writer should expose claim-use status for downstream agents');
+assert.equal(writerArtifact.downstream_handoff.execution_status, 'handoff_prepared_not_ingested_not_published', 'writer downstream handoff should label non-execution status');
 const ownedSiteWriterArtifact = sourceBackedWriter.report.artifacts.find((item) => item.channel_key === 'owned_site');
 assert.ok(ownedSiteWriterArtifact, 'writer should emit a separate Publisher artifact when a blog/article medium is requested too');
 assert.equal(ownedSiteWriterArtifact.publish_variants.length, 3, 'writer should emit three variants for the owned site/blog medium');
@@ -1158,6 +1169,8 @@ assert.ok(publisherItem, 'writer Publisher handoff artifact should become a publ
 assert.ok(Array.isArray(publisherItem.metadata.source_evidence), 'publisher delivery item should preserve writer source evidence');
 assert.equal(publisherItem.metadata.publish_variants.length, 3, 'publisher delivery item should preserve three publish variants');
 assert.ok(publisherItem.metadata.eeat_notes?.trust, 'publisher delivery item should preserve E-E-A-T notes');
+assert.ok(Array.isArray(publisherItem.metadata.claim_use_ledger), 'publisher delivery item should preserve writer claim-use ledger');
+assert.equal(publisherItem.metadata.downstream_handoff?.execution_status, 'handoff_prepared_not_ingested_not_published', 'publisher delivery item should preserve writer downstream handoff status');
 const seoPublisherItem = sanitizeDeliveryItemForSurface({
   surface: 'publisher',
   itemType: 'publish_asset',
