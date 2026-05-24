@@ -220,6 +220,13 @@ const externalCommunicationContractExpectations = [
     forbiddenClaims: ['approved', 'sent', 'queued', 'CRM imported', 'delivered', 'reply handled', 'open or reply rate observed']
   },
   {
+    kind: 'list_creator',
+    actions: ['prepare_public_source_list_brief', 'prepare_list_review_handoff', 'prepare_crm_or_outreach_import_packet'],
+    requiredSections: ['Row-level source ledger', 'Exclusion and duplicate review', 'Approval owner', 'Downstream handoff packet', 'Execution proof tracker'],
+    guidedSections: ['Row-level source ledger', 'Import-ready field map', 'Exclusion and duplicate review', 'Approval owner', 'Execution proof tracker'],
+    forbiddenClaims: ['lead list approved', 'row verified', 'duplicate checked without evidence', 'contact enriched', 'CRM imported', 'outreach queued', 'outreach sent'],
+  },
+  {
     kind: 'instagram',
     actions: ['prepare_instagram_caption_packet', 'prepare_instagram_content_outline_guidance', 'prepare_instagram_creative_brief', 'prepare_instagram_schedule_handoff'],
     requiredSections: ['Destination URL/copy status', 'Format decision', 'Visual brief', 'Content outline guidance', 'Exact caption or outline', 'Schedule handoff', 'Approval checklist', 'Connector boundary', 'Execution status labels'],
