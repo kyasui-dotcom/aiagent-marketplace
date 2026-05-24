@@ -1735,6 +1735,29 @@ assert.ok(
   'OpenAI clarification questions must not override agent-owned Secretary Leader intake'
 );
 
+const selectedLegalOpenAiAskPrepare = await request('/api/work/prepare-order', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    prompt: 'Legal Leaderとして、AI agent marketplaceの規約、プライバシー、コンプライアンスリスクをレビューしてください。',
+    task_type: 'legal_leader',
+    selected_agent_id: 'agent_legal_leader_01',
+    selected_agent_name: 'Legal Leader',
+    requestedStrategy: 'auto'
+  })
+});
+assert.equal(selectedLegalOpenAiAskPrepare.status, 200);
+assert.equal(selectedLegalOpenAiAskPrepare.body.taskType, 'legal_leader');
+assert.equal(selectedLegalOpenAiAskPrepare.body.status, 'needs_input');
+assert.ok(
+  selectedLegalOpenAiAskPrepare.body.questions.some((question) => /法務領域|規約|プライバシー|返金|課金|特商法|契約|弁護士/i.test(question)),
+  'Legal Leader should use legal-owned intake questions'
+);
+assert.ok(
+  !selectedLegalOpenAiAskPrepare.body.questions.some((question) => /問い合わせ・リード|売上・購入|登録・トライアル|流入・認知|広告|SEO|SNS|KPI表|投稿文|LP改善/i.test(question)),
+  'OpenAI clarification questions must not override agent-owned Legal Leader intake'
+);
+
 const lockedCmoPrepare = await request('/api/work/prepare-order', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },

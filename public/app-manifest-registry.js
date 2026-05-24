@@ -19,6 +19,7 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
       returns: ['facts', 'metrics', 'artifacts', 'recommended_next_actions']
     },
     tags: ['analytics', 'seo', 'growth'],
+    directCommandAliases: ['analytics', 'ga4', 'google analytics', 'search console', 'google search console', 'analytics console', 'アナリティクス', 'サーチコンソール'],
     owner: 'cait-managed',
     status: 'active',
     verificationStatus: 'cait_managed',
@@ -32,6 +33,7 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     description: 'Content, page, metadata, media-separated publish packets, directory submission, PR draft, and approval queue studio for external action handoffs.',
     baseUrl: '/publisher-approval.html',
     entryUrl: '/publisher-approval.html',
+    contextIngestUrl: '/api/publisher/context-ingest',
     capabilities: ['content_management', 'approval_queue', 'directory_submission_packet', 'publisher_change_set', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'instagram_post_packet', 'site_publish_packet', 'wordpress_draft_packet'],
     requiredConnectors: [],
     requiresApprovalFor: ['publish_change', 'directory_submit', 'github_pr', 'wordpress_draft', 'x_post', 'reddit_post', 'indie_hackers_post', 'instagram_post', 'external_send'],
@@ -52,6 +54,7 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
       returns: ['approval_requests', 'artifacts', 'delivery_files', 'recommended_next_actions']
     },
     tags: ['publisher', 'approval', 'seo'],
+    directCommandAliases: ['publisher', 'approval studio', 'publisher approval', 'publish app', 'approval app', '公開', '承認'],
     owner: 'cait-managed',
     status: 'active',
     verificationStatus: 'cait_managed',
@@ -74,6 +77,7 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
       returns: ['artifacts', 'approval_requests', 'recommended_next_actions']
     },
     tags: ['crm', 'lead', 'email'],
+    directCommandAliases: ['lead ops', 'lead console', 'crm', 'leads', 'email drafts', 'リード', '営業リスト'],
     owner: 'cait-managed',
     status: 'active',
     verificationStatus: 'cait_managed',
@@ -103,9 +107,16 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     handoff: {
       createUrl: `${X_CLIENT_OPS_URL.replace(/\/+$/, '')}/api/cait/handoff`,
       method: 'POST',
-      openUrlParam: 'cait_handoff'
+      openUrlParam: 'cait_handoff',
+      dedicatedDelivery: {
+        artifactTypes: ['post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet'],
+        preparedTextSource: 'social_post_text',
+        requiresPreparedText: true,
+        suppressGenericCard: true
+      }
     },
     tags: ['social', 'x', 'posting'],
+    directCommandAliases: ['x ops', 'x client', 'x posting', 'twitter', 'tweet', 'x post', 'x投稿', 'ツイート'],
     owner: 'cait-managed',
     status: 'active',
     verificationStatus: 'cait_managed',

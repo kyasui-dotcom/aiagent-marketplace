@@ -9482,7 +9482,6 @@ function openChatTaskLabel(taskType = '') {
     list_creator: 'List Creator Agent',
     landing: 'Landing Agent',
     seo_specialist: 'SEO Specialist',
-    seo_specialist: 'SEO Specialist',
     acquisition_automation: 'Acquisition Automation Agent',
     directory_submission: 'Directory Submission Agent',
     x_post: 'X Ops Connector Agent'

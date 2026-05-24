@@ -63,6 +63,20 @@ test.describe('CAIt Chat workspace', () => {
     expect(pageErrors).toEqual([]);
   });
 
+  test('opens apps from manifest-declared direct command aliases', async ({ page }) => {
+    test.skip(!canUseAuth, authSkipReason);
+
+    await openChat(page);
+    await page.locator('#promptInput').fill('アナリティクスを開いて');
+    const popupPromise = page.waitForEvent('popup');
+    await page.locator('#sendMessageBtn').click();
+    const popup = await popupPromise;
+    await popup.waitForLoadState('domcontentloaded');
+    expect(new URL(popup.url()).pathname).toBe('/analytics-console.html');
+    await expect(page.locator('#chatThread')).toContainText(/Opened Analytics Console|Analytics Consoleを開きました/, { timeout: chatResponseTimeout });
+    await popup.close();
+  });
+
   test('asks CMO intake before allowing a broad acquisition dispatch', async ({ page }) => {
     test.skip(!canUseAuth, authSkipReason);
 
@@ -183,6 +197,7 @@ test.describe('CAIt Chat workspace', () => {
         files: [
           {
             name: 'seo-agent-delivery.md',
+            content_type: 'seo_page_artifact',
             content: [
               '# SEO page artifact',
               '',
@@ -416,6 +431,7 @@ test.describe('CAIt Chat workspace', () => {
           {
             name: 'landing-page-critique-delivery.md',
             type: 'text/markdown',
+            content_type: 'landing_page_change',
             content: preparationContent
           }
         ]
@@ -461,6 +477,10 @@ test.describe('CAIt Chat workspace', () => {
       capturedContext = body.context;
       expect(body.app_id).toBe('publisher-approval-studio');
       expect(capturedContext?.artifacts?.some((artifact) => artifact.name === 'landing-page-critique-delivery.md')).toBeTruthy();
+      const deliveryArtifact = capturedContext?.artifacts?.find((artifact) => artifact.name === 'landing-page-critique-delivery.md');
+      expect(deliveryArtifact?.content_type).toBe('landing_page_change');
+      expect(deliveryArtifact?.artifact_type).toBe('landing_page_change');
+      expect(deliveryArtifact?.artifact_types).toContain('landing_page_change');
       expect(JSON.stringify(capturedContext)).toContain('Unique publisher E2E preparation body from chat handoff.');
       await route.fulfill({
         status: 201,
@@ -659,6 +679,7 @@ test.describe('CAIt Chat workspace', () => {
           {
             name: 'list-creator-delivery.md',
             type: 'text/markdown',
+            content_type: 'lead_rows',
             content: leadContent
           }
         ]
@@ -775,6 +796,7 @@ test.describe('CAIt Chat workspace', () => {
         key: 'seo',
         taskType: 'seo_specialist',
         fileName: 'seo-agent-delivery.md',
+        contentType: 'seo_page_artifact',
         content: [
           '# SEO page artifact',
           '',
@@ -808,6 +830,7 @@ test.describe('CAIt Chat workspace', () => {
         key: 'landing',
         taskType: 'landing',
         fileName: 'landing-page-delivery.md',
+        contentType: 'landing_page_change',
         content: [
           '# Landing page change',
           '',
@@ -841,6 +864,7 @@ test.describe('CAIt Chat workspace', () => {
         key: 'directory',
         taskType: 'directory_submission',
         fileName: 'directory-submission-delivery.md',
+        contentType: 'directory_packet',
         content: [
           '# Directory submission packet',
           '',
@@ -869,6 +893,7 @@ test.describe('CAIt Chat workspace', () => {
         key: 'reddit',
         taskType: 'reddit',
         fileName: 'reddit-launch-delivery.md',
+        contentType: 'reddit_post_packet',
         content: [
           '# Community post packet',
           '',
@@ -893,6 +918,7 @@ test.describe('CAIt Chat workspace', () => {
         key: 'xpost',
         taskType: 'x_post',
         fileName: 'x-post-delivery.md',
+        contentType: 'x_post_packet',
         content: [
           '# Social post pack',
           '',
@@ -957,6 +983,8 @@ test.describe('CAIt Chat workspace', () => {
       expect(body.app_id).toBe('publisher-approval-studio');
       const artifact = body.context?.artifacts?.find((item) => item.name === currentScenario.fileName || item.title === currentScenario.expected.title);
       expect(artifact).toBeTruthy();
+      expect(artifact?.artifact_type).toBe(currentScenario.contentType);
+      expect(artifact?.artifact_types).toContain(currentScenario.contentType);
       expect(JSON.stringify(artifact)).toContain(currentScenario.expected.title);
       capturedContexts.set(currentScenario.key, body.context);
       await route.fulfill({
@@ -1021,6 +1049,7 @@ test.describe('CAIt Chat workspace', () => {
             {
               name: scenario.fileName,
               type: 'text/markdown',
+              content_type: scenario.contentType,
               content: scenario.content
             }
           ]
@@ -1283,8 +1312,77 @@ test.describe('CAIt Chat workspace', () => {
     await expect(page.locator('#chatThread')).toContainText('App handoff', { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText('X Client Ops', { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).not.toContainText(/Connect X|Resume X approval|Action approval required/);
-    await expect(page.locator('[data-app-agent-handoff="x-client-ops"], [data-x-client-ops-link]')).toBeVisible();
+    await expect(page.locator('[data-app-agent-handoff="x-client-ops"]')).toBeVisible();
     await expect(page).toHaveURL(/\/chat(?:\.html)?(?:\?|#|$)/);
     expect(new URL(page.url()).pathname).toBe('/chat');
+  });
+
+  test('blocks empty edited X handoff text before opening the app', async ({ page }) => {
+    test.skip(!canUseAuth, authSkipReason);
+
+    const completedXJob = {
+      id: 'e2e-empty-x-handoff',
+      status: 'completed',
+      taskType: 'x_post',
+      prompt: 'Prepare one X post for CAIt.',
+      createdAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      output: {
+        summary: 'X post pack ready for app handoff.',
+        files: [
+          {
+            name: 'x-post-pack.md',
+            type: 'text/markdown',
+            content: [
+              '# X post draft',
+              '',
+              'Post text: Try CAIt when you need an AI agent marketplace that keeps delivery, approval, and app context together.'
+            ].join('\n')
+          }
+        ]
+      }
+    };
+    let handoffCalled = false;
+
+    await page.route('**/api/jobs?**', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ jobs: [completedXJob] })
+      });
+    });
+    await page.route(`**/api/jobs/${completedXJob.id}**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ job: completedXJob })
+      });
+    });
+    await page.route('**/api/apps/x-client-ops/handoff', async (route) => {
+      handoffCalled = true;
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, handoff_url: '/x-client-ops.html?unexpected=1' })
+      });
+    });
+
+    await openChat(page);
+    await page.locator('#promptInput').fill('Show my completed X post delivery.');
+    await page.locator('#sendMessageBtn').click();
+    await expect(page.locator('#chatThread')).toContainText('Final action: X Client Ops', { timeout: chatResponseTimeout });
+    await page.locator('#utilityModalCloseBtn').click();
+    await expect(page.locator('[data-app-agent-handoff="x-client-ops"]')).toHaveCount(1);
+    const editor = page.locator('[data-app-transfer-editable="text"]');
+    await expect(editor).toBeVisible();
+    await editor.fill('');
+    await page.getByRole('button', { name: 'Open X Client Ops' }).click();
+    await expect(page.locator('#chatThread')).toContainText('X Client Ops requires handoff text before opening the app', { timeout: chatResponseTimeout });
+    expect(handoffCalled).toBe(false);
+    await expect(page).toHaveURL(/\/chat(?:\.html)?(?:\?|#|$)/);
   });
 });

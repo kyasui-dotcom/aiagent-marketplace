@@ -98,6 +98,15 @@ const initial = await storage.getState();
 assert.ok(Array.isArray(initial.apps), 'storage state should include apps');
 assert.ok(Array.isArray(initial.appContexts), 'storage state should include app contexts');
 assert.ok(initial.apps.some((item) => item.id === 'x-client-ops'), 'default X Client Ops app should be seeded');
+const seededXClientOps = initial.apps.find((item) => item.id === 'x-client-ops');
+assert.equal(seededXClientOps?.handoff?.dedicatedDelivery?.preparedTextSource, 'social_post_text', 'default X Client Ops app seed should preserve dedicated handoff display contract');
+assert.equal(seededXClientOps?.inputContract?.constraints?.text?.maxLength, 280, 'default X Client Ops app seed should preserve text limits for chat handoff validation');
+assert.ok(seededXClientOps?.directCommandAliases?.includes('x ops'), 'default X Client Ops app seed should expose direct command aliases outside chat code');
+const seededPublisher = initial.apps.find((item) => item.id === 'publisher-approval-studio');
+assert.equal(seededPublisher?.contextIngestUrl, '/api/publisher/context-ingest', 'default Publisher app seed should expose its context ingest route');
+assert.ok(seededPublisher?.directCommandAliases?.includes('approval studio'), 'default Publisher app seed should expose direct command aliases outside chat code');
+const seededAnalytics = initial.apps.find((item) => item.id === 'analytics-console');
+assert.ok(seededAnalytics?.directCommandAliases?.includes('ga4'), 'default Analytics app seed should expose direct command aliases outside chat code');
 assert.ok(!initial.apps.some((item) => item.id === 'delivery-manager'), 'Deliveries should not be seeded as an app');
 const contextRecord = createAppContextRecord({
   source_app: 'x-client-ops',
@@ -116,6 +125,7 @@ assert.equal(publicAppContext(contextRecord).app_context_token, undefined, 'publ
 
 const server = readFileSync(new URL('../server.js', import.meta.url), 'utf8');
 const worker = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
+const snapshotSource = readFileSync(new URL('../lib/snapshot.js', import.meta.url), 'utf8');
 const chat = readFileSync(new URL('../public/chat.js', import.meta.url), 'utf8');
 const cli = readFileSync(new URL('../scripts/external-chat.mjs', import.meta.url), 'utf8');
 const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
@@ -153,7 +163,7 @@ for (const source of [worker]) {
   assert.ok(source.includes('handleAppHandoff'), 'Worker should proxy app handoff payloads');
   assert.ok(source.includes('handleCreateAppContext'), 'Worker should accept app context payloads');
   assert.ok(source.includes('handleVerifyApp'), 'Worker should verify apps');
-  assert.ok(source.includes('apps:'), 'Worker should include apps in snapshots');
+  assert.ok(snapshotSource.includes('apps:') && snapshotSource.includes('publicApp(app)'), 'Snapshots should include public app catalog rows.');
 }
 
 assert.ok(chat.includes('registeredApps: []'), 'chat state should include registered apps');

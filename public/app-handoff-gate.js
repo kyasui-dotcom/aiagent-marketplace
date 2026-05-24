@@ -132,6 +132,15 @@ const DEFAULT_HANDOFF_ARTIFACT_DESTINATION_HINTS = Object.freeze({
   approval_request: Object.freeze(['owned_site', 'wordpress_site', 'directory', 'x', 'reddit', 'indie_hackers'])
 });
 
+const SOCIAL_POST_TEXT_ARTIFACT_TYPES = Object.freeze([
+  'post_text',
+  'x_post',
+  'x_post_packet',
+  'social_post',
+  'social_post_pack',
+  'social_copy_packet'
+]);
+
 function defaultNormalizeUsageId(value = '') {
   return String(value || '').trim().toLowerCase().replace(/[\s./:]+/g, '_').replace(/[^a-z0-9_-]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
 }
@@ -426,4 +435,64 @@ export function appHandoffRankEntries(entries = [], job = {}, options = {}) {
       || String(left.name || left.id || '').localeCompare(String(right.name || right.id || ''))
     ))
     .slice(0, maxCandidates);
+}
+
+export function appHandoffDedicatedDeliveryConfig(entry = {}) {
+  const handoff = entry?.handoff && typeof entry.handoff === 'object' ? entry.handoff : {};
+  const config = entry?.dedicatedDelivery
+    || entry?.dedicated_delivery
+    || handoff.dedicatedDelivery
+    || handoff.dedicated_delivery
+    || null;
+  return config && typeof config === 'object' ? config : {};
+}
+
+export function appHandoffDedicatedDeliveryArtifactTypes(entry = {}, options = {}) {
+  const normalizeUsageId = options.normalizeUsageId || defaultNormalizeUsageId;
+  const listValues = options.listValues || ((value) => Array.isArray(value) ? value : []);
+  const config = appHandoffDedicatedDeliveryConfig(entry);
+  return listValues(config.artifactTypes || config.artifact_types || config.accepts || [])
+    .map(normalizeUsageId)
+    .filter((item, index, array) => item && array.indexOf(item) === index);
+}
+
+export function appHandoffDedicatedTextSourceKind(entry = {}, options = {}) {
+  const normalizeUsageId = options.normalizeUsageId || defaultNormalizeUsageId;
+  const config = appHandoffDedicatedDeliveryConfig(entry);
+  const declared = normalizeUsageId(config.preparedTextSource || config.prepared_text_source || config.textSource || config.text_source || '');
+  if (declared) return declared;
+  const artifactTypes = appHandoffDedicatedDeliveryArtifactTypes(entry, options);
+  if (artifactTypes.some((type) => SOCIAL_POST_TEXT_ARTIFACT_TYPES.includes(type))) return 'social_post_text';
+  return 'delivery_text';
+}
+
+export function appHandoffHasDedicatedDelivery(entry = {}, job = {}, options = {}) {
+  const normalizeUsageId = options.normalizeUsageId || defaultNormalizeUsageId;
+  const config = appHandoffDedicatedDeliveryConfig(entry);
+  const artifactTypes = appHandoffDedicatedDeliveryArtifactTypes(entry, options);
+  if (!artifactTypes.length) return false;
+  if (config.requiresPreparedText === true || config.requires_prepared_text === true) {
+    const text = String(options.preparedTextForDedicatedDelivery?.(entry, job, config) || '').trim();
+    if (!text) return false;
+  }
+  const availableTypes = options.deliveryHandoffArtifactTypes?.(job) || new Set();
+  return artifactTypes
+    .map(normalizeUsageId)
+    .filter(Boolean)
+    .some((type) => availableTypes.has(type));
+}
+
+export function appHandoffSuppressesGenericCard(entry = {}, job = {}, options = {}) {
+  if (!appHandoffHasDedicatedDelivery(entry, job, options)) return false;
+  const config = appHandoffDedicatedDeliveryConfig(entry);
+  return config.suppressGenericCard !== false && config.suppress_generic_card !== false;
+}
+
+export function genericSuppressedAppHandoffIds(entries = [], job = {}, options = {}) {
+  const normalizeUsageId = options.normalizeUsageId || defaultNormalizeUsageId;
+  const ids = new Set();
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (appHandoffSuppressesGenericCard(entry, job, options)) ids.add(normalizeUsageId(entry.id || ''));
+  }
+  return ids;
 }

@@ -79,6 +79,7 @@ test.describe('CAIt app context continuity', () => {
     await expect(page.locator('#chatThread')).toContainText(/アプリの情報を進行中のヒアリングに戻しました|App context returned to the active intake/, { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText('Context received from Analytics Console');
     await expect(page.locator('#promptInput')).toHaveValue(/connector context attached|アナリティクス/);
+    await expect(page.locator('#promptInput')).not.toHaveValue(/GA4\/Search Console is available|GA4\/Search Consoleがあります|Use GA4\/Search Console|GA4\/Search Consoleを使う|Skip analytics|アナリティクスをスキップ/);
     await expect(page.locator('#promptInput')).not.toHaveValue(/Recommended next actions|Use this Analytics Console context/);
     await expect(page.getByRole('button', { name: 'Send order' })).toHaveCount(0);
     const disabledIntakeChoices = await page.locator('[data-intake-choice]').evaluateAll((buttons) => buttons

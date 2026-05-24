@@ -102,6 +102,9 @@ assert.ok(resourcesHtml.includes('/agents/prompt-brushup-ai-agent.html'));
 assert.ok(resourcesHtml.includes('/glossary/ai-agent.html'));
 
 assert.ok(agentsHtml.includes('QUALITY FLOW'));
+assert.ok(agentsHtml.includes('DELIVERY READINESS'));
+assert.ok(agentsHtml.includes('43 sample agent files'));
+assert.ok(agentsHtml.includes('40 orderable built-in agents'));
 assert.ok(agentsHtml.includes('1. LEADER LAYER'));
 assert.ok(agentsHtml.includes('2. RESEARCH LAYER'));
 assert.ok(agentsHtml.includes('3. PLANNING AND PREPARATION LAYER'));

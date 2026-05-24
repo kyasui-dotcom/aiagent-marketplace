@@ -55,8 +55,12 @@ import {
 import {
   appHandoffArtifactLabel as appHandoffGateArtifactLabel,
   appHandoffConnectorNotes as appHandoffGateConnectorNotes,
+  appHandoffDedicatedDeliveryArtifactTypes as appHandoffGateDedicatedDeliveryArtifactTypes,
+  appHandoffDedicatedTextSourceKind as appHandoffGateDedicatedTextSourceKind,
   appHandoffEntryMatchesArtifact as appHandoffGateEntryMatchesArtifact,
+  appHandoffHasDedicatedDelivery as appHandoffGateHasDedicatedDelivery,
   appHandoffRankEntries as appHandoffGateRankEntries,
+  genericSuppressedAppHandoffIds as appHandoffGateGenericSuppressedAppHandoffIds,
   explicitHandoffArtifactTypesFromAuthorityRequest as appHandoffGateExplicitArtifactTypesFromAuthorityRequest,
   explicitHandoffArtifactTypesFromFile as appHandoffGateExplicitArtifactTypesFromFile,
   renderAppHandoffTree as appHandoffGateRenderTree
@@ -1364,27 +1368,31 @@ function mergeUsageEntry(list = [], entry = {}, options = {}) {
 }
 
 function normalizeAppAgentManifest(app = {}) {
-  const id = normalizeUsageId(app.id || app.name);
+  const manifest = app?.metadata?.manifest && typeof app.metadata.manifest === 'object' ? app.metadata.manifest : {};
+  const id = normalizeUsageId(app.id || app.name || manifest.id || manifest.name);
   if (!id || isCoreFeatureAppId(id)) return null;
-  const baseUrl = String(app.baseUrl || app.base_url || app.url || '').trim();
-  const entryUrl = String(app.entryUrl || app.entry_url || app.launchUrl || app.launch_url || baseUrl).trim();
+  const baseUrl = String(app.baseUrl || app.base_url || manifest.baseUrl || manifest.base_url || app.url || manifest.url || '').trim();
+  const entryUrl = String(app.entryUrl || app.entry_url || app.launchUrl || app.launch_url || manifest.entryUrl || manifest.entry_url || manifest.launchUrl || manifest.launch_url || baseUrl).trim();
   return {
     id,
-    name: String(app.name || 'Application').trim(),
-    kind: String(app.kind || 'application').trim(),
-    description: String(app.description || '').trim(),
+    name: String(app.name || manifest.name || 'Application').trim(),
+    kind: String(app.kind || manifest.kind || 'application').trim(),
+    description: String(app.description || manifest.description || '').trim(),
     baseUrl,
     entryUrl,
-    capabilities: listValues(app.capabilities || app.actions || []),
-    requiredConnectors: listValues(app.requiredConnectors || app.required_connectors || app.connectors || []),
-    requiresApprovalFor: listValues(app.requiresApprovalFor || app.requires_approval_for || []),
-    inputContract: app.inputContract || app.input_contract || null,
-    handoff: app.handoff || null,
-    tags: listValues(app.tags || []),
-    owner: String(app.owner || '').trim(),
-    status: String(app.status || '').trim(),
-    verificationStatus: String(app.verificationStatus || app.verification_status || '').trim(),
-    reusePrompt: String(app.reusePrompt || app.reuse_prompt || `Use ${app.name || 'this app'} as the final action app when it fits the order.`).trim()
+    capabilities: listValues(app.capabilities || app.actions || manifest.capabilities || manifest.actions || []),
+    requiredConnectors: listValues(app.requiredConnectors || app.required_connectors || app.connectors || manifest.requiredConnectors || manifest.required_connectors || manifest.connectors || []),
+    requiresApprovalFor: listValues(app.requiresApprovalFor || app.requires_approval_for || manifest.requiresApprovalFor || manifest.requires_approval_for || []),
+    inputContract: app.inputContract || app.input_contract || manifest.inputContract || manifest.input_contract || null,
+    contextIngestUrl: String(app.contextIngestUrl || app.context_ingest_url || manifest.contextIngestUrl || manifest.context_ingest_url || '').trim(),
+    handoff: app.handoff || manifest.handoff || null,
+    dedicatedDelivery: app.dedicatedDelivery || app.dedicated_delivery || manifest.dedicatedDelivery || manifest.dedicated_delivery || null,
+    tags: listValues(app.tags || manifest.tags || []),
+    directCommandAliases: listValues(app.directCommandAliases || app.direct_command_aliases || app.commandAliases || app.command_aliases || manifest.directCommandAliases || manifest.direct_command_aliases || manifest.commandAliases || manifest.command_aliases || []),
+    owner: String(app.owner || manifest.owner || '').trim(),
+    status: String(app.status || manifest.status || '').trim(),
+    verificationStatus: String(app.verificationStatus || app.verification_status || manifest.verificationStatus || manifest.verification_status || '').trim(),
+    reusePrompt: String(app.reusePrompt || app.reuse_prompt || manifest.reusePrompt || manifest.reuse_prompt || `Use ${app.name || manifest.name || 'this app'} as the final action app when it fits the order.`).trim()
   };
 }
 
@@ -1393,7 +1401,14 @@ function appManifestSources() {
   for (const item of [...APP_AGENT_MANIFESTS, ...(Array.isArray(state.registeredApps) ? state.registeredApps : [])]) {
     const normalized = normalizeAppAgentManifest(item);
     if (!normalized) continue;
-    byId.set(normalized.id, { ...(byId.get(normalized.id) || {}), ...normalized });
+    const existing = byId.get(normalized.id) || {};
+    byId.set(normalized.id, {
+      ...existing,
+      ...normalized,
+      inputContract: { ...(existing.inputContract || {}), ...(normalized.inputContract || {}) },
+      handoff: { ...(existing.handoff || {}), ...(normalized.handoff || {}) },
+      dedicatedDelivery: normalized.dedicatedDelivery || existing.dedicatedDelivery || null
+    });
   }
   return [...byId.values()];
 }
@@ -1409,7 +1424,7 @@ function appAgentLaunchUrl(manifestOrEntry = {}, hrefOverride = '') {
   try {
     const url = new URL(href, window.location.origin);
     const id = normalizeUsageId(manifestOrEntry.id || '');
-    const sameOriginManifest = APP_AGENT_MANIFESTS.some((item) => normalizeUsageId(item.id) === id && id !== 'x-client-ops');
+    const sameOriginManifest = APP_AGENT_MANIFESTS.some((item) => normalizeUsageId(item.id) === id);
     if (sameOriginManifest && /^(?:www\.)?aiagent-marketplace\.net$/i.test(url.hostname)) {
       return new URL(`${url.pathname}${url.search}${url.hash}`, window.location.origin).toString();
     }
@@ -1432,7 +1447,9 @@ function rememberAppAgentUsage(id = '', details = {}, options = {}) {
     capabilities: manifest.capabilities || [],
     requiresApprovalFor: manifest.requiresApprovalFor || [],
     inputContract: manifest.inputContract || null,
+    contextIngestUrl: manifest.contextIngestUrl || '',
     handoff: manifest.handoff || null,
+    dedicatedDelivery: manifest.dedicatedDelivery || null,
     reusePrompt: manifest.reusePrompt || '',
     ...details,
     lastContext: {
@@ -3392,13 +3409,17 @@ function appAgentSourceAgentsFromJob(job = {}) {
 }
 
 function appAgentDeliveryArtifactsFromJob(job = {}) {
-  return deliveryFiles(job).map((file) => ({
-    name: String(file?.name || 'delivery.md').trim(),
-    contentType: String(file?.content_type || file?.contentType || file?.type || fileMimeType(file?.name || '', file?.content || '')).trim(),
-    artifactTypes: Array.from(explicitHandoffArtifactTypesFromFile(file)),
-    summary: compactTransferText(file?.summary || file?.description || '', 280),
-    contentPreview: compactTransferText(file?.content || '', 900)
-  })).slice(0, 8);
+  return deliveryFiles(job).map((file) => {
+    const artifactTypes = Array.from(explicitHandoffArtifactTypesFromFile(file));
+    return {
+      name: String(file?.name || 'delivery.md').trim(),
+      contentType: String(artifactTypes[0] || file?.content_type || file?.contentType || file?.type || fileMimeType(file?.name || '', file?.content || '')).trim(),
+      artifactType: artifactTypes[0] || '',
+      artifactTypes,
+      summary: compactTransferText(file?.summary || file?.description || '', 280),
+      contentPreview: compactTransferText(file?.content || '', 900)
+    };
+  }).slice(0, 8);
 }
 
 function appAgentActionKind(manifest = {}, options = {}) {
@@ -3502,7 +3523,7 @@ function registerAppTransferPayload(payload = {}) {
 
 function appTransferPayloadWithEditedText(payload = {}, trigger = null) {
   const editable = trigger?.closest?.('[data-app-transfer-edit-root]')?.querySelector?.('[data-app-transfer-editable]')
-    || trigger?.closest?.('.app-handoff-card, .x-post-card')?.querySelector?.('[data-app-transfer-editable]')
+    || trigger?.closest?.('.app-handoff-card, .app-dedicated-handoff-card')?.querySelector?.('[data-app-transfer-editable]')
     || null;
   if (!editable) return payload;
   const text = String('value' in editable ? editable.value : editable.textContent || '').trim();
@@ -3622,7 +3643,7 @@ function fileLooksLikeSocialPostPack(file = {}) {
   );
 }
 
-function xPostDraftFromJob(job = {}) {
+function socialPostDraftFromJob(job = {}) {
   const files = deliveryFiles(job);
   const orderedFiles = files.filter((file) => {
     const explicitTypes = explicitHandoffArtifactTypesFromFile(file);
@@ -3692,7 +3713,7 @@ function strategyFieldFromText(text = '', labels = []) {
   return '';
 }
 
-function xStrategyContextFromJob(job = {}) {
+function actionStrategyContextFromJob(job = {}) {
   const files = deliveryFiles(job);
   const summary = deliveryText(job);
   const parts = [];
@@ -3712,10 +3733,6 @@ function xStrategyContextFromJob(job = {}) {
     channel: strategyFieldFromText(allText, ['Candidate channels', 'Primary lane', 'Channel', 'チャネル']),
     url: urlMatch?.[0] || ''
   };
-}
-
-function xPostConnectHint() {
-  return '<span class="chat-hint">X account connection and final publishing are handled inside X Client Ops, not in chat.</span>';
 }
 
 function appHandoffMarkdownFieldValue(markdown = '', labels = []) {
@@ -3765,13 +3782,18 @@ function appContextFromTransferPayload(appId = '', payload = {}) {
   const order = payload.order && typeof payload.order === 'object' ? payload.order : {};
   const settings = payload.settings && typeof payload.settings === 'object' ? payload.settings : {};
   const delivery = payload.delivery && typeof payload.delivery === 'object' ? payload.delivery : {};
-  const fileArtifacts = (Array.isArray(payload.files) ? payload.files : []).map((file) => ({
-    type: 'file',
-    name: file?.name || '',
-    content_type: file?.type || file?.contentType || file?.content_type || '',
-    content: file?.content || '',
-    ...appHandoffFileMetadata(file)
-  }));
+  const fileArtifacts = (Array.isArray(payload.files) ? payload.files : []).map((file) => {
+    const artifactTypes = Array.from(explicitHandoffArtifactTypesFromFile(file));
+    return {
+      type: 'file',
+      artifact_type: artifactTypes[0] || '',
+      artifact_types: artifactTypes,
+      name: file?.name || '',
+      content_type: artifactTypes[0] || file?.content_type || file?.contentType || file?.artifact_type || file?.artifactType || file?.type || '',
+      content: file?.content || '',
+      ...appHandoffFileMetadata(file)
+    };
+  });
   const artifacts = [
     ...fileArtifacts,
     delivery.summary ? { type: 'delivery_summary', title: payload.title || 'Delivery summary', content: delivery.summary } : null,
@@ -3867,7 +3889,8 @@ function shouldStartFreshChatFromUrl() {
 
 async function createAppAgentContextOpenUrl(appId = '', payload = {}, options = {}) {
   const safeAppId = normalizeUsageId(appId || '');
-  const contextPath = options.contextPath || (safeAppId === 'publisher-approval-studio' ? '/api/publisher/context-ingest' : '/api/app-contexts');
+  const manifest = appManifestById(safeAppId) || {};
+  const contextPath = options.contextPath || manifest.contextIngestUrl || manifest.context_ingest_url || '/api/app-contexts';
   const result = await apiWithRetry(contextPath, {
     method: 'POST',
     body: JSON.stringify({
@@ -3898,14 +3921,35 @@ async function createAppAgentHandoffUrl(appId = '', payload = {}) {
   return String(handoffUrl || manifest?.entryUrl || manifest?.baseUrl || '');
 }
 
-function xClientOpsTransferPayload(job = {}, draft = {}, strategy = {}) {
-  const transfer = appAgentBaseTransferPacket('x-client-ops', job, { draft, strategy });
+function preparedTextForDedicatedDelivery(entry = {}, job = {}) {
+  const sourceKind = appHandoffGateDedicatedTextSourceKind(entry, { normalizeUsageId, listValues });
+  if (sourceKind === 'social_post_text') return socialPostDraftFromJob(job)?.text || '';
+  return deliveryText(job);
+}
+
+function appHandoffDedicatedTextSource(entry = {}, job = {}) {
+  const sourceKind = appHandoffGateDedicatedTextSourceKind(entry, { normalizeUsageId, listValues });
+  if (sourceKind === 'social_post_text') {
+    const draft = socialPostDraftFromJob(job);
+    if (draft?.text) return draft;
+  }
+  const text = deliveryText(job);
+  return text ? { text, source: 'CAIt delivery' } : null;
+}
+
+function dedicatedAppHandoffTitle(entry = {}) {
+  return `CAIt final ${entry?.name || 'app'} handoff`;
+}
+
+function dedicatedAppTransferPayload(entry = {}, job = {}, draft = {}, strategy = {}) {
+  const appId = normalizeUsageId(entry.id || '');
+  const transfer = appAgentBaseTransferPacket(appId, job, { draft, strategy, actionKind: 'dedicated_app_handoff' });
   return {
-    schema_version: 'cait-app-agent-transfer/v1',
+    schema_version: entry?.inputContract?.schemaVersion || 'cait-app-agent-transfer/v1',
     transfer_id: transfer.transfer_id,
     text: String(draft?.text || '').trim(),
     source: String(draft?.source || 'CAIt delivery').trim(),
-    title: 'CAIt final X post draft',
+    title: dedicatedAppHandoffTitle(entry),
     jobId: String(job?.id || '').trim(),
     strategy: strategy.strategy || '',
     product: strategy.product || '',
@@ -3926,48 +3970,61 @@ function xClientOpsTransferPayload(job = {}, draft = {}, strategy = {}) {
   };
 }
 
-function renderXPostTool(job = {}) {
-  const draft = xPostDraftFromJob(job);
-  if (!draft?.text) return '';
+function renderDedicatedAppDeliveryTools(job = {}) {
   const jobId = String(job?.id || '').trim();
-  const strategy = xStrategyContextFromJob(job);
-  const transferPayload = xClientOpsTransferPayload(job, draft, strategy);
-  const transferId = registerAppTransferPayload(transferPayload);
-  const xClientOpsUrl = appAgentLaunchUrl(appManifestById('x-client-ops')) || '/apps.html';
-  rememberAppAgentUsage('x-client-ops', {
-    title: 'CAIt final X post draft',
-    lastHandoffUrl: xClientOpsUrl,
-    lastOrderId: jobId,
-    source: draft.source,
-    product: strategy.product,
-    audience: strategy.audience,
-    goal: strategy.goal,
-    channel: strategy.channel,
-    lastContext: {
-      title: 'CAIt final X post draft',
+  const cards = [];
+  for (const entry of appAgentHandoffCandidates(job)) {
+    if (!appHandoffGateHasDedicatedDelivery(entry, job, {
+      normalizeUsageId,
+      listValues,
+      deliveryHandoffArtifactTypes,
+      preparedTextForDedicatedDelivery
+    })) continue;
+    const draft = appHandoffDedicatedTextSource(entry, job);
+    if (!draft?.text) continue;
+    const strategy = actionStrategyContextFromJob(job);
+    const transferPayload = dedicatedAppTransferPayload(entry, job, draft, strategy);
+    const transferId = registerAppTransferPayload(transferPayload);
+    const appUrl = appAgentLaunchUrl(entry) || '/apps.html';
+    const title = dedicatedAppHandoffTitle(entry);
+    const textLimit = appHandoffContractTextLimit(entry);
+    const countLabel = textLimit ? `${String(draft.text).length}/${textLimit}` : `${String(draft.text).length} chars`;
+    rememberAppAgentUsage(entry.id, {
+      title,
+      lastHandoffUrl: appUrl,
+      lastOrderId: jobId,
       source: draft.source,
       product: strategy.product,
       audience: strategy.audience,
       goal: strategy.goal,
-      channel: strategy.channel
-    },
-    lastTransfer: compactTransferObject(transferPayload, { depth: 4, maxText: 700, maxArray: 8 })
-  }, { increment: false });
-  return [
-    '<div class="x-post-card" data-app-transfer-edit-root="1">',
-    '<strong>Final action: X Client Ops</strong>',
-    '<div class="chat-hint">CAIt has attached the X post draft and strategy context prepared during the workflow. Open X Client Ops to load the draft into the posting queue and use the strategy as context for this action.</div>',
-    `<label class="x-post-label" for="x-post-${escapeHtml(jobId || 'draft')}">X post draft (${String(draft.text).length}/280)</label>`,
-    `<textarea class="x-post-editor" id="x-post-${escapeHtml(jobId || 'draft')}" data-x-post-text="${escapeHtml(jobId)}" data-app-transfer-editable="text" data-app-transfer-source="${escapeHtml(draft.source)}" data-app-transfer-title="CAIt final X post draft" data-app-transfer-id="${escapeHtml(transferId)}" rows="5">${escapeHtml(draft.text)}</textarea>`,
-    `<div class="chat-hint">Source: ${escapeHtml(draft.source)}${strategy.strategy ? ' / Strategy attached' : ''} / Agent-app transfer attached</div>`,
-    '<div class="inline-actions">',
-    `<button class="primary-btn inline-btn file-action" type="button" data-app-agent-handoff="x-client-ops" data-app-transfer-id="${escapeHtml(transferId)}">Open X Client Ops</button>`,
-    `<button class="ghost-btn inline-btn file-action" type="button" data-x-post-copy="${escapeHtml(jobId)}">Copy X draft</button>`,
-    xPostConnectHint(),
-    '</div>',
-    '<span class="chat-hint">CAIt will not post automatically from a summary alone. Open the SaaS publishing surface or copy the prepared text into the target service for the final user action.</span>',
-    '</div>'
-  ].filter(Boolean).join('\n');
+      channel: strategy.channel,
+      lastContext: {
+        title,
+        source: draft.source,
+        product: strategy.product,
+        audience: strategy.audience,
+        goal: strategy.goal,
+        channel: strategy.channel
+      },
+      lastTransfer: compactTransferObject(transferPayload, { depth: 4, maxText: 700, maxArray: 8 })
+    }, { increment: false });
+    cards.push([
+      '<div class="app-dedicated-handoff-card" data-app-transfer-edit-root="1">',
+      `<strong>Final action: ${escapeHtml(entry.name || 'App handoff')}</strong>`,
+      `<div class="chat-hint">CAIt has attached the prepared handoff text and strategy context declared by the app manifest. Open ${escapeHtml(entry.name || 'the app')} to continue the final action outside chat.</div>`,
+      `<label class="app-dedicated-handoff-label" for="app-handoff-${escapeHtml(normalizeUsageId(entry.id || 'app'))}-${escapeHtml(jobId || 'draft')}">Handoff text (${escapeHtml(countLabel)})</label>`,
+      `<textarea class="app-dedicated-handoff-editor" id="app-handoff-${escapeHtml(normalizeUsageId(entry.id || 'app'))}-${escapeHtml(jobId || 'draft')}" data-app-transfer-editable="text" data-app-transfer-source="${escapeHtml(draft.source)}" data-app-transfer-title="${escapeHtml(title)}" data-app-transfer-id="${escapeHtml(transferId)}" rows="5">${escapeHtml(draft.text)}</textarea>`,
+      `<div class="chat-hint">Source: ${escapeHtml(draft.source)}${strategy.strategy ? ' / Strategy attached' : ''} / Agent-app transfer attached</div>`,
+      '<div class="inline-actions">',
+      `<button class="primary-btn inline-btn file-action" type="button" data-app-agent-handoff="${escapeHtml(entry.id)}" data-app-transfer-id="${escapeHtml(transferId)}">Open ${escapeHtml(entry.name || 'app')}</button>`,
+      `<button class="ghost-btn inline-btn file-action" type="button" data-app-transfer-copy="${escapeHtml(transferId)}">Copy handoff text</button>`,
+      `<span class="chat-hint">${escapeHtml(entry.name || 'The app')} handles account connection and final external action outside chat.</span>`,
+      '</div>',
+      '<span class="chat-hint">CAIt will not post, publish, or send automatically from a summary alone. Use the SaaS surface or copy the prepared text into the target service for the final user action.</span>',
+      '</div>'
+    ].filter(Boolean).join('\n'));
+  }
+  return cards.join('\n');
 }
 
 function appAgentHandoffTitle(job = {}) {
@@ -4021,7 +4078,7 @@ function deliveryHandoffArtifactTypes(job = {}) {
   };
   const files = deliveryFiles(job);
 
-  if (xPostDraftFromJob(job)?.text) {
+  if (socialPostDraftFromJob(job)?.text) {
     add('post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet');
   }
   const authorityRequest = authorityRequestFromJob(job);
@@ -4091,6 +4148,15 @@ function appHandoffIsCaitManagedSurface(entry = {}) {
   return APP_AGENT_MANIFESTS.some((item) => normalizeUsageId(item.id) === id);
 }
 
+function genericSuppressedAppHandoffIds(job = {}) {
+  return appHandoffGateGenericSuppressedAppHandoffIds(appAgentHandoffCandidates(job), job, {
+    normalizeUsageId,
+    listValues,
+    deliveryHandoffArtifactTypes,
+    preparedTextForDedicatedDelivery
+  });
+}
+
 function appAgentHandoffCandidates(job = {}) {
   return appHandoffGateRankEntries(appManifestSources(), job, {
     normalizeUsageId,
@@ -4105,7 +4171,9 @@ function renderAppHandoffTools(job = {}) {
   const hasPreparationData = deliveryFiles(job).length > 0
     || visibleWorkflowChildRuns(job.workflow?.childRuns).some((child) => ['completed', 'failed', 'blocked', 'waiting'].includes(String(child.status || '').trim().toLowerCase()));
   if (!['completed', 'failed', 'blocked', 'waiting'].includes(status) || !hasPreparationData) return '';
-  const entries = appAgentHandoffCandidates(job);
+  const suppressedIds = genericSuppressedAppHandoffIds(job);
+  const entries = appAgentHandoffCandidates(job)
+    .filter((entry) => !suppressedIds.has(normalizeUsageId(entry.id || '')));
   if (!entries.length) return '';
   const rows = entries.map((entry) => {
     const payload = appAgentGenericTransferPayload(entry.id, job);
@@ -4308,9 +4376,33 @@ function libraryCommandScope(prompt = '') {
   return '';
 }
 
+function directAppCommandTextTokens(value = '') {
+  const raw = String(value || '').trim().toLowerCase();
+  const normalized = normalizeUsageId(raw);
+  return [
+    raw,
+    raw.replace(/[\s　_-]+/g, ''),
+    normalized,
+    normalized.replace(/[_-]+/g, '')
+  ].filter((item, index, array) => item && array.indexOf(item) === index);
+}
+
 function directAppCommandId(prompt = '') {
   const text = String(prompt || '').trim();
-  if (/x\s*client\s*ops/i.test(text) && /(open|launch|use|開|起動|呼び出|使)/i.test(text)) return 'x-client-ops';
+  if (!/(open|launch|use|show|開|起動|呼び出|使|表示)/i.test(text)) return '';
+  const promptTokens = directAppCommandTextTokens(text);
+  for (const app of appManifestSources()) {
+    const aliases = [
+      app.id,
+      app.name,
+      ...(Array.isArray(app.directCommandAliases) ? app.directCommandAliases : [])
+    ]
+      .flatMap(directAppCommandTextTokens)
+      .filter((item) => item && item.length >= 2)
+      .filter((item, index, array) => array.indexOf(item) === index);
+    const matched = aliases.some((alias) => promptTokens.some((token) => token.includes(alias)));
+    if (matched) return app.id;
+  }
   return '';
 }
 
@@ -5493,7 +5585,7 @@ function renderDelivery(job = {}) {
     renderAuthorityRequest,
     renderRetryReuseControls,
     deliveryOrderActionsHtml,
-    renderXPostTool,
+    renderDedicatedAppDeliveryTools,
     renderAppHandoffTools,
     renderFileCards
   });
@@ -7066,8 +7158,8 @@ function accumulatedWorkOrderReadiness(latestPrompt = '') {
     offerContext ? `CTA/offer context: ${offerContext}` : '',
     '',
     'User asked for an action plan and execution. Use the accumulated details above as sufficient intake.',
-    'If the CTA, offer mechanics, account access, or external publishing target is incomplete, treat that as an assumption/blocker to resolve inside the plan and delivery. Do not ask another pre-order intake question just because the CTA is weak.',
-    'Produce concrete next actions and any approval-ready drafts or SaaS handoff artifacts needed before external publishing. Do not claim external posting, sending, publishing, or repository writes without connector or SaaS proof.',
+    'If the CTA, offer mechanics, account access, or external publishing target is incomplete, pass that as an assumption/blocker for the assigned agent to resolve. Do not ask another pre-order intake question just because the CTA is weak.',
+    'Use the assigned agent contract for the concrete delivery shape and any approval or SaaS handoff requirements. Do not claim external posting, sending, publishing, or repository writes without connector or SaaS proof.',
     '',
     'Source conversation:',
     text
@@ -7426,33 +7518,8 @@ async function handleChatIntentWithLlm(prompt = '') {
     const automaticLeaderTaskType = leaderTaskTypeFromIntentResult(prompt, result);
     if (!explicitLeaderTaskType && suggestLeaderChangeIfNeeded(automaticLeaderTaskType, prompt, 'openai_intake', { preparedPrompt: prompt })) return true;
     const leaderTaskType = explicitLeaderTaskType || (lockedOwner?.type === 'leader' ? lockedOwner.taskType : '') || automaticLeaderTaskType;
-    if (leaderTaskType && intakeQuestions.length >= 2) {
-      startIntake({
-        status: 'needs_input',
-        needs_input: true,
-        reason: 'leader_context_required',
-        inferred_task_type: leaderTaskType,
-        prompt,
-        questions: intakeQuestions,
-        message: chatLanguage(prompt) === 'ja'
-          ? 'リーダーが提案前に確認したい内容です。まだ実行も課金もしていません。'
-          : 'The leader needs this context before proposing. Nothing has run or been billed yet.',
-        conversationOwner: {
-          type: 'leader',
-          taskType: leaderTaskType,
-          label: taskLabel(leaderTaskType),
-          reason: result.summary || 'OpenAI-generated leader intake.'
-        },
-        intake: {
-          originalPrompt: prompt,
-          taskType: leaderTaskType,
-          questions: intakeQuestions,
-          questionSource: 'openai'
-        }
-      }, prompt);
-      return true;
-    }
-    if (leaderTaskType) {
+    const preserveAgentOwnedLeaderIntake = Boolean(leaderTaskType);
+    if (preserveAgentOwnedLeaderIntake) {
       await prepareOrder(prompt, {
         originalPrompt: prompt,
         taskType: leaderTaskType,
@@ -8032,9 +8099,25 @@ async function prepareOrder(prompt, options = {}) {
     });
   } catch (error) {
     if (!skipOpenAiIntent || options.intakeAnswered === true) throw error;
+    const fallbackTaskType = effectiveConversationOwner?.taskType
+      || options.taskType
+      || options.task_type
+      || effectiveActiveOwnerTaskType
+      || effectiveActiveLeaderTaskType
+      || '';
+    const fallbackWouldSynthesizeLeaderIntake = effectiveConversationOwner?.type === 'leader'
+      || isLeaderTaskType(fallbackTaskType)
+      || isLeaderTaskType(effectiveActiveLeaderTaskType);
+    if (fallbackWouldSynthesizeLeaderIntake) {
+      throw new Error(chatText(
+        'Agent-owned leader intake questions could not be loaded. No order or billing happened; retry so CAIt can fetch the selected leader questions from the server.',
+        'agent-owned のリーダーヒアリング質問を読み込めませんでした。注文も課金も発生していません。選択リーダーの質問をサーバーから取得するため、もう一度試してください。',
+        prompt
+      ));
+    }
     prepared = clientPrepareOrderIntakeFallback(prompt, {
       ...options,
-      taskType: effectiveConversationOwner?.taskType || options.taskType || options.task_type || effectiveActiveOwnerTaskType || effectiveActiveLeaderTaskType,
+      taskType: fallbackTaskType,
       activeOwnerType: effectiveActiveOwnerType,
       activeOwnerTaskType: effectiveActiveOwnerTaskType,
       activeOwnerName: effectiveActiveOwnerName,
@@ -8802,14 +8885,14 @@ els.chatThread.addEventListener('click', async (event) => {
     }
     return;
   }
-  const xCopyButton = event.target.closest('[data-x-post-copy]');
-  if (xCopyButton) {
-    const card = xCopyButton.closest('.x-post-card');
-    const textarea = card?.querySelector('[data-x-post-text]');
+  const appTransferCopyButton = event.target.closest('[data-app-transfer-copy]');
+  if (appTransferCopyButton) {
+    const card = appTransferCopyButton.closest('[data-app-transfer-edit-root]');
+    const textarea = card?.querySelector('[data-app-transfer-editable="text"]');
     const text = String(textarea?.value || '').trim();
     void copyTextToClipboard(text)
-      .then(() => appendTextMessage('system', 'Copied X post draft.'))
-      .catch(() => appendTextMessage('assistant', 'Could not copy the X post draft.', { tone: 'error', label: 'X action' }));
+      .then(() => appendTextMessage('system', 'Copied handoff text.'))
+      .catch(() => appendTextMessage('assistant', 'Could not copy the handoff text.', { tone: 'error', label: 'App handoff' }));
     return;
   }
   const fileButton = event.target.closest('[data-file-action]');

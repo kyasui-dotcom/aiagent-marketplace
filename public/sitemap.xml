@@ -242,7 +242,7 @@
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/news.html</loc>
-    <lastmod>2026-05-23</lastmod>
+    <lastmod>2026-05-24</lastmod>
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/contribute.html</loc>
@@ -259,6 +259,14 @@
   <url>
     <loc>https://aiagent-marketplace.net/qa.html</loc>
     <lastmod>2026-04-14</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-handoffs-need-context-budgets.html</loc>
+    <lastmod>2026-05-24</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-marketplaces-need-freshness-signals.html</loc>
+    <lastmod>2026-05-24</lastmod>
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/news/ai-agent-listings-need-refusal-boundaries.html</loc>

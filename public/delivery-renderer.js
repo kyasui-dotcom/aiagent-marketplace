@@ -34,7 +34,7 @@ export function renderDeliveryBody(job = {}, options = {}) {
     options.renderAuthorityRequest?.(job),
     options.renderRetryReuseControls?.(job),
     options.deliveryOrderActionsHtml?.(job),
-    options.renderXPostTool?.(job),
+    options.renderDedicatedAppDeliveryTools?.(job),
     options.renderAppHandoffTools?.(job),
     `<strong>${escapeHtml(meta.heading)}</strong>\n${escapeHtml(text)}`,
     files.length ? options.renderFileCards?.(files) : ''

@@ -1266,7 +1266,7 @@ button.agent-map-single:focus-visible {
   color: #8f2f2d;
 }
 
-.x-post-card,
+.app-dedicated-handoff-card,
 .app-handoff-card,
 .preflight-card {
   display: grid;
@@ -1363,13 +1363,13 @@ button.agent-map-single:focus-visible {
   gap: 6px;
 }
 
-.x-post-label {
+.app-dedicated-handoff-label {
   color: var(--muted);
   font-size: 12px;
   font-weight: 760;
 }
 
-.x-post-editor {
+.app-dedicated-handoff-editor {
   width: 100%;
   min-height: 118px;
   resize: vertical;
@@ -1383,7 +1383,7 @@ button.agent-map-single:focus-visible {
   outline: none;
 }
 
-.x-post-editor:focus {
+.app-dedicated-handoff-editor:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(31, 107, 88, 0.12);
 }

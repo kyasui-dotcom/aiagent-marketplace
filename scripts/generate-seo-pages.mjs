@@ -2,6 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { contributionPage, glossaryCategories, glossaryTerms, newsPosts, seoLandingPages, SITE_NAME, SITE_SHORT_NAME, SITE_URL } from '../lib/seo-pages.js';
+import { SAMPLE_AGENT_DEFINITIONS } from '../lib/builtin-agents/agents/index.js';
 import { DEFAULT_AGENT_SEEDS, DEPRECATED_AGENT_SEED_IDS } from '../lib/shared.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -878,6 +879,11 @@ function agentIndexJsonLd(agents) {
 }
 
 function agentCatalogHtml(agents) {
+  const activeKinds = new Set(agents.map(agentKind));
+  const sampleDefinitions = Object.values(SAMPLE_AGENT_DEFINITIONS).filter((definition) => definition?.manifest);
+  const hiddenSampleKinds = sampleDefinitions
+    .map((definition) => String(definition.manifest?.kind || '').trim())
+    .filter((kind) => kind && !activeKinds.has(kind));
   const leaderKinds = new Set([
     'research_team_leader',
     'build_team_leader',
@@ -988,6 +994,29 @@ function agentCatalogHtml(agents) {
           <span>4</span>
           <strong>Action</strong>
           <p>Prepares connector/app handoffs and asks for approval before external execution.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="box panel-stack" style="margin-bottom:16px">
+      <div class="section-title">DELIVERY READINESS</div>
+      <h2>The catalog is generated from the current agent manifests.</h2>
+      <p>This public catalog exposes ${escapeHtml(String(agents.length))} orderable built-in agents. The delivery regression package covers ${escapeHtml(String(sampleDefinitions.length))} sample agent files, including ${escapeHtml(String(hiddenSampleKinds.length))} non-routable internal or legacy fixtures that stay out of public ordering.</p>
+      <div class="orchestration-builder-grid">
+        <div class="orchestration-builder-item">
+          <span>Ideal</span>
+          <strong>Reviewable delivery, not a loose chat reply</strong>
+          <p>Each agent owns its purpose, action boundaries, required sections, evidence labels, and forbidden execution claims.</p>
+        </div>
+        <div class="orchestration-builder-item">
+          <span>Reality</span>
+          <strong>Agent-file manifests drive the list</strong>
+          <p>Cards are built from the active sample manifests, while retired team fixtures remain test-covered but hidden from routing.</p>
+        </div>
+        <div class="orchestration-builder-item">
+          <span>Test</span>
+          <strong>Before/after output snapshots</strong>
+          <p>The release check uses the all-agent output regression snapshot plus the built-in agent QA contract.</p>
         </div>
       </div>
     </section>
