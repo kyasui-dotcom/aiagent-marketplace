@@ -244,6 +244,13 @@ const externalCommunicationContractExpectations = [
 
 const marketingExecutionContractExpectations = [
   {
+    kind: 'campaign_operations',
+    actions: ['prepare_campaign_record', 'prepare_publisher_queue', 'prepare_planned_action_queue', 'prepare_measurement_loop'],
+    requiredSections: ['Planned action queue', 'Waiting conditions', 'Measurement loop', 'Next action owner'],
+    guidedSections: ['Planned action queue', 'Waiting conditions', 'Measurement loop', 'Next action owner'],
+    forbiddenClaims: ['blocked item ready', 'waiting item executed', 'outcome decided without measurement']
+  },
+  {
     kind: 'ads_planner',
     actions: ['prepare_ads_plan', 'prepare_ads_saas_handoff', 'prepare_creative_asset_packet', 'prepare_launch_approval_handoff'],
     requiredSections: ['Creative asset packet', 'Ads SaaS handoff', 'Approval and launch boundary', 'Execution status labels'],
@@ -850,6 +857,8 @@ assertUserFacingDelivery(fallbackCampaignOps, 'campaign_operations fallback deli
   /## Publisher queue/i,
   /## Approval backlog/i,
   /## Connector readiness/i,
+  /## Planned action queue/i,
+  /## Waiting conditions/i,
   /## Measurement loop/i,
   /## Next action owner/i
 ]);
@@ -877,6 +886,8 @@ const fallbackCampaignOpsJa = await campaignOperations.provider.runJob({
 const fallbackCampaignContentJa = fallbackCampaignOpsJa.files?.[0]?.content || '';
 assert.match(fallbackCampaignContentJa, /## キャンペーン状態/i, 'campaign_operations Japanese fallback should keep localized section headings');
 assert.match(fallbackCampaignContentJa, /## コネクタ準備状況/i, 'campaign_operations Japanese fallback should localize connector readiness');
+assert.match(fallbackCampaignContentJa, /## 実行予定キュー/i, 'campaign_operations Japanese fallback should localize planned action queue');
+assert.match(fallbackCampaignContentJa, /## 待機条件/i, 'campaign_operations Japanese fallback should localize waiting conditions');
 assert.doesNotMatch(fallbackCampaignContentJa, /## Campaign state|## Publisher queue|## Approval backlog/i, 'campaign_operations Japanese fallback must not fall back to English section headings');
 
 const result = await research.provider.runJob({
