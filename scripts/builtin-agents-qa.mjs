@@ -99,6 +99,13 @@ const operationsContractExpectations = [
     forbiddenClaims: ['minutes distributed without proof', 'raw transcript forwarded without scope', 'owner action accepted without owner proof', 'follow-up sent without connector proof']
   },
   {
+    kind: 'meeting_prep',
+    actions: ['prepare_meeting_brief', 'prepare_preread_packet', 'prepare_meeting_execution_handoff'],
+    requiredSections: ['Objective', 'Participants', 'Agenda', 'Decision points', 'Preparation handoff packet', 'Participant-visible context scope', 'Calendar/send boundary', 'Execution status labels'],
+    guidedSections: ['Preparation handoff packet', 'Participant-visible context scope', 'Calendar/send boundary', 'Execution status labels'],
+    forbiddenClaims: ['pre-read sent without proof', 'calendar invite updated without proof', 'participant context shared without scope']
+  },
+  {
     kind: 'schedule_coordination',
     actions: ['prepare_candidate_time_packet', 'prepare_invite_handoff', 'prepare_meeting_tool_handoff'],
     requiredSections: ['Availability source', 'Candidate times', 'Invite draft', 'Meeting-link handoff'],
@@ -360,7 +367,7 @@ globalThis.fetch = async (url, options = {}) => {
     const packetDefinition = sampleAgentDefinitionForKind(kind);
     if (packetDefinition?.deliveryContract) {
       if (
-        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'reply_draft', 'inbox_triage'].includes(kind)
+        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'reply_draft', 'inbox_triage', 'writer'].includes(kind)
         && Array.isArray(packetDefinition.outputSections)
         && packetDefinition.outputSections.length
       ) {
@@ -371,7 +378,7 @@ globalThis.fetch = async (url, options = {}) => {
         );
       }
       if (
-        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'reply_draft', 'inbox_triage'].includes(kind)
+        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'reply_draft', 'inbox_triage', 'writer'].includes(kind)
         && Array.isArray(packetDefinition.acceptanceChecks)
         && packetDefinition.acceptanceChecks.length
       ) {
