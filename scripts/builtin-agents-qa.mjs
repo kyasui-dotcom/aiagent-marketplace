@@ -101,6 +101,13 @@ const operationsContractExpectations = [
     actions: ['prepare_candidate_time_packet', 'prepare_invite_handoff', 'prepare_meeting_tool_handoff'],
     requiredSections: ['Availability source', 'Candidate times', 'Invite draft', 'Meeting-link handoff'],
     forbiddenClaims: ['meeting link created without proof']
+  },
+  {
+    kind: 'reply_draft',
+    actions: ['prepare_reply_draft', 'prepare_send_guardrail', 'prepare_reply_followup_handoff'],
+    requiredSections: ['Sender and recipient', 'Desired outcome', 'Approval condition', 'Approval/send handoff', 'Follow-up timing'],
+    guidedSections: ['Sender and recipient', 'Desired outcome', 'Approval condition', 'Approval/send handoff', 'Follow-up timing'],
+    forbiddenClaims: ['approval complete without user or connector evidence', 'follow-up scheduled without connector proof']
   }
 ];
 
