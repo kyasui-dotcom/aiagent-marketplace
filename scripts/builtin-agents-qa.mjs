@@ -108,6 +108,13 @@ const operationsContractExpectations = [
     requiredSections: ['Sender and recipient', 'Desired outcome', 'Approval condition', 'Approval/send handoff', 'Follow-up timing'],
     guidedSections: ['Sender and recipient', 'Desired outcome', 'Approval condition', 'Approval/send handoff', 'Follow-up timing'],
     forbiddenClaims: ['approval complete without user or connector evidence', 'follow-up scheduled without connector proof']
+  },
+  {
+    kind: 'secretary_leader',
+    actions: ['coordinate_operations_queue', 'prepare_connector_handoff', 'synthesize_secretary_specialist_outputs'],
+    requiredSections: ['Source data inventory', 'Operations queue', 'Specialist handoff synthesis', 'Least-privilege context scope', 'Approval gate', 'Connector status'],
+    guidedSections: ['Source data inventory', 'Priority queue', 'Specialist handoff synthesis', 'Least-privilege context scope', 'Approval gates', 'Connector gaps'],
+    forbiddenClaims: ['external action approved by leader without principal or connector proof', 'unscoped private context copied into handoff']
   }
 ];
 
@@ -344,7 +351,7 @@ globalThis.fetch = async (url, options = {}) => {
     const packetDefinition = sampleAgentDefinitionForKind(kind);
     if (packetDefinition?.deliveryContract) {
       if (
-        ['ads_planner', 'campaign_operations', 'cfo_leader'].includes(kind)
+        ['ads_planner', 'campaign_operations', 'cfo_leader', 'reply_draft'].includes(kind)
         && Array.isArray(packetDefinition.outputSections)
         && packetDefinition.outputSections.length
       ) {
@@ -355,7 +362,7 @@ globalThis.fetch = async (url, options = {}) => {
         );
       }
       if (
-        ['ads_planner', 'campaign_operations', 'cfo_leader'].includes(kind)
+        ['ads_planner', 'campaign_operations', 'cfo_leader', 'reply_draft'].includes(kind)
         && Array.isArray(packetDefinition.acceptanceChecks)
         && packetDefinition.acceptanceChecks.length
       ) {
