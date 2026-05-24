@@ -246,9 +246,9 @@ const marketingExecutionContractExpectations = [
   {
     kind: 'campaign_operations',
     actions: ['prepare_campaign_record', 'prepare_publisher_queue', 'prepare_planned_action_queue', 'prepare_measurement_loop'],
-    requiredSections: ['Planned action queue', 'Waiting conditions', 'Measurement loop', 'Next action owner'],
-    guidedSections: ['Planned action queue', 'Waiting conditions', 'Measurement loop', 'Next action owner'],
-    forbiddenClaims: ['blocked item ready', 'waiting item executed', 'outcome decided without measurement']
+    requiredSections: ['Planned action queue', 'Now (Week 0-1)', 'Waiting conditions', 'Measurement loop', 'Next action owner'],
+    guidedSections: ['Planned action queue', 'Now (Week 0-1)', 'Waiting conditions', 'Measurement loop', 'Next action owner'],
+    forbiddenClaims: ['blocked item ready', 'waiting item executed', 'week 0 action completed without proof', 'outcome decided without measurement']
   },
   {
     kind: 'ads_planner',
@@ -858,6 +858,7 @@ assertUserFacingDelivery(fallbackCampaignOps, 'campaign_operations fallback deli
   /## Approval backlog/i,
   /## Connector readiness/i,
   /## Planned action queue/i,
+  /## Now \(Week 0-1\)/i,
   /## Waiting conditions/i,
   /## Measurement loop/i,
   /## Next action owner/i
@@ -887,6 +888,7 @@ const fallbackCampaignContentJa = fallbackCampaignOpsJa.files?.[0]?.content || '
 assert.match(fallbackCampaignContentJa, /## キャンペーン状態/i, 'campaign_operations Japanese fallback should keep localized section headings');
 assert.match(fallbackCampaignContentJa, /## コネクタ準備状況/i, 'campaign_operations Japanese fallback should localize connector readiness');
 assert.match(fallbackCampaignContentJa, /## 実行予定キュー/i, 'campaign_operations Japanese fallback should localize planned action queue');
+assert.match(fallbackCampaignContentJa, /## Now \(Week 0-1\)/i, 'campaign_operations Japanese fallback should keep the near-term action window label stable');
 assert.match(fallbackCampaignContentJa, /## 待機条件/i, 'campaign_operations Japanese fallback should localize waiting conditions');
 assert.doesNotMatch(fallbackCampaignContentJa, /## Campaign state|## Publisher queue|## Approval backlog/i, 'campaign_operations Japanese fallback must not fall back to English section headings');
 
