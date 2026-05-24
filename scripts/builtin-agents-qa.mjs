@@ -336,6 +336,28 @@ globalThis.fetch = async (url, options = {}) => {
     const kind = packet.agent?.kind || 'agent';
     const packetDefinition = sampleAgentDefinitionForKind(kind);
     if (packetDefinition?.deliveryContract) {
+      if (
+        ['ads_planner', 'campaign_operations', 'cfo_leader'].includes(kind)
+        && Array.isArray(packetDefinition.outputSections)
+        && packetDefinition.outputSections.length
+      ) {
+        assert.deepEqual(
+          packet.agent?.output_sections,
+          Array.from(packetDefinition.outputSections),
+          `${kind} provider request must carry its model guidance output sections`
+        );
+      }
+      if (
+        ['ads_planner', 'campaign_operations', 'cfo_leader'].includes(kind)
+        && Array.isArray(packetDefinition.acceptanceChecks)
+        && packetDefinition.acceptanceChecks.length
+      ) {
+        assert.deepEqual(
+          packet.agent?.acceptance_checks,
+          Array.from(packetDefinition.acceptanceChecks),
+          `${kind} provider request must carry its acceptance checks`
+        );
+      }
       assert.deepEqual(
         packet.delivery_quality_gate?.required_sections,
         Array.from(packetDefinition.deliveryContract.requiredDeliverySections || []),
