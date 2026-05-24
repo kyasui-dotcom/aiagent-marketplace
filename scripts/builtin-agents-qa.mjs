@@ -246,9 +246,9 @@ const marketingExecutionContractExpectations = [
   {
     kind: 'acquisition_automation',
     actions: ['prepare_automation_flow', 'handoff_connector_packet', 'prepare_ga4_funnel_event_spec'],
-    requiredSections: ['Conversion goal', 'Trigger', 'CRM states', 'Messages', 'Approval gates', 'Stop rules', 'Measurement', 'GA4 event specification', 'Connector handoff'],
-    guidedSections: ['Flow objective and conversion event', 'GA4 event specification', 'Measurement', 'Connector and approval packets'],
-    forbiddenClaims: ['events implemented without proof', 'tracking live without analytics proof', 'GA4 conversion marked without admin proof']
+    requiredSections: ['Conversion goal', 'Trigger', 'CRM states', 'Messages', 'Approval gates', 'Stop rules', 'Measurement', 'GA4 event specification', 'Zero-conversion debug escalation', 'Connector handoff'],
+    guidedSections: ['Flow objective and conversion event', 'GA4 event specification', 'Zero-conversion debug escalation', 'Measurement', 'Connector and approval packets'],
+    forbiddenClaims: ['events implemented without proof', 'tracking live without analytics proof', 'GA4 conversion marked without admin proof', 'conversion failure diagnosed before event verification', 'signup/trial integration cleared without internal test']
   },
   {
     kind: 'campaign_operations',
