@@ -109,6 +109,8 @@ assert.equal(prepareWorkOrderSeed('SEO記事を作りたい').conversationOwner.
 assert.equal(prepareWorkOrderSeed('SEO記事を作りたい').activeOwnerLocked, true);
 assert.equal(prepareWorkOrderSeed('CMO Leaderとしてサイトの購入を増やす施策を作って').conversationOwner.type, 'leader');
 assert.equal(prepareWorkOrderSeed('analyze GA4 and Search Console data').taskType, 'data_analysis');
+assert.equal(prepareWorkOrderSeed('Search Console の query と landing page を対応付けて、SEO の改善案を出して').taskType, 'seo_specialist');
+assert.equal(prepareWorkOrderSeed('Map Search Console queries to landing pages and suggest SEO fixes').taskType, 'seo_specialist');
 assert.equal(prepareWorkOrderSeed('create landing page hero copy').taskType, 'landing');
 assert.deepEqual(inferTaskSequence('retry_timeout_qa', 'timeout test', { maxTasks: 3, expand: false }), ['retry_timeout_qa']);
 

@@ -202,6 +202,9 @@ export function inferWorkIntentTaskType(prompt = '') {
   if (explicitLeader) return explicitLeader;
   if (hasAnyPattern(text, [/(x\.com|\bx post\b|\bx thread\b|twitter|tweet|tweets|ツイート|x投稿|ポスト|スレッド)/i])) return 'x_post';
   if (hasAnyPattern(text, [/(gmail|email|mail|メール|送信メール|営業メール)/i])) return 'email_ops';
+  if (hasAnyPattern(text, [/(search console|サーチコンソール|gsc)/i]) && hasAnyPattern(text, [/(seo|query|queries|landing page|landing pages|landing intent|search intent|keyword|keywords|検索意図|キーワード|流入|対応付け|マップ)/i])) {
+    return 'seo_specialist';
+  }
   if (hasAnyPattern(text, [/(data analysis|analytics|metrics|kpi|dashboard|cohort|funnel analysis|ga4|gsc|search console|データ分析|アクセス解析|指標|計測|ファネル)/i])) return 'data_analysis';
   if (hasAnyPattern(text, [/(landing page|lp copy|hero copy|sales page|ランディングページ|LP|ファーストビュー)/i])) return 'landing';
   if (hasAnyPattern(text, [/(seo|keyword|search intent|content gap|meta|description|title|検索流入|検索意図|キーワード|コンテンツギャップ)/i])) return 'seo_specialist';
