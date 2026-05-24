@@ -242,7 +242,17 @@ const externalCommunicationContractExpectations = [
   }
 ];
 
-for (const expectation of [...engineeringContractExpectations, ...operationsContractExpectations, ...productResearchContractExpectations, ...workSupportContractExpectations, ...externalCommunicationContractExpectations]) {
+const marketingExecutionContractExpectations = [
+  {
+    kind: 'ads_planner',
+    actions: ['prepare_ads_plan', 'prepare_ads_saas_handoff', 'prepare_creative_asset_packet', 'prepare_launch_approval_handoff'],
+    requiredSections: ['Creative asset packet', 'Ads SaaS handoff', 'Approval and launch boundary', 'Execution status labels'],
+    guidedSections: ['Creative asset packet', 'Ads SaaS handoff', 'Approval and launch boundary', 'Execution status labels'],
+    forbiddenClaims: ['creative approved without owner proof', 'conversion tracking verified without connector proof', 'campaign ready to launch without approval']
+  }
+];
+
+for (const expectation of [...engineeringContractExpectations, ...operationsContractExpectations, ...productResearchContractExpectations, ...workSupportContractExpectations, ...externalCommunicationContractExpectations, ...marketingExecutionContractExpectations]) {
   const definition = sampleAgentDefinitionForKind(expectation.kind);
   assert.ok(definition, `${expectation.kind} should resolve from sample agent definitions`);
   const actionIds = new Set((definition.agentActionBoundaries || []).map((action) => action.id));
@@ -764,7 +774,10 @@ assertUserFacingDelivery(fallbackAdsPlan, 'ads_planner fallback delivery', [
   /## Campaign structure/i,
   /## Budget cap and CPA assumption/i,
   /## Stop rules/i,
+  /## Creative asset packet/i,
   /## Ads SaaS handoff/i,
+  /## Approval and launch boundary/i,
+  /## Execution status labels/i,
   /## Measurement plan/i
 ]);
 const fallbackAdsContent = fallbackAdsPlan.files?.[0]?.content || '';
@@ -792,6 +805,8 @@ const fallbackAdsPlanJa = await adsPlanner.provider.runJob({
 const fallbackAdsContentJa = fallbackAdsPlanJa.files?.[0]?.content || '';
 assert.match(fallbackAdsContentJa, /## 目的/i, 'ads_planner Japanese fallback should keep localized section headings');
 assert.match(fallbackAdsContentJa, /## Ads SaaS 引き継ぎ/i, 'ads_planner Japanese fallback should localize handoff section');
+assert.match(fallbackAdsContentJa, /## クリエイティブアセット案/i, 'ads_planner Japanese fallback should include a localized creative asset packet');
+assert.match(fallbackAdsContentJa, /## 実行ステータスラベル/i, 'ads_planner Japanese fallback should include localized execution status labels');
 assert.doesNotMatch(fallbackAdsContentJa, /## Objective|## Audience|## Campaign structure/i, 'ads_planner Japanese fallback must not fall back to English section headings');
 
 const campaignOperations = sampleAgentDefinitionForKind('campaign_operations');
