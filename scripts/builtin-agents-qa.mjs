@@ -244,6 +244,13 @@ const externalCommunicationContractExpectations = [
 
 const marketingExecutionContractExpectations = [
   {
+    kind: 'seo_specialist',
+    actions: ['prepare_seo_rewrite_packet', 'prepare_article_plan_or_batch', 'prepare_publisher_handoff', 'prepare_search_console_intent_map'],
+    requiredSections: ['SEO mode', 'SERP/source status', 'Search Console source status', 'Search Console landing intent map', 'CTA/trust plan', 'Source ledger'],
+    guidedSections: ['Mode, conversion goal, and target keyword', 'Search Console source status', 'Search Console landing intent map', 'CTA, trust, and internal-link plan'],
+    forbiddenClaims: ['Search Console data verified without export or connector proof', 'intent mapped from Search Console without query rows']
+  },
+  {
     kind: 'acquisition_automation',
     actions: ['prepare_automation_flow', 'handoff_connector_packet', 'prepare_ga4_funnel_event_spec'],
     requiredSections: ['Conversion goal', 'Trigger', 'CRM states', 'Messages', 'Approval gates', 'Stop rules', 'Measurement', 'GA4 event specification', 'Zero-conversion debug escalation', 'Connector handoff'],
