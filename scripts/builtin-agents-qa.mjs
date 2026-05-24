@@ -259,7 +259,17 @@ const marketingExecutionContractExpectations = [
   }
 ];
 
-for (const expectation of [...engineeringContractExpectations, ...operationsContractExpectations, ...productResearchContractExpectations, ...workSupportContractExpectations, ...externalCommunicationContractExpectations, ...marketingExecutionContractExpectations]) {
+const orchestrationContractExpectations = [
+  {
+    kind: 'agent_team_leader',
+    actions: ['plan_agent_team', 'merge_specialist_outputs', 'dedupe_worker_context_for_final_decision'],
+    requiredSections: ['Worker context dedupe record', 'Merge criteria', 'Final acceptance criteria'],
+    guidedSections: ['Worker context dedupe record', 'Merge plan', 'Final delivery contract'],
+    forbiddenClaims: ['empty item contributed to final decision', 'duplicate item treated as independent evidence']
+  }
+];
+
+for (const expectation of [...engineeringContractExpectations, ...operationsContractExpectations, ...productResearchContractExpectations, ...workSupportContractExpectations, ...externalCommunicationContractExpectations, ...marketingExecutionContractExpectations, ...orchestrationContractExpectations]) {
   const definition = sampleAgentDefinitionForKind(expectation.kind);
   assert.ok(definition, `${expectation.kind} should resolve from sample agent definitions`);
   const actionIds = new Set((definition.agentActionBoundaries || []).map((action) => action.id));
