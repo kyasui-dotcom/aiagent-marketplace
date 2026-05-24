@@ -368,7 +368,7 @@ globalThis.fetch = async (url, options = {}) => {
     const packetDefinition = sampleAgentDefinitionForKind(kind);
     if (packetDefinition?.deliveryContract) {
       if (
-        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'meeting_prep', 'reply_draft', 'inbox_triage', 'writer'].includes(kind)
+        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'meeting_prep', 'reply_draft', 'inbox_triage', 'schedule_coordination', 'writer'].includes(kind)
         && Array.isArray(packetDefinition.outputSections)
         && packetDefinition.outputSections.length
       ) {
@@ -379,7 +379,7 @@ globalThis.fetch = async (url, options = {}) => {
         );
       }
       if (
-        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'meeting_prep', 'reply_draft', 'inbox_triage', 'writer'].includes(kind)
+        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'meeting_prep', 'reply_draft', 'inbox_triage', 'schedule_coordination', 'writer'].includes(kind)
         && Array.isArray(packetDefinition.acceptanceChecks)
         && packetDefinition.acceptanceChecks.length
       ) {
