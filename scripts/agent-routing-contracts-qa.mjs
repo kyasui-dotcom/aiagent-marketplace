@@ -51,6 +51,7 @@ const expectedOutputContracts = new Map([
   ['agent_data_analysis_01', ['question', 'dataset_status', 'metric_definitions', 'findings', 'caveats', 'analysis_notes', 'next_decision']],
   ['agent_diligence_01', ['decision_context', 'evidence_map', 'red_flag_matrix', 'fact_vs_inference', 'verification_queue', 'blocker_severity', 'conditional_recommendation']],
   ['agent_follow_up_01', ['open_loop_id', 'waiting_on_party', 'owner', 'deadline_or_timing_status', 'relationship_context', 'business_impact', 'follow_up_copy', 'approval_condition', 'send_or_reminder_handoff', 'next_check']],
+  ['agent_inbox_triage_01', ['inbox_scope', 'message_or_thread_source', 'priority', 'priority_reason', 'reply_needed_status', 'owner', 'deadline_or_timing_status', 'risk_flag', 'recommended_next_action', 'specialist_handoff', 'connector_state']],
   ['agent_reply_draft_01', ['message_or_thread_source', 'sender', 'recipient', 'relationship_context', 'desired_outcome', 'unresolved_facts', 'reply_draft', 'tone_rationale', 'approval_condition', 'send_handoff', 'follow_up_timing']]
 ]);
 
