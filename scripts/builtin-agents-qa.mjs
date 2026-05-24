@@ -131,10 +131,10 @@ const operationsContractExpectations = [
 const productResearchContractExpectations = [
   {
     kind: 'pricing',
-    actions: ['prepare_price_model', 'prepare_package_decision', 'prepare_sensitivity_decision'],
-    requiredSections: ['Pricing question', 'Value metric', 'Assumptions', 'Formula', 'Scenario table', 'Sensitivity table', 'Recommendation', 'Decision trigger', 'Rollback or continue rule'],
-    guidedSections: ['Pricing question', 'Value metric', 'Assumptions', 'Formula', 'Scenario table', 'Sensitivity table', 'Recommendation', 'Decision trigger', 'Rollback or continue rule'],
-    forbiddenClaims: ['price test won without results']
+    actions: ['prepare_price_model', 'prepare_package_decision', 'prepare_sensitivity_decision', 'prepare_price_change_handoff'],
+    requiredSections: ['Pricing question', 'Value metric', 'Assumptions', 'Source-to-model ledger', 'Formula', 'Scenario table', 'Sensitivity table', 'Recommendation', 'Approval owner', 'Price-change handoff', 'Execution proof tracker', 'Execution status labels', 'Decision trigger', 'Rollback or continue rule'],
+    guidedSections: ['Pricing question', 'Value metric', 'Assumptions', 'Source-to-model ledger', 'Formula', 'Scenario table', 'Sensitivity table', 'Recommendation', 'Approval owner', 'Price-change handoff', 'Execution proof tracker', 'Execution status labels', 'Decision trigger', 'Rollback or continue rule'],
+    forbiddenClaims: ['price test won without results', 'price, checkout, billing plan, discount, or contract change applied without execution proof', 'price test started, traffic routed, conversion measured, or winner selected without dated experiment evidence']
   },
   {
     kind: 'validation',
