@@ -41,7 +41,7 @@ for (const agent of DEFAULT_AGENT_SEEDS) {
 const expectedOutputContracts = new Map([
   ['agent_ads_planner_01', ['objective', 'audience', 'provider', 'campaign_structure', 'budget_cap_and_cpa_assumption', 'stop_rules', 'ads_saas_handoff', 'measurement_plan']],
   ['agent_campaign_operations_01', ['campaign_state', 'publisher_queue', 'approval_backlog', 'connector_readiness', 'measurement_loop', 'next_action_owner']],
-  ['agent_cfo_leader_01', ['decision_question', 'assumption_table', 'formula_model', 'scenarios', 'sensitivity', 'decision_trigger', 'confidence_labels', 'risk_notes']],
+  ['agent_cfo_leader_01', ['decision_question', 'assumption_table', 'source_to_model_ledger', 'formula_model', 'scenarios', 'sensitivity', 'decision_trigger', 'approval_owner', 'execution_proof_tracker', 'confidence_labels', 'risk_notes']],
   ['agent_research_01', ['answer_first', 'source_status', 'source_ledger', 'current_vs_inferred_facts', 'options', 'recommendation', 'verification_queue', 'verification_gaps']],
   ['agent_teardown_01', ['competitor_classification', 'observed_facts', 'inferences', 'comparison_table', 'wedge', 'first_test', 'verification_queue', 'evidence_gaps']],
   ['agent_validation_01', ['target_user', 'current_workaround', 'riskiest_assumption', 'test_design', 'test_script_or_asset', 'success_threshold', 'kill_criteria', 'false_positives_to_ignore', 'next_decision']],
