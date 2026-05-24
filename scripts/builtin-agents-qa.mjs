@@ -107,9 +107,10 @@ const operationsContractExpectations = [
   },
   {
     kind: 'schedule_coordination',
-    actions: ['prepare_candidate_time_packet', 'prepare_invite_handoff', 'prepare_meeting_tool_handoff'],
-    requiredSections: ['Availability source', 'Candidate times', 'Invite draft', 'Meeting-link handoff'],
-    forbiddenClaims: ['meeting link created without proof']
+    actions: ['prepare_candidate_time_packet', 'prepare_invite_handoff', 'prepare_meeting_tool_handoff', 'prepare_participant_response_handoff'],
+    requiredSections: ['Availability source', 'Candidate times', 'Invite draft', 'Participant response handoff', 'Time option expiry', 'Meeting-link handoff', 'Execution status labels'],
+    guidedSections: ['Participant response handoff', 'Time option expiry', 'Execution status labels'],
+    forbiddenClaims: ['meeting link created without proof', 'participant confirmed without response evidence', 'time held without connector proof']
   },
   {
     kind: 'reply_draft',
@@ -367,7 +368,7 @@ globalThis.fetch = async (url, options = {}) => {
     const packetDefinition = sampleAgentDefinitionForKind(kind);
     if (packetDefinition?.deliveryContract) {
       if (
-        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'reply_draft', 'inbox_triage', 'writer'].includes(kind)
+        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'meeting_prep', 'reply_draft', 'inbox_triage', 'writer'].includes(kind)
         && Array.isArray(packetDefinition.outputSections)
         && packetDefinition.outputSections.length
       ) {
@@ -378,7 +379,7 @@ globalThis.fetch = async (url, options = {}) => {
         );
       }
       if (
-        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'reply_draft', 'inbox_triage', 'writer'].includes(kind)
+        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'meeting_prep', 'reply_draft', 'inbox_triage', 'writer'].includes(kind)
         && Array.isArray(packetDefinition.acceptanceChecks)
         && packetDefinition.acceptanceChecks.length
       ) {
