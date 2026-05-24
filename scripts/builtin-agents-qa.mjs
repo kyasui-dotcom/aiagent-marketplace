@@ -162,10 +162,10 @@ const productResearchContractExpectations = [
 const workSupportContractExpectations = [
   {
     kind: 'prompt_brushup',
-    actions: ['prepare_prompt_rewrite', 'prepare_prompt_test_cases'],
-    requiredSections: ['Intent ledger', 'Original prompt', 'Rewritten prompt', 'Preserved constraints', 'Change rationale', 'Test cases', 'Failure modes'],
-    guidedSections: ['Intent ledger', 'Original prompt', 'Rewritten prompt', 'Preserved constraints', 'Change rationale', 'Test cases', 'Failure modes'],
-    forbiddenClaims: ['intent changed without label', 'tested claim without results']
+    actions: ['prepare_prompt_rewrite', 'prepare_prompt_test_cases', 'prepare_dispatch_handoff'],
+    requiredSections: ['Intent ledger', 'Original prompt', 'Rewritten prompt', 'Preserved constraints', 'Source/context ledger', 'Change rationale', 'Test cases', 'Failure modes', 'Dispatch recommendation', 'Dispatch handoff packet', 'Execution status labels'],
+    guidedSections: ['Intent ledger', 'Original prompt', 'Rewritten prompt', 'Preserved constraints', 'Source/context ledger', 'Change rationale', 'Test cases', 'Failure modes', 'Dispatch recommendation', 'Dispatch handoff packet', 'Execution status labels'],
+    forbiddenClaims: ['intent changed without label', 'tested claim without results', 'downstream task dispatched, executed, or completed without execution proof']
   },
   {
     kind: 'hiring',

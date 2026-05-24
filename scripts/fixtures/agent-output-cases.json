@@ -471,7 +471,7 @@
       "id": "prompt-brushup-intent-preservation",
       "file": "prompt-brushup.js",
       "kind": "prompt_brushup",
-      "prompt": "Improve a prompt for ordering market research while preserving intent. Include before/after prompt, intent ledger, constraints kept, rationale, and test cases.",
+      "prompt": "Improve a prompt for ordering market research while preserving intent. Include before/after prompt, intent ledger, source/context ledger, constraints kept, dispatch handoff packet, execution status labels, rationale, and test cases.",
       "body": {
         "input": {
           "original_prompt": "Research competitors and make it actionable without losing source caveats."
