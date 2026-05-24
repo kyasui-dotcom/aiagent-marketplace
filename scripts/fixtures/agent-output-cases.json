@@ -153,7 +153,7 @@
       "id": "x-post-launch-packet",
       "file": "x-post.js",
       "kind": "x_post",
-      "prompt": "Prepare X posts for launching Publisher Approval Studio. Include exact post text, replies, cadence, and approval/connector boundary. Do not claim it was posted.",
+      "prompt": "Prepare X posts for launching Publisher Approval Studio. Include exact post text, replies, cadence, account and link policy, pre-publish review, publish readiness handoff, and approval/connector boundary. Do not claim it was posted, queued, scheduled, approved, or ready to post without proof.",
       "body": {
         "input": {
           "account_handle": "@example",

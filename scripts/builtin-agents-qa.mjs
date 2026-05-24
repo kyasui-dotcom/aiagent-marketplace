@@ -200,10 +200,10 @@ const externalCommunicationContractExpectations = [
   },
   {
     kind: 'x_post',
-    actions: ['prepare_x_post_packet', 'prepare_x_schedule_packet', 'prepare_x_connector_handoff'],
-    requiredSections: ['Exact post text', 'Approval checklist', 'Connector handoff boundary', 'Execution status labels'],
-    guidedSections: ['Exact post text', 'Connector handoff boundary', 'Execution status labels'],
-    forbiddenClaims: ['posted', 'scheduled', 'queued']
+    actions: ['prepare_x_post_packet', 'prepare_x_schedule_packet', 'prepare_x_pre_publish_review', 'prepare_x_connector_handoff'],
+    requiredSections: ['Exact post text', 'Account and link policy', 'Pre-publish review', 'Approval checklist', 'Connector handoff boundary', 'Publish readiness handoff', 'Execution status labels'],
+    guidedSections: ['Exact post text', 'Account and link policy', 'Pre-publish review', 'Connector handoff boundary', 'Publish readiness handoff', 'Execution status labels'],
+    forbiddenClaims: ['posted', 'scheduled', 'queued', 'ready to post without approval proof', 'approved without owner evidence']
   },
   {
     kind: 'email_ops',
