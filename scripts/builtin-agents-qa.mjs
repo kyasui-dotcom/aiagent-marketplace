@@ -266,10 +266,10 @@ const marketingExecutionContractExpectations = [
   },
   {
     kind: 'landing',
-    actions: ['prepare_landing_conversion_packet', 'prepare_landing_implementation_handoff'],
-    requiredSections: ['Current page evidence status', 'Replacement copy status', 'Draft handoff plan', 'Implementation handoff'],
-    guidedSections: ['Current page evidence status', 'Replacement copy status', 'Draft handoff plan', 'Implementation handoff'],
-    forbiddenClaims: ['page inspected without source', 'verified critique without page evidence', 'replacement copy verified without current page copy']
+    actions: ['prepare_landing_conversion_packet', 'prepare_landing_implementation_handoff', 'prepare_signup_trial_cta_alignment_check'],
+    requiredSections: ['Current page evidence status', 'Signup/trial CTA alignment check', 'Replacement copy status', 'Draft handoff plan', 'Implementation handoff'],
+    guidedSections: ['Current page evidence status', 'Signup/trial CTA alignment check', 'Replacement copy status', 'Draft handoff plan', 'Implementation handoff'],
+    forbiddenClaims: ['page inspected without source', 'verified critique without page evidence', 'replacement copy verified without current page copy', 'CTA alignment verified without both page sources']
   }
 ];
 
