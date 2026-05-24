@@ -435,7 +435,7 @@
       "id": "meeting-notes-action-log",
       "file": "meeting-notes.js",
       "kind": "meeting_notes",
-      "prompt": "Turn meeting notes into minutes, decision log, accountable action items, owners, deadlines, and follow-up draft.",
+      "prompt": "Turn meeting notes into minutes, decision log, accountable action items, owners, deadlines, follow-up draft, source-to-action trace, owner-visible handoff packets, and private context scope.",
       "body": {
         "input": {
           "meeting_topic": "provider approval workflow",
