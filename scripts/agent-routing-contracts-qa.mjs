@@ -42,10 +42,11 @@ const expectedOutputContracts = new Map([
   ['agent_ads_planner_01', ['objective', 'audience', 'provider', 'campaign_structure', 'budget_cap_and_cpa_assumption', 'stop_rules', 'creative_asset_packet', 'ads_saas_handoff', 'approval_and_launch_boundary', 'execution_status_labels', 'measurement_plan']],
   ['agent_campaign_operations_01', ['campaign_state', 'publisher_queue', 'approval_backlog', 'connector_readiness', 'planned_action_queue', 'now_week_0_1', 'next_week_1_3', 'waiting_conditions', 'measurement_loop', 'next_action_owner']],
   ['agent_cfo_leader_01', ['decision_question', 'assumption_table', 'source_to_model_ledger', 'formula_model', 'scenarios', 'sensitivity', 'decision_trigger', 'approval_owner', 'execution_proof_tracker', 'confidence_labels', 'risk_notes']],
+  ['agent_list_creator_01', ['target_segment', 'source_policy', 'qualification_rules', 'field_schema', 'row_level_source_ledger', 'exclusion_and_duplicate_review', 'review_status', 'approval_owner', 'import_outreach_boundary', 'downstream_handoff_packet', 'execution_proof_tracker', 'next_owner']],
   ['agent_research_01', ['answer_first', 'source_status', 'source_ledger', 'current_vs_inferred_facts', 'options', 'recommendation', 'verification_queue', 'verification_gaps']],
   ['agent_teardown_01', ['competitor_classification', 'observed_facts', 'inferences', 'comparison_table', 'wedge', 'first_test', 'verification_queue', 'evidence_gaps']],
   ['agent_validation_01', ['target_user', 'current_workaround', 'riskiest_assumption', 'test_design', 'test_script_or_asset', 'success_threshold', 'kill_criteria', 'false_positives_to_ignore', 'next_decision']],
-  ['agent_pricing_01', ['pricing_question', 'value_metric', 'assumptions', 'formula', 'scenario_table', 'sensitivity_table', 'recommendation', 'decision_trigger', 'rollback_or_continue_rule']],
+  ['agent_pricing_01', ['pricing_question', 'value_metric', 'assumptions', 'source_to_model_ledger', 'formula', 'scenario_table', 'sensitivity_table', 'recommendation', 'approval_owner', 'price_change_handoff', 'execution_proof_tracker', 'execution_status_labels', 'decision_trigger', 'rollback_or_continue_rule']],
   ['agent_prompt_brushup_01', ['intent_ledger', 'original_prompt', 'rewritten_prompt', 'preserved_constraints', 'change_rationale', 'test_cases', 'failure_modes']],
   ['agent_hiring_01', ['role_context/source_status', 'role_outcomes', 'scorecard', 'job_description', 'must_have_and_nice_to_have', 'screening_questions', 'evaluation_rubric', 'interview_loop_and_decision_thresholds', 'candidate_evidence_boundary', 'exclusion_risks', 'exclusion/legal_risks', 'hiring_owner_handoff_and_next_step']],
   ['agent_data_analysis_01', ['question', 'dataset_status', 'conversion_instrumentation_verification', 'metric_definitions', 'findings', 'caveats', 'analysis_notes', 'next_decision']],
@@ -120,4 +121,3 @@ assert.equal(researchConfirmation.inferred.layer, 'research');
 assert.ok(researchConfirmation.inferred.downstream.task_types.includes('writing'));
 
 console.log('agent routing contracts qa passed');
-
