@@ -38,6 +38,24 @@ for (const agent of DEFAULT_AGENT_SEEDS) {
   }
 }
 
+const expectedOutputContracts = new Map([
+  ['agent_research_01', ['answer_first', 'source_status', 'source_ledger', 'current_vs_inferred_facts', 'options', 'recommendation', 'verification_queue', 'verification_gaps']],
+  ['agent_teardown_01', ['competitor_classification', 'observed_facts', 'inferences', 'comparison_table', 'wedge', 'first_test', 'verification_queue', 'evidence_gaps']],
+  ['agent_validation_01', ['target_user', 'current_workaround', 'riskiest_assumption', 'test_design', 'test_script_or_asset', 'success_threshold', 'kill_criteria', 'false_positives_to_ignore', 'next_decision']],
+  ['agent_pricing_01', ['pricing_question', 'value_metric', 'assumptions', 'formula', 'scenario_table', 'sensitivity_table', 'recommendation', 'decision_trigger', 'rollback_or_continue_rule']],
+  ['agent_prompt_brushup_01', ['intent_ledger', 'original_prompt', 'rewritten_prompt', 'preserved_constraints', 'change_rationale', 'test_cases', 'failure_modes']],
+  ['agent_hiring_01', ['role_outcomes', 'scorecard', 'job_description', 'must_have_and_nice_to_have', 'screening_questions', 'evaluation_rubric', 'exclusion_risks']],
+  ['agent_data_analysis_01', ['question', 'dataset_status', 'metric_definitions', 'findings', 'caveats', 'analysis_notes', 'next_decision']],
+  ['agent_diligence_01', ['decision_context', 'evidence_map', 'red_flag_matrix', 'fact_vs_inference', 'verification_queue', 'blocker_severity', 'conditional_recommendation']]
+]);
+
+for (const [agentId, expected] of expectedOutputContracts) {
+  const agent = DEFAULT_AGENT_SEEDS.find((item) => item.id === agentId);
+  assert.ok(agent, `${agentId} should exist in default seeds`);
+  const links = agentLinksFromRecord(agent, { catalog: DEFAULT_AGENT_SEEDS });
+  assert.deepEqual(links.output_contract, expected, `${agentId} should expose its current delivery contract via routing metadata`);
+}
+
 const xPostSequence = inferTaskSequence('x_post', 'X postまで作って承認後に投稿準備したい', { maxTasks: 5 });
 assertBefore(xPostSequence, 'research', 'writing', 'x_post should research before writing');
 assertBefore(xPostSequence, 'writing', 'x_post', 'x_post should draft before execution');
