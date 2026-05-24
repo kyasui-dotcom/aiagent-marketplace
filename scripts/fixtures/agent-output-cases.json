@@ -516,7 +516,7 @@
       "id": "schedule-coordination-candidate-times",
       "file": "schedule-coordination.js",
       "kind": "schedule_coordination",
-      "prompt": "Prepare a scheduling packet for a demo with Tokyo and California participants. Include timezone, duration, availability source, candidate times, invite draft, and confirmation owner.",
+      "prompt": "Prepare a scheduling packet for a demo with Tokyo and California participants. Include timezone, duration, availability source, candidate times, invite draft, participant response handoff, time option expiry, confirmation owner, connector state, and execution status labels.",
       "body": {
         "input": {
           "timezone": "Asia/Tokyo",

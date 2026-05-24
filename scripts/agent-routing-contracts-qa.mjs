@@ -54,7 +54,7 @@ const expectedOutputContracts = new Map([
   ['agent_meeting_prep_01', ['agenda', 'briefing_notes', 'questions', 'decision_points', 'participant_visible_context_scope', 'calendar_send_boundary', 'execution_status_labels']],
   ['agent_inbox_triage_01', ['inbox_scope', 'message_or_thread_source', 'priority', 'priority_reason', 'reply_needed_status', 'owner', 'deadline_or_timing_status', 'risk_flag', 'recommended_next_action', 'specialist_handoff', 'connector_state']],
   ['agent_reply_draft_01', ['message_or_thread_source', 'sender', 'recipient', 'relationship_context', 'desired_outcome', 'unresolved_facts', 'reply_draft', 'tone_rationale', 'approval_condition', 'send_handoff', 'follow_up_timing']],
-  ['agent_schedule_coordination_01', ['schedule_request_source', 'participants', 'timezone', 'duration', 'meeting_purpose', 'availability_source', 'candidate_times', 'conflicts_or_constraints', 'invite_draft', 'confirmation_owner', 'calendar_event_handoff', 'meeting_link_handoff', 'connector_state', 'next_check', 'draft_then_schedule']]
+  ['agent_schedule_coordination_01', ['schedule_request_source', 'participants', 'timezone', 'duration', 'meeting_purpose', 'availability_source', 'candidate_times', 'conflicts_or_constraints', 'invite_draft', 'participant_response_handoff', 'time_option_expiry', 'confirmation_owner', 'calendar_event_handoff', 'meeting_link_handoff', 'execution_status_labels', 'connector_state', 'next_check', 'draft_then_schedule']]
 ]);
 
 for (const [agentId, expected] of expectedOutputContracts) {
