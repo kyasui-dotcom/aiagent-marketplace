@@ -528,10 +528,31 @@
       "id": "secretary-leader-ops-queue",
       "file": "secretary-leader.js",
       "kind": "secretary_leader",
-      "prompt": "Coordinate executive assistant work across inbox, calendar, and meeting prep. Include operations queue, item owners, approval gates, connector gaps, and next action.",
+      "prompt": "Coordinate executive assistant work across inbox, calendar, and meeting prep. Synthesize the specialist outputs into one principal-facing queue with least-privilege context scope, item owners, approval gates, connector gaps, and next action.",
       "body": {
         "input": {
-          "work_items": ["reply investor email", "schedule demo", "prepare board agenda"]
+          "work_items": ["reply investor email", "schedule demo", "prepare board agenda"],
+          "_broker": {
+            "workflow": {
+              "priorRuns": [
+                {
+                  "taskType": "inbox_triage",
+                  "status": "completed",
+                  "summary": "Investor thread needs a reply today; owner is founder; connector status is Gmail context supplied but send approval missing."
+                },
+                {
+                  "taskType": "schedule_coordination",
+                  "status": "completed",
+                  "summary": "Demo candidate windows prepared for Tokyo morning; calendar write and Meet link creation still need approval."
+                },
+                {
+                  "taskType": "meeting_prep",
+                  "status": "completed",
+                  "summary": "Board agenda brief prepared with finance and provider-risk topics; unrelated inbox details should not be forwarded."
+                }
+              ]
+            }
+          }
         }
       }
     },
