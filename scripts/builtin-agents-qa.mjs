@@ -249,6 +249,13 @@ const marketingExecutionContractExpectations = [
     requiredSections: ['Creative asset packet', 'Ads SaaS handoff', 'Approval and launch boundary', 'Execution status labels'],
     guidedSections: ['Creative asset packet', 'Ads SaaS handoff', 'Approval and launch boundary', 'Execution status labels'],
     forbiddenClaims: ['creative approved without owner proof', 'conversion tracking verified without connector proof', 'campaign ready to launch without approval']
+  },
+  {
+    kind: 'landing',
+    actions: ['prepare_landing_conversion_packet', 'prepare_landing_implementation_handoff'],
+    requiredSections: ['Current page evidence status', 'Replacement copy status', 'Draft handoff plan', 'Implementation handoff'],
+    guidedSections: ['Current page evidence status', 'Replacement copy status', 'Draft handoff plan', 'Implementation handoff'],
+    forbiddenClaims: ['page inspected without source', 'verified critique without page evidence', 'replacement copy verified without current page copy']
   }
 ];
 
