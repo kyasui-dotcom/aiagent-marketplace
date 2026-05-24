@@ -39,6 +39,9 @@ for (const agent of DEFAULT_AGENT_SEEDS) {
 }
 
 const expectedOutputContracts = new Map([
+  ['agent_ads_planner_01', ['objective', 'audience', 'provider', 'campaign_structure', 'budget_cap_and_cpa_assumption', 'stop_rules', 'ads_saas_handoff', 'measurement_plan']],
+  ['agent_campaign_operations_01', ['campaign_state', 'publisher_queue', 'approval_backlog', 'connector_readiness', 'measurement_loop', 'next_action_owner']],
+  ['agent_cfo_leader_01', ['decision_question', 'assumption_table', 'formula_model', 'scenarios', 'sensitivity', 'decision_trigger', 'confidence_labels', 'risk_notes']],
   ['agent_research_01', ['answer_first', 'source_status', 'source_ledger', 'current_vs_inferred_facts', 'options', 'recommendation', 'verification_queue', 'verification_gaps']],
   ['agent_teardown_01', ['competitor_classification', 'observed_facts', 'inferences', 'comparison_table', 'wedge', 'first_test', 'verification_queue', 'evidence_gaps']],
   ['agent_validation_01', ['target_user', 'current_workaround', 'riskiest_assumption', 'test_design', 'test_script_or_asset', 'success_threshold', 'kill_criteria', 'false_positives_to_ignore', 'next_decision']],
@@ -46,7 +49,8 @@ const expectedOutputContracts = new Map([
   ['agent_prompt_brushup_01', ['intent_ledger', 'original_prompt', 'rewritten_prompt', 'preserved_constraints', 'change_rationale', 'test_cases', 'failure_modes']],
   ['agent_hiring_01', ['role_outcomes', 'scorecard', 'job_description', 'must_have_and_nice_to_have', 'screening_questions', 'evaluation_rubric', 'exclusion_risks']],
   ['agent_data_analysis_01', ['question', 'dataset_status', 'metric_definitions', 'findings', 'caveats', 'analysis_notes', 'next_decision']],
-  ['agent_diligence_01', ['decision_context', 'evidence_map', 'red_flag_matrix', 'fact_vs_inference', 'verification_queue', 'blocker_severity', 'conditional_recommendation']]
+  ['agent_diligence_01', ['decision_context', 'evidence_map', 'red_flag_matrix', 'fact_vs_inference', 'verification_queue', 'blocker_severity', 'conditional_recommendation']],
+  ['agent_follow_up_01', ['open_loop_id', 'waiting_on_party', 'owner', 'deadline_or_timing_status', 'relationship_context', 'business_impact', 'follow_up_copy', 'approval_condition', 'send_or_reminder_handoff', 'next_check']]
 ]);
 
 for (const [agentId, expected] of expectedOutputContracts) {
