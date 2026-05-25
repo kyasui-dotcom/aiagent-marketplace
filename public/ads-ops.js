@@ -1,4 +1,4 @@
-import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260525b';
+import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526b';
 
 const els = {
   returnToChatLink: document.getElementById('adsReturnToChatLink'),
@@ -60,6 +60,23 @@ function camelKey(value = '') {
   return String(value || '').replace(/_([a-z0-9])/g, (_, char) => char.toUpperCase());
 }
 
+const ADS_CONTRACT_ALIASES = Object.freeze({
+  ads_plan: Object.freeze(['adsPlan', 'ads_plan_packet', 'adsPlanPacket', 'paid_ads_plan', 'paidAdsPlan', 'ad_plan', 'adPlan', 'ad_campaign_plan', 'adCampaignPlan', 'paid_acquisition_plan', 'paidAcquisitionPlan']),
+  ads_plan_packet: Object.freeze(['adsPlanPacket', 'ads_plan', 'adsPlan', 'paid_ads_plan', 'paidAdsPlan', 'ad_plan', 'adPlan', 'ad_campaign_plan', 'adCampaignPlan', 'paid_acquisition_plan', 'paidAcquisitionPlan']),
+  paid_ads_plan: Object.freeze(['paidAdsPlan', 'ads_plan', 'adsPlan', 'ads_plan_packet', 'adsPlanPacket', 'ad_plan', 'adPlan', 'ad_campaign_plan', 'adCampaignPlan', 'paid_acquisition_plan', 'paidAcquisitionPlan']),
+  campaign_structure: Object.freeze(['campaignStructure', 'ad_groups', 'adGroups', 'campaign_sections', 'campaignSections']),
+  budget_cap_and_cpa_assumption: Object.freeze(['budgetCapAndCpaAssumption', 'budget_guardrails', 'budgetGuardrails', 'budget_cap', 'budgetCap', 'target_cpa', 'targetCpa', 'target_cpa_assumptions', 'targetCpaAssumptions', 'cpa_assumption', 'cpaAssumption']),
+  budget_guardrails: Object.freeze(['budgetGuardrails', 'budget_cap_and_cpa_assumption', 'budgetCapAndCpaAssumption', 'budget_cap', 'budgetCap', 'target_cpa_assumptions', 'targetCpaAssumptions']),
+  stop_rules: Object.freeze(['stopRules']),
+  creative_asset_packet: Object.freeze(['creativeAssetPacket', 'approval_ready_ad_asset_packet', 'approvalReadyAdAssetPacket', 'ad_asset_packet', 'adAssetPacket', 'creative_assets', 'creativeAssets', 'ad_creatives', 'adCreatives']),
+  ads_saas_handoff: Object.freeze(['adsSaasHandoff', 'ads_saas_handoff_packet', 'adsSaasHandoffPacket', 'ads_saas_fields', 'adsSaasFields', 'ads_handoff', 'adsHandoff']),
+  ads_saas_handoff_packet: Object.freeze(['adsSaasHandoffPacket', 'ads_saas_handoff', 'adsSaasHandoff', 'ads_saas_fields', 'adsSaasFields', 'ads_handoff', 'adsHandoff']),
+  approval_and_launch_boundary: Object.freeze(['approvalAndLaunchBoundary', 'approval_boundary', 'approvalBoundary', 'launch_boundary', 'launchBoundary', 'approval_checklist', 'approvalChecklist', 'launch_approval_checklist', 'launchApprovalChecklist', 'missing_execution_inputs', 'missingExecutionInputs']),
+  launch_approval_handoff: Object.freeze(['launchApprovalHandoff', 'launch_approval_handoff_packet', 'launchApprovalHandoffPacket', 'launch_handoff_packet', 'launchHandoffPacket']),
+  execution_status_labels: Object.freeze(['executionStatusLabels', 'execution_status', 'executionStatus', 'status_labels', 'statusLabels']),
+  measurement_plan: Object.freeze(['measurementPlan', 'measurement_checks', 'measurementChecks', 'conversion_tracking_plan', 'conversionTrackingPlan', 'tracking_plan', 'trackingPlan', 'post_launch_measurement', 'postLaunchMeasurement'])
+});
+
 function firstValue(source = {}, keys = []) {
   const object = objectValue(source);
   for (const key of keys) {
@@ -98,11 +115,26 @@ function row(label = '', detail = '', status = '') {
   return { label: text(label), detail: text(detail), status: text(status) };
 }
 
+function parseJsonRowsValue(value = '') {
+  const safe = text(value);
+  if (!/^[\[{]/.test(safe)) return null;
+  try {
+    const parsed = JSON.parse(safe);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function rowsFromValue(value, fallbackLabel = '') {
   if (value == null || value === '') return [];
   if (Array.isArray(value)) return value.flatMap((item) => rowsFromValue(item, fallbackLabel));
-  if (typeof value !== 'object') return [row(fallbackLabel || 'Item', String(value))];
+  if (typeof value !== 'object') {
+    const parsed = parseJsonRowsValue(value);
+    return parsed ? rowsFromValue(parsed, fallbackLabel) : [row(fallbackLabel || 'Item', String(value))];
+  }
   const object = objectValue(value);
+  if (!Object.keys(object).length) return [];
   if (Array.isArray(object.rows)) return rowsFromValue(object.rows, fallbackLabel);
   if (Array.isArray(object.items)) return rowsFromValue(object.items, fallbackLabel);
   if (Array.isArray(object.queue)) return rowsFromValue(object.queue, fallbackLabel);
@@ -131,7 +163,7 @@ function artifactMatches(artifact = {}, types = []) {
 
 function contractKeys(type = '') {
   const normalized = normalizeKey(type);
-  return [...new Set([normalized, camelKey(normalized)].filter(Boolean))];
+  return [...new Set([normalized, camelKey(normalized), ...(ADS_CONTRACT_ALIASES[normalized] || [])].filter(Boolean))];
 }
 
 function rawRowsFor(context = {}, type = '') {

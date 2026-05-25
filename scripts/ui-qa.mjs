@@ -755,7 +755,7 @@ assert.ok(campaignOperationsHtml.includes('AIAGENT chat output'), 'Campaign Oper
 assert.ok(adsOpsHtml.includes('Ads Launch Console'), 'Ads Launch Console should be a first-class app page.');
 assert.ok(adsOpsHtml.includes('href="/apps.html"'), 'Ads Launch Console should link back to the apps hub.');
 assert.ok(adsOpsHtml.includes('id="sendAdsContextBtn"'), 'Ads Launch Console should send context to CAIt.');
-assert.ok(adsOpsHtml.includes('/ads-ops.js?v=20260526a'), 'Ads Launch Console should load the app-context receiving controller.');
+assert.ok(adsOpsHtml.includes('/ads-ops.js?v=20260526b'), 'Ads Launch Console should load the app-context receiving controller.');
 assert.ok(adsOpsHtml.includes('id="adsReadinessList"'), 'Ads Launch Console should show operational readiness.');
 assert.ok(adsOpsHtml.includes('id="adsHandoffNotice"'), 'Ads Launch Console should show CAIt handoff session state.');
 assert.ok(adsOpsHtml.includes('id="adsHandoffAuditList"'), 'Ads Launch Console should show AIAGENT handoff audit gaps.');
@@ -882,6 +882,8 @@ assert.ok(adsOpsJs.includes("type: 'measurement_plan'"), 'Ads Launch Console sho
 assert.ok(adsOpsJs.includes('ads_handoff_audit'), 'Ads Launch Console should include handoff audit details in raw_context.');
 assert.ok(appContextDomainJs.includes('ads_saas_handoff'), 'Server-side app context should preserve Ads SaaS handoff contract fields in raw_context.');
 assert.ok(caitAppBridge.includes('ads_saas_handoff'), 'Client app-context bridge should preserve Ads SaaS handoff contract fields.');
+assert.ok(appContextDomainJs.includes('approval_ready_ad_asset_packet') && appHandoffTransferJs.includes('APP_HANDOFF_ADS_CONTRACT_ALIASES'), 'Ads Launch handoff should canonicalize Ads Planner action-boundary aliases.');
+assert.ok(adsOpsJs.includes('launch_approval_handoff_packet') && caitAppBridge.includes('conversion_tracking_plan'), 'Ads Launch Console should recover launch approval and measurement alias packets.');
 assert.ok(!adsOpsJs.includes("source_app: 'analytics_console'"), 'Ads Launch Console JS should not contain Analytics app logic.');
 assert.ok(!adsOpsJs.includes("source_app: 'publisher_approval_studio'"), 'Ads Launch Console JS should not contain Publisher app logic.');
 assert.ok(!adsOpsJs.includes("source_app: 'lead_ops_console'"), 'Ads Launch Console JS should not contain Lead Ops app logic.');
@@ -1092,7 +1094,7 @@ assert.ok(chatJs.includes("from './chat-engine.js?v=20260525a'"), 'Chat JS shoul
 assert.ok(!appHandoffTransferJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'App handoff transfer must not parse delivery body text for legacy social-post extraction.');
 assert.ok(!appHandoffTransferJs.includes('extractSocialPostTextFromDeliveryContent'), 'Dedicated app handoff text should come from explicit artifact metadata only.');
 assert.ok(!chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should not import delivery action parsing helpers directly.');
-assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260525b'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
+assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260526b'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
 assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
 assert.ok(chatJs.includes('await consumeCaitAppContextForChat()'), 'Chat should await server-side app context retrieval before filling the composer.');
 assert.ok(chatJs.includes('refreshAppContexts'), 'Chat Apps panel should load reusable app contexts from the server.');

@@ -63,7 +63,7 @@ import {
   explicitHandoffArtifactTypesFromAuthorityRequest as appHandoffGateExplicitArtifactTypesFromAuthorityRequest,
   explicitHandoffArtifactTypesFromFile as appHandoffGateExplicitArtifactTypesFromFile,
   renderAppHandoffTree as appHandoffGateRenderTree
-} from './app-handoff-gate.js?v=20260525a';
+} from './app-handoff-gate.js?v=20260526b';
 import {
   appContextFromTransferPayload,
   appHandoffBaseTransferPacket,
@@ -71,7 +71,7 @@ import {
   appHandoffPayloadContractError,
   appHandoffSocialPostDraftFromDeliveryFiles,
   appTransferPayloadWithEditedText
-} from './app-handoff-transfer.js?v=20260525a';
+} from './app-handoff-transfer.js?v=20260526b';
 import {
   appContextAnswerLine as appContextGateAnswerLine,
   appContextMatchesManifest as appContextGateMatchesManifest,
@@ -103,7 +103,7 @@ import {
   caitAppContextChatPrompt,
   caitAppContextThreadHtml,
   consumeCaitAppContextForChat
-} from './cait-app-bridge.js?v=20260525b';
+} from './cait-app-bridge.js?v=20260526b';
 import {
   isDeliveryHistoryQuestionIntentText,
   isLeaderCatalogQuestionIntentText,

@@ -1414,6 +1414,12 @@ const seoPublisherItem = sanitizeDeliveryItemForSurface({
   itemType: 'publish_asset',
   title: 'SEO SPECIALIST',
   workflowTask: 'seo_specialist',
+  metadata: {
+    content_type: 'seo_article',
+    artifact_type: 'seo_article',
+    item_type: 'seo_article',
+    title: 'example.com SEO article'
+  },
   body: [
     '# SEO SPECIALIST',
     'Canonical user brief: Product/service: https://example.com Main goal: signup trial start. Target audience: developers and technical buyers.',

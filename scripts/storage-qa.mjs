@@ -524,7 +524,19 @@ await deliveryItemStorage.upsertJobs([{
   workflowAgentName: 'SEO SPECIALIST',
   output: {
     report: { summary: 'SEO article ready' },
-    files: [{ name: 'seo-agent-delivery.md', type: 'text/markdown', content: '# SEO article\n\nTitle: AI agent marketplace guide\n\nMeta description: Source-backed guide.\n\nSource: https://reddit.com/r/example\n\nLeader checkpointで確認する本文。' }]
+    files: [{
+      name: 'seo-agent-delivery.md',
+      type: 'text/markdown',
+      content_type: 'seo_article',
+      artifact_type: 'seo_article',
+      surface: 'publisher',
+      item_type: 'seo_article',
+      metadata: {
+        title: 'AI agent marketplace guide',
+        meta_description: 'Source-backed guide.'
+      },
+      content: '# SEO article\n\nTitle: AI agent marketplace guide\n\nMeta description: Source-backed guide.\n\nSource: https://reddit.com/r/example\n\nLeader checkpointで確認する本文。'
+    }]
   },
   createdAt: '2026-04-26T08:20:00.000Z',
   completedAt: '2026-04-26T08:21:00.000Z'
@@ -544,6 +556,14 @@ await deliveryItemStorage.upsertJobs([{
     files: [{
       name: 'landing-page-critique-delivery.md',
       type: 'text/markdown',
+      content_type: 'landing_page',
+      artifact_type: 'landing_page',
+      surface: 'publisher',
+      item_type: 'landing_page',
+      metadata: {
+        title: 'example.com - signup landing page',
+        meta_description: 'Use example.com to show the offer, proof, and next step for Developers/technical users, then continue to signup or trial start.'
+      },
       content: [
         '# example.com - signup landing page',
         '',
@@ -592,7 +612,20 @@ await deliveryItemStorage.upsertJobs([{
   workflowAgentName: 'X OPS CONNECTOR AGENT',
   output: {
     report: { summary: 'X post packet ready' },
-    files: [{ name: 'x-ops-connector-delivery.md', type: 'text/markdown', content: '# X post packet\n\nPost text: Engineers can compare AI agent workflows before signup.\n\nCTA: https://example.com' }]
+    files: [{
+      name: 'x-ops-connector-delivery.md',
+      type: 'text/markdown',
+      content_type: 'x_post_packet',
+      artifact_type: 'x_post_packet',
+      artifact_types: ['x_post_packet', 'x_post', 'approval_request'],
+      surface: 'publisher',
+      item_type: 'x_post',
+      action_type: 'x_post',
+      channel: 'x',
+      connector: 'x',
+      connector_capability: 'x.post',
+      content: '# X post packet\n\nPost text: Engineers can compare AI agent workflows before signup.\n\nCTA: https://example.com'
+    }]
   },
   createdAt: '2026-04-26T08:21:40.000Z',
   completedAt: '2026-04-26T08:21:50.000Z'
@@ -609,7 +642,20 @@ await deliveryItemStorage.upsertJobs([{
   workflowAgentName: 'REDDIT LAUNCH AGENT',
   output: {
     report: { summary: 'Reddit packet ready' },
-    files: [{ name: 'reddit-launch-delivery.md', type: 'text/markdown', content: '# Reddit launch packet\n\nSubreddit: r/SideProject\n\nPost text: I am testing an AI agent marketplace flow for technical users.' }]
+    files: [{
+      name: 'reddit-launch-delivery.md',
+      type: 'text/markdown',
+      content_type: 'reddit_post_packet',
+      artifact_type: 'reddit_post_packet',
+      artifact_types: ['reddit_post_packet', 'reddit_post', 'approval_request'],
+      surface: 'publisher',
+      item_type: 'reddit_post',
+      action_type: 'reddit_post',
+      channel: 'reddit',
+      connector: 'reddit',
+      connector_capability: 'reddit.post',
+      content: '# Reddit launch packet\n\nSubreddit: r/SideProject\n\nPost text: I am testing an AI agent marketplace flow for technical users.'
+    }]
   },
   createdAt: '2026-04-26T08:21:55.000Z',
   completedAt: '2026-04-26T08:22:00.000Z'
@@ -626,7 +672,20 @@ await deliveryItemStorage.upsertJobs([{
   workflowAgentName: 'INDIE HACKERS LAUNCH AGENT',
   output: {
     report: { summary: 'Indie Hackers packet ready' },
-    files: [{ name: 'indie-hackers-launch-delivery.md', type: 'text/markdown', content: '# Indie Hackers launch packet\n\nPost text: Building a low-budget acquisition loop for an AI agent marketplace.' }]
+    files: [{
+      name: 'indie-hackers-launch-delivery.md',
+      type: 'text/markdown',
+      content_type: 'indie_hackers_packet',
+      artifact_type: 'indie_hackers_packet',
+      artifact_types: ['indie_hackers_packet', 'indie_hackers_post', 'approval_request'],
+      surface: 'publisher',
+      item_type: 'indie_hackers_post',
+      action_type: 'indie_hackers_post',
+      channel: 'indie_hackers',
+      connector: 'indie_hackers',
+      connector_capability: 'indie_hackers.post',
+      content: '# Indie Hackers launch packet\n\nPost text: Building a low-budget acquisition loop for an AI agent marketplace.'
+    }]
   },
   createdAt: '2026-04-26T08:22:05.000Z',
   completedAt: '2026-04-26T08:22:10.000Z'
@@ -660,7 +719,15 @@ await deliveryItemStorage.upsertJobs([{
   workflowAgentName: 'DATA ANALYSIS AGENT',
   output: {
     report: { summary: 'GA4 packet' },
-    files: [{ name: 'analytics.md', type: 'text/markdown', content: '# GA4 packet\n\nリード and signup context.' }]
+    files: [{
+      name: 'analytics.md',
+      type: 'text/markdown',
+      content_type: 'analytics_packet',
+      artifact_type: 'analytics_packet',
+      surface: 'analytics',
+      item_type: 'analytics_packet',
+      content: '# GA4 packet\n\nリード and signup context.'
+    }]
   },
   createdAt: '2026-04-26T08:24:00.000Z',
   completedAt: '2026-04-26T08:25:00.000Z'
@@ -703,6 +770,27 @@ await deliveryItemStorage.upsertJobs([{
   createdAt: '2026-04-26T08:28:00.000Z',
   completedAt: '2026-04-26T08:29:00.000Z'
 }]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-task-filename-noise',
+  parentAgentId: 'qa',
+  taskType: 'seo_specialist',
+  prompt: 'task and filename should not create app item without explicit metadata',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'seo_specialist',
+  workflowAgentName: 'SEO SPECIALIST',
+  output: {
+    report: { summary: 'Generic delivery with app-like task and filename' },
+    files: [{
+      name: 'x-post-seo-landing-publisher.md',
+      type: 'text/markdown',
+      content: '# Generic memo\n\nThis is only a delivery memo. There is no explicit surface, content_type, artifact_type, or item_type.'
+    }]
+  },
+  createdAt: '2026-04-26T08:29:10.000Z',
+  completedAt: '2026-04-26T08:29:20.000Z'
+}]);
 const publisherItems = await deliveryItemStorage.listDeliveryItems({ surface: 'publisher', ownerLogins: ['owner@example.com'] });
 assert.equal(publisherItems.length, 5, `publisher items: ${JSON.stringify(publisherItems.map((item) => ({
   type: item.itemType,
@@ -710,6 +798,7 @@ assert.equal(publisherItems.length, 5, `publisher items: ${JSON.stringify(publis
   jobId: item.jobId
 })))}`);
 assert.equal(publisherItems.some((item) => item.jobId === 'job-generic-keyword-noise'), false, 'body keywords alone must not create Publisher delivery items');
+assert.equal(publisherItems.some((item) => item.jobId === 'job-task-filename-noise'), false, 'task type and filename alone must not create Publisher delivery items');
 const seoPublisherItem = publisherItems.find((item) => item.itemType === 'seo_article');
 const landingPublisherItem = publisherItems.find((item) => item.itemType === 'landing_page');
 const xPublisherItem = publisherItems.find((item) => item.itemType === 'x_post');
@@ -743,6 +832,7 @@ const analyticsItems = await deliveryItemStorage.listDeliveryItems({ surface: 'a
 assert.equal(analyticsItems.length, 1);
 assert.equal(analyticsItems[0].surface, 'analytics');
 assert.equal(analyticsItems.some((item) => item.jobId === 'job-generic-keyword-noise'), false, 'body keywords alone must not create Analytics delivery items');
+assert.equal(analyticsItems.some((item) => item.jobId === 'job-task-filename-noise'), false, 'task type and filename alone must not create Analytics delivery items');
 const leadItems = await deliveryItemStorage.listDeliveryItems({ surface: 'lead', ownerLogins: ['owner@example.com'] });
 assert.equal(leadItems.length, 0);
 

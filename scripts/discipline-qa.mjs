@@ -607,6 +607,8 @@ assert.equal(
 );
 assertNotIncludes(deliveryItemsSource, [
   'function publisherFallback',
+  'function metadataFromContent',
+  'function labeledValue',
   'Hero promise: turn the visitor',
   'Example delivery packet showing the finished output',
   'prepared.body || rawContent',
@@ -619,7 +621,9 @@ const inferDeliverySurfaceSource = deliveryItemsSource.slice(
 );
 assertNotIncludes(inferDeliverySurfaceSource, [
   'content.slice',
-  'content ='
+  'content =',
+  'taskType',
+  'fileName'
 ], 'lib/delivery-items.js inferSurface');
 const publisherChannelProfileSource = deliveryItemsSource.slice(
   deliveryItemsSource.indexOf('function publisherChannelProfile'),
@@ -627,15 +631,19 @@ const publisherChannelProfileSource = deliveryItemsSource.slice(
 );
 assertNotIncludes(publisherChannelProfileSource, [
   'content.slice',
-  'content ='
+  'content =',
+  'taskType',
+  'fileName'
 ], 'lib/delivery-items.js publisherChannelProfile');
 const inferDeliveryItemTypeSource = deliveryItemsSource.slice(
   deliveryItemsSource.indexOf('function inferItemType'),
-  deliveryItemsSource.indexOf('function surfaceForTask')
+  deliveryItemsSource.indexOf('function surfaceForArtifact')
 );
 assertNotIncludes(inferDeliveryItemTypeSource, [
   'content.slice',
-  'content ='
+  'content =',
+  'taskType',
+  'fileName'
 ], 'lib/delivery-items.js inferItemType');
 assert.ok(
   clientSource.includes('function buildOpenChatPreLlmGuardAnswer'),

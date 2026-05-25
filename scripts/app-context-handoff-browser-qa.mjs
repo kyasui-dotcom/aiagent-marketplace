@@ -1105,6 +1105,54 @@ try {
   if (!JSON.stringify(adsPacket.artifacts || []).includes('ads_saas_handoff')) throw new Error('ads packet did not return ads_saas_handoff for app contract reuse');
   if (!JSON.stringify(adsPacket.raw_context?.received_context || {}).includes('ads-planner-delivery.md')) throw new Error('ads source delivery file was not preserved in raw_context');
 
+  const adsAliasTransferContext = appContextFromTransferPayload('ads-launch-console', {
+    transfer_id: 'transfer-ads-aliases',
+    title: 'Ads Planner alias handoff',
+    summary: 'Ads Planner returned action-boundary alias fields instead of canonical app contract names.',
+    adCampaignPlan: {
+      objective: 'Recover alias-only Ads Planner output into stable launch operations.',
+      audience: 'Operators worried AIAGENT plan data disappears.',
+      provider: 'meta_ads'
+    },
+    targetCpaAssumptions: [
+      { label: 'Alias CPA assumption', detail: '45 USD until conversion tracking is verified.' }
+    ],
+    approvalReadyAdAssetPacket: [
+      { label: 'Alias headline draft', detail: 'AIAGENT output, retained before spend', status: 'draft_only' }
+    ],
+    adsSaasFields: [
+      { label: 'Ad account', detail: 'Meta Ads account must be connected before submit.', status: 'needs_connector' }
+    ],
+    launchApprovalHandoffPacket: [
+      { label: 'Launch owner approval', detail: 'Budget, stop rules, tracking, and creative must be approved.', status: 'required' }
+    ],
+    conversionTrackingPlan: [
+      { label: 'Alias 48h quality check', detail: 'Compare CPA and qualified conversion signal.', status: 'scheduled' }
+    ]
+  }, {
+    manifestById: () => ({
+      id: 'ads-launch-console',
+      name: 'Ads Launch Console',
+      requiresApprovalFor: ['ads_launch', 'budget_spend'],
+      inputContract: {
+        schemaVersion: 'cait-app-context/v1',
+        accepts: ['ads_plan', 'budget_cap_and_cpa_assumption', 'creative_asset_packet', 'ads_saas_handoff', 'launch_approval_handoff', 'measurement_plan']
+      }
+    })
+  });
+  if (!JSON.stringify(adsAliasTransferContext.raw_context?.contract_fields || {}).includes('Alias headline draft')) throw new Error('ads alias transfer did not canonicalize creative asset packet');
+  if (!JSON.stringify(adsAliasTransferContext.artifacts || []).includes('launch_approval_handoff')) throw new Error('ads alias transfer did not return launch approval handoff artifact');
+  await openAppWithContext(page, `/ads-ops.html?chat_return_to=${encodeURIComponent('/chat?thread=ads-alias')}&chat_handoff_id=ads-alias-handoff`, adsAliasTransferContext);
+  await page.waitForSelector('#adsPlanTable');
+  await page.waitForFunction(() => document.querySelector('#adsRecordTitle')?.textContent?.includes('Ads Planner alias handoff'));
+  if (!(await page.textContent('#adsPlanTable')).includes('Operators worried AIAGENT')) throw new Error('ads alias plan was not imported');
+  if (!(await page.textContent('#adsLaunchTable')).includes('Alias headline draft')) throw new Error('ads approval_ready_ad_asset_packet alias was not imported');
+  if (!(await page.textContent('#adsLaunchTable')).includes('Launch owner approval')) throw new Error('ads launch_approval_handoff_packet alias was not imported');
+  if (!(await page.textContent('#adsMeasurementTable')).includes('Alias 48h quality check')) throw new Error('ads conversion_tracking_plan alias was not imported');
+  const adsAliasPacket = JSON.parse(await page.textContent('#adsContextPreview'));
+  if (adsAliasPacket.raw_context?.chat_handoff_id !== 'ads-alias-handoff') throw new Error('ads alias handoff id was not preserved');
+  if (!JSON.stringify(adsAliasPacket.artifacts || []).includes('AIAGENT output, retained before spend')) throw new Error('ads alias creative packet was not returned for reuse');
+
   await openAppWithContext(page, '/lead-ops.html', {
     schema: 'cait-app-context/v1',
     source_app: 'qa_list_creator',

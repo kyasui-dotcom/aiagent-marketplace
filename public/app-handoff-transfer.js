@@ -456,31 +456,57 @@ const APP_HANDOFF_ADS_CONTRACT_FIELDS = Object.freeze([
   'measurement_plan'
 ]);
 
+const APP_HANDOFF_ADS_CONTRACT_ALIASES = Object.freeze({
+  ads_plan: Object.freeze(['adsPlan', 'ads_plan_packet', 'adsPlanPacket', 'paid_ads_plan', 'paidAdsPlan', 'ad_plan', 'adPlan', 'ad_campaign_plan', 'adCampaignPlan', 'paid_acquisition_plan', 'paidAcquisitionPlan']),
+  ads_plan_packet: Object.freeze(['adsPlanPacket', 'ads_plan', 'adsPlan', 'paid_ads_plan', 'paidAdsPlan', 'ad_plan', 'adPlan', 'ad_campaign_plan', 'adCampaignPlan', 'paid_acquisition_plan', 'paidAcquisitionPlan']),
+  paid_ads_plan: Object.freeze(['paidAdsPlan', 'ads_plan', 'adsPlan', 'ads_plan_packet', 'adsPlanPacket', 'ad_plan', 'adPlan', 'ad_campaign_plan', 'adCampaignPlan', 'paid_acquisition_plan', 'paidAcquisitionPlan']),
+  campaign_structure: Object.freeze(['campaignStructure', 'ad_groups', 'adGroups', 'campaign_sections', 'campaignSections']),
+  budget_cap_and_cpa_assumption: Object.freeze(['budgetCapAndCpaAssumption', 'budget_guardrails', 'budgetGuardrails', 'budget_cap', 'budgetCap', 'target_cpa', 'targetCpa', 'target_cpa_assumptions', 'targetCpaAssumptions', 'cpa_assumption', 'cpaAssumption']),
+  budget_guardrails: Object.freeze(['budgetGuardrails', 'budget_cap_and_cpa_assumption', 'budgetCapAndCpaAssumption', 'budget_cap', 'budgetCap', 'target_cpa_assumptions', 'targetCpaAssumptions']),
+  stop_rules: Object.freeze(['stopRules']),
+  creative_asset_packet: Object.freeze(['creativeAssetPacket', 'approval_ready_ad_asset_packet', 'approvalReadyAdAssetPacket', 'ad_asset_packet', 'adAssetPacket', 'creative_assets', 'creativeAssets', 'ad_creatives', 'adCreatives']),
+  ads_saas_handoff: Object.freeze(['adsSaasHandoff', 'ads_saas_handoff_packet', 'adsSaasHandoffPacket', 'ads_saas_fields', 'adsSaasFields', 'ads_handoff', 'adsHandoff']),
+  ads_saas_handoff_packet: Object.freeze(['adsSaasHandoffPacket', 'ads_saas_handoff', 'adsSaasHandoff', 'ads_saas_fields', 'adsSaasFields', 'ads_handoff', 'adsHandoff']),
+  approval_and_launch_boundary: Object.freeze(['approvalAndLaunchBoundary', 'approval_boundary', 'approvalBoundary', 'launch_boundary', 'launchBoundary', 'approval_checklist', 'approvalChecklist', 'launch_approval_checklist', 'launchApprovalChecklist', 'missing_execution_inputs', 'missingExecutionInputs']),
+  launch_approval_handoff: Object.freeze(['launchApprovalHandoff', 'launch_approval_handoff_packet', 'launchApprovalHandoffPacket', 'launch_handoff_packet', 'launchHandoffPacket']),
+  execution_status_labels: Object.freeze(['executionStatusLabels', 'execution_status', 'executionStatus', 'status_labels', 'statusLabels']),
+  measurement_plan: Object.freeze(['measurementPlan', 'measurement_checks', 'measurementChecks', 'conversion_tracking_plan', 'conversionTrackingPlan', 'tracking_plan', 'trackingPlan', 'post_launch_measurement', 'postLaunchMeasurement'])
+});
+
 function appHandoffTransferCamelKey(value = '') {
   return String(value || '').replace(/_([a-z0-9])/g, (_, char) => char.toUpperCase());
 }
 
 function appHandoffTransferContractValue(payload = {}, key = '') {
-  const camel = appHandoffTransferCamelKey(key);
   const raw = payload.raw_context && typeof payload.raw_context === 'object' ? payload.raw_context : {};
-  const candidates = [
-    payload[key],
-    payload[camel],
-    raw[key],
-    raw[camel],
-    payload.delivery?.[key],
-    payload.delivery?.[camel],
-    payload.context?.[key],
-    payload.context?.[camel]
-  ];
+  const keys = [...new Set([key, appHandoffTransferCamelKey(key), ...(APP_HANDOFF_ADS_CONTRACT_ALIASES[key] || [])].filter(Boolean))];
+  const candidates = keys.flatMap((candidateKey) => [
+    payload[candidateKey],
+    raw[candidateKey],
+    payload.delivery?.[candidateKey],
+    payload.context?.[candidateKey]
+  ]);
   return candidates.find((item) => item != null && item !== '');
 }
 
 function appHandoffTransferContractFields(manifest = {}, payload = {}) {
+  const seenValues = new Set();
   return Object.fromEntries(APP_HANDOFF_ADS_CONTRACT_FIELDS
     .filter((key) => appHandoffTransferManifestAccepts(manifest, key))
     .map((key) => [key, appHandoffTransferContractValue(payload, key)])
-    .filter(([, value]) => value != null && value !== ''));
+    .filter(([, value]) => {
+      if (value == null || value === '') return false;
+      const valueKey = (() => {
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return String(value);
+        }
+      })();
+      if (seenValues.has(valueKey)) return false;
+      seenValues.add(valueKey);
+      return true;
+    }));
 }
 
 export function appContextFromTransferPayload(appId = '', payload = {}, options = {}) {
