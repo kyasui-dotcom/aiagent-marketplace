@@ -1729,7 +1729,7 @@ function renderPublisherLoginState() {
     els.publisherLoginLink.href = '/settings';
   } else {
     const url = new URL('/login', window.location.origin);
-    url.searchParams.set('next', '/publisher-approval.html');
+    url.searchParams.set('next', currentPublisherReturnPath());
     url.searchParams.set('source', 'publisher_saas');
     els.publisherLoginLink.textContent = 'Publisher login';
     els.publisherLoginLink.href = `${url.pathname}${url.search}`;
