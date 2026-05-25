@@ -276,17 +276,8 @@ export function articleCandidateFromClassification(run = null, cached = null) {
 }
 
 export function genericDeliverableFromClassification(run = null, cached = null) {
-  if (!run?.id || !cached || cached.status !== 'done' || !cached.content || !cached.contentType || cached.contentType === 'other' || cached.contentType === 'article_draft') return null;
-  return {
-    type: String(cached.contentType || 'other'),
-    title: compactClientText(String(cached.title || `${run?.taskType || 'delivery'} output`), 140),
-    content: rawDeliveryText(cached.content),
-    fileName: String(cached.fileName || ''),
-    format: String(cached.format || 'text/markdown'),
-    confidence: Number(cached.confidence || 0),
-    reason: String(cached.reason || ''),
-    actionContract: resolveDeliveryActionContract(cached.contentType, cached.actionContract)
-  };
+  if (!run?.id || !cached || cached.status !== 'done') return null;
+  return null;
 }
 
 export function genericDeliverableFromExplicitFiles(report = {}, files = []) {

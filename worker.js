@@ -7456,6 +7456,8 @@ export default {
         '/ads-ops.js',
         '/growth-ops.html',
         '/growth-ops.js',
+        '/pricing-ops.html',
+        '/pricing-ops.js',
         '/delivery-manager.html',
         '/delivery-manager.js',
         '/app-console.css',

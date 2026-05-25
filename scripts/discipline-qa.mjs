@@ -39,6 +39,7 @@ const measurementEvidenceGateSource = read('public/measurement-evidence-gate.js'
 const agentProgressViewSource = read('public/agent-progress-view.js');
 const adsOpsSource = read('public/ads-ops.js');
 const clientSource = read('public/client.js');
+const clientDeliveryFilesSource = read('public/client-delivery-files.js');
 const workActionRegistrySource = read('public/work-action-registry.js');
 const workIntentResolverSource = read('public/work-intent-resolver.js');
 const campaignOperationsSource = read('lib/builtin-agents/agents/campaign-operations.js');
@@ -472,6 +473,34 @@ assert.equal(
 assert.ok(
   openChatIntentSource.includes("if (preliminary?.intake?.questionSource === 'rules') return preliminary;"),
   'generic Open Chat LLM intake must not replace agent-owned leaderBehavior.intakeQuestions'
+);
+const openChatDeliveryClassifierSource = openChatIntentSource.slice(
+  openChatIntentSource.indexOf('function deliveryClassifierSystemPrompt'),
+  openChatIntentSource.indexOf('function normalizeOpenChatIntentResult')
+);
+assertNotIncludes(openChatDeliveryClassifierSource, [
+  'social_post_pack',
+  'email_pack',
+  'code_handoff',
+  'report_bundle'
+], 'lib/open-chat-intent.js delivery classifier');
+assert.ok(
+  openChatDeliveryClassifierSource.includes('Do not infer app handoff, connector action, execution type, or delivery artifact type from the content.'),
+  'Open Chat delivery classifier must be limited to article detection and must not create app/action artifact contracts from body text'
+);
+const clientGenericClassificationSource = clientDeliveryFilesSource.slice(
+  clientDeliveryFilesSource.indexOf('export function genericDeliverableFromClassification'),
+  clientDeliveryFilesSource.indexOf('export function genericDeliverableFromExplicitFiles')
+);
+assert.ok(
+  clientGenericClassificationSource.includes('return null;')
+    && !clientGenericClassificationSource.includes('resolveDeliveryActionContract'),
+  'client delivery classification must not create generic execution/app deliverables from body-derived classifier output'
+);
+assert.ok(
+  clientDeliveryFilesSource.includes("['social_post_pack', 'email_pack', 'code_handoff', 'report_bundle'].includes(type)")
+    && clientDeliveryFilesSource.includes('execution_candidate === true'),
+  'client generic delivery actions must require explicit agent/provider execution-candidate file metadata'
 );
 const clientPreorderIntentSource = clientSource.slice(clientSource.indexOf('function preorderIntentLlmAnswerFromResult'), clientSource.indexOf('function openChatPreparedOrderActions'));
 assert.ok(

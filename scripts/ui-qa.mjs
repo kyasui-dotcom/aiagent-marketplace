@@ -851,7 +851,7 @@ for (const app of caitManagedSurfaceEntries) {
 }
 
 assert.ok(analyticsJs.includes("source_app: 'analytics_console'"), 'Analytics app logic should stay in analytics-console.js.');
-assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260526d"), 'Analytics Console should load the latest CAIt app bridge.');
+assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260526f"), 'Analytics Console should load the latest CAIt app bridge.');
 assert.ok(caitAppBridge.includes("`${origin}/auth/status`"), 'CAIt app bridge should read auth status before same-origin context handoff.');
 assert.ok(caitAppBridge.includes("headers['x-aiagent2-csrf'] = csrfToken"), 'CAIt app bridge should attach CSRF token to same-origin context handoff writes.');
 assert.ok(caitAppBridge.includes('createServerAppContextWithRetry'), 'CAIt app bridge should retry server-side app context writes.');
@@ -950,10 +950,13 @@ assert.ok(pricingOpsJs.includes("type: 'sensitivity_table'"), 'Pricing Decision 
 assert.ok(pricingOpsJs.includes("type: 'price_change_handoff'"), 'Pricing Decision Console should return price_change_handoff artifacts.');
 assert.ok(pricingOpsJs.includes("type: 'execution_proof_tracker'"), 'Pricing Decision Console should return execution_proof_tracker artifacts.');
 assert.ok(pricingOpsJs.includes('pricing_handoff_audit'), 'Pricing Decision Console should include handoff audit details in raw_context.');
+assert.ok(pricingOpsJs.includes('receivedRaw') && pricingOpsJs.includes('receivedContractFields'), 'Pricing Decision Console should restore aliases nested under received_context.raw_context.');
+assert.ok(pricingOpsJs.includes('Array.isArray(value) && !value.length'), 'Pricing Decision Console should not let empty canonical arrays mask populated alias fields.');
 assert.ok(appContextDomainJs.includes('pricing_decision_packet'), 'Server-side app context should preserve pricing decision packet contract fields in raw_context.');
 assert.ok(appContextDomainJs.includes('price_change_handoff'), 'Server-side app context should preserve price change handoff contract fields in raw_context.');
 assert.ok(caitAppBridge.includes('pricing_decision_packet'), 'Client app-context bridge should preserve pricing decision packet contract fields.');
 assert.ok(caitAppBridge.includes('priceChangeHandoff'), 'Client app-context bridge should preserve price change handoff aliases.');
+assert.ok(caitAppBridge.includes('priceChangePacket') && caitAppBridge.includes('proofTracker') && caitAppBridge.includes('rollbackRule'), 'Client app-context bridge should preserve common Pricing/CFO alias packet keys.');
 assert.ok(appHandoffTransferJs.includes('APP_HANDOFF_PRICING_CONTRACT_FIELDS'), 'Generic app handoff transfer should preserve Pricing/CFO contract fields.');
 assert.ok(appManifestRegistryJs.includes("'pricing_decision_packet'") && appManifestRegistryJs.includes("'rollback_or_continue_rule'"), 'Pricing Decision app manifest should declare retained pricing handoff contracts.');
 assert.ok(pricingOpsJs.includes('const PRICING_MARKDOWN_ARTIFACT_TYPES = Object.freeze(['), 'Pricing Decision Console should gate Markdown parsing on explicit Pricing/CFO artifact contracts.');
@@ -988,6 +991,7 @@ assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
 assert.ok(appsHtml.includes('/apps.js?v=20260526e'), 'Apps page should load the current server-side context history controller.');
+assert.ok(worker.includes("'/pricing-ops.html'") && worker.includes("'/pricing-ops.js'"), 'Worker should no-cache Pricing Decision Console assets after deploy.');
 assert.ok(appsHtml.includes('data-app-registry-list'), 'Apps page should expose the live app registry list.');
 assert.ok(appsHtml.includes('/.well-known/mcp.json') && appsHtml.includes('Disabled by default'), 'Apps page should describe MCP as disabled by default.');
 assert.ok(appsHtml.includes('COMING SOON'), 'Apps MCP tab should be labeled coming soon while MCP is paused.');
@@ -1169,7 +1173,7 @@ assert.ok(chatJs.includes("from './chat-engine.js?v=20260525a'"), 'Chat JS shoul
 assert.ok(!appHandoffTransferJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'App handoff transfer must not parse delivery body text for legacy social-post extraction.');
 assert.ok(!appHandoffTransferJs.includes('extractSocialPostTextFromDeliveryContent'), 'Dedicated app handoff text should come from explicit artifact metadata only.');
 assert.ok(!chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should not import delivery action parsing helpers directly.');
-assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260526d'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
+assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260526f'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
 assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
 assert.ok(chatJs.includes('await consumeCaitAppContextForChat()'), 'Chat should await server-side app context retrieval before filling the composer.');
 assert.ok(chatJs.includes('refreshAppContexts'), 'Chat Apps panel should load reusable app contexts from the server.');

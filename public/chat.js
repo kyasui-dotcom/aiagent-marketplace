@@ -71,7 +71,7 @@ import {
   appHandoffPayloadContractError,
   appHandoffSocialPostDraftFromDeliveryFiles,
   appTransferPayloadWithEditedText
-} from './app-handoff-transfer.js?v=20260526d';
+} from './app-handoff-transfer.js?v=20260526f';
 import {
   appContextAnswerLine as appContextGateAnswerLine,
   appContextMatchesManifest as appContextGateMatchesManifest,
@@ -103,7 +103,7 @@ import {
   caitAppContextChatPrompt,
   caitAppContextThreadHtml,
   consumeCaitAppContextForChat
-} from './cait-app-bridge.js?v=20260526d';
+} from './cait-app-bridge.js?v=20260526f';
 import {
   isDeliveryHistoryQuestionIntentText,
   isLeaderCatalogQuestionIntentText,

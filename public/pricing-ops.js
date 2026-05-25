@@ -1,4 +1,4 @@
-import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526d';
+import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526f';
 
 const els = {
   returnToChatLink: document.getElementById('pricingReturnToChatLink'),
@@ -105,7 +105,12 @@ function contractKeys(type = '') {
 function firstValue(source = {}, keys = []) {
   const object = objectValue(source);
   for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(object, key) && object[key] != null && object[key] !== '') return object[key];
+    if (!Object.prototype.hasOwnProperty.call(object, key)) continue;
+    const value = object[key];
+    if (value == null || value === '') continue;
+    if (Array.isArray(value) && !value.length) continue;
+    if (typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length) continue;
+    return value;
   }
   return undefined;
 }
@@ -164,7 +169,10 @@ function rawRowsFor(context = {}, type = '') {
   const raw = objectValue(context.raw_context);
   const received = objectValue(raw.received_context);
   const contractFields = objectValue(raw.contract_fields);
-  const sourceList = [context, raw, received, contractFields];
+  const receivedRaw = objectValue(received.raw_context);
+  const receivedContractFields = objectValue(receivedRaw.contract_fields);
+  const receivedNested = objectValue(receivedRaw.received_context);
+  const sourceList = [context, raw, received, contractFields, receivedRaw, receivedContractFields, receivedNested];
   return sourceList.flatMap((source) => {
     const value = firstValue(source, contractKeys(type));
     return rowsFromValue(value, type);

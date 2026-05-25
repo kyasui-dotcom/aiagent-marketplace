@@ -60,7 +60,7 @@ import {
   genericDeliverableFromExplicitFiles,
   normalizeArticleText,
   shouldClassifyDeliveryCandidate
-} from './client-delivery-files.js?v=20260521a';
+} from './client-delivery-files.js?v=20260526a';
 import { compactClientText as compactChatText } from './client-text-utils.js?v=20260521a';
 import {
   deliveryFileDisplayTitle,
