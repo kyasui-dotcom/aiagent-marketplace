@@ -187,10 +187,10 @@ const workSupportContractExpectations = [
   },
   {
     kind: 'diligence',
-    actions: ['prepare_red_flag_review', 'prepare_verification_queue'],
-    requiredSections: ['Decision context', 'Evidence map', 'Red flag matrix', 'Fact vs inference', 'Verification queue', 'Blocker severity', 'Conditional recommendation'],
-    guidedSections: ['Decision context', 'Evidence map', 'Red flag matrix', 'Fact vs inference', 'Verification queue', 'Blocker severity', 'Conditional recommendation'],
-    forbiddenClaims: ['risk cleared without evidence', 'generic risk list without severity']
+    actions: ['prepare_red_flag_review', 'prepare_verification_queue', 'prepare_decision_handoff'],
+    requiredSections: ['Decision context', 'Evidence map', 'Red flag matrix', 'Fact vs inference', 'Verification queue', 'Blocker severity', 'Go/no-go impact', 'Next verification per red flag', 'Decision owner handoff', 'Verification proof tracker', 'Approval/execution status labels', 'Conditional recommendation'],
+    guidedSections: ['Decision context', 'Evidence map', 'Red flag matrix', 'Fact vs inference', 'Verification queue', 'Blocker severity', 'Go/no-go impact', 'Next verification per red flag', 'Decision owner handoff', 'Verification proof tracker', 'Approval/execution status labels', 'Conditional recommendation'],
+    forbiddenClaims: ['risk cleared without evidence', 'generic risk list without severity', 'clean go recommendation while blocker verification is open', 'launch approved or go/no-go decision adopted without decision-owner proof', 'blocker resolved or verification completed without dated evidence']
   }
 ];
 

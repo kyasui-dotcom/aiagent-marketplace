@@ -437,11 +437,13 @@
       "id": "diligence-red-flag-review",
       "file": "diligence.js",
       "kind": "diligence",
-      "prompt": "Review a marketplace launch plan for blockers. Include red flag matrix, evidence map, severity, go/no-go impact for each material red flag, next verification per red flag, verification queue, and conditional recommendation.",
+      "prompt": "Review a marketplace launch plan for blockers. Include red flag matrix, evidence map, severity, go/no-go impact for each material red flag, next verification per red flag, verification queue, decision owner handoff, verification proof tracker, approval/execution status labels, and conditional recommendation. Do not claim launch approval, adopted go/no-go decision, blocker resolution, or completed verification without owner approval and dated proof.",
       "body": {
         "input": {
           "plan": "launch provider marketplace with paid orders",
-          "known_gap": "provider verification evidence is incomplete"
+          "known_gap": "provider verification evidence is incomplete",
+          "decision_owner": "founder",
+          "verification_proof_status": "no dated verification proof supplied"
         }
       }
     },
