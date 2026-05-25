@@ -91,9 +91,9 @@ const operationsContractExpectations = [
   {
     kind: 'follow_up',
     actions: ['prepare_open_loop_tracker', 'prepare_followup_draft', 'prepare_followup_send_handoff'],
-    requiredSections: ['Open-loop table', 'Owner', 'Deadline', 'Relationship context', 'Business impact', 'Follow-up copy', 'Approval condition', 'Approval/send handoff', 'Next check'],
-    guidedSections: ['Open-loop queue', 'Owner', 'Business impact', 'Approval condition', 'Approval/send handoff', 'Next action'],
-    forbiddenClaims: ['sent claim without connector proof', 'queued reminder without connector proof', 'follow-up complete without reply or owner confirmation']
+    requiredSections: ['Open-loop table', 'Owner', 'Deadline', 'Deadline gap handling', 'Priority rank and reason', 'Relationship context', 'Business impact', 'Follow-up copy', 'Approval condition', 'Approval/send handoff', 'Execution status labels', 'Next check trigger'],
+    guidedSections: ['Open-loop queue', 'Deadline gap handling', 'Priority rank and reason', 'Owner', 'Business impact', 'Approval condition', 'Approval/send handoff', 'Execution status labels', 'Next-check trigger', 'Next action'],
+    forbiddenClaims: ['sent claim without connector proof', 'queued reminder without connector proof', 'scheduled reminder without connector or human executor proof', 'deadline confirmed without source evidence', 'follow-up complete without reply or owner confirmation']
   },
   {
     kind: 'meeting_notes',

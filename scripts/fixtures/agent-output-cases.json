@@ -493,10 +493,45 @@
       "id": "follow-up-open-loop",
       "file": "follow-up.js",
       "kind": "follow_up",
-      "prompt": "Prepare follow-ups for three open customer loops. Include owner, deadline, relationship context, follow-up copy, timing, and next check.",
+      "prompt": "Prepare follow-ups for three open customer loops: demo feedback is due tomorrow, invoice approval has no confirmed deadline, and a security questionnaire is overdue. Include owner, deadline or missing-deadline label, priority rank and reason, relationship context, business impact, follow-up copy, approval/send handoff, execution status labels, and next-check trigger. Do not claim any message was sent, reminder was scheduled, or missing deadline was confirmed without proof.",
       "body": {
         "input": {
-          "open_loops": ["demo feedback", "invoice approval", "security questionnaire"]
+          "open_loops": [
+            {
+              "id": "demo-feedback",
+              "waiting_on_party": "customer champion",
+              "owner": "founder",
+              "deadline": "tomorrow",
+              "last_touch": "demo ended two days ago",
+              "relationship_context": "warm evaluation",
+              "business_impact": "could unlock paid pilot",
+              "approval_owner": "founder"
+            },
+            {
+              "id": "invoice-approval",
+              "waiting_on_party": "customer finance contact",
+              "owner": "ops",
+              "deadline": null,
+              "deadline_status": "missing; no due date supplied",
+              "last_touch": "invoice sent last week",
+              "relationship_context": "existing customer",
+              "business_impact": "cash collection blocked",
+              "approval_owner": "founder"
+            },
+            {
+              "id": "security-questionnaire",
+              "waiting_on_party": "internal security owner",
+              "owner": "support",
+              "deadline": "yesterday",
+              "last_touch": "customer requested completion three days ago",
+              "relationship_context": "enterprise prospect waiting",
+              "business_impact": "procurement blocked",
+              "approval_owner": "support lead"
+            }
+          ],
+          "connector_status": "no Gmail or reminder connector execution proof supplied",
+          "current_date": "2026-05-26",
+          "next_owner": "founder"
         }
       }
     },
