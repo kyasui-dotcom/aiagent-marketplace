@@ -389,11 +389,20 @@
       "id": "cto-leader-rollout",
       "file": "cto-leader.js",
       "kind": "cto_leader",
-      "prompt": "Decide how to roll out queue-backed agent dispatch. Include current-state evidence, architecture options, chosen path, validation gate, rollback trigger, and risks.",
+      "prompt": "Decide how to roll out queue-backed agent dispatch when current-state evidence is incomplete. Include current-state evidence, evidence sufficiency gate, architecture options, decision status, chosen or provisional path, validation gate, rollback trigger, and risks. Do not claim the architecture decision is final, rollout is approved, deployed, or production-ready without repo/platform evidence and owner approval.",
       "body": {
         "input": {
-          "current_state": "direct dispatch with optional queue",
-          "rollback_trigger": "dispatch error rate above 2%"
+          "current_state": "Only a high-level note is supplied: direct dispatch with optional queue. No repo files, queue metrics, incident logs, dependency map, or runtime architecture diagram are supplied.",
+          "decision_need": "choose whether to make queue-backed dispatch the default rollout path",
+          "source_status": "current-state evidence incomplete",
+          "missing_evidence": [
+            "repo files for dispatch path",
+            "queue latency/error metrics",
+            "dependency map",
+            "rollback owner approval"
+          ],
+          "rollback_trigger": "dispatch error rate above 2%",
+          "approval_owner": "engineering owner"
         }
       }
     },
