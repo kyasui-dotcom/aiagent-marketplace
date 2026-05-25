@@ -84,7 +84,8 @@ export function appContextMatchesManifest(context = {}, manifest = {}) {
   const contextTypes = [
     ...(Array.isArray(context.artifacts) ? context.artifacts.map((artifact) => artifact?.type || artifact?.artifact_type || artifact?.artifactType) : []),
     ...(Array.isArray(context.capabilities) ? context.capabilities : []),
-    ...(Array.isArray(raw.capabilities) ? raw.capabilities : [])
+    ...(Array.isArray(raw.capabilities) ? raw.capabilities : []),
+    ...Object.keys(raw)
   ].map(normalizeUsageId).filter(Boolean);
   return contextTypes.some((item) => accepts.includes(item) || capabilities.includes(item));
 }

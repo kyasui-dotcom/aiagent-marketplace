@@ -6532,10 +6532,7 @@ function buildOpenChatLeaderIntakeClarifyAnswer(taskType = 'research_team_leader
   const safeMissing = Array.isArray(missing) && missing.length
     ? missing
     : openChatMissingLeaderIntakeFields(safeTaskType, text, {});
-  const dynamicQuestions = normalizeOpenChatDynamicLeaderIntakeQuestions(options.dynamicIntakeQuestions || options.intakeQuestions || []);
-  const questions = dynamicQuestions.length >= 3
-    ? dynamicQuestions
-    : openChatLeaderIntakeQuestionsForTask(safeTaskType, text);
+  const questions = openChatLeaderIntakeQuestionsForTask(safeTaskType, text);
   const ja = looksJapanese(text);
   const guardedByOpenAi = options.source === 'openai_guarded';
   return {
@@ -10905,8 +10902,6 @@ function preorderIntentLlmAnswerFromResult(prompt = '', result = {}, fallbackAns
   const ja = looksJapanese(languageContext);
   const rawBrief = String(result.order_brief || result.orderBrief || '').trim();
   const action = String(result.action || '').trim();
-  const leaderGuard = openChatLlmLeaderIntakeGuardAnswer(prompt, result, fallbackAnswer);
-  if (leaderGuard) return leaderGuard;
   if (action === 'answer_in_chat') {
     const chatAnswer = compactChatText(String(result.chat_answer || result.chatAnswer || result.summary || result.narrowing_question || ''), 1400);
     return {
@@ -11037,7 +11032,7 @@ function preorderIntentLlmAnswerFromResult(prompt = '', result = {}, fallbackAns
   };
 }
 
-function openChatLlmLeaderIntakeGuardAnswer(prompt = '', result = {}, fallbackAnswer = null) {
+function openChatLlmLeaderIntakeGuardCandidate(prompt = '', result = {}, fallbackAnswer = null) {
   const action = String(result?.action || '').trim();
   const rawBrief = String(result?.order_brief || result?.orderBrief || '').trim();
   const userContext = openChatUserOnlyContextForIntake(prompt);
@@ -11059,12 +11054,26 @@ function openChatLlmLeaderIntakeGuardAnswer(prompt = '', result = {}, fallbackAn
   if (!isOrderLike && !isLeaderIntent) return null;
   const missing = openChatMissingLeaderIntakeFields(taskType, userContext, orderInputCounts(orderInputFromComposer()));
   if (!missing.length) return null;
-  const dynamicQuestions = normalizeOpenChatDynamicLeaderIntakeQuestions(result?.intake_questions || result?.intakeQuestions || []);
-  return buildOpenChatLeaderIntakeClarifyAnswer(taskType, prompt, missing, {
-    source: 'openai_guarded',
-    dynamicIntakeQuestions: dynamicQuestions,
-    suppressTrio: true
+  return { taskType, userContext, missing };
+}
+
+async function openChatServerLeaderIntakeGuardAnswer(prompt = '', result = {}, fallbackAnswer = null, inputCounts = {}) {
+  const candidate = openChatLlmLeaderIntakeGuardCandidate(prompt, result, fallbackAnswer);
+  if (!candidate) return null;
+  const prepared = await prepareWorkOrderViaApi(candidate.userContext || prompt, requestedOrderStrategy(), {
+    taskType: candidate.taskType,
+    inputCounts,
+    conversationContext: openChatConversationContextForLlm()
   });
+  if (!prepared) return null;
+  if (chatEngineIsNeedsInputResponse(prepared)) {
+    return serverIntakeAnswerFromPreparedOrder(prepared, prompt);
+  }
+  if (openChatIsLeaderIntakeTask(prepared.taskType || candidate.taskType)) {
+    applyServerPreparedOrder(prepared, candidate.userContext || prompt);
+    return serverPreparedOrderAnswerFromResult(prepared, candidate.userContext || prompt, { followup: false });
+  }
+  return null;
 }
 
 async function buildOpenChatPreorderIntentLlmAnswer(prompt = '', inputCounts = {}, fallbackAnswer = null, options = {}) {
@@ -11114,7 +11123,8 @@ async function buildOpenChatPreorderIntentLlmAnswer(prompt = '', inputCounts = {
       });
       return null;
     }
-    const answer = preorderIntentLlmAnswerFromResult(prompt, result, fallbackAnswer);
+    const serverLeaderGuardAnswer = await openChatServerLeaderIntakeGuardAnswer(prompt, result, fallbackAnswer, inputCounts);
+    const answer = serverLeaderGuardAnswer || preorderIntentLlmAnswerFromResult(prompt, result, fallbackAnswer);
     if (telemetry) {
       telemetry.ok = Boolean(answer);
       telemetry.error = answer ? '' : 'openai_returned_unusable_intent';

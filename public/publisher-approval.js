@@ -1,4 +1,4 @@
-import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260525b';
+import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526a';
 
 let items = [];
 let selectedId = '';
@@ -186,6 +186,17 @@ const PUBLISHER_CONTRACT_TYPES = Object.freeze([
 ]);
 
 const PUBLISHER_CONTRACT_TYPE_SET = new Set(PUBLISHER_CONTRACT_TYPES);
+const PUBLISHER_CONTRACT_ALIASES = Object.freeze({
+  site_publish_packet: ['sitePublishPacket', 'owned_site_packet', 'ownedSitePacket', 'publisher_packet', 'publisherPacket', 'publishing_packet', 'publishingPacket', 'publish_packet', 'publishPacket', 'content_package', 'contentPackage', 'publisher_content_package', 'publisherContentPackage'],
+  wordpress_draft_packet: ['wordpressDraftPacket', 'wp_draft_packet', 'wpDraftPacket'],
+  directory_packet: ['directoryPacket', 'listing_packet', 'listingPacket'],
+  social_copy_packet: ['socialCopyPacket', 'social_post_pack', 'socialPostPack', 'social_packet', 'socialPacket'],
+  x_post_packet: ['xPostPacket', 'twitter_post_packet', 'twitterPostPacket'],
+  reddit_post_packet: ['redditPostPacket'],
+  indie_hackers_packet: ['indieHackersPacket'],
+  instagram_post_packet: ['instagramPostPacket'],
+  approval_request: ['approvalRequest']
+});
 
 const els = {
   destinationNav: document.getElementById('destinationNav'),
@@ -439,8 +450,8 @@ function listObjects(value = []) {
 
 function contractValueFromContext(context = {}, contractType = '') {
   const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
-  const camel = camelContractKey(contractType);
-  return firstText(context[contractType], context[camel], raw[contractType], raw[camel]);
+  const aliases = [contractType, camelContractKey(contractType), ...(PUBLISHER_CONTRACT_ALIASES[contractType] || [])];
+  return firstText(...aliases.flatMap((key) => [context[key], raw[key]]));
 }
 
 function explicitPublisherContractType(artifact = {}) {

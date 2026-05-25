@@ -472,6 +472,15 @@ assert.ok(
   openChatIntentSource.includes("if (preliminary?.intake?.questionSource === 'rules') return preliminary;"),
   'generic Open Chat LLM intake must not replace agent-owned leaderBehavior.intakeQuestions'
 );
+const clientPreorderIntentSource = clientSource.slice(clientSource.indexOf('function preorderIntentLlmAnswerFromResult'), clientSource.indexOf('function openChatPreparedOrderActions'));
+assert.ok(
+  clientPreorderIntentSource.includes('openChatServerLeaderIntakeGuardAnswer') && clientPreorderIntentSource.includes('prepareWorkOrderViaApi'),
+  'legacy Open Chat LLM intake must preserve agent-owned leaderBehavior.intakeQuestions through prepare-order'
+);
+assert.ok(
+  !clientPreorderIntentSource.includes('dynamicIntakeQuestions: dynamicQuestions'),
+  'legacy Open Chat must not render generic LLM leader intake questions'
+);
 const deliveryFilePrioritySource = chatSource.slice(
   chatSource.indexOf('function deliveryFilePriority'),
   chatSource.indexOf('function cleanReadableBundleContent')

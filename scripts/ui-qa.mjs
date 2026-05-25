@@ -329,6 +329,9 @@ assert.ok(chatJs.includes('openChatIntentShouldUseStepIntake'), 'Executable Open
 const chatIntentWithLlmSource = chatJs.slice(chatJs.indexOf('async function handleChatIntentWithLlm'), chatJs.indexOf('function addChatAdjustmentToDraft'));
 assert.ok(chatIntentWithLlmSource.includes('preserveAgentOwnedLeaderIntake'), 'OpenAI intake results for leaders should preserve agent-owned intake questions.');
 assert.ok(chatIntentWithLlmSource.includes('await prepareOrder(prompt') && !chatIntentWithLlmSource.includes("questionSource: 'openai'"), 'Chat must let server/agent-owned leader intake render questions instead of storing OpenAI questions directly.');
+const clientPreorderIntentLlmSource = clientJs.slice(clientJs.indexOf('function preorderIntentLlmAnswerFromResult'), clientJs.indexOf('function openChatPreparedOrderActions'));
+assert.ok(clientPreorderIntentLlmSource.includes('openChatServerLeaderIntakeGuardAnswer') && clientPreorderIntentLlmSource.includes('prepareWorkOrderViaApi'), 'Legacy Open Chat LLM leader intake must delegate to server/agent-owned prepare-order contracts.');
+assert.ok(!clientPreorderIntentLlmSource.includes('dynamicIntakeQuestions: dynamicQuestions'), 'Legacy Open Chat must not render OpenAI-provided leader intake questions directly.');
 const prepareOrderSource = chatJs.slice(chatJs.indexOf('async function prepareOrder'), chatJs.indexOf('async function sendOrder'));
 assert.ok(prepareOrderSource.includes('Server-owned order intake questions could not be loaded'), 'Prepare-order failures should stop instead of falling back to client-generated intake questions.');
 assert.ok(!chatJs.includes('clientPrepareOrderIntakeFallback'), 'Chat must not synthesize fallback intake contracts when prepare-order fails.');
@@ -417,6 +420,8 @@ assert.ok(chatJs.includes('deliveryLineLooksInternal'), 'Chat delivery sanitizat
 assert.ok(appHandoffTransferJs.includes('export function appHandoffSocialPostDraftFromDeliveryFiles'), 'App handoff transfer should own social post draft extraction for dedicated handoff cards.');
 assert.ok(chatJs.includes('appHandoffSocialPostDraftFromDeliveryFiles(orderedFiles, { maxLength: 1200 })'), 'Chat should route explicit X/social post packs into X Client Ops through the app handoff transfer module.');
 assert.ok(appManifestRegistryJs.includes('x_post_packet') && appManifestRegistryJs.includes('reddit_post_packet') && appManifestRegistryJs.includes('indie_hackers_packet') && appManifestRegistryJs.includes('instagram_post_packet'), 'Publisher app handoff should accept media-separated site and social post packets as external-app content.');
+assert.ok(appManifestRegistryJs.includes('publisher_packet') && appManifestRegistryJs.includes('content_package'), 'Publisher app handoff should accept AIAGENT publisher packet aliases.');
+assert.ok(appHandoffGateJs.includes("publisher_packet: ['site_publish_packet'") && appHandoffGateJs.includes("content_package: ['site_publish_packet'"), 'Publisher packet aliases should route into the Publisher handoff candidate.');
 assert.ok(!chatJs.includes("normalizeUsageId(entry.id) === 'x-client-ops' && hasXPostTool"), 'X Client Ops must remain visible as an app handoff when a post draft exists.');
 assert.ok(!chatJs.includes('Resume X approval'), 'Chat must not expose the old X approval resume action.');
 assert.ok(!chatJs.includes('href="${escapeHtml(openWorkHref)}"'), 'Open chat approval must not be a no-op anchor back to the same card.');
@@ -480,6 +485,21 @@ assert.equal(
   }, analyticsContextManifest).loaded,
   true,
   'App context gate should mark manifest-matched loaded evidence as loaded.'
+);
+assert.equal(
+  appContextMatchesManifest({
+    source_app: 'qa_publisher_packet_agent',
+    raw_context: {
+      publisher_packet: { title: 'Retained Publisher packet' }
+    }
+  }, {
+    id: 'publisher-approval-studio',
+    name: 'Publisher & Approval Studio',
+    capabilities: ['content_management'],
+    inputContract: { accepts: ['publisher_packet', 'site_publish_packet'] }
+  }),
+  true,
+  'App context matching should include raw contract keys such as publisher_packet.'
 );
 assert.ok(chatJs.includes('openMeasurementEvidenceAppForIntake'), 'Chat intake should open the manifest-matched evidence app before dispatch when analytics data is available.');
 assert.ok(chatJs.includes('openMeasurementEvidenceAppForDraft'), 'Chat order checks should open the manifest-matched evidence app and attach returned context to the prepared draft.');
@@ -673,7 +693,7 @@ assert.ok(analyticsHtml.includes('id="analyticsQueriesCount"'), 'Analytics Conso
 assert.ok(publisherHtml.includes('Publisher & Approval'), 'Publisher and Approval Studio should be a first-class app page.');
 assert.ok(publisherHtml.includes('href="/apps.html"'), 'Publisher Studio should link back to the apps hub.');
 assert.ok(publisherHtml.includes('id="approvalTable"'), 'Publisher Studio should include an approval queue.');
-assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260525f'), 'Publisher Studio should load the app-context receiving controller.');
+assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260526a'), 'Publisher Studio should load the app-context receiving controller.');
 assert.ok(publisherHtml.includes('id="publisherStepApproval"'), 'Publisher Studio should show approval progress before handoff.');
 assert.ok(publisherHtml.includes('id="channelSelect"'), 'Publisher Studio should expose media/channel separation.');
 assert.ok(publisherHtml.includes('id="connectorInput"'), 'Publisher Studio should expose the publish connector per channel.');
@@ -986,6 +1006,7 @@ assert.ok(publisherJs.includes('renderCounts'), 'Publisher Studio should update 
 assert.ok(publisherJs.includes('No publisher packet is loaded yet'), 'Publisher Studio should render an explicit empty state before server context is loaded.');
 assert.ok(appContextDomainJs.includes('site_publish_packet') && appContextDomainJs.includes('social_copy_packet'), 'Server-side app context should preserve Publisher contract fields in raw_context.');
 assert.ok(publisherJs.includes('publisherContractArtifactsFromContext'), 'Publisher Studio should import top-level Publisher contract fields from server raw_context.');
+assert.ok(publisherJs.includes('PUBLISHER_CONTRACT_ALIASES') && publisherJs.includes('publisher_packet') && publisherJs.includes('content_package'), 'Publisher Studio should import AIAGENT publisher packet aliases from server raw_context.');
 assert.ok(publisherJs.includes('selected_publisher_contract_type'), 'Publisher Studio should return the selected Publisher contract type for app-contract reuse.');
 assert.ok(!/Japan eSIM|7-day Japan|directory-ai-agent-listing|post-japan-esim/i.test(publisherJs), 'Publisher Studio should not ship built-in sample publisher packets.');
 assert.ok(leadOpsJs.includes('source_app: \'lead_ops_console\''), 'Lead Ops should create lead app context.');

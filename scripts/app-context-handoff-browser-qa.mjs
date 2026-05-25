@@ -111,6 +111,47 @@ try {
   if (!JSON.stringify(seededPublisherPacket.raw_context || {}).includes('cait_usage')) throw new Error('publisher SaaS billing model was not preserved in packet raw_context');
   if (!JSON.stringify(seededPublisherPacket.artifacts || []).includes('site_publish_packet')) throw new Error('publisher LP starter did not create a Publisher packet');
 
+  await openAppWithContext(page, `/publisher-approval.html?chat_return_to=${encodeURIComponent('/chat?thread=publisher-packet')}&chat_handoff_id=publisher-packet-handoff`, {
+    schema: 'cait-app-context/v1',
+    source_app: 'qa_publisher_packet_agent',
+    source_app_label: 'QA Publisher Packet Agent',
+    title: 'Nested publisher packet',
+    summary: 'AIAGENT returned a publisher_packet/content_package shape instead of manifest-native site_publish_packet.',
+    publisher_packet: {
+      packets: [{
+        id: 'nested-publisher-packet-1',
+        title: 'Retained AIAGENT operations page',
+        destination: 'Owned site / Publisher',
+        channel_key: 'owned_site',
+        market: 'US',
+        locale: 'en-US',
+        slug: '/retained-aiagent-operations',
+        meta: 'Show skeptical AIAGENT users how CAIt keeps publishing operations stable.',
+        h1: 'Stable AIAGENT operations with retained Publisher packets',
+        primary_cta: 'Review retained operations',
+        body: 'Meta title: Retained AIAGENT operations\nMeta description: CAIt keeps approval, destination, and execution state attached after chat.\nPrimary CTA: Review retained operations\n\nThis packet should become a visible Publisher approval item.'
+      }]
+    },
+    content_package: {
+      packets: [{
+        title: 'Backup content package row',
+        destination: 'WordPress site',
+        channel_key: 'wordpress_site',
+        body: 'WordPress fallback packet should stay in raw context for audit.'
+      }]
+    }
+  });
+  await page.waitForSelector('#contentList');
+  await page.waitForFunction(() => document.querySelector('#titleInput')?.value?.includes('Retained AIAGENT operations'));
+  if (!(await page.inputValue('#slugInput')).includes('/retained-aiagent-operations')) throw new Error('publisher_packet slug was not restored');
+  if (!(await page.inputValue('#metaInput')).includes('skeptical AIAGENT users')) throw new Error('publisher_packet meta was not restored');
+  if (!(await page.inputValue('#bodyInput')).includes('visible Publisher approval item')) throw new Error('publisher_packet body was not restored');
+  if (!(await page.textContent('#handoffSessionNotice')).includes('CAIt handoff session is attached')) throw new Error('publisher nested packet server context notice was not rendered');
+  const nestedPublisherPacket = JSON.parse(await page.textContent('#packetPreview'));
+  if (nestedPublisherPacket.raw_context?.chat_handoff_id !== 'publisher-packet-handoff') throw new Error('publisher nested packet handoff id was not preserved');
+  if (!JSON.stringify(nestedPublisherPacket.raw_context?.received_context || {}).includes('publisher_packet')) throw new Error('publisher nested source packet was not preserved in server raw_context');
+  if (!JSON.stringify(nestedPublisherPacket.artifacts || []).includes('site_publish_packet')) throw new Error('publisher nested packet was not returned as a site_publish_packet artifact');
+
   await page.goto(`${base}/lead-ops.html`);
   await page.waitForSelector('#leadTable');
   if (!(await page.textContent('#leadTable')).includes('No lead rows loaded.')) throw new Error('lead empty state was not rendered');
