@@ -403,7 +403,7 @@
       "id": "diligence-red-flag-review",
       "file": "diligence.js",
       "kind": "diligence",
-      "prompt": "Review a marketplace launch plan for blockers. Include red flag matrix, evidence map, verification queue, severity, and conditional recommendation.",
+      "prompt": "Review a marketplace launch plan for blockers. Include red flag matrix, evidence map, severity, go/no-go impact for each material red flag, next verification per red flag, verification queue, and conditional recommendation.",
       "body": {
         "input": {
           "plan": "launch provider marketplace with paid orders",
