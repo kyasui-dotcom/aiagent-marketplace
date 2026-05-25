@@ -28,6 +28,7 @@ const connectorGateSource = read('public/connector-gate.js');
 const chatSessionStateSource = read('public/chat-session-state.js');
 const orderRuntimeSource = read('public/order-runtime.js');
 const deliveryRendererSource = read('public/delivery-renderer.js');
+const deliveryItemsSource = read('lib/delivery-items.js');
 const appHandoffGateSource = read('public/app-handoff-gate.js');
 const appContextGateSource = read('public/app-context-gate.js');
 const agentProgressViewSource = read('public/agent-progress-view.js');
@@ -298,6 +299,23 @@ assert.equal(
   false,
   'chat measurement-evidence routing must not fall back to a privileged app id'
 );
+const measurementEvidenceRoutingSource = chatSource.slice(
+  chatSource.indexOf('function growthLeaderNeedsDataHint'),
+  chatSource.indexOf('function authGrantedGoogleCapabilities')
+);
+assert.ok(
+  measurementEvidenceRoutingSource.includes('function measurementEvidenceContractRequired')
+    && measurementEvidenceRoutingSource.includes('function textExplicitlyRequestsMeasurementEvidence'),
+  'chat measurement-evidence app routing must use explicit request/contract helpers'
+);
+assertNotIncludes(measurementEvidenceRoutingSource, [
+  'function orderNeedsMeasurementEvidence',
+  'function intakeShouldOfferMeasurementEvidenceChoice',
+  "inferWorkIntentTaskType(prompt)",
+  "seo|cvr|conversion",
+  "taskType\\n${text}",
+  "growth|go[-\\s]?to[-\\s]?market"
+], 'public/chat.js measurement evidence app routing');
 assert.ok(
   chatSource.includes('appHandoffGateExplicitArtifactTypesFromFile'),
   'chat app handoff routing must consume artifact metadata through app-handoff-gate'
@@ -310,6 +328,29 @@ assert.ok(
   chatSource.includes('appHandoffGateRankEntries'),
   'chat app handoff routing must delegate candidate scoring through app-handoff-gate'
 );
+const authorityArtifactExtractionSource = appHandoffGateSource.slice(
+  appHandoffGateSource.indexOf('export function explicitHandoffArtifactTypesFromAuthorityRequest'),
+  appHandoffGateSource.indexOf('export function appHandoffArtifactLabel')
+);
+assertNotIncludes(authorityArtifactExtractionSource, [
+  'missing_connectors',
+  'missingConnectors',
+  'missing_connector_capabilities',
+  'missingConnectorCapabilities',
+  'channel_candidates',
+  'channelCandidates',
+  "addExplicitHandoffArtifactType(types, 'x_post_approval'"
+], 'public/app-handoff-gate.js authority_request artifact extraction');
+assert.equal(
+  chatSource.includes('function fileLooksLikeSocialPostPack'),
+  false,
+  'chat app handoff routing must not infer social app handoff from file names or MIME-like type tokens'
+);
+assert.equal(
+  chatSource.includes("add('post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet')"),
+  false,
+  'chat app handoff routing must not synthesize broad social artifact types from extracted body text'
+);
 assertNotIncludes(chatSource, [
   'function addExplicitHandoffArtifactType',
   'function appHandoffRelevanceScore',
@@ -319,6 +360,40 @@ assertNotIncludes(chatSource, [
   'const HANDOFF_ARTIFACT_LABELS',
   'const HANDOFF_ARTIFACT_DESTINATION_HINTS'
 ], 'public/chat.js');
+assertNotIncludes(chatSource, [
+  "taskType: 'growth'",
+  "taskType: readiness.taskType || 'growth'",
+  "if (intent === 'natural_business_growth' || intent === 'natural_marketing_launch') return 'growth';",
+  'const taskType = bestCatalogLeaderTaskTypeForSpecialistTask(agents, specialistTaskType) || specialistTaskType;',
+  'function bestCatalogLeaderTaskTypeForSpecialistTask',
+  'function refreshWorkerAgentsForRouting',
+  'function obviousStepIntakeSpecialistTaskType',
+  'function prepareObviousStepIntakeIfNeeded',
+  'function accumulatedWorkOrderReadiness',
+  'function prepareAccumulatedOrderIfReady',
+  'function matchingRecentUserLines',
+  'Conversation-derived work request:',
+  'hasAcquisitionGoal',
+  'latestIsClarificationAnswer',
+  'Do not ask another pre-order intake question just because the CTA is weak.',
+  'acquisitionOrGrowth',
+  'socialDraftOrApproval',
+  'inferWorkIntentTaskType'
+], 'public/chat.js accumulated/order-intent routing');
+const deliveryFilePrioritySource = chatSource.slice(
+  chatSource.indexOf('function deliveryFilePriority'),
+  chatSource.indexOf('function cleanReadableBundleContent')
+);
+assertNotIncludes(deliveryFilePrioritySource, [
+  'source_task_type',
+  'sourceTaskType',
+  'seo|landing',
+  'x_post|x-post',
+  'media_planner',
+  'data_analysis',
+  'list_creator',
+  'cold_email'
+], 'public/chat.js delivery file ordering');
 for (const [moduleName, symbol] of [
   ['public/chat-session-state.js', 'compactChatRuntimeSnapshot'],
   ['public/order-runtime.js', 'visibleJobApiPath'],
@@ -344,15 +419,72 @@ assertNotIncludes(chatSource, [
   'function authorityScanTextFromJob',
   'delivery_text_approval',
   'createXClientOpsHandoffUrl',
+  'function appHandoffQueryFallbackUrl',
+  'generic_app_query_fallback',
+  'cait_x_post',
   'data-x-client-ops-link',
   'Called X Client Ops directly'
 ], 'public/chat.js');
+const appAgentActionKindSource = chatSource.slice(
+  chatSource.indexOf('function appAgentActionKind'),
+  chatSource.indexOf('function appAgentRequiresApproval')
+);
+assertNotIncludes(appAgentActionKindSource, [
+  "const caps = listValues(manifest.capabilities || []).join(' ').toLowerCase();",
+  "const accepts = listValues(manifest.inputContract?.accepts || []).join(' ').toLowerCase();",
+  "if (/x[_\\s-]?post|twitter|tweet/.test(combined)) return 'x_post_handoff';",
+  "if (/social|post|community/.test(combined)) return 'social_handoff';",
+  "if (/email|gmail|newsletter/.test(combined)) return 'email_handoff';",
+  "if (/github|pull[_\\s-]?request|repo|code/.test(combined)) return 'code_handoff';",
+  "if (/crm|lead|sales|acquisition/.test(combined)) return 'acquisition_handoff';"
+], 'public/chat.js app-agent action contract');
+const appAgentRequiresApprovalSource = chatSource.slice(
+  chatSource.indexOf('function appAgentRequiresApproval'),
+  chatSource.indexOf('function appAgentBaseTransferPacket')
+);
+assertNotIncludes(appAgentRequiresApprovalSource, [
+  "const caps = listValues(manifest.capabilities || []).join(' ').toLowerCase();",
+  "|| /(post|send|publish|submit|schedule|external|crm|email|x_|twitter)/i.test(approval.join(' '))",
+  "|| /(post|send|publish|submit|schedule|external|crm|email|x[_\\s-]?post|twitter)/i.test(caps)"
+], 'public/chat.js app-agent approval contract');
 
 assert.equal(
   existsSync(join(root, 'public', 'client-basic-chat-answers.js')),
   false,
   'client basic answer builder module must not exist; true answer builders belong in agent/provider definitions'
 );
+assertNotIncludes(deliveryItemsSource, [
+  'function publisherFallback',
+  'Hero promise: turn the visitor',
+  'Example delivery packet showing the finished output',
+  'prepared.body || rawContent',
+  'prepared.body || item.body',
+  'prepared.body || item.content'
+], 'lib/delivery-items.js');
+const inferDeliverySurfaceSource = deliveryItemsSource.slice(
+  deliveryItemsSource.indexOf('function inferSurface'),
+  deliveryItemsSource.indexOf('function publisherChannelProfile')
+);
+assertNotIncludes(inferDeliverySurfaceSource, [
+  'content.slice',
+  'content ='
+], 'lib/delivery-items.js inferSurface');
+const publisherChannelProfileSource = deliveryItemsSource.slice(
+  deliveryItemsSource.indexOf('function publisherChannelProfile'),
+  deliveryItemsSource.indexOf('function inferItemType')
+);
+assertNotIncludes(publisherChannelProfileSource, [
+  'content.slice',
+  'content ='
+], 'lib/delivery-items.js publisherChannelProfile');
+const inferDeliveryItemTypeSource = deliveryItemsSource.slice(
+  deliveryItemsSource.indexOf('function inferItemType'),
+  deliveryItemsSource.indexOf('function surfaceForTask')
+);
+assertNotIncludes(inferDeliveryItemTypeSource, [
+  'content.slice',
+  'content ='
+], 'lib/delivery-items.js inferItemType');
 assert.ok(
   clientSource.includes('function buildOpenChatPreLlmGuardAnswer'),
   'client pre-dispatch UI answers must remain visible in the client controller until renamed/scoped deliberately'
@@ -370,8 +502,18 @@ assert.ok(
   'chat running-order follow-up drafts must be prepared by the server route'
 );
 assertNotIncludes(chatSource, [
+  'function clientPrepareOrderIntakeFallback',
+  'client_prepare_order_intake_fallback',
+  "source: 'client_fallback'",
+  "questionSource: 'client_fallback'",
+  'What outcome and target should this work focus on?',
+  '今回達成したい成果と対象を教えてください。'
+], 'public/chat.js prepare-order intake');
+assertNotIncludes(chatSource, [
   'Follow-up/change request for running order ${job.id}:',
-  'Use the previous order context, completed specialist outputs, active blockers, and current workflow state.'
+  'Use the previous order context, completed specialist outputs, active blockers, and current workflow state.',
+  "String(prepared?.prompt || text || '').trim()",
+  'prepared?.reason || `Prepared as an add-on request for running order'
 ], 'public/chat.js');
 assertNotIncludes(clientSource, [
   'function buildOpenChatLeaderOrderBrief',

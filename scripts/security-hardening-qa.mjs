@@ -41,6 +41,7 @@ async function main() {
       ...process.env,
       NODE_ENV: 'test',
       ALLOW_IN_MEMORY_STORAGE: '1',
+      ALLOW_OPEN_WRITE_API: '1',
       PORT: String(PORT),
       OPEN_CHAT_INTENT_LLM: 'openai',
       OPENAI_API_KEY: 'sk-should-not-be-used-for-work-chat',

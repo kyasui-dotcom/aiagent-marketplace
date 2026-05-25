@@ -1218,6 +1218,86 @@ test.describe('CAIt Chat workspace', () => {
     expect(postCount).toBe(1);
   });
 
+  test('does not synthesize running-order follow-up drafts when the server contract is incomplete', async ({ page }) => {
+    test.skip(!canUseAuth, authSkipReason);
+
+    const activeJobId = 'e2e-running-followup-contract';
+    const activeJob = {
+      id: activeJobId,
+      status: 'queued',
+      taskType: 'cmo_leader',
+      jobKind: 'workflow',
+      prompt: 'Task: cmo_leader\nGoal: Existing active E2E order',
+      workflow: { plannedTasks: ['cmo_leader', 'data_analysis', 'research'] }
+    };
+    let jobPostCount = 0;
+    let followupPreparePayload = null;
+
+    await page.route(/\/api\/jobs(?:\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ jobs: [activeJob] })
+        });
+        return;
+      }
+      jobPostCount += 1;
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          job_id: activeJobId,
+          id: activeJobId,
+          status: 'queued',
+          mode: 'workflow',
+          async_dispatch: true
+        })
+      });
+    });
+    await page.route(`**/api/jobs/${activeJobId}**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ job: activeJob })
+      });
+    });
+    await page.route('**/api/deliveries/prepare-followup-order', async (route) => {
+      followupPreparePayload = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          followup_to_job_id: activeJobId,
+          reason: 'Server intentionally omitted prompt for contract regression coverage.'
+        })
+      });
+    });
+
+    await openChat(page);
+    await page.locator('#promptInput').fill('I run a Shopify store and need more sales. What should I do?');
+    await page.locator('#sendMessageBtn').click();
+    await page.locator('#promptInput').fill([
+      '1. https://example-shop.test sells travel accessories.',
+      '2. Increase purchases from US shoppers.',
+      '3. Skip analytics.',
+      '4. No paid ads. Deliver an execution checklist and copy/assets draft.'
+    ].join('\n'));
+    await page.locator('#sendMessageBtn').click();
+    await page.getByRole('button', { name: 'Send order' }).last().click();
+    await expect(page.locator('#chatThread')).toContainText(/Order #e2e-runn|Order submitted/i, { timeout: chatResponseTimeout });
+
+    await page.locator('#promptInput').fill('Continue this order with one more competitor angle.');
+    await page.locator('#sendMessageBtn').click();
+    await expect(page.locator('#chatThread')).toContainText('server did not return a complete follow-up draft', { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).not.toContainText('Review it, then press Send order to attach');
+    expect(followupPreparePayload?.job_id).toBe(activeJobId);
+    expect(followupPreparePayload?.mode).toBe('running');
+    expect(jobPostCount).toBe(1);
+  });
+
   test('keeps approval-required actions inside the chat workspace', async ({ page }) => {
     test.skip(!canUseAuth, authSkipReason);
 
@@ -1270,6 +1350,7 @@ test.describe('CAIt Chat workspace', () => {
           summary: 'Approval required before external posting.',
           authority_request: {
             reason: 'X posting authority is required before CAIt can publish this post.',
+            handoff_artifact_type: 'x_post_approval',
             missing_connectors: ['x'],
             missing_connector_capabilities: ['x.post']
           }
@@ -1332,7 +1413,7 @@ test.describe('CAIt Chat workspace', () => {
         files: [
           {
             name: 'x-post-pack.md',
-            type: 'text/markdown',
+            content_type: 'x_post_packet',
             content: [
               '# X post draft',
               '',
@@ -1372,7 +1453,7 @@ test.describe('CAIt Chat workspace', () => {
     });
 
     await openChat(page);
-    await page.locator('#promptInput').fill('Show my completed X post delivery.');
+    await page.locator('#promptInput').fill('Show my completed delivery history.');
     await page.locator('#sendMessageBtn').click();
     await expect(page.locator('#chatThread')).toContainText('Final action: X Client Ops', { timeout: chatResponseTimeout });
     await page.locator('#utilityModalCloseBtn').click();

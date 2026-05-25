@@ -6527,9 +6527,9 @@ async function runRecurringOrderSweep(storage, env, options = {}) {
     const fresh = (latestState.recurringOrders || []).find((item) => item.id === order.id) || order;
     const current = currentFromRecurringOrder(latestState, fresh);
     let result;
-    const exactAction = exactConnectorActionFromRecurringOrder(fresh);
-    if (exactAction) {
-      result = await integrationRoutes.executeScheduledExactConnectorAction(storage, env, fresh, current);
+    const exactConnectorResult = await integrationRoutes.executeScheduledExactConnectorAction(storage, env, fresh, current);
+    if (exactConnectorResult) {
+      result = exactConnectorResult;
     } else {
       const body = recurringOrderToJobPayload(fresh);
       const promptInjection = promptInjectionGuardForPrompt(body.prompt || '');
@@ -6711,7 +6711,7 @@ export default {
       return connectorRoutes.handleXAuthCallback(request, env);
     }
     if (url.pathname === '/auth/logout' && request.method === 'POST') {
-      return handleLogout(env);
+      return integrationRoutes.handleLogout(env);
     }
     if (apiRouteMatches(url.pathname, request.method, 'CONNECTORS_X_STATUS', 'GET')) {
       return connectorRoutes.handleXConnectorStatus(request, env);
@@ -7438,6 +7438,8 @@ export default {
         '/publisher-approval.js',
         '/lead-ops.html',
         '/lead-ops.js',
+        '/campaign-operations.html',
+        '/campaign-operations.js',
         '/delivery-manager.html',
         '/delivery-manager.js',
         '/app-console.css',

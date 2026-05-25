@@ -45,6 +45,10 @@ const EXPLICIT_HANDOFF_TYPE_ALIASES = {
   email_draft: ['email_drafts'],
   email_send: ['email_drafts', 'approval_request'],
   google_send_gmail: ['email_drafts', 'approval_request'],
+  campaign_operations: ['campaign_state', 'publisher_queue', 'approval_backlog', 'connector_readiness', 'planned_action_queue', 'now_week_0_1', 'next_week_1_3', 'waiting_conditions', 'measurement_loop', 'next_action_owner'],
+  campaign_operations_plan: ['campaign_state', 'publisher_queue', 'approval_backlog', 'connector_readiness', 'planned_action_queue', 'now_week_0_1', 'next_week_1_3', 'waiting_conditions', 'measurement_loop', 'next_action_owner'],
+  campaign_ops: ['campaign_state', 'publisher_queue', 'approval_backlog', 'connector_readiness', 'planned_action_queue', 'now_week_0_1', 'next_week_1_3', 'waiting_conditions', 'measurement_loop', 'next_action_owner'],
+  marketing_operations: ['campaign_state', 'publisher_queue', 'approval_backlog', 'connector_readiness', 'planned_action_queue', 'now_week_0_1', 'next_week_1_3', 'waiting_conditions', 'measurement_loop', 'next_action_owner'],
   social_post: ['social_copy_packet', 'social_post_pack'],
   social_post_pack: ['social_copy_packet', 'x_post_packet'],
   x_post: ['post_text', 'x_post_packet'],
@@ -87,6 +91,17 @@ const DEFAULT_HANDOFF_ARTIFACT_CAPABILITY_ALIASES = Object.freeze({
   evidence_urls: Object.freeze(['lead_management', 'crm_packet']),
   email_drafts: Object.freeze(['email_draft', 'outreach_review']),
   next_actions: Object.freeze(['lead_management', 'outreach_review']),
+  campaign_operations_plan: Object.freeze(['campaign_state', 'planned_action_queue', 'measurement_loop', 'next_action_owner']),
+  campaign_state: Object.freeze(['campaign_state']),
+  publisher_queue: Object.freeze(['publisher_queue']),
+  approval_backlog: Object.freeze(['publisher_queue', 'planned_action_queue']),
+  connector_readiness: Object.freeze(['connector_readiness']),
+  planned_action_queue: Object.freeze(['planned_action_queue']),
+  now_week_0_1: Object.freeze(['planned_action_queue']),
+  next_week_1_3: Object.freeze(['planned_action_queue']),
+  waiting_conditions: Object.freeze(['planned_action_queue']),
+  measurement_loop: Object.freeze(['measurement_loop']),
+  next_action_owner: Object.freeze(['planned_action_queue']),
   post_text: Object.freeze(['x_post_draft', 'social_action']),
   strategy: Object.freeze(['x_post_queue', 'social_action']),
   delivery_summary: Object.freeze(['x_post_queue', 'social_action'])
@@ -113,6 +128,17 @@ const DEFAULT_HANDOFF_ARTIFACT_LABELS = Object.freeze({
   evidence_urls: 'Evidence URLs',
   email_drafts: 'Email drafts',
   next_actions: 'Next actions',
+  campaign_operations_plan: 'Campaign operations plan',
+  campaign_state: 'Campaign state',
+  publisher_queue: 'Publisher queue',
+  approval_backlog: 'Approval backlog',
+  connector_readiness: 'Connector readiness',
+  planned_action_queue: 'Planned action queue',
+  now_week_0_1: 'Now (Week 0-1)',
+  next_week_1_3: 'Next (Week 1-3)',
+  waiting_conditions: 'Waiting conditions',
+  measurement_loop: 'Measurement loop',
+  next_action_owner: 'Next action owner',
   post_text: 'Post text',
   strategy: 'Strategy context',
   delivery_summary: 'Delivery summary'
@@ -198,7 +224,6 @@ export function explicitHandoffArtifactTypesFromFile(file = {}, options = {}) {
 
 export function explicitHandoffArtifactTypesFromAuthorityRequest(request = null, options = {}) {
   const listValues = options.listValues || ((value) => Array.isArray(value) ? value : []);
-  const normalizeUsageId = options.normalizeUsageId || defaultNormalizeUsageId;
   const types = new Set();
   if (!request || typeof request !== 'object') return types;
 
@@ -219,27 +244,6 @@ export function explicitHandoffArtifactTypesFromAuthorityRequest(request = null,
     request.packetType
   ]) {
     for (const item of listValues(list)) addExplicitHandoffArtifactType(types, item, options);
-  }
-
-  const missingConnectors = listValues(request.missing_connectors || request.missingConnectors || request.connectors)
-    .map(normalizeUsageId)
-    .filter(Boolean);
-  const missingCapabilities = listValues(request.missing_connector_capabilities || request.missingConnectorCapabilities || request.capabilities)
-    .map(normalizeUsageId)
-    .filter(Boolean);
-  const channels = listValues(request.channel_candidates || request.channelCandidates || request.channels)
-    .map(normalizeUsageId)
-    .filter(Boolean);
-  const googleSources = listValues(request.required_google_sources || request.requiredGoogleSources || request.google_source_types || request.googleSourceTypes)
-    .map(normalizeUsageId)
-    .filter(Boolean);
-  const signals = [...missingConnectors, ...missingCapabilities, ...channels];
-  const hasXSignal = signals.some((item) => /^(x|twitter|tweet|x[._-]post|x[._-]write|twitter[._-]post|social[._-]post)$/.test(item));
-  const hasNonXConnector = missingConnectors.some((item) => !/^(x|twitter)$/.test(item));
-  const hasNonXCapability = missingCapabilities.some((item) => !/^(x[._-]post|x[._-]write|twitter[._-]post|social[._-]post)$/.test(item));
-  const hasNonXChannel = channels.some((item) => !/^(x|twitter|tweet)$/.test(item));
-  if (hasXSignal && !googleSources.length && !hasNonXConnector && !hasNonXCapability && !hasNonXChannel) {
-    addExplicitHandoffArtifactType(types, 'x_post_approval', options);
   }
 
   return types;
@@ -398,10 +402,27 @@ export function appHandoffSpecificityScore(entry = {}, artifactTypes = [], optio
 
   const contractSize = accepts.size + capabilities.size;
   const narrowContractBonus = Math.max(0, 18 - Math.min(18, contractSize));
-  const externalAppBonus = options.isCaitManagedSurface?.(entry) ? 0 : 12;
+  const externalAppBonus = appHandoffIsCaitManagedSurface(entry, options) ? 0 : 12;
   const handoffEndpointBonus = entry.handoff?.createUrl ? 4 : 0;
   const broadContractPenalty = Math.max(0, contractSize - 4) * 12;
   return (directMatches * 40) + (aliasMatches * 18) + narrowContractBonus + externalAppBonus + handoffEndpointBonus - broadContractPenalty;
+}
+
+export function appHandoffIsCaitManagedSurface(entry = {}, options = {}) {
+  const normalizeUsageId = options.normalizeUsageId || ((value) => String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '-'));
+  const listValues = options.listValues || ((value) => Array.isArray(value) ? value : []);
+  const id = normalizeUsageId(entry.id || '');
+  const caitManagedIds = new Set(listValues(options.caitManagedAppIds || options.caitManaged_app_ids || []).map(normalizeUsageId));
+  if (id && caitManagedIds.has(id)) return true;
+  const metadata = entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : {};
+  return Boolean(
+    entry.caitManaged === true
+    || entry.cait_managed === true
+    || metadata.caitManaged === true
+    || metadata.cait_managed === true
+    || normalizeUsageId(entry.owner || '') === 'cait-managed'
+    || normalizeUsageId(entry.verificationStatus || entry.verification_status || '') === 'cait-managed'
+  );
 }
 
 export function appHandoffRankEntries(entries = [], job = {}, options = {}) {

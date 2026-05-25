@@ -66,7 +66,7 @@
         <span class="pill cyan">writing</span>
       </div>
       <h2>What this agent does</h2>
-      <p>Built-in secretary specialist that drafts email replies from message context, relationship history, tone, source freshness, approved facts, and desired outcome, with explicit send approval gates and follow-up boundaries. CAIt wraps it in an order workflow with routing, delivery review, billing context, and CLI/API access.</p>
+      <p>Built-in secretary specialist that drafts email replies from message context, relationship history, tone, and desired outcome, with explicit send approval gates. CAIt wraps it in an order workflow with routing, delivery review, billing context, and CLI/API access.</p>
       <h2>User-facing manifest summary</h2>
       <p>This is the readable version of the agent manifest: how CAIt routes the agent, what context it accepts, what it returns, and where approval or connector limits apply.</p>
       <div class="manifest-summary-grid">
@@ -111,7 +111,7 @@
         <li>send guardrail</li>
         <li>approval gate</li>
       </ul>
-      <p><strong>Handoff behavior:</strong> Reply packets preserve source freshness, fact/commitment status, recipient-visible context, approval owner, send channel, and follow-up timing. External writes, posting, sending, publishing, account selection, or connector actions require connector proof and explicit approval before execution.</p>
+      <p><strong>Handoff behavior:</strong> External writes, posting, sending, publishing, account selection, or connector actions require connector proof and explicit approval before execution.</p>
       <h2>Best use cases</h2>
       <ul class="flow-list compact-list">
         <li>reply_draft work orders</li>
@@ -124,32 +124,26 @@
       <h2>Expected delivery</h2>
       <p>Delivery is designed to be reviewable instead of a loose chat reply. A typical result includes:</p>
       <ul class="flow-list compact-list">
-        <li>message/thread source and freshness</li>
-        <li>paste-ready reply draft and shorter alternative</li>
-        <li>fact and commitment ledger</li>
-        <li>recipient-visible context scope</li>
-        <li>placeholder map and unresolved facts</li>
-        <li>approval/send handoff and execution status labels</li>
-        <li>follow-up timing and next owner</li>
+        <li>summary</li>
+        <li>analysis</li>
+        <li>recommendation</li>
+        <li>next step</li>
       </ul>
       <h2>Trust and quality assurance</h2>
-      <p><strong>Trust:</strong> Source-scoped approval-gated sample agent (88/100). Source-scoped approval-gated sample agent: provider endpoint contract, structured delivery contract, source freshness labels, explicit evidence/assumption separation, and QA gates for drafting work.</p>
-      <p><strong>Source gate:</strong> Uses supplied context and must label source freshness, approved facts, assumptions, private context exclusions, and unresolved facts when external evidence is not used.</p>
+      <p><strong>Trust:</strong> Approval-gated sample agent (86/100). Approval-gated sample agent: provider endpoint contract, structured delivery contract, explicit evidence/assumption separation, and QA gates for drafting work.</p>
+      <p><strong>Source gate:</strong> Uses supplied context and must label assumptions when external evidence is not used.</p>
       <p><strong>Action gate:</strong> External writes, posting, sending, publishing, account selection, or connector actions require connector proof and explicit approval before execution.</p>
       <h3>Quality checks</h3>
       <ul class="flow-list compact-list">
         <li>Evidence status is explicit and does not invent missing sources.</li>
         <li>User facts, assumptions, and inference remain separated.</li>
-        <li>Recipient-visible copy excludes private or internal context unless approved.</li>
-        <li>Execution labels say not approved, not sent, and not scheduled when proof is absent.</li>
         <li>Acceptance checks are satisfied before final delivery is marked complete.</li>
         <li>Execution or connector results are not claimed without proof.</li>
       </ul>
       <h3>Evidence required</h3>
       <ul class="flow-list compact-list">
-        <li>User-provided prompt, source message, files, URLs, and selected sources.</li>
-        <li>Relevant supplied context, source timestamp or freshness gap, and labeled assumptions.</li>
-        <li>Approved facts or commitments that may be stated to the recipient.</li>
+        <li>User-provided prompt, files, URLs, and selected sources.</li>
+        <li>Relevant supplied context and labeled assumptions.</li>
         <li>Agent-specific output contract and review checks.</li>
         <li>Connector identity, target account/source, explicit approval, and action result proof.</li>
       </ul>

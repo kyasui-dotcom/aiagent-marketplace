@@ -451,6 +451,148 @@ a.detail-card span {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.ops-story-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.ops-story-panel,
+.ops-readiness-panel {
+  min-width: 0;
+}
+
+.ops-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ops-compare-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.ops-compare-card.before {
+  background: #fff8f2;
+  border-color: #ebd4bb;
+}
+
+.ops-compare-card.after {
+  background: linear-gradient(180deg, #f2faf7 0%, #f8fcfa 100%);
+  border-color: #b8d6ca;
+}
+
+.ops-compare-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.ops-compare-card h3 {
+  margin-bottom: 0;
+  font-size: 18px;
+}
+
+.ops-bullet-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.ops-bullet-list li + li {
+  margin-top: 6px;
+}
+
+.ops-readiness-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ops-readiness-item {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.ops-readiness-item strong {
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.ops-readiness-item span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ops-readiness-item.ready {
+  border-color: #b8d6ca;
+  background: #f4fbf8;
+}
+
+.ops-readiness-item.pending {
+  border-color: #ead5b5;
+  background: #fffaf1;
+}
+
+.ops-readiness-item.blocked {
+  border-color: #edc1c1;
+  background: #fff6f6;
+}
+
+.handoff-audit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.handoff-audit-item {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.handoff-audit-item strong {
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.handoff-audit-item span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.handoff-audit-item.ready {
+  border-color: #b8d6ca;
+  background: #f4fbf8;
+}
+
+.handoff-audit-item.pending {
+  border-color: #ead5b5;
+  background: #fffaf1;
+}
+
+.handoff-audit-item.blocked {
+  border-color: #edc1c1;
+  background: #fff6f6;
+}
+
 .metric-card {
   display: grid;
   gap: 6px;
@@ -844,6 +986,17 @@ a.detail-card span {
   border-radius: 8px;
   background: #f2faf7;
   color: #23352e;
+  font-size: 14px;
+}
+
+.notice.notice-warning {
+  border-color: #e8d1ad;
+  background: #fff9ef;
+}
+
+.notice strong {
+  display: block;
+  margin-bottom: 4px;
   font-size: 14px;
 }
 
@@ -1487,9 +1640,12 @@ a.detail-card span {
   .delivery-overview-grid,
   .delivery-files-head,
   .workspace-head,
+  .ops-story-grid,
   .split-main,
   .editor-grid,
   .workflow-strip,
+  .ops-compare-grid,
+  .handoff-audit-grid,
   .three-col,
   .metric-strip,
   .publisher-controls,

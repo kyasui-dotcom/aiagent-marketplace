@@ -30,6 +30,33 @@ let xStatus = {
 };
 let publishResult = null;
 
+function publisherUrlParams() {
+  return new URL(window.location.href).searchParams;
+}
+
+function chatReturnTo() {
+  const value = String(publisherUrlParams().get('chat_return_to') || '').trim();
+  if (!value) return '';
+  try {
+    const url = new URL(value, window.location.origin);
+    return url.origin === window.location.origin && /^\/chat(?:\.html)?$/.test(url.pathname)
+      ? `${url.pathname}${url.search}${url.hash}`
+      : '';
+  } catch {
+    return '';
+  }
+}
+
+function chatHandoffId() {
+  return String(publisherUrlParams().get('chat_handoff_id') || '').replace(/[^a-z0-9_-]/gi, '').slice(0, 120);
+}
+
+function currentPublisherReturnPath() {
+  const path = window.location.pathname || '/publisher-approval.html';
+  const safePath = path.startsWith('/') && /\/publisher-approval\.html$/.test(path) ? path : '/publisher-approval.html';
+  return `${safePath}${window.location.search || ''}${window.location.hash || ''}`;
+}
+
 const PUBLISH_DESTINATION_PROFILES = [
   {
     key: 'x',
@@ -132,6 +159,33 @@ const PUBLISH_DESTINATION_PROFILES = [
   }
 ];
 
+const PUBLISHER_CONTRACT_TYPES = Object.freeze([
+  'article_draft',
+  'seo_article',
+  'seo_page_artifact',
+  'landing_page',
+  'landing_page_change',
+  'site_publish_packet',
+  'wordpress_draft',
+  'wordpress_draft_packet',
+  'directory_submission',
+  'directory_packet',
+  'community_post_packet',
+  'social_copy_packet',
+  'social_post',
+  'x_post',
+  'x_post_packet',
+  'reddit_post',
+  'reddit_post_packet',
+  'indie_hackers_post',
+  'indie_hackers_packet',
+  'instagram_post',
+  'instagram_post_packet',
+  'approval_request'
+]);
+
+const PUBLISHER_CONTRACT_TYPE_SET = new Set(PUBLISHER_CONTRACT_TYPES);
+
 const els = {
   destinationNav: document.getElementById('destinationNav'),
   listTitle: document.getElementById('listTitle'),
@@ -202,7 +256,11 @@ const els = {
   publisherApprovedMetric: document.getElementById('publisherApprovedMetric'),
   publisherStepLoad: document.getElementById('publisherStepLoad'),
   publisherStepApproval: document.getElementById('publisherStepApproval'),
-  publisherStepHandoff: document.getElementById('publisherStepHandoff')
+  publisherStepHandoff: document.getElementById('publisherStepHandoff'),
+  opsReadinessPill: document.getElementById('opsReadinessPill'),
+  opsReadinessList: document.getElementById('opsReadinessList'),
+  returnToChatLink: document.getElementById('returnToChatLink'),
+  handoffSessionNotice: document.getElementById('handoffSessionNotice')
 };
 
 function selectedItem() {
@@ -313,6 +371,104 @@ function itemType(value = '') {
 
 function firstText(...values) {
   return values.find((value) => String(value || '').trim()) || '';
+}
+
+function normalizeContractType(value = '') {
+  return String(value || '')
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function camelContractKey(value = '') {
+  return String(value || '').replace(/_([a-z0-9])/g, (_, char) => char.toUpperCase());
+}
+
+function listObjects(value = []) {
+  if (Array.isArray(value)) return value.filter((item) => item && typeof item === 'object');
+  if (!value || typeof value !== 'object') return [];
+  for (const key of ['items', 'rows', 'packets', 'posts', 'drafts', 'requests']) {
+    if (Array.isArray(value[key])) return value[key].filter((item) => item && typeof item === 'object');
+  }
+  return [value];
+}
+
+function contractValueFromContext(context = {}, contractType = '') {
+  const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
+  const camel = camelContractKey(contractType);
+  return firstText(context[contractType], context[camel], raw[contractType], raw[camel]);
+}
+
+function explicitPublisherContractType(artifact = {}) {
+  const fields = [
+    artifact.contract_type,
+    artifact.contractType,
+    artifact.artifact_type,
+    artifact.artifactType,
+    artifact.delivery_artifact_type,
+    artifact.deliveryArtifactType,
+    artifact.handoff_artifact_type,
+    artifact.handoffArtifactType,
+    artifact.packet_type,
+    artifact.packetType,
+    artifact.content_type,
+    artifact.contentType,
+    artifact.action_type,
+    artifact.actionType,
+    artifact.type
+  ];
+  for (const field of fields) {
+    const normalized = normalizeContractType(field);
+    if (PUBLISHER_CONTRACT_TYPE_SET.has(normalized)) return normalized;
+  }
+  for (const list of [artifact.artifact_types, artifact.artifactTypes, artifact.accepted_by_apps, artifact.acceptedByApps]) {
+    for (const field of Array.isArray(list) ? list : []) {
+      const normalized = normalizeContractType(field);
+      if (PUBLISHER_CONTRACT_TYPE_SET.has(normalized)) return normalized;
+    }
+  }
+  return '';
+}
+
+function publisherContractTypeForProfile(profile = null, type = '') {
+  const key = String(profile?.key || '').trim();
+  if (key === 'x') return 'x_post_packet';
+  if (key === 'reddit') return 'reddit_post_packet';
+  if (key === 'indie_hackers') return 'indie_hackers_packet';
+  if (key === 'instagram') return 'instagram_post_packet';
+  if (key === 'social') return 'social_copy_packet';
+  if (key === 'directory') return 'directory_packet';
+  if (key === 'wordpress_site') return 'wordpress_draft_packet';
+  if (key === 'owned_site' || key === 'github_pr') return 'site_publish_packet';
+  if (String(type || '').toLowerCase() === 'directory') return 'directory_packet';
+  if (String(type || '').toLowerCase() === 'post') return 'social_copy_packet';
+  return 'site_publish_packet';
+}
+
+function publisherContractTypeFromArtifact(artifact = {}, type = '', profile = null) {
+  return explicitPublisherContractType(artifact) || publisherContractTypeForProfile(profile, type);
+}
+
+function publisherContractArtifactsFromContext(context = {}) {
+  const imported = [];
+  for (const contractType of PUBLISHER_CONTRACT_TYPES) {
+    const value = contractValueFromContext(context, contractType);
+    for (const item of listObjects(value)) {
+      imported.push({
+        ...item,
+        type: item.type || contractType,
+        artifact_type: item.artifact_type || contractType,
+        contract_type: item.contract_type || contractType
+      });
+    }
+  }
+  return imported;
+}
+
+function itemContractType(item = null) {
+  return String(item?.contractType || publisherContractTypeForProfile(itemProfile(item), item?.type || '')).trim();
 }
 
 function marketFromValue(value = '') {
@@ -518,14 +674,14 @@ function artifactBodyText(artifact = {}) {
 function githubConnectHref() {
   const url = new URL('/auth/github', window.location.origin);
   url.searchParams.set('mode', 'link');
-  url.searchParams.set('return_to', '/publisher-approval.html');
+  url.searchParams.set('return_to', currentPublisherReturnPath());
   url.searchParams.set('login_source', 'publisher_approval');
   return url.toString();
 }
 
 function xConnectHref() {
   const url = new URL('/auth/x', window.location.origin);
-  url.searchParams.set('return_to', '/publisher-approval.html');
+  url.searchParams.set('return_to', currentPublisherReturnPath());
   url.searchParams.set('login_source', 'publisher_approval');
   url.searchParams.set('capabilities', 'x.post');
   return url.toString();
@@ -1109,9 +1265,11 @@ function contextItemFromArtifact(artifact = {}, index = 0) {
   const channel = String(firstText(artifact.channel_key, artifact.channelKey, artifact.medium_key, artifact.mediumKey, artifact.media_key, artifact.mediaKey, profile.key) || profile.key).trim();
   const selectedProfile = profileByKey(channel);
   const profileOwnsConnector = selectedProfile.key !== 'generic';
+  const contractType = publisherContractTypeFromArtifact(artifact, type, selectedProfile);
   return {
     id: String(artifact.id || `imported-${index + 1}`).trim(),
     type,
+    contractType,
     channel: selectedProfile.key,
     destination,
     connector: String(profileOwnsConnector ? selectedProfile.connector : (firstText(artifact.connector, artifact.required_connector, artifact.requiredConnector, selectedProfile.connector) || selectedProfile.connector)).trim(),
@@ -1209,7 +1367,9 @@ function applyInboundContext(context = null) {
   const artifacts = Array.isArray(context.artifacts) ? context.artifacts : [];
   const approvals = Array.isArray(context.approval_requests) ? context.approval_requests : [];
   const files = Array.isArray(context.delivery_files) ? context.delivery_files : [];
+  const contractArtifacts = publisherContractArtifactsFromContext(context);
   const importedItems = [
+    ...contractArtifacts.map(contextItemFromArtifact),
     ...artifacts.filter((artifact) => artifact && typeof artifact === 'object').map(contextItemFromArtifact),
     ...approvals.filter((approval) => approval && typeof approval === 'object').map((approval, index) => contextItemFromArtifact({
       ...approval,
@@ -1249,6 +1409,7 @@ function persistSelectedFromFields() {
   item.destination = els.destinationInput.value.trim();
   const profile = profileByKey(els.channelSelect.value);
   item.channel = profile.key;
+  item.contractType = publisherContractTypeForProfile(profile, item.type || '');
   item.connector = profile.connector;
   item.connectorCapability = profile.capability;
   item.publishMethod = profile.method;
@@ -1284,14 +1445,20 @@ function buildPacket() {
       facts: ['No content, page, directory, or approval packet is loaded.'],
       assumptions: ['No built-in demo content is used.', 'Publishing, PR creation, directory submission, or connector execution still requires explicit approval.'],
       recommended_next_actions: ['Load a CAIt app context that contains artifacts or approval requests.'],
-      handoff_targets: [target, 'build_team_leader', 'cmo_leader']
+      handoff_targets: [target, 'build_team_leader', 'cmo_leader'],
+      raw_context: {
+        chat_handoff_id: chatHandoffId(),
+        chat_return_to: chatReturnTo(),
+        publisher_return_to: currentPublisherReturnPath()
+      }
     });
   }
+  const contractType = itemContractType(item);
   return buildCaitAppContext({
     source_app: 'publisher_approval_studio',
     source_app_label: 'Publisher & Approval Studio',
     title: `${itemDestination(item)}: ${item.title}`,
-    summary: `Global publishing packet for ${itemDestination(item)} (${itemMarket(item)}, ${itemLocale(item)}). Current status: ${item.status}. The selected item is ready for CAIt to route to ${target} after destination, market, locale, and execution waiting items are checked.`,
+    summary: `Global publishing packet for ${itemDestination(item)} (${itemMarket(item)}, ${itemLocale(item)}). Current status: ${item.status}. This keeps approval, destination, and execution context visible so CAIt can resume stable publishing operations instead of rerunning a disposable AIAGENT chat.`,
     facts: [
       importedContext ? `Imported context: ${importedContext.title || importedContext.id || 'CAIt app context'}` : '',
       `Destination: ${itemDestination(item)}`,
@@ -1313,6 +1480,7 @@ function buildPacket() {
       item.ogDescription ? `OG description: ${item.ogDescription}` : '',
       `Approval status: ${item.status}`,
       `Risk: ${item.risk}`,
+      'This packet keeps destination rules, execution readiness, and approval state attached to the next CAIt run.',
       repo ? `Selected GitHub repository: ${repo.fullName || repo.full_name}` : '',
       prUrl ? `Created PR: ${prUrl}` : '',
       wpDraftUrl ? `Created WordPress draft: ${wpDraftUrl}` : '',
@@ -1323,7 +1491,7 @@ function buildPacket() {
       'Publisher can create repository handoff PRs or WordPress drafts, but final publishing remains outside chat and approval-gated.'
     ],
     artifacts: [
-      { type: item.type, channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), action_type: itemActionType(item), market: itemMarket(item), locale: itemLocale(item), owner: item.owner || 'CAIt', title: item.title, slug: item.slug, meta: item.meta, keywords: item.keywords, h1: item.h1, primary_cta: item.primaryCta, secondary_cta: item.secondaryCta, internal_links: item.internalLinks, og_title: item.ogTitle, og_description: item.ogDescription, body: item.body, status: item.status, risk: item.risk, source_evidence: item.sourceEvidence || [], publish_variants: item.publishVariants || [], eeat_notes: item.eeatNotes || {} },
+      { type: contractType, artifact_type: contractType, contract_type: contractType, item_type: item.type, channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), action_type: itemActionType(item), market: itemMarket(item), locale: itemLocale(item), owner: item.owner || 'CAIt', title: item.title, slug: item.slug, meta: item.meta, keywords: item.keywords, h1: item.h1, primary_cta: item.primaryCta, secondary_cta: item.secondaryCta, internal_links: item.internalLinks, og_title: item.ogTitle, og_description: item.ogDescription, body: item.body, status: item.status, risk: item.risk, source_evidence: item.sourceEvidence || [], publish_variants: item.publishVariants || [], eeat_notes: item.eeatNotes || {} },
       { type: 'github_pr_handoff', repo: repo?.fullName || repo?.full_name || '', repo_path: String(els.repoPathInput?.value || '').trim(), pr_url: prUrl, status: repoStatus.message },
       { type: 'wordpress_draft_handoff', site_url: wordpressStatus?.result?.wordpress?.siteUrl || '', draft_url: wpDraftUrl, draft_id: wordpressStatus?.result?.draft?.id || '', post_type: String(els.wordpressPostTypeSelect?.value || 'posts'), status: wordpressStatus.message },
       { type: 'x_post_handoff', account_username: xStatus?.result?.x?.username || '', connected: Boolean(xStatus.connected), status: xStatus.message },
@@ -1332,6 +1500,7 @@ function buildPacket() {
     approval_requests: items.map((entry) => ({
       id: entry.id,
       title: entry.title,
+      artifact_type: itemContractType(entry),
       action_type: itemActionType(entry),
       status: entry.status,
       channel: entry.channel,
@@ -1352,6 +1521,17 @@ function buildPacket() {
     handoff_targets: [target, 'build_team_leader', 'cmo_leader'],
     raw_context: {
       ...(importedContext ? { received_context: importedContext } : {}),
+      chat_handoff_id: chatHandoffId(),
+      chat_return_to: chatReturnTo(),
+      publisher_return_to: currentPublisherReturnPath(),
+      selected_publisher_item_id: item.id,
+      selected_publisher_contract_type: contractType,
+      publisher_counts: {
+        items: items.length,
+        destinations: destinationGroups().length,
+        approved: items.filter((entry) => String(entry.status || '').toLowerCase() === 'approved').length,
+        needs_review: items.filter((entry) => String(entry.status || '').toLowerCase() !== 'approved').length
+      },
       github_repo: repo?.fullName || repo?.full_name || '',
       github_pr_url: prUrl,
       github_status: repoStatus,
@@ -1460,6 +1640,104 @@ function renderCounts() {
   els.publisherMarketMetric.textContent = String(markets.size);
   els.publisherReviewMetric.textContent = String(needsReview);
   els.publisherApprovedMetric.textContent = String(approved);
+}
+
+function renderHandoffSessionNotice() {
+  const returnTo = chatReturnTo();
+  const handoffId = chatHandoffId();
+  const hasImportedServerContext = Boolean(importedContext?.id);
+  if (els.returnToChatLink) {
+    if (returnTo) {
+      els.returnToChatLink.hidden = false;
+      els.returnToChatLink.href = returnTo;
+    } else {
+      els.returnToChatLink.hidden = true;
+      els.returnToChatLink.href = '/chat';
+    }
+  }
+  if (!els.handoffSessionNotice) return;
+  const fragments = [];
+  if (returnTo) fragments.push('Return path to the same CAIt chat is pinned.');
+  if (hasImportedServerContext) fragments.push('Server-side context is loaded for this packet.');
+  if (handoffId) fragments.push(`Handoff ID: ${handoffId}.`);
+  if (!fragments.length) {
+    els.handoffSessionNotice.hidden = true;
+    els.handoffSessionNotice.className = 'notice';
+    els.handoffSessionNotice.textContent = '';
+    return;
+  }
+  const warning = returnTo && !hasImportedServerContext;
+  els.handoffSessionNotice.hidden = false;
+  els.handoffSessionNotice.className = `notice${warning ? ' notice-warning' : ''}`;
+  els.handoffSessionNotice.innerHTML = [
+    `<strong>${escapeHtml(warning ? 'Chat handoff is open but no server packet is loaded yet.' : 'CAIt handoff session is attached.')}</strong>`,
+    `<span>${escapeHtml(fragments.join(' '))}</span>`
+  ].join('');
+}
+
+function renderOpsReadiness() {
+  const item = selectedItem();
+  const approved = approvedPublisherItem(item);
+  const blocked = /blocked|changes requested/i.test(String(item?.status || ''));
+  const prUrl = String(repoStatus?.result?.pull_request?.htmlUrl || repoStatus?.result?.entity?.pull_request?.htmlUrl || '').trim();
+  const wpDraftUrl = String(wordpressStatus?.result?.draft?.editUrl || wordpressStatus?.result?.draft?.link || '').trim();
+  const hasServerContext = Boolean(importedContext?.id);
+  const hasChatReturn = Boolean(chatReturnTo() || chatHandoffId());
+  const readinessItems = [
+    {
+      title: 'Approval queue stays inspectable',
+      detail: item
+        ? `${itemDestination(item)} is loaded with ${item.status || 'needs approval'} status, owner, market, and locale.`
+        : 'Load a publisher packet to keep the next execution tied to one visible approval item.',
+      status: item ? 'ready' : 'pending'
+    },
+    {
+      title: 'Approval gate is explicit',
+      detail: approved
+        ? 'The selected packet is approved for handoff.'
+        : (blocked
+          ? 'The selected packet is blocked or needs changes before handoff.'
+          : 'Approve, request changes, or block the selected packet before execution.'),
+      status: approved ? 'ready' : (blocked ? 'blocked' : 'pending')
+    },
+    {
+      title: 'Execution handoff keeps destination proof',
+      detail: prUrl
+        ? 'GitHub PR handoff exists and stays attached to this packet.'
+        : (wpDraftUrl
+          ? 'WordPress draft handoff exists and stays attached to this packet.'
+          : (xStatus.connected
+            ? 'X connector readiness is visible before execution.'
+            : 'No external handoff exists yet. Create a PR, draft, or connector-backed execution path.')),
+      status: prUrl || wpDraftUrl || xStatus.connected ? 'ready' : 'pending'
+    },
+    {
+      title: 'CAIt can reopen the same context',
+      detail: hasServerContext
+        ? 'Server-side context return data is preserved so the next CAIt run can reopen this packet instead of asking again.'
+        : (hasChatReturn
+          ? 'The chat return route is pinned; Send to CAIt will create the server-side packet reference.'
+          : 'Open this app from a CAIt handoff to preserve chat return routing and server-side context references.'),
+      status: hasServerContext ? 'ready' : (hasChatReturn ? 'pending' : 'blocked')
+    }
+  ];
+  if (els.opsReadinessPill) {
+    const readyCount = readinessItems.filter((entry) => entry.status === 'ready').length;
+    const blockedCount = readinessItems.filter((entry) => entry.status === 'blocked').length;
+    const pillStatus = readyCount === readinessItems.length ? 'approved' : blockedCount ? 'blocked' : 'pending';
+    els.opsReadinessPill.textContent = item
+      ? `${readyCount}/${readinessItems.length} ops checks ready`
+      : 'Queue not loaded';
+    els.opsReadinessPill.className = `status-pill ${item ? pillStatus : 'pending'}`;
+  }
+  if (els.opsReadinessList) {
+    els.opsReadinessList.innerHTML = readinessItems.map((entry) => [
+      `<article class="ops-readiness-item ${entry.status}">`,
+      `<strong>${escapeHtml(entry.title)}</strong>`,
+      `<span>${escapeHtml(entry.detail)}</span>`,
+      '</article>'
+    ].join('')).join('');
+  }
 }
 
 function renderEditor() {
@@ -1573,6 +1851,8 @@ function renderExecutionResult() {
 
 function render() {
   renderCounts();
+  renderHandoffSessionNotice();
+  renderOpsReadiness();
   renderDestinationNav();
   renderFilters();
   renderList();
@@ -1692,7 +1972,8 @@ els.wordpressPostTypeSelect.addEventListener('change', () => {
 });
 els.sendPacketBtn.addEventListener('click', () => {
   persistSelectedFromFields();
-  void sendContextToCait(buildPacket()).catch((error) => {
+  const returnTo = chatReturnTo();
+  void sendContextToCait(buildPacket(), { returnTo }).catch((error) => {
     window.alert(`CAIt context handoff failed: ${error.message}`);
   });
 });

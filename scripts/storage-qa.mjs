@@ -545,7 +545,7 @@ await deliveryItemStorage.upsertJobs([{
       name: 'landing-page-critique-delivery.md',
       type: 'text/markdown',
       content: [
-        '# landing page critique delivery',
+        '# example.com - signup landing page',
         '',
         '## Request',
         'Task: writing',
@@ -561,7 +561,19 @@ await deliveryItemStorage.upsertJobs([{
         '## Expected output sections',
         '- Replacement copy',
         '## Review notes',
-        'internal prompt text'
+        'internal prompt text',
+        '# example.com - signup landing page',
+        '',
+        'Meta description: Use example.com to show the offer, proof, and next step for Developers/technical users, then continue to signup or trial start.',
+        '',
+        '## Hero',
+        'Compare AI agent workflows before you commit engineering time. Show the offer, proof, and next step above the fold for Developers/technical users.',
+        '',
+        '## CTA',
+        'Primary CTA: Start the trial. Secondary CTA: Review the workflow examples.',
+        '',
+        '## Proof',
+        'Use source-backed examples, product screenshots, and short implementation notes so technical buyers can decide whether signup or trial start is worth the next click.'
       ].join('\n')
     }]
   },
@@ -670,8 +682,34 @@ await deliveryItemStorage.upsertJobs([{
   createdAt: '2026-04-26T08:26:00.000Z',
   completedAt: '2026-04-26T08:27:00.000Z'
 }]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-generic-keyword-noise',
+  parentAgentId: 'qa',
+  taskType: 'summary',
+  prompt: 'generic summary should not become an app delivery item',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'summary',
+  workflowAgentName: 'SUMMARY AGENT',
+  output: {
+    report: { summary: 'Generic delivery with app-like words' },
+    files: [{
+      name: 'generic-summary.md',
+      type: 'text/markdown',
+      content: '# Generic summary\n\nThis mentions SEO, social post, GA4, and リード as context only. It has no explicit delivery surface or artifact contract.'
+    }]
+  },
+  createdAt: '2026-04-26T08:28:00.000Z',
+  completedAt: '2026-04-26T08:29:00.000Z'
+}]);
 const publisherItems = await deliveryItemStorage.listDeliveryItems({ surface: 'publisher', ownerLogins: ['owner@example.com'] });
-assert.equal(publisherItems.length, 5);
+assert.equal(publisherItems.length, 5, `publisher items: ${JSON.stringify(publisherItems.map((item) => ({
+  type: item.itemType,
+  title: item.title,
+  jobId: item.jobId
+})))}`);
+assert.equal(publisherItems.some((item) => item.jobId === 'job-generic-keyword-noise'), false, 'body keywords alone must not create Publisher delivery items');
 const seoPublisherItem = publisherItems.find((item) => item.itemType === 'seo_article');
 const landingPublisherItem = publisherItems.find((item) => item.itemType === 'landing_page');
 const xPublisherItem = publisherItems.find((item) => item.itemType === 'x_post');
@@ -704,6 +742,7 @@ assert.equal(indieHackersPublisherItem.metadata.publish_method, 'indie_hackers_c
 const analyticsItems = await deliveryItemStorage.listDeliveryItems({ surface: 'analytics', ownerLogins: ['owner@example.com'] });
 assert.equal(analyticsItems.length, 1);
 assert.equal(analyticsItems[0].surface, 'analytics');
+assert.equal(analyticsItems.some((item) => item.jobId === 'job-generic-keyword-noise'), false, 'body keywords alone must not create Analytics delivery items');
 const leadItems = await deliveryItemStorage.listDeliveryItems({ surface: 'lead', ownerLogins: ['owner@example.com'] });
 assert.equal(leadItems.length, 0);
 

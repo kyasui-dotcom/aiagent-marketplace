@@ -15,6 +15,7 @@ const data = {
   channels: [],
   channelPages: [],
   channelSources: [],
+  conversionPaths: [],
   measurement: []
 };
 
@@ -96,7 +97,10 @@ const els = {
   analyticsMeasurementCount: document.getElementById('analyticsMeasurementCount'),
   analyticsStepSources: document.getElementById('analyticsStepSources'),
   analyticsStepReport: document.getElementById('analyticsStepReport'),
-  analyticsStepHandoff: document.getElementById('analyticsStepHandoff')
+  analyticsStepHandoff: document.getElementById('analyticsStepHandoff'),
+  analyticsRunReadinessStatus: document.getElementById('analyticsRunReadinessStatus'),
+  analyticsReadinessList: document.getElementById('analyticsReadinessList'),
+  analyticsHandoffNotice: document.getElementById('analyticsHandoffNotice')
 };
 
 function formatNumber(value) {
@@ -152,6 +156,29 @@ function statusClass(value = '') {
   if (/approved|ready|scheduled/.test(safe)) return 'approved';
   if (/block|missing/.test(safe)) return 'blocked';
   return 'pending';
+}
+
+function booleanValue(value, fallback = false) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  const text = String(value ?? '').trim().toLowerCase();
+  if (!text) return fallback;
+  if (['true', '1', 'yes', 'ready', 'loaded'].includes(text)) return true;
+  if (['false', '0', 'no', 'missing', 'pending'].includes(text)) return false;
+  return fallback;
+}
+
+function listValue(value = []) {
+  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean);
+  return String(value || '').split(/[,\n/]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function hasEvidenceRows() {
+  return Boolean(data.queries.length || data.pages.length || data.channels.length || data.channelPages.length || data.channelSources.length || data.conversionPaths.length || data.countries.length);
+}
+
+function hasChatReturnRoute() {
+  return Boolean(chatReturnTo() || chatHandoffId());
 }
 
 function currentAnalyticsReturnPath() {
@@ -311,6 +338,12 @@ function renderGoogleSourceControls() {
       : `Report loaded for ${state.googleReportDateRange.start_date} to ${state.googleReportDateRange.end_date}. Send this evidence packet to CAIt when ready.`;
     return;
   }
+  if (importedContext && state.googleReportLoaded) {
+    els.googleSourceStatus.textContent = 'Context restored';
+    els.googleSourceStatus.className = 'status-pill approved';
+    els.googleSourceNote.textContent = 'A server-side CAIt context was restored. Review the retained evidence, then send the updated packet when ready.';
+    return;
+  }
   els.googleSourceNote.textContent = connected
     ? `Loaded ${sites.length} Search Console site(s) and ${ga4.length} GA4 propert${ga4.length === 1 ? 'y' : 'ies'}. Select sources, then use Load report to fetch performance rows.`
     : 'Use Connect GA4 or Connect Search Console to grant Google read access, then refresh sources.';
@@ -326,17 +359,17 @@ function setWorkflowStep(element, status = '', detail = '') {
 function renderWorkflowState() {
   const hasSource = Boolean(state.gscSite || state.ga4Property);
   const connected = Boolean(state.googleConnected);
-  const loaded = Boolean(state.googleReportLoaded);
+  const loaded = Boolean(state.googleReportLoaded || (importedContext && hasEvidenceRows()));
   setWorkflowStep(
     els.analyticsStepSources,
-    connected && hasSource ? 'done' : (state.googleWarnings.length ? 'blocked' : 'current'),
+    (connected || importedContext) && hasSource ? 'done' : (state.googleWarnings.length ? 'blocked' : 'current'),
     connected
       ? (hasSource ? 'Source selected and ready for report loading.' : 'Connected. Choose one source before loading.')
-      : 'Connect GA4 or Search Console before loading evidence.'
+      : (importedContext ? 'Source metadata was restored from server-side context.' : 'Connect GA4 or Search Console before loading evidence.')
   );
   setWorkflowStep(
     els.analyticsStepReport,
-    loaded ? 'done' : (connected && hasSource ? 'current' : ''),
+    loaded ? 'done' : ((connected || importedContext) && hasSource ? 'current' : ''),
     loaded ? 'Report rows are loaded into the packet.' : 'Use Load report after selecting sources.'
   );
   setWorkflowStep(
@@ -347,6 +380,77 @@ function renderWorkflowState() {
   if (els.sendContextBtn) {
     els.sendContextBtn.textContent = 'Send to CAIt';
   }
+  renderReadiness();
+}
+
+function readinessItems() {
+  const sourceCount = [state.gscSite, state.ga4Property].filter(Boolean).length;
+  const loaded = Boolean(state.googleReportLoaded || (importedContext && hasEvidenceRows()));
+  const warnings = [...state.googleWarnings, ...state.googleReportWarnings].filter(Boolean);
+  const measurementReady = data.measurement.length > 0;
+  return [
+    {
+      label: 'Server-side context',
+      status: importedContext ? 'ready' : 'pending',
+      detail: importedContext
+        ? `Restored from ${importedContext.source_app_label || importedContext.source_app || 'CAIt context'}.`
+        : (hasChatReturnRoute() ? 'The chat return route is pinned; Send to CAIt will create the server-side analytics packet.' : 'Open this app from a CAIt handoff or send the packet to create a retained context record.')
+    },
+    {
+      label: 'Connector source',
+      status: sourceCount ? 'ready' : (warnings.length ? 'blocked' : 'pending'),
+      detail: sourceCount ? `${sourceCount} source${sourceCount === 1 ? '' : 's'} selected for this packet.` : 'Select GA4 or Search Console before ordering evidence-based work.'
+    },
+    {
+      label: 'Evidence rows',
+      status: loaded && hasEvidenceRows() ? 'ready' : (warnings.length ? 'blocked' : 'pending'),
+      detail: loaded && hasEvidenceRows() ? `${data.queries.length + data.pages.length + data.channels.length} primary rows are attached.` : 'Load or import report rows before asking a leader to decide.'
+    },
+    {
+      label: 'Measurement loop',
+      status: measurementReady ? 'ready' : 'pending',
+      detail: measurementReady ? '24h and 7d follow-up checks are included in the handoff.' : 'A post-run measurement queue will be added after report loading.'
+    }
+  ];
+}
+
+function renderReadiness() {
+  if (!els.analyticsReadinessList || !els.analyticsRunReadinessStatus) return;
+  const items = readinessItems();
+  const blocked = items.some((item) => item.status === 'blocked');
+  const ready = items.filter((item) => item.status === 'ready').length;
+  const allReady = ready === items.length;
+  els.analyticsRunReadinessStatus.textContent = allReady ? 'Ready' : blocked ? 'Blocked' : `${ready}/${items.length} ready`;
+  els.analyticsRunReadinessStatus.className = `status-pill ${allReady ? 'approved' : blocked ? 'blocked' : 'pending'}`;
+  els.analyticsReadinessList.innerHTML = items.map((item) => [
+    `<div class="ops-readiness-item ${escapeHtml(item.status)}">`,
+    `<strong>${escapeHtml(item.label)}</strong>`,
+    `<span>${escapeHtml(item.detail)}</span>`,
+    '</div>'
+  ].join('')).join('');
+}
+
+function renderHandoffNotice() {
+  if (!els.analyticsHandoffNotice) return;
+  const handoffId = chatHandoffId();
+  const returnTo = chatReturnTo();
+  const fragments = [];
+  if (importedContext?.id) fragments.push('Server-side analytics context is loaded.');
+  if (handoffId) fragments.push(`Handoff ID: ${handoffId}.`);
+  if (returnTo) fragments.push('Return to CAIt chat is pinned.');
+  if (!fragments.length) {
+    els.analyticsHandoffNotice.hidden = true;
+    els.analyticsHandoffNotice.textContent = '';
+    els.analyticsHandoffNotice.className = 'notice';
+    return;
+  }
+  const warning = hasChatReturnRoute() && !importedContext?.id;
+  els.analyticsHandoffNotice.hidden = false;
+  els.analyticsHandoffNotice.className = `notice${warning ? ' notice-warning' : ''}`;
+  els.analyticsHandoffNotice.innerHTML = [
+    `<strong>${escapeHtml(warning ? 'Chat handoff is open but no server analytics packet is loaded yet.' : 'CAIt analytics handoff session is attached.')}</strong>`,
+    `<span>${escapeHtml(fragments.join(' '))}</span>`
+  ].join(' ');
 }
 
 async function refreshGoogleSources(options = {}) {
@@ -375,6 +479,15 @@ async function refreshGoogleSources(options = {}) {
     state.ga4Property = normalizeGa4Property(state.ga4Property);
     if (!state.ga4Property && state.ga4Properties[0]?.value) state.ga4Property = state.ga4Properties[0].value;
   } catch (error) {
+    if (options.silent && importedContext && hasEvidenceRows()) {
+      state.googleConnected = false;
+      state.googleWarnings = [];
+      state.googleApiErrors = {};
+      renderGoogleSourceControls();
+      renderWorkflowState();
+      els.contextPreview.textContent = JSON.stringify(buildContext(), null, 2);
+      return;
+    }
     state.googleConnected = false;
     const detail = error?.data && typeof error.data === 'object'
       ? [
@@ -404,6 +517,7 @@ function resetReportData() {
   data.channels = [];
   data.channelPages = [];
   data.channelSources = [];
+  data.conversionPaths = [];
   data.measurement = [];
 }
 
@@ -543,10 +657,17 @@ async function loadGoogleReport() {
   }
 }
 
-function artifactRows(context = {}, type = '') {
-  const match = (Array.isArray(context.artifacts) ? context.artifacts : [])
-    .find((artifact) => String(artifact?.type || '').toLowerCase() === String(type || '').toLowerCase());
-  return Array.isArray(match?.rows) ? match.rows : [];
+function artifactRows(context = {}, types = []) {
+  const accepted = new Set((Array.isArray(types) ? types : [types])
+    .map((type) => String(type || '').toLowerCase())
+    .filter(Boolean));
+  return (Array.isArray(context.artifacts) ? context.artifacts : [])
+    .filter((artifact) => accepted.has(String(artifact?.type || '').toLowerCase()))
+    .flatMap((artifact) => {
+      if (Array.isArray(artifact?.rows)) return artifact.rows;
+      if (Array.isArray(artifact?.items)) return artifact.items;
+      return [];
+    });
 }
 
 function metricByLabel(context = {}, label = '') {
@@ -589,11 +710,11 @@ function applyInboundContext(context = null) {
     ]);
   }
 
-  const channelRows = artifactRows(context, 'channel_mix');
+  const channelRows = artifactRows(context, ['channel_mix', 'channel_breakdown', 'channel_breakdowns']);
   if (channelRows.length) {
     data.channels = channelRows.map((row) => [
       row.channel || row.source || 'unknown channel',
-      Number(row.sessions || 0),
+      Number(row.sessions || row.clicks || 0),
       Number(row.conversions || row.cv || 0),
       Number(row.share || row.percent || row.value || 0),
       Number(row.cvr || row.conversion_rate || 0)
@@ -623,6 +744,37 @@ function applyInboundContext(context = null) {
     ]);
   }
 
+  const conversionPathRows = artifactRows(context, ['conversion_paths', 'conversion_path']);
+  if (conversionPathRows.length) {
+    data.conversionPaths = conversionPathRows.map((row) => [
+      row.channel || row.source || row.medium || 'unknown channel',
+      row.path || row.path_name || row.conversion_path || row.touchpoints || row.source_medium || 'unknown path',
+      Number(row.sessions || row.users || row.clicks || 0),
+      Number(row.conversions || row.cv || row.purchases || row.value || 0),
+      Number(row.cvr || row.conversion_rate || 0),
+      row.note || row.decision_note || row.intent || ''
+    ]);
+    if (!data.channels.length) {
+      const totals = new Map();
+      for (const [channel, , sessions, conversions, cvr] of data.conversionPaths) {
+        const current = totals.get(channel) || { sessions: 0, conversions: 0, cvr: 0 };
+        current.sessions += Number(sessions || 0);
+        current.conversions += Number(conversions || 0);
+        current.cvr = Math.max(current.cvr, Number(cvr || 0));
+        totals.set(channel, current);
+      }
+      const totalSessions = [...totals.values()].reduce((sum, item) => sum + Number(item.sessions || 0), 0);
+      data.channels = [...totals.entries()].map(([channel, item]) => [
+        channel,
+        item.sessions,
+        item.conversions,
+        shareOf(item.sessions, totalSessions),
+        item.cvr || rateOf(item.conversions, item.sessions)
+      ]);
+    }
+    if (!state.selectedChannel && data.conversionPaths[0]?.[0]) state.selectedChannel = data.conversionPaths[0][0];
+  }
+
   const countryRows = artifactRows(context, 'country_mix');
   if (countryRows.length) {
     data.countries = countryRows.map((row) => [
@@ -632,14 +784,57 @@ function applyInboundContext(context = null) {
     ]);
   }
 
+  const measurementRows = [
+    ...artifactRows(context, 'measurement_queue'),
+    ...artifactRows(context, 'post_run_measurement')
+  ];
+  if (measurementRows.length) {
+    data.measurement = measurementRows.map((row) => [
+      row.action || row.name || row.check || 'Imported measurement check',
+      row.window || row.windowLabel || row.window_label || '-',
+      row.status || 'ready',
+      row.note || row.detail || row.check || context.summary || ''
+    ]);
+  }
+
   const target = (Array.isArray(context.handoff_targets) ? context.handoff_targets : []).find(Boolean);
   if (target) {
     state.target = String(target);
     if ([...els.targetSelect.options].some((option) => option.value === state.target)) els.targetSelect.value = state.target;
   }
   const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
-  if (String(raw.googleSearchConsoleSite || raw.searchConsoleSite || '').trim()) state.gscSite = String(raw.googleSearchConsoleSite || raw.searchConsoleSite || '').trim();
-  if (String(raw.googleGa4Property || raw.ga4Property || '').trim()) state.ga4Property = String(raw.googleGa4Property || raw.ga4Property || '').trim();
+  const googleSourceRows = artifactRows(context, 'google_sources');
+  const gscArtifact = googleSourceRows.find((row) => /search_console|gsc/i.test(String(row?.source || row?.kind || row?.type || '')));
+  const ga4Artifact = googleSourceRows.find((row) => /ga4|google_analytics/i.test(String(row?.source || row?.kind || row?.type || '')));
+  if (String(raw.googleSearchConsoleSite || raw.searchConsoleSite || gscArtifact?.value || gscArtifact?.site || '').trim()) state.gscSite = String(raw.googleSearchConsoleSite || raw.searchConsoleSite || gscArtifact?.value || gscArtifact?.site || '').trim();
+  if (String(raw.googleGa4Property || raw.ga4Property || ga4Artifact?.value || ga4Artifact?.property || '').trim()) state.ga4Property = normalizeGa4Property(raw.googleGa4Property || raw.ga4Property || ga4Artifact?.value || ga4Artifact?.property || '');
+  const reportStatus = artifactRows(context, 'google_report_status')[0] || {};
+  const rawSources = raw.googleReportSources && typeof raw.googleReportSources === 'object' ? raw.googleReportSources : {};
+  const reportLoaded = booleanValue(raw.googleReportLoaded ?? raw.google_report_loaded ?? reportStatus.loaded, hasEvidenceRows());
+  state.googleReportLoaded = reportLoaded || (hasEvidenceRows() && Boolean(importedContext));
+  state.googleReportSources = {
+    ga4: booleanValue(rawSources.ga4 ?? reportStatus.ga4, Boolean(state.ga4Property && (data.channels.length || data.pages.length))),
+    gsc: booleanValue(rawSources.gsc ?? rawSources.search_console ?? reportStatus.gsc, Boolean(state.gscSite && data.queries.length))
+  };
+  const importedRange = raw.googleReportDateRange && typeof raw.googleReportDateRange === 'object' ? raw.googleReportDateRange : {};
+  state.googleReportDateRange = importedRange.start_date || importedRange.end_date || reportStatus.start_date || reportStatus.end_date
+    ? {
+        start_date: String(importedRange.start_date || reportStatus.start_date || ''),
+        end_date: String(importedRange.end_date || reportStatus.end_date || ''),
+        range_days: String(importedRange.range_days || reportStatus.range_days || state.range)
+      }
+    : state.googleReportDateRange;
+  state.googleReportWarnings = [
+    ...listValue(raw.googleReportWarnings || raw.google_report_warnings || []),
+    ...listValue(reportStatus.warnings || [])
+  ];
+  if (!data.measurement.length && (state.googleReportLoaded || reportStatus.loaded !== undefined)) {
+    const reportWindow = state.googleReportDateRange?.range_days ? `${state.googleReportDateRange.range_days}d` : `last ${state.range} days`;
+    data.measurement = [
+      ['Imported analytics baseline', reportWindow, state.googleReportLoaded ? 'ready' : 'pending', reportStatus.warnings || context.summary || 'Context received from CAIt.'],
+      ['Leader follow-up window', '24h and 7d', 'scheduled', 'Reuse this retained packet after the approved action is executed.']
+    ];
+  }
 }
 
 function tableHtml(headers = [], rows = []) {
@@ -766,8 +961,10 @@ function buildContext() {
       { type: 'search_queries', rows: data.queries.map(([query, clicks, position, impressions, note]) => ({ query, clicks, position, impressions, note })) },
       { type: 'landing_pages', rows: data.pages.map(([page, sessions, conversions, note]) => ({ page, sessions, conversions, note })) },
       { type: 'channel_mix', rows: data.channels.map(([channel, sessions, conversions, share, cvr]) => ({ channel, sessions, conversions, share, cvr })) },
+      { type: 'channel_breakdown', rows: data.channels.map(([channel, sessions, conversions, share, cvr]) => ({ channel, sessions, conversions, share, cvr })) },
       { type: 'channel_landing_pages', rows: data.channelPages.map(([channel, page, sessions, conversions, cvr]) => ({ channel, page, sessions, conversions, cvr })) },
       { type: 'channel_sources', rows: data.channelSources.map(([channel, sourceMedium, sessions, conversions, cvr]) => ({ channel, source_medium: sourceMedium, sessions, conversions, cvr })) },
+      { type: 'conversion_paths', rows: data.conversionPaths.map(([channel, path, sessions, conversions, cvr, note]) => ({ channel, path, sessions, conversions, cvr, note })) },
       { type: 'country_mix', rows: data.countries.map(([country, share, conversions]) => ({ country, share, conversions })) },
       { type: 'google_sources', rows: [
         state.gscSite ? { source: 'search_console', value: state.gscSite } : null,
@@ -777,9 +974,15 @@ function buildContext() {
         {
           loaded: state.googleReportLoaded,
           range: reportWindow,
+          start_date: state.googleReportDateRange?.start_date || '',
+          end_date: state.googleReportDateRange?.end_date || '',
+          range_days: state.googleReportDateRange?.range_days || state.range,
+          ga4: Boolean(state.googleReportSources.ga4),
+          gsc: Boolean(state.googleReportSources.gsc),
           warnings: reportWarningText()
         }
-      ] }
+      ] },
+      { type: 'measurement_queue', rows: data.measurement.map(([action, windowLabel, status, note]) => ({ action, window: windowLabel, status, note })) }
     ],
     recommended_next_actions: [
       (state.gscSite || state.ga4Property || importedContext) ? 'Ask the selected leader to prioritize one evidence-backed next action.' : 'Connect Google and select Search Console / GA4 sources first.',
@@ -826,6 +1029,11 @@ function miniTableHtml(headers = [], rows = []) {
   ].join('');
 }
 
+function selectedConversionPathRows(channelName = selectedChannelName()) {
+  const selected = channelKey(channelName);
+  return selected ? data.conversionPaths.filter(([channel]) => channelKey(channel) === selected) : data.conversionPaths;
+}
+
 function channelDetailHtml() {
   const selected = selectedChannelName();
   const channel = data.channels.find(([name]) => channelKey(name) === channelKey(selected)) || data.channels[0] || null;
@@ -833,6 +1041,7 @@ function channelDetailHtml() {
   const [name, sessions, conversions, share, cvr] = channel;
   const sourceRows = selectedChannelRows(data.channelSources, name).slice(0, 8);
   const pageRows = selectedChannelRows(data.channelPages, name).slice(0, 8);
+  const conversionRows = selectedConversionPathRows(name).slice(0, 8);
   const sourceTitle = /referral/i.test(name) ? 'Referral sites' : 'Sources';
   return [
     '<div class="channel-detail-head">',
@@ -856,6 +1065,16 @@ function channelDetailHtml() {
       formatNumber(rowConversions),
       `${formatPercent(rowCvr)}%`
     ])),
+    '</div>',
+    '<div class="detail-block">',
+    '<h3>Conversion paths</h3>',
+    miniTableHtml(['Path', 'Sessions / clicks', 'CV', 'CVR', 'Note'], conversionRows.map(([, path, rowSessions, rowConversions, rowCvr, note]) => [
+      `<strong>${escapeHtml(path)}</strong>`,
+      formatNumber(rowSessions),
+      formatNumber(rowConversions),
+      `${formatPercent(rowCvr)}%`,
+      escapeHtml(note || 'Keep this path attached to the next leader decision.')
+    ])),
     '</div>'
   ].join('');
 }
@@ -870,6 +1089,7 @@ function renderCounts() {
 
 function render() {
   renderWorkflowState();
+  renderHandoffNotice();
   renderCounts();
   const m = data.metrics;
   els.sessionsMetric.textContent = formatNumber(m.sessions);

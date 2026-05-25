@@ -69,6 +69,7 @@ async function main() {
       ...process.env,
       NODE_ENV: 'test',
       ALLOW_IN_MEMORY_STORAGE: '1',
+      ALLOW_OPEN_WRITE_API: '1',
       PORT: String(PORT)
     },
     stdio: ['ignore', 'pipe', 'pipe']
@@ -136,7 +137,21 @@ async function main() {
         job_id: jobId,
         agent_id: agentId,
         status: 'completed',
-        report: { summary: 'async done' },
+        report: {
+          summary: 'async done with source-backed recommendation, risk note, and next action',
+          recommendation: 'Recommend completing the callback QA flow after verifying the source URL and delivery artifact.'
+        },
+        files: [{
+          name: 'callback-delivery.md',
+          content: [
+            '# Callback QA delivery',
+            '',
+            'Source: callback provider accepted the remote job and returned external_job_id remote-qa-1.',
+            'Risk: the callback must include a concrete user-facing artifact, not only status metadata.',
+            'Recommendation: mark the job completed after this delivery file is stored.',
+            'Next action: verify duplicate callbacks remain blocked.'
+          ].join('\n')
+        }],
         usage: { total_cost_basis: 80, compute_cost: 20, tool_cost: 10, labor_cost: 50 },
         external_job_id: 'remote-qa-1'
       })

@@ -95,6 +95,36 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     reusePrompt: 'Open Lead Ops Console to review lead rows and email drafts, then send a lead packet back to CAIt.'
   },
   {
+    id: 'campaign-operations',
+    name: 'Campaign Operations',
+    kind: 'application_agent',
+    description: 'Campaign state, Publisher queues, connector readiness, planned actions, waiting conditions, and measurement loops for stable CAIt campaign runs.',
+    baseUrl: '/campaign-operations.html',
+    entryUrl: '/campaign-operations.html',
+    capabilities: ['campaign_state', 'publisher_queue', 'connector_readiness', 'planned_action_queue', 'measurement_loop', 'next_action_owner'],
+    requiredConnectors: [],
+    requiresApprovalFor: ['publish_change', 'email_send', 'ads_launch', 'external_send'],
+    inputContract: {
+      schemaVersion: 'cait-app-context/v1',
+      accepts: ['campaign_state', 'campaign_operations_plan', 'delivery_files', 'publisher_queue', 'approval_backlog', 'connector_readiness', 'planned_action_queue', 'now_week_0_1', 'next_week_1_3', 'waiting_conditions', 'measurement_loop', 'next_action_owner'],
+      returns: ['artifacts', 'metrics', 'recommended_next_actions']
+    },
+    contextContract: {
+      sourceApps: ['campaign_operations'],
+      evidence: {
+        loadedArtifactTypes: ['campaign_state', 'campaign_operations_plan', 'publisher_queue', 'connector_readiness', 'planned_action_queue', 'measurement_loop', 'next_action_owner'],
+        summaryFields: ['campaign_id', 'campaign_counts']
+      }
+    },
+    tags: ['campaigns', 'operations', 'measurement'],
+    directCommandAliases: ['campaign operations', 'campaign ops', 'campaign state', 'marketing operations', 'campaign run', 'キャンペーン運用'],
+    owner: 'cait-managed',
+    status: 'active',
+    verificationStatus: 'cait_managed',
+    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] },
+    reusePrompt: 'Open Campaign Operations to inspect retained campaign state, queues, SaaS readiness, waiting conditions, and measurement loops.'
+  },
+  {
     id: 'x-client-ops',
     name: 'X Client Ops',
     kind: 'application_agent',
@@ -115,6 +145,7 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
       returns: ['approval_requests', 'artifacts']
     },
     handoff: {
+      actionKind: 'x_post_handoff',
       createUrl: `${X_CLIENT_OPS_URL.replace(/\/+$/, '')}/api/cait/handoff`,
       method: 'POST',
       openUrlParam: 'cait_handoff',

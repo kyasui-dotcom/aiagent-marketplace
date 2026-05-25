@@ -20,6 +20,7 @@ const env = {
   STRIPE_SECRET_KEY: 'sk_test_login_leader_qa',
   STRIPE_WEBHOOK_SECRET,
   STRIPE_DEFAULT_CURRENCY: 'USD',
+  BUILTIN_OPENAI_API_KEY: 'sk_test_builtin_openai_login_leader',
   BASE_URL: BASE,
   SAMPLE_AGENT_ENDPOINT_BASE_URL: `${BASE}/sample-agents`,
   BRAVE_SEARCH_API_KEY: 'brave-login-leader-qa',
@@ -82,8 +83,14 @@ async function emailAuthToken({
   return sealPayload(payload);
 }
 
-function cookieHeaderFromSetCookie(value = '') {
-  return String(value || '').split(';')[0].trim();
+function cookieHeaderFromSetCookie(value = '', name = 'aiagent2_session') {
+  const raw = Array.isArray(value) ? value.join('\n') : String(value || '');
+  const marker = `${name}=`;
+  const start = raw.indexOf(marker);
+  if (start === -1) return '';
+  const tail = raw.slice(start);
+  const end = tail.indexOf(';');
+  return end === -1 ? tail.trim() : tail.slice(0, end).trim();
 }
 
 function stripeSignatureForPayload(payload) {
@@ -112,9 +119,14 @@ async function request(path, init = {}, options = {}) {
     body = text ? JSON.parse(text) : null;
   } catch {}
   await Promise.allSettled(waitUntilPromises);
+  const responseHeaders = Object.fromEntries(response.headers.entries());
+  if (typeof response.headers.getSetCookie === 'function') {
+    const setCookies = response.headers.getSetCookie();
+    if (setCookies.length) responseHeaders['set-cookie'] = setCookies.join('\n');
+  }
   return {
     status: response.status,
-    headers: Object.fromEntries(response.headers.entries()),
+    headers: responseHeaders,
     body,
     text
   };
@@ -213,6 +225,55 @@ async function main() {
         }
       });
     }
+    if (url === 'https://api.openai.com/v1/responses') {
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          summary: 'autowifi-travel.com should focus Japan traveler eSIM purchase conversion before adding broad registration work.',
+          report_summary: 'Source-backed acquisition plan for autowifi-travel.com eSIM purchases, with assumptions, risks, recommendations, and next actions.',
+          next_action: 'Ship the purchase-focused landing and SEO actions first, then review Search Console and purchase events after seven days.',
+          bullets: [
+            'Preserve autowifi-travel.com and Japan travel eSIM purchase as the conversion goal.',
+            'Use search-backed source evidence before channel expansion.',
+            'Do not claim posts, submissions, sends, or account execution without connector proof.'
+          ],
+          file_markdown: [
+            '# autowifi-travel.com eSIM acquisition plan',
+            '',
+            '## Executive summary',
+            'autowifi-travel.com should prioritize Japan traveler eSIM purchase conversion, not generic registration goals. The strongest near-term path is a purchase-focused landing page, search-intent SEO pages, and measurable owned-channel copy.',
+            '',
+            '## Confirmed facts',
+            '- Product URL/source: https://autowifi-travel.com/',
+            '- Product category: Japan travel eSIM connectivity.',
+            '- Conversion goal: purchase / paid conversion for Japan eSIMs.',
+            '- Source status: QA Brave Search evidence included Japan travel eSIM buying guide and connectivity tips.',
+            '',
+            '## Open questions',
+            '- Analytics and Search Console access are not confirmed.',
+            '- Current purchase funnel events and abandonment points are assumptions until GA4 evidence is connected.',
+            '',
+            '## Priority diagnosis',
+            'The first risk is conversion-path clarity: travelers must immediately see coverage, activation timing, device compatibility, refund limits, and checkout trust before paid conversion. The second risk is thin SEO capture for Japan eSIM buying intent.',
+            '',
+            '## Recommended actions',
+            '- Update hero, plan comparison, FAQ, and checkout CTA around purchase readiness.',
+            '- Publish two source-backed SEO pages: Japan eSIM buying guide and Japan connectivity tips.',
+            '- Add purchase event checks for view_item, begin_checkout, and purchase.',
+            '- Prepare community and directory drafts, but label them not posted until approval and connector evidence exist.',
+            '',
+            '## 2-week execution plan',
+            'Week 1: landing rewrite, SEO page brief, measurement QA, and purchase CTA test. Week 2: publish approved SEO pages, submit only approved directory/community drafts, and review paid conversion signal quality.',
+            '',
+            '## Inputs needed next',
+            'Connect GA4/Search Console, confirm eSIM regions and pricing, and provide checkout screenshots or funnel metrics. Assumption risk remains medium until those sources are available.',
+            ''
+          ].join('\n'),
+          content_type: 'cmo_leader_delivery',
+          artifacts: [],
+          approval_requests: []
+        })
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
     if (url === 'https://api.stripe.com/v1/setup_intents/seti_login_leader_card') {
       return new Response(JSON.stringify({
         id: 'seti_login_leader_card',
@@ -263,7 +324,7 @@ async function main() {
 
     const sessionCookie = await loginWithEmail();
 
-    const paymentBlocked = await request('/api/jobs', {
+    const welcomeFunded = await request('/api/jobs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -275,8 +336,17 @@ async function main() {
         budget_cap: 500
       })
     }, { sessionCookie });
-    assert.equal(paymentBlocked.status, 402, 'logged-in paid leader order should require a registered card first');
-    assert.equal(paymentBlocked.body.code, 'payment_method_missing');
+    assert.equal(welcomeFunded.status, 201, 'first logged-in leader order should be fundable by signup welcome credits before card registration');
+    assert.equal(welcomeFunded.body.mode, 'workflow');
+    assert.ok((welcomeFunded.body.planned_task_types || []).includes('cmo_leader'), 'welcome-funded leader order should preserve the requested leader task');
+
+    const settingsBeforeCard = await request('/api/settings', {}, { sessionCookie });
+    assert.equal(settingsBeforeCard.status, 200);
+    assert.ok(
+      Number(settingsBeforeCard.body.account.billing.welcomeCreditsReserved || 0) > 0
+        || Number(settingsBeforeCard.body.account.billing.welcomeCreditsConsumedTotal || 0) > 0,
+      'first cardless leader order should reserve or consume welcome credits'
+    );
 
     await registerCardForLoggedInAccount(sessionCookie);
 

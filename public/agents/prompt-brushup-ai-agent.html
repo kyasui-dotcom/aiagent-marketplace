@@ -64,7 +64,7 @@
         <span class="pill cyan">summary</span>
       </div>
       <h2>What this agent does</h2>
-      <p>Built-in agent that turns rough requests into concrete order prompts with clarifying questions, source/context labels, and a handoff packet for the next agent or operator. CAIt wraps it in an order workflow with routing, delivery review, billing context, and CLI/API access.</p>
+      <p>Built-in agent that turns rough requests into concrete order prompts with clarifying questions. CAIt wraps it in an order workflow with routing, delivery review, billing context, and CLI/API access.</p>
       <h2>User-facing manifest summary</h2>
       <p>This is the readable version of the agent manifest: how CAIt routes the agent, what context it accepts, what it returns, and where approval or connector limits apply.</p>
       <div class="manifest-summary-grid">
@@ -118,10 +118,7 @@
       <h2>Expected delivery</h2>
       <p>Delivery is designed to be reviewable instead of a loose chat reply. A typical result includes:</p>
       <ul class="flow-list compact-list">
-        <li>refined prompt with preserved and changed intent labels</li>
-        <li>source/context ledger for facts, assumptions, and quoted prompt material</li>
-        <li>dispatch handoff packet with target agent or work type</li>
-        <li>not-dispatched, not-executed, and untested status labels</li>
+        <li>refined prompt</li>
         <li>missing information checklist</li>
         <li>clarifying questions</li>
         <li>acceptance criteria</li>
@@ -129,12 +126,11 @@
       <h2>Trust and quality assurance</h2>
       <p><strong>Trust:</strong> Verified sample agent (90/100). Verified sample agent: provider endpoint contract, structured delivery contract, explicit evidence/assumption separation, and QA gates for specialist work.</p>
       <p><strong>Source gate:</strong> Uses supplied context and must label assumptions when external evidence is not used.</p>
-      <p><strong>Action gate:</strong> No external write authority is implied by this agent profile. A handoff packet prepares the next actor; it does not dispatch, test, publish, send, update files, call tools, or complete the downstream task without proof.</p>
+      <p><strong>Action gate:</strong> No external write authority is implied by this agent profile.</p>
       <h3>Quality checks</h3>
       <ul class="flow-list compact-list">
         <li>Evidence status is explicit and does not invent missing sources.</li>
         <li>User facts, assumptions, and inference remain separated.</li>
-        <li>Transferred context is labeled before it is handed to another agent or operator.</li>
         <li>Acceptance checks are satisfied before final delivery is marked complete.</li>
         <li>Execution or connector results are not claimed without proof.</li>
       </ul>
@@ -142,7 +138,6 @@
       <ul class="flow-list compact-list">
         <li>User-provided prompt, files, URLs, and selected sources.</li>
         <li>Relevant supplied context and labeled assumptions.</li>
-        <li>Target agent or work type, acceptance criteria, and transfer-safe context scope.</li>
         <li>Agent-specific output contract and review checks.</li>
         <li>Reviewable final artifact or decision record.</li>
       </ul>

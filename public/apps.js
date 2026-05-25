@@ -96,6 +96,7 @@ function sameOriginAppUrl(value = '') {
       '/analytics-console.html',
       '/publisher-approval.html',
       '/lead-ops.html',
+      '/campaign-operations.html',
       '/apps.html'
     ].includes(parsed.pathname);
     if (isBuiltInCaitHost && isKnownLocalApp) {
@@ -172,6 +173,7 @@ function renderFeaturedApps(records = []) {
     ['analytics-console', { tag: 'SEO / CMO', description: 'Find the next growth move from traffic evidence.' }],
     ['publisher-approval-studio', { tag: 'Approval', description: 'Review external publishing changes before they leave CAIt.' }],
     ['lead-ops-console', { tag: 'Growth', description: 'Turn sourced leads into reviewed outreach drafts.' }],
+    ['campaign-operations', { tag: 'Operations', description: 'Keep campaign state, readiness, and measurement loops reusable.' }],
     ['x-client-ops', { tag: 'Social', description: 'Prepare approved social action packets.' }]
   ]);
   const featured = [...featureCopy.keys()]

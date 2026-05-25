@@ -64,7 +64,7 @@ import {
   explicitHandoffArtifactTypesFromAuthorityRequest as appHandoffGateExplicitArtifactTypesFromAuthorityRequest,
   explicitHandoffArtifactTypesFromFile as appHandoffGateExplicitArtifactTypesFromFile,
   renderAppHandoffTree as appHandoffGateRenderTree
-} from './app-handoff-gate.js?v=20260523a';
+} from './app-handoff-gate.js?v=20260525a';
 import {
   appContextAnswerLine as appContextGateAnswerLine,
   appContextMatchesManifest as appContextGateMatchesManifest,
@@ -88,7 +88,6 @@ import {
   consumeCaitAppContextForChat
 } from './cait-app-bridge.js?v=20260516a';
 import {
-  inferWorkIntentTaskType,
   isDeliveryHistoryQuestionIntentText,
   isLeaderCatalogQuestionIntentText,
   isNonOrderConversationIntentText
@@ -2188,18 +2187,39 @@ function visibleDeliveryFiles(files = []) {
   return (Array.isArray(files) ? files : []).filter((file) => file && !isInternalDeliveryFile(file));
 }
 
+function explicitDeliveryFilePriority(file = {}) {
+  const values = [
+    file?.delivery_priority,
+    file?.deliveryPriority,
+    file?.display_priority,
+    file?.displayPriority,
+    file?.sort_order,
+    file?.sortOrder
+  ];
+  for (const value of values) {
+    if (value == null || value === '') continue;
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return null;
+}
+
 function deliveryFilePriority(file = {}) {
-  const sourceTask = String(file?.source_task_type || file?.sourceTaskType || '').trim().toLowerCase();
-  const name = String(file?.name || file?.filename || '').trim().toLowerCase();
-  const contentType = String(file?.content_type || file?.contentType || '').trim().toLowerCase();
-  const text = `${sourceTask}\n${name}\n${contentType}`;
-  if (/_leader\b|team[-_\s]?leader|final/.test(text)) return 0;
-  if (/seo|landing|writing|writer|article|page/.test(text)) return 10;
-  if (/x_post|x-post|reddit|indie_hackers|instagram|directory/.test(text)) return 20;
-  if (/media_planner/.test(text)) return 30;
-  if (/research/.test(text)) return 40;
-  if (/data_analysis|analytics/.test(text)) return 50;
-  if (/list_creator|cold_email|email/.test(text)) return 80;
+  const explicit = explicitDeliveryFilePriority(file);
+  if (explicit != null) return explicit;
+  if (file?.execution_candidate === true || file?.executionCandidate === true) return 0;
+  const roleText = [
+    file?.delivery_role,
+    file?.deliveryRole,
+    file?.source_role,
+    file?.sourceRole,
+    file?.role,
+    file?.phase,
+    file?.source_phase,
+    file?.sourcePhase
+  ].map((item) => String(item || '').trim().toLowerCase()).filter(Boolean).join('\n');
+  if (/(^|\b)(final|primary|selected|recommended|summary|user[-_\s]?facing)(\b|$)/.test(roleText)) return 10;
+  if (/(^|\b)(supporting|appendix|evidence|source|raw|diagnostic|internal)(\b|$)/.test(roleText)) return 80;
   return 60;
 }
 
@@ -3437,28 +3457,22 @@ function appAgentDeliveryArtifactsFromJob(job = {}) {
 }
 
 function appAgentActionKind(manifest = {}, options = {}) {
-  const explicit = String(options.actionKind || options.action?.kind || '').trim();
+  const explicit = String(
+    options.actionKind
+    || options.action?.kind
+    || manifest.handoff?.actionKind
+    || manifest.handoff?.action_kind
+    || manifest.inputContract?.actionKind
+    || manifest.inputContract?.action_kind
+    || ''
+  ).trim();
   if (explicit) return explicit;
-  const caps = listValues(manifest.capabilities || []).join(' ').toLowerCase();
-  const accepts = listValues(manifest.inputContract?.accepts || []).join(' ').toLowerCase();
-  const combined = `${caps} ${accepts}`;
-  if (/x[_\s-]?post|twitter|tweet/.test(combined)) return 'x_post_handoff';
-  if (/social|post|community/.test(combined)) return 'social_handoff';
-  if (/email|gmail|newsletter/.test(combined)) return 'email_handoff';
-  if (/github|pull[_\s-]?request|repo|code/.test(combined)) return 'code_handoff';
-  if (/crm|lead|sales|acquisition/.test(combined)) return 'acquisition_handoff';
   return 'app_handoff';
 }
 
 function appAgentRequiresApproval(manifest = {}, options = {}) {
   if (options.requiresApproval != null) return Boolean(options.requiresApproval);
-  const approval = listValues(manifest.requiresApprovalFor || []);
-  const caps = listValues(manifest.capabilities || []).join(' ').toLowerCase();
-  return Boolean(
-    approval.length
-    || /(post|send|publish|submit|schedule|external|crm|email|x_|twitter)/i.test(approval.join(' '))
-    || /(post|send|publish|submit|schedule|external|crm|email|x[_\s-]?post|twitter)/i.test(caps)
-  );
+  return listValues(manifest.requiresApprovalFor || []).length > 0;
 }
 
 function appAgentBaseTransferPacket(appId = '', job = {}, options = {}) {
@@ -3622,31 +3636,6 @@ function appHandoffPayloadContractError(manifest = {}, payload = {}) {
   return '';
 }
 
-function appHandoffQueryFallbackUrl(appId = '', payload = {}) {
-  const manifest = appManifestById(appId) || {};
-  const entryUrl = String(manifest.entryUrl || manifest.baseUrl || '').trim();
-  if (!entryUrl) return '';
-  if (normalizeUsageId(appId || manifest.id || '') !== 'x-client-ops') return '';
-  const text = appHandoffPayloadText(payload);
-  if (!text) return '';
-  const url = new URL(entryUrl, window.location.origin);
-  const setParam = (key, value) => {
-    const textValue = String(value || '').trim();
-    if (textValue) url.searchParams.set(key, textValue);
-  };
-  setParam('cait_x_post', text);
-  setParam('cait_source', payload.source || payload.action?.source || 'CAIt chat action');
-  setParam('cait_title', payload.title || payload.action?.title || 'CAIt final X post draft');
-  setParam('cait_strategy', payload.strategy);
-  setParam('cait_product', payload.product);
-  setParam('cait_audience', payload.audience);
-  setParam('cait_goal', payload.goal);
-  setParam('cait_channel', payload.channel);
-  setParam('cait_url', payload.url);
-  setParam('cait_job', payload.jobId || payload.order?.id || payload.context?.order?.id);
-  return url.toString();
-}
-
 function authorityRequestFromJob(job = {}) {
   return connectorGateAuthorityRequestFromJob(job);
 }
@@ -3673,21 +3662,11 @@ function authorityNoticeKey(job = {}) {
   return connectorGateAuthorityNoticeKey(job);
 }
 
-function fileLooksLikeSocialPostPack(file = {}) {
-  const name = String(file?.name || '').toLowerCase();
-  const type = String(file?.content_type || file?.contentType || file?.type || '').toLowerCase();
-  return Boolean(
-    /social[_-\s]?post|x[_-\s]?(?:post|ops)|tweet|twitter|post[-_\s]?pack|sns/.test(name)
-    || /social[_-\s]?post|x[_-\s]?(?:post|ops)|tweet|twitter/.test(type)
-  );
-}
-
 function socialPostDraftFromJob(job = {}) {
   const files = deliveryFiles(job);
   const orderedFiles = files.filter((file) => {
     const explicitTypes = explicitHandoffArtifactTypesFromFile(file);
-    return fileLooksLikeSocialPostPack(file)
-      || ['post_text', 'social_post_pack', 'social_copy_packet', 'social_post', 'x_post', 'x_post_packet'].some((type) => explicitTypes.has(type));
+    return ['post_text', 'social_post_pack', 'social_copy_packet', 'social_post', 'x_post', 'x_post_packet'].some((type) => explicitTypes.has(type));
   });
   for (const file of orderedFiles) {
     const text = extractSocialPostTextFromDeliveryContent(file?.content || '', { maxLength: 1200 });
@@ -4117,9 +4096,6 @@ function deliveryHandoffArtifactTypes(job = {}) {
   };
   const files = deliveryFiles(job);
 
-  if (socialPostDraftFromJob(job)?.text) {
-    add('post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet');
-  }
   const authorityRequest = authorityRequestFromJob(job);
   if (authorityRequestHandledBySaasHandoffInChat(authorityRequest)) {
     for (const artifactType of explicitHandoffArtifactTypesFromAuthorityRequest(authorityRequest)) add(artifactType);
@@ -4182,11 +4158,6 @@ function renderAppHandoffRoutingPreview(job = {}) {
   ].filter(Boolean).join('\n');
 }
 
-function appHandoffIsCaitManagedSurface(entry = {}) {
-  const id = normalizeUsageId(entry.id || '');
-  return APP_AGENT_MANIFESTS.some((item) => normalizeUsageId(item.id) === id);
-}
-
 function genericSuppressedAppHandoffIds(job = {}) {
   return appHandoffGateGenericSuppressedAppHandoffIds(appAgentHandoffCandidates(job), job, {
     normalizeUsageId,
@@ -4201,7 +4172,7 @@ function appAgentHandoffCandidates(job = {}) {
     normalizeUsageId,
     listValues,
     deliveryHandoffArtifactTypes,
-    isCaitManagedSurface: appHandoffIsCaitManagedSurface
+    caitManagedAppIds: APP_AGENT_MANIFESTS.map((item) => item.id)
   });
 }
 
@@ -6109,8 +6080,8 @@ function appendPendingIntakeStep(options = {}) {
         sample
       )
     : '';
-  const dataHint = step.id === 'analytics'
-    ? growthLeaderNeedsDataHint(owner.taskType || intake.taskType, sample)
+  const dataHint = step.id === 'analytics' && intakeHasMeasurementEvidenceQuestion(intake)
+    ? growthLeaderNeedsDataHint(sample)
     : '';
   appendTextMessage('assistant', [
     options.includeMessage === true ? options.message : '',
@@ -6233,8 +6204,7 @@ function measurementEvidenceAppName() {
   return measurementEvidenceAppManifest()?.name || 'measurement evidence app';
 }
 
-function growthLeaderNeedsDataHint(taskType = '', sample = '') {
-  if (!/(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics|計測|流入|seo|cvr|conversion|コンバージョン)/i.test(`${taskType}\n${sample}`)) return '';
+function growthLeaderNeedsDataHint(sample = '') {
   const appName = measurementEvidenceAppName();
   return chatText(
     `If you have GA4/Search Console, answer "yes, I have GA4" and I will open ${appName} so you can choose the Google account, property, and site. If not, say "skip analytics" and CAIt will proceed with assumptions.`,
@@ -6243,9 +6213,63 @@ function growthLeaderNeedsDataHint(taskType = '', sample = '') {
   );
 }
 
-function orderNeedsMeasurementEvidence(taskType = '', prompt = '') {
-  const text = String(prompt || '').toLowerCase();
-  return /(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics|計測|流入|seo|cvr|conversion|コンバージョン)/i.test(`${taskType}\n${text}`);
+function measurementEvidenceContractRequired(source = {}) {
+  if (!source || typeof source !== 'object') return false;
+  const input = source.input && typeof source.input === 'object' ? source.input : {};
+  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
+  const intake = source.intake && typeof source.intake === 'object' ? source.intake : {};
+  const objects = [source, input, broker, intake].filter((item) => item && typeof item === 'object');
+  const explicitRequiredKeys = [
+    'measurementEvidenceRequired',
+    'measurement_evidence_required',
+    'analyticsContextRequired',
+    'analytics_context_required',
+    'requiresMeasurementEvidence',
+    'requires_measurement_evidence'
+  ];
+  if (objects.some((object) => explicitRequiredKeys.some((key) => object[key] === true))) return true;
+  const requiredContextValues = objects
+    .flatMap((object) => [
+      object.requiredAppContexts,
+      object.required_app_contexts,
+      object.appContextRequirements,
+      object.app_context_requirements,
+      object.connectorContextRequirements,
+      object.connector_context_requirements
+    ])
+    .flatMap((value) => Array.isArray(value) ? value : (value ? [value] : []))
+    .flatMap((value) => {
+      if (value && typeof value === 'object') {
+        return [
+          value.type,
+          value.kind,
+          value.id,
+          value.capability,
+          value.artifact_type,
+          value.artifactType,
+          value.context_type,
+          value.contextType
+        ];
+      }
+      return [value];
+    })
+    .map(normalizeUsageId)
+    .filter(Boolean);
+  return requiredContextValues.some((value) => (
+    value === 'analytics_context'
+    || value === 'measurement_evidence'
+    || value === 'ga4_packet'
+    || value === 'search_console_packet'
+  ));
+}
+
+function textExplicitlyRequestsMeasurementEvidence(value = '') {
+  const text = String(value || '').trim();
+  if (!/(ga4|google analytics|search console|サーチコンソール|アナリティクス)/i.test(text)) return false;
+  if (/(skip analytics|without analytics|no analytics|アナリティクスをスキップ)/i.test(text)) return false;
+  if (/(ga4|google analytics|search console|サーチコンソール|アナリティクス).{0,32}(使わない|なし|無し|ありません|不要|skip|without|no)/i.test(text)) return false;
+  if (/(使わない|なし|無し|ありません|不要|skip|without|no).{0,32}(ga4|google analytics|search console|サーチコンソール|アナリティクス)/i.test(text)) return false;
+  return /(使う|使いたい|接続済み|あります|ある|available|connected|use|with|利用)/i.test(text);
 }
 
 function authGrantedGoogleCapabilities() {
@@ -6253,8 +6277,10 @@ function authGrantedGoogleCapabilities() {
     .map((item) => String(item || '').trim().toLowerCase()));
 }
 
-function measurementEvidencePreOrderHintHtml(taskType = '', prompt = '') {
-  if (!orderNeedsMeasurementEvidence(taskType, prompt)) return '';
+function measurementEvidencePreOrderHintHtml(draft = null) {
+  const sourceDraft = draft || state.draft || {};
+  if (!draftExplicitlyRequestsMeasurementEvidence(sourceDraft)) return '';
+  const prompt = sourceDraft.originalPrompt || sourceDraft.prompt || '';
   const appName = measurementEvidenceAppName();
   const status = measurementEvidenceContextStatus(state.draft);
   const granted = authGrantedGoogleCapabilities();
@@ -6719,17 +6745,14 @@ function measurementEvidenceContextStatus(draft = null) {
 }
 
 function draftExplicitlyRequestsMeasurementEvidence(draft = null) {
+  if (measurementEvidenceContractRequired(draft || {})) return true;
   const text = [
     draft?.prompt,
     draft?.originalPrompt,
     draft?.input?.original_prompt,
     draft?.input?.originalPrompt
   ].map((item) => String(item || '')).join('\n');
-  if (!/(ga4|google analytics|search console|サーチコンソール|アナリティクス)/i.test(text)) return false;
-  if (/(skip analytics|without analytics|no analytics|アナリティクスをスキップ)/i.test(text)) return false;
-  if (/(ga4|google analytics|search console|サーチコンソール|アナリティクス).{0,32}(使わない|なし|無し|ありません|不要|skip|without|no)/i.test(text)) return false;
-  if (/(使わない|なし|無し|ありません|不要|skip|without|no).{0,32}(ga4|google analytics|search console|サーチコンソール|アナリティクス)/i.test(text)) return false;
-  return /(使う|使いたい|接続済み|あります|ある|available|connected|use|with|利用)/i.test(text);
+  return textExplicitlyRequestsMeasurementEvidence(text);
 }
 
 function mergeUniqueContexts(existing = [], nextContext = null) {
@@ -6811,22 +6834,14 @@ function caitAppContextAnswerLine(context = {}) {
 }
 
 function intakeHasMeasurementEvidenceQuestion(intake = {}) {
-  const explicitSource = [
-    intake.originalPrompt,
-    intake.taskType,
-    intake.activeLeaderTaskType
+  if (measurementEvidenceContractRequired(intake)) return true;
+  if (textExplicitlyRequestsMeasurementEvidence(intake.originalPrompt || intake.original_prompt || '')) return true;
+  const serverOwnedQuestionText = [
+    ...(Array.isArray(intake.questions) ? intake.questions : []),
+    ...(Array.isArray(intake.missingFields) ? intake.missingFields : []),
+    ...(Array.isArray(intake.missing_fields) ? intake.missing_fields : [])
   ].join('\n');
-  return orderNeedsMeasurementEvidence(intake.taskType || intake.activeLeaderTaskType || '', intake.originalPrompt || explicitSource)
-    || /(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics console)/i.test(explicitSource)
-    || intakeShouldOfferMeasurementEvidenceChoice(intake);
-}
-
-function intakeShouldOfferMeasurementEvidenceChoice(intake = {}) {
-  const prompt = String(intake.originalPrompt || '').trim();
-  if (!prompt) return false;
-  const inferredTask = inferWorkIntentTaskType(prompt);
-  if (inferredTask === 'growth' || inferredTask === 'seo' || inferredTask === 'data_analysis') return true;
-  return /(growth|go[-\s]?to[-\s]?market|gtm|acquisition|aquisition|aquire|new customers?|more users?|more sales|increase sales|increase revenue|signup|trial|marketing|traffic|organic|seo|conversion|cvr|集客|流入|認知|登録|トライアル|問い合わせ|リード|売上|購入|マーケ|自然検索)/i.test(prompt);
+  return /(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics data|analytics context)/i.test(serverOwnedQuestionText);
 }
 
 function answerSaysAnalyticsAvailable(answer = '') {
@@ -7077,7 +7092,7 @@ function orderConfirmationHtml(options = {}) {
       ? `Reuse selected artifacts: ${escapeHtml(reuseArtifacts.map((item) => item.task_type || item.taskType).join(', '))}`
       : '',
     '',
-    measurementEvidencePreOrderHintHtml(task, prompt),
+    measurementEvidencePreOrderHintHtml(draft),
     '<details class="file-card order-brief" open>',
     '<summary>Instruction that will be sent</summary>',
     `<pre>${escapeHtml(prompt)}</pre>`,
@@ -7105,251 +7120,6 @@ function chatIntentConversationContext() {
       return content ? { role, content: content.slice(0, 900) } : null;
     })
     .filter(Boolean);
-}
-
-function recentUserChatBodies(limit = 8) {
-  return state.chatMessages
-    .filter((entry) => entry?.role === 'user')
-    .map((entry) => String(entry.body || '').replace(/\s+/g, ' ').trim())
-    .filter(Boolean)
-    .slice(-Math.max(1, Number(limit) || 8));
-}
-
-function recentAssistantClarificationCount() {
-  return state.chatMessages
-    .filter((entry) => entry?.role === 'assistant')
-    .map((entry) => String(entry.body || '').replace(/\s+/g, ' ').trim())
-    .filter((text) => /(no order or billing happened yet|no order or billing happens yet|nothing has run or been billed|まだ注文も課金も発生していません|まだ実行も課金もしていません)/i.test(text))
-    .slice(-5)
-    .length;
-}
-
-function accumulatedOrderText(latestPrompt = '') {
-  const lines = recentUserChatBodies(8);
-  const latest = String(latestPrompt || '').replace(/\s+/g, ' ').trim();
-  if (latest && !lines.some((line) => line === latest)) lines.push(latest);
-  const seen = new Set();
-  return lines
-    .map((line) => line.trim())
-    .filter((line) => {
-      const key = line.toLowerCase();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .join('\n');
-}
-
-function firstUrlFromText(value = '') {
-  const match = String(value || '').match(/(?:https?:\/\/|www\.)[^\s<>"'）)]+|[a-z0-9-]+\.[a-z]{2,}(?:\/[^\s<>"'）)]*)?/i);
-  if (!match) return '';
-  return match[0].replace(/[、。,.]+$/g, '');
-}
-
-function matchingRecentUserLines(pattern, limit = 3) {
-  return recentUserChatBodies(10)
-    .filter((line) => pattern.test(line))
-    .slice(-Math.max(1, Number(limit) || 3));
-}
-
-function accumulatedWorkOrderReadiness(latestPrompt = '') {
-  const text = accumulatedOrderText(latestPrompt);
-  const lower = text.toLowerCase();
-  if (!text || promptInjectionGuard(text).blocked) return { ready: false };
-  const hasAcquisitionGoal = /(acquire|aquire|get|grow|increase|new customers?|customers?|users?|user acquisition|customer acquisition|aquisition|aquitisition|growth|marketing|sales|集客|顧客獲得|ユーザーを増や|ユーザー獲得|新規顧客)/i.test(text);
-  const targetUrl = firstUrlFromText(text);
-  const hasTarget = Boolean(targetUrl);
-  const hasAudience = /(engineers?|developers?|technical users?|individuals?|consumers?|founders?|operators?|対象|開発者|技術ユーザー|個人|一般消費者|ターゲット)/i.test(text);
-  const hasConversion = /(signup|sign up|trial|register|registration|conversion|lead|contact|primary conversion|登録|トライアル|問い合わせ|リード|コンバージョン)/i.test(text);
-  const hasConstraint = /(no budget|no paid ads|no ads|without ads|organic|free|low budget|広告なし|広告無し|予算なし|低予算|オーガニック)/i.test(text);
-  const hasExecuteIntent = /(action plan|do the action|do it|execute|run it|start|proceed|handle it|実行|やって|進めて|アクション|行動計画)/i.test(text);
-  const repeatedClarification = recentAssistantClarificationCount() >= 2;
-  const latestIsClarificationAnswer = /(cta|call to action|offer|product|サービス|商材|signup|sign up|登録|コンバージョン|conversion)/i.test(latestPrompt);
-  if (!(hasAcquisitionGoal && hasTarget && hasConversion && (hasAudience || hasConstraint) && (hasExecuteIntent || (repeatedClarification && latestIsClarificationAnswer)))) {
-    return { ready: false };
-  }
-
-  const audience = matchingRecentUserLines(/engineers?|developers?|technical users?|individuals?|consumers?|対象|開発者|技術|個人|一般消費者/i).join('; ');
-  const conversion = matchingRecentUserLines(/signup|sign up|trial|register|registration|conversion|登録|トライアル|コンバージョン/i, 2).join('; ');
-  const constraints = matchingRecentUserLines(/no budget|no paid ads|no ads|without ads|organic|free|low budget|広告なし|広告無し|予算なし|低予算|オーガニック/i).join('; ');
-  const offerContext = matchingRecentUserLines(/cta|call to action|offer|product|value|ai agents?|高品質|アクション|signup/i, 3).join('; ');
-  const goalLine = hasAcquisitionGoal
-    ? (chatLanguage(latestPrompt) === 'ja' ? '新規顧客/ユーザー獲得を増やす。' : 'Acquire new customers/users.')
-    : latestPrompt;
-  const prompt = [
-    'Conversation-derived work request:',
-    `Goal: ${goalLine}`,
-    `Target service: ${targetUrl}`,
-    audience ? `Target audience: ${audience}` : '',
-    conversion ? `Primary conversion/outcome: ${conversion}` : '',
-    constraints ? `Constraints: ${constraints}` : '',
-    offerContext ? `CTA/offer context: ${offerContext}` : '',
-    '',
-    'User asked for an action plan and execution. Use the accumulated details above as sufficient intake.',
-    'If the CTA, offer mechanics, account access, or external publishing target is incomplete, pass that as an assumption/blocker for the assigned agent to resolve. Do not ask another pre-order intake question just because the CTA is weak.',
-    'Use the assigned agent contract for the concrete delivery shape and any approval or SaaS handoff requirements. Do not claim external posting, sending, publishing, or repository writes without connector or SaaS proof.',
-    '',
-    'Source conversation:',
-    text
-  ].filter(Boolean).join('\n');
-  return {
-    ready: true,
-    prompt,
-    originalPrompt: text,
-    taskType: 'growth'
-  };
-}
-
-async function prepareAccumulatedOrderIfReady(latestPrompt = '') {
-  const readiness = accumulatedWorkOrderReadiness(latestPrompt);
-  if (!readiness.ready) return false;
-  await prepareOrder(readiness.prompt, {
-    originalPrompt: readiness.originalPrompt || latestPrompt,
-    taskType: readiness.taskType || 'growth',
-    intakeAnswered: true,
-    skipOpenAiIntent: true,
-    skipLeaderChangeProposal: true
-  });
-  return true;
-}
-
-function normalizeAgentTaskTypes(agent = {}) {
-  return [
-    ...(Array.isArray(agent.taskTypes) ? agent.taskTypes : []),
-    ...(Array.isArray(agent.task_types) ? agent.task_types : []),
-    ...(Array.isArray(agent.metadata?.manifest?.task_types) ? agent.metadata.manifest.task_types : []),
-    ...(Array.isArray(agent.metadata?.manifest?.taskTypes) ? agent.metadata.manifest.taskTypes : []),
-    ...(Array.isArray(agent.metadata?.downstream_task_types) ? agent.metadata.downstream_task_types : []),
-    ...(Array.isArray(agent.metadata?.downstreamTaskTypes) ? agent.metadata.downstreamTaskTypes : [])
-  ]
-    .map((item) => String(item || '').trim().toLowerCase())
-    .filter(Boolean);
-}
-
-function leaderTaskTypeFromAgent(agent = {}) {
-  const taskTypes = normalizeAgentTaskTypes(agent);
-  const manifest = agent.metadata?.manifest && typeof agent.metadata.manifest === 'object' ? agent.metadata.manifest : {};
-  const roleText = [
-    agent.executionLayer,
-    agent.execution_layer,
-    agent.metadata?.layer,
-    agent.metadata?.agentRole,
-    agent.metadata?.agent_role,
-    manifest.agent_role,
-    manifest.execution_layer
-  ].map((item) => String(item || '').trim().toLowerCase()).join('\n');
-  return taskTypes.find((task) => task.endsWith('_leader'))
-    || (/\bleader\b/.test(roleText) ? taskTypes[0] || '' : '');
-}
-
-function nestedArrayValues(value = null, keys = []) {
-  const results = [];
-  const visit = (item) => {
-    if (!item) return;
-    if (Array.isArray(item)) {
-      item.forEach(visit);
-      return;
-    }
-    if (typeof item !== 'object') return;
-    keys.forEach((key) => {
-      if (Array.isArray(item[key])) results.push(...item[key]);
-    });
-    Object.values(item).forEach((child) => {
-      if (child && typeof child === 'object') visit(child);
-    });
-  };
-  visit(value);
-  return results;
-}
-
-function leaderDownstreamTaskTypesFromAgent(agent = {}) {
-  const metadata = agent.metadata && typeof agent.metadata === 'object' ? agent.metadata : {};
-  const manifest = metadata.manifest && typeof metadata.manifest === 'object' ? metadata.manifest : {};
-  const links = agent.links && typeof agent.links === 'object' ? agent.links : {};
-  const downstreamLinks = links.downstream && typeof links.downstream === 'object' ? links.downstream : {};
-  return [
-    ...(Array.isArray(metadata.downstream_task_types) ? metadata.downstream_task_types : []),
-    ...(Array.isArray(metadata.downstreamTaskTypes) ? metadata.downstreamTaskTypes : []),
-    ...(Array.isArray(manifest.downstream_task_types) ? manifest.downstream_task_types : []),
-    ...(Array.isArray(manifest.downstreamTaskTypes) ? manifest.downstreamTaskTypes : []),
-    ...(Array.isArray(downstreamLinks.task_types) ? downstreamLinks.task_types : []),
-    ...(Array.isArray(downstreamLinks.taskTypes) ? downstreamLinks.taskTypes : []),
-    ...nestedArrayValues(metadata.workflowProfile || manifest.workflowProfile || manifest.workflow_profile || metadata.leaderBehavior || manifest.leaderBehavior || manifest.leader_behavior, [
-      'tasks',
-      'downstreamTaskTypes',
-      'downstream_task_types'
-    ])
-  ]
-    .map((item) => String(item || '').trim().toLowerCase())
-    .filter(Boolean);
-}
-
-function bestCatalogLeaderTaskTypeForSpecialistTask(agents = [], taskType = '') {
-  const safeTask = String(taskType || '').trim().toLowerCase();
-  if (!safeTask) return '';
-  const candidates = (Array.isArray(agents) ? agents : [])
-    .map((agent) => {
-      const leaderTask = leaderTaskTypeFromAgent(agent);
-      if (!leaderTask) return null;
-      const downstream = new Set(leaderDownstreamTaskTypesFromAgent(agent));
-      const taskTypes = new Set(normalizeAgentTaskTypes(agent));
-      const exact = downstream.has(safeTask);
-      const selfMatch = taskTypes.has(safeTask);
-      if (!exact && !selfMatch) return null;
-      return {
-        leaderTask,
-        score: Number(exact) * 10 + Number(selfMatch) * 3 + Number(agent.online === true)
-      };
-    })
-    .filter(Boolean)
-    .sort((left, right) => right.score - left.score || left.leaderTask.localeCompare(right.leaderTask));
-  return candidates[0]?.leaderTask || '';
-}
-
-async function refreshWorkerAgentsForRouting() {
-  await refreshWorkerAgents({ force: true, limit: 100 }).catch(() => state.workerAgents || []);
-  let guard = 0;
-  while (state.workerAgentsHasMore && guard < 5) {
-    guard += 1;
-    const before = state.workerAgents.length;
-    await refreshWorkerAgents({
-      force: true,
-      append: true,
-      offset: before,
-      limit: 100
-    }).catch(() => state.workerAgents || []);
-    if (state.workerAgents.length <= before) break;
-  }
-  return state.workerAgents || [];
-}
-
-function obviousStepIntakeSpecialistTaskType(prompt = '') {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  if (!text || promptInjectionGuard(text).blocked) return '';
-  const words = text.split(/\s+/).filter(Boolean);
-  const shortEnough = words.length <= 10 || text.length <= 80;
-  const acquisitionOrGrowth = /(?:customer\s+(?:acquisition|aquisition|aquitisition)|(?:acquire|aquire|get|gain|grow)\s+(?:new\s+)?customers?|new\s+customers?|more\s+(?:users?|customers?|sales)|need\s+more\s+sales|increase\s+(?:sales|revenue|signups?|trials?)|user\s+acquisition|growth|marketing|集客|顧客獲得|ユーザーを増や|ユーザー獲得|売上.*増|登録.*増)/i.test(text);
-  const broadGuidance = /\b(?:what\s+should\s+i\s+do|what\s+do\s+i\s+do|help\s+me\s+(?:grow|market|sell)|action\s+plan|strategy)\b|どうすれば|何をすれば|施策|実行計画/i.test(text);
-  const socialDraftOrApproval = /\b(?:x|twitter|tweet|social)\b.{0,80}\b(?:post|draft|copy|approve|approved|approval|publish|publishing)\b|\b(?:post|draft|copy|approve|approval|publish|publishing)\b.{0,80}\b(?:x|twitter|tweet|social)\b|(?:x|twitter|ツイッター).{0,80}(投稿|下書き|承認|公開)|(?:投稿|下書き|承認|公開).{0,80}(x|twitter|ツイッター)/i.test(text);
-  if ((shortEnough && acquisitionOrGrowth) || acquisitionOrGrowth || broadGuidance || socialDraftOrApproval) {
-    return inferWorkIntentTaskType(text);
-  }
-  return '';
-}
-
-async function prepareObviousStepIntakeIfNeeded(prompt = '') {
-  const specialistTaskType = obviousStepIntakeSpecialistTaskType(prompt);
-  if (!specialistTaskType) return false;
-  const agents = await refreshWorkerAgentsForRouting();
-  const taskType = bestCatalogLeaderTaskTypeForSpecialistTask(agents, specialistTaskType) || specialistTaskType;
-  if (!taskType) return false;
-  await prepareOrder(prompt, {
-    originalPrompt: prompt,
-    taskType,
-    skipOpenAiIntent: true,
-    skipLeaderChangeProposal: true
-  });
-  return true;
 }
 
 function isStructuredOrderBriefText(value = '') {
@@ -7468,9 +7238,6 @@ function leaderTaskTypeFromIntentResult(prompt = '', result = {}) {
 function taskTypeFromOpenChatIntent(result = {}) {
   const briefTask = String(result?.order_brief || result?.orderBrief || '').match(/^Task:\s*([a-z0-9_-]+)/im)?.[1] || '';
   if (briefTask) return briefTask.trim().toLowerCase();
-  const intent = String(result?.intent || '').trim();
-  if (intent === 'natural_business_growth' || intent === 'natural_marketing_launch') return 'growth';
-  if (intent === 'natural_idea_discovery' || intent === 'natural_entity_exploration') return 'research';
   return String(result?.task_type || result?.taskType || '').trim().toLowerCase();
 }
 
@@ -7479,51 +7246,6 @@ function openChatIntentShouldUseStepIntake(result = {}) {
   if (action !== 'ask_clarifying_question') return false;
   const intent = String(result?.intent || '').trim();
   return ['natural_business_growth', 'natural_marketing_launch', 'natural_idea_discovery'].includes(intent);
-}
-
-function clientPrepareOrderIntakeFallback(prompt = '', options = {}) {
-  const taskType = String(options.taskType || options.task_type || options.activeLeaderTaskType || options.active_leader_task_type || leaderTaskTypeFromIntentResult(prompt, {}) || 'research').trim();
-  const leaderName = options.activeLeaderName || options.active_leader_name || taskLabel(taskType);
-  const ja = chatLanguage(prompt) === 'ja';
-  const questions = ja
-    ? [
-        '今回達成したい成果と対象を教えてください。',
-        '参考にしたい資料、URL、データ、制約があれば教えてください。',
-        '最終アウトプットの形式と優先順位を教えてください。'
-      ]
-    : [
-        'What outcome and target should this work focus on?',
-        'What source material, URLs, data, or constraints should be used?',
-        'What final output format and priority should the leader optimize for?'
-      ];
-  return {
-    ok: true,
-    status: 'needs_input',
-    needs_input: true,
-    reason: 'client_prepare_order_intake_fallback',
-    prompt,
-    source: 'client_fallback',
-    inferred_task_type: taskType,
-    taskType,
-    activeLeaderTaskType: taskType,
-    activeLeaderName: leaderName,
-    questions,
-    message: ja
-      ? `${leaderName} が実行前に確認したい内容です。まだ実行も課金もしていません。`
-      : `${leaderName} needs this context before execution. Nothing has run or been billed yet.`,
-    conversationOwner: {
-      type: 'leader',
-      taskType,
-      label: leaderName,
-      reason: 'Client-side intake fallback after prepare-order was temporarily unavailable.'
-    },
-    intake: {
-      originalPrompt: prompt,
-      taskType,
-      questions,
-      questionSource: 'client_fallback'
-    }
-  };
 }
 
 async function handleChatIntentWithLlm(prompt = '') {
@@ -7561,10 +7283,10 @@ async function handleChatIntentWithLlm(prompt = '') {
       return true;
     }
     const intentTaskType = taskTypeFromOpenChatIntent(result);
-    if (intentTaskType && openChatIntentShouldUseStepIntake(result)) {
+    if (openChatIntentShouldUseStepIntake(result)) {
       await prepareOrder(prompt, {
         originalPrompt: prompt,
-        taskType: intentTaskType,
+        ...(intentTaskType ? { taskType: intentTaskType } : {}),
         skipOpenAiIntent: true,
         skipLeaderChangeProposal: true
       });
@@ -7942,19 +7664,29 @@ async function prepareFollowupForRunningOrder(prompt = '') {
     appendTextMessage('assistant', `${chatText('Could not prepare that as a follow-up for the running order.', '進行中オーダーへの追加要望として準備できませんでした。', text)} ${orderErrorMessage(error)}`, { tone: 'error', label: 'Follow-up' });
     return true;
   }
+  const preparedPrompt = String(prepared?.prompt || '').trim();
+  const preparedTaskType = String(prepared?.task_type || prepared?.taskType || '').trim();
+  if (!preparedPrompt || !preparedTaskType) {
+    appendTextMessage('assistant', chatText(
+      'The server did not return a complete follow-up draft, so I did not create one in chat.',
+      'サーバーが完全なフォローアップドラフトを返さなかったため、チャット側では作成しませんでした。',
+      text
+    ), { tone: 'error', label: 'Follow-up' });
+    return true;
+  }
   const conversationOwner = prepared?.conversation_owner && typeof prepared.conversation_owner === 'object'
     ? prepared.conversation_owner
     : prepared?.conversationOwner;
   const draftSeed = {
     ...(prepared || {}),
-    taskType: prepared?.task_type || prepared?.taskType || 'research',
-    task_type: prepared?.task_type || prepared?.taskType || 'research',
+    taskType: preparedTaskType,
+    task_type: preparedTaskType,
     resolvedOrderStrategy: prepared?.order_strategy || prepared?.resolvedOrderStrategy || 'auto',
     resolved_order_strategy: prepared?.order_strategy || prepared?.resolved_order_strategy || 'auto',
-    reason: prepared?.reason || `Prepared as an add-on request for running order ${job.id.slice(0, 8)}. It will not run until Send order is pressed.`,
+    reason: String(prepared?.reason || '').trim(),
     conversationOwner
   };
-  state.draft = chatEngineBuildOrderDraft(String(prepared?.prompt || text || '').trim(), draftSeed, {
+  state.draft = chatEngineBuildOrderDraft(preparedPrompt, draftSeed, {
     originalPrompt: text,
     intakeChecked: true,
     intakeAnswered: true,
@@ -8127,31 +7859,11 @@ async function prepareOrder(prompt, options = {}) {
     });
   } catch (error) {
     if (!skipOpenAiIntent || options.intakeAnswered === true) throw error;
-    const fallbackTaskType = effectiveConversationOwner?.taskType
-      || options.taskType
-      || options.task_type
-      || effectiveActiveOwnerTaskType
-      || effectiveActiveLeaderTaskType
-      || '';
-    const fallbackWouldSynthesizeLeaderIntake = effectiveConversationOwner?.type === 'leader'
-      || isLeaderTaskType(fallbackTaskType)
-      || isLeaderTaskType(effectiveActiveLeaderTaskType);
-    if (fallbackWouldSynthesizeLeaderIntake) {
-      throw new Error(chatText(
-        'Agent-owned leader intake questions could not be loaded. No order or billing happened; retry so CAIt can fetch the selected leader questions from the server.',
-        'agent-owned のリーダーヒアリング質問を読み込めませんでした。注文も課金も発生していません。選択リーダーの質問をサーバーから取得するため、もう一度試してください。',
-        prompt
-      ));
-    }
-    prepared = clientPrepareOrderIntakeFallback(prompt, {
-      ...options,
-      taskType: fallbackTaskType,
-      activeOwnerType: effectiveActiveOwnerType,
-      activeOwnerTaskType: effectiveActiveOwnerTaskType,
-      activeOwnerName: effectiveActiveOwnerName,
-      activeLeaderTaskType: effectiveActiveLeaderTaskType,
-      activeLeaderName: effectiveActiveLeaderName
-    });
+    throw new Error(chatText(
+      'Server-owned order intake questions could not be loaded. No order or billing happened; retry so CAIt can fetch the selected agent contract from the server.',
+      'server-owned の注文ヒアリング質問を読み込めませんでした。注文も課金も発生していません。選択エージェントの契約をサーバーから取得するため、もう一度試してください。',
+      prompt
+    ));
   }
   const finalPrepared = effectiveConversationOwner
     ? withConversationOwner(prepared, effectiveConversationOwner, {
@@ -8791,10 +8503,6 @@ els.composer.addEventListener('submit', async (event) => {
       // prepared as an add-on request attached to the running order
     } else if (state.draft) {
       addChatAdjustmentToDraft(prompt);
-    } else if (await prepareAccumulatedOrderIfReady(prompt)) {
-      // Recent chat turns now contain enough concrete work context to draft an order.
-    } else if (await prepareObviousStepIntakeIfNeeded(prompt)) {
-      // Short growth/acquisition work requests should enter step intake before freeform chat clarification.
     } else if (await handleChatIntentWithLlm(prompt)) {
       // OpenAI classified this as chat, clarification, or an order-ready brief.
     } else {
@@ -8899,20 +8607,13 @@ els.chatThread.addEventListener('click', async (event) => {
       window.open(handoffUrl, '_blank', 'noopener,noreferrer');
       appendTextMessage('system', `Sent CAIt transfer context to ${manifest.name || 'the registered app'} and opened the handoff URL.`, { label: 'App handoff' });
     } catch (error) {
-      const directUrl = appHandoffQueryFallbackUrl(appId, payload);
-      if (directUrl) {
-        appHandoffRememberDetails(appId, payload, directUrl, 'generic_app_query_fallback');
-        window.open(directUrl, '_blank', 'noopener,noreferrer');
-        appendTextMessage('assistant', `${manifest.name || 'App'} handoff API failed, so I opened the app with the edited X draft in the URL fallback.\n\n${String(error?.message || error || '')}`, { tone: 'warn', label: 'App handoff' });
-      } else {
-        try {
-          const contextUrl = await createAppAgentContextOpenUrl(appId, payload);
-          appHandoffRememberDetails(appId, payload, contextUrl, 'generic_app_context_fallback');
-          window.open(contextUrl, '_blank', 'noopener,noreferrer');
-          appendTextMessage('assistant', `${manifest.name || 'App'} handoff API failed, so I created a server-side CAIt app context and opened the app with only the context id/token in the URL.\n\n${String(error?.message || error || '')}`, { tone: 'warn', label: 'App handoff' });
-        } catch (fallbackError) {
-          appendTextMessage('assistant', `${String(error?.message || error || 'App handoff failed.')}\n\nFallback also failed: ${String(fallbackError?.message || fallbackError || 'unknown error')}`, { tone: 'error', label: 'App handoff' });
-        }
+      try {
+        const contextUrl = await createAppAgentContextOpenUrl(appId, payload);
+        appHandoffRememberDetails(appId, payload, contextUrl, 'generic_app_context_fallback');
+        window.open(contextUrl, '_blank', 'noopener,noreferrer');
+        appendTextMessage('assistant', `${manifest.name || 'App'} handoff API failed, so I created a server-side CAIt app context and opened the app with only the context id/token in the URL.\n\n${String(error?.message || error || '')}`, { tone: 'warn', label: 'App handoff' });
+      } catch (fallbackError) {
+        appendTextMessage('assistant', `${String(error?.message || error || 'App handoff failed.')}\n\nFallback also failed: ${String(fallbackError?.message || fallbackError || 'unknown error')}`, { tone: 'error', label: 'App handoff' });
       }
     } finally {
       setBusy(false);

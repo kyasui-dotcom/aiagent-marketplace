@@ -11,6 +11,33 @@ let resendResult = {
   result: null
 };
 
+function leadUrlParams() {
+  return new URL(window.location.href).searchParams;
+}
+
+function leadChatReturnTo() {
+  const value = String(leadUrlParams().get('chat_return_to') || '').trim();
+  if (!value) return '';
+  try {
+    const url = new URL(value, window.location.origin);
+    return url.origin === window.location.origin && /^\/chat(?:\.html)?$/.test(url.pathname)
+      ? `${url.pathname}${url.search}${url.hash}`
+      : '';
+  } catch {
+    return '';
+  }
+}
+
+function leadChatHandoffId() {
+  return String(leadUrlParams().get('chat_handoff_id') || '').replace(/[^a-z0-9_-]/gi, '').slice(0, 120);
+}
+
+function currentLeadReturnPath() {
+  const path = window.location.pathname || '/lead-ops.html';
+  const safePath = path.startsWith('/') && /\/lead-ops\.html$/.test(path) ? path : '/lead-ops.html';
+  return `${safePath}${window.location.search || ''}${window.location.hash || ''}`;
+}
+
 const els = {
   statusButtons: [...document.querySelectorAll('[data-status]')],
   leaderSelect: document.getElementById('leaderSelect'),
@@ -55,7 +82,11 @@ const els = {
   leadBlockedNavCount: document.getElementById('leadBlockedNavCount'),
   leadStepLoad: document.getElementById('leadStepLoad'),
   leadStepDraft: document.getElementById('leadStepDraft'),
-  leadStepApproval: document.getElementById('leadStepApproval')
+  leadStepApproval: document.getElementById('leadStepApproval'),
+  leadReturnToChatLink: document.getElementById('leadReturnToChatLink'),
+  leadHandoffSessionNotice: document.getElementById('leadHandoffSessionNotice'),
+  leadOpsReadinessPill: document.getElementById('leadOpsReadinessPill'),
+  leadOpsReadinessList: document.getElementById('leadOpsReadinessList')
 };
 
 function selectedLead() {
@@ -147,10 +178,29 @@ async function apiJson(path = '', options = {}) {
   return payload;
 }
 
-function artifactRows(context = {}, type = '') {
+function artifactType(artifact = {}) {
+  return String(artifact?.type || artifact?.content_type || artifact?.contentType || artifact?.artifact_type || artifact?.artifactType || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function artifactsByType(context = {}, types = []) {
+  const wanted = new Set((Array.isArray(types) ? types : [types]).map((type) => artifactType({ type })));
   return (Array.isArray(context.artifacts) ? context.artifacts : [])
-    .filter((artifact) => String(artifact?.type || '').toLowerCase() === String(type || '').toLowerCase())
-    .flatMap((artifact) => (Array.isArray(artifact?.rows) ? artifact.rows : []));
+    .filter((artifact) => wanted.has(artifactType(artifact)));
+}
+
+function artifactRows(context = {}, types = []) {
+  return artifactsByType(context, types)
+    .flatMap((artifact) => {
+      if (Array.isArray(artifact?.rows)) return artifact.rows;
+      if (Array.isArray(artifact?.items)) return artifact.items;
+      if (Array.isArray(artifact?.leads)) return artifact.leads;
+      if (Array.isArray(artifact?.drafts)) return artifact.drafts;
+      return [artifact];
+    })
+    .filter((row) => row && typeof row === 'object');
 }
 
 function markdownCellText(value = '') {
@@ -184,6 +234,42 @@ function rowValue(row = {}, keys = []) {
     if (String(normalizedValue || '').trim()) return String(normalizedValue).trim();
   }
   return '';
+}
+
+function matchingSupplementRow(rows = [], lead = null) {
+  if (!lead) return null;
+  const leadId = String(lead.id || '').trim().toLowerCase();
+  const company = String(lead.company || '').trim().toLowerCase();
+  const website = String(lead.website || lead.evidenceUrl || '').trim().toLowerCase();
+  return rows.find((row) => {
+    const rowId = rowValue(row, ['lead_id', 'leadId', 'id']).toLowerCase();
+    const rowCompany = rowValue(row, ['company', 'company_name', 'lead', 'lead_name', 'target']).toLowerCase();
+    const rowUrl = rowValue(row, ['website', 'url', 'company_url', 'domain', 'evidence_url', 'source_url', 'contact_source_url']).toLowerCase();
+    return (leadId && rowId && rowId === leadId)
+      || (company && rowCompany && rowCompany === company)
+      || (website && rowUrl && rowUrl === website);
+  }) || null;
+}
+
+function applyLeadSupplementArtifacts(importedLeads = [], context = {}) {
+  const evidenceRows = artifactRows(context, ['evidence_urls', 'evidence_url', 'evidence', 'source_urls']);
+  const nextActionRows = artifactRows(context, ['next_actions', 'next_action', 'lead_next_actions']);
+  importedLeads.forEach((lead) => {
+    const evidence = matchingSupplementRow(evidenceRows, lead);
+    if (evidence) {
+      lead.evidenceUrl = lead.evidenceUrl || rowValue(evidence, ['evidenceUrl', 'evidence_url', 'source_url', 'contact_source_url', 'url']);
+      lead.contact = lead.contact || rowValue(evidence, ['contact', 'email', 'public_email', 'public_email_or_contact_path', 'contact_path', 'form_url', 'recipient']);
+      lead.fit = lead.fit || rowValue(evidence, ['fit', 'why_fit', 'observed_signal', 'signal', 'note']);
+      lead.consent = lead.consent || rowValue(evidence, ['consent', 'legal_basis', 'consent_basis']) || 'needs_review';
+    }
+    const nextAction = matchingSupplementRow(nextActionRows, lead);
+    if (nextAction) {
+      lead.nextAction = rowValue(nextAction, ['nextAction', 'next_action', 'action', 'task', 'review_note', 'note']) || lead.nextAction;
+      lead.status = rowValue(nextAction, ['status', 'review_status']) || lead.status;
+      lead.owner = rowValue(nextAction, ['owner', 'agent', 'assignee']) || lead.owner;
+    }
+  });
+  return importedLeads;
 }
 
 function normalizeLeadRow(row = {}, index = 0, source = {}) {
@@ -288,8 +374,14 @@ function parseCollapsedLeadTable(markdown = '', source = {}) {
 }
 
 function leadRowsFromContextArtifacts(context = {}) {
-  const structured = artifactRows(context, 'lead_rows')
+  const structured = artifactRows(context, ['lead_rows', 'leads', 'crm_rows'])
     .map((row, index) => normalizeLeadRow(row, index, { id: context.id || 'structured-lead', owner: context.source_app_label || context.source_app || 'CAIt' }))
+    .filter(Boolean);
+  const evidenceOnlyRows = artifactRows(context, ['evidence_urls', 'evidence_url', 'source_urls'])
+    .map((row, index) => normalizeLeadRow(row, index, { id: `${context.id || 'evidence'}-evidence`, owner: context.source_app_label || context.source_app || 'CAIt' }))
+    .filter(Boolean);
+  const nextActionOnlyRows = artifactRows(context, ['next_actions', 'next_action'])
+    .map((row, index) => normalizeLeadRow(row, index, { id: `${context.id || 'next-action'}-next`, owner: context.source_app_label || context.source_app || 'CAIt' }))
     .filter(Boolean);
   const markdownSources = [
     ...(Array.isArray(context.artifacts) ? context.artifacts : []),
@@ -305,22 +397,56 @@ function leadRowsFromContextArtifacts(context = {}) {
     });
   });
   const seen = new Set();
-  return [...structured, ...parsed].filter((lead) => {
+  const merged = [...structured, ...evidenceOnlyRows, ...nextActionOnlyRows, ...parsed].filter((lead) => {
     const key = `${String(lead.company || '').toLowerCase()}|${String(lead.evidenceUrl || lead.website || '').toLowerCase()}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  return applyLeadSupplementArtifacts(merged, context);
+}
+
+function leadEmailDraftArtifacts(context = {}) {
+  return artifactsByType(context, ['email_draft', 'email_drafts', 'outreach_draft', 'outreach_drafts'])
+    .flatMap((artifact) => {
+      if (Array.isArray(artifact?.rows)) return artifact.rows;
+      if (Array.isArray(artifact?.drafts)) return artifact.drafts;
+      if (Array.isArray(artifact?.items)) return artifact.items;
+      return [artifact];
+    })
+    .filter((draft) => draft && typeof draft === 'object');
+}
+
+function applyEmailDraftArtifacts(importedLeads = [], context = {}) {
+  const drafts = leadEmailDraftArtifacts(context);
+  drafts.forEach((draft, index) => {
+    const leadId = rowValue(draft, ['lead_id', 'leadId', 'id']);
+    const company = rowValue(draft, ['company', 'company_name', 'lead', 'target']);
+    const target = importedLeads.find((lead) => leadId && String(lead.id || '') === leadId)
+      || importedLeads.find((lead) => company && String(lead.company || '').toLowerCase() === company.toLowerCase())
+      || (drafts.length === 1 && index === 0 ? importedLeads[0] : null);
+    if (!target) return;
+    target.channel = normalizeChannel(draft.channel || target.channel);
+    target.consent = String(draft.consent || draft.consent_basis || target.consent || 'needs_review');
+    target.sendMode = normalizeSendMode(draft.send_mode || draft.sendMode || target.sendMode);
+    target.scheduleAt = String(draft.schedule_at || draft.scheduleAt || target.scheduleAt || '');
+    target.triggerEvent = String(draft.trigger_event || draft.triggerEvent || target.triggerEvent || 'none');
+    target.triggerCondition = String(draft.trigger_condition || draft.triggerCondition || target.triggerCondition || '');
+    target.senderEmail = String(draft.sender_email || draft.senderEmail || draft.from || target.senderEmail || '');
+    target.replyToEmail = String(draft.reply_to_email || draft.replyToEmail || draft.replyTo || target.replyToEmail || '');
+    target.subject = String(draft.subject || draft.email_subject || target.subject || '');
+    target.body = String(draft.body || draft.message || draft.email_body || target.body || '');
+    target.status = String(draft.status || target.status || 'draft');
+  });
+  return importedLeads;
 }
 
 function applyInboundContext(context = null) {
   if (!context) return;
   importedContext = context;
   const leadRows = leadRowsFromContextArtifacts(context);
-  const emailDraft = (Array.isArray(context.artifacts) ? context.artifacts : [])
-    .find((artifact) => String(artifact?.type || '').toLowerCase() === 'email_draft') || {};
-  const outreachPlan = (Array.isArray(context.artifacts) ? context.artifacts : [])
-    .find((artifact) => String(artifact?.type || '').toLowerCase() === 'outreach_plan') || {};
+  const emailDraft = leadEmailDraftArtifacts(context)[0] || {};
+  const outreachPlan = artifactsByType(context, ['outreach_plan', 'outreach_plans'])[0] || {};
   const outreachSteps = Array.isArray(outreachPlan.steps) ? outreachPlan.steps : [];
   const importedLeads = leadRows;
   if (!importedLeads.length) {
@@ -375,6 +501,7 @@ function applyInboundContext(context = null) {
     target.body = String(emailDraft.body || target.body || '');
     target.status = String(emailDraft.status || target.status || 'draft');
   }
+  applyEmailDraftArtifacts(importedLeads, context);
   leads = importedLeads;
   selectedId = leads[0]?.id || '';
   const target = (Array.isArray(context.handoff_targets) ? context.handoff_targets : []).find(Boolean);
@@ -523,6 +650,9 @@ function outreachStepsPayload() {
 function buildContext() {
   const target = String(els.leaderSelect.value || 'cmo_leader');
   const lead = selectedLead();
+  const chatHandoffId = leadChatHandoffId();
+  const chatReturnTo = leadChatReturnTo();
+  const leadReturnTo = currentLeadReturnPath();
   if (!lead) {
     return buildCaitAppContext({
       source_app: 'lead_ops_console',
@@ -532,14 +662,19 @@ function buildContext() {
       facts: ['No lead rows, evidence URLs, contact paths, outreach channels, schedules, triggers, or messages are loaded.'],
       assumptions: ['No built-in demo lead data is used.', 'This app uses CAIt Resend for approved email sends only after explicit user confirmation. SMS remains a CAIt handoff.'],
       recommended_next_actions: ['Load a CAIt app context that contains lead_rows or ask List Creator / CMO Leader to produce public-source rows and consent-safe contact paths.'],
-      handoff_targets: [target, 'list_creator', 'email_ops', 'sms_ops']
+      handoff_targets: [target, 'list_creator', 'email_ops', 'sms_ops'],
+      raw_context: {
+        chat_handoff_id: chatHandoffId,
+        chat_return_to: chatReturnTo,
+        lead_return_to: leadReturnTo
+      }
     });
   }
   return buildCaitAppContext({
     source_app: 'lead_ops_console',
     source_app_label: 'Lead Ops Console',
     title: `Lead Ops packet - ${lead.company}`,
-    summary: `Lead outreach packet for ${lead.company}. Status is ${statusLabel(lead.status)}. Channel is ${lead.channel || 'email'} and send mode is ${lead.sendMode || 'manual_approval'}. Approved email can execute through CAIt Resend after explicit confirmation; SMS still requires CAIt handoff.`,
+    summary: `Lead outreach packet for ${lead.company}. Status is ${statusLabel(lead.status)}. Channel is ${lead.channel || 'email'} and send mode is ${lead.sendMode || 'manual_approval'}. This keeps evidence, consent, approval, schedule, trigger, and message state visible so CAIt can resume stable outreach operations instead of rerunning a disposable AIAGENT chat.`,
     facts: [
       importedContext ? `Imported context: ${importedContext.title || importedContext.id || 'CAIt app context'}` : '',
       `Selected lead: ${lead.company}`,
@@ -553,7 +688,9 @@ function buildContext() {
       lead.scheduleAt ? `Scheduled at: ${lead.scheduleAt}` : '',
       lead.triggerEvent && lead.triggerEvent !== 'none' ? `Trigger: ${lead.triggerEvent} (${lead.triggerCondition || 'condition not set'})` : '',
       `Status: ${statusLabel(lead.status)}`,
-      `Next action: ${lead.nextAction}`
+      `Next action: ${lead.nextAction}`,
+      'This packet keeps public-source evidence, consent basis, send mode, and approval state attached to the next CAIt run.',
+      resendResult.checked ? `Resend status: ${resendResult.status || 'checked'}` : ''
     ].filter(Boolean),
     assumptions: [
       'No guessed personal emails are used.',
@@ -584,6 +721,26 @@ function buildContext() {
         subject: lead.subject,
         body: lead.body,
         status: lead.status
+      },
+      {
+        type: 'email_drafts',
+        rows: leads
+          .filter((entry) => String(entry.channel || 'email') === 'email' && (entry.subject || entry.body))
+          .map((entry) => ({
+            lead_id: entry.id,
+            company: entry.company,
+            contact: entry.contact || '',
+            sender_email: entry.senderEmail || '',
+            reply_to_email: entry.replyToEmail || '',
+            consent_basis: entry.consent || 'needs_review',
+            send_mode: entry.sendMode || 'manual_approval',
+            schedule_at: entry.scheduleAt || '',
+            trigger_event: entry.triggerEvent || 'none',
+            trigger_condition: entry.triggerCondition || '',
+            subject: entry.subject || '',
+            body: entry.body || '',
+            status: entry.status || 'review'
+          }))
       }
     ],
     approval_requests: [
@@ -606,7 +763,23 @@ function buildContext() {
       'Keep any row without a public source URL or consent-safe contact path waiting for review.'
     ],
     handoff_targets: [target, 'list_creator', 'email_ops', 'sms_ops'],
-    raw_context: importedContext ? { received_context: importedContext } : {}
+    raw_context: {
+      ...(importedContext ? { received_context: importedContext } : {}),
+      chat_handoff_id: chatHandoffId,
+      chat_return_to: chatReturnTo,
+      lead_return_to: leadReturnTo,
+      selected_lead_id: lead.id,
+      selected_lead_status: lead.status || 'review',
+      lead_counts: {
+        total: leads.length,
+        draft: leads.filter((entry) => entry.status === 'draft').length,
+        approved: leads.filter((entry) => entry.status === 'approved').length,
+        scheduled: leads.filter((entry) => entry.status === 'scheduled').length,
+        trigger_ready: leads.filter((entry) => entry.status === 'triggered').length,
+        waiting: leads.filter((entry) => entry.status === 'blocked').length
+      },
+      resend_result: resendResult.checked ? resendResult : null
+    }
   });
 }
 
@@ -760,11 +933,111 @@ function renderEditor() {
 
 function render() {
   renderMetrics();
+  renderLeadHandoffSessionNotice();
   renderTable();
   renderEditor();
   renderWorkflowState();
+  renderLeadOpsReadiness();
   renderResendState();
   els.leadContextPreview.textContent = JSON.stringify(buildContext(), null, 2);
+}
+
+function renderLeadHandoffSessionNotice() {
+  const returnTo = leadChatReturnTo();
+  const handoffId = leadChatHandoffId();
+  const hasImportedServerContext = Boolean(importedContext?.id);
+  if (els.leadReturnToChatLink) {
+    if (returnTo) {
+      els.leadReturnToChatLink.hidden = false;
+      els.leadReturnToChatLink.href = returnTo;
+    } else {
+      els.leadReturnToChatLink.hidden = true;
+      els.leadReturnToChatLink.href = '/chat';
+    }
+  }
+  if (!els.leadHandoffSessionNotice) return;
+  const fragments = [];
+  if (returnTo) fragments.push('Return path to the same CAIt chat is pinned.');
+  if (hasImportedServerContext) fragments.push('Server-side lead context is loaded.');
+  if (handoffId) fragments.push(`Handoff ID: ${handoffId}.`);
+  if (!fragments.length) {
+    els.leadHandoffSessionNotice.hidden = true;
+    els.leadHandoffSessionNotice.className = 'notice';
+    els.leadHandoffSessionNotice.textContent = '';
+    return;
+  }
+  const warning = returnTo && !hasImportedServerContext;
+  els.leadHandoffSessionNotice.hidden = false;
+  els.leadHandoffSessionNotice.className = `notice${warning ? ' notice-warning' : ''}`;
+  els.leadHandoffSessionNotice.innerHTML = [
+    `<strong>${escapeHtml(warning ? 'Chat handoff is open but no server lead packet is loaded yet.' : 'CAIt lead handoff session is attached.')}</strong>`,
+    `<span>${escapeHtml(fragments.join(' '))}</span>`
+  ].join('');
+}
+
+function renderLeadOpsReadiness() {
+  const lead = selectedLead();
+  const approved = ['approved', 'scheduled', 'triggered', 'sent'].includes(String(lead?.status || '').toLowerCase());
+  const hasEvidence = Boolean(String(lead?.evidenceUrl || '').trim());
+  const hasContact = Boolean(String(lead?.contact || '').trim());
+  const hasMessage = Boolean(String(lead?.subject || '').trim() && String(lead?.body || '').trim());
+  const hasScheduleRule = String(lead?.sendMode || '') === 'scheduled'
+    ? Boolean(String(lead?.scheduleAt || '').trim())
+    : true;
+  const hasTriggerRule = String(lead?.sendMode || '') === 'event_trigger'
+    ? Boolean(String(lead?.triggerEvent || '').trim() && String(lead?.triggerEvent || '') !== 'none' && String(lead?.triggerCondition || '').trim())
+    : true;
+  const hasServerContext = Boolean(importedContext?.id);
+  const hasChatReturn = Boolean(leadChatReturnTo() || leadChatHandoffId());
+  const readinessItems = [
+    {
+      title: 'Lead evidence stays attached',
+      detail: lead
+        ? `${lead.company} keeps ${hasEvidence ? 'a public source URL' : 'a missing source warning'} and ${hasContact ? 'a contact path' : 'a missing contact warning'}.`
+        : 'Load lead rows from CAIt so the next agent can inspect public evidence before outreach.',
+      status: lead && hasEvidence && hasContact ? 'ready' : (lead ? 'pending' : 'blocked')
+    },
+    {
+      title: 'Consent and approval are explicit',
+      detail: lead
+        ? `${lead.consent || 'needs_review'} consent basis with ${statusLabel(lead.status)} status.`
+        : 'No consent or approval state is loaded yet.',
+      status: approved ? 'ready' : (String(lead?.status || '') === 'blocked' ? 'blocked' : 'pending')
+    },
+    {
+      title: 'Execution rule is reusable',
+      detail: lead
+        ? `${lead.channel || 'email'} uses ${lead.sendMode || 'manual_approval'}${lead.scheduleAt ? ` at ${lead.scheduleAt}` : ''}${lead.triggerEvent && lead.triggerEvent !== 'none' ? ` after ${lead.triggerEvent}` : ''}.`
+        : 'No channel, schedule, trigger, or message is loaded.',
+      status: lead && hasMessage && hasScheduleRule && hasTriggerRule ? 'ready' : (lead ? 'pending' : 'blocked')
+    },
+    {
+      title: 'CAIt can reopen the same lead packet',
+      detail: hasServerContext
+        ? 'Server-side context return data is preserved for the next CAIt run.'
+        : (hasChatReturn
+          ? 'The chat return route is pinned; Send to CAIt will create the server-side lead packet reference.'
+          : 'Open this app from a CAIt handoff to preserve chat return routing and server-side context references.'),
+      status: hasServerContext ? 'ready' : (hasChatReturn ? 'pending' : 'blocked')
+    }
+  ];
+  if (els.leadOpsReadinessPill) {
+    const readyCount = readinessItems.filter((entry) => entry.status === 'ready').length;
+    const blockedCount = readinessItems.filter((entry) => entry.status === 'blocked').length;
+    const pillStatus = readyCount === readinessItems.length ? 'approved' : blockedCount ? 'blocked' : 'pending';
+    els.leadOpsReadinessPill.textContent = lead
+      ? `${readyCount}/${readinessItems.length} ops checks ready`
+      : 'Rows not loaded';
+    els.leadOpsReadinessPill.className = `status-pill ${lead ? pillStatus : 'pending'}`;
+  }
+  if (els.leadOpsReadinessList) {
+    els.leadOpsReadinessList.innerHTML = readinessItems.map((entry) => [
+      `<article class="ops-readiness-item ${entry.status}">`,
+      `<strong>${escapeHtml(entry.title)}</strong>`,
+      `<span>${escapeHtml(entry.detail)}</span>`,
+      '</article>'
+    ].join('')).join('');
+  }
 }
 
 function renderResendState() {
@@ -889,7 +1162,8 @@ els.scheduleResendBtn?.addEventListener('click', () => {
 
 els.sendLeadContextBtn.addEventListener('click', () => {
   saveEditor();
-  void sendContextToCait(buildContext()).catch((error) => {
+  const returnTo = leadChatReturnTo();
+  void sendContextToCait(buildContext(), { returnTo }).catch((error) => {
     window.alert(`CAIt context handoff failed: ${error.message}`);
   });
 });

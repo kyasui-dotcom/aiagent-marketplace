@@ -13,6 +13,7 @@ const appsJsPath = new URL('../public/apps.js', import.meta.url);
 const analyticsHtmlPath = new URL('../public/analytics-console.html', import.meta.url);
 const publisherHtmlPath = new URL('../public/publisher-approval.html', import.meta.url);
 const leadOpsHtmlPath = new URL('../public/lead-ops.html', import.meta.url);
+const campaignOperationsHtmlPath = new URL('../public/campaign-operations.html', import.meta.url);
 const deliveryManagerHtmlPath = new URL('../public/delivery-manager.html', import.meta.url);
 const legalNoticeHtmlPath = new URL('../public/legal-notice.html', import.meta.url);
 const tokushohoRedirectHtmlPath = new URL('../public/tokushoho.html', import.meta.url);
@@ -36,6 +37,7 @@ const appManifestRegistryPath = new URL('../public/app-manifest-registry.js', im
 const analyticsJsPath = new URL('../public/analytics-console.js', import.meta.url);
 const publisherJsPath = new URL('../public/publisher-approval.js', import.meta.url);
 const leadOpsJsPath = new URL('../public/lead-ops.js', import.meta.url);
+const campaignOperationsJsPath = new URL('../public/campaign-operations.js', import.meta.url);
 const deliveryManagerJsPath = new URL('../public/delivery-manager.js', import.meta.url);
 const caitAppBridgePath = new URL('../public/cait-app-bridge.js', import.meta.url);
 const loginJsPath = new URL('../public/login.js', import.meta.url);
@@ -45,6 +47,7 @@ const stylesCssPath = new URL('../public/styles.css', import.meta.url);
 const chatEnginePath = new URL('../public/chat-engine.js', import.meta.url);
 const deliveryActionContractPath = new URL('../public/delivery-action-contract.js', import.meta.url);
 const appsDomainPath = new URL('../lib/apps.js', import.meta.url);
+const appContextDomainPath = new URL('../lib/app-context.js', import.meta.url);
 const workActionRegistryPath = new URL('../public/work-action-registry.js', import.meta.url);
 const workIntentResolverPath = new URL('../public/work-intent-resolver.js', import.meta.url);
 const workerPath = new URL('../worker.js', import.meta.url);
@@ -101,10 +104,12 @@ execFileSync(process.execPath, ['--check', fileURLToPath(analyticsLoaderPath)], 
 execFileSync(process.execPath, ['--check', fileURLToPath(analyticsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(publisherJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(leadOpsJsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(campaignOperationsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(deliveryManagerJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(caitAppBridgePath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatEnginePath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(deliveryActionContractPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(appContextDomainPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(workActionRegistryPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(workIntentResolverPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(onboardingPath)], { stdio: 'pipe' });
@@ -126,6 +131,7 @@ const appsJs = readFileSync(appsJsPath, 'utf8');
 const analyticsHtml = readFileSync(analyticsHtmlPath, 'utf8');
 const publisherHtml = readFileSync(publisherHtmlPath, 'utf8');
 const leadOpsHtml = readFileSync(leadOpsHtmlPath, 'utf8');
+const campaignOperationsHtml = readFileSync(campaignOperationsHtmlPath, 'utf8');
 const deliveryManagerHtml = readFileSync(deliveryManagerHtmlPath, 'utf8');
 const legalNoticeHtml = readFileSync(legalNoticeHtmlPath, 'utf8');
 const tokushohoRedirectHtml = readFileSync(tokushohoRedirectHtmlPath, 'utf8');
@@ -147,9 +153,11 @@ const appContextGateJs = readFileSync(appContextGateJsPath, 'utf8');
 const agentProgressViewJs = readFileSync(agentProgressViewJsPath, 'utf8');
 const appManifestRegistryJs = readFileSync(appManifestRegistryPath, 'utf8');
 const appsDomainJs = readFileSync(appsDomainPath, 'utf8');
+const appContextDomainJs = readFileSync(appContextDomainPath, 'utf8');
 const analyticsJs = readFileSync(analyticsJsPath, 'utf8');
 const publisherJs = readFileSync(publisherJsPath, 'utf8');
 const leadOpsJs = readFileSync(leadOpsJsPath, 'utf8');
+const campaignOperationsJs = readFileSync(campaignOperationsJsPath, 'utf8');
 const deliveryManagerJs = readFileSync(deliveryManagerJsPath, 'utf8');
 const caitAppBridge = readFileSync(caitAppBridgePath, 'utf8');
 const loginJs = readFileSync(loginJsPath, 'utf8');
@@ -206,6 +214,9 @@ const {
   appContextMatchesManifest,
   appContextStatusForDraft
 } = await import(appContextGateJsPath.href);
+const {
+  explicitHandoffArtifactTypesFromAuthorityRequest
+} = await import(appHandoffGateJsPath.href);
 const appSurfaceSources = [
   appsHtml,
   appsJs,
@@ -215,6 +226,8 @@ const appSurfaceSources = [
   publisherJs,
   leadOpsHtml,
   leadOpsJs,
+  campaignOperationsHtml,
+  campaignOperationsJs,
   deliveryManagerHtml,
   deliveryManagerJs,
   caitAppBridge
@@ -293,27 +306,26 @@ assert.ok(chatHtml.includes('href="/admin" id="adminNavLink" hidden'), 'Chat sho
 assert.ok(chatJs.includes('appendThinkingMessage'), 'Chat should show a transient thinking state while OpenAI intent classification is running.');
 assert.ok(chatJs.includes('Thinking...'), 'Chat thinking state should use English copy on the English chat page.');
 assert.ok(chatJs.includes('removeMessage(thinkingMessage)'), 'Chat should remove the transient thinking state after OpenAI returns or fails.');
-assert.ok(chatJs.includes('prepareAccumulatedOrderIfReady'), 'Chat should prepare an order once enough work context accumulates across turns.');
-assert.ok(chatJs.includes('accumulatedWorkOrderReadiness'), 'Chat should have a generic accumulated-context readiness gate before asking another clarification.');
-assert.ok(chatJs.includes('aquire') && chatJs.includes('aquitisition'), 'Chat accumulated-context readiness should tolerate common acquisition typos.');
-assert.ok(chatJs.includes('prepareObviousStepIntakeIfNeeded'), 'Short growth/acquisition requests should enter step intake before OpenAI freeform clarification.');
-assert.ok(chatJs.indexOf('prepareObviousStepIntakeIfNeeded(prompt)') < chatJs.indexOf('handleChatIntentWithLlm(prompt)'), 'Obvious acquisition intake should run before OpenAI chat clarification.');
-assert.ok(chatJs.includes('bestCatalogLeaderTaskTypeForSpecialistTask') && chatJs.includes('leaderDownstreamTaskTypesFromAgent'), 'Short acquisition intake should choose a leader from the agent catalog instead of hardcoded client branching.');
+assert.ok(!chatJs.includes('prepareAccumulatedOrderIfReady'), 'Chat must not synthesize accumulated work-order prompts from client-side conversation heuristics.');
+assert.ok(!chatJs.includes('accumulatedWorkOrderReadiness'), 'OpenAI intent and server prepare-order contracts should own readiness, not chat regexes.');
+assert.ok(!chatJs.includes('Conversation-derived work request:'), 'Chat must not create client-owned work request briefs from previous turns.');
+assert.ok(!chatJs.includes('prepareObviousStepIntakeIfNeeded'), 'Chat must not short-circuit specialist intake with client-side domain heuristics.');
+assert.ok(!chatJs.includes('obviousStepIntakeSpecialistTaskType'), 'Chat must let OpenAI intent and server prepare-order contracts own short executable request routing.');
+assert.ok(!chatJs.includes('bestCatalogLeaderTaskTypeForSpecialistTask') && !chatJs.includes('leaderDownstreamTaskTypesFromAgent'), 'Short intake should let server prepare-order choose the route instead of client catalog branching.');
 assert.ok(!chatJs.includes("return 'cmo_leader'"), 'Chat should not hardcode a CMO leader for acquisition intake.');
-assert.ok(chatJs.includes('Do not ask another pre-order intake question just because the CTA is weak.'), 'Weak CTA details should become a planning assumption, not an endless pre-order clarification loop.');
-assert.ok(chatJs.includes('Use the assigned agent contract for the concrete delivery shape'), 'Accumulated-context order prep should not define agent-owned delivery shape in chat.');
+assert.ok(!chatJs.includes('Do not ask another pre-order intake question just because the CTA is weak.'), 'Client chat must not inject agent planning assumptions into generated order briefs.');
+assert.ok(!chatJs.includes('Use the assigned agent contract for the concrete delivery shape'), 'Client chat must not generate accumulated-context order instructions.');
 assert.ok(!chatJs.includes('Produce concrete next actions and any approval-ready drafts or SaaS handoff artifacts'), 'Accumulated-context order prep must leave delivery and approval packet shape to the assigned agent contract.');
-assert.ok(chatJs.includes('intakeAnswered: true') && chatJs.includes('skipOpenAiIntent: true'), 'Accumulated-context order prep should bypass repeated intake after the user has answered enough context.');
-assert.ok(chatJs.includes('taskTypeFromOpenChatIntent'), 'Open chat natural intents should map into normal order intake task types instead of freeform clarification loops.');
+assert.ok(chatJs.includes('taskTypeFromOpenChatIntent'), 'Open chat natural intents should enter normal server-owned order intake instead of freeform clarification loops.');
 assert.ok(chatJs.includes('openChatIntentShouldUseStepIntake'), 'Executable OpenAI clarification intents should hand off to step-by-step intake.');
 const chatIntentWithLlmSource = chatJs.slice(chatJs.indexOf('async function handleChatIntentWithLlm'), chatJs.indexOf('function addChatAdjustmentToDraft'));
 assert.ok(chatIntentWithLlmSource.includes('preserveAgentOwnedLeaderIntake'), 'OpenAI intake results for leaders should preserve agent-owned intake questions.');
 assert.ok(chatIntentWithLlmSource.includes('await prepareOrder(prompt') && !chatIntentWithLlmSource.includes("questionSource: 'openai'"), 'Chat must let server/agent-owned leader intake render questions instead of storing OpenAI questions directly.');
 const prepareOrderSource = chatJs.slice(chatJs.indexOf('async function prepareOrder'), chatJs.indexOf('async function sendOrder'));
-assert.ok(prepareOrderSource.includes('fallbackWouldSynthesizeLeaderIntake'), 'Prepare-order fallback should explicitly guard leader-owned intake.');
-assert.ok(prepareOrderSource.includes('Agent-owned leader intake questions could not be loaded'), 'Leader prepare-order failures should not fall back to client-generated intake questions.');
-assert.ok(prepareOrderSource.includes('clientPrepareOrderIntakeFallback') && prepareOrderSource.indexOf('fallbackWouldSynthesizeLeaderIntake') < prepareOrderSource.indexOf('clientPrepareOrderIntakeFallback'), 'Client fallback must run only after the leader-owned intake guard.');
-assert.ok(chatJs.includes("intent === 'natural_business_growth'") && chatJs.includes("return 'growth'"), 'Business-growth intent should enter generic growth intake without CMO-specific client branching.');
+assert.ok(prepareOrderSource.includes('Server-owned order intake questions could not be loaded'), 'Prepare-order failures should stop instead of falling back to client-generated intake questions.');
+assert.ok(!chatJs.includes('clientPrepareOrderIntakeFallback'), 'Chat must not synthesize fallback intake contracts when prepare-order fails.');
+assert.ok(!chatJs.includes("questionSource: 'client_fallback'"), 'Chat must not label client-generated intake as a fallback contract.');
+assert.ok(!chatJs.includes("if (intent === 'natural_business_growth' || intent === 'natural_marketing_launch') return 'growth';"), 'Business-growth intent should not map to a task type in chat; prepare-order owns routing.');
 assert.ok(chatJs.includes('intakeGroupOrder'), 'Step-by-step intake should use a stable question order instead of incidental regex insertion order.');
 assert.ok(chatJs.indexOf("['goal', 3]") < chatJs.indexOf("['audience', 4]"), 'Growth intake should ask goal/conversion before target audience.');
 assert.ok(chatJs.indexOf("['constraints', 5]") < chatJs.indexOf("['deliverable', 7]"), 'Growth intake should ask constraints/channels before output format.');
@@ -411,6 +423,16 @@ assert.ok(appContextGateJs.includes('appContextStatusForDraft'), 'App context ga
 assert.ok(appManifestRegistryJs.includes('contextContract'), 'Measurement evidence app matching should be declared in the app manifest.');
 assert.ok(chatJs.includes('contextContract: app.contextContract || app.context_contract || manifest.contextContract || manifest.context_contract || null'), 'Chat app manifest normalization should preserve app context contracts.');
 assert.ok(chatJs.includes('contextContract: { ...(existing.contextContract || {}), ...(normalized.contextContract || {}) }'), 'Chat app manifest merging should not drop app context contracts.');
+assert.ok(chatJs.includes('function measurementEvidenceContractRequired'), 'Chat should gate measurement evidence app prompts on explicit draft/server contracts.');
+assert.ok(chatJs.includes('function textExplicitlyRequestsMeasurementEvidence'), 'Chat should allow explicit GA4/Search Console user requests without broad task inference.');
+assert.ok(!chatJs.includes('function orderNeedsMeasurementEvidence'), 'Chat must not infer measurement app needs from task/prompt tokens.');
+assert.ok(!chatJs.includes('function intakeShouldOfferMeasurementEvidenceChoice'), 'Chat must not offer analytics app choices from broad growth/SEO intent.');
+const measurementEvidenceRoutingSource = chatJs.slice(
+  chatJs.indexOf('function growthLeaderNeedsDataHint'),
+  chatJs.indexOf('function authGrantedGoogleCapabilities')
+);
+assert.ok(!measurementEvidenceRoutingSource.includes('seo|cvr|conversion'), 'Measurement evidence routing must not use SEO/CVR/conversion prompt heuristics.');
+assert.ok(!measurementEvidenceRoutingSource.includes('inferWorkIntentTaskType(prompt)'), 'Measurement evidence routing must not use chat task inference to show app surfaces.');
 const analyticsContextManifest = {
   id: 'analytics-console',
   name: 'Analytics Console',
@@ -610,13 +632,15 @@ assert.ok(appManifestRegistryJs.includes("verificationStatus: 'cait_managed'"), 
 assert.ok(appManifestRegistryJs.includes('analytics-console'), 'Shared app registry should include Analytics Console.');
 assert.ok(appManifestRegistryJs.includes('publisher-approval-studio'), 'Shared app registry should include Publisher and Approval Studio.');
 assert.ok(appManifestRegistryJs.includes('lead-ops-console'), 'Shared app registry should include Lead Ops.');
+assert.ok(appManifestRegistryJs.includes('campaign-operations'), 'Shared app registry should include Campaign Operations.');
 assert.ok(appsJs.includes('CORE_FEATURE_APP_IDS'), 'Apps hub should filter core CAIt features out of app registry rendering.');
 assert.ok(!appsJs.includes("['delivery-manager', { tag: 'Follow-up'"), 'Apps hub should not feature Deliveries as a registered app.');
 assert.ok(appsHtml.includes('cait-app-context/v1'), 'Apps hub should explain the shared context contract.');
 assert.ok(analyticsHtml.includes('Analytics Console'), 'Analytics Console should be a first-class app page.');
 assert.ok(analyticsHtml.includes('href="/apps.html"'), 'Analytics Console should link back to the apps hub.');
 assert.ok(analyticsHtml.includes('id="sendContextBtn"'), 'Analytics Console should send context to CAIt.');
-assert.ok(analyticsHtml.includes('/analytics-console.js?v=20260516a'), 'Analytics Console should load the app-context receiving controller.');
+assert.ok(analyticsHtml.includes('/analytics-console.js?v=20260525a'), 'Analytics Console should load the app-context receiving controller.');
+assert.ok(analyticsHtml.includes('id="analyticsHandoffNotice"'), 'Analytics Console should disclose chat-return-only versus server-side context handoffs.');
 assert.ok(analyticsHtml.includes('/app-console.css?v=20260507a'), 'Analytics Console should load the current shared app console CSS.');
 assert.ok(analyticsHtml.includes('id="analyticsStepSources"'), 'Analytics Console should show a compact workflow state strip.');
 assert.ok(analyticsHtml.includes('id="connectGoogleBtn"'), 'Analytics Console should expose a Google OAuth connection button.');
@@ -640,7 +664,7 @@ assert.ok(analyticsHtml.includes('id="analyticsQueriesCount"'), 'Analytics Conso
 assert.ok(publisherHtml.includes('Publisher & Approval'), 'Publisher and Approval Studio should be a first-class app page.');
 assert.ok(publisherHtml.includes('href="/apps.html"'), 'Publisher Studio should link back to the apps hub.');
 assert.ok(publisherHtml.includes('id="approvalTable"'), 'Publisher Studio should include an approval queue.');
-assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260519a'), 'Publisher Studio should load the app-context receiving controller.');
+assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260525a'), 'Publisher Studio should load the app-context receiving controller.');
 assert.ok(publisherHtml.includes('id="publisherStepApproval"'), 'Publisher Studio should show approval progress before handoff.');
 assert.ok(publisherHtml.includes('id="channelSelect"'), 'Publisher Studio should expose media/channel separation.');
 assert.ok(publisherHtml.includes('id="connectorInput"'), 'Publisher Studio should expose the publish connector per channel.');
@@ -660,7 +684,7 @@ assert.ok(publisherHtml.includes('id="publisherDestinationCount"'), 'Publisher S
 assert.ok(leadOpsHtml.includes('Lead Ops'), 'Lead Ops should be a first-class app page.');
 assert.ok(leadOpsHtml.includes('href="/apps.html"'), 'Lead Ops should link back to the apps hub.');
 assert.ok(leadOpsHtml.includes('id="sendLeadContextBtn"'), 'Lead Ops should send context to CAIt.');
-assert.ok(leadOpsHtml.includes('/lead-ops.js?v=20260516a'), 'Lead Ops should load the app-context receiving controller.');
+assert.ok(leadOpsHtml.includes('/lead-ops.js?v=20260524b'), 'Lead Ops should load the app-context receiving controller.');
 assert.ok(leadOpsHtml.includes('id="approveLeadBtn"'), 'Lead Ops should provide a direct approval action.');
 assert.ok(leadOpsHtml.includes('id="scheduleLeadBtn"'), 'Lead Ops should provide scheduled outreach planning.');
 assert.ok(leadOpsHtml.includes('id="triggerLeadBtn"'), 'Lead Ops should provide event-triggered outreach planning.');
@@ -668,6 +692,15 @@ assert.ok(leadOpsHtml.includes('id="outreachChannelSelect"'), 'Lead Ops should l
 assert.ok(leadOpsHtml.includes('id="sendResendBtn"'), 'Lead Ops should execute approved email through CAIt Resend.');
 assert.ok(leadOpsHtml.includes('id="scheduleResendBtn"'), 'Lead Ops should schedule approved email through CAIt Resend.');
 assert.ok(leadOpsHtml.includes('id="leadAllNavCount"'), 'Lead Ops side navigation counts should come from runtime data.');
+assert.ok(campaignOperationsHtml.includes('Campaign Operations'), 'Campaign Operations should be a first-class app page.');
+assert.ok(campaignOperationsHtml.includes('href="/apps.html"'), 'Campaign Operations should link back to the apps hub.');
+assert.ok(campaignOperationsHtml.includes('id="sendCampaignContextBtn"'), 'Campaign Operations should send context to CAIt.');
+assert.ok(campaignOperationsHtml.includes('/campaign-operations.js?v=20260525b'), 'Campaign Operations should load the app-context receiving controller.');
+assert.ok(campaignOperationsHtml.includes('id="campaignReadinessList"'), 'Campaign Operations should show operational readiness.');
+assert.ok(campaignOperationsHtml.includes('id="campaignHandoffNotice"'), 'Campaign Operations should show CAIt handoff session state.');
+assert.ok(campaignOperationsHtml.includes('id="campaignHandoffAuditList"'), 'Campaign Operations should show AIAGENT handoff audit gaps.');
+assert.ok(campaignOperationsHtml.includes('id="campaignContextPreview"'), 'Campaign Operations should preview the CAIt packet.');
+assert.ok(campaignOperationsHtml.includes('AIAGENT chat output'), 'Campaign Operations should explain the before state for one-off AIAGENT chat output.');
 assert.ok(deliveryManagerHtml.includes('Deliveries'), 'Deliveries should be a first-class CAIt feature page.');
 assert.ok(deliveryManagerHtml.includes('href="/chat"'), 'Deliveries should link back to chat.');
 assert.ok(deliveryManagerHtml.includes('id="downloadSelectedBtn"'), 'Delivery Manager should expose downloadable delivery files.');
@@ -686,25 +719,31 @@ const caitManagedSurfaceEntries = [
     name: 'Analytics Console',
     html: analyticsHtml,
     ownScript: '/analytics-console.js',
-    forbiddenScripts: ['/publisher-approval.js', '/lead-ops.js', '/delivery-manager.js', '/client.js', '/chat.js']
+    forbiddenScripts: ['/publisher-approval.js', '/lead-ops.js', '/campaign-operations.js', '/delivery-manager.js', '/client.js', '/chat.js']
   },
   {
     name: 'Publisher and Approval Studio',
     html: publisherHtml,
     ownScript: '/publisher-approval.js',
-    forbiddenScripts: ['/analytics-console.js', '/lead-ops.js', '/delivery-manager.js', '/client.js', '/chat.js']
+    forbiddenScripts: ['/analytics-console.js', '/lead-ops.js', '/campaign-operations.js', '/delivery-manager.js', '/client.js', '/chat.js']
   },
   {
     name: 'Lead Ops Console',
     html: leadOpsHtml,
     ownScript: '/lead-ops.js',
-    forbiddenScripts: ['/analytics-console.js', '/publisher-approval.js', '/delivery-manager.js', '/client.js', '/chat.js']
+    forbiddenScripts: ['/analytics-console.js', '/publisher-approval.js', '/campaign-operations.js', '/delivery-manager.js', '/client.js', '/chat.js']
+  },
+  {
+    name: 'Campaign Operations',
+    html: campaignOperationsHtml,
+    ownScript: '/campaign-operations.js',
+    forbiddenScripts: ['/analytics-console.js', '/publisher-approval.js', '/lead-ops.js', '/delivery-manager.js', '/client.js', '/chat.js']
   },
   {
     name: 'Delivery Manager',
     html: deliveryManagerHtml,
     ownScript: '/delivery-manager.js',
-    forbiddenScripts: ['/analytics-console.js', '/publisher-approval.js', '/lead-ops.js', '/client.js', '/chat.js']
+    forbiddenScripts: ['/analytics-console.js', '/publisher-approval.js', '/lead-ops.js', '/campaign-operations.js', '/client.js', '/chat.js']
   }
 ];
 
@@ -733,7 +772,30 @@ assert.ok(leadOpsJs.includes("source_app: 'lead_ops_console'"), 'Lead Ops app lo
 assert.ok(leadOpsJs.includes('/api/delivery-items?surface=lead'), 'Lead Ops should load normalized lead/email delivery items from the SaaS DB.');
 assert.ok(!leadOpsJs.includes("source_app: 'analytics_console'"), 'Lead Ops JS should not contain Analytics app logic.');
 assert.ok(!leadOpsJs.includes("source_app: 'publisher_approval_studio'"), 'Lead Ops JS should not contain Publisher app logic.');
+assert.ok(!leadOpsJs.includes("source_app: 'campaign_operations'"), 'Lead Ops JS should not contain Campaign Operations app logic.');
 assert.ok(!leadOpsJs.includes("source_app: 'delivery_manager'"), 'Lead Ops JS should not contain Delivery Manager app logic.');
+assert.ok(campaignOperationsJs.includes("source_app: 'campaign_operations'"), 'Campaign Operations app logic should stay in campaign-operations.js.');
+assert.ok(campaignOperationsJs.includes("fetchCaitAppContextFromUrl"), 'Campaign Operations should receive CAIt app contexts.');
+assert.ok(campaignOperationsJs.includes("type: 'campaign_state'"), 'Campaign Operations should return campaign_state artifacts.');
+assert.ok(campaignOperationsJs.includes("type: 'publisher_queue'"), 'Campaign Operations should return publisher_queue artifacts.');
+assert.ok(campaignOperationsJs.includes("type: 'approval_backlog'"), 'Campaign Operations should preserve approval_backlog artifacts from the app input contract.');
+assert.ok(campaignOperationsJs.includes("type: 'connector_readiness'"), 'Campaign Operations should return connector_readiness artifacts.');
+assert.ok(campaignOperationsJs.includes("type: 'now_week_0_1'"), 'Campaign Operations should return now_week_0_1 artifacts.');
+assert.ok(campaignOperationsJs.includes("type: 'next_week_1_3'"), 'Campaign Operations should return next_week_1_3 artifacts.');
+assert.ok(campaignOperationsJs.includes("type: 'waiting_conditions'"), 'Campaign Operations should return waiting_conditions artifacts.');
+assert.ok(campaignOperationsJs.includes("type: 'measurement_loop'"), 'Campaign Operations should return measurement_loop artifacts.');
+assert.ok(campaignOperationsJs.includes("type: 'next_action_owner'"), 'Campaign Operations should return next_action_owner artifacts.');
+assert.ok(campaignOperationsJs.includes("type: 'handoff_audit'"), 'Campaign Operations should return handoff_audit artifacts for app contract debugging.');
+assert.ok(campaignOperationsJs.includes('campaign_handoff_audit'), 'Campaign Operations should include handoff audit details in raw_context.');
+assert.ok(campaignOperationsJs.includes('campaignNextActionOwnerRows'), 'Campaign Operations should render retained next action owners.');
+assert.ok(campaignOperationsJs.includes('nowWeekZeroOne'), 'Campaign Operations should accept camelCase week 0-1 campaign handoff aliases.');
+assert.ok(campaignOperationsJs.includes('nextWeekOneThree'), 'Campaign Operations should accept camelCase week 1-3 campaign handoff aliases.');
+assert.ok(campaignOperationsJs.includes('publisherQueue'), 'Campaign Operations should accept top-level camelCase Publisher queue handoff fields.');
+assert.ok(campaignOperationsJs.includes('nextActionOwner'), 'Campaign Operations should accept top-level camelCase next action owner handoff fields.');
+assert.ok(!campaignOperationsJs.includes("source_app: 'analytics_console'"), 'Campaign Operations JS should not contain Analytics app logic.');
+assert.ok(!campaignOperationsJs.includes("source_app: 'publisher_approval_studio'"), 'Campaign Operations JS should not contain Publisher app logic.');
+assert.ok(!campaignOperationsJs.includes("source_app: 'lead_ops_console'"), 'Campaign Operations JS should not contain Lead Ops app logic.');
+assert.ok(!campaignOperationsJs.includes("source_app: 'delivery_manager'"), 'Campaign Operations JS should not contain Delivery Manager app logic.');
 assert.ok(deliveryManagerJs.includes("source_app: 'delivery_manager'"), 'Deliveries feature logic should stay in delivery-manager.js.');
 assert.ok(!deliveryManagerJs.includes("source_app: 'analytics_console'"), 'Delivery Manager JS should not contain Analytics app logic.');
 assert.ok(!deliveryManagerJs.includes("source_app: 'publisher_approval_studio'"), 'Delivery Manager JS should not contain Publisher app logic.');
@@ -813,6 +875,9 @@ assert.ok(analyticsJs.includes('els.ga4PropertyInput?.value'), 'Analytics Consol
 assert.ok(analyticsJs.includes('Requested ${requested.ga4_property}'), 'Analytics Console should show which GA4 property was sent when GA4 loading fails.');
 assert.ok(analyticsJs.includes('channel_landing_pages'), 'Analytics Console should carry channel-by-landing-page drilldowns.');
 assert.ok(analyticsJs.includes('channel_sources'), 'Analytics Console should carry referral/source-medium drilldowns.');
+assert.ok(analyticsJs.includes('channel_breakdown'), 'Analytics Console should accept and return manifest-declared channel_breakdown artifacts.');
+assert.ok(analyticsJs.includes('conversion_paths'), 'Analytics Console should accept and return manifest-declared conversion_paths artifacts.');
+assert.ok(analyticsJs.includes('analyticsHandoffNotice'), 'Analytics Console should render handoff state without relying on pasted URL payloads.');
 assert.ok(analyticsJs.includes('channel-drilldown-btn'), 'Analytics Console should make channel rows directly clickable.');
 assert.ok(analyticsJs.includes('data-channel'), 'Analytics Console should attach channel drilldown state to each channel row.');
 assert.ok(analyticsJs.includes('Referral sites'), 'Analytics Console should give Referral a site/source drilldown view.');
@@ -869,9 +934,15 @@ assert.ok(publisherJs.includes('confirm_execute'), 'Publisher Studio should expl
 assert.ok(publisherJs.includes('article_publish'), 'Publisher Studio should mark publish handoffs separately from generic code handoffs.');
 assert.ok(publisherJs.includes('renderCounts'), 'Publisher Studio should update side navigation counts from runtime packets.');
 assert.ok(publisherJs.includes('No publisher packet is loaded yet'), 'Publisher Studio should render an explicit empty state before server context is loaded.');
+assert.ok(appContextDomainJs.includes('site_publish_packet') && appContextDomainJs.includes('social_copy_packet'), 'Server-side app context should preserve Publisher contract fields in raw_context.');
+assert.ok(publisherJs.includes('publisherContractArtifactsFromContext'), 'Publisher Studio should import top-level Publisher contract fields from server raw_context.');
+assert.ok(publisherJs.includes('selected_publisher_contract_type'), 'Publisher Studio should return the selected Publisher contract type for app-contract reuse.');
 assert.ok(!/Japan eSIM|7-day Japan|directory-ai-agent-listing|post-japan-esim/i.test(publisherJs), 'Publisher Studio should not ship built-in sample publisher packets.');
 assert.ok(leadOpsJs.includes('source_app: \'lead_ops_console\''), 'Lead Ops should create lead app context.');
 assert.ok(leadOpsJs.includes('email_draft'), 'Lead Ops should include email draft artifacts.');
+assert.ok(leadOpsJs.includes('email_drafts'), 'Lead Ops should preserve plural email_drafts from the app input contract.');
+assert.ok(leadOpsJs.includes('evidence_urls'), 'Lead Ops should merge evidence_urls artifacts into imported lead rows.');
+assert.ok(leadOpsJs.includes('next_actions'), 'Lead Ops should merge next_actions artifacts into imported lead rows.');
 assert.ok(leadOpsJs.includes('outreach_plan'), 'Lead Ops should include channel, schedule, and trigger outreach plans.');
 assert.ok(leadOpsJs.includes('event_triggered_outreach'), 'Lead Ops should represent event-triggered outreach approval requests.');
 assert.ok(leadOpsJs.includes('scheduled_outreach'), 'Lead Ops should represent scheduled outreach approval requests.');
@@ -912,6 +983,7 @@ assert.ok(chatJs.includes('compactChatRuntimeSnapshot'), 'Chat should compact ru
 assert.ok(appManifestRegistryJs.includes('analytics-console'), 'Chat app catalog should include Analytics Console.');
 assert.ok(appManifestRegistryJs.includes('publisher-approval-studio'), 'Chat app catalog should include Publisher and Approval Studio.');
 assert.ok(appManifestRegistryJs.includes('lead-ops-console'), 'Chat app catalog should include Lead Ops Console.');
+assert.ok(appManifestRegistryJs.includes('campaign-operations'), 'Chat app catalog should include Campaign Operations.');
 assert.ok(chatJs.includes('CORE_FEATURE_APP_IDS'), 'Chat should filter core CAIt features out of app manifests.');
 assert.ok(!chatJs.includes("id: 'delivery-manager'"), 'Chat app catalog should not include Deliveries as an app.');
 assert.ok(chatJs.includes("const CHATUX_RETURN_PATH = '/chat'"), 'OAuth and delivery return path should use the canonical chat route, not /chatux or /chat.html.');
@@ -1102,8 +1174,24 @@ assert.ok(!chatJs.includes("ids.add('x-client-ops')"), 'Generic app handoff supp
 assert.ok(!chatJs.includes("appManifestById('x-client-ops')"), 'Dedicated delivery rendering must not look up a CAIt-managed app by hardcoded id.');
 assert.ok(!chatJs.includes("appAgentBaseTransferPacket('x-client-ops'"), 'Dedicated delivery transfer packets must use the manifest app id.');
 assert.ok(chatJs.includes(".filter((entry) => !suppressedIds.has(normalizeUsageId(entry.id || '')))"), 'Generic app handoff cards should not duplicate a dedicated final-action app card.');
-assert.ok(chatJs.includes('authorityRequestHandledBySaasHandoffInChat(authorityRequestFromJob(job))'), 'X authority waits should become SaaS app handoff candidates instead of chat approval dead-ends.');
+assert.ok(chatJs.includes('authorityRequestHandledBySaasHandoffInChat(authorityRequestFromJob(job))'), 'Explicit X handoff authority waits should be eligible for SaaS app handoff instead of chat approval dead-ends.');
 assert.ok(appHandoffGateJs.includes('x_post_approval'), 'Explicit X approval artifact metadata should still route to X Client Ops app handoff.');
+assert.equal(
+  explicitHandoffArtifactTypesFromAuthorityRequest({
+    missing_connectors: ['x'],
+    missing_connector_capabilities: ['x.post'],
+    reason: 'X connector approval is required.'
+  }).size,
+  0,
+  'Connector-only authority requests must not synthesize app handoff artifact types.'
+);
+assert.equal(
+  explicitHandoffArtifactTypesFromAuthorityRequest({
+    action_kinds: ['x_post_approval']
+  }).has('x_post_packet'),
+  true,
+  'Explicit authority request action metadata should still route X app handoff artifacts.'
+);
 assert.ok(chatJs.includes('function renderAppHandoffTools'), 'Chat deliveries should expose generic app handoff cards.');
 assert.ok(chatJs.includes('function renderAppHandoffTree'), 'Chat deliveries should render the preparation artifact to app routing tree.');
 assert.ok(chatJs.includes('function renderAppHandoffRoutingPreview'), 'Agent map progress should preview SaaS routing before final delivery.');
@@ -1121,7 +1209,8 @@ assert.ok(chatJs.includes('appHandoffGateRankEntries'), 'Chat should delegate ap
 assert.ok(!chatJs.includes('function appHandoffRelevanceScore'), 'Chat must not duplicate app handoff relevance scoring.');
 assert.ok(!chatJs.includes('function appHandoffSpecificityScore'), 'Chat must not duplicate app handoff specificity scoring.');
 assert.ok(appHandoffGateJs.includes('handoffSpecificityScore'), 'Generic app handoff candidates should carry a specificity score.');
-assert.ok(chatJs.includes('function appHandoffIsCaitManagedSurface'), 'App handoff ranking should distinguish CAIt-managed surfaces from future external apps without making them internal features.');
+assert.ok(appHandoffGateJs.includes('export function appHandoffIsCaitManagedSurface'), 'App handoff ranking should distinguish CAIt-managed surfaces from future external apps in the handoff gate.');
+assert.ok(!chatJs.includes('function appHandoffIsCaitManagedSurface'), 'Chat must not duplicate CAIt-managed app ranking policy.');
 assert.ok(appHandoffGateJs.includes('broadContractPenalty'), 'App handoff ranking should avoid letting broad generic apps outrank specialized apps by accepting everything.');
 assert.ok(chatJs.includes('function deliveryHandoffArtifactTypes'), 'App handoff scoring should derive explicit artifact types from the delivery.');
 assert.ok(appHandoffGateJs.includes('function addExplicitHandoffArtifactType'), 'App handoff gate should own explicit delivery file artifact metadata normalization.');
@@ -1134,6 +1223,8 @@ assert.ok(chatJs.includes('appHandoffGateExplicitArtifactTypesFromAuthorityReque
 assert.ok(appHandoffGateJs.includes('DEFAULT_HANDOFF_ARTIFACT_CAPABILITY_ALIASES'), 'App handoff gate should own artifact capability aliases.');
 assert.ok(appHandoffGateJs.includes('DEFAULT_HANDOFF_ARTIFACT_LABELS'), 'App handoff gate should own artifact labels.');
 assert.ok(appHandoffGateJs.includes('DEFAULT_HANDOFF_ARTIFACT_DESTINATION_HINTS'), 'App handoff gate should own destination hints.');
+assert.ok(appHandoffGateJs.includes("campaign_operations_plan: ['campaign_state'"), 'Campaign Operations delivery files should route into campaign app context handoff candidates.');
+assert.ok(appHandoffGateJs.includes('approval_backlog: Object.freeze'), 'Campaign approval backlog should be a first-class app handoff artifact.');
 assert.ok(!chatJs.includes('function addExplicitHandoffArtifactType'), 'Chat must not duplicate explicit app handoff artifact metadata normalization.');
 assert.ok(!chatJs.includes('const HANDOFF_ARTIFACT_CAPABILITY_ALIASES'), 'Chat must not own app handoff alias policy.');
 assert.ok(!chatJs.includes('const HANDOFF_ARTIFACT_LABELS'), 'Chat must not own app handoff labels.');
@@ -1161,8 +1252,10 @@ assert.ok(chatJs.includes('appContextFromTransferPayload'), 'Generic app handoff
 assert.ok(chatJs.includes('createAppAgentContextOpenUrl'), 'Generic app handoff fallback should create a server-side context open URL.');
 assert.ok(chatJs.includes('cait_app_context_id'), 'Generic app handoff fallback should pass only context identifiers in the app URL.');
 assert.ok(chatJs.includes('/api/app-contexts'), 'Generic app handoff fallback should use the server-side app context API.');
-assert.ok(chatJs.includes('function appHandoffQueryFallbackUrl'), 'Chat should keep an app-specific emergency URL fallback when a managed app cannot ingest server-side app contexts.');
-assert.ok(chatJs.includes('cait_x_post'), 'X Client Ops fallback should preserve the edited X draft text in the emergency launch URL.');
+assert.ok(!chatJs.includes('function appHandoffQueryFallbackUrl'), 'Chat must not keep app-specific URL payload fallbacks for handoff content.');
+assert.ok(!chatJs.includes('cait_x_post'), 'X Client Ops fallback must not place edited draft text in the app URL.');
+assert.ok(!chatJs.includes('generic_app_query_fallback'), 'Generic app handoff fallback should use server-side app contexts, not query payloads.');
+assert.ok(appManifestRegistryJs.includes("actionKind: 'x_post_handoff'"), 'X Client Ops handoff action kind should be manifest-declared instead of inferred from capabilities in chat.');
 assert.ok(chatJs.includes('artifact_type: artifactTypes[0]') && chatJs.includes('artifact_types: artifactTypes'), 'App context handoff should preserve explicit delivery artifact type contracts for downstream apps.');
 assert.ok(chatJs.includes('contentType: String(artifactTypes[0]'), 'Agent-app transfer delivery artifacts should prefer explicit artifact types over MIME fallbacks.');
 assert.ok(!chatJs.includes("{ contextPath: '/api/app-contexts' }"), 'Publisher handoff fallback should preserve app-specific context ingest routes instead of forcing the generic app-context endpoint.');
@@ -1360,6 +1453,7 @@ assert.ok(worker.includes("'/apps.js'"));
 assert.ok(worker.includes("'/analytics-console.html'"));
 assert.ok(worker.includes("'/publisher-approval.html'"));
 assert.ok(worker.includes("'/lead-ops.html'"));
+assert.ok(worker.includes("'/campaign-operations.html'"));
 assert.ok(worker.includes("'/delivery-manager.html'"));
 assert.ok(worker.includes("'/cait-app-bridge.js'"));
 assert.ok(worker.includes("'/app-manifest-registry.js'"));

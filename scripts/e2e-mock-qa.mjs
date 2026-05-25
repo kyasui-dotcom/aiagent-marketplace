@@ -67,7 +67,14 @@ function startProviderServer() {
         },
         files: [{
           name: `${taskType}-delivery.md`,
-          content: `# E2E ${taskType} delivery\n\nProvider-backed delivery.`
+          content: [
+            `# E2E ${taskType} delivery`,
+            '',
+            'Source: external provider endpoint returned this delivery artifact.',
+            'Risk: the job should fail if the provider only returns status metadata.',
+            'Recommendation: accept this concrete provider-backed delivery and continue the QA flow.',
+            'Next action: review the generated delivery in the job record.'
+          ].join('\n')
         }],
         usage: { input_tokens: 50, output_tokens: 50, total_tokens: 100, api_cost: 1 }
       }));
@@ -87,6 +94,8 @@ async function main() {
       ...process.env,
       NODE_ENV: 'test',
       ALLOW_IN_MEMORY_STORAGE: '1',
+      ALLOW_OPEN_WRITE_API: '1',
+      ALLOW_DEV_API: '1',
       BUILTIN_AGENT_SAMPLE_FALLBACK: '1',
       PORT: String(PORT)
     },
@@ -152,7 +161,7 @@ async function main() {
       body: JSON.stringify({ confirm_routing: true, manifest: {
         schema_version: 'agent-manifest/v1',
         name: 'seo_agent',
-        task_types: ['seo'],
+        task_types: ['seo', 'seo_specialist'],
         pricing: { premium_rate: 0.06, basic_rate: 0.1 },
         success_rate: 0.99,
         avg_latency_sec: 5,
@@ -229,7 +238,21 @@ async function main() {
         job_id: asyncJob.body.job_id,
         agent_id: asyncAgentId,
         status: 'completed',
-        report: { summary: 'async finished' },
+        report: {
+          summary: 'async finished with source-backed recommendation and risk note',
+          recommendation: 'Accept the async callback after confirming the delivery file exists.'
+        },
+        files: [{
+          name: 'async-delivery.md',
+          content: [
+            '# Async callback delivery',
+            '',
+            'Source: accepted provider callback completed the remote job.',
+            'Risk: async callbacks must include a concrete user-facing artifact.',
+            'Recommendation: store this delivery and keep duplicate callback protection enabled.',
+            'Next action: inspect the terminal job state.'
+          ].join('\n')
+        }],
         usage: { total_cost_basis: 70, compute_cost: 20, tool_cost: 10, labor_cost: 40 }
       })
     });
@@ -253,13 +276,26 @@ async function main() {
     assert.equal(workflowJob.body.order_strategy_resolved, 'multi');
     assert.ok(workflowJob.body.workflow_job_id);
     assert.ok(workflowJob.body.child_runs.length >= 2);
-    assert.ok(workflowJob.body.planned_task_types.includes('seo'));
+    assert.ok(
+      workflowJob.body.planned_task_types.includes('seo_specialist')
+        || workflowJob.body.planned_task_types.includes('seo'),
+      'workflow should include the SEO specialist planning task'
+    );
 
     const workflowState = await waitForJob(workflowJob.body.workflow_job_id, (job) => job.status === 'completed');
     assert.equal(workflowState.status, 200);
     const workflowStateJob = jobPayload(workflowState);
     assert.equal(workflowStateJob.jobKind, 'workflow');
-    assert.equal(workflowStateJob.status, 'completed');
+    assert.equal(workflowStateJob.status, 'completed', `workflow should complete: ${JSON.stringify({
+      status: workflowStateJob.status,
+      failureReason: workflowStateJob.failureReason || '',
+      statusCounts: workflowStateJob.workflow?.statusCounts || {},
+      childRuns: (workflowStateJob.workflow?.childRuns || []).map((run) => ({
+        taskType: run.taskType,
+        status: run.status,
+        failureReason: run.failureReason || run.failure_reason || ''
+      }))
+    })}`);
     assert.ok((workflowStateJob.workflow?.childRuns || []).length >= 2);
 
     const autoSingleJob = await request('/api/jobs', {

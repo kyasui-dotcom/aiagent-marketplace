@@ -8,8 +8,8 @@
   <meta name="robots" content="noindex,follow" />
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
-  <link rel="stylesheet" href="/app-console.css?v=20260507d" />
-  <script type="module" src="/lead-ops.js?v=20260516a"></script>
+  <link rel="stylesheet" href="/app-console.css?v=20260524a" />
+  <script type="module" src="/lead-ops.js?v=20260524b"></script>
 </head>
 <body>
   <main class="app-console-shell" aria-label="CAIt Lead Ops Console">
@@ -24,6 +24,7 @@
           <a href="/delivery-manager.html">Deliveries</a>
         </nav>
         <div class="app-header-actions">
+          <a class="ghost-btn" id="leadReturnToChatLink" href="/chat" hidden>Return to chat</a>
           <button class="primary-btn" id="sendLeadContextBtn" type="button">Send to CAIt</button>
         </div>
       </header>
@@ -80,6 +81,49 @@
             <article class="metric-card"><span>Scheduled</span><strong id="leadScheduledMetric">-</strong><small>time-based send plan</small></article>
             <article class="metric-card"><span>Trigger-ready</span><strong id="leadTriggeredMetric">-</strong><small>event-based send plan</small></article>
             <article class="metric-card"><span>Waiting</span><strong id="leadBlockedMetric">-</strong><small>missing evidence or consent</small></article>
+          </section>
+
+          <section class="notice" id="leadHandoffSessionNotice" hidden aria-label="CAIt lead handoff session notice"></section>
+
+          <section class="ops-story-grid" aria-label="Lead operations readiness">
+            <article class="panel ops-story-panel">
+              <div class="status-row compact-head">
+                <div>
+                  <span class="kicker">Operational lead handoff</span>
+                  <h2>Keep outreach evidence and approval state attached.</h2>
+                </div>
+                <span class="status-pill pending" id="leadOpsReadinessPill">Rows not loaded</span>
+              </div>
+              <div class="ops-compare-grid">
+                <section class="ops-compare-card before">
+                  <span class="ops-compare-label">Before</span>
+                  <h3>Disposable lead notes</h3>
+                  <ul class="ops-bullet-list">
+                    <li>Contact paths, evidence URLs, and consent labels drift between chats.</li>
+                    <li>Message drafts lose the source row they were based on.</li>
+                    <li>Scheduled or event-triggered sends are hard to audit later.</li>
+                  </ul>
+                </section>
+                <section class="ops-compare-card after">
+                  <span class="ops-compare-label">After</span>
+                  <h3>Lead Ops packet</h3>
+                  <ul class="ops-bullet-list">
+                    <li>Public-source evidence, contact path, and consent basis stay in one packet.</li>
+                    <li>Email, SMS, schedule, and trigger rules remain tied to the selected lead.</li>
+                    <li>CAIt receives a server-side context reference for follow-up orders.</li>
+                  </ul>
+                </section>
+              </div>
+            </article>
+            <article class="panel ops-readiness-panel">
+              <div class="status-row compact-head">
+                <div>
+                  <span class="kicker">Reusable execution context</span>
+                  <h2>What the next run can trust</h2>
+                </div>
+              </div>
+              <div class="ops-readiness-list" id="leadOpsReadinessList"></div>
+            </article>
           </section>
 
           <section class="split-main">

@@ -9,7 +9,7 @@
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/app-console.css?v=20260507b" />
-  <script type="module" src="/publisher-approval.js?v=20260519a"></script>
+  <script type="module" src="/publisher-approval.js?v=20260525a"></script>
 </head>
 <body>
   <main class="app-console-shell" aria-label="CAIt Publisher and Approval Studio">
@@ -24,6 +24,7 @@
           <a href="/delivery-manager.html">Deliveries</a>
         </nav>
         <div class="app-header-actions">
+          <a class="ghost-btn" id="returnToChatLink" href="/chat" hidden>Return to chat</a>
           <button class="primary-btn" id="sendPacketBtn" type="button">Send to CAIt</button>
         </div>
       </header>
@@ -93,6 +94,49 @@
               <span>Approved</span>
               <strong id="publisherApprovedMetric">0</strong>
               <small>Ready for CAIt or repository handoff.</small>
+            </article>
+          </section>
+
+          <section class="notice" id="handoffSessionNotice" hidden aria-label="CAIt handoff session notice"></section>
+
+          <section class="ops-story-grid" aria-label="Operational publishing value">
+            <article class="panel ops-story-panel">
+              <div class="status-row compact-head">
+                <div>
+                  <span class="kicker">Why this beats one-off chat output</span>
+                  <h2>Stable publishing operations, not disposable agent text.</h2>
+                </div>
+                <span class="status-pill approved" id="opsReadinessPill">Queue not loaded</span>
+              </div>
+              <div class="ops-compare-grid">
+                <section class="ops-compare-card before">
+                  <span class="ops-compare-label">Before</span>
+                  <h3>One-off AIAGENT chat</h3>
+                  <ul class="ops-bullet-list">
+                    <li>Drafts and approval status disappear between chats.</li>
+                    <li>Destination rules, locale, and owner context are easy to drop.</li>
+                    <li>Connector readiness and publish evidence are checked too late.</li>
+                  </ul>
+                </section>
+                <section class="ops-compare-card after">
+                  <span class="ops-compare-label">After</span>
+                  <h3>Publisher-driven SaaS workflow</h3>
+                  <ul class="ops-bullet-list">
+                    <li>Approval queue, destination profile, and market/locale stay visible.</li>
+                    <li>GitHub PR, WordPress draft, and X readiness remain tied to the packet.</li>
+                    <li>CAIt receives a server-side context reference for the next run.</li>
+                  </ul>
+                </section>
+              </div>
+            </article>
+            <article class="panel ops-readiness-panel">
+              <div class="status-row compact-head">
+                <div>
+                  <span class="kicker">Operational readiness</span>
+                  <h2>What stays attached to the next run</h2>
+                </div>
+              </div>
+              <div class="ops-readiness-list" id="opsReadinessList"></div>
             </article>
           </section>
 

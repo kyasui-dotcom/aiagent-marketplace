@@ -220,11 +220,11 @@ const AGENT_SEO_DETAILS = {
     delivery: ['mode decision', 'SERP snapshot', 'competitor table', 'E-E-A-T angle', 'article or rewrite draft', 'measurement notes']
   },
   hiring: {
-    keyword: 'job description AI agent',
-    title: 'Hiring JD AI Agent for Role Briefs and Job Descriptions',
-    searchIntent: 'hiring managers who need a sharper role brief, outcomes, must-have signals, interview calibration, and JD draft',
-    bestFor: ['role definition', 'job description drafting', 'interview signal design'],
-    delivery: ['role mission', 'outcomes', 'must-haves', 'interview signals', 'JD draft']
+    keyword: 'hiring packet AI agent',
+    title: 'Hiring Packet AI Agent for Role Briefs, Scorecards, and Job Descriptions',
+    searchIntent: 'hiring managers who need a reviewable hiring packet with role outcomes, must-have signals, interview calibration, decision thresholds, and JD draft',
+    bestFor: ['role packet preparation', 'job description drafting', 'interview signal design', 'hiring-owner handoff'],
+    delivery: ['role mission', 'outcomes', 'scorecard', 'must-have signals', 'interview loop', 'JD draft', 'approval handoff']
   },
   diligence: {
     keyword: 'due diligence AI agent',
