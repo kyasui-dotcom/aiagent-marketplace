@@ -138,10 +138,10 @@ const productResearchContractExpectations = [
   },
   {
     kind: 'validation',
-    actions: ['prepare_falsification_plan', 'prepare_validation_next_step', 'prepare_interview_or_smoke_packet'],
-    requiredSections: ['Target user', 'Current workaround', 'Riskiest assumption', 'Test design', 'Test script or asset', 'Success threshold', 'Kill criteria', 'False positives to ignore', 'Next decision'],
-    guidedSections: ['Target user', 'Current workaround', 'Riskiest assumption', 'Test design', 'Test script or asset', 'Success threshold', 'Kill criteria', 'False positives to ignore', 'Next decision'],
-    forbiddenClaims: ['respondents committed without evidence']
+    actions: ['prepare_falsification_plan', 'prepare_validation_next_step', 'prepare_interview_or_smoke_packet', 'prepare_validation_execution_handoff'],
+    requiredSections: ['Target user', 'Current workaround', 'Riskiest assumption', 'Test design', 'Test script or asset', 'Success threshold', 'Kill criteria', 'False positives to ignore', 'Execution handoff packet', 'Evidence return path', 'Execution status labels', 'Next decision'],
+    guidedSections: ['Target user', 'Current workaround', 'Riskiest assumption', 'Test design', 'Test script or asset', 'Success threshold', 'Kill criteria', 'False positives to ignore', 'Execution handoff packet', 'Evidence return path', 'Execution status labels', 'Next decision'],
+    forbiddenClaims: ['respondents committed without evidence', 'test launched without owner or channel proof', 'learning accepted without result evidence', 'continue or kill decision made without proof']
   },
   {
     kind: 'teardown',
