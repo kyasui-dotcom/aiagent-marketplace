@@ -108,7 +108,7 @@ import {
   isDeliveryHistoryQuestionIntentText,
   isLeaderCatalogQuestionIntentText,
   isNonOrderConversationIntentText
-} from './work-intent-resolver.js?v=20260512a';
+} from './work-intent-resolver.js?v=20260526a';
 
 const CHATUX_RETURN_PATH = '/chat';
 const CHATUX_BACKFILL_INTERVAL_MS = 10000;

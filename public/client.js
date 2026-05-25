@@ -42,11 +42,10 @@ import {
   validateDeliveryExecutionDraft
 } from './delivery-action-contract.js';
 import {
-  inferWorkIntentRoute,
   isLeaderCatalogQuestionIntentText,
   isNonOrderConversationIntentText,
   isRepoBackedCodeIntentText
-} from './work-intent-resolver.js?v=20260507b';
+} from './work-intent-resolver.js?v=20260526a';
 import {
   chatEngineBuildIntakeCombinedPrompt,
   chatEngineBuildIntakeState,

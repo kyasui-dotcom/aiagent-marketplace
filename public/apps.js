@@ -225,6 +225,9 @@ async function loadApps() {
 
 function normalizeContext(record = {}) {
   const context = record.context && typeof record.context === 'object' ? record.context : {};
+  const operationalSummary = record.operational_summary && typeof record.operational_summary === 'object'
+    ? record.operational_summary
+    : {};
   const id = String(record.id || context.id || '').trim();
   if (!id) return null;
   return {
@@ -233,8 +236,30 @@ function normalizeContext(record = {}) {
     title: String(record.title || context.title || 'App context').trim(),
     summary: String(record.summary || context.summary || '').trim(),
     status: String(record.status || 'ready').trim(),
-    createdAt: String(record.created_at || context.created_at || '').trim()
+    createdAt: String(record.created_at || context.created_at || '').trim(),
+    expiresAt: String(record.expires_at || context.expires_at || '').trim(),
+    operationalSummary
   };
+}
+
+function contextAnchorChips(summary = {}) {
+  const entries = [
+    ['artifacts', 'Artifacts'],
+    ['delivery_files', 'Files'],
+    ['metrics', 'Metrics'],
+    ['approval_requests', 'Approvals'],
+    ['recommended_next_actions', 'Next actions'],
+    ['handoff_targets', 'Targets'],
+    ['facts', 'Facts']
+  ];
+  const chips = entries
+    .map(([key, label]) => {
+      const count = Number(summary[key] || 0);
+      return count > 0 ? `<span class="mini-chip context-anchor-chip">${escapeHtml(label)} ${count}</span>` : '';
+    })
+    .filter(Boolean);
+  if (!chips.length) return '<span class="mini-chip context-anchor-chip">Retained packet</span>';
+  return chips.slice(0, 6).join('');
 }
 
 function renderNotice(message = '') {
@@ -253,7 +278,8 @@ function renderContexts(records = []) {
     const meta = [
       item.source,
       item.status ? `Status: ${item.status}` : '',
-      item.createdAt ? `Created ${displayDate(item.createdAt)}` : ''
+      item.createdAt ? `Created ${displayDate(item.createdAt)}` : '',
+      item.expiresAt ? `Expires ${displayDate(item.expiresAt)}` : ''
     ].filter(Boolean).join(' / ');
     return [
       '<article class="context-row">',
@@ -261,6 +287,7 @@ function renderContexts(records = []) {
       `<h3>${escapeHtml(item.title)}</h3>`,
       `<p class="context-meta">${escapeHtml(meta)}</p>`,
       item.summary ? `<p>${escapeHtml(compact(item.summary))}</p>` : '',
+      `<div class="context-anchor-strip" aria-label="Retained context anchors">${contextAnchorChips(item.operationalSummary)}</div>`,
       '</div>',
       '<div class="context-actions">',
       `<a class="primary-btn" href="/chat?app_context_id=${encodeURIComponent(item.id)}">Use in chat</a>`,

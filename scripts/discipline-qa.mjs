@@ -39,6 +39,7 @@ const measurementEvidenceGateSource = read('public/measurement-evidence-gate.js'
 const agentProgressViewSource = read('public/agent-progress-view.js');
 const clientSource = read('public/client.js');
 const workActionRegistrySource = read('public/work-action-registry.js');
+const workIntentResolverSource = read('public/work-intent-resolver.js');
 const campaignOperationsSource = read('lib/builtin-agents/agents/campaign-operations.js');
 const campaignRoutesSource = read('lib/routes/campaigns.js');
 const adsPlannerSource = read('lib/builtin-agents/agents/ads-planner.js');
@@ -452,6 +453,21 @@ assertNotIncludes(chatHtmlSource, [
 assertNotIncludes(openChatIntentSource, [
   'LEADER_INTAKE_LLM_OVERRIDE_AGENT_QUESTIONS'
 ], 'lib/open-chat-intent.js');
+assertNotIncludes(workIntentResolverSource, [
+  'export function inferWorkIntentTaskType',
+  'export function inferWorkIntentRoute',
+  'export function prepareWorkOrderSeed',
+  'function explicitLeaderTaskTypeFromText',
+  'const LEADER_TASK_TYPES',
+  'const AGENT_TASK_LABELS',
+  'routeOwnerForLeader',
+  'routeOwnerForAgent'
+], 'public/work-intent-resolver.js');
+assert.equal(
+  clientSource.includes('inferWorkIntentRoute'),
+  false,
+  'client must not import browser-side agent routing; order intent routing belongs to server/agent definitions'
+);
 assert.ok(
   openChatIntentSource.includes("if (preliminary?.intake?.questionSource === 'rules') return preliminary;"),
   'generic Open Chat LLM intake must not replace agent-owned leaderBehavior.intakeQuestions'

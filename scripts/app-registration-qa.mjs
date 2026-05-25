@@ -112,7 +112,10 @@ const contextRecord = createAppContextRecord({
   source_app: 'x-client-ops',
   title: 'X action packet',
   summary: 'Approved post draft and strategy context.',
-  facts: ['draft ready']
+  facts: ['draft ready'],
+  artifacts: [{ type: 'post_text', content: 'Approved draft.' }],
+  approval_requests: [{ action: 'post_now', status: 'needs approval' }],
+  recommended_next_actions: ['Review retained X action packet in chat.']
 }, { login: 'publisher' }, { id: 'ctx-test', accessToken: 'ctx_secret' });
 await storage.mutate(async (draft) => {
   draft.apps.unshift(app);
@@ -122,6 +125,12 @@ const after = await storage.getState();
 assert.ok(after.apps.some((item) => item.id === app.id), 'custom app should persist in storage state');
 assert.ok(after.appContexts.some((item) => item.id === 'ctx-test'), 'app context should persist in storage state');
 assert.equal(publicAppContext(contextRecord).app_context_token, undefined, 'public app context must not expose token');
+const publicContextWithoutPayload = publicAppContext(contextRecord, { includePayload: false });
+assert.equal(publicContextWithoutPayload.context, undefined, 'public app context list rows should not expose packet bodies');
+assert.equal(publicContextWithoutPayload.operational_summary.artifacts, 1, 'public app context list rows should expose safe artifact counts');
+assert.equal(publicContextWithoutPayload.operational_summary.approval_requests, 1, 'public app context list rows should expose safe approval counts');
+assert.equal(publicContextWithoutPayload.operational_summary.recommended_next_actions, 1, 'public app context list rows should expose safe next-action counts');
+assert.equal(publicContextWithoutPayload.operational_summary.anchors_total >= 4, true, 'public app context list rows should show retained operational anchors');
 
 const server = readFileSync(new URL('../server.js', import.meta.url), 'utf8');
 const worker = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');

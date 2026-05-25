@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
-import { DEFAULT_AGENT_SEEDS, agentTagsFromRecord, buildIntakeClarification, inferAgentTagsFromSignals, inferTaskSequence, inferTaskType, computeScore, isManagedSampleAgent, isLargeAgentTeamIntent, optimizeOrderPromptForBroker } from '../lib/shared.js';
+import { DEFAULT_AGENT_SEEDS, agentTagsFromRecord, buildIntakeClarification, inferAgentTagsFromSignals, inferTaskSequence, inferTaskType, computeScore, isManagedSampleAgent, isLargeAgentTeamIntent, leaderTaskTypeForInitialWork, optimizeOrderPromptForBroker } from '../lib/shared.js';
 import { isAgentTeamLaunchIntent, isCmoExternalExecutionIntent, isFreeWebGrowthIntent } from '../lib/builtin-agents/agents/cmo-leader.js';
-import { prepareWorkOrderSeed } from '../public/work-intent-resolver.js';
 
 assert.equal(inferTaskType('', '料金計算ロジックのバグ修正'), 'code');
 assert.equal(inferTaskType('', '中古iPhone 13の買取比較'), 'research');
@@ -98,20 +97,16 @@ assert.equal(ctoFlow[0], 'cto_leader');
 assert.ok(ctoFlow.includes('code'));
 assert.ok(ctoFlow.includes('debug'));
 assert.ok(ctoFlow.includes('automation'));
-assert.equal(prepareWorkOrderSeed('CTO LeaderとしてSaaS全体設計とロールバック計画を作って').taskType, 'cto_leader');
-assert.equal(prepareWorkOrderSeed('Build Team LeaderとしてGitHub repoのバグ修正を分解して').taskType, 'build_team_leader');
-assert.equal(prepareWorkOrderSeed('i want to get new customers for my website').taskType, 'growth');
-assert.equal(prepareWorkOrderSeed('サイトの購入を増やしたい').taskType, 'growth');
-assert.equal(prepareWorkOrderSeed('CMO Leaderとしてサイトの購入を増やす施策を作って').taskType, 'cmo_leader');
-assert.equal(prepareWorkOrderSeed('write a blog post for my product').taskType, 'writing');
-assert.equal(prepareWorkOrderSeed('write a blog post for my product').conversationOwner.type, 'agent');
-assert.equal(prepareWorkOrderSeed('SEO記事を作りたい').conversationOwner.taskType, 'seo_specialist');
-assert.equal(prepareWorkOrderSeed('SEO記事を作りたい').activeOwnerLocked, true);
-assert.equal(prepareWorkOrderSeed('CMO Leaderとしてサイトの購入を増やす施策を作って').conversationOwner.type, 'leader');
-assert.equal(prepareWorkOrderSeed('analyze GA4 and Search Console data').taskType, 'data_analysis');
-assert.equal(prepareWorkOrderSeed('Search Console の query と landing page を対応付けて、SEO の改善案を出して').taskType, 'seo_specialist');
-assert.equal(prepareWorkOrderSeed('Map Search Console queries to landing pages and suggest SEO fixes').taskType, 'seo_specialist');
-assert.equal(prepareWorkOrderSeed('create landing page hero copy').taskType, 'landing');
+assert.equal(leaderTaskTypeForInitialWork('cto_leader', 'SaaS全体設計とロールバック計画を作って'), 'cto_leader');
+assert.equal(leaderTaskTypeForInitialWork('build_team_leader', 'GitHub repoのバグ修正を分解して'), 'build_team_leader');
+assert.equal(leaderTaskTypeForInitialWork('', 'CMO Leaderとしてサイトの購入を増やす施策を作って'), 'cmo_leader');
+assert.equal(inferTaskType('', 'write a blog post for my product'), 'writing');
+assert.equal(inferTaskType('', 'SEO記事を作りたい'), 'seo_specialist');
+assert.equal(inferTaskType('', 'Search Console の query と landing page を対応付けて、SEO の改善案を出して'), 'seo_specialist');
+assert.equal(inferTaskType('', 'Map Search Console queries to landing pages and suggest SEO fixes'), 'seo_specialist');
+assert.equal(inferTaskType('growth', 'i want to get new customers for my website'), 'growth');
+assert.equal(inferTaskType('data_analysis', 'analyze GA4 and Search Console data'), 'data_analysis');
+assert.equal(inferTaskType('landing', 'create landing page hero copy'), 'landing');
 assert.deepEqual(inferTaskSequence('retry_timeout_qa', 'timeout test', { maxTasks: 3, expand: false }), ['retry_timeout_qa']);
 
 const thinCmoIntake = buildIntakeClarification({

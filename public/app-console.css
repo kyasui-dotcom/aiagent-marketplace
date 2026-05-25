@@ -817,6 +817,19 @@ a.detail-card span {
   margin-bottom: 0;
 }
 
+.context-anchor-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.context-anchor-chip {
+  border-color: rgba(25, 91, 255, .22);
+  background: rgba(25, 91, 255, .07);
+  color: #164baf;
+}
+
 .context-meta {
   color: var(--muted);
   font-size: 12px;
