@@ -103,7 +103,7 @@ import {
   caitAppContextChatPrompt,
   caitAppContextThreadHtml,
   consumeCaitAppContextForChat
-} from './cait-app-bridge.js?v=20260516a';
+} from './cait-app-bridge.js?v=20260525b';
 import {
   isDeliveryHistoryQuestionIntentText,
   isLeaderCatalogQuestionIntentText,

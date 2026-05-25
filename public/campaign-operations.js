@@ -1,4 +1,4 @@
-import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260516a';
+import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260525b';
 
 const listEl = document.getElementById('campaignList');
 const detailEl = document.getElementById('campaignDetail');
