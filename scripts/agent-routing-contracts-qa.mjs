@@ -45,7 +45,7 @@ for (const agent of DEFAULT_AGENT_SEEDS) {
 }
 
 const expectedOutputContracts = new Map([
-  ['agent_ads_planner_01', ['objective', 'audience', 'provider', 'campaign_structure', 'budget_cap_and_cpa_assumption', 'stop_rules', 'creative_asset_packet', 'ads_saas_handoff', 'approval_and_launch_boundary', 'execution_status_labels', 'measurement_plan']],
+  ['agent_ads_planner_01', ['objective', 'pre_launch_measurement_blocker', 'audience', 'provider', 'campaign_structure', 'budget_cap_and_cpa_assumption', 'stop_rules', 'creative_asset_packet', 'ads_saas_handoff', 'approval_and_launch_boundary', 'execution_status_labels', 'measurement_plan']],
   ['agent_campaign_operations_01', ['campaign_state', 'publisher_queue', 'approval_backlog', 'connector_readiness', 'planned_action_queue', 'now_week_0_1', 'next_week_1_3', 'waiting_conditions', 'measurement_loop', 'next_action_owner']],
   ['agent_cfo_leader_01', ['decision_question', 'assumption_table', 'source_to_model_ledger', 'formula_model', 'scenarios', 'sensitivity', 'decision_trigger', 'approval_owner', 'execution_proof_tracker', 'confidence_labels', 'risk_notes']],
   ['agent_list_creator_01', ['lead_rows', 'evidence_urls', 'next_actions', 'lead_ops_packet', 'target_segment', 'source_policy', 'qualification_rules', 'field_schema', 'row_level_source_ledger', 'exclusion_and_duplicate_review', 'review_status', 'approval_owner', 'import_outreach_boundary', 'downstream_handoff_packet', 'execution_proof_tracker', 'next_owner']],

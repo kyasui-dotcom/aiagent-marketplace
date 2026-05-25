@@ -103,12 +103,14 @@
       "id": "ads-planner-budget-guardrails",
       "file": "ads-planner.js",
       "kind": "ads_planner",
-      "prompt": "Prepare a Google Ads plan for the marketplace with a $300 test budget, target CPA $30, and strict stop rules. Do not launch ads.",
+      "prompt": "Prepare a Google Ads plan for aiagent-marketplace.net with a $300 test budget, target CPA $30, strict stop rules, draft creative packet, launch approval handoff, and a clear blocker if conversion tracking is not verified. Do not launch ads.",
       "body": {
         "ads": {
           "provider": "google_ads",
           "budgetCap": 300,
-          "targetCpa": 30
+          "targetCpa": 30,
+          "conversionEvent": "paid_order",
+          "conversionTrackingStatus": "unverified"
         }
       }
     },

@@ -278,9 +278,9 @@ const marketingExecutionContractExpectations = [
   {
     kind: 'ads_planner',
     actions: ['prepare_ads_plan', 'prepare_ads_saas_handoff', 'prepare_creative_asset_packet', 'prepare_launch_approval_handoff'],
-    requiredSections: ['Creative asset packet', 'Ads SaaS handoff', 'Approval and launch boundary', 'Execution status labels'],
-    guidedSections: ['Creative asset packet', 'Ads SaaS handoff', 'Approval and launch boundary', 'Execution status labels'],
-    forbiddenClaims: ['creative approved without owner proof', 'conversion tracking verified without connector proof', 'campaign ready to launch without approval']
+    requiredSections: ['Pre-launch measurement blocker', 'Creative asset packet', 'Ads SaaS handoff', 'Approval and launch boundary', 'Execution status labels'],
+    guidedSections: ['Pre-launch measurement blocker', 'Creative asset packet', 'Ads SaaS handoff', 'Approval and launch boundary', 'Execution status labels'],
+    forbiddenClaims: ['creative approved without owner proof', 'conversion tracking verified without connector proof', 'campaign ready to launch without approval', 'launchable campaign while conversion tracking is unverified']
   },
   {
     kind: 'directory_submission',
@@ -955,12 +955,15 @@ const fallbackAdsPlan = await adsPlanner.provider.runJob({
       'Plan a small Google Ads test for https://aiagent-marketplace.net.',
       'Audience: developers and technical founders',
       'Budget cap: 300',
-      'Target CPA: 20'
+      'Target CPA: 20',
+      'Conversion event: paid_order; conversion tracking is not verified'
     ].join('\n'),
     output_language: 'en',
     provider: 'google_ads',
     budgetCap: 300,
     targetCpa: 20,
+    conversionEvent: 'paid_order',
+    conversionTrackingStatus: 'unverified',
     input: { target_url: 'https://aiagent-marketplace.net' }
   },
   source: {},
@@ -968,6 +971,7 @@ const fallbackAdsPlan = await adsPlanner.provider.runJob({
 });
 assertUserFacingDelivery(fallbackAdsPlan, 'ads_planner fallback delivery', [
   /## Objective/i,
+  /## Pre-launch measurement blocker/i,
   /## Audience/i,
   /## Provider/i,
   /## Campaign structure/i,
@@ -990,12 +994,15 @@ const fallbackAdsPlanJa = await adsPlanner.provider.runJob({
       'https://aiagent-marketplace.net の Google 広告テストを計画してください。',
       '対象: 開発者と技術系ファウンダー',
       '予算上限: 300',
-      '目標CPA: 20'
+      '目標CPA: 20',
+      'CVイベント: paid_order、CV計測は未確認'
     ].join('\n'),
     output_language: 'ja',
     provider: 'google_ads',
     budgetCap: 300,
     targetCpa: 20,
+    conversionEvent: 'paid_order',
+    conversionTrackingStatus: '未確認',
     input: { target_url: 'https://aiagent-marketplace.net' }
   },
   source: {},
@@ -1003,6 +1010,7 @@ const fallbackAdsPlanJa = await adsPlanner.provider.runJob({
 });
 const fallbackAdsContentJa = fallbackAdsPlanJa.files?.[0]?.content || '';
 assert.match(fallbackAdsContentJa, /## 目的/i, 'ads_planner Japanese fallback should keep localized section headings');
+assert.match(fallbackAdsContentJa, /## 配信前の計測ブロッカー/i, 'ads_planner Japanese fallback should include a localized measurement blocker section');
 assert.match(fallbackAdsContentJa, /## Ads SaaS 引き継ぎ/i, 'ads_planner Japanese fallback should localize handoff section');
 assert.match(fallbackAdsContentJa, /## クリエイティブアセット案/i, 'ads_planner Japanese fallback should include a localized creative asset packet');
 assert.match(fallbackAdsContentJa, /## 実行ステータスラベル/i, 'ads_planner Japanese fallback should include localized execution status labels');
