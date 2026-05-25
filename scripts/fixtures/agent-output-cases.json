@@ -326,7 +326,7 @@
       "id": "build-team-leader-implementation",
       "file": "build-team-leader.js",
       "kind": "build_team_leader",
-      "prompt": "Lead a repo-aware bug fix for an order status page with multiple implementers. Include file ownership, shared-file conflict matrix, serial vs parallel sequencing, integration owner, validation commands, rollback path, and PR handoff criteria.",
+      "prompt": "Lead a repo-aware bug fix for an order status page with multiple implementers. Include file ownership, write-intent conflict matrix, serial vs parallel sequencing, serial blockers, downstream contract owner, integration owner, validation commands, rollback path, and PR handoff criteria.",
       "body": {
         "input": {
           "affected_area": "order status page",
@@ -338,6 +338,20 @@
           "suspected_shared_files": [
             "lib/api-routes.js",
             "scripts/ui-qa.mjs"
+          ],
+          "shared_file_write_intents": [
+            {
+              "file": "lib/api-routes.js",
+              "owners": ["API implementer", "UI implementer"],
+              "writes": ["status endpoint response shape", "frontend-facing field contract"],
+              "downstream_contract_owner": "UI implementer"
+            },
+            {
+              "file": "scripts/ui-qa.mjs",
+              "owners": ["UI implementer", "QA owner"],
+              "writes": ["order status assertion", "regression fixture coverage"],
+              "downstream_contract_owner": "QA owner"
+            }
           ],
           "owner_candidates": [
             "UI implementer",
