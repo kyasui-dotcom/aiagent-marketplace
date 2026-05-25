@@ -652,11 +652,18 @@
       "id": "validation-falsification-plan",
       "file": "validation.js",
       "kind": "validation",
-      "prompt": "Validate an app idea for recurring AI agent orders. Include target user, current workaround, riskiest assumption, falsification test, success threshold, kill criteria, and next decision.",
+      "prompt": "Validate an app idea for recurring AI agent orders. Include target user, current workaround, riskiest assumption, falsification test, concrete smoke-test asset, learning acceptance table, success threshold, kill criteria, evidence return path, execution status labels, and next decision. Do not claim the test launched, learning was accepted, or continue/kill decision was made without owner approval and result proof.",
       "body": {
         "input": {
           "target_user": "solo founder",
-          "current_workaround": "manual freelancer tasks"
+          "current_workaround": "manual freelancer tasks",
+          "idea": "scheduled recurring AI agent orders for weekly growth and operations work",
+          "riskiest_assumption": "solo founders will commit to a recurring paid workflow before seeing a custom setup",
+          "test_channel": "founder-owned email list or 10 warm founder DMs",
+          "test_owner": "founder",
+          "result_review_owner": "founder",
+          "proof_capture": "spreadsheet with respondent, source, response, commitment signal, and screenshot/link proof",
+          "approval_status": "owner approval not supplied; test not launched"
         }
       }
     }
