@@ -257,9 +257,9 @@ const marketingExecutionContractExpectations = [
   {
     kind: 'seo_specialist',
     actions: ['prepare_seo_rewrite_packet', 'prepare_article_plan_or_batch', 'prepare_publisher_handoff', 'prepare_search_console_intent_map'],
-    requiredSections: ['SEO mode', 'SERP/source status', 'Search Console source status', 'Search Console landing intent map', 'CTA/trust plan', 'Source ledger'],
-    guidedSections: ['Mode, conversion goal, and target keyword', 'Search Console source status', 'Search Console landing intent map', 'CTA, trust, and internal-link plan'],
-    forbiddenClaims: ['Search Console data verified without export or connector proof', 'intent mapped from Search Console without query rows']
+    requiredSections: ['SEO mode', 'SERP/source status', 'Search Console source status', 'Search Console row coverage ledger', 'Search Console landing intent map', 'CTA/trust plan', 'Source ledger'],
+    guidedSections: ['Mode, conversion goal, and target keyword', 'Search Console source status', 'Search Console row coverage ledger', 'Search Console landing intent map', 'CTA, trust, and internal-link plan'],
+    forbiddenClaims: ['Search Console data verified without export or connector proof', 'intent mapped from Search Console without query rows', 'query performance inferred for missing Search Console rows']
   },
   {
     kind: 'acquisition_automation',

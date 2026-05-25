@@ -118,12 +118,40 @@
       "id": "seo-specialist-rewrite",
       "file": "seo-specialist.js",
       "kind": "seo_specialist",
-      "prompt": "Rewrite the homepage for the keyword AI agent marketplace. Target English-speaking founders and signup conversion. Include SERP/source status and Publisher handoff boundary.",
+      "prompt": "Rewrite the homepage for the keyword AI agent marketplace. Target English-speaking founders and signup conversion. Use the supplied Search Console rows to create a row-level landing intent map, and explicitly keep any missing query/page exports unverified instead of inferring their performance. Include SERP/source status and Publisher handoff boundary.",
       "body": {
         "input": {
           "target_url": "https://aiagent-marketplace.net",
           "keyword": "AI agent marketplace",
-          "market": "English"
+          "market": "English",
+          "conversion_goal": "signup",
+          "search_console": {
+            "property": "sc-domain:aiagent-marketplace.net",
+            "date_range": "2026-05-01 to 2026-05-24",
+            "source_status": "csv export supplied by owner, connector not executed by agent",
+            "rows": [
+              {
+                "query": "ai agent marketplace",
+                "landing_page": "https://aiagent-marketplace.net/",
+                "impressions": 420,
+                "clicks": 18,
+                "ctr": "4.3%",
+                "position": 11.8
+              },
+              {
+                "query": "hire ai agent",
+                "landing_page": "https://aiagent-marketplace.net/",
+                "impressions": 130,
+                "clicks": 3,
+                "ctr": "2.3%",
+                "position": 18.2
+              }
+            ],
+            "missing_exports": [
+              "pricing page query/page rows",
+              "brand query rows"
+            ]
+          }
         }
       }
     },
