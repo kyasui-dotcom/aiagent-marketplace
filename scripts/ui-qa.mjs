@@ -829,7 +829,7 @@ for (const app of caitManagedSurfaceEntries) {
 }
 
 assert.ok(analyticsJs.includes("source_app: 'analytics_console'"), 'Analytics app logic should stay in analytics-console.js.');
-assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260525b"), 'Analytics Console should load the latest CAIt app bridge.');
+assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260526b"), 'Analytics Console should load the latest CAIt app bridge.');
 assert.ok(caitAppBridge.includes("`${origin}/auth/status`"), 'CAIt app bridge should read auth status before same-origin context handoff.');
 assert.ok(caitAppBridge.includes("headers['x-aiagent2-csrf'] = csrfToken"), 'CAIt app bridge should attach CSRF token to same-origin context handoff writes.');
 assert.ok(caitAppBridge.includes('createServerAppContextWithRetry'), 'CAIt app bridge should retry server-side app context writes.');
