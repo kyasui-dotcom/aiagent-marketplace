@@ -30,6 +30,7 @@ const orderRuntimeSource = read('public/order-runtime.js');
 const deliveryRendererSource = read('public/delivery-renderer.js');
 const deliveryItemsSource = read('lib/delivery-items.js');
 const deliveryRoutesSource = read('lib/routes/deliveries.js');
+const deliveryManagerSource = read('public/delivery-manager.js');
 const openChatIntentSource = read('lib/open-chat-intent.js');
 const chatHtmlSource = read('public/chat.html');
 const appHandoffGateSource = read('public/app-handoff-gate.js');
@@ -582,6 +583,20 @@ assert.ok(
     && !adsOpsSource.includes('/ads saas|advertis|広告|campaign structure|budget cap|stop rules/i.test(content)'),
   'Ads Launch Console must parse Markdown only from explicit Ads artifact contracts, not from body text keywords'
 );
+assert.ok(
+  deliveryManagerSource.includes('function explicitDeliveryContractTokens')
+    && deliveryManagerSource.includes('function explicitExternalWriteRequested')
+    && deliveryManagerSource.includes('function explicitApprovalWaiting'),
+  'Delivery Manager must derive review/action state from explicit delivery contracts and authority requests'
+);
+assertNotIncludes(deliveryManagerSource, [
+  'function deliveryCombinedText',
+  'file.content}`)',
+  'delivery.authorityRequest?.reason',
+  '/publish now|post now|send now|schedule|投稿|送信|公開|配信/.test(text)',
+  '/blocked|approval|waiting/.test(status) && /approval|authority|connector|publish|send|post|承認|接続|投稿|送信/i.test',
+  '/external|publish|send|post|schedule|公開|投稿|送信|配信/i.test(action)'
+], 'public/delivery-manager.js explicit contract boundary');
 for (const [moduleName, symbol] of [
   ['public/chat-session-state.js', 'compactChatRuntimeSnapshot'],
   ['public/order-runtime.js', 'visibleJobApiPath'],

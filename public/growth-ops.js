@@ -1,4 +1,4 @@
-import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526f';
+import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526g';
 
 const els = {
   returnToChatLink: document.getElementById('growthReturnToChatLink'),
@@ -63,17 +63,22 @@ const GROWTH_CONTRACT_ALIASES = Object.freeze({
   icp_and_offer: Object.freeze(['icpAndOffer', 'icp_offer', 'icpOffer', 'target_segment_offer', 'targetSegmentOffer']),
   experiment_hypothesis: Object.freeze(['experimentHypothesis', 'hypothesis', 'growth_hypothesis', 'growthHypothesis']),
   exact_artifact_packet: Object.freeze(['exactArtifactPacket', 'artifact_packet', 'artifactPacket', 'exact_copy_or_page_or_channel_artifact', 'exactCopyOrPageOrChannelArtifact']),
-  execution_packet: Object.freeze(['executionPacket', 'activation_packet', 'activationPacket']),
-  tracking_specification: Object.freeze(['trackingSpecification', 'tracking_spec', 'trackingSpec', 'measurement_spec', 'measurementSpec']),
-  metric_threshold: Object.freeze(['metricThreshold', 'success_metric', 'successMetric', 'threshold']),
-  kill_rule: Object.freeze(['killRule', 'stop_rule', 'stopRule']),
+  page_or_channel_artifact: Object.freeze(['pageOrChannelArtifact', 'page_channel_artifact', 'pageChannelArtifact', 'artifact_surface', 'artifactSurface']),
+  execution_packet: Object.freeze(['executionPacket', 'activation_packet', 'activationPacket', '7_day_experiment', '7DayExperiment', 'seven_day_experiment', 'sevenDayExperiment', 'experiment_plan', 'experimentPlan']),
+  tracking_specification: Object.freeze(['trackingSpecification', 'tracking_spec', 'trackingSpec', 'measurement_spec', 'measurementSpec', 'measurement_surface', 'measurementSurface', 'tracking_plan', 'trackingPlan']),
+  metric_threshold: Object.freeze(['metricThreshold', 'success_metric', 'successMetric', 'threshold', 'metrics', 'success_criteria', 'successCriteria']),
+  kill_rule: Object.freeze(['killRule', 'stop_rule', 'stopRule', 'stop_rules', 'stopRules']),
   activation_owner: Object.freeze(['activationOwner', 'implementation_owner', 'implementationOwner']),
   approval_owner: Object.freeze(['approvalOwner']),
+  owner_responsibility_map: Object.freeze(['ownerResponsibilityMap', 'owner_map', 'ownerMap', 'responsibility_map', 'responsibilityMap']),
   measurement_owner: Object.freeze(['measurementOwner']),
+  measurement_surface: Object.freeze(['measurementSurface', 'analytics_surface', 'analyticsSurface', 'proof_surface', 'proofSurface']),
+  proof_source: Object.freeze(['proofSource', 'execution_proof_source', 'executionProofSource', 'launch_proof', 'launchProof', 'conversion_proof', 'conversionProof']),
   review_date: Object.freeze(['reviewDate', 'next_review_date', 'nextReviewDate']),
   execution_proof_tracker: Object.freeze(['executionProofTracker', 'proof_tracker', 'proofTracker']),
-  execution_status_labels: Object.freeze(['executionStatusLabels', 'execution_status', 'executionStatus', 'status_labels', 'statusLabels']),
-  measurement_plan: Object.freeze(['measurementPlan', 'measurement_checks', 'measurementChecks', 'conversion_tracking_plan', 'conversionTrackingPlan', 'tracking_plan', 'trackingPlan'])
+  execution_status_labels: Object.freeze(['executionStatusLabels', 'execution_status', 'executionStatus', 'status_labels', 'statusLabels', 'approval_state', 'approvalState', 'launch_status', 'launchStatus', 'measurement_status', 'measurementStatus']),
+  measurement_plan: Object.freeze(['measurementPlan', 'measurement_checks', 'measurementChecks', 'conversion_tracking_plan', 'conversionTrackingPlan', 'tracking_plan', 'trackingPlan']),
+  next_decision: Object.freeze(['nextDecision', 'decision_rule', 'decisionRule', 'continue_or_stop_rule', 'continueOrStopRule'])
 });
 
 const GROWTH_MARKDOWN_ARTIFACT_TYPES = Object.freeze([
@@ -86,17 +91,28 @@ const GROWTH_MARKDOWN_ARTIFACT_TYPES = Object.freeze([
   'icp_and_offer',
   'experiment_hypothesis',
   'exact_artifact_packet',
+  'page_or_channel_artifact',
   'execution_packet',
+  '7_day_experiment',
+  'seven_day_experiment',
+  'experiment_plan',
   'tracking_specification',
   'metric_threshold',
+  'metrics',
+  'success_criteria',
   'kill_rule',
+  'stop_rules',
   'activation_owner',
   'approval_owner',
+  'owner_responsibility_map',
   'measurement_owner',
+  'measurement_surface',
+  'proof_source',
   'review_date',
   'execution_proof_tracker',
   'execution_status_labels',
-  'measurement_plan'
+  'measurement_plan',
+  'next_decision'
 ]);
 
 function firstValue(source = {}, keys = []) {
@@ -246,6 +262,17 @@ function markdownRowsFor(context = {}, types = []) {
     });
 }
 
+function firstAvailableRows(context = {}, types = []) {
+  for (const type of types) {
+    const rows = uniqueRows([
+      ...rowsFor(context, [type]),
+      ...markdownRowsFor(context, [type])
+    ]);
+    if (rows.length) return rows;
+  }
+  return [];
+}
+
 function uniqueRows(rows = []) {
   const seen = new Set();
   return rows.filter((item) => {
@@ -273,21 +300,28 @@ function collectGrowthRecord(context = null) {
   const title = text(context.title, 'Growth experiment packet');
   const summary = text(context.summary, 'Growth AIAGENT context was restored as a retained app packet.');
   const experimentRows = uniqueRows([
-    ...rowsFor(context, ['growth_experiment_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis']),
-    ...markdownRowsFor(context, ['growth_experiment_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis'])
+    ...rowsFor(context, ['growth_experiment_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'execution_packet']),
+    ...markdownRowsFor(context, ['growth_experiment_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'execution_packet'])
   ]);
   const artifactRows = uniqueRows([
-    ...rowsFor(context, ['growth_asset_handoff_packet', 'exact_artifact_packet', 'execution_packet']),
-    ...markdownRowsFor(context, ['growth_asset_handoff_packet', 'exact_artifact_packet', 'execution_packet'])
+    ...rowsFor(context, ['growth_asset_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet']),
+    ...markdownRowsFor(context, ['growth_asset_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet'])
   ]);
   const activationRows = uniqueRows([
-    ...rowsFor(context, ['growth_activation_handoff_packet', 'activation_owner', 'approval_owner', 'measurement_owner', 'review_date']),
-    ...markdownRowsFor(context, ['growth_activation_handoff_packet', 'activation_owner', 'approval_owner', 'measurement_owner', 'review_date'])
+    ...rowsFor(context, ['growth_activation_handoff_packet', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'review_date']),
+    ...markdownRowsFor(context, ['growth_activation_handoff_packet', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'review_date'])
   ]);
   const measurementRows = uniqueRows([
-    ...rowsFor(context, ['tracking_specification', 'metric_threshold', 'kill_rule', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan']),
-    ...markdownRowsFor(context, ['tracking_specification', 'metric_threshold', 'kill_rule', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan'])
+    ...rowsFor(context, ['tracking_specification', 'metric_threshold', 'kill_rule', 'proof_source', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan', 'next_decision']),
+    ...markdownRowsFor(context, ['tracking_specification', 'metric_threshold', 'kill_rule', 'proof_source', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan', 'next_decision'])
   ]);
+  if (!experimentRows.length) experimentRows.push(...firstAvailableRows(context, ['seven_day_experiment', 'experiment_plan']));
+  if (!measurementRows.some((item) => /metric|threshold|success|criteria/i.test(`${item.label} ${item.detail}`))) {
+    measurementRows.push(...firstAvailableRows(context, ['metrics', 'success_criteria']));
+  }
+  if (!measurementRows.some((item) => /kill|stop/i.test(`${item.label} ${item.detail}`))) {
+    measurementRows.push(...firstAvailableRows(context, ['stop_rules']));
+  }
   const audit = auditGrowthRecord({ experimentRows, artifactRows, activationRows, measurementRows }, context);
   return { title, summary, experimentRows, artifactRows, activationRows, measurementRows, audit };
 }
@@ -300,11 +334,11 @@ function auditGrowthRecord(record = {}, context = {}) {
     { key: 'experiment_inputs', label: 'Experiment inputs', ok: record.experimentRows.length >= 3, detail: record.experimentRows.length >= 3 ? `${record.experimentRows.length} experiment row(s) retained.` : 'Need bottleneck, ICP/offer, hypothesis, or experiment packet rows.' },
     { key: 'exact_artifact_packet', label: 'Exact artifact', ok: record.artifactRows.length > 0, detail: record.artifactRows.length ? `${record.artifactRows.length} artifact/execution row(s) retained.` : 'Missing exact_artifact_packet or execution_packet.' },
     { key: 'activation_owner', label: 'Activation owner', ok: /activation_owner|activationowner|implementation_owner/.test(json), detail: /activation_owner|activationowner|implementation_owner/.test(json) ? 'Activation owner is attached.' : 'Missing activation owner before launch.' },
-    { key: 'measurement_owner', label: 'Measurement owner', ok: /measurement_owner|measurementowner/.test(json), detail: /measurement_owner|measurementowner/.test(json) ? 'Measurement owner is attached.' : 'Missing measurement owner before launch.' },
+    { key: 'measurement_owner', label: 'Measurement owner', ok: /measurement_owner|measurementowner|measurement_surface|measurementsurface/.test(json), detail: /measurement_owner|measurementowner|measurement_surface|measurementsurface/.test(json) ? 'Measurement owner or surface is attached.' : 'Missing measurement owner or surface before launch.' },
     { key: 'review_date', label: 'Review date', ok: /review_date|reviewdate|next_review_date/.test(json), detail: /review_date|reviewdate|next_review_date/.test(json) ? 'Review date is retained.' : 'Missing review_date for the experiment decision.' },
-    { key: 'metric_threshold', label: 'Metric threshold', ok: /metric_threshold|metricthreshold|success_metric|threshold/.test(json), detail: /metric_threshold|metricthreshold|success_metric|threshold/.test(json) ? 'Metric threshold is retained.' : 'Missing metric_threshold.' },
-    { key: 'kill_rule', label: 'Kill rule', ok: /kill_rule|killrule|stop_rule/.test(json), detail: /kill_rule|killrule|stop_rule/.test(json) ? 'Kill rule is retained.' : 'Missing kill_rule.' },
-    { key: 'proof_tracker', label: 'Proof tracker', ok: /execution_proof_tracker|executionprooftracker|proof_tracker/.test(json), detail: /execution_proof_tracker|executionprooftracker|proof_tracker/.test(json) ? 'Execution proof tracker is retained.' : 'Missing proof tracker for follow-up operations.' }
+    { key: 'metric_threshold', label: 'Metric threshold', ok: /metric_threshold|metricthreshold|success_metric|threshold|success_criteria/.test(json), detail: /metric_threshold|metricthreshold|success_metric|threshold|success_criteria/.test(json) ? 'Metric threshold is retained.' : 'Missing metric_threshold or success criteria.' },
+    { key: 'kill_rule', label: 'Kill rule', ok: /kill_rule|killrule|stop_rule|stop_rules/.test(json), detail: /kill_rule|killrule|stop_rule|stop_rules/.test(json) ? 'Kill rule is retained.' : 'Missing kill_rule or stop_rules.' },
+    { key: 'proof_tracker', label: 'Proof tracker', ok: /execution_proof_tracker|executionprooftracker|proof_tracker|proof_source|proofsource/.test(json), detail: /execution_proof_tracker|executionprooftracker|proof_tracker|proof_source|proofsource/.test(json) ? 'Execution proof tracker or proof source is retained.' : 'Missing proof tracker or proof source for follow-up operations.' }
   ];
 }
 
@@ -397,7 +431,8 @@ function contextPacket() {
       growth_experiment_rows: growthRecord.experimentRows,
       growth_artifact_rows: growthRecord.artifactRows,
       growth_activation_rows: growthRecord.activationRows,
-      growth_measurement_rows: growthRecord.measurementRows
+      growth_measurement_rows: growthRecord.measurementRows,
+      next_decision: growthRecord.measurementRows.find((item) => /next decision|decision rule|continue|stop/i.test(`${item.label} ${item.detail}`)) || null
     }
   });
 }

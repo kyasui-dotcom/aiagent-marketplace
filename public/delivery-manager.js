@@ -146,6 +146,82 @@ function safeBool(value) {
   return value === true || value === 'true' || value === 1 || value === '1';
 }
 
+function safeObject(value = null) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function listValues(value = []) {
+  if (Array.isArray(value)) return value;
+  if (value == null || value === '') return [];
+  return [value];
+}
+
+function normalizeContractToken(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function explicitDeliveryMetadata(file = {}) {
+  return safeObject(file.metadata || file.meta || file.raw_metadata || file.rawMetadata);
+}
+
+function explicitDeliveryContractTokensFromRecord(record = {}) {
+  if (!record || typeof record !== 'object') return [];
+  const metadata = explicitDeliveryMetadata(record);
+  return [
+    record.artifact_type,
+    record.artifactType,
+    record.content_type,
+    record.contentType,
+    record.type,
+    record.surface,
+    record.item_type,
+    record.itemType,
+    record.action_type,
+    record.actionType,
+    record.channel,
+    record.connector,
+    record.connector_capability,
+    record.connectorCapability,
+    metadata.artifact_type,
+    metadata.artifactType,
+    metadata.content_type,
+    metadata.contentType,
+    metadata.surface,
+    metadata.item_type,
+    metadata.itemType,
+    metadata.action_type,
+    metadata.actionType,
+    metadata.channel,
+    metadata.connector,
+    metadata.connector_capability,
+    metadata.connectorCapability,
+    ...listValues(record.artifact_types || record.artifactTypes),
+    ...listValues(metadata.artifact_types || metadata.artifactTypes),
+    ...listValues(metadata.channels),
+    ...listValues(metadata.connectors),
+    ...listValues(metadata.connector_capabilities || metadata.connectorCapabilities)
+  ].map(normalizeContractToken).filter(Boolean);
+}
+
+function explicitDeliveryContractTokens(delivery = {}) {
+  const authority = delivery.authorityRequest || {};
+  return [...new Set([
+    ...explicitDeliveryContractTokensFromRecord(delivery),
+    ...listValues(authority.missingConnectorCapabilities).map(normalizeContractToken),
+    ...listValues(authority.requiredGoogleSources).map(normalizeContractToken),
+    ...listValues(authority.channelCandidates).map(normalizeContractToken),
+    ...(delivery.files || []).flatMap(explicitDeliveryContractTokensFromRecord)
+  ].filter(Boolean))];
+}
+
+function contractMatches(delivery = {}, pattern) {
+  return explicitDeliveryContractTokens(delivery).some((token) => pattern.test(token));
+}
+
 function normalizeAuthorityRequest(raw = null, fallback = {}) {
   if (!raw || typeof raw !== 'object') return null;
   const reason = String(raw.reason || raw.message || raw.error || fallback.reason || '').trim();
@@ -229,61 +305,74 @@ function authorityRequestFromContext(context = {}) {
   );
 }
 
-function deliveryCombinedText(delivery = {}) {
-  return [
-    delivery.title,
-    delivery.summary,
-    delivery.nextAction,
-    delivery.agentName,
-    delivery.taskType,
-    delivery.workflowTask,
-    delivery.authorityRequest?.reason,
-    ...(delivery.authorityRequest?.missingConnectorCapabilities || []),
-    ...(delivery.files || []).map((file) => `${file.name}\n${file.content}`)
-  ].join('\n').toLowerCase();
-}
-
 function marketingDeliverableLabel(delivery = {}) {
-  const text = deliveryCombinedText(delivery);
-  if (/seo|article|blog|記事|meta description|h1/.test(text)) return 'SEO article or content draft';
-  if (/landing|lp|page|hero|cta|conversion|signup/.test(text)) return 'Landing page or conversion copy';
-  if (/x post|x_post|twitter|tweet|social|sns|instagram|reddit|indie hackers|投稿/.test(text)) return 'Social post package';
-  if (/email|gmail|cold mail|outreach|subject|recipient|送信/.test(text)) return 'Email or outreach package';
-  if (/lead|prospect|company list|リード|候補企業/.test(text)) return 'Lead list or prospecting package';
-  if (/analytics|ga4|search console|gsc|measurement/.test(text)) return 'Analytics or measurement report';
-  if (/research|competitive|competitor|market|調査/.test(text)) return 'Marketing research report';
-  return 'Reusable marketing delivery';
+  if (contractMatches(delivery, /^(seo|article|blog|meta_description|h1|article_draft|seo_article)/)) return 'SEO article or content draft';
+  if (contractMatches(delivery, /^(landing|lp|page|hero|cta|conversion|signup|landing_page)/)) return 'Landing page or conversion copy';
+  if (contractMatches(delivery, /^(x_post|twitter|tweet|social|social_post|social_copy|instagram|reddit|indie_hackers)/)) return 'Social post package';
+  if (contractMatches(delivery, /^(email|gmail|cold_mail|outreach|subject|recipient|email_pack)/)) return 'Email or outreach package';
+  if (contractMatches(delivery, /^(lead|prospect|company_list|lead_list|lead_ops)/)) return 'Lead list or prospecting package';
+  if (contractMatches(delivery, /^(analytics|ga4|search_console|gsc|measurement|measurement_report)/)) return 'Analytics or measurement report';
+  if (contractMatches(delivery, /^(research|competitive|competitor|market|source_collection)/)) return 'Marketing research report';
+  return 'Reusable delivery package';
 }
 
 function marketingChannelLabel(delivery = {}) {
-  const text = deliveryCombinedText(delivery);
+  const tokens = explicitDeliveryContractTokens(delivery);
   const channels = [];
-  if (/seo|organic search|search console|gsc|記事/.test(text)) channels.push('SEO');
-  if (/x post|x_post|twitter|tweet|\bx\b|投稿/.test(text)) channels.push('X');
-  if (/instagram|insta/.test(text)) channels.push('Instagram');
-  if (/reddit/.test(text)) channels.push('Reddit');
-  if (/indie hackers|indie_hackers/.test(text)) channels.push('Indie Hackers');
-  if (/email|gmail|resend|outreach|送信/.test(text)) channels.push('Email');
-  if (/landing|owned site|wordpress|publisher|lp/.test(text)) channels.push('Owned site');
-  if (/directory|listing|掲載/.test(text)) channels.push('Directory');
-  if (/lead|prospect|リード/.test(text)) channels.push('Lead Ops');
-  return channels.length ? channels.join(' / ') : 'Not fixed yet';
+  if (tokens.some((token) => /^(seo|organic_search|search_console|gsc)/.test(token))) channels.push('SEO');
+  if (tokens.some((token) => /^(x|x_post|twitter|tweet)/.test(token))) channels.push('X');
+  if (tokens.some((token) => /^(instagram|insta)/.test(token))) channels.push('Instagram');
+  if (tokens.some((token) => /^reddit/.test(token))) channels.push('Reddit');
+  if (tokens.some((token) => /^indie_hackers/.test(token))) channels.push('Indie Hackers');
+  if (tokens.some((token) => /^(email|gmail|resend|outreach)/.test(token))) channels.push('Email');
+  if (tokens.some((token) => /^(landing|owned_site|wordpress|publisher|lp)/.test(token))) channels.push('Owned site');
+  if (tokens.some((token) => /^(directory|listing)/.test(token))) channels.push('Directory');
+  if (tokens.some((token) => /^(lead|prospect|lead_ops)/.test(token))) channels.push('Lead Ops');
+  return channels.length ? channels.join(' / ') : 'No explicit channel contract';
 }
 
 function evidenceLabel(delivery = {}) {
-  const text = deliveryCombinedText(delivery);
-  const urls = text.match(/https?:\/\/[^\s)>\]]+/gi) || [];
-  if (/ga4|google analytics|search console|gsc/.test(text)) return 'Analytics/source connector referenced';
-  if (/source|evidence|reference|引用|根拠/.test(text) && urls.length) return `${urls.length} source URL${urls.length === 1 ? '' : 's'} referenced`;
-  if (urls.length) return `${urls.length} URL${urls.length === 1 ? '' : 's'} included`;
+  const authority = delivery.authorityRequest || {};
+  const tokens = explicitDeliveryContractTokens(delivery);
+  if (tokens.some((token) => /^(ga4|google_analytics|search_console|gsc|analytics)/.test(token))) return 'Analytics/source connector referenced';
+  const sourceRefs = (delivery.files || []).flatMap((file) => {
+    const metadata = explicitDeliveryMetadata(file);
+    return [
+      ...listValues(metadata.source_urls || metadata.sourceUrls),
+      ...listValues(metadata.sources),
+      ...listValues(metadata.citations),
+      ...listValues(file.source_urls || file.sourceUrls),
+      ...listValues(file.sources),
+      ...listValues(file.citations)
+    ].filter(Boolean);
+  });
+  if (sourceRefs.length) return `${sourceRefs.length} explicit source reference${sourceRefs.length === 1 ? '' : 's'}`;
+  if ((authority.requiredGoogleSources || []).length) return 'Google source selection required';
   return 'No explicit source evidence found';
 }
 
 function externalActionLabel(delivery = {}) {
-  const text = deliveryCombinedText(delivery);
-  if (/publish now|post now|send now|schedule|投稿|送信|公開|配信/.test(text)) return 'External publish/send action requested';
-  if (/prepare|draft|handoff|approval|review|承認|確認/.test(text)) return 'Preparation or approval handoff';
+  if (explicitExternalWriteRequested(delivery)) return 'External publish/send action requested';
+  if (contractMatches(delivery, /^(prepare|draft|handoff|approval|review|app_review|approval_gate|authority_request)/)) return 'Preparation or approval handoff';
   return 'Internal follow-up only';
+}
+
+function explicitExternalWriteRequested(delivery = {}) {
+  return contractMatches(delivery, /^(external|publish|post|send|schedule|submit|repository_write|pull_request|github_pr|x_post|email_send|connector_action)/);
+}
+
+function explicitApprovalWaiting(delivery = {}) {
+  if (delivery.authorityRequest) return true;
+  return [
+    delivery.status,
+    delivery.failureCategory,
+    delivery.dispatchCompletionStatus
+  ].map(normalizeContractToken).some((token) => [
+    'blocked_waiting_for_approval',
+    'approval_required',
+    'authority_required',
+    'connector_authority_required'
+  ].includes(token));
 }
 
 function approvalGateForDelivery(delivery = selectedDelivery()) {
@@ -305,14 +394,13 @@ function approvalGateForDelivery(delivery = selectedDelivery()) {
     };
   }
   const authority = delivery.authorityRequest || null;
-  const status = String(delivery.status || '').trim().toLowerCase();
-  const approvalWaiting = Boolean(authority) || /blocked|approval|waiting/.test(status) && /approval|authority|connector|publish|send|post|承認|接続|投稿|送信/i.test(deliveryCombinedText(delivery));
+  const approvalWaiting = explicitApprovalWaiting(delivery);
   const deliverable = marketingDeliverableLabel(delivery);
   const channel = marketingChannelLabel(delivery);
   const evidence = evidenceLabel(delivery);
   const action = externalActionLabel(delivery);
   const hasFiles = (delivery.files || []).length > 0;
-  const externalWrite = /external|publish|send|post|schedule|公開|投稿|送信|配信/i.test(action);
+  const externalWrite = explicitExternalWriteRequested(delivery);
   const canResumeApproval = delivery.jobKind !== 'app_context' && delivery.sourceLabel === 'Server job';
   const state = approvalWaiting ? 'blocked' : (externalWrite ? 'pending' : 'approved');
   const label = approvalWaiting ? 'approval needed' : (externalWrite ? 'review before action' : 'ready');
@@ -323,7 +411,7 @@ function approvalGateForDelivery(delivery = selectedDelivery()) {
       : 'No external write is implied by this delivery.';
   const items = [
     { label: 'Deliverable', value: deliverable, ok: Boolean(String(delivery.title || delivery.summary || '').trim()) },
-    { label: 'Channel/action', value: channel === 'Not fixed yet' ? action : `${channel} - ${action}`, ok: channel !== 'Not fixed yet' || action !== 'Internal follow-up only' },
+    { label: 'Channel/action', value: channel === 'No explicit channel contract' ? action : `${channel} - ${action}`, ok: channel !== 'No explicit channel contract' || action !== 'Internal follow-up only' },
     { label: 'Evidence/source', value: evidence, ok: !/^No explicit/.test(evidence) },
     { label: 'Files/package', value: hasFiles ? `${delivery.files.length} file${delivery.files.length === 1 ? '' : 's'} attached` : 'No attached files', ok: hasFiles },
     { label: 'Human approval', value: humanApprovalValue, ok: !approvalWaiting }
@@ -706,6 +794,16 @@ function normalizeJobDelivery(job = {}) {
     files: files.map((file, index) => ({
       name: String(file.name || file.filename || `delivery-${index + 1}.md`),
       type: String(file.type || file.mime || 'text/plain'),
+      artifact_type: String(file.artifact_type || file.artifactType || ''),
+      artifact_types: listValues(file.artifact_types || file.artifactTypes).map(String).filter(Boolean),
+      content_type: String(file.content_type || file.contentType || file.type || file.mime || 'text/plain'),
+      surface: String(file.surface || file.metadata?.surface || ''),
+      item_type: String(file.item_type || file.itemType || file.metadata?.item_type || file.metadata?.itemType || ''),
+      action_type: String(file.action_type || file.actionType || file.metadata?.action_type || file.metadata?.actionType || ''),
+      channel: String(file.channel || file.metadata?.channel || ''),
+      connector: String(file.connector || file.metadata?.connector || ''),
+      connector_capability: String(file.connector_capability || file.connectorCapability || file.metadata?.connector_capability || file.metadata?.connectorCapability || ''),
+      metadata: safeObject(file.metadata),
       content: String(file.content || file.body || ''),
       updatedAt: createdAt
     })),
@@ -772,6 +870,16 @@ function normalizeAppContextFile(item = {}, index = 0, sourceKind = 'app_context
   return {
     name: appContextFileName(item, index, sourceKind),
     type: appContextFileType(item),
+    artifact_type: String(item.artifact_type || item.artifactType || ''),
+    artifact_types: listValues(item.artifact_types || item.artifactTypes).map(String).filter(Boolean),
+    content_type: String(item.content_type || item.contentType || item.type || item.mime || 'text/plain'),
+    surface: String(item.surface || item.metadata?.surface || ''),
+    item_type: String(item.item_type || item.itemType || item.metadata?.item_type || item.metadata?.itemType || ''),
+    action_type: String(item.action_type || item.actionType || item.metadata?.action_type || item.metadata?.actionType || ''),
+    channel: String(item.channel || item.metadata?.channel || ''),
+    connector: String(item.connector || item.metadata?.connector || ''),
+    connector_capability: String(item.connector_capability || item.connectorCapability || item.metadata?.connector_capability || item.metadata?.connectorCapability || ''),
+    metadata: safeObject(item.metadata),
     content,
     updatedAt: String(item.updated_at || item.updatedAt || item.created_at || item.createdAt || ''),
     sourceKind
@@ -981,7 +1089,21 @@ function buildContext() {
       { type: 'approval_gate', id: `${delivery.id}-approval-gate`, status: approvalGate.state, summary: approvalGate.summary, checkpoints: approvalGate.context.checkpoints },
       { type: 'handoff_audit', id: `${delivery.id}-handoff-audit`, complete: handoffAudit.complete, total: handoffAudit.total, missing: handoffAudit.missing, checkpoints: handoffAudit.items }
     ],
-    delivery_files: (delivery.files || []).map((file) => ({ name: file.name, type: file.type, content: file.content })),
+    delivery_files: (delivery.files || []).map((file) => ({
+      name: file.name,
+      type: file.type,
+      artifact_type: file.artifact_type,
+      artifact_types: file.artifact_types,
+      content_type: file.content_type,
+      surface: file.surface,
+      item_type: file.item_type,
+      action_type: file.action_type,
+      channel: file.channel,
+      connector: file.connector,
+      connector_capability: file.connector_capability,
+      metadata: file.metadata,
+      content: file.content
+    })),
     recommended_next_actions: [
       approvalGate.approveEnabled ? 'Approve and resume the paused execution lane from Delivery Manager.' : '',
       delivery.nextAction || 'Ask a leader to run follow-up with this delivery.',

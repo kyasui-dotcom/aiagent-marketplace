@@ -521,16 +521,24 @@ const APP_HANDOFF_GROWTH_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqu
   'icp_and_offer',
   'experiment_hypothesis',
   'exact_artifact_packet',
+  'page_or_channel_artifact',
   'execution_packet',
+  'seven_day_experiment',
+  'experiment_plan',
   'tracking_specification',
   'metric_threshold',
   'kill_rule',
   'activation_owner',
   'approval_owner',
+  'owner_responsibility_map',
   'measurement_owner',
+  'measurement_surface',
+  'proof_source',
   'review_date',
   'execution_proof_tracker',
-  'execution_status_labels'
+  'execution_status_labels',
+  'measurement_plan',
+  'next_decision'
 ]));
 
 const APP_HANDOFF_GROWTH_CONTRACT_ALIASES = Object.freeze({
@@ -541,16 +549,24 @@ const APP_HANDOFF_GROWTH_CONTRACT_ALIASES = Object.freeze({
   icp_and_offer: Object.freeze(['icpAndOffer', 'icp_offer', 'icpOffer', 'target_segment_offer', 'targetSegmentOffer']),
   experiment_hypothesis: Object.freeze(['experimentHypothesis', 'hypothesis', 'growth_hypothesis', 'growthHypothesis']),
   exact_artifact_packet: Object.freeze(['exactArtifactPacket', 'artifact_packet', 'artifactPacket', 'exact_copy_or_page_or_channel_artifact', 'exactCopyOrPageOrChannelArtifact']),
-  execution_packet: Object.freeze(['executionPacket', 'activation_packet', 'activationPacket']),
-  tracking_specification: Object.freeze(['trackingSpecification', 'tracking_spec', 'trackingSpec', 'measurement_spec', 'measurementSpec']),
-  metric_threshold: Object.freeze(['metricThreshold', 'success_metric', 'successMetric', 'threshold']),
-  kill_rule: Object.freeze(['killRule', 'stop_rule', 'stopRule']),
+  page_or_channel_artifact: Object.freeze(['pageOrChannelArtifact', 'page_channel_artifact', 'pageChannelArtifact', 'artifact_surface', 'artifactSurface']),
+  execution_packet: Object.freeze(['executionPacket', 'activation_packet', 'activationPacket', '7_day_experiment', '7DayExperiment', 'seven_day_experiment', 'sevenDayExperiment', 'experiment_plan', 'experimentPlan']),
+  seven_day_experiment: Object.freeze(['sevenDayExperiment', 'seven_day_test', 'sevenDayTest', 'experiment_plan', 'experimentPlan', 'growth_experiment_packet', 'growthExperimentPacket']),
+  experiment_plan: Object.freeze(['experimentPlan', 'seven_day_experiment', 'sevenDayExperiment', 'growth_experiment_packet', 'growthExperimentPacket']),
+  tracking_specification: Object.freeze(['trackingSpecification', 'tracking_spec', 'trackingSpec', 'measurement_spec', 'measurementSpec', 'measurement_surface', 'measurementSurface', 'tracking_plan', 'trackingPlan']),
+  metric_threshold: Object.freeze(['metricThreshold', 'success_metric', 'successMetric', 'threshold', 'success_criteria', 'successCriteria']),
+  kill_rule: Object.freeze(['killRule', 'stop_rule', 'stopRule', 'stop_rules', 'stopRules']),
   activation_owner: Object.freeze(['activationOwner', 'implementation_owner', 'implementationOwner']),
   approval_owner: Object.freeze(['approvalOwner']),
+  owner_responsibility_map: Object.freeze(['ownerResponsibilityMap', 'owner_map', 'ownerMap', 'responsibility_map', 'responsibilityMap']),
   measurement_owner: Object.freeze(['measurementOwner']),
+  measurement_surface: Object.freeze(['measurementSurface', 'analytics_surface', 'analyticsSurface', 'proof_surface', 'proofSurface']),
+  proof_source: Object.freeze(['proofSource', 'execution_proof_source', 'executionProofSource', 'launch_proof', 'launchProof', 'conversion_proof', 'conversionProof']),
   review_date: Object.freeze(['reviewDate', 'next_review_date', 'nextReviewDate']),
   execution_proof_tracker: Object.freeze(['executionProofTracker', 'proof_tracker', 'proofTracker']),
-  execution_status_labels: Object.freeze(['executionStatusLabels', 'execution_status', 'executionStatus', 'status_labels', 'statusLabels'])
+  execution_status_labels: Object.freeze(['executionStatusLabels', 'execution_status', 'executionStatus', 'status_labels', 'statusLabels', 'approval_state', 'approvalState', 'launch_status', 'launchStatus', 'measurement_status', 'measurementStatus']),
+  measurement_plan: Object.freeze(['measurementPlan', 'measurement_checks', 'measurementChecks', 'conversion_tracking_plan', 'conversionTrackingPlan', 'tracking_plan', 'trackingPlan']),
+  next_decision: Object.freeze(['nextDecision', 'decision_rule', 'decisionRule', 'continue_or_stop_rule', 'continueOrStopRule'])
 });
 
 const APP_HANDOFF_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqueStrings([
