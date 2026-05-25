@@ -281,10 +281,22 @@
       "id": "growth-loop-experiment",
       "file": "growth.js",
       "kind": "growth",
-      "prompt": "Design one growth loop experiment for converting visitors into paid agent orders. Include metric, threshold, kill rule, and next decision.",
+      "prompt": "Design one 7-day growth loop experiment for https://aiagent-marketplace.net to convert solo-founder visitors into paid agent orders. Current facts: 1,200 sessions in the last 14 days, 18 signups, 0 paid orders, no verified proof block on the homepage, GA4 page_view and signup events exist but paid_order is not verified. Deliver a bottleneck diagnosis, exact homepage or owned-channel artifact packet, activation owner, approval owner, measurement owner, review date, metric threshold, kill rule, execution proof tracker, and next decision. Do not claim launch, traffic routing, conversion lift, publication, approval, or winner status without dated proof. Next owner is the founder.",
       "body": {
         "input": {
-          "conversion_goal": "paid order"
+          "target_url": "https://aiagent-marketplace.net",
+          "audience": "solo founders",
+          "conversion_goal": "paid agent order",
+          "sessions_last_14_days": 1200,
+          "signups_last_14_days": 18,
+          "paid_orders_last_14_days": 0,
+          "homepage_evidence": "no verified proof block",
+          "measurement_status": "GA4 page_view and signup events exist; paid_order event is not verified",
+          "activation_owner": "founder",
+          "approval_owner": "founder",
+          "measurement_owner": "founder",
+          "next_owner": "founder",
+          "budget": "no paid spend"
         }
       }
     },
