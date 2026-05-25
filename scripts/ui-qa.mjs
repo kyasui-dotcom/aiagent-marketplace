@@ -15,6 +15,7 @@ const publisherHtmlPath = new URL('../public/publisher-approval.html', import.me
 const leadOpsHtmlPath = new URL('../public/lead-ops.html', import.meta.url);
 const campaignOperationsHtmlPath = new URL('../public/campaign-operations.html', import.meta.url);
 const adsOpsHtmlPath = new URL('../public/ads-ops.html', import.meta.url);
+const growthOpsHtmlPath = new URL('../public/growth-ops.html', import.meta.url);
 const pricingOpsHtmlPath = new URL('../public/pricing-ops.html', import.meta.url);
 const deliveryManagerHtmlPath = new URL('../public/delivery-manager.html', import.meta.url);
 const legalNoticeHtmlPath = new URL('../public/legal-notice.html', import.meta.url);
@@ -43,6 +44,7 @@ const publisherJsPath = new URL('../public/publisher-approval.js', import.meta.u
 const leadOpsJsPath = new URL('../public/lead-ops.js', import.meta.url);
 const campaignOperationsJsPath = new URL('../public/campaign-operations.js', import.meta.url);
 const adsOpsJsPath = new URL('../public/ads-ops.js', import.meta.url);
+const growthOpsJsPath = new URL('../public/growth-ops.js', import.meta.url);
 const pricingOpsJsPath = new URL('../public/pricing-ops.js', import.meta.url);
 const deliveryManagerJsPath = new URL('../public/delivery-manager.js', import.meta.url);
 const caitAppBridgePath = new URL('../public/cait-app-bridge.js', import.meta.url);
@@ -114,6 +116,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(publisherJsPath)], { st
 execFileSync(process.execPath, ['--check', fileURLToPath(leadOpsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(campaignOperationsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(adsOpsJsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(growthOpsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(pricingOpsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(deliveryManagerJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(caitAppBridgePath)], { stdio: 'pipe' });
@@ -143,6 +146,7 @@ const publisherHtml = readFileSync(publisherHtmlPath, 'utf8');
 const leadOpsHtml = readFileSync(leadOpsHtmlPath, 'utf8');
 const campaignOperationsHtml = readFileSync(campaignOperationsHtmlPath, 'utf8');
 const adsOpsHtml = readFileSync(adsOpsHtmlPath, 'utf8');
+const growthOpsHtml = readFileSync(growthOpsHtmlPath, 'utf8');
 const pricingOpsHtml = readFileSync(pricingOpsHtmlPath, 'utf8');
 const deliveryManagerHtml = readFileSync(deliveryManagerHtmlPath, 'utf8');
 const legalNoticeHtml = readFileSync(legalNoticeHtmlPath, 'utf8');
@@ -173,6 +177,7 @@ const publisherJs = readFileSync(publisherJsPath, 'utf8');
 const leadOpsJs = readFileSync(leadOpsJsPath, 'utf8');
 const campaignOperationsJs = readFileSync(campaignOperationsJsPath, 'utf8');
 const adsOpsJs = readFileSync(adsOpsJsPath, 'utf8');
+const growthOpsJs = readFileSync(growthOpsJsPath, 'utf8');
 const pricingOpsJs = readFileSync(pricingOpsJsPath, 'utf8');
 const deliveryManagerJs = readFileSync(deliveryManagerJsPath, 'utf8');
 const caitAppBridge = readFileSync(caitAppBridgePath, 'utf8');
@@ -252,6 +257,8 @@ const appSurfaceSources = [
   campaignOperationsJs,
   adsOpsHtml,
   adsOpsJs,
+  growthOpsHtml,
+  growthOpsJs,
   pricingOpsHtml,
   pricingOpsJs,
   deliveryManagerHtml,
@@ -674,8 +681,8 @@ assert.ok(!appsHtml.includes('Register your own app'), 'Apps hub should not impl
 assert.ok(appsHtml.includes('Self-service app registration is not open yet'), 'Apps hub should set the short-term app registration boundary.');
 assert.ok(appsHtml.includes('data-featured-app-list'), 'Apps hub should render featured workflows from the app registry.');
 assert.ok(appsJs.includes('sameOriginAppUrl'), 'Apps hub should normalize CAIt-managed app URLs to the current origin.');
-assert.ok(appsJs.includes("from './app-manifest-registry.js?v=20260526d'"), 'Apps hub should reuse the shared app manifest registry.');
-assert.ok(chatJs.includes("from './app-manifest-registry.js?v=20260526d'"), 'Chat should reuse the shared app manifest registry.');
+assert.ok(appsJs.includes("from './app-manifest-registry.js?v=20260526e'"), 'Apps hub should reuse the shared app manifest registry.');
+assert.ok(chatJs.includes("from './app-manifest-registry.js?v=20260526e'"), 'Chat should reuse the shared app manifest registry.');
 assert.ok(appManifestRegistryJs.includes("owner: 'cait-managed'"), 'CAIt-managed app surfaces should not be labeled as built-in apps.');
 assert.ok(appManifestRegistryJs.includes("verificationStatus: 'cait_managed'"), 'CAIt-managed app surfaces should have explicit verification status.');
 assert.ok(appManifestRegistryJs.includes('analytics-console'), 'Shared app registry should include Analytics Console.');
@@ -683,6 +690,7 @@ assert.ok(appManifestRegistryJs.includes('publisher-approval-studio'), 'Shared a
 assert.ok(appManifestRegistryJs.includes('lead-ops-console'), 'Shared app registry should include Lead Ops.');
 assert.ok(appManifestRegistryJs.includes('campaign-operations'), 'Shared app registry should include Campaign Operations.');
 assert.ok(appManifestRegistryJs.includes('ads-launch-console'), 'Shared app registry should include Ads Launch Console.');
+assert.ok(appManifestRegistryJs.includes('growth-experiment-console'), 'Shared app registry should include Growth Experiment Console.');
 assert.ok(appManifestRegistryJs.includes('pricing-decision-console'), 'Shared app registry should include Pricing Decision Console.');
 assert.ok(appsJs.includes('CORE_FEATURE_APP_IDS'), 'Apps hub should filter core CAIt features out of app registry rendering.');
 assert.ok(!appsJs.includes("['delivery-manager', { tag: 'Follow-up'"), 'Apps hub should not feature Deliveries as a registered app.');
@@ -910,6 +918,30 @@ assert.ok(!adsOpsJs.includes("source_app: 'publisher_approval_studio'"), 'Ads La
 assert.ok(!adsOpsJs.includes("source_app: 'lead_ops_console'"), 'Ads Launch Console JS should not contain Lead Ops app logic.');
 assert.ok(!adsOpsJs.includes("source_app: 'campaign_operations'"), 'Ads Launch Console JS should not contain Campaign Operations app logic.');
 assert.ok(!adsOpsJs.includes("source_app: 'delivery_manager'"), 'Ads Launch Console JS should not contain Delivery Manager app logic.');
+assert.ok(growthOpsJs.includes("source_app: 'growth_experiment_console'"), 'Growth Experiment Console app logic should stay in growth-ops.js.');
+assert.ok(growthOpsJs.includes("fetchCaitAppContextFromUrl"), 'Growth Experiment Console should receive CAIt app contexts.');
+assert.ok(growthOpsJs.includes("type: 'growth_experiment_packet'"), 'Growth Experiment Console should return growth_experiment_packet artifacts.');
+assert.ok(growthOpsJs.includes("type: 'growth_asset_handoff_packet'"), 'Growth Experiment Console should return growth_asset_handoff_packet artifacts.');
+assert.ok(growthOpsJs.includes("type: 'growth_activation_handoff_packet'"), 'Growth Experiment Console should return growth_activation_handoff_packet artifacts.');
+assert.ok(growthOpsJs.includes("type: 'tracking_specification'"), 'Growth Experiment Console should return tracking_specification artifacts.');
+assert.ok(growthOpsJs.includes("type: 'execution_proof_tracker'"), 'Growth Experiment Console should return execution_proof_tracker artifacts.');
+assert.ok(growthOpsJs.includes('growth_handoff_audit'), 'Growth Experiment Console should include handoff audit details in raw_context.');
+assert.ok(appContextDomainJs.includes('growth_experiment_packet'), 'Server-side app context should preserve growth experiment packet contract fields in raw_context.');
+assert.ok(appContextDomainJs.includes('growth_activation_handoff_packet'), 'Server-side app context should preserve growth activation handoff contract fields in raw_context.');
+assert.ok(caitAppBridge.includes('growth_experiment_packet'), 'Client app-context bridge should preserve growth experiment packet contract fields.');
+assert.ok(caitAppBridge.includes('growthActivationHandoffPacket'), 'Client app-context bridge should preserve growth activation aliases.');
+assert.ok(appHandoffTransferJs.includes('APP_HANDOFF_GROWTH_CONTRACT_FIELDS'), 'Generic app handoff transfer should preserve Growth contract fields.');
+assert.ok(appManifestRegistryJs.includes("'growth_experiment_packet'") && appManifestRegistryJs.includes("'kill_rule'"), 'Growth Experiment app manifest should declare retained growth handoff contracts.');
+assert.ok(growthOpsJs.includes('const GROWTH_MARKDOWN_ARTIFACT_TYPES = Object.freeze(['), 'Growth Experiment Console should gate Markdown parsing on explicit Growth artifact contracts.');
+assert.ok(growthOpsJs.includes('const growthFiles = deliveryFiles(context).filter((file) => artifactMatches(file, GROWTH_MARKDOWN_ARTIFACT_TYPES));'), 'Growth Experiment Console must not choose Growth files from body text keywords.');
+assert.ok(!growthOpsJs.includes('/growth|experiment|施策/i.test(content)'), 'Growth Experiment Console must not infer growth handoff intent from delivery body text.');
+assert.ok(!growthOpsJs.includes("source_app: 'analytics_console'"), 'Growth Experiment Console JS should not contain Analytics app logic.');
+assert.ok(!growthOpsJs.includes("source_app: 'publisher_approval_studio'"), 'Growth Experiment Console JS should not contain Publisher app logic.');
+assert.ok(!growthOpsJs.includes("source_app: 'lead_ops_console'"), 'Growth Experiment Console JS should not contain Lead Ops app logic.');
+assert.ok(!growthOpsJs.includes("source_app: 'campaign_operations'"), 'Growth Experiment Console JS should not contain Campaign Operations app logic.');
+assert.ok(!growthOpsJs.includes("source_app: 'ads_launch_console'"), 'Growth Experiment Console JS should not contain Ads Launch Console app logic.');
+assert.ok(!growthOpsJs.includes("source_app: 'pricing_decision_console'"), 'Growth Experiment Console JS should not contain Pricing Decision Console app logic.');
+assert.ok(!growthOpsJs.includes("source_app: 'delivery_manager'"), 'Growth Experiment Console JS should not contain Delivery Manager app logic.');
 assert.ok(pricingOpsJs.includes("source_app: 'pricing_decision_console'"), 'Pricing Decision Console app logic should stay in pricing-ops.js.');
 assert.ok(pricingOpsJs.includes("fetchCaitAppContextFromUrl"), 'Pricing Decision Console should receive CAIt app contexts.');
 assert.ok(pricingOpsJs.includes("type: 'pricing_decision_packet'"), 'Pricing Decision Console should return pricing_decision_packet artifacts.');
@@ -955,7 +987,7 @@ assert.ok(chatHtml.includes('id="openAppListBtn"'));
 assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
-assert.ok(appsHtml.includes('/apps.js?v=20260526d'), 'Apps page should load the current server-side context history controller.');
+assert.ok(appsHtml.includes('/apps.js?v=20260526e'), 'Apps page should load the current server-side context history controller.');
 assert.ok(appsHtml.includes('data-app-registry-list'), 'Apps page should expose the live app registry list.');
 assert.ok(appsHtml.includes('/.well-known/mcp.json') && appsHtml.includes('Disabled by default'), 'Apps page should describe MCP as disabled by default.');
 assert.ok(appsHtml.includes('COMING SOON'), 'Apps MCP tab should be labeled coming soon while MCP is paused.');
@@ -1446,6 +1478,43 @@ assert.ok(caitAppBridge.includes("'deliveryPackage'") && appContextDomainJs.incl
 assert.ok(caitAppBridge.includes("'attachments'") && appContextDomainJs.includes("'output_files'") && deliveryManagerJs.includes("'raw_result_files'"), 'CAIt app context normalization should preserve attachment-shaped delivery contracts for Delivery Manager.');
 assert.ok(appContextDomainJs.includes("'post_text'") && caitAppBridge.includes("'post_text'"), 'CAIt app context normalization should preserve X Client Ops post_text contract fields.');
 assert.ok(appContextDomainJs.includes("'agent_context'") && caitAppBridge.includes("'agent_context'"), 'CAIt app context normalization should preserve app-agent transfer strategy context fields.');
+const growthNormalizedContext = normalizeCaitAppContext({
+  source_app: 'growth_experiment_console',
+  title: 'Growth packet',
+  growthExperimentPacket: 'Line one\nLine two',
+  growthActivationHandoffPacket: [{ label: 'Activation owner', detail: 'Growth owner approves launch' }]
+});
+assert.ok(
+  String(growthNormalizedContext.raw_context?.growth_experiment_packet || '').includes('Line one\nLine two'),
+  'Server app context normalization should preserve multiline growth experiment packets from explicit top-level aliases.'
+);
+assert.ok(
+  JSON.stringify(growthNormalizedContext.raw_context?.growth_activation_handoff_packet || []).includes('Growth owner approves launch'),
+  'Server app context normalization should preserve explicit growth activation handoff packets.'
+);
+const growthTransferContext = appContextFromTransferPayload('growth-experiment-console', {
+  transfer_id: 'growth-transfer-qa',
+  title: 'Growth experiment handoff',
+  growthExperimentPacket: { hypothesis: 'Retained app context raises activation trust', status: 'review_required' },
+  growthActivationHandoffPacket: { owner: 'growth owner', action: 'publish landing page test after approval' },
+  killRule: [{ label: 'Kill rule', detail: 'Stop if qualified signup rate stays below threshold' }]
+}, {
+  manifestById: () => ({
+    id: 'growth-experiment-console',
+    name: 'Growth Experiment Console',
+    inputContract: {
+      accepts: ['growth_experiment_packet', 'growth_activation_handoff_packet', 'kill_rule']
+    }
+  })
+});
+assert.ok(
+  JSON.stringify(growthTransferContext.raw_context?.contract_fields || {}).includes('Retained app context raises activation trust'),
+  'Growth app handoff transfer should canonicalize explicit growth packet aliases into contract_fields.'
+);
+assert.ok(
+  JSON.stringify(growthTransferContext.artifacts || []).includes('kill rule'),
+  'Growth app handoff transfer should create review artifacts only from manifest-accepted explicit fields.'
+);
 const pricingNormalizedContext = normalizeCaitAppContext({
   source_app: 'pricing_decision_console',
   title: 'Pricing packet',

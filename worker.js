@@ -7454,6 +7454,8 @@ export default {
         '/campaign-operations.js',
         '/ads-ops.html',
         '/ads-ops.js',
+        '/growth-ops.html',
+        '/growth-ops.js',
         '/delivery-manager.html',
         '/delivery-manager.js',
         '/app-console.css',

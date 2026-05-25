@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Growth Experiment Console | CAIt Apps</title>
+  <meta name="description" content="CAIt Growth Experiment Console turns Growth AIAGENT output into retained experiment, artifact, activation, measurement, proof, and kill-rule context." />
+  <meta name="robots" content="noindex,follow" />
+  <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/cait-icon.png" />
+  <link rel="stylesheet" href="/app-console.css?v=20260507b">
+  <style>
+    .growth-workspace {
+      display: grid;
+      gap: 16px;
+    }
+    .growth-title {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+    .growth-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 390px) minmax(0, 1fr);
+      gap: 16px;
+    }
+    .growth-panel {
+      border: 1px solid #d8dee6;
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+    .growth-section {
+      display: grid;
+      gap: 12px;
+    }
+    .growth-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .growth-table th,
+    .growth-table td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .growth-table td {
+      overflow-wrap: anywhere;
+    }
+    .growth-stack {
+      display: grid;
+      gap: 10px;
+    }
+    .growth-record-card {
+      width: 100%;
+      text-align: left;
+      border: 1px solid #d8dee6;
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 10px;
+    }
+    .growth-record-card strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+    .growth-meta {
+      color: #667085;
+      font-size: 12px;
+    }
+    .growth-preview {
+      max-height: 360px;
+      overflow: auto;
+    }
+    @media (max-width: 860px) {
+      .growth-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app-console-shell" aria-label="CAIt Growth Experiment Console">
+    <section class="app-console-panel">
+      <header class="app-console-header">
+        <a class="app-brand" href="/" aria-label="CAIt"><img src="/cait-icon.svg" alt="" /><span>Growth Experiment Console</span></a>
+        <nav class="app-nav" aria-label="CAIt app navigation">
+          <a href="/chat">Chat</a>
+          <a href="/apps.html">Apps</a>
+          <a href="/analytics-console.html">Analytics</a>
+          <a href="/campaign-operations.html">Campaign Ops</a>
+          <a href="/publisher-approval.html">Publisher</a>
+          <a href="/delivery-manager.html">Deliveries</a>
+        </nav>
+        <div class="app-header-actions">
+          <a class="ghost-btn" id="growthReturnToChatLink" href="/chat" hidden>Return to chat</a>
+          <button id="copyGrowthContextBtn" class="ghost-btn" type="button">Copy packet</button>
+          <button id="sendGrowthContextBtn" class="primary-btn" type="button">Send to CAIt</button>
+        </div>
+      </header>
+
+      <section class="workspace growth-workspace">
+        <div class="workspace-head">
+          <div>
+            <span class="kicker">Growth experiment operations</span>
+            <h1 class="growth-title">Turn Growth AIAGENT output into a retained experiment launch gate.</h1>
+            <p class="growth-meta">Bottleneck, ICP/offer, hypothesis, exact artifact, activation owner, measurement owner, threshold, kill rule, proof tracker, and review date stay attached to the next CAIt run.</p>
+          </div>
+        </div>
+
+        <section class="notice" id="growthHandoffNotice" hidden aria-label="CAIt growth handoff notice"></section>
+
+        <section class="ops-story-grid" aria-label="Growth experiment value">
+          <article class="panel ops-story-panel">
+            <div class="status-row compact-head">
+              <div>
+                <span class="kicker">Before / After</span>
+                <h2>From broad growth advice to one measurable experiment record.</h2>
+              </div>
+              <span class="status-pill pending" id="growthReadinessPill">No growth packet loaded</span>
+            </div>
+            <div class="ops-compare-grid">
+              <section class="ops-compare-card before">
+                <span class="ops-compare-label">Before</span>
+                <h3>AIAGENT growth answer</h3>
+                <ul class="ops-bullet-list">
+                  <li>Hypothesis, artifact, owner, and proof can remain mixed in Markdown.</li>
+                  <li>An experiment can look launch-ready without approval or measurement state.</li>
+                  <li>The next operator may not know when to stop, review, or continue.</li>
+                </ul>
+              </section>
+              <section class="ops-compare-card after">
+                <span class="ops-compare-label">After</span>
+                <h3>Growth Experiment Console SaaS</h3>
+                <ul class="ops-bullet-list">
+                  <li>Experiment, exact artifact, activation, and measurement are separated.</li>
+                  <li>Launch stays blocked until owner, approval, proof, and review date are visible.</li>
+                  <li>CAIt receives a server-side context packet for follow-up operations.</li>
+                </ul>
+              </section>
+            </div>
+          </article>
+          <article class="panel ops-readiness-panel">
+            <div class="status-row compact-head">
+              <div>
+                <span class="kicker">Experiment readiness</span>
+                <h2>What must survive the handoff</h2>
+              </div>
+            </div>
+            <div class="ops-readiness-list" id="growthReadinessList"></div>
+          </article>
+        </section>
+
+        <section class="workflow-strip" aria-label="Growth experiment workflow">
+          <div class="workflow-step current" id="growthStepExperiment">
+            <span class="step-index">1</span>
+            <span><strong>Experiment</strong><span>Recover bottleneck, ICP/offer, and hypothesis.</span></span>
+          </div>
+          <div class="workflow-step" id="growthStepActivation">
+            <span class="step-index">2</span>
+            <span><strong>Activation</strong><span>Keep exact artifact, owner, and approval explicit.</span></span>
+          </div>
+          <div class="workflow-step" id="growthStepMeasurement">
+            <span class="step-index">3</span>
+            <span><strong>Measurement</strong><span>Attach threshold, kill rule, proof, and review date.</span></span>
+          </div>
+        </section>
+
+        <section class="growth-panel growth-section" aria-label="AIAGENT growth handoff audit">
+          <div class="status-row">
+            <div>
+              <span class="kicker">AIAGENT handoff audit</span>
+              <h2>Launch gaps are visible before traffic or product changes move.</h2>
+            </div>
+            <span class="status-pill pending" id="growthHandoffAuditPill">No packet audited</span>
+          </div>
+          <p class="growth-meta" id="growthHandoffAuditSummary">Open this app from a Growth handoff to audit experiment, artifact, activation, measurement, proof, and review continuity.</p>
+          <div class="handoff-audit-grid" id="growthHandoffAuditList"></div>
+        </section>
+
+        <section class="metric-strip" aria-label="Growth experiment summary">
+          <article class="metric-card">
+            <span>Experiment anchors</span>
+            <strong id="growthExperimentMetric">0</strong>
+            <small>Bottleneck, ICP/offer, hypothesis, and experiment packet retained.</small>
+          </article>
+          <article class="metric-card">
+            <span>Artifact rows</span>
+            <strong id="growthArtifactMetric">0</strong>
+            <small>Exact artifact and execution packet rows ready for review.</small>
+          </article>
+          <article class="metric-card">
+            <span>Activation gates</span>
+            <strong id="growthActivationMetric">0</strong>
+            <small>Activation, approval, measurement owner, and review date checks.</small>
+          </article>
+          <article class="metric-card">
+            <span>Measurement checks</span>
+            <strong id="growthMeasurementMetric">0</strong>
+            <small>Tracking, threshold, kill rule, status, and proof rows.</small>
+          </article>
+        </section>
+
+        <div class="growth-grid">
+          <aside class="growth-panel growth-stack" aria-label="Recovered growth experiment">
+            <article class="growth-record-card">
+              <strong id="growthRecordTitle">No Growth packet loaded</strong>
+              <span class="growth-meta" id="growthRecordMeta">Open from CAIt or paste/send an app context to populate this console.</span>
+            </article>
+            <table class="growth-table" id="growthExperimentTable" aria-label="Growth experiment overview"></table>
+          </aside>
+
+          <section class="growth-panel growth-section">
+            <div class="status-row">
+              <h2>Exact artifact and activation</h2>
+            </div>
+            <table class="growth-table" id="growthActivationTable" aria-label="Growth activation review"></table>
+          </section>
+        </div>
+
+        <section class="growth-panel growth-section">
+          <div class="status-row">
+            <h2>Measurement, proof, and stop rule</h2>
+          </div>
+          <table class="growth-table" id="growthMeasurementTable" aria-label="Growth measurement review"></table>
+        </section>
+
+        <section class="growth-panel growth-section">
+          <div class="status-row">
+            <h2>Returned CAIt packet</h2>
+          </div>
+          <pre class="context-preview growth-preview" id="growthContextPreview"></pre>
+        </section>
+      </section>
+    </section>
+  </main>
+  <script type="module" src="/growth-ops.js?v=20260526a"></script>
+</body>
+</html>

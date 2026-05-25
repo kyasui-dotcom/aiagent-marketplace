@@ -155,6 +155,36 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     reusePrompt: 'Open Ads Launch Console to review budget, stop rules, creative drafts, launch approval, Ads SaaS readiness, and measurement before any spend.'
   },
   {
+    id: 'growth-experiment-console',
+    name: 'Growth Experiment Console',
+    kind: 'application_agent',
+    description: 'Growth experiment console that retains bottleneck, ICP/offer, hypothesis, exact artifact packet, activation owner, measurement owner, threshold, kill rule, review date, proof tracker, and status labels before launch.',
+    baseUrl: '/growth-ops.html',
+    entryUrl: '/growth-ops.html',
+    capabilities: ['growth_experiment_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'tracking_specification', 'metric_threshold', 'kill_rule', 'execution_proof_tracker'],
+    requiredConnectors: [],
+    requiresApprovalFor: ['growth_activation', 'publish_change', 'external_send'],
+    inputContract: {
+      schemaVersion: 'cait-app-context/v1',
+      accepts: ['growth_experiment_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'growth_packet', 'experiment_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'exact_artifact_packet', 'execution_packet', 'tracking_specification', 'metric_threshold', 'kill_rule', 'activation_owner', 'approval_owner', 'measurement_owner', 'review_date', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan', 'delivery_files'],
+      returns: ['artifacts', 'approval_requests', 'metrics', 'recommended_next_actions']
+    },
+    contextContract: {
+      sourceApps: ['growth_experiment_console'],
+      evidence: {
+        loadedArtifactTypes: ['growth_experiment_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'tracking_specification', 'metric_threshold', 'kill_rule', 'execution_proof_tracker'],
+        summaryFields: ['growth_handoff_audit']
+      }
+    },
+    tags: ['growth', 'experiments', 'measurement'],
+    directCommandAliases: ['growth ops', 'growth experiment', 'growth console', 'growth sprint', 'experiment ops', 'activation handoff', 'グロース実験', '成長施策'],
+    owner: 'cait-managed',
+    status: 'active',
+    verificationStatus: 'cait_managed',
+    mcp: { enabled: false, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'], status: 'paused' },
+    reusePrompt: 'Open Growth Experiment Console to review the retained experiment, exact artifact, activation handoff, measurement owner, proof tracker, and kill rule before launching.'
+  },
+  {
     id: 'pricing-decision-console',
     name: 'Pricing Decision Console',
     kind: 'application_agent',

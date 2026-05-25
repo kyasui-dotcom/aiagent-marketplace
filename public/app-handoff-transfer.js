@@ -513,14 +513,56 @@ const APP_HANDOFF_PRICING_CONTRACT_ALIASES = Object.freeze({
   rollback_or_continue_rule: Object.freeze(['rollbackOrContinueRule', 'rollback_rule', 'rollbackRule', 'continue_rule', 'continueRule'])
 });
 
+const APP_HANDOFF_GROWTH_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqueStrings([
+  'growth_experiment_packet',
+  'growth_asset_handoff_packet',
+  'growth_activation_handoff_packet',
+  'bottleneck',
+  'icp_and_offer',
+  'experiment_hypothesis',
+  'exact_artifact_packet',
+  'execution_packet',
+  'tracking_specification',
+  'metric_threshold',
+  'kill_rule',
+  'activation_owner',
+  'approval_owner',
+  'measurement_owner',
+  'review_date',
+  'execution_proof_tracker',
+  'execution_status_labels'
+]));
+
+const APP_HANDOFF_GROWTH_CONTRACT_ALIASES = Object.freeze({
+  growth_experiment_packet: Object.freeze(['growthExperimentPacket', 'growth_packet', 'growthPacket', 'experiment_packet', 'experimentPacket', 'growth_plan_packet', 'growthPlanPacket']),
+  growth_asset_handoff_packet: Object.freeze(['growthAssetHandoffPacket', 'growth_asset_packet', 'growthAssetPacket', 'asset_handoff_packet', 'assetHandoffPacket']),
+  growth_activation_handoff_packet: Object.freeze(['growthActivationHandoffPacket', 'growth_activation_packet', 'growthActivationPacket', 'activation_handoff_packet', 'activationHandoffPacket']),
+  bottleneck: Object.freeze(['growth_bottleneck', 'growthBottleneck']),
+  icp_and_offer: Object.freeze(['icpAndOffer', 'icp_offer', 'icpOffer', 'target_segment_offer', 'targetSegmentOffer']),
+  experiment_hypothesis: Object.freeze(['experimentHypothesis', 'hypothesis', 'growth_hypothesis', 'growthHypothesis']),
+  exact_artifact_packet: Object.freeze(['exactArtifactPacket', 'artifact_packet', 'artifactPacket', 'exact_copy_or_page_or_channel_artifact', 'exactCopyOrPageOrChannelArtifact']),
+  execution_packet: Object.freeze(['executionPacket', 'activation_packet', 'activationPacket']),
+  tracking_specification: Object.freeze(['trackingSpecification', 'tracking_spec', 'trackingSpec', 'measurement_spec', 'measurementSpec']),
+  metric_threshold: Object.freeze(['metricThreshold', 'success_metric', 'successMetric', 'threshold']),
+  kill_rule: Object.freeze(['killRule', 'stop_rule', 'stopRule']),
+  activation_owner: Object.freeze(['activationOwner', 'implementation_owner', 'implementationOwner']),
+  approval_owner: Object.freeze(['approvalOwner']),
+  measurement_owner: Object.freeze(['measurementOwner']),
+  review_date: Object.freeze(['reviewDate', 'next_review_date', 'nextReviewDate']),
+  execution_proof_tracker: Object.freeze(['executionProofTracker', 'proof_tracker', 'proofTracker']),
+  execution_status_labels: Object.freeze(['executionStatusLabels', 'execution_status', 'executionStatus', 'status_labels', 'statusLabels'])
+});
+
 const APP_HANDOFF_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqueStrings([
   ...APP_HANDOFF_ADS_CONTRACT_FIELDS,
-  ...APP_HANDOFF_PRICING_CONTRACT_FIELDS
+  ...APP_HANDOFF_PRICING_CONTRACT_FIELDS,
+  ...APP_HANDOFF_GROWTH_CONTRACT_FIELDS
 ]));
 
 const APP_HANDOFF_CONTRACT_ALIASES = Object.freeze({
   ...APP_HANDOFF_ADS_CONTRACT_ALIASES,
-  ...APP_HANDOFF_PRICING_CONTRACT_ALIASES
+  ...APP_HANDOFF_PRICING_CONTRACT_ALIASES,
+  ...APP_HANDOFF_GROWTH_CONTRACT_ALIASES
 });
 
 function appHandoffTransferUniqueStrings(items = []) {

@@ -1168,6 +1168,104 @@ try {
   if (!JSON.stringify(adsAliasPacket.artifacts || []).includes('Alias tracking blocker')) throw new Error('ads alias measurement blocker was not returned for reuse');
   if (!JSON.stringify(adsAliasPacket.artifacts || []).includes('AIAGENT output, retained before spend')) throw new Error('ads alias creative packet was not returned for reuse');
 
+  const growthTransferContext = appContextFromTransferPayload('growth-experiment-console', {
+    transfer_id: 'transfer-growth-experiment',
+    title: 'Growth experiment handoff',
+    summary: 'Growth agent returned an experiment packet that must survive as stable SaaS operations.',
+    growthExperimentPacket: [
+      { label: 'Bottleneck', detail: 'AIAGENT users distrust chat-only outputs because no operation state survives.', status: 'validated' },
+      { label: 'ICP and offer', detail: 'Founder who needs retained growth experiments with proof before launch.', status: 'selected' },
+      { label: 'Experiment hypothesis', detail: 'Showing retained app context anchors increases confidence to run CAIt again.', status: 'review' }
+    ],
+    exactArtifactPacket: [
+      { label: 'Exact artifact', detail: 'Add a comparison block that shows server-side retained experiment state.', status: 'draft_only' }
+    ],
+    growthActivationHandoffPacket: [
+      { label: 'Activation owner', detail: 'Growth owner approves page copy before publishing.', status: 'approval_required' }
+    ],
+    trackingSpecification: [
+      { label: 'Tracking specification', detail: 'Measure app-open to follow-up-order conversion.', status: 'ready' }
+    ],
+    metricThreshold: [
+      { label: 'Metric threshold', detail: 'Proceed if follow-up-order rate improves by 15%.', status: 'threshold' }
+    ],
+    killRule: [
+      { label: 'Kill rule', detail: 'Stop if retained context users do not create follow-up orders within 7 days.', status: 'required' }
+    ],
+    measurementOwner: [
+      { label: 'Measurement owner', detail: 'Growth analyst reviews retained packet conversion.', status: 'assigned' }
+    ],
+    reviewDate: [
+      { label: 'Review date', detail: '2026-06-02', status: 'scheduled' }
+    ],
+    executionProofTracker: [
+      { label: 'Proof tracker', detail: 'Capture screenshot and app_context_id after launch.', status: 'not_launched' }
+    ],
+    delivery: {
+      summary: 'Prepared approval-gated growth experiment.',
+      artifacts: [{
+        name: 'growth-experiment.md',
+        artifactType: 'growth_experiment_packet',
+        artifactTypes: ['growth_experiment_packet', 'growth_activation_handoff_packet'],
+        contentPreview: [
+          '# Growth experiment packet',
+          '',
+          '## Bottleneck',
+          '- Bottleneck: AIAGENT users distrust chat-only outputs because no operation state survives.',
+          '',
+          '## ICP and offer',
+          '- ICP and offer: Founder who needs retained growth experiments with proof before launch.',
+          '',
+          '## Experiment hypothesis',
+          '- Experiment hypothesis: Showing retained app context anchors increases confidence to run CAIt again.',
+          '',
+          '## Exact artifact packet',
+          '- Exact artifact: Add a comparison block that shows server-side retained experiment state.',
+          '',
+          '## Growth activation handoff packet',
+          '- Activation owner: Growth owner approves page copy before publishing.',
+          '',
+          '## Tracking specification',
+          '- Tracking specification: Measure app-open to follow-up-order conversion.',
+          '',
+          '## Metric threshold',
+          '- Metric threshold: Proceed if follow-up-order rate improves by 15%.',
+          '',
+          '## Kill rule',
+          '- Kill rule: Stop if retained context users do not create follow-up orders within 7 days.',
+          '',
+          '## Execution proof tracker',
+          '- Proof tracker: Capture screenshot and app_context_id after launch.'
+        ].join('\n')
+      }]
+    }
+  }, {
+    manifestById: () => ({
+      id: 'growth-experiment-console',
+      name: 'Growth Experiment Console',
+      requiresApprovalFor: ['growth_activation', 'publish_change'],
+      inputContract: {
+        schemaVersion: 'cait-app-context/v1',
+        accepts: ['growth_experiment_packet', 'exact_artifact_packet', 'growth_activation_handoff_packet', 'tracking_specification', 'metric_threshold', 'kill_rule', 'measurement_owner', 'review_date', 'execution_proof_tracker', 'delivery_files']
+      }
+    })
+  });
+  if (!JSON.stringify(growthTransferContext.artifacts || []).includes('growth_activation_handoff_packet')) throw new Error('growth transfer context did not preserve activation handoff artifact');
+  if (!JSON.stringify(growthTransferContext.raw_context?.contract_fields || {}).includes('follow-up-order rate')) throw new Error('growth transfer context did not preserve metric threshold in raw_context');
+  await openAppWithContext(page, `/growth-ops.html?chat_return_to=${encodeURIComponent('/chat?thread=growth')}&chat_handoff_id=growth-handoff`, growthTransferContext);
+  await page.waitForSelector('#growthExperimentTable');
+  await page.waitForFunction(() => document.querySelector('#growthRecordTitle')?.textContent?.includes('Growth experiment handoff'));
+  if (!(await page.textContent('#growthExperimentTable')).includes('AIAGENT users distrust')) throw new Error('growth bottleneck was not imported');
+  if (!(await page.textContent('#growthActivationTable')).includes('server-side retained experiment state')) throw new Error('growth exact artifact was not imported');
+  if (!(await page.textContent('#growthMeasurementTable')).includes('follow-up-order rate improves')) throw new Error('growth metric threshold was not imported');
+  if (!(await page.textContent('#growthMeasurementTable')).includes('Stop if retained context users')) throw new Error('growth kill rule was not imported');
+  if (!(await page.textContent('#growthHandoffNotice')).includes('CAIt growth handoff session is attached')) throw new Error('growth server context notice was not rendered');
+  const growthPacket = JSON.parse(await page.textContent('#growthContextPreview'));
+  if (growthPacket.raw_context?.chat_handoff_id !== 'growth-handoff') throw new Error('growth chat handoff id was not preserved in packet');
+  if (!JSON.stringify(growthPacket.artifacts || []).includes('growth_experiment_packet')) throw new Error('growth packet did not return growth_experiment_packet for app contract reuse');
+  if (!JSON.stringify(growthPacket.artifacts || []).includes('growth_activation_handoff_packet')) throw new Error('growth packet did not return growth_activation_handoff_packet for app contract reuse');
+  if (!JSON.stringify(growthPacket.raw_context?.received_context || {}).includes('growth-experiment.md')) throw new Error('growth source delivery file was not preserved in raw_context');
+
   const pricingTransferContext = appContextFromTransferPayload('pricing-decision-console', {
     transfer_id: 'transfer-pricing-decision',
     title: 'Pricing CFO decision handoff',

@@ -90,7 +90,7 @@ import {
 import {
   BUILT_IN_APP_MANIFESTS as APP_AGENT_MANIFESTS,
   CORE_FEATURE_APP_IDS
-} from './app-manifest-registry.js?v=20260526d';
+} from './app-manifest-registry.js?v=20260526e';
 import {
   progressNarratorHtml as agentProgressNarratorHtml,
   progressNarratorProgress as agentProgressNarratorProgress,
