@@ -9,6 +9,7 @@ let statusFilter = 'all';
 let workFilter = 'current';
 let importedContext = null;
 let csrfToken = '';
+let authSnapshot = null;
 let repos = [];
 let repoStatus = {
   checked: false,
@@ -255,6 +256,18 @@ const els = {
   marketFilterSelect: document.getElementById('marketFilterSelect'),
   localeFilterSelect: document.getElementById('localeFilterSelect'),
   statusFilterSelect: document.getElementById('statusFilterSelect'),
+  launchOfferInput: document.getElementById('launchOfferInput'),
+  launchAudienceInput: document.getElementById('launchAudienceInput'),
+  launchGoalInput: document.getElementById('launchGoalInput'),
+  launchDestinationMixInput: document.getElementById('launchDestinationMixInput'),
+  launchDeliveryFormatSelect: document.getElementById('launchDeliveryFormatSelect'),
+  launchProofInput: document.getElementById('launchProofInput'),
+  launchAxisInput: document.getElementById('launchAxisInput'),
+  askPlanningBtn: document.getElementById('askPlanningBtn'),
+  draftFromAxisBtn: document.getElementById('draftFromAxisBtn'),
+  seedLpBtn: document.getElementById('seedLpBtn'),
+  publisherPlanningPill: document.getElementById('publisherPlanningPill'),
+  publisherPlanningNote: document.getElementById('publisherPlanningNote'),
   publisherDestinationCount: document.getElementById('publisherDestinationCount'),
   publisherDestinationMetric: document.getElementById('publisherDestinationMetric'),
   publisherMarketMetric: document.getElementById('publisherMarketMetric'),
@@ -267,6 +280,7 @@ const els = {
   opsReadinessList: document.getElementById('opsReadinessList'),
   dataCheckPill: document.getElementById('dataCheckPill'),
   dataCheckList: document.getElementById('dataCheckList'),
+  publisherLoginLink: document.getElementById('publisherLoginLink'),
   returnToChatLink: document.getElementById('returnToChatLink'),
   handoffSessionNotice: document.getElementById('handoffSessionNotice')
 };
@@ -813,8 +827,10 @@ async function refreshAuthSnapshot() {
       credentials: 'same-origin'
     });
     const payload = await response.json().catch(() => ({}));
+    authSnapshot = payload?.auth || payload?.snapshot?.auth || null;
     csrfToken = String(payload?.auth?.csrfToken || payload?.snapshot?.auth?.csrfToken || '').trim();
   } catch {
+    authSnapshot = null;
     csrfToken = '';
   }
 }
@@ -1605,6 +1621,8 @@ function buildPacket() {
       item.ogDescription ? `OG description: ${item.ogDescription}` : '',
       `Approval status: ${item.status}`,
       `Risk: ${item.risk}`,
+      'SaaS entrypoint: Publisher login keeps account, destinations, approvals, and retained packets.',
+      'Billing model: planning, drafting, routing, and connector-backed work is billed as CAIt usage.',
       'This packet keeps destination rules, execution readiness, and approval state attached to the next CAIt run.',
       repo ? `Selected GitHub repository: ${repo.fullName || repo.full_name}` : '',
       prUrl ? `Created PR: ${prUrl}` : '',
@@ -1613,13 +1631,15 @@ function buildPacket() {
     ].filter(Boolean),
     assumptions: [
       'Publishing, PR creation, external directory submission, or connector execution still requires explicit approval.',
-      'Publisher can create repository handoff PRs or WordPress drafts, but final publishing remains outside chat and approval-gated.'
+      'Publisher can create repository handoff PRs or WordPress drafts, but final publishing remains outside chat and approval-gated.',
+      'Publisher is the SaaS account surface; CAIt is the usage-billed orchestration and generation layer connected to external destinations.'
     ],
     artifacts: [
       { type: contractType, artifact_type: contractType, contract_type: contractType, item_type: item.type, channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), action_type: itemActionType(item), profile_handle: itemProfileHandle(item), profile_url: itemProfileUrl(item), media_assets: itemMediaAssets(item), channel_rules: itemChannelRules(item), approval_checklist: itemApprovalChecklist(item), market: itemMarket(item), locale: itemLocale(item), owner: item.owner || 'CAIt', title: item.title, slug: item.slug, meta: item.meta, keywords: item.keywords, h1: item.h1, primary_cta: item.primaryCta, secondary_cta: item.secondaryCta, internal_links: item.internalLinks, og_title: item.ogTitle, og_description: item.ogDescription, body: item.body, status: item.status, risk: item.risk, source_evidence: item.sourceEvidence || [], publish_variants: item.publishVariants || [], eeat_notes: item.eeatNotes || {} },
       { type: 'github_pr_handoff', repo: repo?.fullName || repo?.full_name || '', repo_path: String(els.repoPathInput?.value || '').trim(), pr_url: prUrl, status: repoStatus.message },
       { type: 'wordpress_draft_handoff', site_url: wordpressStatus?.result?.wordpress?.siteUrl || '', draft_url: wpDraftUrl, draft_id: wordpressStatus?.result?.draft?.id || '', post_type: String(els.wordpressPostTypeSelect?.value || 'posts'), status: wordpressStatus.message },
       { type: 'x_post_handoff', account_username: xStatus?.result?.x?.username || '', connected: Boolean(xStatus.connected), status: xStatus.message },
+      { type: 'publisher_saas_billing_model', ...publisherSaasBillingModel() },
       { type: 'destination_profile', channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), profile_handle: itemProfileHandle(item), profile_url: itemProfileUrl(item), media_assets: itemMediaAssets(item), channel_rules: itemChannelRules(item), approval_checklist: itemApprovalChecklist(item), market: itemMarket(item), locale: itemLocale(item), note: 'Destination profile holds publication rules, owner, CTA policy, compliance notes, OAuth connector, media requirements, and execution method.' }
     ],
     approval_requests: items.map((entry) => ({
@@ -1654,6 +1674,10 @@ function buildPacket() {
       chat_handoff_id: chatHandoffId(),
       chat_return_to: chatReturnTo(),
       publisher_return_to: currentPublisherReturnPath(),
+      publisher_planning: publisherPlanningState(),
+      billing_model: publisherSaasBillingModel(),
+      delivery_format: selectedPublisherDeliveryFormat(),
+      delivery_format_preference: selectedPublisherDeliveryFormat(),
       selected_publisher_item_id: item.id,
       selected_publisher_contract_type: contractType,
       publisher_counts: {
@@ -1683,6 +1707,262 @@ function channelOptionHtml(profile = null) {
 
 function textLength(value = '') {
   return String(value || '').trim().length;
+}
+
+function publisherSaasBillingModel() {
+  return {
+    saas_entrypoint: 'publisher_approval_studio',
+    account_surface: 'Publisher login',
+    paid_meter: 'cait_usage',
+    paid_meter_label: 'CAIt usage fee',
+    value_model: 'Connect CAIt to publishing destinations and bill for planning, drafting, routing, and approval-gated execution support.',
+    connector_strategy: ['x', 'github', 'wordpress', 'email', 'directory', 'owned_site', 'future_partner_apps']
+  };
+}
+
+function renderPublisherLoginState() {
+  if (!els.publisherLoginLink) return;
+  const login = String(authSnapshot?.login || authSnapshot?.user?.login || authSnapshot?.account?.login || '').trim();
+  const loggedIn = Boolean(authSnapshot?.loggedIn || authSnapshot?.user || login);
+  if (loggedIn) {
+    els.publisherLoginLink.textContent = login ? `Publisher: ${login}` : 'Publisher account';
+    els.publisherLoginLink.href = '/settings';
+  } else {
+    const url = new URL('/login', window.location.origin);
+    url.searchParams.set('next', '/publisher-approval.html');
+    url.searchParams.set('source', 'publisher_saas');
+    els.publisherLoginLink.textContent = 'Publisher login';
+    els.publisherLoginLink.href = `${url.pathname}${url.search}`;
+  }
+}
+
+function planningValue(input = null) {
+  return String(input?.value || '').trim();
+}
+
+function selectedPublisherDeliveryFormat() {
+  return String(els.launchDeliveryFormatSelect?.value || 'publisher_packets').trim() || 'publisher_packets';
+}
+
+function publisherPlanningState() {
+  return {
+    offer: planningValue(els.launchOfferInput),
+    audience: planningValue(els.launchAudienceInput),
+    goal: planningValue(els.launchGoalInput),
+    destinationMix: planningValue(els.launchDestinationMixInput),
+    deliveryFormat: selectedPublisherDeliveryFormat(),
+    proof: planningValue(els.launchProofInput),
+    selectedAxis: planningValue(els.launchAxisInput),
+    savedAt: new Date().toISOString()
+  };
+}
+
+function savePublisherPlanningState() {
+  if (els.publisherPlanningPill) {
+    els.publisherPlanningPill.textContent = 'Planning ready';
+    els.publisherPlanningPill.className = 'status-pill approved';
+  }
+  if (els.publisherPlanningNote) {
+    els.publisherPlanningNote.textContent = 'Planning inputs will be saved into the next server-side CAIt packet when you send a planning or draft request.';
+  }
+}
+
+function restorePublisherPlanningState() {
+  if (els.publisherPlanningNote) {
+    els.publisherPlanningNote.textContent = 'Publisher planning is held in the current review state until it is sent as a server-side CAIt packet.';
+  }
+}
+
+function currentLaunchBrief() {
+  const item = selectedItem();
+  return {
+    offer: planningValue(els.launchOfferInput) || item?.title || '',
+    audience: planningValue(els.launchAudienceInput) || item?.target || itemDestination(item),
+    goal: planningValue(els.launchGoalInput) || item?.primaryCta || '',
+    destinationMix: planningValue(els.launchDestinationMixInput) || (item ? `${itemProfile(item)?.label || item.channel}, ${itemDestination(item)}` : 'LP, X, directory, email'),
+    deliveryFormat: selectedPublisherDeliveryFormat(),
+    proof: planningValue(els.launchProofInput) || [
+      item?.meta ? `Meta: ${item.meta}` : '',
+      item?.keywords ? `Keywords: ${item.keywords}` : '',
+      item?.body ? `Current draft:\n${item.body}` : ''
+    ].filter(Boolean).join('\n\n'),
+    selectedAxis: planningValue(els.launchAxisInput)
+  };
+}
+
+function publisherQueueSummary() {
+  return items.slice(0, 12).map((item) => ({
+    id: item.id,
+    title: item.title,
+    destination: itemDestination(item),
+    channel: itemProfile(item)?.label || item.channel,
+    status: item.status,
+    market: itemMarket(item),
+    locale: itemLocale(item),
+    contract_type: itemContractType(item)
+  }));
+}
+
+function buildPublisherPlanningContext(mode = 'axes') {
+  const brief = currentLaunchBrief();
+  const target = mode === 'draft_assets'
+    ? String(els.handoffTargetSelect.value || 'cmo_leader')
+    : 'cmo_leader';
+  const wantsDrafts = mode === 'draft_assets';
+  const requestedOutputs = brief.deliveryFormat === 'lp_and_posts'
+    ? ['landing_page_change', 'site_publish_packet', 'x_post_packet', 'social_copy_packet', 'approval_request']
+    : brief.deliveryFormat === 'approval_queue'
+      ? ['approval_request', 'destination_profile', 'execution_checklist']
+      : brief.deliveryFormat === 'planning_options'
+        ? ['4-6 positioning axes', 'channel fit', 'LP promise', 'post angle', 'risk/blocker', 'recommended selected axis criteria']
+        : brief.deliveryFormat === 'files'
+          ? ['delivery_files', 'markdown packet files', 'approval checklist file']
+          : brief.deliveryFormat === 'chat_summary'
+            ? ['chat summary', 'recommended next actions', 'assumptions']
+            : ['landing_page_change', 'site_publish_packet', 'x_post_packet', 'directory_packet', 'approval_request'];
+  return buildCaitAppContext({
+    source_app: 'publisher_approval_studio',
+    source_app_label: 'Publisher & Approval Studio',
+    title: wantsDrafts ? `Draft Publisher assets: ${brief.offer || 'launch'}` : `Plan Publisher launch axes: ${brief.offer || 'new launch'}`,
+    summary: wantsDrafts
+      ? 'Publisher is asking CAIt to create LP, post, and approval-ready publishing packets from the selected launch axis.'
+      : 'Publisher is asking CAIt to propose multiple launch axes before content is drafted or approved.',
+    facts: [
+      brief.offer ? `Offer / product: ${brief.offer}` : 'Offer / product is not filled yet.',
+      brief.audience ? `Target audience: ${brief.audience}` : '',
+      brief.goal ? `Business goal: ${brief.goal}` : '',
+      brief.destinationMix ? `Destination mix: ${brief.destinationMix}` : '',
+      `Delivery shape: ${brief.deliveryFormat}`,
+      'SaaS entrypoint: users sign in through Publisher and keep launch plans, approvals, and packets there.',
+      'Billing model: CAIt usage fees cover planning, drafting, routing, and connector-backed execution support.',
+      brief.proof ? `Proof / assets: ${brief.proof}` : '',
+      brief.selectedAxis ? `Selected axis: ${brief.selectedAxis}` : '',
+      `Publisher queue items: ${items.length}`,
+      selectedItem() ? `Current selected item: ${selectedItem().title} (${itemDestination(selectedItem())})` : ''
+    ].filter(Boolean),
+    assumptions: [
+      'Publisher is the stable operations board; CAIt should return structured packets that can reopen here.',
+      'No external publishing should happen in chat. Create approval-ready drafts and route execution back through Publisher.',
+      'This is a Publisher SaaS login flow with CAIt usage billing, not a separate per-connector billing UI inside chat.'
+    ],
+    artifacts: [
+      {
+        type: wantsDrafts ? 'publisher_asset_draft_request' : 'publisher_launch_axis_request',
+        artifact_type: wantsDrafts ? 'publisher_asset_draft_request' : 'publisher_launch_axis_request',
+        mode,
+        offer: brief.offer,
+        audience: brief.audience,
+        goal: brief.goal,
+        destination_mix: brief.destinationMix,
+        delivery_format_preference: brief.deliveryFormat,
+        billing_model: publisherSaasBillingModel(),
+        proof_assets: brief.proof,
+        selected_axis: brief.selectedAxis,
+        requested_outputs: requestedOutputs,
+        publisher_queue: publisherQueueSummary()
+      }
+    ],
+    recommended_next_actions: wantsDrafts
+      ? [
+          'Create Publisher-ready artifacts for the selected axis: landing page packet, social post packet, directory/listing packet if relevant, and approval requests.',
+          'Return structured artifacts with destination, channel_key, connector, connector_capability, title, slug, meta, h1, body, CTA, risk, and status.',
+          'Do not publish directly; the returned packets must be reviewed in Publisher.'
+        ]
+      : [
+          'Propose 4-6 distinct launch axes with target segment, promise, proof needed, LP angle, post angle, destination fit, and risks.',
+          'Recommend which axis to choose first and explain why.',
+          'Return the axes as structured Publisher planning artifacts so the chosen axis can be used for the next draft request.'
+        ],
+    handoff_targets: [target, 'seo_specialist', 'build_team_leader'],
+    raw_context: {
+      chat_handoff_id: chatHandoffId(),
+      chat_return_to: chatReturnTo(),
+      publisher_return_to: currentPublisherReturnPath(),
+      publisher_request_mode: mode,
+      publisher_launch_brief: brief,
+      billing_model: publisherSaasBillingModel(),
+      delivery_format: brief.deliveryFormat,
+      delivery_format_preference: brief.deliveryFormat,
+      publisher_queue: publisherQueueSummary()
+    }
+  });
+}
+
+async function sendPublisherPlanningToCait(mode = 'axes') {
+  const wantsDrafts = mode === 'draft_assets';
+  if (wantsDrafts && !planningValue(els.launchAxisInput)) {
+    window.alert('Choose or paste a selected axis before asking CAIt to draft the assets.');
+    return;
+  }
+  const button = wantsDrafts ? els.draftFromAxisBtn : els.askPlanningBtn;
+  if (!button) return;
+  savePublisherPlanningState();
+  persistSelectedFromFields();
+  const previousText = button.textContent;
+  button.disabled = true;
+  button.textContent = wantsDrafts ? 'Sending draft request' : 'Sending planning request';
+  if (els.publisherPlanningPill) {
+    els.publisherPlanningPill.textContent = wantsDrafts ? 'Draft request sent' : 'Planning request sent';
+    els.publisherPlanningPill.className = 'status-pill pending';
+  }
+  try {
+    const returnTo = chatReturnTo();
+    const target = await sendContextToCait(buildPublisherPlanningContext(mode), { returnTo });
+    publishResult = {
+      kind: mode,
+      ok: true,
+      chat_url: target,
+      next: wantsDrafts
+        ? 'CAIt is preparing Publisher-ready assets for the selected axis.'
+        : 'CAIt is preparing launch axes for selection.'
+    };
+    if (els.publisherPlanningNote) {
+      els.publisherPlanningNote.textContent = wantsDrafts
+        ? 'Sent selected-axis draft request to CAIt. Returned artifacts will reopen here as Publisher packets.'
+        : 'Sent launch-axis planning request to CAIt. Paste the chosen axis here, then request drafts.';
+    }
+  } catch (error) {
+    publishResult = { kind: mode, ok: false, error: String(error?.message || error) };
+    if (els.publisherPlanningPill) {
+      els.publisherPlanningPill.textContent = 'Request failed';
+      els.publisherPlanningPill.className = 'status-pill blocked';
+    }
+  } finally {
+    button.disabled = false;
+    button.textContent = previousText;
+    render();
+  }
+}
+
+function seedLandingPageStarter() {
+  savePublisherPlanningState();
+  const brief = currentLaunchBrief();
+  const id = `publisher-lp-${Date.now().toString(36)}`;
+  const title = brief.offer || 'New Publisher launch page';
+  const item = contextItemFromArtifact({
+    id,
+    type: 'landing_page_change',
+    title,
+    slug: `/${slugFromTitle(title)}`,
+    meta: brief.goal || `Landing page for ${title}`,
+    h1: brief.selectedAxis || title,
+    keywords: brief.audience || '',
+    primary_cta: brief.goal || 'Start now',
+    body: [
+      brief.selectedAxis ? `Selected axis: ${brief.selectedAxis}` : '',
+      brief.proof ? `Proof / assets:\n${brief.proof}` : '',
+      'Draft body placeholder. Ask CAIt to draft selected axis to replace this with launch-ready copy.'
+    ].filter(Boolean).join('\n\n'),
+    status: 'needs approval',
+    channel_key: 'owned_site',
+    destination: 'Owned site / Publisher',
+    risk: 'Starter item created in Publisher. Needs CAIt drafting and human approval before publishing.'
+  }, items.length);
+  items = [item, ...items.filter((entry) => entry.id !== id)];
+  selectedId = item.id;
+  destinationFilter = 'all';
+  if (els.launchAxisInput && !planningValue(els.launchAxisInput)) els.launchAxisInput.value = item.h1 || '';
+  render();
 }
 
 function itemDataChecks(item = null) {
@@ -2222,6 +2502,12 @@ els.contentList.addEventListener('click', (event) => {
   input.addEventListener('change', update);
 });
 
+[els.launchOfferInput, els.launchAudienceInput, els.launchGoalInput, els.launchDestinationMixInput, els.launchDeliveryFormatSelect, els.launchProofInput, els.launchAxisInput].forEach((input) => {
+  if (!input) return;
+  input.addEventListener('input', savePublisherPlanningState);
+  input.addEventListener('change', savePublisherPlanningState);
+});
+
 els.workSelect.addEventListener('change', () => {
   persistSelectedFromFields();
   workFilter = String(els.workSelect.value || 'current');
@@ -2249,6 +2535,15 @@ els.statusFilterSelect.addEventListener('change', () => {
 els.saveDraftBtn.addEventListener('click', () => setSelectedStatus('draft'));
 els.reshapeSelectedBtn.addEventListener('click', () => {
   void reshapeSelectedMediumContext();
+});
+els.askPlanningBtn?.addEventListener('click', () => {
+  void sendPublisherPlanningToCait('axes');
+});
+els.draftFromAxisBtn?.addEventListener('click', () => {
+  void sendPublisherPlanningToCait('draft_assets');
+});
+els.seedLpBtn?.addEventListener('click', () => {
+  seedLandingPageStarter();
 });
 els.requestChangesBtn.addEventListener('click', () => setSelectedStatus('changes requested'));
 els.blockBtn.addEventListener('click', () => setSelectedStatus('blocked'));
@@ -2310,7 +2605,9 @@ els.copyPacketBtn.addEventListener('click', async () => {
 });
 
 async function bootstrap() {
+  restorePublisherPlanningState();
   await refreshAuthSnapshot();
+  renderPublisherLoginState();
   applyInboundContext(await fetchCaitAppContextFromUrl());
   await loadPublisherDbItems();
   await loadPublisherDeliveryItems();

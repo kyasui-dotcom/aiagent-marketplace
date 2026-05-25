@@ -673,7 +673,7 @@ assert.ok(analyticsHtml.includes('id="analyticsQueriesCount"'), 'Analytics Conso
 assert.ok(publisherHtml.includes('Publisher & Approval'), 'Publisher and Approval Studio should be a first-class app page.');
 assert.ok(publisherHtml.includes('href="/apps.html"'), 'Publisher Studio should link back to the apps hub.');
 assert.ok(publisherHtml.includes('id="approvalTable"'), 'Publisher Studio should include an approval queue.');
-assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260525d'), 'Publisher Studio should load the app-context receiving controller.');
+assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260525f'), 'Publisher Studio should load the app-context receiving controller.');
 assert.ok(publisherHtml.includes('id="publisherStepApproval"'), 'Publisher Studio should show approval progress before handoff.');
 assert.ok(publisherHtml.includes('id="channelSelect"'), 'Publisher Studio should expose media/channel separation.');
 assert.ok(publisherHtml.includes('id="connectorInput"'), 'Publisher Studio should expose the publish connector per channel.');
@@ -699,6 +699,8 @@ assert.ok(publisherHtml.includes('id="publishNowBtn"'), 'Publisher Studio should
 assert.ok(publisherHtml.includes('id="schedulePostBtn"'), 'Publisher Studio should expose scheduled post execution.');
 assert.ok(publisherHtml.includes('id="bulkPublishBtn"'), 'Publisher Studio should expose bulk publishing for approved packets.');
 assert.ok(publisherHtml.includes('id="connectXBtn"'), 'Publisher Studio should expose X connection for one-click posting.');
+assert.ok(publisherHtml.includes('id="publisherLoginLink"') && publisherHtml.includes('CAIt usage'), 'Publisher Studio should present Publisher login with CAIt usage billing as the SaaS model.');
+assert.ok(publisherHtml.includes('id="launchDeliveryFormatSelect"'), 'Publisher Studio should let users choose the CAIt delivery shape before planning.');
 assert.ok(publisherHtml.includes('id="publisherDestinationCount"'), 'Publisher Studio side navigation counts should come from runtime data.');
 assert.ok(leadOpsHtml.includes('Lead Ops'), 'Lead Ops should be a first-class app page.');
 assert.ok(leadOpsHtml.includes('href="/apps.html"'), 'Lead Ops should link back to the apps hub.');
@@ -725,7 +727,7 @@ assert.ok(campaignOperationsHtml.includes('AIAGENT chat output'), 'Campaign Oper
 assert.ok(deliveryManagerHtml.includes('Deliveries'), 'Deliveries should be a first-class CAIt feature page.');
 assert.ok(deliveryManagerHtml.includes('href="/chat"'), 'Deliveries should link back to chat.');
 assert.ok(deliveryManagerHtml.includes('id="downloadSelectedBtn"'), 'Delivery Manager should expose downloadable delivery files.');
-assert.ok(deliveryManagerHtml.includes('/delivery-manager.js?v=20260525a'), 'Delivery Manager should load the app-context receiving controller.');
+assert.ok(deliveryManagerHtml.includes('/delivery-manager.js?v=20260525b'), 'Delivery Manager should load the app-context receiving controller.');
 assert.ok(deliveryManagerHtml.includes('id="deliverySearchInput"'), 'Delivery Manager should expose delivery search.');
 assert.ok(deliveryManagerHtml.includes('id="deliverySortSelect"'), 'Delivery Manager should expose delivery sorting.');
 assert.ok(deliveryManagerHtml.includes('data-tab="files"'), 'Delivery Manager should expose file and context tabs.');
@@ -969,6 +971,10 @@ assert.ok(publisherJs.includes('bulkPublishApproved'), 'Publisher Studio should 
 assert.ok(publisherJs.includes('approved_text: text'), 'Publisher Studio should pass exact text approval for X posting.');
 assert.ok(publisherJs.includes('fetchCaitAppContextFromUrl'), 'Publisher Studio should receive CAIt contexts through the server context API.');
 assert.ok(publisherJs.includes('applyInboundContext'), 'Publisher Studio should map inbound context into editable approval packets.');
+assert.ok(!publisherJs.includes('localStorage') && publisherJs.includes('server-side CAIt packet'), 'Publisher Studio should put planning inputs into server-side CAIt packets, not browser storage.');
+assert.ok(publisherJs.includes('publisher_launch_axis_request') && publisherJs.includes('publisher_asset_draft_request'), 'Publisher Studio should call CAIt for planning axes and selected-axis asset drafting.');
+assert.ok(publisherJs.includes('delivery_format_preference'), 'Publisher Studio should pass selected delivery shape into CAIt planning requests.');
+assert.ok(publisherJs.includes('publisherSaasBillingModel') && publisherJs.includes('cait_usage'), 'Publisher Studio should preserve Publisher-login plus CAIt-usage billing context in packets.');
 assert.ok(publisherJs.includes('/api/github/repos'), 'Publisher Studio should load GitHub repositories from the server.');
 assert.ok(publisherJs.includes('/api/deliveries/execute'), 'Publisher Studio should use the delivery execution API for PR handoff.');
 assert.ok(publisherJs.includes('confirm_execute'), 'Publisher Studio should explicitly confirm approval-gated PR handoff execution.');
@@ -1015,7 +1021,7 @@ assert.ok(deliveryManagerJs.includes('approval_gate'), 'Delivery Manager should 
 assert.ok(appConsoleCss.includes('.delivery-approval-gate'), 'Delivery Manager approval gate should have app-console styling.');
 assert.ok(!deliveryManagerJs.includes('local delivery samples'), 'Delivery Manager should not depend on local delivery sample payloads.');
 
-assert.ok(chatJs.includes("from './chat-engine.js?v=20260509a'"), 'Chat JS should use root-relative shared chat engine import.');
+assert.ok(chatJs.includes("from './chat-engine.js?v=20260525a'"), 'Chat JS should use root-relative shared chat engine import.');
 assert.ok(appHandoffTransferJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'App handoff transfer should use root-relative delivery action import for legacy social-post extraction.');
 assert.ok(!chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should not import delivery action parsing helpers directly.');
 assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260525b'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
@@ -1064,6 +1070,8 @@ assert.ok(chatJs.includes('orderMilestoneNoticeKeys'), 'Chat milestone notificat
 assert.ok(chatJs.includes('orderMilestoneChatExists'), 'Reloaded chats should not duplicate already-rendered milestone messages.');
 assert.ok(!chatJs.includes('Sending order. I will keep polling and post progress here.'), 'Chat should not post worker-log style send/progress noise.');
 assert.ok(chatJs.includes('function renderInitialAgentMap'), 'Chat should render the initial Agent map immediately after order creation.');
+assert.ok(chatHtml.includes('deliveryFormatSelect') && chatJs.includes('selectedDeliveryFormat'), 'Chat orders should let users choose delivery shape before dispatch.');
+assert.ok(chatEngine.includes('delivery_format_preference') && chatEngine.includes('delivery_format'), 'Chat order payloads should preserve the selected delivery shape.');
 assert.ok(chatJs.includes('renderInitialAgentMap(created'), 'Send order should attach the initial Agent map to accepted/recovered workflow orders.');
 assert.ok(chatJs.includes('showWorkflowProgressMap(job);'), 'Polling/backfill should keep the Agent map progress tree updated in chat.');
 assert.ok(chatJs.includes('data-agent-run-open'), 'Agent map nodes should open a per-agent status and intermediate-deliverable detail panel.');
@@ -1101,7 +1109,7 @@ assert.ok(chatJs.includes('function suggestLeaderChangeIfNeeded'), 'Chat should 
 assert.ok(chatJs.includes('data-chat-action="keep-leader"'), 'Chat should offer a keep-current-leader action when a different leader is suggested.');
 assert.ok(chatJs.includes('data-chat-action="switch-leader"'), 'Chat should offer an explicit switch-leader action instead of automatically changing the leader.');
 assert.ok(chatJs.includes('leaderChangeRequested'), 'Chat should mark explicit user leader-change requests separately from automatic reclassification.');
-assert.ok(chatJs.includes("chat-engine.js?v=20260509a"), 'Chat should cache-bust the chat engine when retry payload fields change.');
+assert.ok(chatJs.includes("chat-engine.js?v=20260525a"), 'Chat should cache-bust the chat engine when retry payload fields change.');
 assert.ok(chatJs.includes('function retryDraftFromJob'), 'Chat should prepare retries from the previous persisted order.');
 assert.ok(chatJs.includes("fetchVisibleJob(safeId, { force: true, progress: false, inspectOnly: true })"), 'Prepare retry should inspect the saved order without triggering progress side effects.');
 assert.ok(chatJs.includes('function handleRetryCommand'), 'Chat should treat typed retry commands as explicit retry preparation instead of a new order.');
@@ -1319,6 +1327,7 @@ assert.ok(analyticsJs.includes('ANALYTICS_CONTEXT_PACKET_KEYS') && analyticsJs.i
 assert.ok(analyticsJs.includes('ANALYTICS_CONTEXT_KEY_ALIASES') && analyticsJs.includes('rowsFromStructuredPayload'), 'Analytics Console should restore top-level app-contract keys and structured JSON artifact content from AIAGENT handoffs.');
 assert.ok(caitAppBridge.includes('APP_CONTEXT_RAW_PRESERVE_KEYS') && caitAppBridge.includes('rawContextWithPreservedContractKeys'), 'CAIt app context bridge should not drop top-level app-contract keys before apps can restore them.');
 assert.ok(caitAppBridge.includes("'deliveryPackage'") && appContextDomainJs.includes("'delivery_package'"), 'CAIt app context normalization should preserve package-shaped delivery contracts for Delivery Manager.');
+assert.ok(caitAppBridge.includes("'attachments'") && appContextDomainJs.includes("'output_files'") && deliveryManagerJs.includes("'raw_result_files'"), 'CAIt app context normalization should preserve attachment-shaped delivery contracts for Delivery Manager.');
 assert.ok(appContextDomainJs.includes("'post_text'") && caitAppBridge.includes("'post_text'"), 'CAIt app context normalization should preserve X Client Ops post_text contract fields.');
 assert.ok(appContextDomainJs.includes("'agent_context'") && caitAppBridge.includes("'agent_context'"), 'CAIt app context normalization should preserve app-agent transfer strategy context fields.');
 assert.ok(caitAppBridge.includes('Create a List Creator order from this Lead Ops sourcing request.'), 'Lead Ops sourcing requests should produce a direct List Creator chat prompt.');

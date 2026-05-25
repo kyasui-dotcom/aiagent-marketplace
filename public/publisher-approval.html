@@ -9,7 +9,7 @@
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/app-console.css?v=20260507b" />
-  <script type="module" src="/publisher-approval.js?v=20260525d"></script>
+  <script type="module" src="/publisher-approval.js?v=20260525f"></script>
 </head>
 <body>
   <main class="app-console-shell" aria-label="CAIt Publisher and Approval Studio">
@@ -24,6 +24,7 @@
           <a href="/delivery-manager.html">Deliveries</a>
         </nav>
         <div class="app-header-actions">
+          <a class="ghost-btn" id="publisherLoginLink" href="/login?next=%2Fpublisher-approval.html&amp;source=publisher_saas">Publisher login</a>
           <a class="ghost-btn" id="returnToChatLink" href="/chat" hidden>Return to chat</a>
           <button class="primary-btn" id="sendPacketBtn" type="button">Send to CAIt</button>
         </div>
@@ -99,6 +100,24 @@
 
           <section class="notice" id="handoffSessionNotice" hidden aria-label="CAIt handoff session notice"></section>
 
+          <section class="metric-strip publisher-saas-model" aria-label="Publisher SaaS billing model">
+            <article class="metric-card">
+              <span>SaaS entry</span>
+              <strong>Publisher</strong>
+              <small>Sign in here to keep destinations, approvals, launch plans, and retained packets under one account.</small>
+            </article>
+            <article class="metric-card">
+              <span>Paid meter</span>
+              <strong>CAIt usage</strong>
+              <small>Planning, drafting, routing, and connector-backed execution are billed as CAIt usage after the user sends work.</small>
+            </article>
+            <article class="metric-card">
+              <span>Growth model</span>
+              <strong>Connectors</strong>
+              <small>Attach X, GitHub, WordPress, email, directories, and future apps so CAIt can sell stable operations around each channel.</small>
+            </article>
+          </section>
+
           <section class="ops-story-grid" aria-label="Operational publishing value">
             <article class="panel ops-story-panel">
               <div class="status-row compact-head">
@@ -159,6 +178,42 @@
                 <option value="blocked">Blocked</option>
               </select>
             </div>
+          </section>
+
+          <section class="panel publisher-cait-planning" aria-label="CAIt publishing planning">
+            <div class="status-row">
+              <div>
+                <span class="kicker">Publisher calls CAIt</span>
+                <h2>Plan the launch, choose an axis, then draft the assets.</h2>
+                <p class="muted">Use Publisher as the stable operations board: CAIt proposes launch axes, you choose the direction, then CAIt returns LP, post, directory, or approval packets into this queue.</p>
+              </div>
+              <span class="status-pill pending" id="publisherPlanningPill">Planning ready</span>
+            </div>
+            <div class="field-grid">
+              <div class="field-row"><label for="launchOfferInput">Offer / product</label><input id="launchOfferInput" placeholder="What are we selling or launching?" /></div>
+              <div class="field-row"><label for="launchAudienceInput">Target audience</label><input id="launchAudienceInput" placeholder="Who should buy, try, or ask?" /></div>
+              <div class="field-row"><label for="launchGoalInput">Business goal</label><input id="launchGoalInput" placeholder="e.g. qualified demos, paid signups, waitlist, trial starts" /></div>
+              <div class="field-row"><label for="launchDestinationMixInput">Destination mix</label><input id="launchDestinationMixInput" placeholder="LP, X, Reddit, directory, email, WordPress..." /></div>
+              <div class="field-row">
+                <label for="launchDeliveryFormatSelect">Delivery shape</label>
+                <select id="launchDeliveryFormatSelect">
+                  <option value="publisher_packets">Publisher packets</option>
+                  <option value="planning_options">Planning options</option>
+                  <option value="lp_and_posts">LP + posts</option>
+                  <option value="approval_queue">Approval queue</option>
+                  <option value="files">Files</option>
+                  <option value="chat_summary">Chat summary</option>
+                </select>
+              </div>
+              <div class="field-row"><label for="launchProofInput">Proof / assets</label><textarea id="launchProofInput" placeholder="Customer proof, screenshots, product facts, constraints, pricing, existing URLs, brand notes"></textarea></div>
+              <div class="field-row"><label for="launchAxisInput">Selected axis</label><textarea id="launchAxisInput" placeholder="Paste or write the chosen axis after CAIt proposes options. Example: Stable AIAGENT operations for teams that need retained approval and publishing state."></textarea></div>
+            </div>
+            <div class="inline-actions" style="margin-top:12px">
+              <button class="primary-btn" id="askPlanningBtn" type="button">Ask CAIt for axes</button>
+              <button class="ghost-btn" id="draftFromAxisBtn" type="button">Draft selected axis</button>
+              <button class="ghost-btn" id="seedLpBtn" type="button">Create LP starter</button>
+            </div>
+            <p class="muted" id="publisherPlanningNote">First ask CAIt for 4-6 launch axes. After choosing one, ask CAIt to create Publisher-ready LP and post packets for this queue.</p>
           </section>
 
           <section class="editor-grid">

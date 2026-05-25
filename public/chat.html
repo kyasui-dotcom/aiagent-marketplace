@@ -9,9 +9,9 @@
   <link rel="canonical" href="https://aiagent-marketplace.net/chat.html" />
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
-  <link rel="stylesheet" href="/chat.css?v=20260513a" />
+  <link rel="stylesheet" href="/chat.css?v=20260525b" />
   <script defer src="/analytics-loader.js?v=20260514a"></script>
-  <script type="module" src="/chat.js?v=20260525b"></script>
+  <script type="module" src="/chat.js?v=20260525d"></script>
 </head>
 <body>
   <main class="chatux-shell" aria-label="CAIt chat">
@@ -66,6 +66,16 @@
       <form class="composer" id="composer">
         <textarea id="promptInput" rows="3" placeholder="Example: I want to improve website acquisition"></textarea>
         <div class="composer-actions">
+          <label class="delivery-format-control" for="deliveryFormatSelect">
+            <span>Delivery</span>
+            <select id="deliveryFormatSelect" aria-label="Delivery shape">
+              <option value="chat_summary">Chat summary</option>
+              <option value="files">Files</option>
+              <option value="review_packets">Review packets</option>
+              <option value="planning_options">Planning options</option>
+              <option value="approval_queue">Approval queue</option>
+            </select>
+          </label>
           <button class="ghost-btn schedule-composer-btn" id="openScheduleComposerBtn" type="button" title="Scheduled work" aria-label="Scheduled work">Schedule</button>
           <button class="ghost-btn" id="resetBtn" type="button">Reset</button>
           <button class="primary-btn" id="sendMessageBtn" type="submit">Send chat</button>

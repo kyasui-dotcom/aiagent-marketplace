@@ -31,6 +31,7 @@ const deliveryRendererSource = read('public/delivery-renderer.js');
 const deliveryItemsSource = read('lib/delivery-items.js');
 const deliveryRoutesSource = read('lib/routes/deliveries.js');
 const openChatIntentSource = read('lib/open-chat-intent.js');
+const chatHtmlSource = read('public/chat.html');
 const appHandoffGateSource = read('public/app-handoff-gate.js');
 const appHandoffTransferSource = read('public/app-handoff-transfer.js');
 const appContextGateSource = read('public/app-context-gate.js');
@@ -434,6 +435,20 @@ assertNotIncludes(chatSource, [
   'socialDraftOrApproval',
   'inferWorkIntentTaskType'
 ], 'public/chat.js accumulated/order-intent routing');
+assertNotIncludes(chatSource, [
+  'function deliveryInstructionForFormat',
+  'delivery_instruction:',
+  'Return Publisher-ready app packets',
+  'Return a landing page packet plus social post packets',
+  'publisher_packets',
+  'lp_and_posts'
+], 'public/chat.js delivery preference boundary');
+assertNotIncludes(chatHtmlSource, [
+  'publisher_packets',
+  'lp_and_posts',
+  'Publisher packets',
+  'LP + posts'
+], 'public/chat.html delivery preference options');
 assertNotIncludes(openChatIntentSource, [
   'LEADER_INTAKE_LLM_OVERRIDE_AGENT_QUESTIONS'
 ], 'lib/open-chat-intent.js');

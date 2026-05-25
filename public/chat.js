@@ -6,7 +6,7 @@ import {
   chatEngineBuildPrepareOrderPayload,
   chatEngineDraftBrief,
   chatEngineIsNeedsInputResponse
-} from './chat-engine.js?v=20260509a';
+} from './chat-engine.js?v=20260525a';
 import {
   connectorGateApprovalAnchor,
   connectorGateAuthorityHandledBySaasHandoff,
@@ -283,6 +283,7 @@ const els = {
   chatThread: $('chatThread'),
   composer: $('composer'),
   promptInput: $('promptInput'),
+  deliveryFormatSelect: $('deliveryFormatSelect'),
   sendMessageBtn: $('sendMessageBtn'),
   resetBtn: $('resetBtn'),
   chatSessionSidebar: $('chatSessionSidebar'),
@@ -321,6 +322,22 @@ const PROMPT_PLACEHOLDERS = {
     ja: '新しい依頼を書くか、状態確認をするか、「このオーダーの続きとして: ...」と明示してください...'
   }
 };
+
+const DELIVERY_FORMAT_LABELS = Object.freeze({
+  chat_summary: 'Chat summary',
+  files: 'Files',
+  review_packets: 'Review packets',
+  planning_options: 'Planning options',
+  approval_queue: 'Approval queue'
+});
+
+function selectedDeliveryFormat() {
+  return String(els.deliveryFormatSelect?.value || 'chat_summary').trim() || 'chat_summary';
+}
+
+function selectedDeliveryFormatLabel(format = selectedDeliveryFormat()) {
+  return DELIVERY_FORMAT_LABELS[String(format || '').trim()] || DELIVERY_FORMAT_LABELS.chat_summary;
+}
 
 function escapeHtml(value = '') {
   return String(value || '')
@@ -7526,6 +7543,8 @@ async function prepareOrder(prompt, options = {}) {
       activeLeaderLocked,
       leaderChangeRequested,
       intakeAnswered: options.intakeAnswered === true,
+      deliveryFormat: options.deliveryFormat || options.delivery_format || selectedDeliveryFormat(),
+      delivery_format: options.deliveryFormat || options.delivery_format || selectedDeliveryFormat(),
       skipOpenAiIntent
       }))
     }, {
@@ -7558,6 +7577,8 @@ async function prepareOrder(prompt, options = {}) {
     activeOwnerName: effectiveActiveOwnerName,
     activeOwnerLocked,
     leaderChangeRequested,
+    deliveryFormat: options.deliveryFormat || options.delivery_format || selectedDeliveryFormat(),
+    delivery_format: options.deliveryFormat || options.delivery_format || selectedDeliveryFormat(),
     announce: true,
     sample: options.originalPrompt || prompt
   });
@@ -7575,7 +7596,9 @@ async function prepareOrder(prompt, options = {}) {
     activeOwnerTaskType: effectiveActiveOwnerTaskType,
     activeOwnerName: effectiveActiveOwnerName,
     activeOwnerLocked: Boolean(state.activeOwnerLocked && state.activeOwner?.taskType),
-    leaderChangeRequested
+    leaderChangeRequested,
+    deliveryFormat: options.deliveryFormat || options.delivery_format || selectedDeliveryFormat(),
+    delivery_format: options.deliveryFormat || options.delivery_format || selectedDeliveryFormat()
   });
   const appContext = options.appContext || state.pendingAppContext || null;
   if (appContext && typeof appContext === 'object') {
@@ -7607,6 +7630,7 @@ async function sendOrder() {
       return;
     }
     const actorLabel = activeActorLabel('CAIt');
+    const acceptedDeliveryFormat = acceptedDraft.deliveryFormat || acceptedDraft.delivery_format || selectedDeliveryFormat();
     const payload = chatEngineBuildJobPayload(acceptedDraft, {
       parentAgentId: 'chatux',
       source: 'chatux',
@@ -7619,6 +7643,9 @@ async function sendOrder() {
           return_path: CHATUX_RETURN_PATH,
           visitor_id: state.visitorId
         },
+        deliveryFormat: acceptedDeliveryFormat,
+        delivery_format: acceptedDeliveryFormat,
+        delivery_format_label: selectedDeliveryFormatLabel(acceptedDeliveryFormat),
         chatSessionId,
         intake: {
           prepared_in_chat: true,

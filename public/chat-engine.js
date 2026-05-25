@@ -1,4 +1,16 @@
 export const CHAT_ENGINE_DEFAULT_REQUESTED_STRATEGY = 'auto';
+export const CHAT_ENGINE_DELIVERY_FORMATS = Object.freeze([
+  'chat_summary',
+  'files',
+  'review_packets',
+  'planning_options',
+  'approval_queue'
+]);
+
+export function chatEngineNormalizeDeliveryFormat(value = '') {
+  const format = String(value || '').trim();
+  return CHAT_ENGINE_DELIVERY_FORMATS.includes(format) ? format : '';
+}
 
 export function chatEngineLooksJapanese(value = '') {
   return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(String(value || ''));
@@ -20,6 +32,7 @@ export function chatEngineBuildPrepareOrderPayload(prompt = '', options = {}) {
   const activeOwnerName = String(options.activeOwnerName || options.active_owner_name || '').trim();
   const activeOwnerLocked = options.activeOwnerLocked === true || options.active_owner_locked === true;
   const leaderChangeRequested = options.leaderChangeRequested === true || options.leader_change_requested === true;
+  const deliveryFormat = chatEngineNormalizeDeliveryFormat(options.deliveryFormat || options.delivery_format);
   const lockedOwnerTaskType = activeOwnerLocked && activeOwnerType && activeOwnerType !== 'cait' && !leaderChangeRequested
     ? activeOwnerTaskType
     : '';
@@ -34,6 +47,7 @@ export function chatEngineBuildPrepareOrderPayload(prompt = '', options = {}) {
   return {
     prompt: String(prompt || '').trim(),
     requestedStrategy: String(options.requestedStrategy || CHAT_ENGINE_DEFAULT_REQUESTED_STRATEGY).trim() || CHAT_ENGINE_DEFAULT_REQUESTED_STRATEGY,
+    ...(deliveryFormat ? { delivery_format: deliveryFormat } : {}),
     ...(taskType ? { task_type: taskType } : {}),
     ...(selectedAgentId ? { selected_agent_id: selectedAgentId } : {}),
     ...(selectedAgentName ? { selected_agent_name: selectedAgentName } : {}),
@@ -262,6 +276,12 @@ export function chatEngineDraftBrief(prompt = '', prepared = {}, options = {}) {
 
 export function chatEngineBuildOrderDraft(prompt = '', prepared = {}, options = {}) {
   const owner = chatEngineConversationOwner(prepared, options);
+  const deliveryFormat = chatEngineNormalizeDeliveryFormat(
+    options.deliveryFormat
+    || options.delivery_format
+    || prepared.deliveryFormat
+    || prepared.delivery_format
+  );
   const activeLeaderLocked = options.activeLeaderLocked === true
     || options.active_leader_locked === true
     || prepared.activeLeaderLocked === true
@@ -278,6 +298,8 @@ export function chatEngineBuildOrderDraft(prompt = '', prepared = {}, options = 
     intakeChecked: options.intakeChecked === true,
     selectedAgentId: options.selectedAgentId || prepared.selectedAgentId || prepared.selected_agent_id || '',
     selectedAgentName: options.selectedAgentName || prepared.selectedAgentName || prepared.selected_agent_name || '',
+    deliveryFormat,
+    delivery_format: deliveryFormat,
     conversationOwner: owner,
     activeOwnerType: owner.type,
     activeOwnerTaskType: owner.type !== 'cait' ? owner.taskType : '',
@@ -297,6 +319,7 @@ export function chatEngineBuildJobPayload(draft = {}, options = {}) {
   const selectedAgentName = draft.selectedAgentName || draft.selected_agent_name || '';
   const taskType = draft.taskType || draft.task_type || 'research';
   const owner = chatEngineConversationOwner(draft, options);
+  const deliveryFormat = chatEngineNormalizeDeliveryFormat(draft.deliveryFormat || draft.delivery_format);
   return {
     parent_agent_id: options.parentAgentId || draft.parent_agent_id || draft.parentAgentId || 'cloudcode-main',
     task_type: taskType,
@@ -326,6 +349,10 @@ export function chatEngineBuildJobPayload(draft = {}, options = {}) {
       active_owner_locked: true
     } : {}),
     ...(draft.leaderChangeRequested === true ? { leader_change_requested: true } : {}),
+    ...(deliveryFormat ? {
+      delivery_format: deliveryFormat,
+      deliveryFormat: deliveryFormat
+    } : {}),
     confirmation: {
       accepted: true,
       source: 'chat_send_order',
@@ -336,10 +363,17 @@ export function chatEngineBuildJobPayload(draft = {}, options = {}) {
       ...(draft.input && typeof draft.input === 'object' ? draft.input : {}),
       source: options.source || draft.input?.source || 'chat',
       original_prompt: draft.originalPrompt || draft.original_prompt || '',
+      ...(deliveryFormat ? {
+        delivery_format_preference: deliveryFormat
+      } : {}),
       _broker: {
         ...((draft.input && typeof draft.input === 'object' && draft.input._broker && typeof draft.input._broker === 'object') ? draft.input._broker : {}),
         ...broker,
         conversationOwner: owner,
+        ...(deliveryFormat ? {
+          deliveryFormat,
+          delivery_format: deliveryFormat
+        } : {}),
         ...(draft.activeOwnerLocked === true && owner.type !== 'cait' ? {
           activeOwnerLocked: true,
           activeOwner: {

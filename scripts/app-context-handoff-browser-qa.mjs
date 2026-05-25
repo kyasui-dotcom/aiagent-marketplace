@@ -99,6 +99,17 @@ try {
   await page.waitForSelector('#handoffSessionNotice:not([hidden])');
   if (!(await page.textContent('#handoffSessionNotice')).includes('no server packet is loaded yet')) throw new Error('publisher chat-return-only warning was not rendered');
   if (!(await page.textContent('#opsReadinessList')).includes('Send to CAIt will create the server-side packet reference')) throw new Error('publisher chat-return-only readiness overclaimed server context');
+  await page.fill('#launchOfferInput', 'Stable AIAGENT operations SaaS');
+  await page.fill('#launchAudienceInput', 'Teams that think AIAGENT chat data disappears');
+  await page.selectOption('#launchDeliveryFormatSelect', 'lp_and_posts');
+  await page.fill('#launchAxisInput', 'Reliable retained operations after disposable AIAGENT output');
+  await page.waitForFunction(() => document.querySelector('#publisherPlanningPill')?.textContent?.includes('Planning ready'));
+  await page.click('#seedLpBtn');
+  await page.waitForFunction(() => document.querySelector('#titleInput')?.value?.includes('Stable AIAGENT operations SaaS'));
+  const seededPublisherPacket = JSON.parse(await page.textContent('#packetPreview'));
+  if (!JSON.stringify(seededPublisherPacket.raw_context || {}).includes('lp_and_posts')) throw new Error('publisher planning delivery shape was not preserved in packet raw_context');
+  if (!JSON.stringify(seededPublisherPacket.raw_context || {}).includes('cait_usage')) throw new Error('publisher SaaS billing model was not preserved in packet raw_context');
+  if (!JSON.stringify(seededPublisherPacket.artifacts || []).includes('site_publish_packet')) throw new Error('publisher LP starter did not create a Publisher packet');
 
   await page.goto(`${base}/lead-ops.html`);
   await page.waitForSelector('#leadTable');
@@ -981,6 +992,8 @@ try {
     title: 'Imported delivery packet',
     summary: 'Imported delivery summary',
     delivery_files: [{ name: 'imported-delivery.md', type: 'markdown', content: '# Imported delivery' }],
+    attachments: [{ name: 'attachment-delivery.md', type: 'markdown', content: '# Attachment delivery\n\nRecovered from attachment alias.' }],
+    outputFiles: [{ name: 'output-file-delivery.md', type: 'markdown', content: '# Output file delivery\n\nRecovered from outputFiles alias.' }],
     deliveryPackage: {
       summary: 'Package-shaped AIAGENT delivery summary',
       files: [{
@@ -1002,6 +1015,8 @@ try {
   await page.waitForSelector('#deliveryList');
   if (!(await page.textContent('#deliveryList')).includes('Imported delivery packet')) throw new Error('delivery context was not rendered');
   if (!(await page.textContent('#fileTable')).includes('imported-delivery.md')) throw new Error('delivery file was not rendered');
+  if (!(await page.textContent('#fileTable')).includes('attachment-delivery.md')) throw new Error('delivery attachment alias was not rendered');
+  if (!(await page.textContent('#fileTable')).includes('output-file-delivery.md')) throw new Error('delivery outputFiles alias was not rendered');
   if (!(await page.textContent('#fileTable')).includes('package-shaped-delivery.md')) throw new Error('deliveryPackage file was not rendered');
   if (!(await page.textContent('#fileTable')).includes('generic-transfer-delivery.md')) throw new Error('delivery raw transfer artifact was not recovered');
   await page.waitForFunction(() => document.querySelector('#deliveryHandoffNotice')?.textContent?.includes('Stable delivery handoff loaded'));
@@ -1011,6 +1026,8 @@ try {
   if (deliveryPacket.raw_context?.chat_return_to !== '/chat?thread=delivery') throw new Error('delivery chat return path was not preserved in packet');
   if (!JSON.stringify(deliveryPacket.artifacts || []).includes('handoff_audit')) throw new Error('delivery packet did not return handoff_audit for app contract debugging');
   if (!JSON.stringify(deliveryPacket.delivery_files || []).includes('Recovered from contentPreview')) throw new Error('delivery packet did not return recovered contentPreview file');
+  if (!JSON.stringify(deliveryPacket.delivery_files || []).includes('Recovered from attachment alias')) throw new Error('delivery packet did not return recovered attachment file');
+  if (!JSON.stringify(deliveryPacket.delivery_files || []).includes('Recovered from outputFiles alias')) throw new Error('delivery packet did not return recovered outputFiles file');
   if (!JSON.stringify(deliveryPacket.delivery_files || []).includes('Recovered from top-level deliveryPackage')) throw new Error('delivery packet did not return deliveryPackage files for reuse');
   if (!JSON.stringify(deliveryPacket.raw_context?.received_context || {}).includes('delivery_package')) throw new Error('deliveryPackage source was not preserved in server raw_context');
 

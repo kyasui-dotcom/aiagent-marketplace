@@ -51,6 +51,15 @@ const APP_CONTEXT_RAW_PRESERVE_KEYS = Object.freeze([
   'deliveryPacket',
   'delivery_artifacts',
   'deliveryArtifacts',
+  'delivery_files',
+  'deliveryFiles',
+  'files',
+  'attachments',
+  'output_files',
+  'outputFiles',
+  'result_files',
+  'resultFiles',
+  'deliverables',
   'post_text',
   'postText',
   'approved_text',
@@ -136,6 +145,12 @@ function safeObjectList(value = [], max = 24) {
     .filter((item) => item && typeof item === 'object')
     .map((item) => compactObject(item, { depth: 4, maxText: 6000, maxArray: 12 }))
     .slice(0, max);
+}
+
+function safeDeliveryFileObjectList(source = {}, max = 24) {
+  const keys = ['delivery_files', 'deliveryFiles', 'files', 'attachments', 'output_files', 'outputFiles', 'result_files', 'resultFiles', 'deliverables'];
+  const items = keys.flatMap((key) => (Array.isArray(source[key]) ? source[key] : []));
+  return safeObjectList(items, max);
 }
 
 function compactObject(value, options = {}, depth = 0) {
@@ -322,7 +337,7 @@ export function buildCaitAppContext(raw = {}) {
     metrics: safeObjectList(raw.metrics || [], 40),
     recommended_next_actions: safeList(raw.recommended_next_actions || raw.recommendedNextActions || [], 24),
     approval_requests: safeObjectList(raw.approval_requests || raw.approvalRequests || [], 24),
-    delivery_files: safeObjectList(raw.delivery_files || raw.deliveryFiles || raw.files || [], 24),
+    delivery_files: safeDeliveryFileObjectList(raw, 24),
     handoff_targets: safeList(raw.handoff_targets || raw.handoffTargets || [], 16),
     raw_context: compactObject(rawContextWithPreservedContractKeys(raw), { depth: 5, maxText: 1000, maxArray: 12 }),
     created_at: createdAt

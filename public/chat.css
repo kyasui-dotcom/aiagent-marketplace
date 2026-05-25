@@ -191,7 +191,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 18px;
   padding: 16px 18px;
   border-bottom: 1px solid var(--line);
@@ -587,12 +587,40 @@ textarea {
 
 .composer-actions {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  flex-wrap: nowrap;
   gap: 8px;
 }
 
+.delivery-format-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 1 160px;
+  min-height: 42px;
+  max-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.delivery-format-control select {
+  min-height: 30px;
+  min-width: 0;
+  max-width: 76px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
 .schedule-composer-btn {
-  min-width: 94px;
+  min-width: 84px;
 }
 
 .primary-btn,
@@ -1575,7 +1603,17 @@ button.agent-map-single:focus-visible {
   }
 
   .composer-actions {
+    flex-wrap: wrap;
     justify-content: space-between;
+  }
+
+  .delivery-format-control {
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
+
+  .delivery-format-control select {
+    max-width: min(220px, 62vw);
   }
 
   .usage-row {
