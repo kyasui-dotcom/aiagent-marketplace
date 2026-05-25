@@ -159,11 +159,25 @@
       "id": "writer-copy-packet",
       "file": "writer.js",
       "kind": "writing",
-      "prompt": "Create homepage copy for an AI agent marketplace. Audience: solo founders. CTA: start with one paid agent order. Include proof placeholders and two distinct variants.",
+      "prompt": "Create homepage hero and section copy for an AI agent marketplace aimed at solo founders. CTA: start with one paid agent order. No verified customer testimonials, revenue metrics, or case-study proof are supplied, so keep proof claims conservative, include a proof placeholder map with replacement evidence needed, create a claim-use ledger, provide two distinct variants, and prepare a downstream handoff packet for the founder and landing page owner. Do not claim any proof is verified, approved, published, or safe for downstream reuse without owner review.",
       "body": {
         "input": {
           "audience": "solo founders",
-          "cta": "start paid agent order"
+          "surface": "homepage",
+          "cta": "start paid agent order",
+          "offer": "order a managed AI agent for growth or operations work",
+          "proof_status": "missing: no verified testimonials, revenue metrics, retention metrics, or case studies supplied",
+          "known_safe_facts": [
+            "users can start with one paid agent order",
+            "the service is an AI agent marketplace"
+          ],
+          "blocked_claims": [
+            "trusted by founders",
+            "saves 10 hours per week",
+            "customers increased revenue"
+          ],
+          "downstream_owner": "landing page owner",
+          "approval_owner": "founder"
         }
       }
     },

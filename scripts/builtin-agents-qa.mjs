@@ -198,9 +198,9 @@ const externalCommunicationContractExpectations = [
   {
     kind: 'writer',
     actions: ['prepare_copy_packet', 'prepare_publisher_handoff_copy', 'prepare_claim_safe_downstream_handoff'],
-    requiredSections: ['Copy mode', 'Proof status', 'Claim use ledger', 'Downstream handoff packet'],
-    guidedSections: ['Claim use ledger', 'Downstream handoff packet'],
-    forbiddenClaims: ['claims verified without source review', 'copy approved by owner without evidence']
+    requiredSections: ['Copy mode', 'Proof status', 'Proof placeholder map', 'Claim use ledger', 'Downstream handoff packet'],
+    guidedSections: ['Proof placeholder map', 'Claim use ledger', 'Downstream handoff packet'],
+    forbiddenClaims: ['claims verified without source review', 'copy approved by owner without evidence', 'placeholder treated as approved proof without owner review']
   },
   {
     kind: 'x_post',
