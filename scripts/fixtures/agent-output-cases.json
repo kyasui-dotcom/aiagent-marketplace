@@ -494,10 +494,14 @@
       "id": "research-team-leader-source-plan",
       "file": "research-team-leader.js",
       "kind": "research_team_leader",
-      "prompt": "Coordinate research on AI agent marketplace demand. Include research question, non-overlapping specialist split, evidence acceptance criteria, synthesis plan, and confidence grading.",
+      "prompt": "Coordinate research on AI agent marketplace demand for deciding the first paid buyer segment. Split work across non-overlapping specialists, define source plan, per-specialist evidence acceptance standards, conflict resolution, synthesis plan, confidence grading, and owner-ready decision handoff. Do not claim research is complete, sources were accessed, or the segment decision is approved without proof.",
       "body": {
         "input": {
-          "research_question": "which buyer segment is ready to pay first"
+          "research_question": "which buyer segment is ready to pay first",
+          "candidate_segments": ["solo founders", "small agencies", "internal ops teams"],
+          "supplied_context": "homepage positioning notes only; no GA4 export, Search Console export, customer interviews, or competitor source ledger supplied",
+          "expected_deliverable": "decision memo workplan with specialist split and evidence acceptance matrix",
+          "next_owner": "founder"
         }
       }
     },
