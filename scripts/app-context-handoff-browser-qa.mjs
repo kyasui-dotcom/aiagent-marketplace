@@ -1168,6 +1168,120 @@ try {
   if (!JSON.stringify(adsAliasPacket.artifacts || []).includes('Alias tracking blocker')) throw new Error('ads alias measurement blocker was not returned for reuse');
   if (!JSON.stringify(adsAliasPacket.artifacts || []).includes('AIAGENT output, retained before spend')) throw new Error('ads alias creative packet was not returned for reuse');
 
+  const pricingTransferContext = appContextFromTransferPayload('pricing-decision-console', {
+    transfer_id: 'transfer-pricing-decision',
+    title: 'Pricing CFO decision handoff',
+    summary: 'Pricing agent returned a price-change decision packet that must survive as stable SaaS operations.',
+    pricingDecisionPacket: [
+      { label: 'Decision question', detail: 'Move CAIt Publisher login to a usage-metered CAIt plan without losing trust?', status: 'draft' }
+    ],
+    valueMetric: [
+      { label: 'Value metric', detail: 'Approved CAIt usage minutes with retained app-context packets.', status: 'selected' }
+    ],
+    assumptionTable: [
+      { label: 'Expansion assumption', detail: 'Users accept usage billing when Publisher keeps approval and connector state visible.', status: 'needs review' }
+    ],
+    sourceToModelLedger: [
+      { label: 'Source ledger', detail: 'Publisher SaaS model and CAIt usage billing context from retained app packet.', status: 'retained' }
+    ],
+    scenarioTable: [
+      { label: 'Base scenario', detail: 'Publisher login free; CAIt usage billed per run after free credits.', status: 'review' }
+    ],
+    sensitivityTable: [
+      { label: 'Usage sensitivity', detail: 'If retained packets per customer drop below target, keep beta billing paused.', status: 'watch' }
+    ],
+    recommendedPrice: [
+      { label: 'Recommendation', detail: 'Keep Publisher as the SaaS entry and price CAIt usage separately.', status: 'recommended' }
+    ],
+    approvalOwner: [
+      { label: 'Approval owner', detail: 'Product owner approves billing copy and pricing switch before external change.', status: 'required' }
+    ],
+    priceChangeHandoff: [
+      { label: 'Price-change handoff', detail: 'No billing copy or paid meter change until approval owner signs off.', status: 'blocked' }
+    ],
+    executionProofTracker: [
+      { label: 'Proof tracker', detail: 'Capture first 10 retained packets, usage charges, and support tickets.', status: 'scheduled' }
+    ],
+    decisionTrigger: [
+      { label: 'Decision trigger', detail: 'Proceed only after retained packet creation succeeds for Publisher, Apps Hub, and Pricing Console.', status: 'trigger' }
+    ],
+    rollbackOrContinueRule: [
+      { label: 'Rollback rule', detail: 'Rollback if paid users cannot see retained app-context anchors after CAIt usage.', status: 'required' }
+    ],
+    delivery: {
+      summary: 'Prepared approval-gated pricing decision.',
+      artifacts: [{
+        name: 'pricing-cfo-decision.md',
+        artifactType: 'pricing_decision_packet',
+        artifactTypes: ['pricing_decision_packet', 'price_change_handoff'],
+        contentPreview: [
+          '# Pricing decision packet',
+          '',
+          '## Pricing question',
+          '- Decision question: Move CAIt Publisher login to a usage-metered CAIt plan without losing trust?',
+          '',
+          '## Value metric',
+          '- Value metric: Approved CAIt usage minutes with retained app-context packets.',
+          '',
+          '## Assumptions',
+          '- Expansion assumption: Users accept usage billing when Publisher keeps approval and connector state visible.',
+          '',
+          '## Source to model ledger',
+          '- Source ledger: Publisher SaaS model and CAIt usage billing context from retained app packet.',
+          '',
+          '## Scenario table',
+          '- Base scenario: Publisher login free; CAIt usage billed per run after free credits.',
+          '',
+          '## Sensitivity table',
+          '- Usage sensitivity: If retained packets per customer drop below target, keep beta billing paused.',
+          '',
+          '## Recommendation',
+          '- Recommendation: Keep Publisher as the SaaS entry and price CAIt usage separately.',
+          '',
+          '## Approval owner',
+          '- Approval owner: Product owner approves billing copy and pricing switch before external change.',
+          '',
+          '## Price change handoff',
+          '- Price-change handoff: No billing copy or paid meter change until approval owner signs off.',
+          '',
+          '## Execution proof tracker',
+          '- Proof tracker: Capture first 10 retained packets, usage charges, and support tickets.',
+          '',
+          '## Decision trigger',
+          '- Decision trigger: Proceed only after retained packet creation succeeds for Publisher, Apps Hub, and Pricing Console.',
+          '',
+          '## Rollback or continue rule',
+          '- Rollback rule: Rollback if paid users cannot see retained app-context anchors after CAIt usage.'
+        ].join('\n')
+      }]
+    }
+  }, {
+    manifestById: () => ({
+      id: 'pricing-decision-console',
+      name: 'Pricing Decision Console',
+      requiresApprovalFor: ['price_change', 'billing_change'],
+      inputContract: {
+        schemaVersion: 'cait-app-context/v1',
+        accepts: ['pricing_decision_packet', 'value_metric', 'assumptions', 'source_to_model_ledger', 'scenario_table', 'sensitivity_table', 'recommendation', 'approval_owner', 'price_change_handoff', 'execution_proof_tracker', 'decision_trigger', 'rollback_or_continue_rule', 'delivery_files']
+      }
+    })
+  });
+  if (!JSON.stringify(pricingTransferContext.artifacts || []).includes('price_change_handoff')) throw new Error('pricing transfer context did not preserve price_change_handoff artifact');
+  if (!JSON.stringify(pricingTransferContext.raw_context?.contract_fields || {}).includes('Publisher login free')) throw new Error('pricing transfer context did not preserve scenario fields in raw_context');
+  await openAppWithContext(page, `/pricing-ops.html?chat_return_to=${encodeURIComponent('/chat?thread=pricing')}&chat_handoff_id=pricing-handoff`, pricingTransferContext);
+  await page.waitForSelector('#pricingDecisionTable');
+  await page.waitForFunction(() => document.querySelector('#pricingRecordTitle')?.textContent?.includes('Pricing CFO decision handoff'));
+  if (!(await page.textContent('#pricingDecisionTable')).includes('Approved CAIt usage minutes')) throw new Error('pricing value metric was not imported');
+  if (!(await page.textContent('#pricingScenarioTable')).includes('Publisher login free')) throw new Error('pricing scenario table was not imported');
+  if (!(await page.textContent('#pricingRiskTable')).includes('No billing copy or paid meter change')) throw new Error('pricing price-change handoff was not imported');
+  if (!(await page.textContent('#pricingRiskTable')).includes('Rollback if paid users cannot see retained')) throw new Error('pricing rollback rule was not imported');
+  if (!(await page.textContent('#pricingHandoffNotice')).includes('CAIt pricing handoff session is attached')) throw new Error('pricing server context notice was not rendered');
+  const pricingPacket = JSON.parse(await page.textContent('#pricingContextPreview'));
+  if (pricingPacket.raw_context?.chat_handoff_id !== 'pricing-handoff') throw new Error('pricing chat handoff id was not preserved in packet');
+  if (!JSON.stringify(pricingPacket.artifacts || []).includes('pricing_decision_packet')) throw new Error('pricing packet did not return pricing_decision_packet for app contract reuse');
+  if (!JSON.stringify(pricingPacket.artifacts || []).includes('price_change_handoff')) throw new Error('pricing packet did not return price_change_handoff for app contract reuse');
+  if (!JSON.stringify(pricingPacket.raw_context?.received_context || {}).includes('pricing-cfo-decision.md')) throw new Error('pricing source delivery file was not preserved in raw_context');
+
   await openAppWithContext(page, '/lead-ops.html', {
     schema: 'cait-app-context/v1',
     source_app: 'qa_list_creator',

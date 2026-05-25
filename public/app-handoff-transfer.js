@@ -439,7 +439,7 @@ function appHandoffTransferStrategyText(payload = {}, settings = {}) {
   ], 1800);
 }
 
-const APP_HANDOFF_ADS_CONTRACT_FIELDS = Object.freeze([
+const APP_HANDOFF_ADS_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqueStrings([
   'ads_plan',
   'ads_plan_packet',
   'paid_ads_plan',
@@ -455,7 +455,7 @@ const APP_HANDOFF_ADS_CONTRACT_FIELDS = Object.freeze([
   'launch_approval_handoff',
   'execution_status_labels',
   'measurement_plan'
-]);
+]));
 
 const APP_HANDOFF_ADS_CONTRACT_ALIASES = Object.freeze({
   ads_plan: Object.freeze(['adsPlan', 'ads_plan_packet', 'adsPlanPacket', 'paid_ads_plan', 'paidAdsPlan', 'ad_plan', 'adPlan', 'ad_campaign_plan', 'adCampaignPlan', 'paid_acquisition_plan', 'paidAcquisitionPlan']),
@@ -475,13 +475,65 @@ const APP_HANDOFF_ADS_CONTRACT_ALIASES = Object.freeze({
   measurement_plan: Object.freeze(['measurementPlan', 'measurement_checks', 'measurementChecks', 'conversion_tracking_plan', 'conversionTrackingPlan', 'tracking_plan', 'trackingPlan', 'post_launch_measurement', 'postLaunchMeasurement'])
 });
 
+const APP_HANDOFF_PRICING_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqueStrings([
+  'pricing_decision_packet',
+  'cfo_decision_packet',
+  'pricing_question',
+  'value_metric',
+  'assumptions',
+  'source_to_model_ledger',
+  'formula',
+  'scenario_table',
+  'sensitivity_table',
+  'recommendation',
+  'approval_owner',
+  'price_change_handoff',
+  'execution_proof_tracker',
+  'execution_status_labels',
+  'decision_trigger',
+  'rollback_or_continue_rule'
+]));
+
+const APP_HANDOFF_PRICING_CONTRACT_ALIASES = Object.freeze({
+  pricing_decision_packet: Object.freeze(['pricingDecisionPacket', 'pricing_packet', 'pricingPacket', 'pricing_model_packet', 'pricingModelPacket', 'price_change_packet', 'priceChangePacket']),
+  cfo_decision_packet: Object.freeze(['cfoDecisionPacket', 'cfo_packet', 'cfoPacket', 'finance_decision_packet', 'financeDecisionPacket']),
+  pricing_question: Object.freeze(['pricingQuestion', 'decision_question', 'decisionQuestion', 'price_question', 'priceQuestion']),
+  value_metric: Object.freeze(['valueMetric', 'billing_metric', 'billingMetric', 'pricing_metric', 'pricingMetric']),
+  assumptions: Object.freeze(['assumption_table', 'assumptionTable', 'pricing_assumptions', 'pricingAssumptions']),
+  source_to_model_ledger: Object.freeze(['sourceToModelLedger', 'source_model_ledger', 'sourceModelLedger', 'evidence_ledger', 'evidenceLedger']),
+  formula: Object.freeze(['formula_model', 'formulaModel', 'pricing_formula', 'pricingFormula']),
+  scenario_table: Object.freeze(['scenarioTable', 'scenarios', 'pricing_scenarios', 'pricingScenarios']),
+  sensitivity_table: Object.freeze(['sensitivityTable', 'sensitivity', 'sensitivity_analysis', 'sensitivityAnalysis']),
+  recommendation: Object.freeze(['recommended_price', 'recommendedPrice', 'pricing_recommendation', 'pricingRecommendation']),
+  approval_owner: Object.freeze(['approvalOwner', 'decision_owner', 'decisionOwner']),
+  price_change_handoff: Object.freeze(['priceChangeHandoff', 'price_change_packet', 'priceChangePacket', 'pricing_handoff', 'pricingHandoff']),
+  execution_proof_tracker: Object.freeze(['executionProofTracker', 'proof_tracker', 'proofTracker']),
+  execution_status_labels: Object.freeze(['executionStatusLabels', 'execution_status', 'executionStatus', 'status_labels', 'statusLabels']),
+  decision_trigger: Object.freeze(['decisionTrigger', 'trigger', 'decision_rule', 'decisionRule']),
+  rollback_or_continue_rule: Object.freeze(['rollbackOrContinueRule', 'rollback_rule', 'rollbackRule', 'continue_rule', 'continueRule'])
+});
+
+const APP_HANDOFF_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqueStrings([
+  ...APP_HANDOFF_ADS_CONTRACT_FIELDS,
+  ...APP_HANDOFF_PRICING_CONTRACT_FIELDS
+]));
+
+const APP_HANDOFF_CONTRACT_ALIASES = Object.freeze({
+  ...APP_HANDOFF_ADS_CONTRACT_ALIASES,
+  ...APP_HANDOFF_PRICING_CONTRACT_ALIASES
+});
+
+function appHandoffTransferUniqueStrings(items = []) {
+  return [...new Set(items.map((item) => String(item || '').trim()).filter(Boolean))];
+}
+
 function appHandoffTransferCamelKey(value = '') {
   return String(value || '').replace(/_([a-z0-9])/g, (_, char) => char.toUpperCase());
 }
 
-function appHandoffTransferContractValue(payload = {}, key = '') {
+function appHandoffTransferContractValue(payload = {}, key = '', aliasMap = {}) {
   const raw = payload.raw_context && typeof payload.raw_context === 'object' ? payload.raw_context : {};
-  const keys = [...new Set([key, appHandoffTransferCamelKey(key), ...(APP_HANDOFF_ADS_CONTRACT_ALIASES[key] || [])].filter(Boolean))];
+  const keys = [...new Set([key, appHandoffTransferCamelKey(key), ...(aliasMap[key] || [])].filter(Boolean))];
   const candidates = keys.flatMap((candidateKey) => [
     payload[candidateKey],
     raw[candidateKey],
@@ -493,9 +545,9 @@ function appHandoffTransferContractValue(payload = {}, key = '') {
 
 function appHandoffTransferContractFields(manifest = {}, payload = {}) {
   const seenValues = new Set();
-  return Object.fromEntries(APP_HANDOFF_ADS_CONTRACT_FIELDS
+  return Object.fromEntries(APP_HANDOFF_CONTRACT_FIELDS
     .filter((key) => appHandoffTransferManifestAccepts(manifest, key))
-    .map((key) => [key, appHandoffTransferContractValue(payload, key)])
+    .map((key) => [key, appHandoffTransferContractValue(payload, key, APP_HANDOFF_CONTRACT_ALIASES)])
     .filter(([, value]) => {
       if (value == null || value === '') return false;
       const valueKey = (() => {

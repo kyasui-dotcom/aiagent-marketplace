@@ -1,7 +1,7 @@
 import {
   BUILT_IN_APP_MANIFESTS as FALLBACK_BUILT_IN_APPS,
   CORE_FEATURE_APP_IDS
-} from './app-manifest-registry.js?v=20260526c';
+} from './app-manifest-registry.js?v=20260526d';
 
 const listEl = document.querySelector('[data-context-list]');
 const registryListEl = document.querySelector('[data-app-registry-list]');
@@ -98,6 +98,7 @@ function sameOriginAppUrl(value = '') {
       '/lead-ops.html',
       '/campaign-operations.html',
       '/ads-ops.html',
+      '/pricing-ops.html',
       '/apps.html'
     ].includes(parsed.pathname);
     if (isBuiltInCaitHost && isKnownLocalApp) {
@@ -176,6 +177,7 @@ function renderFeaturedApps(records = []) {
     ['lead-ops-console', { tag: 'Growth', description: 'Turn sourced leads into reviewed outreach drafts.' }],
     ['campaign-operations', { tag: 'Operations', description: 'Keep campaign state, readiness, and measurement loops reusable.' }],
     ['ads-launch-console', { tag: 'Paid ads', description: 'Keep budget, stop rules, launch approval, and measurement before spend.' }],
+    ['pricing-decision-console', { tag: 'Pricing', description: 'Keep price-change assumptions, scenarios, approval, and rollback state.' }],
     ['x-client-ops', { tag: 'Social', description: 'Prepare approved social action packets.' }]
   ]);
   const featured = [...featureCopy.keys()]

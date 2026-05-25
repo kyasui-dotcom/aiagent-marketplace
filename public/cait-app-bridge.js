@@ -1,7 +1,12 @@
 const CAIT_APP_CONTEXT_SCHEMA = 'cait-app-context/v1';
 const CAIT_APP_CONTEXT_CHANNEL = 'cait-app-context';
 const DEFAULT_CAIt_ORIGIN = 'https://aiagent-marketplace.net';
-const APP_CONTEXT_RAW_PRESERVE_KEYS = Object.freeze([
+
+function uniqueStringList(items = []) {
+  return [...new Set(items.map((item) => String(item || '').trim()).filter(Boolean))];
+}
+
+const APP_CONTEXT_RAW_PRESERVE_KEYS = Object.freeze(uniqueStringList([
   'metrics',
   'analytics_context',
   'analyticsContext',
@@ -214,6 +219,53 @@ const APP_CONTEXT_RAW_PRESERVE_KEYS = Object.freeze([
   'trackingPlan',
   'post_launch_measurement',
   'postLaunchMeasurement',
+  'pricing_decision_packet',
+  'pricingDecisionPacket',
+  'pricing_packet',
+  'pricingPacket',
+  'pricing_model_packet',
+  'pricingModelPacket',
+  'cfo_decision_packet',
+  'cfoDecisionPacket',
+  'cfo_packet',
+  'cfoPacket',
+  'pricing_question',
+  'pricingQuestion',
+  'decision_question',
+  'decisionQuestion',
+  'value_metric',
+  'valueMetric',
+  'billing_metric',
+  'billingMetric',
+  'assumptions',
+  'assumption_table',
+  'assumptionTable',
+  'source_to_model_ledger',
+  'sourceToModelLedger',
+  'formula',
+  'formula_model',
+  'formulaModel',
+  'scenario_table',
+  'scenarioTable',
+  'scenarios',
+  'sensitivity_table',
+  'sensitivityTable',
+  'sensitivity',
+  'recommendation',
+  'recommended_price',
+  'recommendedPrice',
+  'approval_owner',
+  'approvalOwner',
+  'price_change_handoff',
+  'priceChangeHandoff',
+  'execution_proof_tracker',
+  'executionProofTracker',
+  'execution_status_labels',
+  'executionStatusLabels',
+  'decision_trigger',
+  'decisionTrigger',
+  'rollback_or_continue_rule',
+  'rollbackOrContinueRule',
   'article_draft',
   'articleDraft',
   'seo_article',
@@ -276,7 +328,46 @@ const APP_CONTEXT_RAW_PRESERVE_KEYS = Object.freeze([
   'instagramPostPacket',
   'approval_request',
   'approvalRequest'
-]);
+]));
+
+const APP_CONTEXT_MULTILINE_PRESERVE_KEYS = Object.freeze(uniqueStringList([
+  'content',
+  'content_preview',
+  'contentPreview',
+  'body',
+  'text',
+  'markdown',
+  'html',
+  'raw_markdown',
+  'rawMarkdown',
+  'campaign_operations_plan',
+  'campaignOperationsPlan',
+  'campaignOpsPlan',
+  'campaignPlan',
+  'campaign_markdown',
+  'campaignMarkdown',
+  'ads_plan',
+  'adsPlan',
+  'ads_plan_packet',
+  'adsPlanPacket',
+  'paid_ads_plan',
+  'paidAdsPlan',
+  'ad_plan',
+  'adPlan',
+  'ad_campaign_plan',
+  'adCampaignPlan',
+  'paid_acquisition_plan',
+  'paidAcquisitionPlan',
+  'pricing_decision_packet',
+  'pricingDecisionPacket',
+  'pricing_packet',
+  'pricingPacket',
+  'cfo_decision_packet',
+  'cfoDecisionPacket',
+  'price_change_handoff',
+  'priceChangeHandoff'
+]));
+const APP_CONTEXT_MULTILINE_PRESERVE_KEY_SET = new Set(APP_CONTEXT_MULTILINE_PRESERVE_KEYS.map((key) => key.toLowerCase()));
 
 function nowIso() {
   return new Date().toISOString();
@@ -302,7 +393,7 @@ function safeMultilineText(value = '', max = 2000) {
 }
 
 function shouldPreserveMultilineValue(key = '') {
-  return /^(?:content|content_preview|contentPreview|body|text|markdown|html|raw_markdown|rawMarkdown|campaign_operations_plan|campaignOperationsPlan|campaignOpsPlan|campaignPlan|campaign_markdown|campaignMarkdown|ads_plan|adsPlan|ads_plan_packet|adsPlanPacket|paid_ads_plan|paidAdsPlan|ad_plan|adPlan|ad_campaign_plan|adCampaignPlan|paid_acquisition_plan|paidAcquisitionPlan)$/i.test(String(key || '').trim());
+  return APP_CONTEXT_MULTILINE_PRESERVE_KEY_SET.has(String(key || '').trim().toLowerCase());
 }
 
 function safeId(value = '') {

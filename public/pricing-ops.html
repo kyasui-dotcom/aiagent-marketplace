@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pricing Decision Console | CAIt Apps</title>
+  <meta name="description" content="CAIt Pricing Decision Console turns Pricing and CFO AIAGENT output into retained price-change assumptions, scenarios, approval, proof, and rollback context." />
+  <meta name="robots" content="noindex,follow" />
+  <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/cait-icon.png" />
+  <link rel="stylesheet" href="/app-console.css?v=20260507b">
+  <style>
+    .pricing-workspace {
+      display: grid;
+      gap: 16px;
+    }
+    .pricing-title {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 390px) minmax(0, 1fr);
+      gap: 16px;
+    }
+    .pricing-panel {
+      border: 1px solid #d8dee6;
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+    .pricing-section {
+      display: grid;
+      gap: 12px;
+    }
+    .pricing-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .pricing-table th,
+    .pricing-table td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .pricing-table td {
+      overflow-wrap: anywhere;
+    }
+    .pricing-stack {
+      display: grid;
+      gap: 10px;
+    }
+    .pricing-record-card {
+      width: 100%;
+      text-align: left;
+      border: 1px solid #d8dee6;
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 10px;
+    }
+    .pricing-record-card strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+    .pricing-meta {
+      color: #667085;
+      font-size: 12px;
+    }
+    .pricing-preview {
+      max-height: 360px;
+      overflow: auto;
+    }
+    @media (max-width: 860px) {
+      .pricing-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app-console-shell" aria-label="CAIt Pricing Decision Console">
+    <section class="app-console-panel">
+      <header class="app-console-header">
+        <a class="app-brand" href="/" aria-label="CAIt"><img src="/cait-icon.svg" alt="" /><span>Pricing Decision Console</span></a>
+        <nav class="app-nav" aria-label="CAIt app navigation">
+          <a href="/chat">Chat</a>
+          <a href="/apps.html">Apps</a>
+          <a href="/analytics-console.html">Analytics</a>
+          <a href="/campaign-operations.html">Campaign Ops</a>
+          <a href="/publisher-approval.html">Publisher</a>
+          <a href="/delivery-manager.html">Deliveries</a>
+        </nav>
+        <div class="app-header-actions">
+          <a class="ghost-btn" id="pricingReturnToChatLink" href="/chat" hidden>Return to chat</a>
+          <button id="copyPricingContextBtn" class="ghost-btn" type="button">Copy packet</button>
+          <button id="sendPricingContextBtn" class="primary-btn" type="button">Send to CAIt</button>
+        </div>
+      </header>
+
+      <section class="workspace pricing-workspace">
+        <div class="workspace-head">
+          <div>
+            <span class="kicker">Pricing operations</span>
+            <h1 class="pricing-title">Turn Pricing/CFO AIAGENT output into a retained price-change decision record.</h1>
+            <p class="pricing-meta">Value metric, assumptions, source-to-model ledger, scenarios, sensitivity, approval owner, decision trigger, proof tracker, and rollback rules stay attached to the next CAIt run.</p>
+          </div>
+        </div>
+
+        <section class="notice" id="pricingHandoffNotice" hidden aria-label="CAIt pricing handoff notice"></section>
+
+        <section class="ops-story-grid" aria-label="Pricing decision value">
+          <article class="panel ops-story-panel">
+            <div class="status-row compact-head">
+              <div>
+                <span class="kicker">Before / After</span>
+                <h2>From disposable pricing advice to stable decision operations.</h2>
+              </div>
+              <span class="status-pill pending" id="pricingReadinessPill">No pricing packet loaded</span>
+            </div>
+            <div class="ops-compare-grid">
+              <section class="ops-compare-card before">
+                <span class="ops-compare-label">Before</span>
+                <h3>AIAGENT pricing answer</h3>
+                <ul class="ops-bullet-list">
+                  <li>Assumptions, formulas, and evidence can remain buried in chat.</li>
+                  <li>A recommended price can look final without approval or rollback state.</li>
+                  <li>The next operator may not know what changed since the prior decision.</li>
+                </ul>
+              </section>
+              <section class="ops-compare-card after">
+                <span class="ops-compare-label">After</span>
+                <h3>Pricing Decision Console SaaS</h3>
+                <ul class="ops-bullet-list">
+                  <li>Decision question, value metric, scenarios, and proof are separated.</li>
+                  <li>Price changes stay blocked until approval owner and trigger are visible.</li>
+                  <li>CAIt receives a server-side context packet for follow-up operations.</li>
+                </ul>
+              </section>
+            </div>
+          </article>
+          <article class="panel ops-readiness-panel">
+            <div class="status-row compact-head">
+              <div>
+                <span class="kicker">Decision readiness</span>
+                <h2>What must survive the handoff</h2>
+              </div>
+            </div>
+            <div class="ops-readiness-list" id="pricingReadinessList"></div>
+          </article>
+        </section>
+
+        <section class="workflow-strip" aria-label="Pricing decision workflow">
+          <div class="workflow-step current" id="pricingStepModel">
+            <span class="step-index">1</span>
+            <span><strong>Model</strong><span>Recover assumptions, ledger, formula, and scenarios.</span></span>
+          </div>
+          <div class="workflow-step" id="pricingStepApproval">
+            <span class="step-index">2</span>
+            <span><strong>Approval</strong><span>Keep price-change owner and decision trigger explicit.</span></span>
+          </div>
+          <div class="workflow-step" id="pricingStepProof">
+            <span class="step-index">3</span>
+            <span><strong>Proof</strong><span>Attach execution proof and rollback/continue checks.</span></span>
+          </div>
+        </section>
+
+        <section class="pricing-panel pricing-section" aria-label="AIAGENT pricing handoff audit">
+          <div class="status-row">
+            <div>
+              <span class="kicker">AIAGENT handoff audit</span>
+              <h2>Decision gaps are visible before a price change can move.</h2>
+            </div>
+            <span class="status-pill pending" id="pricingHandoffAuditPill">No packet audited</span>
+          </div>
+          <p class="pricing-meta" id="pricingHandoffAuditSummary">Open this app from a Pricing or CFO handoff to audit assumptions, scenarios, approval, proof, and rollback continuity.</p>
+          <div class="handoff-audit-grid" id="pricingHandoffAuditList"></div>
+        </section>
+
+        <section class="metric-strip" aria-label="Pricing decision summary">
+          <article class="metric-card">
+            <span>Decision anchors</span>
+            <strong id="pricingQuestionMetric">0</strong>
+            <small>Question, value metric, assumptions, and formula retained.</small>
+          </article>
+          <article class="metric-card">
+            <span>Scenarios</span>
+            <strong id="pricingScenarioMetric">0</strong>
+            <small>Scenario and sensitivity rows ready for review.</small>
+          </article>
+          <article class="metric-card">
+            <span>Approval gates</span>
+            <strong id="pricingApprovalMetric">0</strong>
+            <small>Owner, trigger, and price-change handoff checks.</small>
+          </article>
+          <article class="metric-card">
+            <span>Proof checks</span>
+            <strong id="pricingProofMetric">0</strong>
+            <small>Execution proof and rollback/continue state.</small>
+          </article>
+        </section>
+
+        <div class="pricing-grid">
+          <aside class="pricing-panel pricing-stack" aria-label="Recovered pricing decision">
+            <article class="pricing-record-card">
+              <strong id="pricingRecordTitle">No Pricing/CFO packet loaded</strong>
+              <span class="pricing-meta" id="pricingRecordMeta">Open from CAIt or paste/send an app context to populate this console.</span>
+            </article>
+            <table class="pricing-table" id="pricingDecisionTable" aria-label="Pricing decision overview"></table>
+          </aside>
+
+          <section class="pricing-panel pricing-section">
+            <div class="status-row">
+              <h2>Scenario and sensitivity review</h2>
+            </div>
+            <table class="pricing-table" id="pricingScenarioTable" aria-label="Pricing scenario review"></table>
+          </section>
+        </div>
+
+        <section class="pricing-panel pricing-section">
+          <div class="status-row">
+            <h2>Approval, proof, and rollback</h2>
+          </div>
+          <table class="pricing-table" id="pricingRiskTable" aria-label="Pricing approval and proof review"></table>
+        </section>
+
+        <section class="pricing-panel pricing-section">
+          <div class="status-row">
+            <h2>Returned CAIt packet</h2>
+          </div>
+          <pre class="context-preview pricing-preview" id="pricingContextPreview"></pre>
+        </section>
+      </section>
+    </section>
+  </main>
+  <script type="module" src="/pricing-ops.js?v=20260526a"></script>
+</body>
+</html>

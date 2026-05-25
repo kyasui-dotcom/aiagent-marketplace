@@ -112,6 +112,12 @@ assert.ok(seededAdsLaunch, 'default Ads Launch Console app should be seeded');
 assert.ok(seededAdsLaunch?.inputContract?.accepts?.includes('ads_saas_handoff'), 'default Ads Launch Console app seed should accept Ads SaaS handoff packets');
 assert.ok(seededAdsLaunch?.requiresApprovalFor?.includes('budget_spend'), 'default Ads Launch Console app seed should keep budget spend approval-gated');
 assert.ok(seededAdsLaunch?.directCommandAliases?.includes('ads launch'), 'default Ads Launch Console app seed should expose direct command aliases outside chat code');
+const seededPricingDecision = initial.apps.find((item) => item.id === 'pricing-decision-console');
+assert.ok(seededPricingDecision, 'default Pricing Decision Console app should be seeded');
+assert.ok(seededPricingDecision?.inputContract?.accepts?.includes('pricing_decision_packet'), 'default Pricing Decision Console app seed should accept pricing decision packets');
+assert.ok(seededPricingDecision?.inputContract?.accepts?.includes('price_change_handoff'), 'default Pricing Decision Console app seed should accept price-change handoff packets');
+assert.ok(seededPricingDecision?.requiresApprovalFor?.includes('price_change'), 'default Pricing Decision Console app seed should keep price changes approval-gated');
+assert.ok(seededPricingDecision?.directCommandAliases?.includes('pricing decision'), 'default Pricing Decision Console app seed should expose direct command aliases outside chat code');
 assert.ok(!initial.apps.some((item) => item.id === 'delivery-manager'), 'Deliveries should not be seeded as an app');
 const contextRecord = createAppContextRecord({
   source_app: 'x-client-ops',

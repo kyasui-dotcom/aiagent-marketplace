@@ -155,6 +155,36 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     reusePrompt: 'Open Ads Launch Console to review budget, stop rules, creative drafts, launch approval, Ads SaaS readiness, and measurement before any spend.'
   },
   {
+    id: 'pricing-decision-console',
+    name: 'Pricing Decision Console',
+    kind: 'application_agent',
+    description: 'Pricing and CFO decision console that retains value metrics, assumptions, source-to-model ledger, scenarios, approval owner, decision trigger, and rollback rules before price changes.',
+    baseUrl: '/pricing-ops.html',
+    entryUrl: '/pricing-ops.html',
+    capabilities: ['pricing_decision_packet', 'cfo_decision_packet', 'value_metric', 'scenario_table', 'sensitivity_table', 'price_change_handoff', 'execution_proof_tracker'],
+    requiredConnectors: [],
+    requiresApprovalFor: ['price_change', 'billing_change', 'external_send'],
+    inputContract: {
+      schemaVersion: 'cait-app-context/v1',
+      accepts: ['pricing_decision_packet', 'cfo_decision_packet', 'pricing_question', 'value_metric', 'assumptions', 'source_to_model_ledger', 'formula', 'scenario_table', 'sensitivity_table', 'recommendation', 'approval_owner', 'price_change_handoff', 'execution_proof_tracker', 'execution_status_labels', 'decision_trigger', 'rollback_or_continue_rule', 'delivery_files'],
+      returns: ['artifacts', 'approval_requests', 'metrics', 'recommended_next_actions']
+    },
+    contextContract: {
+      sourceApps: ['pricing_decision_console'],
+      evidence: {
+        loadedArtifactTypes: ['pricing_decision_packet', 'cfo_decision_packet', 'scenario_table', 'sensitivity_table', 'price_change_handoff', 'execution_proof_tracker'],
+        summaryFields: ['pricing_handoff_audit']
+      }
+    },
+    tags: ['pricing', 'finance', 'approval'],
+    directCommandAliases: ['pricing ops', 'pricing decision', 'price change', 'cfo decision', 'unit economics', 'pricing console', '価格決定', '料金改定'],
+    owner: 'cait-managed',
+    status: 'active',
+    verificationStatus: 'cait_managed',
+    mcp: { enabled: false, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'], status: 'paused' },
+    reusePrompt: 'Open Pricing Decision Console to review value metric, assumptions, scenarios, approval owner, trigger, proof tracker, and rollback rule before any price change.'
+  },
+  {
     id: 'x-client-ops',
     name: 'X Client Ops',
     kind: 'application_agent',

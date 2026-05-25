@@ -15,6 +15,7 @@ const publisherHtmlPath = new URL('../public/publisher-approval.html', import.me
 const leadOpsHtmlPath = new URL('../public/lead-ops.html', import.meta.url);
 const campaignOperationsHtmlPath = new URL('../public/campaign-operations.html', import.meta.url);
 const adsOpsHtmlPath = new URL('../public/ads-ops.html', import.meta.url);
+const pricingOpsHtmlPath = new URL('../public/pricing-ops.html', import.meta.url);
 const deliveryManagerHtmlPath = new URL('../public/delivery-manager.html', import.meta.url);
 const legalNoticeHtmlPath = new URL('../public/legal-notice.html', import.meta.url);
 const tokushohoRedirectHtmlPath = new URL('../public/tokushoho.html', import.meta.url);
@@ -42,6 +43,7 @@ const publisherJsPath = new URL('../public/publisher-approval.js', import.meta.u
 const leadOpsJsPath = new URL('../public/lead-ops.js', import.meta.url);
 const campaignOperationsJsPath = new URL('../public/campaign-operations.js', import.meta.url);
 const adsOpsJsPath = new URL('../public/ads-ops.js', import.meta.url);
+const pricingOpsJsPath = new URL('../public/pricing-ops.js', import.meta.url);
 const deliveryManagerJsPath = new URL('../public/delivery-manager.js', import.meta.url);
 const caitAppBridgePath = new URL('../public/cait-app-bridge.js', import.meta.url);
 const loginJsPath = new URL('../public/login.js', import.meta.url);
@@ -112,6 +114,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(publisherJsPath)], { st
 execFileSync(process.execPath, ['--check', fileURLToPath(leadOpsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(campaignOperationsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(adsOpsJsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(pricingOpsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(deliveryManagerJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(caitAppBridgePath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatEnginePath)], { stdio: 'pipe' });
@@ -140,6 +143,7 @@ const publisherHtml = readFileSync(publisherHtmlPath, 'utf8');
 const leadOpsHtml = readFileSync(leadOpsHtmlPath, 'utf8');
 const campaignOperationsHtml = readFileSync(campaignOperationsHtmlPath, 'utf8');
 const adsOpsHtml = readFileSync(adsOpsHtmlPath, 'utf8');
+const pricingOpsHtml = readFileSync(pricingOpsHtmlPath, 'utf8');
 const deliveryManagerHtml = readFileSync(deliveryManagerHtmlPath, 'utf8');
 const legalNoticeHtml = readFileSync(legalNoticeHtmlPath, 'utf8');
 const tokushohoRedirectHtml = readFileSync(tokushohoRedirectHtmlPath, 'utf8');
@@ -169,6 +173,7 @@ const publisherJs = readFileSync(publisherJsPath, 'utf8');
 const leadOpsJs = readFileSync(leadOpsJsPath, 'utf8');
 const campaignOperationsJs = readFileSync(campaignOperationsJsPath, 'utf8');
 const adsOpsJs = readFileSync(adsOpsJsPath, 'utf8');
+const pricingOpsJs = readFileSync(pricingOpsJsPath, 'utf8');
 const deliveryManagerJs = readFileSync(deliveryManagerJsPath, 'utf8');
 const caitAppBridge = readFileSync(caitAppBridgePath, 'utf8');
 const loginJs = readFileSync(loginJsPath, 'utf8');
@@ -228,6 +233,12 @@ const {
 const {
   explicitHandoffArtifactTypesFromAuthorityRequest
 } = await import(appHandoffGateJsPath.href);
+const {
+  appContextFromTransferPayload
+} = await import(appHandoffTransferJsPath.href);
+const {
+  normalizeCaitAppContext
+} = await import(appContextDomainPath.href);
 const appSurfaceSources = [
   appsHtml,
   appsJs,
@@ -241,6 +252,8 @@ const appSurfaceSources = [
   campaignOperationsJs,
   adsOpsHtml,
   adsOpsJs,
+  pricingOpsHtml,
+  pricingOpsJs,
   deliveryManagerHtml,
   deliveryManagerJs,
   caitAppBridge
@@ -661,8 +674,8 @@ assert.ok(!appsHtml.includes('Register your own app'), 'Apps hub should not impl
 assert.ok(appsHtml.includes('Self-service app registration is not open yet'), 'Apps hub should set the short-term app registration boundary.');
 assert.ok(appsHtml.includes('data-featured-app-list'), 'Apps hub should render featured workflows from the app registry.');
 assert.ok(appsJs.includes('sameOriginAppUrl'), 'Apps hub should normalize CAIt-managed app URLs to the current origin.');
-assert.ok(appsJs.includes("from './app-manifest-registry.js?v=20260526c'"), 'Apps hub should reuse the shared app manifest registry.');
-assert.ok(chatJs.includes("from './app-manifest-registry.js?v=20260526c'"), 'Chat should reuse the shared app manifest registry.');
+assert.ok(appsJs.includes("from './app-manifest-registry.js?v=20260526d'"), 'Apps hub should reuse the shared app manifest registry.');
+assert.ok(chatJs.includes("from './app-manifest-registry.js?v=20260526d'"), 'Chat should reuse the shared app manifest registry.');
 assert.ok(appManifestRegistryJs.includes("owner: 'cait-managed'"), 'CAIt-managed app surfaces should not be labeled as built-in apps.');
 assert.ok(appManifestRegistryJs.includes("verificationStatus: 'cait_managed'"), 'CAIt-managed app surfaces should have explicit verification status.');
 assert.ok(appManifestRegistryJs.includes('analytics-console'), 'Shared app registry should include Analytics Console.');
@@ -670,6 +683,7 @@ assert.ok(appManifestRegistryJs.includes('publisher-approval-studio'), 'Shared a
 assert.ok(appManifestRegistryJs.includes('lead-ops-console'), 'Shared app registry should include Lead Ops.');
 assert.ok(appManifestRegistryJs.includes('campaign-operations'), 'Shared app registry should include Campaign Operations.');
 assert.ok(appManifestRegistryJs.includes('ads-launch-console'), 'Shared app registry should include Ads Launch Console.');
+assert.ok(appManifestRegistryJs.includes('pricing-decision-console'), 'Shared app registry should include Pricing Decision Console.');
 assert.ok(appsJs.includes('CORE_FEATURE_APP_IDS'), 'Apps hub should filter core CAIt features out of app registry rendering.');
 assert.ok(!appsJs.includes("['delivery-manager', { tag: 'Follow-up'"), 'Apps hub should not feature Deliveries as a registered app.');
 assert.ok(appsHtml.includes('cait-app-context/v1'), 'Apps hub should explain the shared context contract.');
@@ -776,8 +790,8 @@ assert.ok(deliveryManagerHtml.includes('id="deliveryHandoffAuditList"'), 'Delive
 assert.ok(deliveryManagerJs.includes('requestedDeliveryIdFromUrl'), 'Delivery Manager should support direct order/job/deep-linked delivery loading.');
 assert.ok(deliveryManagerJs.includes('/api/jobs/${encodeURIComponent(safeId)}'), 'Delivery Manager should fetch a deep-linked delivery by job id when it is outside the latest list.');
 assert.ok(deliveryManagerJs.includes('contentPreview'), 'Delivery Manager should recover generic transfer artifact contentPreview as delivery files.');
-assert.ok(appContextDomainJs.includes('content_preview|contentPreview'), 'Server app-context normalization should preserve multiline artifact contentPreview tables.');
-assert.ok(caitAppBridge.includes('content_preview|contentPreview'), 'Client app-context bridge should preserve multiline artifact contentPreview tables.');
+assert.ok(appContextDomainJs.includes("'content_preview'") && appContextDomainJs.includes("'contentPreview'"), 'Server app-context normalization should preserve multiline artifact contentPreview tables.');
+assert.ok(caitAppBridge.includes("'content_preview'") && caitAppBridge.includes("'contentPreview'"), 'Client app-context bridge should preserve multiline artifact contentPreview tables.');
 assert.ok(deliveryManagerJs.includes('raw_transfer_delivery_artifacts'), 'Delivery Manager should normalize raw transfer delivery artifacts.');
 assert.ok(deliveryManagerJs.includes('delivery_package') && deliveryManagerJs.includes('raw_delivery_package_files'), 'Delivery Manager should restore package-shaped AIAGENT delivery contracts.');
 assert.ok(deliveryManagerJs.includes('delivery_manager_handoff_audit'), 'Delivery Manager should include handoff audit state in reusable app context.');
@@ -829,7 +843,7 @@ for (const app of caitManagedSurfaceEntries) {
 }
 
 assert.ok(analyticsJs.includes("source_app: 'analytics_console'"), 'Analytics app logic should stay in analytics-console.js.');
-assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260525b"), 'Analytics Console should load the latest CAIt app bridge.');
+assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260526d"), 'Analytics Console should load the latest CAIt app bridge.');
 assert.ok(caitAppBridge.includes("`${origin}/auth/status`"), 'CAIt app bridge should read auth status before same-origin context handoff.');
 assert.ok(caitAppBridge.includes("headers['x-aiagent2-csrf'] = csrfToken"), 'CAIt app bridge should attach CSRF token to same-origin context handoff writes.');
 assert.ok(caitAppBridge.includes('createServerAppContextWithRetry'), 'CAIt app bridge should retry server-side app context writes.');
@@ -896,6 +910,28 @@ assert.ok(!adsOpsJs.includes("source_app: 'publisher_approval_studio'"), 'Ads La
 assert.ok(!adsOpsJs.includes("source_app: 'lead_ops_console'"), 'Ads Launch Console JS should not contain Lead Ops app logic.');
 assert.ok(!adsOpsJs.includes("source_app: 'campaign_operations'"), 'Ads Launch Console JS should not contain Campaign Operations app logic.');
 assert.ok(!adsOpsJs.includes("source_app: 'delivery_manager'"), 'Ads Launch Console JS should not contain Delivery Manager app logic.');
+assert.ok(pricingOpsJs.includes("source_app: 'pricing_decision_console'"), 'Pricing Decision Console app logic should stay in pricing-ops.js.');
+assert.ok(pricingOpsJs.includes("fetchCaitAppContextFromUrl"), 'Pricing Decision Console should receive CAIt app contexts.');
+assert.ok(pricingOpsJs.includes("type: 'pricing_decision_packet'"), 'Pricing Decision Console should return pricing_decision_packet artifacts.');
+assert.ok(pricingOpsJs.includes("type: 'scenario_table'"), 'Pricing Decision Console should return scenario_table artifacts.');
+assert.ok(pricingOpsJs.includes("type: 'sensitivity_table'"), 'Pricing Decision Console should return sensitivity_table artifacts.');
+assert.ok(pricingOpsJs.includes("type: 'price_change_handoff'"), 'Pricing Decision Console should return price_change_handoff artifacts.');
+assert.ok(pricingOpsJs.includes("type: 'execution_proof_tracker'"), 'Pricing Decision Console should return execution_proof_tracker artifacts.');
+assert.ok(pricingOpsJs.includes('pricing_handoff_audit'), 'Pricing Decision Console should include handoff audit details in raw_context.');
+assert.ok(appContextDomainJs.includes('pricing_decision_packet'), 'Server-side app context should preserve pricing decision packet contract fields in raw_context.');
+assert.ok(appContextDomainJs.includes('price_change_handoff'), 'Server-side app context should preserve price change handoff contract fields in raw_context.');
+assert.ok(caitAppBridge.includes('pricing_decision_packet'), 'Client app-context bridge should preserve pricing decision packet contract fields.');
+assert.ok(caitAppBridge.includes('priceChangeHandoff'), 'Client app-context bridge should preserve price change handoff aliases.');
+assert.ok(appHandoffTransferJs.includes('APP_HANDOFF_PRICING_CONTRACT_FIELDS'), 'Generic app handoff transfer should preserve Pricing/CFO contract fields.');
+assert.ok(appManifestRegistryJs.includes("'pricing_decision_packet'") && appManifestRegistryJs.includes("'rollback_or_continue_rule'"), 'Pricing Decision app manifest should declare retained pricing handoff contracts.');
+assert.ok(pricingOpsJs.includes('const PRICING_MARKDOWN_ARTIFACT_TYPES = Object.freeze(['), 'Pricing Decision Console should gate Markdown parsing on explicit Pricing/CFO artifact contracts.');
+assert.ok(!pricingOpsJs.includes('/pricing|価格|price/i.test(content)'), 'Pricing Decision Console must not infer pricing handoff intent from delivery body text.');
+assert.ok(!pricingOpsJs.includes("source_app: 'analytics_console'"), 'Pricing Decision Console JS should not contain Analytics app logic.');
+assert.ok(!pricingOpsJs.includes("source_app: 'publisher_approval_studio'"), 'Pricing Decision Console JS should not contain Publisher app logic.');
+assert.ok(!pricingOpsJs.includes("source_app: 'lead_ops_console'"), 'Pricing Decision Console JS should not contain Lead Ops app logic.');
+assert.ok(!pricingOpsJs.includes("source_app: 'campaign_operations'"), 'Pricing Decision Console JS should not contain Campaign Operations app logic.');
+assert.ok(!pricingOpsJs.includes("source_app: 'ads_launch_console'"), 'Pricing Decision Console JS should not contain Ads Launch Console app logic.');
+assert.ok(!pricingOpsJs.includes("source_app: 'delivery_manager'"), 'Pricing Decision Console JS should not contain Delivery Manager app logic.');
 assert.ok(!campaignOperationsJs.includes("source_app: 'analytics_console'"), 'Campaign Operations JS should not contain Analytics app logic.');
 assert.ok(!campaignOperationsJs.includes("source_app: 'publisher_approval_studio'"), 'Campaign Operations JS should not contain Publisher app logic.');
 assert.ok(!campaignOperationsJs.includes("source_app: 'lead_ops_console'"), 'Campaign Operations JS should not contain Lead Ops app logic.');
@@ -919,7 +955,7 @@ assert.ok(chatHtml.includes('id="openAppListBtn"'));
 assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
-assert.ok(appsHtml.includes('/apps.js?v=20260526c'), 'Apps page should load the current server-side context history controller.');
+assert.ok(appsHtml.includes('/apps.js?v=20260526d'), 'Apps page should load the current server-side context history controller.');
 assert.ok(appsHtml.includes('data-app-registry-list'), 'Apps page should expose the live app registry list.');
 assert.ok(appsHtml.includes('/.well-known/mcp.json') && appsHtml.includes('Disabled by default'), 'Apps page should describe MCP as disabled by default.');
 assert.ok(appsHtml.includes('COMING SOON'), 'Apps MCP tab should be labeled coming soon while MCP is paused.');
@@ -1101,7 +1137,7 @@ assert.ok(chatJs.includes("from './chat-engine.js?v=20260525a'"), 'Chat JS shoul
 assert.ok(!appHandoffTransferJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'App handoff transfer must not parse delivery body text for legacy social-post extraction.');
 assert.ok(!appHandoffTransferJs.includes('extractSocialPostTextFromDeliveryContent'), 'Dedicated app handoff text should come from explicit artifact metadata only.');
 assert.ok(!chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should not import delivery action parsing helpers directly.');
-assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260526b'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
+assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260526d'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
 assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
 assert.ok(chatJs.includes('await consumeCaitAppContextForChat()'), 'Chat should await server-side app context retrieval before filling the composer.');
 assert.ok(chatJs.includes('refreshAppContexts'), 'Chat Apps panel should load reusable app contexts from the server.');
@@ -1114,6 +1150,7 @@ assert.ok(appManifestRegistryJs.includes('analytics-console'), 'Chat app catalog
 assert.ok(appManifestRegistryJs.includes('publisher-approval-studio'), 'Chat app catalog should include Publisher and Approval Studio.');
 assert.ok(appManifestRegistryJs.includes('lead-ops-console'), 'Chat app catalog should include Lead Ops Console.');
 assert.ok(appManifestRegistryJs.includes('campaign-operations'), 'Chat app catalog should include Campaign Operations.');
+assert.ok(appManifestRegistryJs.includes('pricing-decision-console'), 'Chat app catalog should include Pricing Decision Console.');
 assert.ok(chatJs.includes('CORE_FEATURE_APP_IDS'), 'Chat should filter core CAIt features out of app manifests.');
 assert.ok(!chatJs.includes("id: 'delivery-manager'"), 'Chat app catalog should not include Deliveries as an app.');
 assert.ok(chatJs.includes("const CHATUX_RETURN_PATH = '/chat'"), 'OAuth and delivery return path should use the canonical chat route, not /chatux or /chat.html.');
@@ -1403,10 +1440,49 @@ assert.ok(appHandoffTransferJs.includes('contentType: String(artifactTypes[0]'),
 assert.ok(analyticsJs.includes('ANALYTICS_CONTEXT_PACKET_KEYS') && analyticsJs.includes('analyticsPacketPayloads'), 'Analytics Console should restore nested analytics_context, search_console_packet, and ga4_packet payloads from AIAGENT handoffs.');
 assert.ok(analyticsJs.includes('ANALYTICS_CONTEXT_KEY_ALIASES') && analyticsJs.includes('rowsFromStructuredPayload'), 'Analytics Console should restore top-level app-contract keys and structured JSON artifact content from AIAGENT handoffs.');
 assert.ok(caitAppBridge.includes('APP_CONTEXT_RAW_PRESERVE_KEYS') && caitAppBridge.includes('rawContextWithPreservedContractKeys'), 'CAIt app context bridge should not drop top-level app-contract keys before apps can restore them.');
+assert.ok(caitAppBridge.includes('uniqueStringList') && appContextDomainJs.includes('uniqueStringList'), 'CAIt app context contract key lists should be de-duplicated at construction.');
+assert.ok(appHandoffTransferJs.includes('APP_HANDOFF_CONTRACT_FIELDS') && appHandoffTransferJs.includes('appHandoffTransferUniqueStrings'), 'App handoff contract fields should merge specialized app contracts without duplicate keys.');
 assert.ok(caitAppBridge.includes("'deliveryPackage'") && appContextDomainJs.includes("'delivery_package'"), 'CAIt app context normalization should preserve package-shaped delivery contracts for Delivery Manager.');
 assert.ok(caitAppBridge.includes("'attachments'") && appContextDomainJs.includes("'output_files'") && deliveryManagerJs.includes("'raw_result_files'"), 'CAIt app context normalization should preserve attachment-shaped delivery contracts for Delivery Manager.');
 assert.ok(appContextDomainJs.includes("'post_text'") && caitAppBridge.includes("'post_text'"), 'CAIt app context normalization should preserve X Client Ops post_text contract fields.');
 assert.ok(appContextDomainJs.includes("'agent_context'") && caitAppBridge.includes("'agent_context'"), 'CAIt app context normalization should preserve app-agent transfer strategy context fields.');
+const pricingNormalizedContext = normalizeCaitAppContext({
+  source_app: 'pricing_decision_console',
+  title: 'Pricing packet',
+  pricingDecisionPacket: 'Line one\nLine two',
+  executionStatusLabels: [{ label: 'price_changed', detail: 'false' }]
+});
+assert.ok(
+  String(pricingNormalizedContext.raw_context?.pricing_decision_packet || '').includes('Line one\nLine two'),
+  'Server app context normalization should preserve multiline pricing decision packets from explicit top-level aliases.'
+);
+assert.ok(
+  JSON.stringify(pricingNormalizedContext.raw_context?.execution_status_labels || []).includes('price_changed'),
+  'Server app context normalization should preserve explicit pricing execution status labels.'
+);
+const pricingTransferContext = appContextFromTransferPayload('pricing-decision-console', {
+  transfer_id: 'pricing-transfer-qa',
+  title: 'Pricing handoff',
+  pricingDecisionPacket: { decision: 'Raise pro plan', status: 'review_required' },
+  priceChangePacket: { target_plan: 'pro', approval_owner: 'pricing owner' },
+  executionStatusLabels: [{ label: 'price_changed', detail: 'false' }]
+}, {
+  manifestById: () => ({
+    id: 'pricing-decision-console',
+    name: 'Pricing Decision Console',
+    inputContract: {
+      accepts: ['pricing_decision_packet', 'price_change_handoff', 'execution_status_labels']
+    }
+  })
+});
+assert.ok(
+  JSON.stringify(pricingTransferContext.raw_context?.contract_fields || {}).includes('Raise pro plan'),
+  'Pricing app handoff transfer should canonicalize explicit pricing packet aliases into contract_fields.'
+);
+assert.ok(
+  JSON.stringify(pricingTransferContext.artifacts || []).includes('price change handoff'),
+  'Pricing app handoff transfer should create review artifacts only from manifest-accepted explicit fields.'
+);
 assert.ok(caitAppBridge.includes('Create a List Creator order from this Lead Ops sourcing request.'), 'Lead Ops sourcing requests should produce a direct List Creator chat prompt.');
 assert.ok(appManifestRegistryJs.includes("'analytics_context', 'search_console_packet', 'ga4_packet'"), 'Analytics Console manifest should declare packet-shaped app input contracts.');
 assert.ok(appContextDomainJs.includes("'analytics_context'") && appContextDomainJs.includes("'search_console_packet'") && appContextDomainJs.includes("'ga4_packet'") && appContextDomainJs.includes("'google_report_status'"), 'Server app context normalization should preserve Analytics Console packet and top-level contract keys.');
