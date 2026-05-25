@@ -17,6 +17,12 @@ function assertBefore(sequence, left, right, message) {
   assert.ok(indexOf(sequence, left) < indexOf(sequence, right), message);
 }
 
+function normalizeContractItems(items = []) {
+  return items
+    .map((item) => String(item || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''))
+    .filter(Boolean);
+}
+
 for (const agent of DEFAULT_AGENT_SEEDS) {
   const links = agentLinksFromRecord(agent, { catalog: DEFAULT_AGENT_SEEDS });
   assert.ok(links.layer, `${agent.id} should infer a routing layer`);
@@ -63,6 +69,13 @@ for (const [agentId, expected] of expectedOutputContracts) {
   assert.ok(agent, `${agentId} should exist in default seeds`);
   const links = agentLinksFromRecord(agent, { catalog: DEFAULT_AGENT_SEEDS });
   assert.deepEqual(links.output_contract, expected, `${agentId} should expose its current delivery contract via routing metadata`);
+  if (Array.isArray(agent.metadata?.output_contract)) {
+    assert.deepEqual(
+      normalizeContractItems(agent.metadata.output_contract),
+      expected,
+      `${agentId} seed metadata output contract should match routing metadata`
+    );
+  }
 }
 
 const xPostSequence = inferTaskSequence('x_post', 'X postまで作って承認後に投稿準備したい', { maxTasks: 5 });
