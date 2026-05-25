@@ -304,10 +304,24 @@
       "id": "build-team-leader-implementation",
       "file": "build-team-leader.js",
       "kind": "build_team_leader",
-      "prompt": "Lead a repo-aware bug fix for an order status page. Include file ownership, execution slices, validation commands, rollback path, and PR handoff criteria.",
+      "prompt": "Lead a repo-aware bug fix for an order status page with multiple implementers. Include file ownership, shared-file conflict matrix, serial vs parallel sequencing, integration owner, validation commands, rollback path, and PR handoff criteria.",
       "body": {
         "input": {
           "affected_area": "order status page",
+          "affected_files": [
+            "public/order-status.js",
+            "lib/api-routes.js",
+            "scripts/ui-qa.mjs"
+          ],
+          "suspected_shared_files": [
+            "lib/api-routes.js",
+            "scripts/ui-qa.mjs"
+          ],
+          "owner_candidates": [
+            "UI implementer",
+            "API implementer",
+            "QA owner"
+          ],
           "validation_command": "npm run qa:ui"
         }
       }
