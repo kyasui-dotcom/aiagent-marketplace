@@ -830,6 +830,34 @@ try {
   if (!JSON.stringify(genericTransferCampaignPacket.raw_context?.received_context || {}).includes('generic-transfer-campaign-ops.md')) throw new Error('campaign generic transfer source file was not preserved in server raw_context');
   if (!JSON.stringify(genericTransferCampaignPacket.artifacts || []).includes('generic transfer copy')) throw new Error('campaign generic transfer Publisher queue was not returned for app contract reuse');
 
+  const genericActionTextContext = appContextFromTransferPayload('campaign-operations', {
+    transfer_id: 'transfer-generic-action-text',
+    title: 'Generic app action text',
+    action: {
+      kind: 'app_handoff',
+      text: 'This is generic app handoff text and must not become a social post_text artifact.',
+      source: 'generic-action.md'
+    },
+    delivery: {
+      summary: 'Generic handoff text for an app that does not accept post_text.',
+      artifacts: [{
+        name: 'generic-action.md',
+        artifactType: 'campaign_operations_plan',
+        artifactTypes: ['campaign_operations_plan'],
+        contentPreview: 'Generic Campaign Operations packet.'
+      }]
+    }
+  }, {
+    manifestById: () => ({
+      id: 'campaign-operations',
+      name: 'Campaign Operations',
+      inputContract: { schemaVersion: 'cait-app-context/v1', accepts: ['campaign_operations_plan', 'delivery_files'] }
+    })
+  });
+  const genericActionJson = JSON.stringify(genericActionTextContext);
+  if (genericActionJson.includes('"artifact_type":"post_text"')) throw new Error('generic app context must not synthesize post_text artifacts from action.text');
+  if (genericActionTextContext.raw_context?.post_text) throw new Error('generic app context must not set raw_context.post_text without a post_text app contract');
+
   const xClientFallbackContext = appContextFromTransferPayload('x-client-ops', {
     transfer_id: 'transfer-x-client-fallback',
     title: 'X Client Ops fallback handoff',

@@ -427,6 +427,14 @@ function appHandoffTransferPostText(payload = {}, delivery = {}) {
   return '';
 }
 
+function appHandoffTransferManifestAccepts(manifest = {}, artifactType = '') {
+  const normalized = defaultNormalizeUsageId(artifactType);
+  if (!normalized) return false;
+  return defaultListValues(manifest?.inputContract?.accepts || manifest?.input_contract?.accepts)
+    .map(defaultNormalizeUsageId)
+    .includes(normalized);
+}
+
 function appHandoffTransferStrategyText(payload = {}, settings = {}) {
   return appHandoffTransferFirstText([
     payload.strategy,
@@ -471,7 +479,9 @@ export function appContextFromTransferPayload(appId = '', payload = {}, options 
     content: file.content || '',
     summary: file.summary || ''
   }));
-  const postText = appHandoffTransferPostText(payload, delivery);
+  const postText = appHandoffTransferManifestAccepts(manifest, 'post_text')
+    ? appHandoffTransferPostText(payload, delivery)
+    : '';
   const strategyText = appHandoffTransferStrategyText(payload, settings);
   const agentContext = payload.context || payload.transfer?.context || null;
   const settingsContext = settings && Object.keys(settings).length ? settings : null;

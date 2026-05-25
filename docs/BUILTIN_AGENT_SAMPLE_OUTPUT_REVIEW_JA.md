@@ -5,9 +5,9 @@
 ## 前提
 
 - 対象: `lib/builtin-agents/agents/` の 43 sample agent。
-- チェック方法: `npm run agent:test:snapshot -- --group all --out tmp\builtins-status-20260525`
+- チェック方法: `npm run agent:test:snapshot -- --group all --out tmp\automation-2-before-20260525-sample-agents`
 - 出力モード: stable mock OpenAI mode。実モデルの文章品質ではなく、各 agent が provider request packet に agent purpose / action boundaries / delivery contract / forbidden claims を渡せているかを確認するための回帰出力。
-- 現状: 43件すべて `completed`。`qa:builtin-agents` と `qa:docs` は通過。`qa:agent-routing-contracts` は `research` の新しい output contract 3項目に期待値が追随しておらず失敗。
+- 現状: 43件すべて `completed`。`qa:builtin-agents`、`qa:docs`、`qa:agent-routing-contracts` は通過。`research` の新しい output contract 3項目は routing contract QA の期待値へ反映済み。
 
 ## 全体改善方針
 
@@ -16,7 +16,7 @@
 | サンプル依頼 | 既存 fixture は agent ごとに概ねフィットしている | 各依頼に「具体入力」「期待成果物」「禁止 claim」「次オーナー」を入れて、実モデル出力でも評価しやすくする |
 | stable mock 出力 | purpose / action boundaries / delivery contract は全 agent で露出 | 文章成果物そのものの品質評価は live mode または provider mock の成果物生成ケースで追加する |
 | 納品品質 | ほぼ全 agent が evidence / approval / execution boundary を持つ | 各 agent ごとに「レビュー可能な成果物」へ寄せる専用シナリオを追加する |
-| 残課題 | `research` の routing contract QA が古い | `source_access_boundary` / `decision_handoff_packet` / `execution_status_labels` を期待値へ追加する |
+| 残課題 | stable mock では文章成果物そのものの品質までは検査しない | 代表 agent の live mode sample と、証拠あり/なしの専用 fixture を追加する |
 
 ## 個別レビュー
 
@@ -91,8 +91,7 @@
 
 ## 次に実装するとよい確認セット
 
-1. `research` の routing QA 期待値を更新する。
-2. stable mock に加えて、代表 agent 10件の live mode sample を実行し、実文章の具体性を確認する。
-3. fixture に「証拠あり」「証拠なし」「connectorあり」「connectorなし」を混ぜる。
-4. 各 agent の出力で、最終成果物本文が `Purpose / Delivery contract` の列挙だけで終わらないことを確認する acceptance check を追加する。
-5. 非公開 fixture 3件は public catalog から隠したまま、CMO/build/research leader への統合方針を維持する。
+1. stable mock に加えて、代表 agent 10件の live mode sample を実行し、実文章の具体性を確認する。
+2. fixture に「証拠あり」「証拠なし」「connectorあり」「connectorなし」を混ぜる。
+3. 各 agent の出力で、最終成果物本文が `Purpose / Delivery contract` の列挙だけで終わらないことを確認する acceptance check を追加する。
+4. 非公開 fixture 3件は public catalog から隠したまま、CMO/build/research leader への統合方針を維持する。

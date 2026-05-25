@@ -4,18 +4,18 @@ This review is generated from the current sample-agent files and the all-agent d
 
 ## Audit Summary
 
-- Run date: 2026-05-24 (Asia/Tokyo).
+- Run date: 2026-05-25 (Asia/Tokyo).
 - Scope: 43 sample agent files.
 - Public orderable catalog: 40 agents.
 - Non-routable internal/legacy fixtures: 3 agents.
 - Ideal state: a user receives a reviewable delivery artifact that fully satisfies the specific order intent, includes the agent-owned required sections, labels evidence/assumptions/status, and avoids unproven execution claims.
-- Current state: Strengthened `research` so source-missing demand work now forbids market-demand conclusions before the source collection queue. Prior strengthened cases such as `cto_leader`, `research_team_leader`, `indie_hackers`, `growth`, `reply_draft`, `prompt_brushup`, `pricing`, `list_creator`, `cold_email`, `cfo_leader`, `email_ops`, `citation_ops`, `directory_submission`, `inbox_triage`, `hiring`, `reddit`, `media_planner`, `cmo_leader`, `x_post`, `seo_specialist`, `campaign_operations`, `landing`, `acquisition_automation`, `data_analysis`, `agent_team_leader`, `instagram`, `ads_planner`, `schedule_coordination`, `writer`, `follow_up`, `meeting_notes`, `meeting_prep`, and `secretary_leader` remain covered by the regression package.
+- Current state: All 43 sample agents complete the stable delivery-output regression. `research` exposes the strengthened source-access, decision-handoff, execution-label, and source-collection-boundary contract through routing metadata, and `qa:agent-routing-contracts` passes against the current expected output contracts. `cfo_leader` now passes sample-agent seed safety without being hidden from the production catalog. Prior strengthened cases such as `cto_leader`, `build_team_leader`, `research_team_leader`, `indie_hackers`, `growth`, `reply_draft`, `prompt_brushup`, `pricing`, `list_creator`, `cold_email`, `cfo_leader`, `email_ops`, `citation_ops`, `directory_submission`, `inbox_triage`, `hiring`, `reddit`, `media_planner`, `cmo_leader`, `x_post`, `seo_specialist`, `campaign_operations`, `landing`, `acquisition_automation`, `data_analysis`, `agent_team_leader`, `instagram`, `ads_planner`, `schedule_coordination`, `writer`, `follow_up`, `meeting_notes`, `meeting_prep`, and `secretary_leader` remain covered by the regression package.
 - Remaining delivery gap found by the regression package: none. Non-routable fixtures remain intentionally hidden from public ordering while still covered by tests.
 
 ## Test Evidence
 
-- Before snapshot: `tmp/automation-2-before-20260524-sample-agents/snapshot.json`
-- After comparison: `tmp/automation-2-after-20260524-sample-agents/comparison.md` (`43` cases, `0` delivery-output changes after catalog regeneration)
+- Before snapshot: `tmp/automation-2-before-20260525-sample-agents/snapshot.json`
+- After comparison: `tmp/automation-2-after-20260525-sample-agents/comparison.md` (`43` cases, `1` intentional `build_team_leader` contract-strengthening diff; `cfo_leader` safety wording changed without delivery-output regression)
 - Contract-strengthening comparison: `tmp/automation-directory-submission-compare-20260524-proof-tracker/comparison.md`
 - Contract-strengthening comparison: `tmp/automation-inbox-triage-compare-20260524-action-handoff/comparison.md`
 - Contract-strengthening comparison: `tmp/automation-citation-ops-after-20260525-proof-led-handoff/comparison.md`
@@ -36,6 +36,7 @@ This review is generated from the current sample-agent files and the all-agent d
 - Contract-strengthening comparison: `tmp/automation-cto-leader-after-20260525-evidence-gate/comparison.md`
 - Contract-strengthening comparison: `tmp/automation-legal-leader-after-20260525-review-flags/comparison.md`
 - Source-contract discipline + delivery contract QA: `npm run qa:builtin-agents`
+- Routing metadata contract QA: `npm run qa:agent-routing-contracts`
 - Public docs QA: `npm run qa:docs`
 
 ## Review Rules

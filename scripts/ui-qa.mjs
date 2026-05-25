@@ -784,7 +784,7 @@ for (const app of caitManagedSurfaceEntries) {
 }
 
 assert.ok(analyticsJs.includes("source_app: 'analytics_console'"), 'Analytics app logic should stay in analytics-console.js.');
-assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260516a"), 'Analytics Console should load the latest CAIt app bridge.');
+assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260525b"), 'Analytics Console should load the latest CAIt app bridge.');
 assert.ok(caitAppBridge.includes("`${origin}/auth/status`"), 'CAIt app bridge should read auth status before same-origin context handoff.');
 assert.ok(caitAppBridge.includes("headers['x-aiagent2-csrf'] = csrfToken"), 'CAIt app bridge should attach CSRF token to same-origin context handoff writes.');
 assert.ok(caitAppBridge.includes('createServerAppContextWithRetry'), 'CAIt app bridge should retry server-side app context writes.');
@@ -1018,7 +1018,7 @@ assert.ok(!deliveryManagerJs.includes('local delivery samples'), 'Delivery Manag
 assert.ok(chatJs.includes("from './chat-engine.js?v=20260509a'"), 'Chat JS should use root-relative shared chat engine import.');
 assert.ok(appHandoffTransferJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'App handoff transfer should use root-relative delivery action import for legacy social-post extraction.');
 assert.ok(!chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should not import delivery action parsing helpers directly.');
-assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260516a'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
+assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260525b'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
 assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
 assert.ok(chatJs.includes('await consumeCaitAppContextForChat()'), 'Chat should await server-side app context retrieval before filling the composer.');
 assert.ok(chatJs.includes('refreshAppContexts'), 'Chat Apps panel should load reusable app contexts from the server.');
@@ -1205,6 +1205,7 @@ assert.ok(appHandoffTransferJs.includes('export function appHandoffContractTextM
 assert.ok(appHandoffTransferJs.includes('export function appHandoffPayloadContractError'), 'Generic app handoffs should validate manifest-declared input constraints before opening the app.');
 assert.ok(appHandoffTransferJs.includes('explicitMetadataText(file, [') && appHandoffTransferJs.includes("'post_text'"), 'Dedicated social handoff text should prefer explicit file metadata before legacy content extraction.');
 assert.ok(appHandoffTransferJs.includes('function appHandoffTransferPostText') && appHandoffTransferJs.includes('payload.x_post_packet'), 'X Client Ops handoff should recover post_text from packet-shaped AIAGENT output.');
+assert.ok(appHandoffTransferJs.includes("appHandoffTransferManifestAccepts(manifest, 'post_text')"), 'Generic app context fallback must only create post_text artifacts when the target app manifest explicitly accepts post_text.');
 assert.ok(appHandoffTransferJs.includes('x_post_packet: payload.x_post_packet || payload.xPostPacket || null'), 'X Client Ops transfer should preserve the source x_post_packet in raw_context.');
 assert.ok(appManifestRegistryJs.includes('constraints:') && appManifestRegistryJs.includes('minLength: 1, maxLength: 280'), 'X Client Ops text length should be declared in its app manifest contract.');
 assert.ok(appHandoffTransferJs.includes('requires handoff text before opening the app'), 'Required app handoff text should block empty SaaS handoffs before opening an external action app.');

@@ -499,6 +499,12 @@ assert.ok(
     && appHandoffTransferSource.includes('const metadata = file?.metadata && typeof file.metadata === \'object\' ? file.metadata : {};'),
   'app handoff transfer metadata must be copied only from explicit file metadata fields'
 );
+assert.ok(
+  appHandoffTransferSource.includes("appHandoffTransferManifestAccepts(manifest, 'post_text')")
+    && appHandoffTransferSource.includes('? appHandoffTransferPostText(payload, delivery)')
+    && appHandoffTransferSource.includes(': \'\';'),
+  'app handoff transfer must create post_text artifacts only for apps whose manifest explicitly accepts post_text'
+);
 for (const [moduleName, symbol] of [
   ['public/chat-session-state.js', 'compactChatRuntimeSnapshot'],
   ['public/order-runtime.js', 'visibleJobApiPath'],
