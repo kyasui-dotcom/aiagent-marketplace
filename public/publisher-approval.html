@@ -9,7 +9,7 @@
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/app-console.css?v=20260507b" />
-  <script type="module" src="/publisher-approval.js?v=20260525a"></script>
+  <script type="module" src="/publisher-approval.js?v=20260525d"></script>
 </head>
 <body>
   <main class="app-console-shell" aria-label="CAIt Publisher and Approval Studio">
@@ -180,6 +180,11 @@
                 <div class="field-row"><label for="connectorInput">Publish connector</label><input id="connectorInput" readonly /></div>
                 <div class="field-row"><label for="connectorCapabilityInput">Connector capability</label><input id="connectorCapabilityInput" readonly /></div>
                 <div class="field-row"><label for="publishMethodInput">Publish method</label><input id="publishMethodInput" readonly /></div>
+                <div class="field-row"><label for="profileHandleInput">Account / profile</label><input id="profileHandleInput" placeholder="@handle, page owner, community, or publication account" /></div>
+                <div class="field-row"><label for="profileUrlInput">Profile URL</label><input id="profileUrlInput" placeholder="https://instagram.com/your-profile" /></div>
+                <div class="field-row"><label for="mediaAssetsInput">Media assets</label><textarea id="mediaAssetsInput" placeholder="Image/video URLs, screenshots, carousel frames, b-roll, or asset blockers"></textarea></div>
+                <div class="field-row"><label for="channelRulesInput">Channel rules</label><textarea id="channelRulesInput" placeholder="Caption limits, community rules, link policy, required tags, or compliance notes"></textarea></div>
+                <div class="field-row"><label for="approvalChecklistInput">Approval checklist</label><textarea id="approvalChecklistInput" placeholder="Profile, destination, assets, exact copy, proof, schedule, and connector checks"></textarea></div>
                 <div class="field-row"><label for="marketInput">Market</label><input id="marketInput" placeholder="Global, US, EU, APAC..." /></div>
                 <div class="field-row"><label for="localeInput">Locale</label><input id="localeInput" placeholder="en, en-US, ja-JP..." /></div>
                 <div class="field-row"><label for="ownerInput">Owner</label><input id="ownerInput" placeholder="CMO, SEO, Partner manager..." /></div>
@@ -197,9 +202,23 @@
               </div>
               <div class="inline-actions" style="margin-top:12px">
                 <button class="primary-btn" id="saveDraftBtn" type="button">Save draft</button>
+                <button class="ghost-btn" id="reshapeSelectedBtn" type="button">Re-shape and save</button>
                 <button class="ghost-btn" id="requestChangesBtn" type="button">Request changes</button>
                 <button class="ghost-btn" id="blockBtn" type="button">Block</button>
               </div>
+            </article>
+          </section>
+
+          <section class="split-main">
+            <article class="panel ops-readiness-panel">
+              <div class="status-row">
+                <div>
+                  <span class="kicker">Packet data check</span>
+                  <h2>Media-specific readiness</h2>
+                </div>
+                <span class="status-pill pending" id="dataCheckPill">Queue not loaded</span>
+              </div>
+              <div class="ops-readiness-list" id="dataCheckList"></div>
             </article>
           </section>
 

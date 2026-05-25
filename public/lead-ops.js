@@ -86,7 +86,17 @@ const els = {
   leadReturnToChatLink: document.getElementById('leadReturnToChatLink'),
   leadHandoffSessionNotice: document.getElementById('leadHandoffSessionNotice'),
   leadOpsReadinessPill: document.getElementById('leadOpsReadinessPill'),
-  leadOpsReadinessList: document.getElementById('leadOpsReadinessList')
+  leadOpsReadinessList: document.getElementById('leadOpsReadinessList'),
+  leadSourcingIcpInput: document.getElementById('leadSourcingIcpInput'),
+  leadSourcingSourceInput: document.getElementById('leadSourcingSourceInput'),
+  leadSourcingCountInput: document.getElementById('leadSourcingCountInput'),
+  leadSourcingRegionInput: document.getElementById('leadSourcingRegionInput'),
+  leadSourcingOfferInput: document.getElementById('leadSourcingOfferInput'),
+  leadSourcingExclusionInput: document.getElementById('leadSourcingExclusionInput'),
+  leadSourcingPill: document.getElementById('leadSourcingPill'),
+  leadSourcingNote: document.getElementById('leadSourcingNote'),
+  requestLeadSourcingBtn: document.getElementById('requestLeadSourcingBtn'),
+  copyLeadSourcingBtn: document.getElementById('copyLeadSourcingBtn')
 };
 
 function selectedLead() {
@@ -203,6 +213,94 @@ function artifactRows(context = {}, types = []) {
     .filter((row) => row && typeof row === 'object');
 }
 
+const LEAD_CONTEXT_PACKET_KEYS = Object.freeze([
+  'lead_ops_packet',
+  'leadOpsPacket',
+  'lead_packet',
+  'leadPacket',
+  'crm_packet',
+  'crmPacket',
+  'outreach_packet',
+  'outreachPacket'
+]);
+
+const LEAD_CONTEXT_FIELD_ALIASES = Object.freeze({
+  lead_rows: ['lead_rows', 'leadRows', 'leads', 'lead_items', 'leadItems', 'rows', 'items'],
+  evidence_urls: ['evidence_urls', 'evidenceUrls', 'evidence_url', 'evidenceUrl', 'source_urls', 'sourceUrls', 'evidence', 'rows', 'items'],
+  next_actions: ['next_actions', 'nextActions', 'next_action', 'nextAction', 'lead_next_actions', 'leadNextActions', 'actions', 'rows', 'items'],
+  email_drafts: ['email_drafts', 'emailDrafts', 'email_draft', 'emailDraft', 'outreach_drafts', 'outreachDrafts', 'drafts', 'rows', 'items'],
+  outreach_plan: ['outreach_plan', 'outreachPlan', 'outreach_plans', 'outreachPlans', 'plan', 'steps']
+});
+
+function objectValue(value = null) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function structuredPayload(value = null) {
+  if (typeof value !== 'string') return value;
+  const text = value.trim();
+  if (!/^[{[]/.test(text)) return value;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return value;
+  }
+}
+
+function contextDataSources(context = {}) {
+  const raw = objectValue(context.raw_context || context.rawContext);
+  const received = objectValue(raw?.received_context || raw?.receivedContext);
+  const receivedRaw = objectValue(received?.raw_context || received?.rawContext);
+  const baseSources = [context, raw, received, receivedRaw].filter(Boolean);
+  const packetSources = baseSources.flatMap((source) => LEAD_CONTEXT_PACKET_KEYS
+    .map((key) => structuredPayload(source?.[key]))
+    .filter((value) => value && typeof value === 'object'));
+  const packetArtifacts = artifactsByType(context, LEAD_CONTEXT_PACKET_KEYS)
+    .map((artifact) => structuredPayload(artifact?.content || artifact?.body || artifact?.text || artifact))
+    .filter((value) => value && typeof value === 'object');
+  return [...baseSources, ...packetSources, ...packetArtifacts];
+}
+
+function contractValues(context = {}, field = '') {
+  const aliases = LEAD_CONTEXT_FIELD_ALIASES[field] || [field];
+  const values = [];
+  contextDataSources(context).forEach((source) => {
+    aliases.forEach((alias) => {
+      if (Object.prototype.hasOwnProperty.call(source, alias)) values.push(structuredPayload(source[alias]));
+    });
+  });
+  return values.filter((value) => value != null && value !== '');
+}
+
+function rowsFromStructuredPayload(value = null, aliases = []) {
+  const payload = structuredPayload(value);
+  if (Array.isArray(payload)) return payload;
+  const object = objectValue(payload);
+  if (!object) return [];
+  for (const alias of aliases) {
+    const nested = structuredPayload(object[alias]);
+    if (Array.isArray(nested)) return nested;
+    if (objectValue(nested)) {
+      const rows = rowsFromStructuredPayload(nested, aliases);
+      if (rows.length) return rows;
+    }
+  }
+  if (Array.isArray(object.rows)) return object.rows;
+  if (Array.isArray(object.items)) return object.items;
+  if (Array.isArray(object.leads)) return object.leads;
+  if (Array.isArray(object.drafts)) return object.drafts;
+  if (Array.isArray(object.steps)) return object.steps;
+  return ['company', 'company_name', 'lead', 'lead_name', 'contact', 'email', 'subject', 'body', 'next_action', 'evidence_url']
+    .some((key) => String(object[key] || '').trim()) ? [object] : [];
+}
+
+function contractRows(context = {}, field = '') {
+  const aliases = LEAD_CONTEXT_FIELD_ALIASES[field] || [field];
+  return contractValues(context, field)
+    .flatMap((value) => rowsFromStructuredPayload(value, aliases))
+    .filter((row) => row && typeof row === 'object');
+}
+
 function markdownCellText(value = '') {
   return String(value || '')
     .replace(/<br\s*\/?>/gi, ' ')
@@ -252,8 +350,14 @@ function matchingSupplementRow(rows = [], lead = null) {
 }
 
 function applyLeadSupplementArtifacts(importedLeads = [], context = {}) {
-  const evidenceRows = artifactRows(context, ['evidence_urls', 'evidence_url', 'evidence', 'source_urls']);
-  const nextActionRows = artifactRows(context, ['next_actions', 'next_action', 'lead_next_actions']);
+  const evidenceRows = [
+    ...artifactRows(context, ['evidence_urls', 'evidence_url', 'evidence', 'source_urls']),
+    ...contractRows(context, 'evidence_urls')
+  ];
+  const nextActionRows = [
+    ...artifactRows(context, ['next_actions', 'next_action', 'lead_next_actions']),
+    ...contractRows(context, 'next_actions')
+  ];
   importedLeads.forEach((lead) => {
     const evidence = matchingSupplementRow(evidenceRows, lead);
     if (evidence) {
@@ -374,13 +478,22 @@ function parseCollapsedLeadTable(markdown = '', source = {}) {
 }
 
 function leadRowsFromContextArtifacts(context = {}) {
-  const structured = artifactRows(context, ['lead_rows', 'leads', 'crm_rows'])
+  const structured = [
+    ...artifactRows(context, ['lead_rows', 'leads', 'crm_rows']),
+    ...contractRows(context, 'lead_rows')
+  ]
     .map((row, index) => normalizeLeadRow(row, index, { id: context.id || 'structured-lead', owner: context.source_app_label || context.source_app || 'CAIt' }))
     .filter(Boolean);
-  const evidenceOnlyRows = artifactRows(context, ['evidence_urls', 'evidence_url', 'source_urls'])
+  const evidenceOnlyRows = [
+    ...artifactRows(context, ['evidence_urls', 'evidence_url', 'source_urls']),
+    ...contractRows(context, 'evidence_urls')
+  ]
     .map((row, index) => normalizeLeadRow(row, index, { id: `${context.id || 'evidence'}-evidence`, owner: context.source_app_label || context.source_app || 'CAIt' }))
     .filter(Boolean);
-  const nextActionOnlyRows = artifactRows(context, ['next_actions', 'next_action'])
+  const nextActionOnlyRows = [
+    ...artifactRows(context, ['next_actions', 'next_action']),
+    ...contractRows(context, 'next_actions')
+  ]
     .map((row, index) => normalizeLeadRow(row, index, { id: `${context.id || 'next-action'}-next`, owner: context.source_app_label || context.source_app || 'CAIt' }))
     .filter(Boolean);
   const markdownSources = [
@@ -407,7 +520,7 @@ function leadRowsFromContextArtifacts(context = {}) {
 }
 
 function leadEmailDraftArtifacts(context = {}) {
-  return artifactsByType(context, ['email_draft', 'email_drafts', 'outreach_draft', 'outreach_drafts'])
+  const artifactDrafts = artifactsByType(context, ['email_draft', 'email_drafts', 'outreach_draft', 'outreach_drafts'])
     .flatMap((artifact) => {
       if (Array.isArray(artifact?.rows)) return artifact.rows;
       if (Array.isArray(artifact?.drafts)) return artifact.drafts;
@@ -415,6 +528,14 @@ function leadEmailDraftArtifacts(context = {}) {
       return [artifact];
     })
     .filter((draft) => draft && typeof draft === 'object');
+  return [...artifactDrafts, ...contractRows(context, 'email_drafts')];
+}
+
+function leadOutreachPlanArtifacts(context = {}) {
+  return [
+    ...artifactsByType(context, ['outreach_plan', 'outreach_plans']),
+    ...contractValues(context, 'outreach_plan').map(structuredPayload)
+  ].filter((plan) => plan && typeof plan === 'object');
 }
 
 function applyEmailDraftArtifacts(importedLeads = [], context = {}) {
@@ -441,12 +562,31 @@ function applyEmailDraftArtifacts(importedLeads = [], context = {}) {
   return importedLeads;
 }
 
+function applyOutreachSteps(importedLeads = [], outreachSteps = []) {
+  outreachSteps.forEach((step) => {
+    const target = importedLeads.find((lead) => lead.id === String(step.lead_id || step.leadId || ''));
+    if (!target) return;
+    target.channel = normalizeChannel(step.channel || target.channel);
+    target.consent = String(step.consent || step.consent_basis || target.consent || 'needs_review');
+    target.sendMode = normalizeSendMode(step.send_mode || step.sendMode || target.sendMode);
+    target.scheduleAt = String(step.schedule_at || step.scheduleAt || target.scheduleAt || '');
+    target.triggerEvent = String(step.trigger_event || step.triggerEvent || target.triggerEvent || 'none');
+    target.triggerCondition = String(step.trigger_condition || step.triggerCondition || target.triggerCondition || '');
+    target.senderEmail = String(step.sender_email || step.senderEmail || step.from || target.senderEmail || '');
+    target.replyToEmail = String(step.reply_to_email || step.replyToEmail || step.replyTo || target.replyToEmail || '');
+    target.subject = String(step.subject || target.subject || '');
+    target.body = String(step.body || step.message || target.body || '');
+    target.status = String(step.status || target.status || 'draft');
+  });
+  return importedLeads;
+}
+
 function applyInboundContext(context = null) {
   if (!context) return;
   importedContext = context;
   const leadRows = leadRowsFromContextArtifacts(context);
   const emailDraft = leadEmailDraftArtifacts(context)[0] || {};
-  const outreachPlan = artifactsByType(context, ['outreach_plan', 'outreach_plans'])[0] || {};
+  const outreachPlan = leadOutreachPlanArtifacts(context)[0] || {};
   const outreachSteps = Array.isArray(outreachPlan.steps) ? outreachPlan.steps : [];
   const importedLeads = leadRows;
   if (!importedLeads.length) {
@@ -472,21 +612,7 @@ function applyInboundContext(context = null) {
       body: ''
     });
   }
-  outreachSteps.forEach((step) => {
-    const target = importedLeads.find((lead) => lead.id === String(step.lead_id || step.leadId || ''));
-    if (!target) return;
-    target.channel = normalizeChannel(step.channel || target.channel);
-    target.consent = String(step.consent || step.consent_basis || target.consent || 'needs_review');
-    target.sendMode = normalizeSendMode(step.send_mode || step.sendMode || target.sendMode);
-    target.scheduleAt = String(step.schedule_at || step.scheduleAt || target.scheduleAt || '');
-    target.triggerEvent = String(step.trigger_event || step.triggerEvent || target.triggerEvent || 'none');
-    target.triggerCondition = String(step.trigger_condition || step.triggerCondition || target.triggerCondition || '');
-    target.senderEmail = String(step.sender_email || step.senderEmail || step.from || target.senderEmail || '');
-    target.replyToEmail = String(step.reply_to_email || step.replyToEmail || step.replyTo || target.replyToEmail || '');
-    target.subject = String(step.subject || target.subject || '');
-    target.body = String(step.body || step.message || target.body || '');
-    target.status = String(step.status || target.status || 'draft');
-  });
+  applyOutreachSteps(importedLeads, outreachSteps);
   if (emailDraft?.lead_id || emailDraft?.subject || emailDraft?.body) {
     const target = importedLeads.find((lead) => lead.id === String(emailDraft.lead_id || '')) || importedLeads[0];
     target.channel = normalizeChannel(emailDraft.channel || target.channel);
@@ -502,6 +628,7 @@ function applyInboundContext(context = null) {
     target.status = String(emailDraft.status || target.status || 'draft');
   }
   applyEmailDraftArtifacts(importedLeads, context);
+  applyOutreachSteps(importedLeads, outreachSteps);
   leads = importedLeads;
   selectedId = leads[0]?.id || '';
   const target = (Array.isArray(context.handoff_targets) ? context.handoff_targets : []).find(Boolean);
@@ -627,6 +754,97 @@ function leadRowsPayload() {
   }));
 }
 
+function leadSourcingRequestPayload() {
+  const targetCount = Math.max(1, Math.min(100, Number(els.leadSourcingCountInput?.value || 20) || 20));
+  return {
+    target_segment: String(els.leadSourcingIcpInput?.value || '').trim(),
+    source_policy: String(els.leadSourcingSourceInput?.value || '').trim(),
+    target_count: targetCount,
+    region_or_language: String(els.leadSourcingRegionInput?.value || '').trim(),
+    offer_or_contact_reason: String(els.leadSourcingOfferInput?.value || '').trim(),
+    exclusions: String(els.leadSourcingExclusionInput?.value || '').trim(),
+    required_fields: [
+      'company',
+      'website',
+      'public_email_or_contact_path',
+      'contact_source_url',
+      'why_fit',
+      'observed_signal',
+      'target_role_hypothesis',
+      'company_specific_angle',
+      'review_status',
+      'next_action'
+    ],
+    output_contract: {
+      app_id: 'lead-ops-console',
+      artifact_types: ['lead_rows', 'evidence_urls', 'next_actions'],
+      return_packet: 'lead_ops_packet'
+    }
+  };
+}
+
+function leadSourcingRequestReady(request = leadSourcingRequestPayload()) {
+  return Boolean(request.target_segment && request.source_policy && request.offer_or_contact_reason);
+}
+
+function buildLeadSourcingContext() {
+  const request = leadSourcingRequestPayload();
+  const ready = leadSourcingRequestReady(request);
+  return buildCaitAppContext({
+    source_app: 'lead_ops_console',
+    source_app_label: 'Lead Ops Console',
+    title: ready ? `Lead sourcing request - ${request.target_segment.slice(0, 80)}` : 'Lead sourcing request',
+    summary: ready
+      ? `Find ${request.target_count} public-source lead rows for ${request.target_segment}. Return evidence URLs, contact paths, fit notes, and next actions as a Lead Ops packet.`
+      : 'Lead sourcing request is missing target customer, source policy, or offer reason.',
+    facts: [
+      request.target_segment ? `Target customer / ICP: ${request.target_segment}` : 'Target customer / ICP is missing.',
+      request.source_policy ? `Sources to use: ${request.source_policy}` : 'Sources to use are missing.',
+      `Target count: ${request.target_count}`,
+      request.region_or_language ? `Region / language: ${request.region_or_language}` : '',
+      request.offer_or_contact_reason ? `Offer / reason to contact: ${request.offer_or_contact_reason}` : 'Offer / reason to contact is missing.',
+      request.exclusions ? `Do not include: ${request.exclusions}` : ''
+    ].filter(Boolean),
+    assumptions: [
+      'Use public-source company evidence only.',
+      'Do not invent personal email addresses or private contact data.',
+      'Rows without a public evidence URL or consent-safe contact path must be marked waiting.',
+      'Return data in the Lead Ops app contract so it can be reopened and approved before outreach.'
+    ],
+    artifacts: [
+      {
+        type: 'lead_acquisition_request',
+        ...request,
+        status: ready ? 'ready_for_list_creator' : 'missing_required_fields'
+      },
+      {
+        type: 'lead_rows',
+        rows: []
+      },
+      {
+        type: 'lead_ops_packet',
+        leadRows: [],
+        request
+      }
+    ],
+    recommended_next_actions: [
+      ready
+        ? 'Create a List Creator order that returns reviewable lead_rows, evidence_urls, next_actions, and a lead_ops_packet for this request.'
+        : 'Complete target customer, sources to use, and offer reason before dispatching List Creator.',
+      'After List Creator returns rows, reopen Lead Ops to review evidence, consent, message drafts, and approval state.',
+      'Keep outreach execution blocked until each row has source evidence and a consent-safe contact path.'
+    ],
+    handoff_targets: ['list_creator', 'cmo_leader', 'email_ops'],
+    raw_context: {
+      chat_handoff_id: leadChatHandoffId(),
+      chat_return_to: leadChatReturnTo(),
+      lead_return_to: currentLeadReturnPath(),
+      lead_acquisition_request: request,
+      lead_sourcing_ready: ready
+    }
+  });
+}
+
 function outreachStepsPayload() {
   return leads.map((lead) => ({
     lead_id: lead.id,
@@ -654,6 +872,7 @@ function buildContext() {
   const chatReturnTo = leadChatReturnTo();
   const leadReturnTo = currentLeadReturnPath();
   if (!lead) {
+    if (leadSourcingRequestReady()) return buildLeadSourcingContext();
     return buildCaitAppContext({
       source_app: 'lead_ops_console',
       source_app_label: 'Lead Ops Console',
@@ -938,8 +1157,29 @@ function render() {
   renderEditor();
   renderWorkflowState();
   renderLeadOpsReadiness();
+  renderLeadSourcingState();
   renderResendState();
   els.leadContextPreview.textContent = JSON.stringify(buildContext(), null, 2);
+}
+
+function renderLeadSourcingState() {
+  const request = leadSourcingRequestPayload();
+  const required = [
+    ['target customer', request.target_segment],
+    ['sources', request.source_policy],
+    ['offer reason', request.offer_or_contact_reason]
+  ];
+  const missing = required.filter(([, value]) => !String(value || '').trim()).map(([label]) => label);
+  const ready = missing.length === 0;
+  if (els.leadSourcingPill) {
+    els.leadSourcingPill.textContent = ready ? `Ready to request ${request.target_count} leads` : `Missing ${missing.join(', ')}`;
+    els.leadSourcingPill.className = `status-pill ${ready ? 'approved' : 'pending'}`;
+  }
+  if (els.leadSourcingNote) {
+    els.leadSourcingNote.textContent = ready
+      ? 'Ready to ask List Creator for public-source lead rows that can return directly into Lead Ops.'
+      : 'Fill target customer, sources to use, and offer reason before asking List Creator to source leads.';
+  }
 }
 
 function renderLeadHandoffSessionNotice() {
@@ -1130,6 +1370,17 @@ els.leadTable.addEventListener('click', (event) => {
   });
 });
 
+[els.leadSourcingIcpInput, els.leadSourcingSourceInput, els.leadSourcingCountInput, els.leadSourcingRegionInput, els.leadSourcingOfferInput, els.leadSourcingExclusionInput].forEach((input) => {
+  input?.addEventListener('input', () => {
+    renderLeadSourcingState();
+    if (!selectedLead()) els.leadContextPreview.textContent = JSON.stringify(buildLeadSourcingContext(), null, 2);
+  });
+  input?.addEventListener('change', () => {
+    renderLeadSourcingState();
+    if (!selectedLead()) els.leadContextPreview.textContent = JSON.stringify(buildLeadSourcingContext(), null, 2);
+  });
+});
+
 els.markDraftBtn.addEventListener('click', () => {
   setSelectedLeadStatus('draft');
 });
@@ -1158,6 +1409,25 @@ els.sendResendBtn?.addEventListener('click', () => {
 });
 els.scheduleResendBtn?.addEventListener('click', () => {
   void scheduleResendSend();
+});
+
+els.requestLeadSourcingBtn?.addEventListener('click', () => {
+  const request = leadSourcingRequestPayload();
+  if (!leadSourcingRequestReady(request)) {
+    window.alert('Fill target customer, sources to use, and offer reason before asking List Creator.');
+    renderLeadSourcingState();
+    return;
+  }
+  const returnTo = leadChatReturnTo();
+  void sendContextToCait(buildLeadSourcingContext(), { returnTo }).catch((error) => {
+    window.alert(`Lead sourcing request failed: ${error.message}`);
+  });
+});
+
+els.copyLeadSourcingBtn?.addEventListener('click', async () => {
+  await copyContextJson(buildLeadSourcingContext());
+  els.copyLeadSourcingBtn.textContent = 'Copied';
+  window.setTimeout(() => { els.copyLeadSourcingBtn.textContent = 'Copy sourcing request'; }, 1200);
 });
 
 els.sendLeadContextBtn.addEventListener('click', () => {

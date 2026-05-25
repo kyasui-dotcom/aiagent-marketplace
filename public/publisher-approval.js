@@ -196,6 +196,11 @@ const els = {
   connectorInput: document.getElementById('connectorInput'),
   connectorCapabilityInput: document.getElementById('connectorCapabilityInput'),
   publishMethodInput: document.getElementById('publishMethodInput'),
+  profileHandleInput: document.getElementById('profileHandleInput'),
+  profileUrlInput: document.getElementById('profileUrlInput'),
+  mediaAssetsInput: document.getElementById('mediaAssetsInput'),
+  channelRulesInput: document.getElementById('channelRulesInput'),
+  approvalChecklistInput: document.getElementById('approvalChecklistInput'),
   marketInput: document.getElementById('marketInput'),
   localeInput: document.getElementById('localeInput'),
   ownerInput: document.getElementById('ownerInput'),
@@ -233,6 +238,7 @@ const els = {
   publishResultPreview: document.getElementById('publishResultPreview'),
   approveSelectedBtn: document.getElementById('approveSelectedBtn'),
   saveDraftBtn: document.getElementById('saveDraftBtn'),
+  reshapeSelectedBtn: document.getElementById('reshapeSelectedBtn'),
   requestChangesBtn: document.getElementById('requestChangesBtn'),
   blockBtn: document.getElementById('blockBtn'),
   connectXBtn: document.getElementById('connectXBtn'),
@@ -259,6 +265,8 @@ const els = {
   publisherStepHandoff: document.getElementById('publisherStepHandoff'),
   opsReadinessPill: document.getElementById('opsReadinessPill'),
   opsReadinessList: document.getElementById('opsReadinessList'),
+  dataCheckPill: document.getElementById('dataCheckPill'),
+  dataCheckList: document.getElementById('dataCheckList'),
   returnToChatLink: document.getElementById('returnToChatLink'),
   handoffSessionNotice: document.getElementById('handoffSessionNotice')
 };
@@ -311,6 +319,26 @@ function itemMarket(item = null) {
 
 function itemLocale(item = null) {
   return String(item?.locale || 'en').trim() || 'en';
+}
+
+function itemProfileHandle(item = null) {
+  return String(item?.profileHandle || item?.profile_handle || item?.accountHandle || item?.account_handle || '').trim();
+}
+
+function itemProfileUrl(item = null) {
+  return String(item?.profileUrl || item?.profile_url || item?.accountUrl || item?.account_url || '').trim();
+}
+
+function itemMediaAssets(item = null) {
+  return String(item?.mediaAssets || item?.media_assets || item?.assetRequirements || item?.asset_requirements || '').trim();
+}
+
+function itemChannelRules(item = null) {
+  return String(item?.channelRules || item?.channel_rules || item?.linkPolicy || item?.link_policy || '').trim();
+}
+
+function itemApprovalChecklist(item = null) {
+  return String(item?.approvalChecklist || item?.approval_checklist || '').trim();
 }
 
 function destinationGroups() {
@@ -447,8 +475,31 @@ function publisherContractTypeForProfile(profile = null, type = '') {
   return 'site_publish_packet';
 }
 
+function directPublisherPacketType(explicit = '', profile = null, type = '') {
+  const normalized = normalizeContractType(explicit);
+  const profileType = publisherContractTypeForProfile(profile, type);
+  if (!normalized) return profileType;
+  const inputDraftTypes = new Set([
+    'article_draft',
+    'seo_article',
+    'seo_page_artifact',
+    'landing_page',
+    'landing_page_change',
+    'wordpress_draft',
+    'directory_submission',
+    'community_post_packet',
+    'social_post',
+    'x_post',
+    'reddit_post',
+    'indie_hackers_post',
+    'instagram_post'
+  ]);
+  if (inputDraftTypes.has(normalized)) return profileType;
+  return normalized;
+}
+
 function publisherContractTypeFromArtifact(artifact = {}, type = '', profile = null) {
-  return explicitPublisherContractType(artifact) || publisherContractTypeForProfile(profile, type);
+  return directPublisherPacketType(explicitPublisherContractType(artifact), profile, type);
 }
 
 function publisherContractArtifactsFromContext(context = {}) {
@@ -725,6 +776,11 @@ function itemMarkdown(item = null) {
     `Publish connector: ${itemConnector(item)}`,
     `Connector capability: ${itemConnectorCapability(item)}`,
     `Publish method: ${itemPublishMethod(item)}`,
+    itemProfileHandle(item) ? `Account / profile: ${itemProfileHandle(item)}` : null,
+    itemProfileUrl(item) ? `Profile URL: ${itemProfileUrl(item)}` : null,
+    itemMediaAssets(item) ? `Media assets: ${itemMediaAssets(item)}` : null,
+    itemChannelRules(item) ? `Channel rules: ${itemChannelRules(item)}` : null,
+    itemApprovalChecklist(item) ? `Approval checklist: ${itemApprovalChecklist(item)}` : null,
     `Target path: ${item.slug || ''}`,
     item.h1 ? `H1: ${item.h1}` : null,
     item.meta ? `Meta description: ${item.meta}` : null,
@@ -1257,6 +1313,11 @@ function contextItemFromArtifact(artifact = {}, index = 0) {
   const extractedInternalLinks = markdownFieldValue(body, ['Internal links', 'Internal link', '内部リンク']);
   const extractedOgTitle = markdownFieldValue(body, ['OG title', 'Open Graph title']);
   const extractedOgDescription = markdownFieldValue(body, ['OG description', 'Open Graph description']);
+  const extractedProfileHandle = markdownFieldValue(body, ['Account / profile', 'Account profile', 'Account handle', 'Profile', 'Instagram account', 'Instagram profile', 'Handle']);
+  const extractedProfileUrl = markdownFieldValue(body, ['Profile URL', 'Account URL', 'Instagram URL', 'Profile link']);
+  const extractedMediaAssets = markdownFieldValue(body, ['Media assets', 'Visual assets', 'Assets', 'Screenshots', 'B-roll', 'Asset/proof status']);
+  const extractedChannelRules = markdownFieldValue(body, ['Channel rules', 'Link policy', 'Community rules', 'Caption rules', 'Schedule handoff']);
+  const extractedApprovalChecklist = markdownFieldValue(body, ['Approval checklist', 'Approval check', 'Approval check before publishing', 'Pre-publish checklist']);
   const artifactSlug = artifact.slug || artifact.path || artifact.url || artifact.target || '';
   const title = String(extractedTitle || titleWithSlugTail(artifact.title, artifactSlug) || artifact.title || artifact.name || artifactSlug || `Imported item ${index + 1}`).trim();
   const destination = destinationFromArtifact(artifact, type, profile);
@@ -1276,6 +1337,11 @@ function contextItemFromArtifact(artifact = {}, index = 0) {
     connectorCapability: String(profileOwnsConnector ? selectedProfile.capability : (firstText(artifact.connector_capability, artifact.connectorCapability, artifact.capability, selectedProfile.capability) || selectedProfile.capability)).trim(),
     publishMethod: String(profileOwnsConnector ? selectedProfile.method : (firstText(artifact.publish_method, artifact.publishMethod, artifact.execution_method, artifact.executionMethod, selectedProfile.method) || selectedProfile.method)).trim(),
     actionType: String(profileOwnsConnector ? selectedProfile.actionType : (firstText(artifact.action_type, artifact.actionType, selectedProfile.actionType) || selectedProfile.actionType)).trim(),
+    profileHandle: String(firstText(artifact.profile_handle, artifact.profileHandle, artifact.account_handle, artifact.accountHandle, artifact.account_username, artifact.accountUsername, artifact.username, artifact.handle, extractedProfileHandle) || '').trim(),
+    profileUrl: String(firstText(artifact.profile_url, artifact.profileUrl, artifact.account_url, artifact.accountUrl, artifact.public_profile_url, artifact.publicProfileUrl, extractedProfileUrl) || '').trim(),
+    mediaAssets: String(firstText(artifact.media_assets, artifact.mediaAssets, artifact.asset_requirements, artifact.assetRequirements, artifact.visual_assets, artifact.visualAssets, artifact.media_requirements, artifact.mediaRequirements, extractedMediaAssets) || '').trim(),
+    channelRules: String(firstText(artifact.channel_rules, artifact.channelRules, artifact.link_policy, artifact.linkPolicy, artifact.community_rules, artifact.communityRules, artifact.caption_rules, artifact.captionRules, extractedChannelRules) || '').trim(),
+    approvalChecklist: String(firstText(artifact.approval_checklist, artifact.approvalChecklist, artifact.pre_publish_checklist, artifact.prePublishChecklist, extractedApprovalChecklist) || '').trim(),
     market,
     locale,
     owner: String(firstText(artifact.owner, artifact.assignee, artifact.agent, artifact.source_agent, artifact.lead, 'CAIt') || 'CAIt').trim(),
@@ -1317,6 +1383,11 @@ function contextItemFromDeliveryItem(item = {}, index = 0) {
     connector: metadata.connector || metadata.required_connector || '',
     connector_capability: metadata.connector_capability || metadata.capability || '',
     publish_method: metadata.publish_method || metadata.execution_method || '',
+    profile_handle: metadata.profile_handle || metadata.profileHandle || metadata.account_handle || metadata.accountHandle || metadata.account_username || '',
+    profile_url: metadata.profile_url || metadata.profileUrl || metadata.account_url || metadata.accountUrl || '',
+    media_assets: metadata.media_assets || metadata.mediaAssets || metadata.asset_requirements || metadata.visual_assets || '',
+    channel_rules: metadata.channel_rules || metadata.channelRules || metadata.link_policy || metadata.community_rules || '',
+    approval_checklist: metadata.approval_checklist || metadata.approvalChecklist || '',
     market: metadata.market || metadata.region || '',
     locale: metadata.locale || metadata.language || '',
     risk: metadata.risk || metadata.blocker || 'Review this delivery item before external publishing.',
@@ -1325,6 +1396,50 @@ function contextItemFromDeliveryItem(item = {}, index = 0) {
     eeat_notes: metadata.eeat_notes && typeof metadata.eeat_notes === 'object' ? metadata.eeat_notes : {},
     source_job_id: item.jobId,
     source_delivery_item_id: item.id
+  }, index);
+}
+
+function contextItemFromPublisherItem(item = {}, index = 0) {
+  const payload = item.payload && typeof item.payload === 'object' ? item.payload : {};
+  const validation = item.validation && typeof item.validation === 'object' ? item.validation : {};
+  const blocker = Array.isArray(validation.checks)
+    ? validation.checks.filter((check) => !check.ok).map((check) => check.message).filter(Boolean).join(' ')
+    : '';
+  return contextItemFromArtifact({
+    id: item.id || `publisher-item-${index + 1}`,
+    type: item.itemType || item.contractType || payload.type || 'publish_asset',
+    contract_type: item.contractType || payload.contract_type || '',
+    title: item.title || payload.title || `Publisher item ${index + 1}`,
+    slug: payload.slug || payload.path || '',
+    meta: payload.meta || payload.meta_description || payload.description || item.summary || '',
+    keywords: payload.keywords || payload.keyword || payload.target_query || '',
+    h1: payload.h1 || payload.headline || '',
+    primary_cta: payload.primary_cta || payload.primaryCta || '',
+    secondary_cta: payload.secondary_cta || payload.secondaryCta || '',
+    internal_links: payload.internal_links || payload.internalLinks || '',
+    og_title: payload.og_title || payload.ogTitle || '',
+    og_description: payload.og_description || payload.ogDescription || '',
+    body: item.body || payload.body || payload.content || item.summary || '',
+    status: item.status || 'needs review',
+    owner: item.ownerLogin || payload.owner || 'CAIt',
+    destination: item.destination || payload.destination || '',
+    channel_key: item.channel || payload.channel || '',
+    connector: item.connector || payload.connector || '',
+    connector_capability: item.connectorCapability || payload.connector_capability || '',
+    publish_method: payload.publish_method || payload.publishMethod || '',
+    profile_handle: payload.profile_handle || payload.profileHandle || payload.account_handle || payload.accountHandle || '',
+    profile_url: payload.profile_url || payload.profileUrl || payload.account_url || payload.accountUrl || '',
+    media_assets: payload.media_assets || payload.mediaAssets || payload.asset_requirements || payload.visual_assets || '',
+    channel_rules: payload.channel_rules || payload.channelRules || payload.link_policy || payload.community_rules || '',
+    approval_checklist: payload.approval_checklist || payload.approvalChecklist || '',
+    market: payload.market || '',
+    locale: payload.locale || '',
+    risk: blocker || `Publisher DB version ${item.version || 1}; review before external execution.`,
+    source_publisher_item_id: item.id,
+    source_publisher_version: item.version,
+    source_evidence: Array.isArray(payload.source_evidence) ? payload.source_evidence : [],
+    publish_variants: Array.isArray(payload.publish_variants) ? payload.publish_variants : [],
+    eeat_notes: payload.eeat_notes && typeof payload.eeat_notes === 'object' ? payload.eeat_notes : {}
   }, index);
 }
 
@@ -1414,6 +1529,11 @@ function persistSelectedFromFields() {
   item.connectorCapability = profile.capability;
   item.publishMethod = profile.method;
   item.actionType = profile.actionType;
+  item.profileHandle = els.profileHandleInput.value.trim();
+  item.profileUrl = els.profileUrlInput.value.trim();
+  item.mediaAssets = els.mediaAssetsInput.value.trim();
+  item.channelRules = els.channelRulesInput.value.trim();
+  item.approvalChecklist = els.approvalChecklistInput.value.trim();
   item.market = els.marketInput.value.trim();
   item.locale = els.localeInput.value.trim();
   item.owner = els.ownerInput.value.trim();
@@ -1466,6 +1586,11 @@ function buildPacket() {
       `Publish connector: ${itemConnector(item)}`,
       `Connector capability: ${itemConnectorCapability(item)}`,
       `Publish method: ${itemPublishMethod(item)}`,
+      itemProfileHandle(item) ? `Account / profile: ${itemProfileHandle(item)}` : '',
+      itemProfileUrl(item) ? `Profile URL: ${itemProfileUrl(item)}` : '',
+      itemMediaAssets(item) ? `Media assets: ${itemMediaAssets(item)}` : '',
+      itemChannelRules(item) ? `Channel rules: ${itemChannelRules(item)}` : '',
+      itemApprovalChecklist(item) ? `Approval checklist: ${itemApprovalChecklist(item)}` : '',
       `Market: ${itemMarket(item)}`,
       `Locale: ${itemLocale(item)}`,
       `Owner: ${item.owner || 'CAIt'}`,
@@ -1491,11 +1616,11 @@ function buildPacket() {
       'Publisher can create repository handoff PRs or WordPress drafts, but final publishing remains outside chat and approval-gated.'
     ],
     artifacts: [
-      { type: contractType, artifact_type: contractType, contract_type: contractType, item_type: item.type, channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), action_type: itemActionType(item), market: itemMarket(item), locale: itemLocale(item), owner: item.owner || 'CAIt', title: item.title, slug: item.slug, meta: item.meta, keywords: item.keywords, h1: item.h1, primary_cta: item.primaryCta, secondary_cta: item.secondaryCta, internal_links: item.internalLinks, og_title: item.ogTitle, og_description: item.ogDescription, body: item.body, status: item.status, risk: item.risk, source_evidence: item.sourceEvidence || [], publish_variants: item.publishVariants || [], eeat_notes: item.eeatNotes || {} },
+      { type: contractType, artifact_type: contractType, contract_type: contractType, item_type: item.type, channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), action_type: itemActionType(item), profile_handle: itemProfileHandle(item), profile_url: itemProfileUrl(item), media_assets: itemMediaAssets(item), channel_rules: itemChannelRules(item), approval_checklist: itemApprovalChecklist(item), market: itemMarket(item), locale: itemLocale(item), owner: item.owner || 'CAIt', title: item.title, slug: item.slug, meta: item.meta, keywords: item.keywords, h1: item.h1, primary_cta: item.primaryCta, secondary_cta: item.secondaryCta, internal_links: item.internalLinks, og_title: item.ogTitle, og_description: item.ogDescription, body: item.body, status: item.status, risk: item.risk, source_evidence: item.sourceEvidence || [], publish_variants: item.publishVariants || [], eeat_notes: item.eeatNotes || {} },
       { type: 'github_pr_handoff', repo: repo?.fullName || repo?.full_name || '', repo_path: String(els.repoPathInput?.value || '').trim(), pr_url: prUrl, status: repoStatus.message },
       { type: 'wordpress_draft_handoff', site_url: wordpressStatus?.result?.wordpress?.siteUrl || '', draft_url: wpDraftUrl, draft_id: wordpressStatus?.result?.draft?.id || '', post_type: String(els.wordpressPostTypeSelect?.value || 'posts'), status: wordpressStatus.message },
       { type: 'x_post_handoff', account_username: xStatus?.result?.x?.username || '', connected: Boolean(xStatus.connected), status: xStatus.message },
-      { type: 'destination_profile', channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), market: itemMarket(item), locale: itemLocale(item), note: 'Destination profile holds publication rules, owner, CTA policy, compliance notes, OAuth connector, and execution method.' }
+      { type: 'destination_profile', channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), profile_handle: itemProfileHandle(item), profile_url: itemProfileUrl(item), media_assets: itemMediaAssets(item), channel_rules: itemChannelRules(item), approval_checklist: itemApprovalChecklist(item), market: itemMarket(item), locale: itemLocale(item), note: 'Destination profile holds publication rules, owner, CTA policy, compliance notes, OAuth connector, media requirements, and execution method.' }
     ],
     approval_requests: items.map((entry) => ({
       id: entry.id,
@@ -1507,6 +1632,11 @@ function buildPacket() {
       connector: itemConnector(entry),
       connector_capability: itemConnectorCapability(entry),
       publish_method: itemPublishMethod(entry),
+      profile_handle: itemProfileHandle(entry),
+      profile_url: itemProfileUrl(entry),
+      media_assets: itemMediaAssets(entry),
+      channel_rules: itemChannelRules(entry),
+      approval_checklist: itemApprovalChecklist(entry),
       destination: itemDestination(entry),
       market: itemMarket(entry),
       locale: itemLocale(entry),
@@ -1549,6 +1679,143 @@ function optionHtml(value = '', label = '') {
 function channelOptionHtml(profile = null) {
   if (!profile) return '';
   return optionHtml(profile.key, profile.label);
+}
+
+function textLength(value = '') {
+  return String(value || '').trim().length;
+}
+
+function itemDataChecks(item = null) {
+  if (!item) {
+    return [{
+      title: 'Packet is loaded',
+      detail: 'Load a Publisher packet from CAIt or a saved delivery item before checking media-specific fields.',
+      status: 'pending'
+    }];
+  }
+  const channel = String(item.channel || 'generic').trim();
+  const checks = [
+    {
+      title: 'Destination and medium are selected',
+      detail: `${itemDestination(item)} uses ${itemProfile(item)?.label || channel} with ${itemConnectorCapability(item)}.`,
+      status: itemDestination(item) && channel ? 'ready' : 'blocked'
+    },
+    {
+      title: 'Title is usable',
+      detail: item.title ? `Title is ${textLength(item.title)} characters.` : 'Add a clear title before saving or publishing.',
+      status: item.title ? 'ready' : 'blocked'
+    },
+    {
+      title: 'Body is present',
+      detail: item.body ? `Body is ${textLength(item.body)} characters.` : 'Add the draft, post text, or page change body.',
+      status: item.body ? 'ready' : 'blocked'
+    }
+  ];
+  if (['owned_site', 'github_pr', 'wordpress_site'].includes(channel)) {
+    checks.push(
+      {
+        title: 'Path and H1 are ready',
+        detail: item.slug && item.h1 ? `Path ${item.slug} and H1 are set.` : 'Set both slug/path and H1 for site publishing.',
+        status: item.slug && item.h1 ? 'ready' : 'pending'
+      },
+      {
+        title: 'SEO metadata is ready',
+        detail: item.meta && item.keywords ? 'Meta description and target query are set.' : 'Add meta description and target query before owned-site publishing.',
+        status: item.meta && item.keywords ? 'ready' : 'pending'
+      },
+      {
+        title: 'CTA and internal links are reviewable',
+        detail: item.primaryCta && item.internalLinks ? 'Primary CTA and internal links are attached.' : 'Add CTA and internal links, or leave a blocker if not applicable.',
+        status: item.primaryCta && item.internalLinks ? 'ready' : 'pending'
+      }
+    );
+  } else if (channel === 'x') {
+    checks.push({
+      title: 'X post length is executable',
+      detail: textLength(item.body) <= 280 ? `${textLength(item.body)} / 280 characters.` : `${textLength(item.body)} characters; shorten or convert to a thread before posting.`,
+      status: textLength(item.body) && textLength(item.body) <= 280 ? 'ready' : 'blocked'
+    });
+  } else if (channel === 'instagram') {
+    checks.push(
+      {
+        title: 'Instagram profile is identified',
+        detail: itemProfileHandle(item) || itemProfileUrl(item) ? `${itemProfileHandle(item) || itemProfileUrl(item)} is attached.` : 'Add the Instagram account/profile before approval.',
+        status: itemProfileHandle(item) || itemProfileUrl(item) ? 'ready' : 'pending'
+      },
+      {
+        title: 'Instagram media assets are attached',
+        detail: itemMediaAssets(item) ? 'Media asset notes, URLs, or blockers are attached.' : 'Add carousel/reel/story media assets or explicitly mark the asset blocker.',
+        status: itemMediaAssets(item) ? 'ready' : 'pending'
+      },
+      {
+        title: 'Instagram approval checklist is visible',
+        detail: itemApprovalChecklist(item) ? 'Profile, caption, destination, proof, and schedule checks are captured.' : 'Add the approval checklist before connector or manual posting handoff.',
+        status: itemApprovalChecklist(item) ? 'ready' : 'pending'
+      }
+    );
+  } else if (['reddit', 'indie_hackers'].includes(channel)) {
+    checks.push({
+      title: 'Community post has context',
+      detail: item.title && textLength(item.body) >= 120 ? 'Title and discussion body are long enough for review.' : 'Add a discussion title and enough body context for community review.',
+      status: item.title && textLength(item.body) >= 120 ? 'ready' : 'pending'
+    });
+  } else if (channel === 'directory') {
+    checks.push({
+      title: 'Directory listing fields are present',
+      detail: item.title && item.meta && item.slug ? 'Listing name, description, and target URL/path are present.' : 'Add listing title, description, and target URL/path before submission.',
+      status: item.title && item.meta && item.slug ? 'ready' : 'pending'
+    });
+  } else if (channel === 'email') {
+    checks.push({
+      title: 'Email packet has subject context',
+      detail: item.title && item.body ? 'Subject/title and body are ready for mailbox handoff.' : 'Add subject/title and exact email body before send handoff.',
+      status: item.title && item.body ? 'ready' : 'blocked'
+    });
+  }
+  checks.push({
+    title: 'Approval status is explicit',
+    detail: `Current status is ${item.status || 'needs approval'}.`,
+    status: item.status ? 'ready' : 'pending'
+  });
+  return checks;
+}
+
+function renderDataCheck() {
+  const checks = itemDataChecks(selectedItem());
+  const readyCount = checks.filter((entry) => entry.status === 'ready').length;
+  const blockedCount = checks.filter((entry) => entry.status === 'blocked').length;
+  if (els.dataCheckPill) {
+    els.dataCheckPill.textContent = selectedItem()
+      ? `${readyCount}/${checks.length} data checks ready`
+      : 'Queue not loaded';
+    els.dataCheckPill.className = `status-pill ${blockedCount ? 'blocked' : (readyCount === checks.length ? 'approved' : 'pending')}`;
+  }
+  if (els.dataCheckList) {
+    els.dataCheckList.innerHTML = checks.map((entry) => [
+      `<article class="ops-readiness-item ${entry.status}">`,
+      `<strong>${escapeHtml(entry.title)}</strong>`,
+      `<span>${escapeHtml(entry.detail)}</span>`,
+      '</article>'
+    ].join('')).join('');
+  }
+}
+
+async function loadPublisherDbItems() {
+  try {
+    const payload = await apiJson('/api/publisher/items?limit=100');
+    const imported = (Array.isArray(payload.items) ? payload.items : [])
+      .map(contextItemFromPublisherItem)
+      .filter((item) => item.title || item.body);
+    if (!imported.length) return;
+    const existing = new Set(items.map((item) => String(item.id || '')));
+    items = [
+      ...items,
+      ...imported.filter((item) => !existing.has(String(item.id || '')))
+    ];
+    if (!selectedId && items[0]) selectedId = items[0].id;
+  } catch {
+    // Publisher DB history requires login/API access; logged-out users can still edit inbound packets.
+  }
 }
 
 function renderDestinationNav() {
@@ -1750,6 +2017,11 @@ function renderEditor() {
   els.connectorInput.value = item ? itemConnector(item) : '';
   els.connectorCapabilityInput.value = item ? itemConnectorCapability(item) : '';
   els.publishMethodInput.value = item ? itemPublishMethod(item) : '';
+  els.profileHandleInput.value = item ? itemProfileHandle(item) : '';
+  els.profileUrlInput.value = item ? itemProfileUrl(item) : '';
+  els.mediaAssetsInput.value = item ? itemMediaAssets(item) : '';
+  els.channelRulesInput.value = item ? itemChannelRules(item) : '';
+  els.approvalChecklistInput.value = item ? itemApprovalChecklist(item) : '';
   els.marketInput.value = item ? itemMarket(item) : '';
   els.localeInput.value = item ? itemLocale(item) : '';
   els.ownerInput.value = item?.owner || '';
@@ -1853,6 +2125,7 @@ function render() {
   renderCounts();
   renderHandoffSessionNotice();
   renderOpsReadiness();
+  renderDataCheck();
   renderDestinationNav();
   renderFilters();
   renderList();
@@ -1874,6 +2147,55 @@ function setSelectedStatus(status) {
   render();
 }
 
+async function reshapeSelectedMediumContext() {
+  const item = selectedItem();
+  if (!item || !els.reshapeSelectedBtn) return;
+  persistSelectedFromFields();
+  const packet = buildPacket();
+  packet.raw_context = {
+    ...(packet.raw_context && typeof packet.raw_context === 'object' ? packet.raw_context : {}),
+    publisher_manual_media_override: {
+      channel: item.channel,
+      destination: itemDestination(item),
+      connector: itemConnector(item),
+      connector_capability: itemConnectorCapability(item),
+      requested_at: new Date().toISOString()
+    }
+  };
+  els.reshapeSelectedBtn.disabled = true;
+  els.reshapeSelectedBtn.textContent = 'Saving shape';
+  try {
+    const payload = await apiJson('/api/publisher/context-ingest', {
+      method: 'POST',
+      body: JSON.stringify({
+        source_app: 'publisher_approval_studio',
+        context: packet
+      })
+    });
+    importedContext = payload?.app_context?.context || importedContext;
+    publishResult = {
+      kind: 'publisher_context_reshape',
+      ok: true,
+      app_context_id: payload.app_context_id || '',
+      shape: payload.app_context_shape || null,
+      next: payload?.app_context_shape?.ok
+        ? 'LLM-shaped Publisher context was saved and can be reopened from CAIt.'
+        : `Publisher context was saved; LLM shaping did not run: ${payload?.app_context_shape?.reason || 'unknown reason'}.`
+    };
+  } catch (error) {
+    publishResult = {
+      kind: 'publisher_context_reshape',
+      ok: false,
+      error: String(error?.message || error),
+      payload: error?.payload || null
+    };
+  } finally {
+    els.reshapeSelectedBtn.disabled = false;
+    els.reshapeSelectedBtn.textContent = 'Re-shape and save';
+    render();
+  }
+}
+
 els.destinationNav.addEventListener('click', (event) => {
   const button = event.target.closest('[data-destination]');
   if (!button) return;
@@ -1890,7 +2212,7 @@ els.contentList.addEventListener('click', (event) => {
   render();
 });
 
-[els.destinationInput, els.channelSelect, els.marketInput, els.localeInput, els.ownerInput, els.titleInput, els.slugInput, els.metaInput, els.keywordsInput, els.h1Input, els.primaryCtaInput, els.secondaryCtaInput, els.internalLinksInput, els.ogTitleInput, els.ogDescriptionInput, els.bodyInput, els.handoffTargetSelect].forEach((input) => {
+[els.destinationInput, els.channelSelect, els.profileHandleInput, els.profileUrlInput, els.mediaAssetsInput, els.channelRulesInput, els.approvalChecklistInput, els.marketInput, els.localeInput, els.ownerInput, els.titleInput, els.slugInput, els.metaInput, els.keywordsInput, els.h1Input, els.primaryCtaInput, els.secondaryCtaInput, els.internalLinksInput, els.ogTitleInput, els.ogDescriptionInput, els.bodyInput, els.handoffTargetSelect].forEach((input) => {
   if (!input) return;
   const update = () => {
     persistSelectedFromFields();
@@ -1925,6 +2247,9 @@ els.statusFilterSelect.addEventListener('change', () => {
 });
 
 els.saveDraftBtn.addEventListener('click', () => setSelectedStatus('draft'));
+els.reshapeSelectedBtn.addEventListener('click', () => {
+  void reshapeSelectedMediumContext();
+});
 els.requestChangesBtn.addEventListener('click', () => setSelectedStatus('changes requested'));
 els.blockBtn.addEventListener('click', () => setSelectedStatus('blocked'));
 els.approveSelectedBtn.addEventListener('click', () => setSelectedStatus('approved'));
@@ -1987,6 +2312,7 @@ els.copyPacketBtn.addEventListener('click', async () => {
 async function bootstrap() {
   await refreshAuthSnapshot();
   applyInboundContext(await fetchCaitAppContextFromUrl());
+  await loadPublisherDbItems();
   await loadPublisherDeliveryItems();
   render();
   void refreshXStatus({ silent: true });

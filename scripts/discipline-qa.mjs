@@ -29,7 +29,10 @@ const chatSessionStateSource = read('public/chat-session-state.js');
 const orderRuntimeSource = read('public/order-runtime.js');
 const deliveryRendererSource = read('public/delivery-renderer.js');
 const deliveryItemsSource = read('lib/delivery-items.js');
+const deliveryRoutesSource = read('lib/routes/deliveries.js');
+const openChatIntentSource = read('lib/open-chat-intent.js');
 const appHandoffGateSource = read('public/app-handoff-gate.js');
+const appHandoffTransferSource = read('public/app-handoff-transfer.js');
 const appContextGateSource = read('public/app-context-gate.js');
 const agentProgressViewSource = read('public/agent-progress-view.js');
 const clientSource = read('public/client.js');
@@ -37,6 +40,9 @@ const workActionRegistrySource = read('public/work-action-registry.js');
 const campaignOperationsSource = read('lib/builtin-agents/agents/campaign-operations.js');
 const campaignRoutesSource = read('lib/routes/campaigns.js');
 const adsPlannerSource = read('lib/builtin-agents/agents/ads-planner.js');
+const operatorAccessSource = read('lib/operator-access.js');
+const apiKeyRoutesSource = read('lib/routes/api-keys.js');
+const mcpRoutesSource = read('lib/routes/mcp.js');
 const disciplineDoc = read('docs/AGENT_ORCHESTRATION_DISCIPLINE.md');
 const agentOutputCases = JSON.parse(read('scripts/fixtures/agent-output-cases.json'));
 
@@ -91,6 +97,10 @@ assert.ok(
   'development discipline must document that delivery artifacts come only from agent/provider returns'
 );
 assert.ok(
+  disciplineDoc.includes('When a leader produces a final integrated delivery, the user-facing delivery bundle should prioritize that final leader artifact and explicit app-review packets.'),
+  'development discipline must prevent final leader bundles from duplicating generic supporting specialist memos'
+);
+assert.ok(
   disciplineDoc.includes('Agent/provider answer builders that define user-facing delivery content, task-specific output structure, work definitions, or approval wording belong in the relevant agent/provider definition.'),
   'development discipline must document that true answer builders are agent/provider-owned'
 );
@@ -115,6 +125,10 @@ assert.ok(
   'development discipline must forbid workflow child assignment from trusting historical concrete agent ids'
 );
 assert.ok(
+  disciplineDoc.includes('Chat may preserve an explicitly selected or locked leader/agent, or pass through a server-returned `task_type`/`conversationOwner` contract'),
+  'development discipline must forbid chat from inventing leader routing from user or LLM prose'
+);
+assert.ok(
   disciplineDoc.includes('Agent-side failures and missing-deliverable failures are free to the requester.'),
   'development discipline must document that failed agent deliveries are not billed'
 );
@@ -129,6 +143,46 @@ assert.ok(
 assert.ok(
   disciplineDoc.includes('do not create unlimited free test-mode order execution for normal users'),
   'development discipline must prevent unlimited beta test-mode execution'
+);
+assert.ok(
+  disciplineDoc.includes('public CLI/API-key access and MCP must stay disabled by default'),
+  'development discipline must keep unstable external developer surfaces disabled by default'
+);
+assert.ok(
+  operatorAccessSource.includes('CAIT_DEVELOPER_API_ENABLED') && operatorAccessSource.includes('CAIT_MCP_ENABLED'),
+  'runtime policy must own explicit external developer surface flags'
+);
+assert.ok(
+  apiKeyRoutesSource.includes('developerApiDisabled') && mcpRoutesSource.includes('mcpDisabledPayload'),
+  'API key and MCP routes must have explicit disabled gates while external contracts stabilize'
+);
+assert.ok(
+  disciplineDoc.includes('App handoff completion has a visible action flow'),
+  'development discipline must define visible app handoff completion, not just normalized rows'
+);
+assert.ok(
+  disciplineDoc.includes('A normalized row alone is not enough to claim app handoff completion.'),
+  'development discipline must forbid claiming app handoff completion from delivery item normalization alone'
+);
+assert.ok(
+  disciplineDoc.includes('the responsible agent/provider must return explicit `content_type`/`artifact_type` or `artifact_types`'),
+  'development discipline must require agent/provider-owned explicit app artifact metadata'
+);
+assert.ok(
+  disciplineDoc.includes('must not recover missing app intent from the delivery body'),
+  'development discipline must forbid body-text recovery of missing app intent'
+);
+assert.ok(
+  disciplineDoc.includes('App handoff transfer code may preserve delivery file content as content, but must not parse Markdown/body text to recover app-specific metadata'),
+  'development discipline must forbid app handoff transfer code from parsing body text into app metadata'
+);
+assert.ok(
+  disciplineDoc.includes('When a leader can determine at dispatch time that a selected specialist should produce an app-review artifact'),
+  'development discipline must require leader dispatch packets to include known app-review metadata contracts upfront'
+);
+assert.ok(
+  disciplineDoc.includes('The UI must distinguish "prepared for app review" from "ingested into the app" and from "externally executed".'),
+  'development discipline must distinguish prepared, ingested, and executed app states'
 );
 assert.ok(
   disciplineDoc.includes('Agent-specific boundaries must be documented in the relevant agent definition file'),
@@ -372,6 +426,8 @@ assertNotIncludes(chatSource, [
   'function accumulatedWorkOrderReadiness',
   'function prepareAccumulatedOrderIfReady',
   'function matchingRecentUserLines',
+  'function leaderTaskTypeFromIntentResult',
+  'automaticLeaderTaskType',
   'Conversation-derived work request:',
   'hasAcquisitionGoal',
   'latestIsClarificationAnswer',
@@ -380,6 +436,13 @@ assertNotIncludes(chatSource, [
   'socialDraftOrApproval',
   'inferWorkIntentTaskType'
 ], 'public/chat.js accumulated/order-intent routing');
+assertNotIncludes(openChatIntentSource, [
+  'LEADER_INTAKE_LLM_OVERRIDE_AGENT_QUESTIONS'
+], 'lib/open-chat-intent.js');
+assert.ok(
+  openChatIntentSource.includes("if (preliminary?.intake?.questionSource === 'rules') return preliminary;"),
+  'generic Open Chat LLM intake must not replace agent-owned leaderBehavior.intakeQuestions'
+);
 const deliveryFilePrioritySource = chatSource.slice(
   chatSource.indexOf('function deliveryFilePriority'),
   chatSource.indexOf('function cleanReadableBundleContent')
@@ -394,6 +457,35 @@ assertNotIncludes(deliveryFilePrioritySource, [
   'list_creator',
   'cold_email'
 ], 'public/chat.js delivery file ordering');
+const appHandoffStrategySource = chatSource.slice(
+  chatSource.indexOf('function actionStrategyContextFromJob'),
+  chatSource.indexOf('function appAgentContextOpenUrl')
+);
+assertNotIncludes(chatSource, [
+  'function strategySnippetFromContent',
+  'function strategyFieldFromText'
+], 'public/chat.js app handoff strategy extraction');
+assertNotIncludes(appHandoffStrategySource, [
+  'deliveryText(job)',
+  'file?.content',
+  'Delivery summary:',
+  'strategy|growth|channel|audience|conversion|goal|cta|seo',
+  'Product\', \'Service',
+  'Candidate channels'
+], 'public/chat.js app handoff strategy extraction');
+assertNotIncludes(appHandoffTransferSource, [
+  'function appHandoffMarkdownFieldValue',
+  'const content = String(file?.content || \'\');',
+  'Meta title',
+  'Primary CTA',
+  'Target keyword',
+  'Internal links'
+], 'public/app-handoff-transfer.js metadata extraction');
+assert.ok(
+  appHandoffTransferSource.includes('function explicitMetadataText')
+    && appHandoffTransferSource.includes('const metadata = file?.metadata && typeof file.metadata === \'object\' ? file.metadata : {};'),
+  'app handoff transfer metadata must be copied only from explicit file metadata fields'
+);
 for (const [moduleName, symbol] of [
   ['public/chat-session-state.js', 'compactChatRuntimeSnapshot'],
   ['public/order-runtime.js', 'visibleJobApiPath'],
@@ -501,6 +593,28 @@ assert.ok(
   chatSource.includes('/api/deliveries/prepare-followup-order'),
   'chat running-order follow-up drafts must be prepared by the server route'
 );
+assert.ok(
+  disciplineDoc.includes('Delivery follow-up preparation may carry the previous order context and explicit UI selections'),
+  'development discipline must forbid delivery follow-up preparation from inventing specialist routing from delivery type/channel'
+);
+assert.ok(
+  deliveryRoutesSource.includes('function explicitFollowupTaskTypeFromRequest')
+    && deliveryRoutesSource.includes('Follow the assigned agent or leader contract for task-specific output, routing, approvals, and next steps.'),
+  'delivery follow-up route must preserve explicit contracts and delegate task-specific instructions to agents/leaders'
+);
+assertNotIncludes(deliveryRoutesSource, [
+  'function deliveryFollowupTaskForChannel',
+  "if (normalized === 'x') return 'x_post';",
+  "if (normalized === 'email') return 'email_ops';",
+  "taskType = 'email_ops';",
+  "taskType = 'code';",
+  'Turn this into an execution-ready social publishing order.',
+  'Use the social post pack from previous order',
+  'Turn this into an execution-ready email order.',
+  'Implement the technical handoff from previous order',
+  'Convert the report into a publishable follow-up order',
+  'Convert the report into the next executable work order directly.'
+], 'lib/routes/deliveries.js follow-up preparation');
 assertNotIncludes(chatSource, [
   'function clientPrepareOrderIntakeFallback',
   'client_prepare_order_intake_fallback',

@@ -15,7 +15,7 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     requiresApprovalFor: [],
     inputContract: {
       schemaVersion: 'cait-app-context/v1',
-      accepts: ['metrics', 'search_queries', 'landing_pages', 'conversion_paths', 'channel_breakdown'],
+      accepts: ['analytics_context', 'search_console_packet', 'ga4_packet', 'metrics', 'search_queries', 'landing_pages', 'conversion_paths', 'channel_breakdown'],
       returns: ['facts', 'metrics', 'artifacts', 'recommended_next_actions']
     },
     contextContract: {
@@ -33,7 +33,7 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     owner: 'cait-managed',
     status: 'active',
     verificationStatus: 'cait_managed',
-    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] },
+    mcp: { enabled: false, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'], status: 'paused' },
     reusePrompt: 'Open Analytics Console, review analytics evidence, then send the context to CAIt for the matching leader or data specialist.'
   },
   {
@@ -68,7 +68,7 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     owner: 'cait-managed',
     status: 'active',
     verificationStatus: 'cait_managed',
-    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] },
+    mcp: { enabled: false, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'], status: 'paused' },
     reusePrompt: 'Open Publisher & Approval Studio to edit, approve, or block the next external content/action packet before execution.'
   },
   {
@@ -78,12 +78,12 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     description: 'Lead rows, public source evidence, statuses, owners, next actions, and email draft management before approval.',
     baseUrl: '/lead-ops.html',
     entryUrl: '/lead-ops.html',
-    capabilities: ['lead_management', 'email_draft', 'crm_packet', 'outreach_review'],
+    capabilities: ['lead_management', 'lead_ops_packet', 'email_draft', 'crm_packet', 'outreach_review'],
     requiredConnectors: ['google'],
     requiresApprovalFor: ['email_send', 'crm_write', 'external_send'],
     inputContract: {
       schemaVersion: 'cait-app-context/v1',
-      accepts: ['lead_rows', 'evidence_urls', 'email_drafts', 'next_actions'],
+      accepts: ['lead_acquisition_request', 'lead_ops_packet', 'lead_packet', 'crm_packet', 'lead_rows', 'evidence_urls', 'email_draft', 'email_drafts', 'next_actions', 'outreach_plan'],
       returns: ['artifacts', 'approval_requests', 'recommended_next_actions']
     },
     tags: ['crm', 'lead', 'email'],
@@ -91,7 +91,7 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     owner: 'cait-managed',
     status: 'active',
     verificationStatus: 'cait_managed',
-    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] },
+    mcp: { enabled: false, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'], status: 'paused' },
     reusePrompt: 'Open Lead Ops Console to review lead rows and email drafts, then send a lead packet back to CAIt.'
   },
   {
@@ -121,7 +121,7 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     owner: 'cait-managed',
     status: 'active',
     verificationStatus: 'cait_managed',
-    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] },
+    mcp: { enabled: false, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'], status: 'paused' },
     reusePrompt: 'Open Campaign Operations to inspect retained campaign state, queues, SaaS readiness, waiting conditions, and measurement loops.'
   },
   {
@@ -161,7 +161,7 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     owner: 'cait-managed',
     status: 'active',
     verificationStatus: 'cait_managed',
-    mcp: { enabled: true, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'] },
+    mcp: { enabled: false, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'], status: 'paused' },
     reusePrompt: 'Create an X post, reflect the strategy, and prepare the final handoff to X Client Ops.'
   }
 ]);

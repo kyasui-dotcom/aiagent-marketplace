@@ -74,7 +74,8 @@ const CONTRACT_KEY_ALIASES = Object.freeze({
   measurement_loop: ['measurementLoop', 'measurementChecks'],
   measurement_queue: ['measurementQueue'],
   campaign_metrics: ['campaignMetrics'],
-  next_action_owner: ['nextActionOwner', 'nextActionOwners', 'next_owner', 'nextOwner', 'owner_map', 'ownerMap']
+  next_action_owner: ['nextActionOwner', 'nextActionOwners', 'next_owner', 'nextOwner', 'owner_map', 'ownerMap'],
+  campaign_operations_plan: ['campaignOperationsPlan', 'campaignOpsPlan', 'campaignPlan', 'campaign_markdown', 'campaignMarkdown']
 });
 
 function contractKeys(type = '') {
@@ -323,6 +324,10 @@ function artifactTypeValues(artifact = {}) {
     artifact.type,
     artifact.artifact_type,
     artifact.artifactType,
+    artifact.delivery_artifact_type,
+    artifact.deliveryArtifactType,
+    artifact.source_task_type,
+    artifact.sourceTaskType,
     artifact.content_type,
     artifact.contentType,
     ...(Array.isArray(artifact.artifact_types) ? artifact.artifact_types : []),
@@ -331,7 +336,47 @@ function artifactTypeValues(artifact = {}) {
 }
 
 function campaignPlanArtifactText(artifact = {}) {
-  return text(artifact.content || artifact.markdown || artifact.body || artifact.text || artifact.raw_markdown || artifact.rawMarkdown);
+  return text(artifact.content || artifact.contentPreview || artifact.content_preview || artifact.markdown || artifact.body || artifact.text || artifact.file_markdown || artifact.fileMarkdown || artifact.output_text || artifact.raw_markdown || artifact.rawMarkdown);
+}
+
+function campaignPlanArtifactFromValue(value = null, name = 'campaign_operations_plan') {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    return { type: 'campaign_operations_plan', name, content_type: 'campaign_operations_plan', content: value };
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const content = campaignPlanArtifactText(value) || text(value.plan || value.value || value.markdown_content || value.markdownContent);
+    return content
+      ? { type: 'campaign_operations_plan', content_type: 'campaign_operations_plan', name: text(value.name || value.title || name), ...value, content }
+      : null;
+  }
+  return null;
+}
+
+function campaignPlanArtifactsFromContractFields(source = {}) {
+  const object = objectValue(source);
+  return contractKeys('campaign_operations_plan')
+    .map((key) => campaignPlanArtifactFromValue(object[key], key))
+    .filter(Boolean);
+}
+
+function campaignPlanArtifactsFromTransferDelivery(raw = {}) {
+  const delivery = objectValue(raw.delivery);
+  return (Array.isArray(delivery.artifacts) ? delivery.artifacts : [])
+    .filter((artifact) => artifact && typeof artifact === 'object')
+    .map((artifact, index) => {
+      const content = campaignPlanArtifactText(artifact);
+      return {
+        ...artifact,
+        type: artifact.type || artifact.artifactType || artifact.artifact_type || 'file',
+        artifact_type: artifact.artifact_type || artifact.artifactType || artifact.content_type || artifact.contentType || '',
+        artifact_types: Array.isArray(artifact.artifact_types) ? artifact.artifact_types : (Array.isArray(artifact.artifactTypes) ? artifact.artifactTypes : []),
+        content_type: artifact.content_type || artifact.contentType || artifact.artifact_type || artifact.artifactType || '',
+        name: artifact.name || artifact.title || `transfer-delivery-artifact-${index + 1}.md`,
+        content
+      };
+    })
+    .filter((artifact) => campaignPlanArtifactText(artifact));
 }
 
 function looksLikeCampaignPlanArtifact(artifact = {}) {
@@ -355,9 +400,22 @@ function looksLikeCampaignPlanArtifact(artifact = {}) {
 }
 
 function campaignPlanArtifacts(context = {}) {
+  const raw = objectValue(context.raw_context);
   const directArtifacts = Array.isArray(context.artifacts) ? context.artifacts : [];
-  const deliveryFiles = Array.isArray(context.delivery_files) ? context.delivery_files : [];
-  return [...directArtifacts, ...deliveryFiles]
+  const deliveryFiles = [
+    ...(Array.isArray(context.delivery_files) ? context.delivery_files : []),
+    ...(Array.isArray(context.deliveryFiles) ? context.deliveryFiles : []),
+    ...(Array.isArray(context.files) ? context.files : []),
+    ...(Array.isArray(raw.delivery_files) ? raw.delivery_files : []),
+    ...(Array.isArray(raw.deliveryFiles) ? raw.deliveryFiles : []),
+    ...(Array.isArray(raw.files) ? raw.files : []),
+    ...campaignPlanArtifactsFromTransferDelivery(raw)
+  ];
+  const contractPlans = [
+    ...campaignPlanArtifactsFromContractFields(context),
+    ...campaignPlanArtifactsFromContractFields(raw)
+  ];
+  return [...directArtifacts, ...deliveryFiles, ...contractPlans]
     .filter((artifact) => artifact && typeof artifact === 'object' && looksLikeCampaignPlanArtifact(artifact));
 }
 

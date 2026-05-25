@@ -75,7 +75,7 @@ function normalizeApp(record = {}) {
     requiredConnectors,
     requiresApprovalFor,
     mcp: {
-      enabled: Boolean(mcp.enabled || mcp.serverUrl || mcp.server_url),
+      enabled: mcp.enabled === false ? false : Boolean(mcp.enabled || mcp.serverUrl || mcp.server_url),
       serverUrl: String(mcp.serverUrl || mcp.server_url || '').trim(),
       tools: list(mcp.tools),
       resources: list(mcp.resources)

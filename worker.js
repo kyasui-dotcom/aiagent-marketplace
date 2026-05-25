@@ -28,6 +28,7 @@ import { GITHUB_ADAPTER_MARKER, adapterNextStepText, buildGithubAdapterPlan, cre
 import { MANIFEST_CANDIDATE_PATHS, assessAgentRegistrationSafety, buildDraftManifestFromAgentSkill, buildDraftManifestFromRepoAnalysis, buildDraftManifestFromRepoAnalysisWithAi, normalizeManifest, parseAndValidateManifest, sanitizeManifestForPublic, validateManifest } from './lib/manifest.js';
 import { createAppFromInput, createAppFromManifest, isCoreFeatureAppId, normalizeAppManifest, sanitizeAppForPublic, validateAppManifest } from './lib/apps.js';
 import { appContextIsExpired, createAppContextRecord, publicAppContext } from './lib/app-context.js';
+import { publicPublisherItem, publisherRecordsFromContext } from './lib/publisher-items.js';
 import { shapePublisherContextWithOpenAi } from './lib/publisher-context.js';
 import { authorityBlockReasonFromRequest, authorityBool, authorityRequestFromReport, authorityRequestIsExternalWriteOrPublish, authorityRequestRequiresApproval, authorityStringList, clearJobAuthorityRequest, executorStatePatchFromAuthorityRequest, normalizeAuthorityRequest, providerAuthorityRequestFromPayload, sanitizeExecutorStatePatch } from './lib/authority-requests.js';
 import { createAuthContextHelpers } from './lib/auth-context.js';
@@ -1644,6 +1645,7 @@ const appRoutes = createAppRouteHandlers({
   appManifestOptionsForRequest,
   applyVerificationToAppRecord,
   authorizeAppOwnerAction,
+  canViewAdminDashboard,
   createAppContextRecord,
   createAppFromInput,
   createAppFromManifest,
@@ -1658,6 +1660,8 @@ const appRoutes = createAppRouteHandlers({
   parseBody,
   publicApp,
   publicAppContext,
+  publicPublisherItem,
+  publisherRecordsFromContext,
   recordOrderApiKeyUsage,
   requireAgentWriteAccess,
   runtimePolicy,
@@ -1674,6 +1678,7 @@ const {
   handleAppHandoff,
   handleCreateAppContext,
   handlePublisherContextIngest,
+  handleListPublisherItems,
   handleGetAppContext,
   handleListAppContexts,
   handleVerifyApp,
@@ -1778,7 +1783,8 @@ const {
 const mcpRoutes = createMcpRouteHandlers({
   parseBody,
   publicAgent,
-  publicApp
+  publicApp,
+  runtimePolicy
 });
 const {
   getMcpDiscoveryPayload,
@@ -6959,11 +6965,12 @@ export default {
       return json((await snapshot(storage, request, env)).stats);
     }
     if (url.pathname === '/.well-known/mcp.json' && request.method === 'GET') {
-      return json(getMcpDiscoveryPayload(request));
+      const payload = getMcpDiscoveryPayload(request, env);
+      return json(payload, payload?.disabled ? 503 : 200);
     }
     if (url.pathname === '/mcp' && request.method === 'POST') {
       const result = await handleMcpRequest(storage, request, env);
-      if (result.error) return json({ error: result.error }, result.statusCode || 400);
+      if (result.error) return json(result.payload || { error: result.error, code: result.code }, result.statusCode || 400);
       return json(result.payload);
     }
     if (url.pathname === '/api/agents') {
@@ -7045,12 +7052,16 @@ export default {
     if (apiRouteMatches(url.pathname, request.method, 'PUBLISHER_CONTEXT_INGEST', 'POST')) {
       return handlePublisherContextIngest(storage, request, env);
     }
+    if (apiRouteMatches(url.pathname, request.method, 'PUBLISHER_ITEMS', 'GET')) {
+      return handleListPublisherItems(storage, request, env);
+    }
     if (apiRouteMatches(url.pathname, request.method, 'APP_CONTEXT_DETAIL', 'GET')) {
       return handleGetAppContext(storage, request, env, decodeURIComponent(url.pathname.split('/')[3] || ''));
     }
     if (apiRouteMatches(url.pathname, request.method, 'DELIVERY_ITEMS', 'GET')) {
       const current = await currentOrderRequesterContext(storage, request, env, { lightweight: true });
       if (!current.user && current.apiKeyStatus === 'invalid') return json({ error: 'Invalid API key' }, 401);
+      if (!current.user && current.apiKeyStatus === 'disabled') return json({ error: 'CAIt developer API and API key access are temporarily disabled.', code: 'developer_api_disabled' }, 403);
       const result = await visibleDeliveryItemsForRequestFast(storage, current, env, request);
       if (current.apiKey?.id) await recordOrderApiKeyUsage(storage, current, request);
       return json({ ok: true, items: result.items, pagination: result.pagination });
@@ -7129,6 +7140,7 @@ export default {
       if (request.method === 'GET') {
         const current = await currentOrderRequesterContext(storage, request, env, { lightweight: true });
         if (!current.user && current.apiKeyStatus === 'invalid') return json({ error: 'Invalid API key' }, 401);
+        if (!current.user && current.apiKeyStatus === 'disabled') return json({ error: 'CAIt developer API and API key access are temporarily disabled.', code: 'developer_api_disabled' }, 403);
         const result = await visibleJobsForRequestFast(storage, current, env, request);
         if (current.apiKey?.id) await recordOrderApiKeyUsage(storage, current, request);
         return json({ jobs: result.jobs, pagination: result.pagination });
@@ -7204,22 +7216,22 @@ export default {
     }
     if (url.pathname === '/api/settings/api-keys' && request.method === 'GET') {
       const result = await listOrderApiKeys(storage, request, env);
-      if (result.error) return json({ error: result.error }, result.statusCode || 400);
+      if (result.error) return json({ error: result.error, code: result.code }, result.statusCode || 400);
       return json({ api_keys: result.apiKeys });
     }
     if (url.pathname === '/api/settings/api-keys' && request.method === 'POST') {
       const result = await createOrderApiKey(storage, request, env);
-      if (result.error) return json({ error: result.error }, result.statusCode || 400);
+      if (result.error) return json({ error: result.error, code: result.code }, result.statusCode || 400);
       return json({ ok: true, api_key: result.apiKey, account: result.account }, 201);
     }
     if (apiRouteMatches(url.pathname, request.method, 'ADMIN_API_KEYS', 'POST')) {
       const result = await createAdminOrderApiKey(storage, request, env);
-      if (result.error) return json({ error: result.error }, result.statusCode || 400);
+      if (result.error) return json({ error: result.error, code: result.code }, result.statusCode || 400);
       return json({ ok: true, api_key: result.apiKey, account: result.account, issued_by: result.issuedBy, auth_mode: result.authMode }, 201);
     }
     if (/^\/api\/settings\/api-keys\/[^/]+$/.test(url.pathname) && request.method === 'DELETE') {
       const result = await revokeOrderApiKey(storage, request, env, url.pathname.split('/')[4] || '');
-      if (result.error) return json({ error: result.error }, result.statusCode || 400);
+      if (result.error) return json({ error: result.error, code: result.code }, result.statusCode || 400);
       return json({ ok: true, api_key: result.apiKey, account: result.account });
     }
     if (url.pathname === '/api/settings/billing' && request.method === 'POST') {

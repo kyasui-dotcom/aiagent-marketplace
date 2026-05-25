@@ -8,6 +8,7 @@ let activeTab = 'overview';
 let searchText = '';
 let sortMode = 'newest';
 let importedContext = null;
+let handoffSession = handoffSessionFromUrl();
 const expandedWorkIds = new Set();
 
 function requestedDeliveryIdFromUrl() {
@@ -21,6 +22,33 @@ function requestedDeliveryIdFromUrl() {
     ).trim();
   } catch {
     return '';
+  }
+}
+
+function handoffSessionFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    const serverContextId = String(url.searchParams.get('app_context_id') || url.searchParams.get('cait_app_context_id') || '').trim();
+    const token = String(url.searchParams.get('app_context_token') || url.searchParams.get('cait_app_context_token') || url.searchParams.get('token') || '').trim();
+    const chatReturnTo = String(url.searchParams.get('chat_return_to') || url.searchParams.get('chatReturnTo') || '').trim();
+    const chatHandoffId = String(url.searchParams.get('chat_handoff_id') || url.searchParams.get('chatHandoffId') || '').trim();
+    return {
+      serverContextId,
+      tokenAttached: Boolean(token),
+      chatReturnTo,
+      chatHandoffId,
+      hasServerContext: Boolean(serverContextId),
+      hasChatReturn: Boolean(chatReturnTo || chatHandoffId)
+    };
+  } catch {
+    return {
+      serverContextId: '',
+      tokenAttached: false,
+      chatReturnTo: '',
+      chatHandoffId: '',
+      hasServerContext: false,
+      hasChatReturn: false
+    };
   }
 }
 
@@ -85,6 +113,9 @@ const els = {
   readinessMeter: document.getElementById('readinessMeter'),
   readinessList: document.getElementById('readinessList'),
   readinessNote: document.getElementById('readinessNote'),
+  deliveryHandoffNotice: document.getElementById('deliveryHandoffNotice'),
+  deliveryHandoffAuditPill: document.getElementById('deliveryHandoffAuditPill'),
+  deliveryHandoffAuditList: document.getElementById('deliveryHandoffAuditList'),
   allCount: document.getElementById('allCount'),
   completedCount: document.getElementById('completedCount'),
   blockedCount: document.getElementById('blockedCount'),
@@ -374,6 +405,65 @@ function approvalGateForDelivery(delivery = selectedDelivery()) {
   };
 }
 
+function handoffSourceKinds(delivery = selectedDelivery()) {
+  return [...new Set((delivery?.files || []).map((file) => String(file.sourceKind || '').trim()).filter(Boolean))];
+}
+
+function deliveryHandoffAuditForDelivery(delivery = selectedDelivery()) {
+  const files = delivery?.files || [];
+  const gate = approvalGateForDelivery(delivery);
+  const raw = plainObject(importedContext?.raw_context);
+  const rawChatReturn = String(raw.chat_return_to || raw.chatReturnTo || '').trim();
+  const rawHandoffId = String(raw.chat_handoff_id || raw.chatHandoffId || '').trim();
+  const sourceKinds = handoffSourceKinds(delivery);
+  const imported = Boolean(importedContext);
+  const serverBacked = imported ? handoffSession.hasServerContext : delivery?.sourceLabel === 'Server job';
+  const hasReturnPath = Boolean(handoffSession.hasChatReturn || rawChatReturn || rawHandoffId);
+  const recoveredFromTransfer = sourceKinds.some((kind) => /artifact|files|delivery/i.test(kind));
+  const items = [
+    {
+      label: 'Server record',
+      ok: Boolean(serverBacked),
+      value: imported
+        ? (handoffSession.serverContextId ? `Context ${handoffSession.serverContextId}` : 'No server context id in URL')
+        : (delivery?.sourceLabel === 'Server job' ? 'Loaded from server-side job output' : 'No server delivery loaded')
+    },
+    {
+      label: 'Delivery selected',
+      ok: Boolean(delivery?.id),
+      value: delivery?.id || 'No selected package'
+    },
+    {
+      label: 'Files recovered',
+      ok: files.length > 0,
+      value: files.length ? `${files.length} file${files.length === 1 ? '' : 's'} available` : 'No delivery file recovered'
+    },
+    {
+      label: 'AIAGENT artifacts normalized',
+      ok: imported ? Boolean(recoveredFromTransfer || files.length) : files.length > 0,
+      value: sourceKinds.length ? sourceKinds.join(', ') : 'Server job package'
+    },
+    {
+      label: 'Approval boundary',
+      ok: Boolean(gate?.context?.checkpoints?.length),
+      value: gate?.label || 'No approval gate'
+    },
+    {
+      label: 'Return path',
+      ok: imported ? hasReturnPath : true,
+      value: hasReturnPath
+        ? [handoffSession.chatHandoffId || rawHandoffId, handoffSession.chatReturnTo || rawChatReturn].filter(Boolean).join(' / ')
+        : (imported ? 'No chat return metadata attached' : 'Follow-up starts from Delivery Manager')
+    }
+  ];
+  return {
+    items,
+    complete: items.filter((item) => item.ok).length,
+    total: items.length,
+    missing: items.filter((item) => !item.ok).map((item) => item.label)
+  };
+}
+
 function deliverySearchBlob(delivery = {}) {
   return [
     delivery.title,
@@ -423,6 +513,17 @@ function statusLabel(value = '') {
 function compact(value = '', max = 120) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   return text.length > max ? `${text.slice(0, max - 1)}...` : text;
+}
+
+function fitTitleInput() {
+  const input = els.deliveryTitleInput;
+  if (!input) return;
+  input.style.fontSize = '';
+  const width = input.clientWidth;
+  if (!width || input.scrollWidth <= width + 2) return;
+  const current = Number.parseFloat(window.getComputedStyle(input).fontSize) || 24;
+  const next = Math.max(14, Math.floor(current * (width / Math.max(input.scrollWidth, 1))));
+  input.style.fontSize = `${next}px`;
 }
 
 function fileSizeLabel(content = '') {
@@ -630,17 +731,140 @@ function normalizeJobDelivery(job = {}) {
   };
 }
 
+function plainObject(value = null) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function compactMultiline(value = '', max = 5000) {
+  const text = String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ')
+    .trim();
+  return text.length > max ? `${text.slice(0, max - 1).trim()}...` : text;
+}
+
+function objectTextArtifact(value = null, max = 5000) {
+  if (value == null) return '';
+  if (typeof value === 'string') return compactMultiline(value, max);
+  try {
+    return compactMultiline(JSON.stringify(value, null, 2), max);
+  } catch {
+    return '';
+  }
+}
+
+function appContextFileContent(item = {}) {
+  if (!item || typeof item !== 'object') return '';
+  return compactMultiline(
+    item.content
+      || item.body
+      || item.markdown
+      || item.text
+      || item.contentPreview
+      || item.content_preview
+      || item.preview
+      || '',
+    9000
+  );
+}
+
+function appContextFileName(item = {}, index = 0, prefix = 'context-file') {
+  const type = String(item.artifact_type || item.artifactType || item.content_type || item.contentType || item.type || '').trim();
+  const raw = String(item.name || item.filename || item.title || '').trim();
+  if (raw) return raw;
+  const suffix = type ? type.toLowerCase().replace(/[^a-z0-9_-]+/g, '-') : `${prefix}-${index + 1}`;
+  return suffix.endsWith('.md') || suffix.includes('.') ? suffix : `${suffix || `${prefix}-${index + 1}`}.md`;
+}
+
+function appContextFileType(item = {}) {
+  return String(item.mime || item.content_type || item.contentType || item.type || item.artifact_type || item.artifactType || 'text/plain').trim() || 'text/plain';
+}
+
+function normalizeAppContextFile(item = {}, index = 0, sourceKind = 'app_context') {
+  const content = appContextFileContent(item);
+  if (!content) return null;
+  return {
+    name: appContextFileName(item, index, sourceKind),
+    type: appContextFileType(item),
+    content,
+    updatedAt: String(item.updated_at || item.updatedAt || item.created_at || item.createdAt || ''),
+    sourceKind
+  };
+}
+
+function artifactAsFile(item = {}, index = 0, sourceKind = 'artifact') {
+  if (!item || typeof item !== 'object') return null;
+  const content = appContextFileContent(item) || objectTextArtifact(item.rows || item.items || item.data || null);
+  if (!content) return null;
+  return normalizeAppContextFile({ ...item, content }, index, sourceKind);
+}
+
+function fileList(value = []) {
+  return Array.isArray(value) ? value.filter((item) => item && typeof item === 'object') : [];
+}
+
+function deliveryFilesFromAppContext(context = {}) {
+  const raw = plainObject(context.raw_context);
+  const rawDelivery = plainObject(raw.delivery);
+  const rawDeliveryPackage = plainObject(raw.delivery_package || raw.deliveryPackage || raw.delivery_context || raw.deliveryContext);
+  const rawDeliveryPacket = plainObject(raw.delivery_packet || raw.deliveryPacket);
+  const rawTransfer = plainObject(raw.transfer);
+  const rawTransferDelivery = plainObject(rawTransfer.delivery);
+  const candidates = [
+    ...fileList(context.delivery_files).map((item, index) => normalizeAppContextFile(item, index, 'delivery_files')),
+    ...fileList(context.deliveryFiles).map((item, index) => normalizeAppContextFile(item, index, 'delivery_files')),
+    ...fileList(context.files).map((item, index) => normalizeAppContextFile(item, index, 'files')),
+    ...fileList(context.delivery_artifacts || context.deliveryArtifacts).map((item, index) => artifactAsFile(item, index, 'delivery_artifacts')),
+    ...fileList(plainObject(context.delivery_package || context.deliveryPackage).artifacts).map((item, index) => artifactAsFile(item, index, 'delivery_package_artifacts')),
+    ...fileList(plainObject(context.delivery_package || context.deliveryPackage).files).map((item, index) => normalizeAppContextFile(item, index, 'delivery_package_files')),
+    ...fileList(plainObject(context.delivery_packet || context.deliveryPacket).artifacts).map((item, index) => artifactAsFile(item, index, 'delivery_packet_artifacts')),
+    ...fileList(plainObject(context.delivery_packet || context.deliveryPacket).files).map((item, index) => normalizeAppContextFile(item, index, 'delivery_packet_files')),
+    ...fileList(context.artifacts).map((item, index) => artifactAsFile(item, index, 'artifacts')),
+    ...fileList(raw.delivery_files).map((item, index) => normalizeAppContextFile(item, index, 'raw_delivery_files')),
+    ...fileList(raw.deliveryFiles).map((item, index) => normalizeAppContextFile(item, index, 'raw_delivery_files')),
+    ...fileList(raw.delivery_artifacts || raw.deliveryArtifacts).map((item, index) => artifactAsFile(item, index, 'raw_delivery_artifacts')),
+    ...fileList(raw.files).map((item, index) => normalizeAppContextFile(item, index, 'raw_files')),
+    ...fileList(rawDelivery.artifacts).map((item, index) => artifactAsFile(item, index, 'raw_delivery_artifacts')),
+    ...fileList(rawDelivery.files).map((item, index) => normalizeAppContextFile(item, index, 'raw_delivery_files')),
+    ...fileList(rawDeliveryPackage.artifacts).map((item, index) => artifactAsFile(item, index, 'raw_delivery_package_artifacts')),
+    ...fileList(rawDeliveryPackage.files).map((item, index) => normalizeAppContextFile(item, index, 'raw_delivery_package_files')),
+    ...fileList(rawDeliveryPacket.artifacts).map((item, index) => artifactAsFile(item, index, 'raw_delivery_packet_artifacts')),
+    ...fileList(rawDeliveryPacket.files).map((item, index) => normalizeAppContextFile(item, index, 'raw_delivery_packet_files')),
+    ...fileList(rawTransferDelivery.artifacts).map((item, index) => artifactAsFile(item, index, 'raw_transfer_delivery_artifacts')),
+    ...fileList(rawTransferDelivery.files).map((item, index) => normalizeAppContextFile(item, index, 'raw_transfer_delivery_files'))
+  ].filter(Boolean);
+  const seen = new Set();
+  return visibleDeliveryFiles(candidates).filter((file) => {
+    const key = `${String(file.name || '').toLowerCase()}\n${String(file.content || '').slice(0, 240)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function contextSummaryFromDelivery(context = {}) {
+  const raw = plainObject(context.raw_context);
+  const rawDelivery = plainObject(raw.delivery);
+  const rawDeliveryPackage = plainObject(raw.delivery_package || raw.deliveryPackage || raw.delivery_context || raw.deliveryContext);
+  const rawDeliveryPacket = plainObject(raw.delivery_packet || raw.deliveryPacket);
+  const contextDeliveryPackage = plainObject(context.delivery_package || context.deliveryPackage);
+  const contextDeliveryPacket = plainObject(context.delivery_packet || context.deliveryPacket);
+  return String(
+    context.summary
+      || rawDelivery.summary
+      || rawDeliveryPackage.summary
+      || rawDeliveryPacket.summary
+      || contextDeliveryPackage.summary
+      || contextDeliveryPacket.summary
+      || context.title
+      || ''
+  ).trim();
+}
+
 function deliveryFromAppContext(context = {}) {
-  const files = visibleDeliveryFiles([
-    ...(Array.isArray(context.delivery_files) ? context.delivery_files : []),
-    ...(Array.isArray(context.artifacts) ? context.artifacts : [])
-      .filter((artifact) => artifact?.content || artifact?.body || artifact?.markdown)
-      .map((artifact, index) => ({
-        name: artifact.name || artifact.title || `artifact-${index + 1}.md`,
-        type: artifact.content_type || artifact.type || 'text/plain',
-        content: artifact.content || artifact.body || artifact.markdown || ''
-      }))
-  ]);
+  const files = deliveryFilesFromAppContext(context);
+  const summary = contextSummaryFromDelivery(context);
   return {
     id: String(context.id || `context-${Date.now()}`),
     workId: String(context.id || `context-${Date.now()}`),
@@ -655,12 +879,13 @@ function deliveryFromAppContext(context = {}) {
     dispatchCompletionStatus: '',
     title: String(context.title || 'Imported CAIt context'),
     status: 'reusable',
-    summary: String(context.summary || ''),
+    summary,
     files: files.map((file, index) => ({
       name: String(file.name || file.filename || `context-file-${index + 1}.md`),
       type: String(file.type || file.mime || file.content_type || 'text/plain'),
       content: String(file.content || file.body || ''),
-      updatedAt: String(context.updated_at || context.updatedAt || '')
+      updatedAt: String(file.updatedAt || context.updated_at || context.updatedAt || ''),
+      sourceKind: String(file.sourceKind || 'app_context')
     })),
     nextAction: String((Array.isArray(context.recommended_next_actions) ? context.recommended_next_actions[0] : '') || 'Use this context for a follow-up order.'),
     agentName: String(context.source_app_label || context.source_app || 'CAIt context'),
@@ -740,6 +965,7 @@ function buildContext() {
     });
   }
   const approvalGate = approvalGateForDelivery(delivery);
+  const handoffAudit = deliveryHandoffAuditForDelivery(delivery);
   return buildCaitAppContext({
     source_app: 'delivery_manager',
     source_app_label: 'CAIt Deliveries',
@@ -760,7 +986,8 @@ function buildContext() {
     ],
     artifacts: [
       { type: 'delivery_package', id: delivery.id, status: delivery.status, summary: delivery.summary, next_action: delivery.nextAction },
-      { type: 'approval_gate', id: `${delivery.id}-approval-gate`, status: approvalGate.state, summary: approvalGate.summary, checkpoints: approvalGate.context.checkpoints }
+      { type: 'approval_gate', id: `${delivery.id}-approval-gate`, status: approvalGate.state, summary: approvalGate.summary, checkpoints: approvalGate.context.checkpoints },
+      { type: 'handoff_audit', id: `${delivery.id}-handoff-audit`, complete: handoffAudit.complete, total: handoffAudit.total, missing: handoffAudit.missing, checkpoints: handoffAudit.items }
     ],
     delivery_files: (delivery.files || []).map((file) => ({ name: file.name, type: file.type, content: file.content })),
     recommended_next_actions: [
@@ -771,7 +998,13 @@ function buildContext() {
     handoff_targets: ['cmo_leader', 'seo_specialist', 'build_team_leader'],
     raw_context: {
       ...(importedContext ? { received_context: importedContext } : {}),
-      approval_gate: approvalGate.context
+      source_context_id: importedContext?.id || '',
+      chat_handoff_id: handoffSession.chatHandoffId || '',
+      chat_return_to: handoffSession.chatReturnTo || '',
+      source_file_count: (delivery.files || []).length,
+      source_file_kinds: handoffSourceKinds(delivery),
+      approval_gate: approvalGate.context,
+      delivery_manager_handoff_audit: handoffAudit
     }
   });
 }
@@ -802,6 +1035,7 @@ function readinessItems(delivery = selectedDelivery()) {
   const summary = String(delivery?.summary || '').trim();
   const context = buildContext();
   const approvalGate = approvalGateForDelivery(delivery);
+  const handoffAudit = deliveryHandoffAuditForDelivery(delivery);
   return [
     ['Summary present', Boolean(summary)],
     ['Delivery selected', Boolean(delivery?.id)],
@@ -809,6 +1043,7 @@ function readinessItems(delivery = selectedDelivery()) {
     ['Files attached', files.length > 0],
     ['Next action captured', Boolean(String(delivery?.nextAction || '').trim())],
     ['Approval gate captured', Boolean(approvalGate?.context?.checkpoints?.length)],
+    ['Server handoff audited', handoffAudit.complete === handoffAudit.total],
     ['Reusable context built', Boolean(context?.source_app === 'delivery_manager')],
     ['No empty title', Boolean(String(delivery?.title || '').trim())]
   ];
@@ -972,6 +1207,7 @@ function renderSelected() {
     els.railCopyBtn
   ].forEach((button) => { button.disabled = !hasDelivery; });
   els.deliveryTitleInput.value = delivery?.title || 'No delivery selected';
+  fitTitleInput();
   els.deliverySummaryInput.value = delivery?.summary || 'Refresh server jobs or open Deliveries from a CAIt context handoff to review reusable work.';
   els.deliveryStatusPill.textContent = hasDelivery ? statusLabel(delivery?.status || '') : 'waiting';
   els.deliveryStatusPill.className = `status-pill ${hasDelivery ? statusClass(delivery?.status || '') : 'pending'}`;
@@ -1036,12 +1272,55 @@ function renderApprovalGate() {
   els.copyApprovalBtn.disabled = !selectedDelivery();
 }
 
+function renderHandoffNotice() {
+  if (!els.deliveryHandoffNotice) return;
+  const delivery = selectedDelivery();
+  if (importedContext) {
+    els.deliveryHandoffNotice.hidden = false;
+    els.deliveryHandoffNotice.classList.toggle('notice-warning', !handoffSession.hasServerContext);
+    els.deliveryHandoffNotice.innerHTML = [
+      '<strong>Stable delivery handoff loaded</strong>',
+      handoffSession.hasServerContext
+        ? 'Before: AIAGENT chat output could be copied, closed, or lose its files. After: Deliveries keeps this server-side package, recovered files, approval gate, and return path available for the next CAIt run.'
+        : 'This browser has delivery context, but no server context id is attached. Send to CAIt will create the server-side delivery packet before follow-up.'
+    ].join('');
+    return;
+  }
+  if (handoffSession.hasChatReturn) {
+    els.deliveryHandoffNotice.hidden = false;
+    els.deliveryHandoffNotice.classList.add('notice-warning');
+    els.deliveryHandoffNotice.innerHTML = [
+      '<strong>Chat return is attached, but no server package is loaded yet</strong>',
+      'Refresh server jobs or send a selected delivery to CAIt so the follow-up run receives a durable Delivery Manager context instead of a chat-only handoff.'
+    ].join('');
+    return;
+  }
+  els.deliveryHandoffNotice.hidden = true;
+  els.deliveryHandoffNotice.textContent = '';
+}
+
+function renderDeliveryHandoffAudit() {
+  if (!els.deliveryHandoffAuditPill || !els.deliveryHandoffAuditList) return;
+  const audit = deliveryHandoffAuditForDelivery();
+  els.deliveryHandoffAuditPill.textContent = `${audit.complete} / ${audit.total} anchors`;
+  els.deliveryHandoffAuditPill.className = `status-pill ${audit.complete === audit.total ? 'approved' : audit.complete ? 'pending' : 'blocked'}`;
+  els.deliveryHandoffAuditList.innerHTML = audit.items.map((item) => [
+    `<div class="delivery-handoff-audit-item ${item.ok ? 'ready' : ''}">`,
+    `<span>${item.ok ? 'Present' : 'Missing'}</span>`,
+    `<strong>${escapeHtml(item.label)}</strong>`,
+    `<small>${escapeHtml(item.value || '')}</small>`,
+    '</div>'
+  ].join('')).join('');
+}
+
 function render() {
   renderCounts();
   renderList();
   renderTabs();
   renderSelected();
   renderApprovalGate();
+  renderHandoffNotice();
+  renderDeliveryHandoffAudit();
   renderReadiness();
   els.deliveryContextPreview.textContent = JSON.stringify(buildContext(), null, 2);
 }
@@ -1204,11 +1483,14 @@ els.fileTable.addEventListener('click', (event) => {
 [els.deliveryTitleInput, els.deliverySummaryInput].forEach((input) => {
   input.addEventListener('input', () => {
     saveEditor();
+    fitTitleInput();
     renderReadiness();
     els.deliveryContextPreview.textContent = JSON.stringify(buildContext(), null, 2);
     els.summaryCount.textContent = `${String(els.deliverySummaryInput.value || '').length.toLocaleString('en-US')} / 1000`;
   });
 });
+
+window.addEventListener('resize', fitTitleInput);
 
 els.refreshDeliveriesBtn.addEventListener('click', refreshDeliveries);
 els.sendDeliveryContextBtn.addEventListener('click', sendFollowup);

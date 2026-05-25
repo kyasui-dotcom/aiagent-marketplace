@@ -657,21 +657,162 @@ async function loadGoogleReport() {
   }
 }
 
+const ANALYTICS_CONTEXT_KEY_ALIASES = Object.freeze({
+  search_queries: ['searchQueries', 'queries', 'query_rows', 'search_query_rows', 'searchConsoleRows', 'search_console_rows'],
+  landing_pages: ['landingPages', 'pages', 'page_rows', 'landing_page_rows'],
+  channel_mix: ['channelMix', 'channels', 'channel_rows'],
+  channel_breakdown: ['channelBreakdown', 'channel_breakdowns', 'channelBreakdowns', 'channel_rows', 'channels'],
+  channel_landing_pages: ['channelLandingPages', 'channel_pages', 'channelPages'],
+  channel_sources: ['channelSources', 'source_medium_rows', 'sourceMediumRows', 'referral_sources', 'referralSources'],
+  conversion_paths: ['conversionPaths', 'conversion_path', 'conversionPath', 'paths'],
+  country_mix: ['countryMix', 'countries', 'country_rows', 'countryRows'],
+  measurement_queue: ['measurementQueue', 'measurement', 'post_run_checks', 'postRunChecks'],
+  post_run_measurement: ['postRunMeasurement', 'post_run_checks', 'postRunChecks', 'measurement'],
+  google_sources: ['googleSources', 'sources'],
+  google_report_status: ['googleReportStatus', 'report_status', 'reportStatus']
+});
+const ANALYTICS_CONTEXT_PACKET_KEYS = Object.freeze([
+  'analytics_context',
+  'analyticsContext',
+  'analytics_packet',
+  'analyticsPacket',
+  'search_console_packet',
+  'searchConsolePacket',
+  'gsc_packet',
+  'gscPacket',
+  'ga4_packet',
+  'ga4Packet',
+  'google_analytics_packet',
+  'googleAnalyticsPacket'
+]);
+
+function analyticsKeyVariants(type = '') {
+  const safe = String(type || '').trim();
+  if (!safe) return [];
+  const camel = safe.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
+  return [safe, camel, ...(ANALYTICS_CONTEXT_KEY_ALIASES[safe] || [])]
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+}
+
+function parseStructuredPayload(value) {
+  if (!value || typeof value !== 'string') return null;
+  const text = value.trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  if (!/^[{[]/.test(text)) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function rowList(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  if (typeof value === 'string') return rowList(parseStructuredPayload(value));
+  if (typeof value === 'object') {
+    if (Array.isArray(value.rows)) return value.rows;
+    if (Array.isArray(value.items)) return value.items;
+    if (Array.isArray(value.data)) return value.data;
+    if (Array.isArray(value.values)) return value.values;
+    return [value];
+  }
+  return [];
+}
+
+function rowsFromStructuredPayload(payload = {}, accepted = new Set()) {
+  if (!payload || typeof payload !== 'object') return [];
+  const rows = [];
+  for (const type of accepted) {
+    for (const key of analyticsKeyVariants(type)) {
+      if (Object.prototype.hasOwnProperty.call(payload, key)) {
+        rows.push(...rowList(payload[key]));
+      }
+    }
+  }
+  return rows;
+}
+
+function analyticsPacketPayloads(context = {}) {
+  const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
+  return [context, raw].flatMap((source) => ANALYTICS_CONTEXT_PACKET_KEYS
+    .map((key) => {
+      if (!source || typeof source !== 'object' || !Object.prototype.hasOwnProperty.call(source, key)) return null;
+      const value = source[key];
+      if (typeof value === 'string') return parseStructuredPayload(value);
+      return value && typeof value === 'object' ? value : null;
+    })
+    .filter(Boolean));
+}
+
+function artifactTypeNames(artifact = {}) {
+  return [
+    artifact.type,
+    artifact.artifact_type,
+    artifact.artifactType,
+    artifact.content_type,
+    artifact.contentType,
+    ...(Array.isArray(artifact.artifact_types) ? artifact.artifact_types : []),
+    ...(Array.isArray(artifact.artifactTypes) ? artifact.artifactTypes : [])
+  ]
+    .map((type) => String(type || '').toLowerCase())
+    .filter(Boolean);
+}
+
 function artifactRows(context = {}, types = []) {
   const accepted = new Set((Array.isArray(types) ? types : [types])
     .map((type) => String(type || '').toLowerCase())
     .filter(Boolean));
-  return (Array.isArray(context.artifacts) ? context.artifacts : [])
-    .filter((artifact) => accepted.has(String(artifact?.type || '').toLowerCase()))
+  const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
+  const packetPayloads = analyticsPacketPayloads(context);
+  const directRows = [
+    ...rowsFromStructuredPayload(context, accepted),
+    ...rowsFromStructuredPayload(raw, accepted),
+    ...packetPayloads.flatMap((payload) => rowsFromStructuredPayload(payload, accepted))
+  ];
+  const artifactRowsFromPayload = (Array.isArray(context.artifacts) ? context.artifacts : [])
+    .filter((artifact) => artifact && typeof artifact === 'object')
     .flatMap((artifact) => {
-      if (Array.isArray(artifact?.rows)) return artifact.rows;
-      if (Array.isArray(artifact?.items)) return artifact.items;
-      return [];
+      const typeMatches = artifactTypeNames(artifact).some((type) => accepted.has(type));
+      const parsedPayloads = [
+        parseStructuredPayload(artifact.content),
+        parseStructuredPayload(artifact.contentPreview),
+        parseStructuredPayload(artifact.content_preview),
+        artifact.payload && typeof artifact.payload === 'object' ? artifact.payload : null
+      ].filter(Boolean);
+      return [
+        ...(typeMatches ? rowList(artifact) : []),
+        ...parsedPayloads.flatMap((payload) => rowsFromStructuredPayload(payload, accepted))
+      ];
     });
+  return [...directRows, ...artifactRowsFromPayload];
 }
 
 function metricByLabel(context = {}, label = '') {
   const target = String(label || '').toLowerCase();
+  const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
+  const packetMetricSources = analyticsPacketPayloads(context).flatMap((payload) => [
+    payload.metrics,
+    payload.analytics_metrics,
+    payload.analyticsMetrics
+  ]);
+  const metricSources = [context.metrics, context.analytics_metrics, raw.metrics, raw.analytics_metrics, ...packetMetricSources];
+  for (const source of metricSources) {
+    if (Array.isArray(source)) {
+      const metric = source.find((item) => String(item?.label || item?.name || item?.metric || '').toLowerCase() === target);
+      if (metric) return metric?.value ?? metric?.current ?? '';
+      continue;
+    }
+    if (source && typeof source === 'object') {
+      for (const key of [target, label, ...analyticsKeyVariants(target)]) {
+        if (Object.prototype.hasOwnProperty.call(source, key)) return source[key];
+      }
+    }
+  }
   const metric = (Array.isArray(context.metrics) ? context.metrics : [])
     .find((item) => String(item?.label || item?.name || item?.metric || '').toLowerCase() === target);
   return metric?.value ?? metric?.current ?? '';

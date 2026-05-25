@@ -7,6 +7,10 @@ import {
   SAMPLE_AGENT_KINDS,
   sampleAgentDefinitionForKind
 } from '../lib/builtin-agents/agents/index.js';
+import {
+  cmoAgentActionContractForKind,
+  cmoAgentActionContractMarkdown
+} from '../lib/builtin-agents/agents/cmo-leader.js';
 import { leaderReadableAgentCatalogIndex } from '../lib/agent-catalog-index.js';
 import { deliveryItemsFromJob, sanitizeDeliveryItemForSurface } from '../lib/delivery-items.js';
 
@@ -392,6 +396,43 @@ assert.ok(
   'CMO leader LLM contract must treat file_markdown as an end-user growth plan, not an internal orchestration log'
 );
 assert.ok(
+  cmoLeaderSource.includes('not an orchestration log or a bundle index'),
+  'CMO leader LLM contract must not turn the final file into a bundle index of specialist outputs'
+);
+assert.ok(
+  cmoLeaderSource.includes('Deduplicate repeated facts and caveats'),
+  'CMO leader final synthesis must explicitly deduplicate repeated specialist facts and caveats'
+);
+assert.ok(
+  cmoLeaderSource.includes('review-only supporting material, not a completed handoff'),
+  'CMO leader final synthesis must not treat unapproved social or Publisher material as completed handoff'
+);
+assert.ok(
+  cmoLeaderSource.includes('If a selected specialist is known from CMO_AGENT_ACTION_CONTRACTS to produce a Publisher-reviewable artifact'),
+  'CMO leader must instruct Publisher-capable specialists from first dispatch'
+);
+assert.ok(
+  cmoLeaderSource.includes('publisherHandoff'),
+  'CMO leader action contracts must mark Publisher-capable specialists explicitly'
+);
+for (const kind of ['seo_specialist', 'landing', 'writing', 'writer', 'x_post', 'instagram', 'reddit', 'indie_hackers', 'directory_submission']) {
+  const contract = cmoAgentActionContractForKind(kind);
+  assert.equal(contract.publisherHandoff?.surface, 'publisher', `${kind} should be declared as a Publisher-review handoff producer`);
+  const markdown = cmoAgentActionContractMarkdown(kind);
+  assert.match(markdown, /Publisher review handoff/i, `${kind} dispatch contract should include Publisher review handoff instructions`);
+  assert.match(markdown, /surface=publisher/i, `${kind} dispatch contract should include Publisher surface metadata`);
+  assert.match(markdown, /content_type=/i, `${kind} dispatch contract should include content_type metadata`);
+  assert.match(markdown, /artifact_type=/i, `${kind} dispatch contract should include artifact_type metadata`);
+  assert.match(markdown, /profile_handle\/profile_url\/media_assets\/channel_rules\/approval_checklist/i, `${kind} dispatch contract should preserve Publisher destination profile metadata when relevant`);
+  assert.match(markdown, /review_status=needs_review/i, `${kind} dispatch contract should set review status`);
+  assert.match(markdown, /ingest_status=not_ingested/i, `${kind} dispatch contract should not claim app ingest`);
+  assert.match(markdown, /publish_status=not_published/i, `${kind} dispatch contract should not claim publishing`);
+}
+for (const kind of ['data_analysis', 'research', 'media_planner', 'growth', 'list_creator', 'email_ops', 'cold_email']) {
+  const markdown = cmoAgentActionContractMarkdown(kind);
+  assert.doesNotMatch(markdown, /Publisher review handoff/i, `${kind} should not receive Publisher review handoff instructions by default`);
+}
+assert.ok(
   cmoLeaderSource.includes('never expose internal agent names'),
   'CMO leader generation prompt must explicitly hide internal agent names from end-user Markdown'
 );
@@ -412,6 +453,7 @@ assert.equal(health.kind, 'research');
 const originalFetch = globalThis.fetch;
 let openAiDeliveryCalls = 0;
 let braveSearchCalls = 0;
+let listCreatorLeadOpsPacketSeen = false;
 globalThis.fetch = async (url, options = {}) => {
   const target = String(url || '');
   if (/api\.search\.brave\.com|\/res\/v1\/web\/search/i.test(target)) {
@@ -497,6 +539,13 @@ globalThis.fetch = async (url, options = {}) => {
       );
     }
     const targetUrl = packet.target_url || 'la demande';
+    if (kind === 'list_creator' && packet.lead_acquisition_request) {
+      listCreatorLeadOpsPacketSeen = true;
+      assert.equal(packet.lead_acquisition_request.target_segment, 'B2B SaaS founders');
+      assert.equal(packet.lead_acquisition_request.source_policy, 'public company pages only');
+      assert.equal(packet.lead_ops_return_contract?.return_packet, 'lead_ops_packet');
+      assert.deepEqual(packet.lead_ops_return_contract?.artifact_types, ['lead_rows', 'evidence_urls', 'next_actions']);
+    }
     const cmoReportExtras = packet.leader_synthesis?.reportExtras || {};
     const leaderEvaluationRequired = packet.leader_synthesis?.mode === 'llm_leader_evaluation_required'
       || cmoReportExtras.leader_evaluation_required === true;
@@ -579,6 +628,20 @@ globalThis.fetch = async (url, options = {}) => {
       '- Founder note: provided file evidence.',
       '- X account/source: provided URL.'
     ].join('\n');
+    const listCreatorLeadOpsMarkdown = [
+      '# List Creator Lead Ops packet',
+      '',
+      '## Reviewable lead rows',
+      '| company_name | website | why_fit | observed_signal | target_role_hypothesis | public_email_or_contact_path | contact_source_url | company_specific_angle | review_status | next_action |',
+      '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+      '| Example SaaS Co | https://example-saas.test | Fits B2B SaaS founder ICP | Public pricing page shows self-serve SaaS | Founder or growth owner | https://example-saas.test/contact | https://example-saas.test/contact | Lead with stable operations after AI agent sourcing | needs_review | Review evidence in Lead Ops before outreach |',
+      '',
+      '## Lead Ops return packet',
+      '- lead_rows: prepared for review',
+      '- evidence_urls: contact/source URL attached',
+      '- next_actions: review before outreach',
+      '- lead_ops_packet: prepared for review, not approved, not imported, not enriched, not queued, not contacted'
+    ].join('\n');
     const writerArtifacts = kind === 'writer' ? [
       {
         id: 'writer-publisher-handoff',
@@ -654,7 +717,7 @@ globalThis.fetch = async (url, options = {}) => {
       next_action: kind === 'cmo_leader' && leaderEvaluationRequired
         ? { action: 'Vérifier le contenu généré puis poursuivre le flux.' }
         : 'Vérifier le contenu généré puis poursuivre le flux.',
-      file_markdown: kind === 'cmo_leader' ? cmoMarkdown : (kind === 'writer' ? writerMarkdown : (kind === 'research' ? researchMarkdown : [
+      file_markdown: kind === 'cmo_leader' ? cmoMarkdown : (kind === 'writer' ? writerMarkdown : (kind === 'list_creator' && packet.lead_acquisition_request ? listCreatorLeadOpsMarkdown : (kind === 'research' ? researchMarkdown : [
         `# Livraison ${kind}`,
         '',
         '## Décision',
@@ -662,7 +725,7 @@ globalThis.fetch = async (url, options = {}) => {
         '',
         '## Action',
         'Utiliser ce brouillon comme sortie agent.'
-      ].join('\n'))),
+      ].join('\n')))),
       content_type: kind === 'cmo_leader' && leaderEvaluationRequired ? 'cmo_leader_delivery' : (kind === 'cmo_leader' && selectedLane ? 'site_publish_packet' : 'agent_delivery'),
       artifacts: [...writerArtifacts, ...cmoArtifacts],
       approval_requests: []
@@ -693,7 +756,72 @@ for (const kind of SAMPLE_AGENT_KINDS) {
   assert.equal(delivery.runtime?.generation_provider, 'openai_responses', `${kind} should mark OpenAI generation`);
   assert.match(content, /Livraison|Décision|français/i, `${kind} should use the OpenAI-generated non-English content`);
   assert.doesNotMatch(content, /Answer first|先に結論|prepared a concrete work product/i, `${kind} should not fall back to hardcoded bilingual delivery text when OpenAI is configured`);
+  if (kind === 'instagram') {
+    const file = delivery.files?.[0] || {};
+    assert.equal(file.content_type, 'instagram_post_packet', 'Instagram delivery file should default to an explicit Publisher handoff packet type');
+    assert.equal(file.artifact_type, 'instagram_post_packet', 'Instagram delivery file should expose the Publisher artifact type');
+    assert.ok((file.artifact_types || []).includes('instagram_post'), 'Instagram delivery file should expose the channel-specific artifact type');
+    assert.equal(file.surface, 'publisher', 'Instagram delivery file should target the Publisher surface');
+    assert.equal(file.item_type, 'instagram_post', 'Instagram delivery file should target Instagram post review');
+    assert.equal(file.action_type, 'instagram_post', 'Instagram delivery file should expose the action type without claiming execution');
+    assert.ok(Object.hasOwn(file, 'profile_handle'), 'Instagram delivery file should expose Publisher profile/account metadata fields');
+    assert.ok(Object.hasOwn(file, 'media_assets'), 'Instagram delivery file should expose Publisher media asset metadata fields');
+    assert.ok(Object.hasOwn(file, 'approval_checklist'), 'Instagram delivery file should expose Publisher approval checklist metadata fields');
+    const instagramItems = deliveryItemsFromJob({
+      id: 'qa-instagram-publisher',
+      status: 'completed',
+      taskType: 'instagram',
+      workflowTask: 'instagram',
+      workflowAgentName: 'INSTAGRAM LAUNCH AGENT',
+      input: { _broker: { requester: { login: 'qa-instagram' } } },
+      output: delivery
+    });
+    const instagramItem = instagramItems.find((item) => item.surface === 'publisher' && item.itemType === 'instagram_post');
+    assert.ok(instagramItem, 'Instagram delivery file should become a Publisher delivery item without body-text inference');
+    assert.equal(instagramItem.metadata.connector, 'instagram', 'Instagram Publisher item should preserve connector metadata');
+    assert.equal(instagramItem.metadata.connector_capability, 'instagram.post', 'Instagram Publisher item should preserve connector capability');
+  }
 }
+
+const listCreator = sampleAgentDefinitionForKind('list_creator');
+const listCreatorLeadOpsDelivery = await listCreator.provider.runJob({
+  kind: 'list_creator',
+  definition: listCreator,
+  body: {
+    prompt: 'Create a Lead Ops review list for the attached sourcing request. Answer in English.',
+    output_language: 'en',
+    input: {
+      _broker: {
+        appContexts: [{
+          source_app: 'lead_ops_console',
+          raw_context: {
+            lead_acquisition_request: {
+              target_segment: 'B2B SaaS founders',
+              source_policy: 'public company pages only',
+              target_count: 1,
+              region_or_language: 'United States',
+              offer_or_contact_reason: 'stable AI agent operations',
+              exclusions: 'agencies'
+            }
+          }
+        }]
+      }
+    }
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: listCreator.manifest
+});
+assert.equal(listCreatorLeadOpsDelivery.status, 'completed', 'List Creator should complete Lead Ops sourcing requests');
+assert.equal(listCreatorLeadOpsPacketSeen, true, 'List Creator request packet should preserve Lead Ops lead_acquisition_request');
+const listLeadRowsArtifact = listCreatorLeadOpsDelivery.report.artifacts.find((item) => item.type === 'lead_rows');
+const listLeadOpsPacketArtifact = listCreatorLeadOpsDelivery.report.artifacts.find((item) => item.type === 'lead_ops_packet');
+assert.ok(listLeadRowsArtifact, 'List Creator should emit a lead_rows artifact for Lead Ops');
+assert.ok(listLeadOpsPacketArtifact, 'List Creator should emit a lead_ops_packet artifact for Lead Ops');
+assert.equal(listLeadRowsArtifact.rows?.[0]?.company, 'Example SaaS Co', 'List Creator lead_rows should be parsed from the reviewable rows table');
+assert.equal(listLeadOpsPacketArtifact.request?.target_segment, 'B2B SaaS founders', 'List Creator lead_ops_packet should retain the original Lead Ops request');
+assert.ok(listLeadOpsPacketArtifact.evidence_urls?.[0]?.url, 'List Creator lead_ops_packet should include evidence_urls');
+assert.ok(listLeadOpsPacketArtifact.next_actions?.[0]?.next_action, 'List Creator lead_ops_packet should include next_actions');
+
 assert.ok(openAiDeliveryCalls >= SAMPLE_AGENT_KINDS.length, 'each sample agent should use OpenAI delivery generation when configured');
 
 const configuredOpenAiFetch = globalThis.fetch;

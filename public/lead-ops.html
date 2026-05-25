@@ -9,7 +9,7 @@
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/app-console.css?v=20260524a" />
-  <script type="module" src="/lead-ops.js?v=20260524b"></script>
+  <script type="module" src="/lead-ops.js?v=20260525b"></script>
 </head>
 <body>
   <main class="app-console-shell" aria-label="CAIt Lead Ops Console">
@@ -62,7 +62,7 @@
           <section class="workflow-strip" aria-label="Lead Ops workflow">
             <div class="workflow-step current" id="leadStepLoad">
               <span class="step-index">1</span>
-              <span><strong>Select lead</strong><span>Bring in public-source lead evidence from CAIt.</span></span>
+              <span><strong>Source or select lead</strong><span>Ask List Creator for public-source rows, or bring in existing CAIt evidence.</span></span>
             </div>
             <div class="workflow-step" id="leadStepDraft">
               <span class="step-index">2</span>
@@ -85,6 +85,29 @@
 
           <section class="notice" id="leadHandoffSessionNotice" hidden aria-label="CAIt lead handoff session notice"></section>
 
+          <section class="panel" aria-label="Lead sourcing request">
+            <div class="status-row">
+              <div>
+                <span class="kicker">Lead acquisition</span>
+                <h2>Source the first reviewable leads.</h2>
+              </div>
+              <span class="status-pill pending" id="leadSourcingPill">Request not ready</span>
+            </div>
+            <div class="field-grid">
+              <div class="field-row"><label for="leadSourcingIcpInput">Target customer / ICP</label><textarea id="leadSourcingIcpInput" placeholder="Who should List Creator find? Industry, role, company size, region, buying signal..."></textarea></div>
+              <div class="field-row"><label for="leadSourcingSourceInput">Sources to use</label><textarea id="leadSourcingSourceInput" placeholder="Public directories, search phrases, competitor users, event pages, existing URLs, exclusions..."></textarea></div>
+              <div class="field-row"><label for="leadSourcingCountInput">Target count</label><input id="leadSourcingCountInput" type="number" min="1" max="100" value="20" /></div>
+              <div class="field-row"><label for="leadSourcingRegionInput">Region / language</label><input id="leadSourcingRegionInput" placeholder="Japan, US SaaS, English pages..." /></div>
+              <div class="field-row"><label for="leadSourcingOfferInput">Offer / reason to contact</label><textarea id="leadSourcingOfferInput" placeholder="What problem, offer, or angle should each row qualify against?"></textarea></div>
+              <div class="field-row"><label for="leadSourcingExclusionInput">Do not include</label><input id="leadSourcingExclusionInput" placeholder="Existing customers, agencies, no public contact path..." /></div>
+            </div>
+            <div class="inline-actions" style="margin-top:12px">
+              <button class="primary-btn" id="requestLeadSourcingBtn" type="button">Ask List Creator</button>
+              <button class="ghost-btn" id="copyLeadSourcingBtn" type="button">Copy sourcing request</button>
+            </div>
+            <p class="muted" id="leadSourcingNote">Creates a server-side CAIt request for public-source lead rows with evidence URLs, contact paths, qualification notes, and downstream Lead Ops handoff fields.</p>
+          </section>
+
           <section class="ops-story-grid" aria-label="Lead operations readiness">
             <article class="panel ops-story-panel">
               <div class="status-row compact-head">
@@ -100,6 +123,7 @@
                   <h3>Disposable lead notes</h3>
                   <ul class="ops-bullet-list">
                     <li>Contact paths, evidence URLs, and consent labels drift between chats.</li>
+                    <li>Nested AIAGENT lead packets can flatten into notes instead of rows.</li>
                     <li>Message drafts lose the source row they were based on.</li>
                     <li>Scheduled or event-triggered sends are hard to audit later.</li>
                   </ul>
@@ -109,6 +133,7 @@
                   <h3>Lead Ops packet</h3>
                   <ul class="ops-bullet-list">
                     <li>Public-source evidence, contact path, and consent basis stay in one packet.</li>
+                    <li>Lead Ops restores lead_ops_packet, crm_packet, and outreach_plan contracts.</li>
                     <li>Email, SMS, schedule, and trigger rules remain tied to the selected lead.</li>
                     <li>CAIt receives a server-side context reference for follow-up orders.</li>
                   </ul>

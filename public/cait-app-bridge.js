@@ -1,6 +1,83 @@
 const CAIT_APP_CONTEXT_SCHEMA = 'cait-app-context/v1';
 const CAIT_APP_CONTEXT_CHANNEL = 'cait-app-context';
 const DEFAULT_CAIt_ORIGIN = 'https://aiagent-marketplace.net';
+const APP_CONTEXT_RAW_PRESERVE_KEYS = Object.freeze([
+  'metrics',
+  'analytics_context',
+  'analyticsContext',
+  'analytics_packet',
+  'analyticsPacket',
+  'search_console_packet',
+  'searchConsolePacket',
+  'gsc_packet',
+  'gscPacket',
+  'ga4_packet',
+  'ga4Packet',
+  'google_analytics_packet',
+  'googleAnalyticsPacket',
+  'analytics_metrics',
+  'search_queries',
+  'searchQueries',
+  'queries',
+  'landing_pages',
+  'landingPages',
+  'pages',
+  'channel_mix',
+  'channelMix',
+  'channel_breakdown',
+  'channelBreakdown',
+  'channel_breakdowns',
+  'channel_landing_pages',
+  'channelLandingPages',
+  'channel_sources',
+  'channelSources',
+  'conversion_paths',
+  'conversionPaths',
+  'country_mix',
+  'countryMix',
+  'measurement_queue',
+  'measurementQueue',
+  'post_run_measurement',
+  'postRunMeasurement',
+  'google_sources',
+  'googleSources',
+  'google_report_status',
+  'googleReportStatus',
+  'delivery_package',
+  'deliveryPackage',
+  'delivery_context',
+  'deliveryContext',
+  'delivery_packet',
+  'deliveryPacket',
+  'delivery_artifacts',
+  'deliveryArtifacts',
+  'lead_rows',
+  'leadRows',
+  'lead_acquisition_request',
+  'leadAcquisitionRequest',
+  'lead_sourcing_request',
+  'leadSourcingRequest',
+  'lead_ops_packet',
+  'leadOpsPacket',
+  'lead_packet',
+  'leadPacket',
+  'crm_packet',
+  'crmPacket',
+  'outreach_packet',
+  'outreachPacket',
+  'evidence_urls',
+  'evidenceUrls',
+  'email_drafts',
+  'emailDrafts',
+  'email_draft',
+  'emailDraft',
+  'outreach_drafts',
+  'outreachDrafts',
+  'next_actions',
+  'nextActions',
+  'outreach_plan',
+  'outreachPlan'
+]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -12,6 +89,21 @@ function safeText(value = '', max = 2000) {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, max);
+}
+
+function safeMultilineText(value = '', max = 2000) {
+  return String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{4,}/g, '\n\n\n')
+    .trim()
+    .slice(0, max);
+}
+
+function shouldPreserveMultilineValue(key = '') {
+  return /^(?:content|body|text|markdown|html|raw_markdown|rawMarkdown|campaign_operations_plan|campaignOperationsPlan|campaignOpsPlan|campaignPlan|campaign_markdown|campaignMarkdown)$/i.test(String(key || '').trim());
 }
 
 function safeId(value = '') {
@@ -40,9 +132,23 @@ function compactObject(value, options = {}, depth = 0) {
       output[key] = item ? '[redacted]' : item;
       continue;
     }
-    output[safeText(key, 80)] = compactObject(item, options, depth + 1);
+    const safeKey = safeText(key, 80);
+    output[safeKey] = typeof item === 'string' && shouldPreserveMultilineValue(key)
+      ? safeMultilineText(item, Number(options.maxText || 1000))
+      : compactObject(item, options, depth + 1);
   }
   return output;
+}
+
+function rawContextWithPreservedContractKeys(raw = {}) {
+  const base = raw.raw_context || raw.rawContext || {};
+  const rawContext = base && typeof base === 'object' ? { ...base } : {};
+  for (const key of APP_CONTEXT_RAW_PRESERVE_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(raw, key) && !Object.prototype.hasOwnProperty.call(rawContext, key)) {
+      rawContext[key] = raw[key];
+    }
+  }
+  return rawContext;
 }
 
 function caitOrigin(options = {}) {
@@ -200,9 +306,9 @@ export function buildCaitAppContext(raw = {}) {
     metrics: safeObjectList(raw.metrics || [], 40),
     recommended_next_actions: safeList(raw.recommended_next_actions || raw.recommendedNextActions || [], 24),
     approval_requests: safeObjectList(raw.approval_requests || raw.approvalRequests || [], 24),
-    delivery_files: safeObjectList(raw.delivery_files || raw.deliveryFiles || [], 24),
+    delivery_files: safeObjectList(raw.delivery_files || raw.deliveryFiles || raw.files || [], 24),
     handoff_targets: safeList(raw.handoff_targets || raw.handoffTargets || [], 16),
-    raw_context: compactObject(raw.raw_context || raw.rawContext || {}, { depth: 5, maxText: 1000, maxArray: 10 }),
+    raw_context: compactObject(rawContextWithPreservedContractKeys(raw), { depth: 5, maxText: 1000, maxArray: 12 }),
     created_at: createdAt
   };
 }
@@ -235,6 +341,23 @@ export function caitAppContextChatPrompt(context = {}) {
       metricValue('conversions') ? `- Conversions: ${metricValue('conversions')}` : '',
       metricValue('conversion_rate') ? `- Conversion rate: ${metricValue('conversion_rate')}` : '',
       'Use this attached connector data as evidence. Do not ask the user to paste GA4/Search Console rows again.'
+    ].filter(Boolean);
+    return lines.join('\n');
+  }
+  if (source === 'lead_ops_console' && raw.lead_acquisition_request && typeof raw.lead_acquisition_request === 'object') {
+    const request = raw.lead_acquisition_request;
+    const lines = [
+      'Create a List Creator order from this Lead Ops sourcing request.',
+      '',
+      request.target_segment ? `Target customer / ICP: ${request.target_segment}` : '',
+      request.source_policy ? `Sources to use: ${request.source_policy}` : '',
+      request.target_count ? `Target count: ${request.target_count}` : '',
+      request.region_or_language ? `Region / language: ${request.region_or_language}` : '',
+      request.offer_or_contact_reason ? `Offer / reason to contact: ${request.offer_or_contact_reason}` : '',
+      request.exclusions ? `Do not include: ${request.exclusions}` : '',
+      '',
+      'Return reviewable lead_rows, evidence_urls, next_actions, and a lead_ops_packet that can reopen in Lead Ops.',
+      'Use public-source evidence only. Do not invent personal emails or private contact data.'
     ].filter(Boolean);
     return lines.join('\n');
   }

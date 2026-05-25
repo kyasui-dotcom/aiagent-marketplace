@@ -180,6 +180,8 @@ import { renderOrderStrategyControlsElement } from './client-order-strategy-ui.j
 const $ = (id) => document.getElementById(id);
 const PRODUCT_NAME = 'CAIt';
 const PRODUCT_SHORT_NAME = 'CAIt';
+const DEVELOPER_SURFACES_STATUS = 'Coming soon';
+const DEVELOPER_SURFACES_NOTICE = 'CLI, external API-key access, and MCP are temporarily paused while the contract is stabilized. Browser-owned CAIt chat, app, delivery, and Publisher flows remain available.';
 const PAYMENT_PROVIDER_UI_VISIBLE = true;
 const WORK_CHAT_INTERNAL_STATUS_VISIBLE = false;
 const TEMPORARY_INVOICE_BILLING_ENABLED = false;
@@ -4614,28 +4616,20 @@ function renderConnectHub(snapshot = state.snapshot || {}) {
 
   if (els.connectOrderApiStatus) {
     const lines = [
-      `Public order endpoint: ${orderApiBaseUrl()}`,
-      `Active CAIt API keys: ${orderKeys.length} (${liveOrderKeys.length} live / ${testOrderKeys.length} test)`,
-      state.lastIssuedOrderApiKey?.token
-        ? `Raw key available in this tab only: ${state.lastIssuedOrderApiKey.prefix || state.lastIssuedOrderApiKey.id || 'issued'}`
-        : 'Raw keys are shown only once when issued.',
-      auth?.loggedIn
-        ? 'Next: issue or manage keys in SETTINGS, then copy the example command here or open CLI HELP.'
-        : 'Next: log in, then issue a CAIt API key in SETTINGS.'
+      `Public order endpoint: ${DEVELOPER_SURFACES_STATUS}`,
+      DEVELOPER_SURFACES_NOTICE,
+      `Previous CAIt API keys on this account: ${orderKeys.length} (${liveOrderKeys.length} live / ${testOrderKeys.length} test)`,
+      'Next: use Chat, Apps, Deliveries, or Publisher in the browser. External API ordering will return after the contract is stable.'
     ];
     els.connectOrderApiStatus.textContent = lines.join('\n');
   }
 
   if (els.connectAgentApiStatus) {
     const lines = [
-      `Agent import endpoint: ${window.location.origin}/api/agents/import-manifest`,
-      `Active CAIt API keys: ${orderKeys.length}`,
-      state.lastIssuedOrderApiKey?.token
-        ? `Raw key available in this tab only: ${state.lastIssuedOrderApiKey.prefix || state.lastIssuedOrderApiKey.id || 'issued'}`
-        : 'Raw keys are shown only once when issued.',
-      auth?.loggedIn
-        ? 'Next: use the same CAIt API key for manifest import, verify, and GitHub adapter PR requests.'
-        : 'Next: log in, then issue a CAIt API key in SETTINGS.'
+      `Agent import endpoint: ${DEVELOPER_SURFACES_STATUS}`,
+      DEVELOPER_SURFACES_NOTICE,
+      `Previous CAIt API keys on this account: ${orderKeys.length}`,
+      'Next: manage provider setup from the browser. External agent API registration will return after the contract is stable.'
     ];
     els.connectAgentApiStatus.textContent = lines.join('\n');
   }
@@ -9046,21 +9040,21 @@ function openChatNaturalConversationAnswerLines(intent = '', prompt = '') {
         'API/CLIからの利用相談として受け取りました。',
         '',
         '実装前に分けるべき点は3つです。',
-        '1. ブラウザから発注するのか、外部システムからCAIt APIで発注するのか',
-        '2. 単発実行か、CI/cron/自社アプリからの自動実行か',
-        '3. 課金元、CAIt API key、納品の受け取り方法',
+        '1. ブラウザのChat/Apps/Deliveries/Publisherで完結できるか',
+        '2. 外部CLI/API/MCPが必要な場合、どの契約が必要か',
+        '3. 再開時に必要な認証、課金元、納品の受け取り方法',
         '',
-        '外部連携なら SETTINGS でCAIt API keyを発行し、CLI/API画面のcurlをベースにできます。まだ注文も課金も発生しません。'
+        '外部CLI/API/MCPは現在Coming soonです。安定するまではブラウザのChat、Apps、Deliveries、Publisherを使ってください。'
       ],
       en: [
         'I read this as API or CLI integration work.',
         '',
         'Before implementation, split three decisions:',
-        '1. Browser order flow vs CAIt API from an external system',
-        '2. One-off run vs automation from CI, cron, or your app',
-        '3. Funding source, CAIt API key, and delivery retrieval',
+        '1. Whether browser Chat, Apps, Deliveries, or Publisher can handle it now',
+        '2. Which external CLI/API/MCP contract is needed later',
+        '3. Authentication, funding, and delivery retrieval needed when it returns',
         '',
-        'For external integration, issue a CAIt API key in SETTINGS and start from the CLI/API curl example. No order or billing happens yet.'
+        'External CLI/API/MCP are currently coming soon. Use browser Chat, Apps, Deliveries, and Publisher until the contract is stable.'
       ]
     },
     natural_engineer_architecture: {
@@ -10603,7 +10597,7 @@ function quickOrderChatAnswer(prompt = '', inputCounts = {}) {
   if (/(api key|apiキー|openai|anthropic|serp|model provider|モデル|プロバイダー|契約)/i.test(matchText)) {
     return ja
       ? `Built-in agent を使う場合、買い手側で OpenAI、Anthropic、検索APIなどを個別契約する必要はありません。${PRODUCT_NAME} の月締め請求で注文できます。自分の外部システムから注文したい場合は SETTINGS で CAIt API key を発行します。`
-      : `For managed sample agents, buyers do not need separate OpenAI, Anthropic, search, or model-provider API contracts. Use ${PRODUCT_NAME} month-end billing. For external systems, issue a CAIt API key in SETTINGS.`;
+      : `For managed sample agents, buyers do not need separate OpenAI, Anthropic, search, or model-provider API contracts. Use ${PRODUCT_NAME} month-end billing. External CLI/API/MCP access is coming soon.`;
   }
   if (/(github|git hub|agent.*登録|登録|publish|list|manifest|verify|verification|ベリファイ|検証|マニフェスト|公開)/i.test(matchText)) {
     return ja
@@ -20081,15 +20075,17 @@ function updateCliPanels(snapshot) {
   const cliRecentRun = selectedJob() || cliJobs[0] || null;
   const cliEstimate = cliPrimaryAgent ? estimateWindowOfAgent(cliPrimaryAgent, cliPrimaryAgent.taskTypes?.[0] || 'research') : null;
   const cliOrderKeys = activeApiKeys(cliAccount?.apiAccess?.orderKeys || []);
-  const cliOrderToken = state.lastIssuedOrderApiKey?.token || '<CAIT_API_KEY>';
-  const cliAgentToken = cliOrderToken;
   if (els.cliStatus) {
     els.cliStatus.textContent = [
+      `Status: ${DEVELOPER_SURFACES_STATUS}`,
+      DEVELOPER_SURFACES_NOTICE,
       `Base URL: ${window.location.origin}`,
-      `Public order endpoint: ${orderApiBaseUrl()}`,
+      'Public order endpoint: paused',
+      'CLI: paused',
+      'MCP: paused',
       `Login: ${cliAuth?.loggedIn ? `connected as ${cliAuth?.user?.login || '-'}` : 'not connected'}`,
-      `Write access: ${cliCanWrite ? 'enabled' : 'login required'}`,
-      `CAIt API keys: ${cliOrderKeys.length} active`,
+      `Browser order access: ${cliCanWrite ? 'enabled' : 'login required'}`,
+      `Previous CAIt API keys: ${cliOrderKeys.length} active`,
       `Ready agents: ${cliReady.length}`,
       `Verified agents: ${cliVerified.length}`,
       `Last run: ${cliRecentRun?.id || '-'}`,
@@ -20098,36 +20094,36 @@ function updateCliPanels(snapshot) {
   }
   if (els.cliQuickstart) {
     els.cliQuickstart.textContent = [
-      '# 1. issue a CAIt API key in SETTINGS',
-      '# 2. run this command against the public API',
+      '# Coming soon',
+      '# CLI and external API-key ordering are temporarily paused.',
+      '# Use the browser Chat / Apps / Deliveries / Publisher flows for now.',
       '',
-      formatOrderApiCommand(cliOrderToken),
+      '# Planned return path:',
+      '# 1. stabilize the app handoff + delivery contract',
+      '# 2. re-enable CAIT_DEVELOPER_API_ENABLED and CAIT_CLI_ENABLED',
+      '# 3. publish updated curl / CLI examples',
       '',
-      '# inspect the run after creation',
-      `curl.exe -H "authorization: Bearer ${cliOrderToken}" ${orderApiBaseUrl()}/${cliRecentRun?.id || '<job_id>'}`,
+      '# Current public API response:',
+      '# 403 developer_api_disabled',
       '',
-      '# notes',
-      '# - leave agent_id empty to auto-route',
-      '# - actual billing is finalized after completion',
-      '# - public beta uses live funded orders only'
+      '# Current MCP response:',
+      '# 503 mcp_disabled'
     ].join('\n');
   }
   if (els.apiExamples) {
     els.apiExamples.textContent = [
-      '# 1. issue a CAIt API key in SETTINGS',
-      '# 2. import a manifest over the public API',
+      '# Coming soon',
+      '# External agent/app API operations are temporarily paused.',
+      '# Provider setup should be managed from the browser until the external contract is stable.',
       '',
-      formatAgentApiCommand(cliAgentToken),
+      '# Planned API surfaces:',
+      '# - order creation and delivery reads',
+      '# - manifest import and verification',
+      '# - app context handoff endpoints',
+      '# - MCP discovery and JSON-RPC',
       '',
-      '# then verify the imported agent',
-      `curl.exe -X POST ${window.location.origin}/api/agents/<agent_id>/verify ^`,
-      `  -H "authorization: Bearer ${cliAgentToken}"`,
-      '',
-      '# inspect onboarding guidance',
-      `curl.exe -H "authorization: Bearer ${cliAgentToken}" ${window.location.origin}/api/agents/<agent_id>/onboarding-check`,
-      '',
-      '# repo-backed manifest generation and adapter PR creation use the same CAIt API key',
-      '# create-adapter-pr requires confirm_adapter_pr=true after user confirmation'
+      '# Current public API response:',
+      '# 403 developer_api_disabled'
     ].join('\n');
   }
   return;
@@ -20601,53 +20597,28 @@ function renderProviderBillingLanesCard(providerSummary = {}) {
 
 function renderOrderApiKeys(account = null, auth = null) {
   if (!els.apiKeyCreateResult || !els.apiKeyTable) return;
-  const loggedIn = Boolean(auth?.loggedIn && auth?.user?.login);
   const apiKeys = account?.apiAccess?.orderKeys || [];
-  const selectedMode = 'live';
-  const modeHelp = 'CAIt API key: public orders require funded billing and are included in live billing and provider payout settlement.';
-  if (!loggedIn) {
-    safeText(els.apiKeyCreateResult, 'Login required.\n\nIssue a CAIt API key here, then use it from Codex, CLI, or an external chat bot against the public /api/jobs endpoint.');
-    els.apiKeyTable.innerHTML = '<div class="empty">No API keys while logged out.</div>';
-    return;
-  }
-  if (state.lastIssuedOrderApiKey?.token) {
-    const issued = state.lastIssuedOrderApiKey;
-    safeText(els.apiKeyCreateResult, [
-      'New CAIt API key issued. Copy it from the one-time popup now. The raw secret is not shown again after you close it.',
-      '',
-      'mode: LIVE',
-      `label: ${issued.label}`,
-      `prefix: ${issued.prefix}`,
-      'settlement: included in live billing and provider payout settlement',
-      '',
-      'Use COPY CURL in the popup for a command with the raw key. Placeholder example:',
-      formatOrderApiCommand()
-    ].join('\n'));
-  } else {
-    safeText(els.apiKeyCreateResult, [
-      'Use this for Codex, CLI, or another external client that places orders against the public API.',
-      '',
-      `Selected mode: ${selectedMode.toUpperCase()}`,
-      modeHelp,
-      '',
-      'Flow:',
-      '1. Issue a key here.',
-      '2. Copy it once.',
-      '3. Send Authorization: Bearer <CAIT_API_KEY> to /api/jobs.',
-      '',
-      'example:',
-      formatOrderApiCommand()
-    ].join('\n'));
-  }
+  if (els.apiKeyLabel) els.apiKeyLabel.disabled = true;
+  if (els.apiKeyMode) els.apiKeyMode.disabled = true;
+  if (els.createApiKeyBtn) els.createApiKeyBtn.disabled = true;
+  state.lastIssuedOrderApiKey = null;
+  safeText(els.apiKeyCreateResult, [
+    `${DEVELOPER_SURFACES_STATUS}: CAIt API keys`,
+    '',
+    DEVELOPER_SURFACES_NOTICE,
+    '',
+    'API key creation, listing for new use, revoke actions, CLI ordering, and MCP are disabled by default.',
+    'Use browser-owned CAIt Chat, Apps, Deliveries, and Publisher flows until the external contract is re-enabled.'
+  ].join('\n'));
   if (!apiKeys.length) {
-    els.apiKeyTable.innerHTML = '<div class="empty">No CAIt API keys yet.</div>';
+    els.apiKeyTable.innerHTML = '<div class="empty">CAIt API keys are coming soon.</div>';
     return;
   }
   els.apiKeyTable.innerHTML = `<div class="table-header runs-grid"><div>KEY</div><div>LAST USED</div><div>STATUS</div></div>${apiKeys.map((key) => `
     <div class="table-row runs-grid">
       <div>${escapeHtml(key.label)}<div class="row-muted">${escapeHtml(`${String(key.mode || 'live').toUpperCase()} · ${key.prefix}… · ${key.scopes.join(', ')}`)}</div></div>
       <div>${escapeHtml(key.lastUsedAt ? formatTime(key.lastUsedAt) : 'never')}<div class="row-muted">${escapeHtml(`${key.lastUsedMethod || '-'} ${key.lastUsedPath || ''}`.trim())}</div></div>
-      <div><span class="status-pill ${key.active ? 'ok' : 'warn'}">${key.active ? 'ACTIVE' : 'REVOKED'}</span>${key.active ? `<button class="mini-btn revoke-api-key-btn" data-api-key-id="${escapeHtml(key.id)}" style="margin-top:6px">REVOKE</button>` : `<div class="row-muted">${escapeHtml(formatTime(key.revokedAt))}</div>`}</div>
+      <div><span class="status-pill warn">${key.active ? 'PAUSED' : 'REVOKED'}</span><div class="row-muted">${key.active ? 'External API disabled' : escapeHtml(formatTime(key.revokedAt))}</div></div>
     </div>`).join('')}`;
 }
 
@@ -21141,7 +21112,7 @@ function renderSettings(account, monthlySummary, auth) {
       els.settingsAccessCard.textContent = [
         'Sign in to manage account actions.',
         '',
-        'Google login: order work, register a card, manage CAIt API keys.',
+        'Google login: order work and account settings. External API keys are coming soon.',
         'GitHub login: publish agents, receive provider payouts, and authorize repo PR actions.',
         '',
         'Use the tabs below to see each setup area. Sign in before changing settings.'
@@ -21149,7 +21120,7 @@ function renderSettings(account, monthlySummary, auth) {
     }
     renderSummaryRows(els.settingsStatus, [
       { label: 'Status', value: 'Login required' },
-      { label: 'What this page does', value: 'Payments, provider setup, and CLI keys' }
+      { label: 'What this page does', value: 'Payments, provider setup, and coming-soon developer surfaces' }
     ]);
     renderSummaryRows(els.monthlySummaryCard, [
       { label: 'Monthly summary', value: 'Unavailable while logged out' }
@@ -21229,8 +21200,8 @@ function renderSettings(account, monthlySummary, auth) {
     { label: 'Account', value: account?.login || auth.user.login },
     { label: 'Orders pay from', value: billing.mode || 'monthly_invoice' },
     { label: 'Provider profile', value: Boolean(payout.providerEnabled) ? 'enabled' : 'disabled' },
-    { label: 'CAIt API keys', value: `${activeOrderKeys.length} active` },
-    { label: 'Live/test keys', value: `${liveOrderKeys.length} live / ${testOrderKeys.length} test` }
+    { label: 'CAIt API keys', value: DEVELOPER_SURFACES_STATUS },
+    { label: 'Live/test keys', value: 'Paused until external contract stabilizes' }
   ]);
   renderSummaryRows(els.monthlySummaryCard, [
     { label: 'Period', value: monthlySummary?.period || state.settingsPeriod },
@@ -22712,7 +22683,7 @@ if (els.connectHubLoadReposBtn) els.connectHubLoadReposBtn.onclick = () => runAc
 if (els.connectHubOpenAgentsBtn) els.connectHubOpenAgentsBtn.onclick = () => openAgentsGithubFlow();
 if (els.connectHubOpenSettingsOrderBtn) els.connectHubOpenSettingsOrderBtn.onclick = () => {
   openSettingsSection('keys');
-  flash('CAIt API keys are managed in SETTINGS.', 'info');
+  flash('CAIt API keys are coming soon in SETTINGS.', 'info');
 };
 if (els.connectHubCopyOrderBtn) els.connectHubCopyOrderBtn.onclick = () => {
   const token = state.lastIssuedOrderApiKey?.token || '<CAIT_API_KEY>';
@@ -22721,7 +22692,7 @@ if (els.connectHubCopyOrderBtn) els.connectHubCopyOrderBtn.onclick = () => {
 if (els.connectHubOpenAgentsPublishBtn) els.connectHubOpenAgentsPublishBtn.onclick = () => openAgentsGithubFlow();
 if (els.connectHubOpenSettingsAgentBtn) els.connectHubOpenSettingsAgentBtn.onclick = () => {
   openSettingsSection('keys');
-  flash('CAIt API keys are managed in SETTINGS.', 'info');
+  flash('CAIt API keys are coming soon in SETTINGS.', 'info');
 };
 if (els.settingsPaymentsTabBtn) els.settingsPaymentsTabBtn.onclick = () => openSettingsSection('payments');
 if (els.settingsProviderTabBtn) els.settingsProviderTabBtn.onclick = () => openSettingsSection('provider');
@@ -22927,43 +22898,22 @@ if (els.chatTrainingExportBtn) els.chatTrainingExportBtn.onclick = () => {
 });
 if (els.apiKeyMode) els.apiKeyMode.onchange = () => renderOrderApiKeys(state.snapshot?.accountSettings, state.snapshot?.auth);
 if (els.createApiKeyBtn) els.createApiKeyBtn.onclick = () => {
-  if (!ensureSettingsLogin()) return;
-  runAction(els.createApiKeyBtn, async () => {
-    const apiKeyTitle = String(els.apiKeyLabel?.value || '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!apiKeyTitle) {
-      safeText(els.apiKeyCreateResult, 'API key title is required. Example: codex-desktop / ci-runner / personal-cli');
-      flash('Enter an API key title before issuing a key.', 'warn');
-      els.apiKeyLabel?.focus?.();
-      return;
-    }
-    const res = await api('/api/settings/api-keys', {
-      method: 'POST',
-      body: JSON.stringify({
-        label: apiKeyTitle,
-        mode: els.apiKeyMode?.value || 'live'
-      })
-    });
-    state.lastIssuedOrderApiKey = res.api_key || null;
-    if (els.apiKeyLabel) els.apiKeyLabel.value = '';
-    flash(`${String(state.lastIssuedOrderApiKey?.mode || 'live').toUpperCase()} CAIt API key issued. Copy the raw key now; it will not be shown again.`, 'ok');
-    await refresh();
-    openApiKeyRevealModal(state.lastIssuedOrderApiKey);
-  });
+  safeText(els.apiKeyCreateResult, [
+    `${DEVELOPER_SURFACES_STATUS}: CAIt API keys`,
+    '',
+    DEVELOPER_SURFACES_NOTICE
+  ].join('\n'));
+  flash('CAIt API keys are coming soon.', 'warn');
 };
 if (els.apiKeyTable) els.apiKeyTable.onclick = (event) => {
   const button = event.target?.closest?.('[data-api-key-id]');
   if (!button) return;
-  const keyId = button.dataset.apiKeyId;
-  if (!keyId) return;
-  if (!ensureSettingsLogin()) return;
-  void runAction(button, async () => {
-    await api(`/api/settings/api-keys/${encodeURIComponent(keyId)}`, { method: 'DELETE' });
-    if (state.lastIssuedOrderApiKey?.id === keyId) state.lastIssuedOrderApiKey = null;
-    flash('CAIt API key revoked.', 'ok');
-    await refresh();
-  });
+  safeText(els.apiKeyCreateResult, [
+    `${DEVELOPER_SURFACES_STATUS}: CAIt API keys`,
+    '',
+    DEVELOPER_SURFACES_NOTICE
+  ].join('\n'));
+  flash('CAIt API keys are coming soon.', 'warn');
 };
 if (els.createStripeSetupSessionBtn) els.createStripeSetupSessionBtn.onclick = () => {
   if (!ensureSettingsLogin()) return;

@@ -132,18 +132,18 @@ export const WORK_COMMAND_COPY = Object.freeze({
     status: 'Go to the AGENTS tab for listing.\n\nNo order was created and no billing occurred.'
   },
   open_api_keys: {
-    ja: 'API key は SETTINGS の KEYS で発行・管理してください。注文、エージェント登録、CLI/API で使います。',
-    en: 'For API keys, go to SETTINGS > KEYS. Issue and manage the CAIt API key there.',
+    ja: 'API key は現在Coming soonです。SETTINGS > KEYS では停止中の状態だけ確認できます。',
+    en: 'API keys are currently coming soon. SETTINGS > KEYS only shows the paused state.',
     status: 'Go to SETTINGS > KEYS.\n\nNo order was created and no billing occurred.'
   },
   open_cli: {
-    ja: 'CLI / API 情報は CONNECT タブで見てください。CAIt API key と /api/jobs の使い方を確認できます。',
-    en: 'For CLI / API docs, go to the CONNECT tab. You can inspect CAIt API key usage and /api/jobs examples there.',
+    ja: 'CLI / API / MCP は現在Coming soonです。CONNECT タブでは停止中の状態を確認できます。',
+    en: 'CLI / API / MCP are currently coming soon. The CONNECT tab shows the paused state.',
     status: 'Go to the CONNECT tab.\n\nNo order was created and no billing occurred.'
   },
   open_account_settings: {
-    ja: 'アカウント設定は SETTINGS タブで管理してください。支払い、提供者設定、APIキー、レポートがあります。',
-    en: 'Go to the SETTINGS tab for account settings. Manage billing, provider setup, API keys, and reports there.',
+    ja: 'アカウント設定は SETTINGS タブで管理してください。支払い、提供者設定、Coming soonのAPIキー状態、レポートがあります。',
+    en: 'Go to the SETTINGS tab for account settings. Manage billing, provider setup, coming-soon API key status, and reports there.',
     status: 'Go to the SETTINGS tab.\n\nNo order was created and no billing occurred.'
   },
   open_feedback: {

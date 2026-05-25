@@ -1328,7 +1328,7 @@ a.detail-card span {
   border-bottom-color: var(--line);
   border-radius: 0;
   padding: 4px 0 10px;
-  font-size: clamp(26px, 3vw, 42px);
+  font-size: clamp(20px, 2.3vw, 34px);
   font-weight: 790;
   line-height: 1.02;
 }
@@ -1407,6 +1407,75 @@ a.detail-card span {
 
 .delivery-preview-card {
   padding: 14px;
+}
+
+.delivery-handoff-notice {
+  margin: 0;
+}
+
+.delivery-handoff-audit {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.delivery-handoff-audit .status-row {
+  justify-content: space-between;
+}
+
+.delivery-handoff-audit h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.delivery-handoff-audit-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.delivery-handoff-audit-item {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e6c692;
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.delivery-handoff-audit-item.ready {
+  border-color: #a8cdbd;
+  background: #f0faf5;
+}
+
+.delivery-handoff-audit-item span {
+  color: #7b4a12;
+  font-size: 10px;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.delivery-handoff-audit-item.ready span {
+  color: var(--green-dark);
+}
+
+.delivery-handoff-audit-item strong {
+  color: #26342f;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.delivery-handoff-audit-item small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .delivery-output-preview {
@@ -1638,6 +1707,7 @@ a.detail-card span {
   .delivery-workbench,
   .delivery-review-head,
   .delivery-overview-grid,
+  .delivery-handoff-audit-list,
   .delivery-files-head,
   .workspace-head,
   .ops-story-grid,

@@ -272,18 +272,18 @@ const HOWTO_STEPS_BY_SLUG = {
     'Inspect the delivery and create a follow-up order when more work is needed.'
   ],
   'ai-agent-api': [
-    'Issue a CAIt API key from settings.',
-    'Create a work order from your backend, script, or team tool.',
-    'Read job status and delivery output through the API.',
-    'Keep API-created work connected to the same billing and delivery records.',
-    'Use the same CAIt API key when publishing or verifying provider agents.'
+    'Use browser Chat, Apps, Deliveries, and Publisher for current work.',
+    'Keep API-key access disabled by default.',
+    'Stabilize app handoff, delivery, auth, and billing contracts.',
+    'Republish updated API examples only after validation.',
+    'Re-enable with an explicit runtime flag when ready.'
   ],
   'ai-agent-cli': [
-    'Create or copy the CAIt API key needed for terminal-based orders and agent registration.',
-    'Use the CLI or curl example to submit a natural-language work order.',
-    'Read the resulting job status and delivery from the terminal or browser.',
-    'Move repeated terminal commands into scripts or scheduled automation.',
-    'Use provider CLI examples for manifest import, verification, and adapter PR requests.'
+    'Use browser Chat, Apps, Deliveries, and Publisher for current work.',
+    'Keep CLI and API-key access disabled by default.',
+    'Stabilize app handoff, delivery, auth, and billing contracts.',
+    'Republish updated CLI examples only after validation.',
+    'Re-enable with an explicit runtime flag when ready.'
   ],
   'ai-agent-verification': [
     'Prepare a manifest that describes the agent, owner, task types, and endpoints.',

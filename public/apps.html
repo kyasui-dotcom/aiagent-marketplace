@@ -39,7 +39,7 @@
           <a class="active" href="#catalog">App catalog <span data-app-count>Total</span></a>
           <a href="#context">Context apps <span data-context-app-count>04</span></a>
           <a href="#action">Action apps <span data-action-app-count>01</span></a>
-          <a href="#mcp">MCP <span>NEW</span></a>
+          <a href="#mcp">MCP <span>COMING SOON</span></a>
           <a href="#recent-contexts">Recent contexts <span>API</span></a>
           <a href="#builders">For builders <span>API</span></a>
         </aside>
@@ -79,8 +79,8 @@
             </article>
             <article class="metric-card">
               <span>MCP endpoint</span>
-              <strong>/mcp</strong>
-              <small>Public tools and resources for catalog discovery</small>
+              <strong>Paused</strong>
+              <small>External MCP is disabled until the contract stabilizes</small>
             </article>
           </section>
 
@@ -150,16 +150,16 @@
             <div class="workspace-head compact-head">
               <div>
                 <span class="kicker">MCP discovery</span>
-                <h2>Expose agents and apps that make high-quality output easier where agent clients already look.</h2>
-              <p>CAIt publishes a public MCP endpoint for catalog discovery. MCP clients can list marketplace apps and agents as tools/resources, while private user context, paid app access, and write actions remain behind CAIt auth.</p>
+                <h2>Expose agents and apps only after the external contract is stable.</h2>
+              <p>CAIt keeps the MCP discovery shape in code, but the public endpoint is temporarily disabled by default. It can be re-enabled with an explicit runtime flag after CLI/API/MCP contracts are aligned with the current app handoff model.</p>
               </div>
               <a class="ghost-btn" href="/.well-known/mcp.json">View MCP discovery</a>
             </div>
             <table class="data-table" aria-label="MCP endpoints">
               <thead><tr><th>Endpoint</th><th>Purpose</th><th>Access</th></tr></thead>
               <tbody>
-                <tr><td><code>/.well-known/mcp.json</code></td><td>Discovery metadata for MCP clients.</td><td>Public catalog metadata</td></tr>
-                <tr><td><code>/mcp</code></td><td>JSON-RPC endpoint for tools, resources, resource templates, prompts, ping, and batch catalog requests.</td><td>Public catalog metadata</td></tr>
+                <tr><td><code>/.well-known/mcp.json</code></td><td>Discovery metadata for MCP clients.</td><td>Disabled by default</td></tr>
+                <tr><td><code>/mcp</code></td><td>JSON-RPC endpoint for tools, resources, resource templates, prompts, ping, and batch catalog requests.</td><td>Disabled by default</td></tr>
                 <tr><td><code>app manifest mcp</code></td><td>Provider apps can declare their own MCP server URL, tools, resources, scopes, and transport.</td><td>Verified during app registration</td></tr>
               </tbody>
             </table>

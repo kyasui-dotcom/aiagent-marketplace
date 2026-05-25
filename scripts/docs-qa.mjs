@@ -100,6 +100,8 @@ assert.ok(resourcesHtml.includes('/rss.xml'));
 assert.ok(resourcesHtml.includes('/feed.xml'));
 assert.ok(resourcesHtml.includes('/agents/prompt-brushup-ai-agent.html'));
 assert.ok(resourcesHtml.includes('/glossary/ai-agent.html'));
+assert.ok(resourcesHtml.includes('External API-key access is paused'), 'Resource hub should show API as coming soon while external surfaces are paused.');
+assert.ok(resourcesHtml.includes('Terminal ordering and provider CLI examples are paused'), 'Resource hub should show CLI as coming soon while external surfaces are paused.');
 
 assert.ok(agentsHtml.includes('QUALITY FLOW'));
 assert.ok(agentsHtml.includes('DELIVERY READINESS'));

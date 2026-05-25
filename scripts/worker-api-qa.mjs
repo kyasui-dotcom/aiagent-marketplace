@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import worker from '../worker.js';
 import { createD1LikeStorage } from '../lib/storage.js';
 import { createBrokerAgentAssignmentHelpers } from '../lib/broker-agent-assignment.js';
+import { publisherRecordsFromContext } from '../lib/publisher-items.js';
 import { WELCOME_CREDITS_GRANT_AMOUNT, buildAgentTeamDeliveryOutput, nowIso, orderPreflightForAgent } from '../lib/shared.js';
 import { E2E_DEFAULT_ORDER_PROMPT, assertOrderScenarioQuality, buildOrderScenarioPayload } from './e2e-order-scenario.mjs';
 
@@ -438,6 +439,7 @@ assert.ok(apiKeyRoutesSource.includes('async function listOrderApiKeys'), 'CAIt 
 assert.ok(apiKeyRoutesSource.includes('async function createOrderApiKey'), 'CAIt API key creation route should be owned by lib/routes/api-keys.js');
 assert.ok(apiKeyRoutesSource.includes('async function createAdminOrderApiKey'), 'admin CAIt API key creation route should be owned by lib/routes/api-keys.js');
 assert.ok(apiKeyRoutesSource.includes('async function revokeOrderApiKey'), 'CAIt API key revoke route should be owned by lib/routes/api-keys.js');
+assert.ok(apiKeyRoutesSource.includes('developerApiDisabled'), 'CAIt API key routes should share a developer API disable gate.');
 assert.ok(apiKeyRoutesSource.includes('function configuredCaitAdminApiTokens'), 'admin API token configuration should be owned by API key routes.');
 assert.ok(apiKeyRoutesSource.includes('function sanitizeAdminApiKeyLogin'), 'admin API key target login sanitization should be owned by API key routes.');
 assert.ok(!workerSource.includes('async function listOrderApiKeys'), 'worker.js must not keep CAIt API key listing route implementation');
@@ -480,6 +482,8 @@ assert.ok(!workerSource.includes("eventSource: 'dev_api'"), 'worker.js must not 
 assert.ok(mcpRoutesSource.includes('async function mcpCatalogForPublicRequest'), 'MCP public catalog loader should be owned by lib/routes/mcp.js');
 assert.ok(mcpRoutesSource.includes('function getMcpDiscoveryPayload'), 'MCP discovery route should be owned by lib/routes/mcp.js');
 assert.ok(mcpRoutesSource.includes('async function handleMcpRequest'), 'MCP JSON-RPC route should be owned by lib/routes/mcp.js');
+assert.ok(mcpRoutesSource.includes('mcpDisabledPayload'), 'MCP route should expose a disabled response while the external contract is paused.');
+assert.ok(mcpRoutesSource.includes('runtimePolicy(env).mcpEnabled'), 'MCP route should be gated by runtime policy.');
 assert.ok(mcpRoutesSource.includes('handleMcpJsonRpc'), 'MCP route should preserve JSON-RPC dispatch through lib/mcp.js');
 assert.ok(mcpRoutesSource.includes('storage.listAgents({ limit: 500 })'), 'MCP route should preserve targeted catalog reads.');
 assert.ok(!workerSource.includes('async function mcpCatalogForPublicRequest'), 'worker.js must not keep MCP public catalog loader implementation');
@@ -911,6 +915,9 @@ const env = {
   ALLOW_OPEN_WRITE_API: '1',
   ALLOW_GUEST_RUN_READ_API: '1',
   ALLOW_DEV_API: '1',
+  CAIT_DEVELOPER_API_ENABLED: '1',
+  CAIT_CLI_ENABLED: '1',
+  CAIT_MCP_ENABLED: '1',
   EXPOSE_JOB_SECRETS: '1',
   SESSION_SECRET: 'worker-api-qa-secret',
   BILLING_ACTIVATION_ENABLED: '1',
@@ -1383,6 +1390,85 @@ assert.equal(ready.status, 200);
 assert.equal(ready.body.ready, true);
 assert.equal(ready.body.version, '0.2.0-test');
 
+const untypedPublisherRecords = publisherRecordsFromContext({
+  title: 'Untyped delivery',
+  summary: 'Plain markdown mentions X, Publisher, and WordPress, but no agent-owned artifact metadata exists.',
+  delivery_files: [{
+    name: 'plain-delivery.md',
+    type: 'markdown',
+    content: '# Plain delivery\n\nPost this on X and WordPress.'
+  }]
+}, { ownerLogin: 'samurai', appContextId: 'ctx-untyped', nowIso: nowIso() });
+assert.equal(
+  untypedPublisherRecords.items.length,
+  0,
+  'Publisher item persistence must not recover missing app intent from untyped delivery body text.'
+);
+const connectorOnlyPublisherRecords = publisherRecordsFromContext({
+  title: 'Connector-only delivery',
+  artifacts: [{
+    type: 'file',
+    name: 'connector-only.md',
+    connector: 'wordpress',
+    channel: 'wordpress_site',
+    body: 'This has destination hints but no explicit Publisher artifact contract.'
+  }]
+}, { ownerLogin: 'samurai', appContextId: 'ctx-connector-only', nowIso: nowIso() });
+assert.equal(
+  connectorOnlyPublisherRecords.items.length,
+  0,
+  'Publisher item persistence must not treat connector or destination hints as app intent without an explicit artifact contract.'
+);
+const explicitPublisherRecords = publisherRecordsFromContext({
+  title: 'Explicit X packet',
+  artifacts: [{
+    type: 'file',
+    name: 'x-post.md',
+    content_type: 'x_post_packet',
+    artifact_type: 'x_post_packet',
+    artifact_types: ['x_post_packet'],
+    channel: 'x',
+    connector: 'x',
+    connector_capability: 'x.post',
+    title: 'Exact X post',
+    body: 'Approved exact post text.'
+  }]
+}, { ownerLogin: 'samurai', appContextId: 'ctx-explicit', nowIso: nowIso() });
+assert.equal(explicitPublisherRecords.items.length, 1, 'Publisher item persistence should keep explicit app-review packets.');
+assert.equal(explicitPublisherRecords.items[0].channel, 'x', 'Publisher item persistence should preserve explicit channel metadata.');
+const explicitInstagramPublisherRecords = publisherRecordsFromContext({
+  title: 'Explicit Instagram packet',
+  artifacts: [{
+    type: 'file',
+    name: 'instagram-launch.md',
+    content_type: 'instagram_post_packet',
+    artifact_type: 'instagram_post_packet',
+    artifact_types: ['instagram_post_packet', 'instagram_post'],
+    channel: 'instagram',
+    connector: 'instagram',
+    connector_capability: 'instagram.post',
+    profile_handle: '@aiagentmarketplace',
+    profile_url: 'https://instagram.com/aiagentmarketplace',
+    media_assets: 'Carousel screenshots and reel b-roll are attached.',
+    channel_rules: 'Use approved caption, destination URL, alt text, and no unsupported proof claims.',
+    approval_checklist: 'Profile, caption, destination, assets, proof, schedule, and connector status checked.',
+    title: 'Instagram launch post',
+    body: 'Approved Instagram caption draft.'
+  }]
+}, { ownerLogin: 'samurai', appContextId: 'ctx-instagram-explicit', nowIso: nowIso() });
+assert.equal(explicitInstagramPublisherRecords.items.length, 1, 'Publisher item persistence should keep explicit Instagram app-review packets.');
+assert.equal(explicitInstagramPublisherRecords.items[0].channel, 'instagram', 'Publisher item persistence should preserve Instagram channel metadata.');
+assert.equal(explicitInstagramPublisherRecords.items[0].payload.profile_handle, '@aiagentmarketplace', 'Publisher item persistence should preserve Instagram profile metadata.');
+assert.equal(explicitInstagramPublisherRecords.items[0].payload.media_assets, 'Carousel screenshots and reel b-roll are attached.', 'Publisher item persistence should preserve Instagram media asset metadata.');
+assert.ok(
+  explicitInstagramPublisherRecords.items[0].validation.checks.some((check) => check.key === 'instagram_profile' && check.ok),
+  'Publisher validation should check Instagram profile readiness.'
+);
+assert.ok(
+  explicitInstagramPublisherRecords.items[0].validation.checks.some((check) => check.key === 'instagram_media' && check.ok),
+  'Publisher validation should check Instagram media asset readiness.'
+);
+
 const publisherContextShape = await request('/api/publisher/context-ingest', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -1413,6 +1499,8 @@ const publisherContextShape = await request('/api/publisher/context-ingest', {
 }, { sessionCookie: samuraiSession });
 assert.equal(publisherContextShape.status, 201, 'Publisher context ingest should accept writer handoff payloads');
 assert.equal(publisherContextShape.body.app_context_shape?.ok, true, 'Publisher context ingest should run the OpenAI shaping pass before DB persistence');
+assert.ok(Array.isArray(publisherContextShape.body.publisher_items) && publisherContextShape.body.publisher_items.length >= 1, 'Publisher context ingest should persist normalized Publisher item records.');
+assert.equal(publisherContextShape.body.publisher_items?.[0]?.version, 1, 'First Publisher item persistence should create version 1.');
 assert.equal(
   publisherContextShape.body.app_context?.context?.raw_context?.publisher_context_shape_status?.ok,
   true,
@@ -1432,6 +1520,20 @@ assert.match(
   String(publisherContextShape.body.app_context?.context?.artifacts?.[0]?.body || publisherContextShape.body.app_context?.context?.artifacts?.[0]?.content || ''),
   /Draft body for the owned site\./,
   'Publisher shaping must preserve original agent artifact body text'
+);
+const publisherItems = await request('/api/publisher/items?limit=10', {}, { sessionCookie: samuraiSession });
+assert.equal(publisherItems.status, 200, 'Publisher item history should be readable by the owner.');
+assert.ok(
+  (publisherItems.body.items || []).some((item) => String(item.appContextId || '') === String(publisherContextShape.body.app_context_id || '')),
+  'Publisher item history should include the just-ingested app context item.'
+);
+assert.ok(
+  appRoutesSource.includes('canViewAdminDashboard(current, env)'),
+  'Publisher item history must use platform admin visibility, not open-write mode, for cross-owner reads.'
+);
+assert.ok(
+  !appRoutesSource.includes('admin: policy.openWriteApiEnabled'),
+  'App context and Publisher item list routes must not treat open-write mode as cross-owner admin visibility.'
 );
 
 const betaBillingEnv = { ...env, BILLING_ACTIVATION_ENABLED: '0', BETA_BILLING_PAUSED: '1' };
@@ -2009,8 +2111,17 @@ const publicLockedEnv = {
   ALLOW_OPEN_WRITE_API: '0',
   ALLOW_GUEST_RUN_READ_API: '0',
   ALLOW_DEV_API: '0',
+  CAIT_DEVELOPER_API_ENABLED: '0',
+  CAIT_CLI_ENABLED: '0',
+  CAIT_MCP_ENABLED: '0',
   EXPOSE_JOB_SECRETS: '0',
   RELEASE_STAGE: 'public'
+};
+const publicExternalEnabledEnv = {
+  ...publicLockedEnv,
+  CAIT_DEVELOPER_API_ENABLED: '1',
+  CAIT_CLI_ENABLED: '1',
+  CAIT_MCP_ENABLED: '1'
 };
 const publicDebug = await request('/auth/debug', {}, { env: publicLockedEnv });
 assert.equal(publicDebug.status, 404, 'production debug endpoint should not be public');
@@ -2022,6 +2133,19 @@ const publicSampleJob = await request('/mock/research/jobs', {
   body: JSON.stringify({ prompt: 'should not run in public without billing' })
 }, { env: publicLockedEnv });
 assert.equal(publicSampleJob.status, 404, 'same-worker sample job execution must not exist in production');
+const publicMcpDiscoveryDisabled = await request('/.well-known/mcp.json', {}, { env: publicLockedEnv });
+assert.equal(publicMcpDiscoveryDisabled.status, 503, 'MCP discovery should be disabled by default on public deployments');
+assert.equal(publicMcpDiscoveryDisabled.body.code, 'mcp_disabled');
+const publicMcpRpcDisabled = await request('/mcp', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' })
+}, { env: publicLockedEnv });
+assert.equal(publicMcpRpcDisabled.status, 503, 'MCP JSON-RPC should be disabled by default on public deployments');
+assert.equal(publicMcpRpcDisabled.body.code, 'mcp_disabled');
+const publicMcpDiscoveryEnabled = await request('/.well-known/mcp.json', {}, { env: publicExternalEnabledEnv });
+assert.equal(publicMcpDiscoveryEnabled.status, 200, 'MCP discovery should return when explicitly enabled');
+assert.equal(publicMcpDiscoveryEnabled.body.server_url, 'https://example.test/mcp');
 
 const asyncWorkflowWaits = [];
 const asyncWorkflow = await request('/api/jobs', {
@@ -4760,6 +4884,31 @@ const syntheticAgentTeamOutput = buildAgentTeamDeliveryOutput({
     }
   },
   {
+    id: 'data-specialist',
+    taskType: 'data_analysis',
+    workflowTask: 'data_analysis',
+    workflowAgentName: 'Data Analysis Agent',
+    status: 'completed',
+    createdAt: nowIso(),
+    completedAt: nowIso(),
+    input: { _broker: { workflow: { sequencePhase: 'data' } } },
+    output: {
+      summary: 'Prepared analytics memo',
+      report: {
+        summary: 'Prepared analytics memo',
+        bullets: ['same baseline repeated'],
+        nextAction: 'Use the final leader summary.'
+      },
+      files: [
+        {
+          name: 'data-analysis-delivery.md',
+          type: 'text/markdown',
+          content: '# Analytics memo\n\n554 sessions and 0 conversions. This supporting memo should not be duplicated in the final delivery bundle.'
+        }
+      ]
+    }
+  },
+  {
     id: 'x-specialist',
     taskType: 'x_post',
     workflowTask: 'x_post',
@@ -4787,6 +4936,14 @@ const syntheticAgentTeamOutput = buildAgentTeamDeliveryOutput({
         {
           name: 'x-post-pack.md',
           type: 'text/markdown',
+          content_type: 'x_post_packet',
+          artifact_type: 'x_post_packet',
+          artifact_types: ['x_post_packet', 'x_post', 'approval_request'],
+          surface: 'publisher',
+          item_type: 'x_post',
+          action_type: 'x_post',
+          connector: 'x',
+          connector_capability: 'x.post',
           content: '# X post pack\n\nPost text:\nLaunching now.'
         }
       ]
@@ -4799,7 +4956,12 @@ assert.ok(
 );
 assert.ok(
   syntheticAgentTeamOutput.files?.some((file) => file.name === 'x-post-pack.md' && file.source_task_type === 'x_post'),
-  'approval-blocked action packet should remain visible as the raw specialist file'
+  'explicit approval-blocked action packet should remain visible as the raw specialist file'
+);
+assert.equal(
+  syntheticAgentTeamOutput.files?.some((file) => file.name === 'data-analysis-delivery.md'),
+  false,
+  'generic supporting specialist memos should not duplicate the final leader delivery bundle'
 );
 assert.ok(
   syntheticAgentTeamOutput.files?.every((file) => file.source_agent_name && file.source_task_type && file.source_run_id && file.display_title),
@@ -4822,7 +4984,7 @@ assert.equal(syntheticAgentTeamOutput.report?.authority_request?.missing_connect
 assert.equal(syntheticAgentTeamOutput.report?.completion_state, 'blocked_waiting_for_approval', 'agent team output should not present approval-blocked execution as final completion');
 assert.equal(syntheticAgentTeamOutput.summary, 'Leader final summary', 'leader-authored summary should remain the default integrated summary when available');
 assert.equal(syntheticAgentTeamOutput.report?.execution_candidate?.source_task_type, 'cmo_leader', 'final leader delivery should remain the selected execution candidate instead of a child action packet');
-assert.equal(syntheticAgentTeamOutput.report?.childRuns?.length, 3, 'integrated output should keep supporting work product summaries attached to the merged report');
+assert.equal(syntheticAgentTeamOutput.report?.childRuns?.length, 4, 'integrated output should keep supporting work product summaries attached to the merged report');
 assert.ok(
   syntheticAgentTeamOutput.report?.bullets?.some((item) => String(item || '').includes('Delivered content summary') && String(item || '').includes('Prepared X packet')),
   'parent report bullets should summarize the actual content produced by each specialist'
@@ -5695,10 +5857,32 @@ const adminIssuedKey = await request('/api/admin/api-keys', {
 });
 assert.equal(adminIssuedKey.status, 201);
 assert.ok(adminIssuedKey.body.api_key.token.startsWith('ai2k_'));
+const disabledApiKeyList = await request('/api/settings/api-keys', {}, { sessionCookie: daveSession, env: publicLockedEnv });
+assert.equal(disabledApiKeyList.status, 403, 'developer API key listing should be disabled by default on public deployments');
+assert.equal(disabledApiKeyList.body.code, 'developer_api_disabled');
+const disabledApiKeyCreate = await request('/api/settings/api-keys', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ label: 'disabled-public-key' })
+}, { sessionCookie: daveSession, env: publicLockedEnv });
+assert.equal(disabledApiKeyCreate.status, 403, 'developer API key creation should be disabled by default on public deployments');
+assert.equal(disabledApiKeyCreate.body.code, 'developer_api_disabled');
+const disabledAdminKeyCreate = await request('/api/admin/api-keys', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', authorization: `Bearer ${env.CAIT_ADMIN_API_TOKEN}` },
+  body: JSON.stringify({ login: 'cli-target@example.com', label: 'disabled-admin-key' })
+}, { env: publicLockedEnv });
+assert.equal(disabledAdminKeyCreate.status, 403, 'operator CLI API-key issuance should be disabled unless explicitly enabled');
+assert.equal(disabledAdminKeyCreate.body.code, 'developer_api_disabled');
 const adminIssuedKeyJobs = await request('/api/jobs', {
   headers: { authorization: `Bearer ${adminIssuedKey.body.api_key.token}` }
 }, { env: publicLockedEnv });
-assert.equal(adminIssuedKeyJobs.status, 200, 'operator-issued API key should authenticate against the public API');
+assert.equal(adminIssuedKeyJobs.status, 403, 'operator-issued API key should not authenticate when public developer API is disabled');
+assert.equal(adminIssuedKeyJobs.body.code, 'developer_api_disabled');
+const adminIssuedKeyJobsEnabled = await request('/api/jobs', {
+  headers: { authorization: `Bearer ${adminIssuedKey.body.api_key.token}` }
+}, { env: publicExternalEnabledEnv });
+assert.equal(adminIssuedKeyJobsEnabled.status, 200, 'operator-issued API key should authenticate when the public developer API is explicitly enabled');
 
 const adminSessionIssuedKey = await request('/api/admin/api-keys', {
   method: 'POST',
@@ -5712,7 +5896,7 @@ const publicTestKeyBlocked = await request('/api/admin/api-keys', {
   method: 'POST',
   headers: { 'content-type': 'application/json', authorization: `Bearer ${env.CAIT_ADMIN_API_TOKEN}` },
   body: JSON.stringify({ login: 'cli-target@example.com', label: 'public-test-key', mode: 'test' })
-}, { env: publicLockedEnv });
+}, { env: publicExternalEnabledEnv });
 assert.equal(publicTestKeyBlocked.status, 403, 'public deployment should reject test keys from the CLI issuer');
 
 const executionConfirmationActions = ['x_post', 'instagram_post', 'gmail_send', 'resend_send', 'github_pr', 'report_next'];
@@ -7320,10 +7504,15 @@ try {
   }, { sessionCookie: daveSession });
   assert.equal(issuedOrderKey.status, 201);
   assert.ok(issuedOrderKey.body.api_key.token.startsWith('ai2k_'));
+  const disabledIssuedKeyRead = await request('/api/jobs?limit=1', {
+    headers: { authorization: `Bearer ${issuedOrderKey.body.api_key.token}` }
+  }, { env: publicLockedEnv });
+  assert.equal(disabledIssuedKeyRead.status, 403, 'CAIt API keys should be rejected while the public developer API is disabled');
+  assert.equal(disabledIssuedKeyRead.body.code, 'developer_api_disabled');
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const apiKeyRead = await request('/api/jobs?limit=1', {
       headers: { authorization: `Bearer ${issuedOrderKey.body.api_key.token}` }
-    }, { env: publicLockedEnv });
+    }, { env: publicExternalEnabledEnv });
     assert.equal(apiKeyRead.status, 200, `CAIt API key should remain valid before order attempt ${attempt + 1}`);
     assert.ok((apiKeyRead.body.jobs || []).length <= 1, 'CAIt API job list limit should be applied before returning');
     assert.equal(apiKeyRead.body.pagination?.limit, 1);
@@ -7341,13 +7530,13 @@ try {
       task_type: 'ops',
       prompt: 'Run the funded ops task through the public CAIt API key.'
     })
-  }, { env: publicLockedEnv });
+  }, { env: publicExternalEnabledEnv });
   assert.equal(apiKeyOrder.status, 201);
   assert.equal(apiKeyOrder.body.status, 'completed');
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const apiKeyReadAfterOrder = await request('/api/jobs?limit=1', {
       headers: { authorization: `Bearer ${issuedOrderKey.body.api_key.token}` }
-    }, { env: publicLockedEnv });
+    }, { env: publicExternalEnabledEnv });
     assert.equal(apiKeyReadAfterOrder.status, 200, `CAIt API key should remain valid after order attempt ${attempt + 1}`);
     assert.ok((apiKeyReadAfterOrder.body.jobs || []).length <= 1, 'CAIt API job list limit should stay applied after orders');
     assert.equal(apiKeyReadAfterOrder.body.pagination?.limit, 1);

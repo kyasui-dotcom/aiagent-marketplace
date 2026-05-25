@@ -9,7 +9,7 @@
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/app-console.css?v=20260505c" />
-  <script type="module" src="/delivery-manager.js?v=20260519a"></script>
+  <script type="module" src="/delivery-manager.js?v=20260525a"></script>
 </head>
 <body>
   <main class="app-console-shell delivery-shell" aria-label="CAIt Deliveries">
@@ -92,6 +92,7 @@
           </div>
 
           <section class="delivery-tab-panel active" id="overviewPanel" aria-label="Delivery overview">
+            <div class="notice delivery-handoff-notice" id="deliveryHandoffNotice" hidden></div>
             <div class="delivery-overview-grid">
               <article>
                 <span>Next action</span>
@@ -112,6 +113,13 @@
                 <button class="ghost-btn" id="copyPreviewBtn" type="button">Copy preview</button>
               </div>
               <pre class="delivery-output-preview" id="outputPreview"></pre>
+            </div>
+            <div class="delivery-handoff-audit">
+              <div class="status-row">
+                <h2>AIAGENT handoff audit</h2>
+                <span class="status-pill pending" id="deliveryHandoffAuditPill">0 / 6 anchors</span>
+              </div>
+              <div class="delivery-handoff-audit-list" id="deliveryHandoffAuditList"></div>
             </div>
           </section>
 

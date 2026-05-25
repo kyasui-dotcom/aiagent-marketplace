@@ -66,6 +66,13 @@ import {
   renderAppHandoffTree as appHandoffGateRenderTree
 } from './app-handoff-gate.js?v=20260525a';
 import {
+  appContextFromTransferPayload,
+  appHandoffBaseTransferPacket,
+  appHandoffContractTextLimit,
+  appHandoffPayloadContractError,
+  appTransferPayloadWithEditedText
+} from './app-handoff-transfer.js?v=20260525a';
+import {
   appContextAnswerLine as appContextGateAnswerLine,
   appContextMatchesManifest as appContextGateMatchesManifest,
   appContextStatusForDraft as appContextGateStatusForDraft
@@ -857,7 +864,7 @@ function applyRestoredChatSnapshot(snapshot = {}, request = {}) {
     resumeActiveWork: true
   });
   if (!session && state.orderId && restoredSessionHasActiveWork({}, snapshot)) startPolling(state.orderId);
-  startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
+  startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false, notifyMilestones: false });
   return true;
 }
 
@@ -1618,8 +1625,8 @@ function conversationOwnerFromPrepared(value = {}, fallback = {}) {
 }
 
 function normalizeLeaderTaskType(value = '') {
-  const token = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-  return token.endsWith('_leader') ? token : '';
+  const token = String(value || '').trim().toLowerCase().replace(/[-]+/g, '_');
+  return /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*_leader$/.test(token) ? token : '';
 }
 
 function isLeaderTaskType(value = '') {
@@ -1629,18 +1636,13 @@ function isLeaderTaskType(value = '') {
 function explicitLeaderChangeTaskTypeFromText(value = '') {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
-  const requested = normalizeLeaderTaskType(text);
+  const requested = normalizeLeaderTaskType(text)
+    || normalizeLeaderTaskType(text.match(/\b[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*[_-]leader\b/i)?.[0] || '');
   if (!requested) return '';
   const explicitChange = /(?:leader|リーダー|担当|主体|lead|owner|route|routing|use|switch|change|変更|切替|切り替|変え|にして|で進め|でお願い|に戻|に固定|固定|指名|選択)/i.test(text)
-    || text.toLowerCase().replace(/[\s-]+/g, '_') === requested;
+    || normalizeLeaderTaskType(text) === requested;
   if (!explicitChange) return '';
   return requested;
-}
-
-function explicitLeaderTaskTypeFromText(value = '') {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!text) return '';
-  return normalizeLeaderTaskType(text);
 }
 
 function leaderOwner(taskType = '', reason = '') {
@@ -3442,99 +3444,23 @@ function appAgentSourceAgentsFromJob(job = {}) {
   return agents.slice(0, 18);
 }
 
-function appAgentDeliveryArtifactsFromJob(job = {}) {
-  return deliveryFiles(job).map((file) => {
-    const artifactTypes = Array.from(explicitHandoffArtifactTypesFromFile(file));
-    return {
-      name: String(file?.name || 'delivery.md').trim(),
-      contentType: String(artifactTypes[0] || file?.content_type || file?.contentType || file?.type || fileMimeType(file?.name || '', file?.content || '')).trim(),
-      artifactType: artifactTypes[0] || '',
-      artifactTypes,
-      summary: compactTransferText(file?.summary || file?.description || '', 280),
-      contentPreview: compactTransferText(file?.content || '', 900)
-    };
-  }).slice(0, 8);
-}
-
-function appAgentActionKind(manifest = {}, options = {}) {
-  const explicit = String(
-    options.actionKind
-    || options.action?.kind
-    || manifest.handoff?.actionKind
-    || manifest.handoff?.action_kind
-    || manifest.inputContract?.actionKind
-    || manifest.inputContract?.action_kind
-    || ''
-  ).trim();
-  if (explicit) return explicit;
-  return 'app_handoff';
-}
-
-function appAgentRequiresApproval(manifest = {}, options = {}) {
-  if (options.requiresApproval != null) return Boolean(options.requiresApproval);
-  return listValues(manifest.requiresApprovalFor || []).length > 0;
-}
-
-function appAgentBaseTransferPacket(appId = '', job = {}, options = {}) {
-  const manifest = appManifestById(appId) || {};
-  const strategy = options.strategy && typeof options.strategy === 'object' ? options.strategy : {};
-  const draft = options.draft && typeof options.draft === 'object' ? options.draft : {};
-  const suppliedAction = options.action && typeof options.action === 'object' ? options.action : {};
-  const objective = String(job.workflow?.objective || job.originalPrompt || job.input?.original_prompt || job.prompt || '').trim();
-  const primaryTask = String((Array.isArray(job.workflow?.plannedTasks) ? job.workflow.plannedTasks[0] : '') || job.taskType || '').trim().toLowerCase();
-  const agents = appAgentSourceAgentsFromJob(job);
-  const settings = {
-    brandName: strategy.product || '',
-    serviceLine: strategy.product || '',
-    targetClient: strategy.audience || '',
-    defaultCta: strategy.goal || '',
-    destinationLink: strategy.url || '',
-    serviceUrl: strategy.url || '',
-    channel: strategy.channel || '',
-    outputLanguage: chatLanguage(objective),
-    workspaceNotes: compactTransferText([
-      strategy.strategy,
-      objective ? `Original objective:\n${objective}` : '',
-      agents.length ? `Agent chain:\n${agents.map((agent) => `- ${agent.name} (${agent.taskType}, ${agent.status || 'unknown'})`).join('\n')}` : ''
-    ].filter(Boolean).join('\n\n'), 2200)
-  };
+function appHandoffTransferOptions(options = {}) {
   return {
-    schema_version: 'cait-app-agent-transfer/v1',
-    transfer_id: `transfer-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`,
-    created_at: isoNow(),
-    platform: {
-      name: 'CAIt',
-      source: 'chatux',
-      return_path: CHATUX_RETURN_PATH
-    },
-    app: {
-      id: manifest.id || appId,
-      name: manifest.name || appId,
-      kind: manifest.kind || 'application_agent',
-      capabilities: manifest.capabilities || [],
-      input_contract: manifest.inputContract || null
-    },
-    order: {
-      id: String(job.id || '').trim(),
-      status: String(job.status || '').trim(),
-      taskType: primaryTask,
-      objective: compactTransferText(objective, 1200),
-      workflow: Boolean(job.workflow || job.jobKind === 'workflow'),
-      statusLabel: statusLabel(job)
-    },
-    agents,
-    delivery: {
-      summary: compactTransferText(deliveryText(job), 1800),
-      artifacts: appAgentDeliveryArtifactsFromJob(job)
-    },
-    settings,
-    action: {
-      kind: appAgentActionKind(manifest, { ...options, action: suppliedAction }),
-      text: compactTransferText(suppliedAction.text || draft.text || '', 1200),
-      source: compactTransferText(suppliedAction.source || draft.source || 'CAIt delivery', 160),
-      requiresApproval: appAgentRequiresApproval(manifest, { ...options, action: suppliedAction }),
-      ...compactTransferObject(suppliedAction, { depth: 3, maxText: 700, maxArray: 8 })
-    }
+    manifestById: appManifestById,
+    normalizeUsageId,
+    listValues,
+    compactTransferText,
+    compactTransferObject,
+    chatLanguage,
+    isoNow,
+    statusLabel,
+    appAgentSourceAgentsFromJob,
+    deliveryText,
+    deliveryFiles,
+    explicitHandoffArtifactTypesFromFile,
+    fileMimeType,
+    returnPath: CHATUX_RETURN_PATH,
+    ...options
   };
 }
 
@@ -3547,93 +3473,6 @@ function registerAppTransferPayload(payload = {}) {
     appTransferStore.delete(first);
   }
   return id;
-}
-
-function appTransferPayloadWithEditedText(payload = {}, trigger = null) {
-  const editable = trigger?.closest?.('[data-app-transfer-edit-root]')?.querySelector?.('[data-app-transfer-editable]')
-    || trigger?.closest?.('.app-handoff-card, .app-dedicated-handoff-card')?.querySelector?.('[data-app-transfer-editable]')
-    || null;
-  if (!editable) return payload;
-  const text = String('value' in editable ? editable.value : editable.textContent || '').trim();
-  const source = String(editable.dataset.appTransferSource || payload.source || payload.action?.source || 'CAIt chat action').trim();
-  const title = String(editable.dataset.appTransferTitle || payload.title || payload.action?.title || 'CAIt app handoff').trim();
-  const settings = payload.settings && typeof payload.settings === 'object' ? payload.settings : {};
-  return {
-    ...payload,
-    text,
-    source,
-    title,
-    action: {
-      ...(payload.action && typeof payload.action === 'object' ? payload.action : {}),
-      text,
-      source,
-      title
-    },
-    settings: {
-      ...settings,
-      workspaceNotes: compactTransferText([
-        settings.workspaceNotes || '',
-        `Current edited handoff text:\n${text || '[empty]'}`
-      ].filter(Boolean).join('\n\n'), 2200)
-    }
-  };
-}
-
-function appHandoffContractTextMinimum(manifest = {}) {
-  const inputContract = manifest?.inputContract && typeof manifest.inputContract === 'object' ? manifest.inputContract : {};
-  const constraints = inputContract.constraints && typeof inputContract.constraints === 'object' ? inputContract.constraints : {};
-  const text = constraints.text && typeof constraints.text === 'object' ? constraints.text : {};
-  const candidates = [
-    inputContract.minTextLength,
-    inputContract.textMinLength,
-    inputContract.min_text_length,
-    inputContract.text_min_length,
-    text.minLength,
-    text.min_length
-  ];
-  for (const candidate of candidates) {
-    const value = Number(candidate);
-    if (Number.isFinite(value) && value > 0) return Math.floor(value);
-  }
-  return text.required === true || inputContract.textRequired === true || inputContract.text_required === true ? 1 : 0;
-}
-
-function appHandoffContractTextLimit(manifest = {}) {
-  const inputContract = manifest?.inputContract && typeof manifest.inputContract === 'object' ? manifest.inputContract : {};
-  const constraints = inputContract.constraints && typeof inputContract.constraints === 'object' ? inputContract.constraints : {};
-  const text = constraints.text && typeof constraints.text === 'object' ? constraints.text : {};
-  const candidates = [
-    inputContract.maxTextLength,
-    inputContract.textMaxLength,
-    inputContract.max_text_length,
-    inputContract.text_max_length,
-    text.maxLength,
-    text.max_length
-  ];
-  for (const candidate of candidates) {
-    const value = Number(candidate);
-    if (Number.isFinite(value) && value > 0) return Math.floor(value);
-  }
-  return 0;
-}
-
-function appHandoffPayloadText(payload = {}) {
-  return String(payload.text || payload.action?.text || '').trim();
-}
-
-function appHandoffPayloadContractError(manifest = {}, payload = {}) {
-  const textMinimum = appHandoffContractTextMinimum(manifest);
-  const textLimit = appHandoffContractTextLimit(manifest);
-  const text = appHandoffPayloadText(payload);
-  if (textMinimum && text.length < textMinimum) {
-    return textMinimum === 1
-      ? `${manifest.name || 'App'} requires handoff text before opening the app. Add the exact text first.`
-      : `${manifest.name || 'App'} requires at least ${textMinimum} characters for this handoff text before opening the app.`;
-  }
-  if (textLimit && text && text.length > textLimit) {
-    return `${manifest.name || 'App'} accepts at most ${textLimit} characters for this handoff text. Shorten it before opening the app.`;
-  }
-  return '';
 }
 
 function authorityRequestFromJob(job = {}) {
@@ -3690,159 +3529,94 @@ function compactStrategyText(value = '', max = 1500) {
   return `${text.slice(0, Math.max(0, max - 1)).trim()}…`;
 }
 
-function strategySnippetFromContent(content = '') {
-  const text = String(content || '').replace(/\r\n/g, '\n').trim();
-  if (!text) return '';
-  const headings = [
-    'Answer first',
-    'Context extracted from the order',
-    'Customer and positioning hypothesis',
-    'First growth bottleneck',
-    '7-day acquisition experiment',
-    'Execution packet',
-    'Priority media queue',
-    'SEO page packet',
-    'Distribution templates',
-    'Handoff to leader'
-  ];
-  const snippets = [];
-  for (const heading of headings) {
-    const pattern = new RegExp(`(?:^|\\n)#{1,4}\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?(?=\\n#{1,4}\\s+|$)`, 'i');
-    const match = text.match(pattern);
-    if (match?.[0]) snippets.push(match[0].trim());
-  }
-  if (!snippets.length) {
-    const lines = text.split('\n')
-      .filter((line) => /(strategy|growth|channel|audience|conversion|goal|cta|seo|x\/social|distribution|bottleneck|execution|handoff|戦略|集客|対象|顧客|購入|登録|投稿|配信|導線)/i.test(line))
-      .slice(0, 18);
-    if (lines.length) snippets.push(lines.join('\n'));
-  }
-  return compactStrategyText(snippets.join('\n\n'), 900);
-}
-
-function strategyFieldFromText(text = '', labels = []) {
-  const source = String(text || '');
-  for (const label of labels) {
-    const table = source.match(new RegExp(`\\|\\s*${label}\\s*\\|\\s*([^|\\n]+?)\\s*\\|`, 'i'));
-    if (table?.[1]) return compact(table[1], 180);
-    const field = source.match(new RegExp(`(?:^|\\n)\\s*(?:[-*]\\s*)?${label}\\s*[:：]\\s*([^\\n]+)`, 'i'));
-    if (field?.[1]) return compact(field[1], 180);
+function firstStructuredText(...values) {
+  for (const value of values) {
+    const text = compactStrategyText(value || '', 1200);
+    if (text) return text;
   }
   return '';
+}
+
+function firstStructuredUrl(...values) {
+  for (const value of values) {
+    const text = String(value || '').trim();
+    if (/^https?:\/\/[^\s"'<>`]+$/i.test(text)) return text;
+  }
+  return '';
+}
+
+function structuredHandoffContextsFromJob(job = {}) {
+  const input = job.input && typeof job.input === 'object' ? job.input : {};
+  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
+  const workflow = job.workflow && typeof job.workflow === 'object' ? job.workflow : {};
+  const output = job.output && typeof job.output === 'object' ? job.output : {};
+  const result = job.result && typeof job.result === 'object' ? job.result : {};
+  const candidates = [
+    job.appHandoffContext,
+    job.app_handoff_context,
+    job.handoffContext,
+    job.handoff_context,
+    job.strategyContext,
+    job.strategy_context,
+    workflow.appHandoffContext,
+    workflow.app_handoff_context,
+    workflow.handoffContext,
+    workflow.handoff_context,
+    workflow.strategyContext,
+    workflow.strategy_context,
+    broker.appHandoffContext,
+    broker.app_handoff_context,
+    broker.handoffContext,
+    broker.handoff_context,
+    broker.strategyContext,
+    broker.strategy_context,
+    output.appHandoffContext,
+    output.app_handoff_context,
+    output.handoffContext,
+    output.handoff_context,
+    output.strategyContext,
+    output.strategy_context,
+    result.appHandoffContext,
+    result.app_handoff_context,
+    result.handoffContext,
+    result.handoff_context,
+    result.strategyContext,
+    result.strategy_context,
+    ...deliveryFiles(job).flatMap((file) => [
+      file?.appHandoffContext,
+      file?.app_handoff_context,
+      file?.handoffContext,
+      file?.handoff_context,
+      file?.strategyContext,
+      file?.strategy_context
+    ])
+  ];
+  return candidates.filter((item) => item && typeof item === 'object');
 }
 
 function actionStrategyContextFromJob(job = {}) {
-  const files = deliveryFiles(job);
-  const summary = deliveryText(job);
-  const parts = [];
-  if (summary) parts.push(`Delivery summary:\n${summary}`);
-  for (const file of files) {
-    const snippet = strategySnippetFromContent(file?.content || '');
-    if (!snippet) continue;
-    parts.push(`From ${String(file?.name || 'delivery file').trim() || 'delivery file'}:\n${snippet}`);
-  }
-  const allText = parts.join('\n\n');
-  const urlMatch = allText.match(/https?:\/\/[^\s)\]|]+/i);
-  return {
-    strategy: compactStrategyText(allText, 1500),
-    product: strategyFieldFromText(allText, ['Product', 'Service', '商材', 'サービス']),
-    audience: strategyFieldFromText(allText, ['ICP', 'Primary audience', 'Audience', 'Target customer', '対象顧客', '対象']),
-    goal: strategyFieldFromText(allText, ['Conversion', 'Goal', 'Objective', '目的', 'CV']),
-    channel: strategyFieldFromText(allText, ['Candidate channels', 'Primary lane', 'Channel', 'チャネル']),
-    url: urlMatch?.[0] || ''
+  const contexts = structuredHandoffContextsFromJob(job);
+  const pick = (...keys) => {
+    for (const context of contexts) {
+      const value = firstStructuredText(...keys.map((key) => context?.[key]));
+      if (value) return value;
+    }
+    return '';
   };
-}
-
-function appHandoffMarkdownFieldValue(markdown = '', labels = []) {
-  const source = String(markdown || '').replace(/\r\n/g, '\n');
-  for (const label of labels) {
-    const safeLabel = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const field = source.match(new RegExp(`(?:^|\\n)\\s*(?:[-*]\\s*)?(?:\\*\\*)?${safeLabel}(?:\\*\\*)?\\s*[:：]\\s*([^\\n]+)`, 'i'));
-    if (field?.[1]) return field[1].trim();
-  }
-  return '';
-}
-
-function appHandoffSlugFromTitle(value = '') {
-  const slug = String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slug ? `/${slug}` : '';
-}
-
-function appHandoffFileMetadata(file = {}) {
-  const content = String(file?.content || '');
-  const title = appHandoffMarkdownFieldValue(content, ['Meta title', 'Page title', 'Title', 'H1', 'Headline']);
-  const meta = appHandoffMarkdownFieldValue(content, ['Meta description', 'Description']);
-  const h1 = appHandoffMarkdownFieldValue(content, ['H1', 'Headline']);
-  const keywords = appHandoffMarkdownFieldValue(content, ['Keywords', 'Meta keywords', 'Target keyword', 'Target query', 'Primary keyword', 'Keyword cluster', 'Keyword and intent']);
-  const primaryCta = appHandoffMarkdownFieldValue(content, ['Primary CTA', 'CTA', '主CTA']);
-  const secondaryCta = appHandoffMarkdownFieldValue(content, ['Secondary CTA', '副CTA']);
-  const internalLinks = appHandoffMarkdownFieldValue(content, ['Internal links', 'Internal link', '内部リンク']);
-  const ogTitle = appHandoffMarkdownFieldValue(content, ['OG title', 'Open Graph title']);
-  const ogDescription = appHandoffMarkdownFieldValue(content, ['OG description', 'Open Graph description']);
-  return {
-    ...(title ? { title, slug: appHandoffSlugFromTitle(title) } : {}),
-    ...(meta ? { meta, description: meta } : {}),
-    ...(h1 ? { h1 } : {}),
-    ...(keywords ? { keywords, target_keyword: keywords } : {}),
-    ...(primaryCta ? { primary_cta: primaryCta } : {}),
-    ...(secondaryCta ? { secondary_cta: secondaryCta } : {}),
-    ...(internalLinks ? { internal_links: internalLinks } : {}),
-    ...(ogTitle ? { og_title: ogTitle } : {}),
-    ...(ogDescription ? { og_description: ogDescription } : {})
+  const pickUrl = (...keys) => {
+    for (const context of contexts) {
+      const value = firstStructuredUrl(...keys.map((key) => context?.[key]));
+      if (value) return value;
+    }
+    return '';
   };
-}
-
-function appContextFromTransferPayload(appId = '', payload = {}) {
-  const manifest = appManifestById(appId) || {};
-  const order = payload.order && typeof payload.order === 'object' ? payload.order : {};
-  const settings = payload.settings && typeof payload.settings === 'object' ? payload.settings : {};
-  const delivery = payload.delivery && typeof payload.delivery === 'object' ? payload.delivery : {};
-  const fileArtifacts = (Array.isArray(payload.files) ? payload.files : []).map((file) => {
-    const artifactTypes = Array.from(explicitHandoffArtifactTypesFromFile(file));
-    return {
-      type: 'file',
-      artifact_type: artifactTypes[0] || '',
-      artifact_types: artifactTypes,
-      name: file?.name || '',
-      content_type: artifactTypes[0] || file?.content_type || file?.contentType || file?.artifact_type || file?.artifactType || file?.type || '',
-      content: file?.content || '',
-      ...appHandoffFileMetadata(file)
-    };
-  });
-  const artifacts = [
-    ...fileArtifacts,
-    delivery.summary ? { type: 'delivery_summary', title: payload.title || 'Delivery summary', content: delivery.summary } : null,
-    payload.action ? { type: 'action', title: payload.action.title || payload.title || 'Action packet', content: payload.action.text || payload.summary || '' } : null
-  ].filter(Boolean);
   return {
-    source_app: normalizeUsageId(manifest.id || appId || 'app'),
-    source_app_label: manifest.name || appId || 'App',
-    title: payload.title || payload.action?.title || `CAIt handoff for ${manifest.name || 'app'}`,
-    summary: payload.summary || delivery.summary || payload.action?.text || '',
-    facts: [
-      order.id ? `Order ID: ${order.id}` : '',
-      order.status ? `Order status: ${order.status}` : '',
-      payload.source ? `Source: ${payload.source}` : ''
-    ].filter(Boolean),
-    artifacts,
-    recommended_next_actions: [
-      manifest.requiresApprovalFor?.length ? `Review approval requirements: ${manifest.requiresApprovalFor.join(', ')}` : '',
-      'Use this server-side CAIt context to continue the app action without URL-embedded payloads.'
-    ].filter(Boolean),
-    approval_requests: Array.isArray(payload.approval_requests) ? payload.approval_requests : [],
-    handoff_targets: [manifest.id || appId].filter(Boolean),
-    raw_context: compactTransferObject({
-      transfer_id: payload.transfer_id || '',
-      app_id: appId,
-      order,
-      settings,
-      delivery,
-      action: payload.action || null,
-      context: payload.context || null
-    }, { depth: 5, maxText: 900, maxArray: 12 })
+    strategy: pick('strategy', 'strategyText', 'strategy_text', 'brief', 'notes', 'summary'),
+    product: pick('product', 'brandName', 'brand_name', 'serviceLine', 'service_line'),
+    audience: pick('audience', 'targetClient', 'target_client', 'primaryAudience', 'primary_audience', 'icp'),
+    goal: pick('goal', 'defaultCta', 'default_cta', 'objective', 'conversion'),
+    channel: pick('channel', 'primaryChannel', 'primary_channel', 'medium'),
+    url: pickUrl('url', 'destinationLink', 'destination_link', 'serviceUrl', 'service_url', 'targetUrl', 'target_url')
   };
 }
 
@@ -3913,7 +3687,7 @@ async function createAppAgentContextOpenUrl(appId = '', payload = {}, options = 
     method: 'POST',
     body: JSON.stringify({
       app_id: appId,
-      context: appContextFromTransferPayload(appId, payload)
+      context: appContextFromTransferPayload(appId, payload, appHandoffTransferOptions())
     })
   }, {
     maxAttempts: 3,
@@ -3961,7 +3735,7 @@ function dedicatedAppHandoffTitle(entry = {}) {
 
 function dedicatedAppTransferPayload(entry = {}, job = {}, draft = {}, strategy = {}) {
   const appId = normalizeUsageId(entry.id || '');
-  const transfer = appAgentBaseTransferPacket(appId, job, { draft, strategy, actionKind: 'dedicated_app_handoff' });
+  const transfer = appHandoffBaseTransferPacket(appId, job, appHandoffTransferOptions({ draft, strategy, actionKind: 'dedicated_app_handoff' }));
   return {
     schema_version: entry?.inputContract?.schemaVersion || 'cait-app-agent-transfer/v1',
     transfer_id: transfer.transfer_id,
@@ -4054,14 +3828,14 @@ function appAgentHandoffTitle(job = {}) {
 function appAgentGenericTransferPayload(appId = '', job = {}) {
   const text = deliveryText(job);
   return {
-    ...appAgentBaseTransferPacket(appId, job, {
+    ...appHandoffBaseTransferPacket(appId, job, appHandoffTransferOptions({
       actionKind: 'app_handoff',
       action: {
         source: 'CAIt delivery',
         text,
         title: appAgentHandoffTitle(job)
       }
-    }),
+    })),
     title: appAgentHandoffTitle(job),
     source: 'CAIt delivery',
     summary: compactTransferText(text, 1800),
@@ -4772,12 +4546,21 @@ function orderIdsFromText(value = '') {
   return ids;
 }
 
-function chatSessionOrderIds(session = {}) {
-  const ids = [
+function chatSessionOrderIds(session = {}, options = {}) {
+  const relatedIds = Array.isArray(session.relatedOrderIds) ? session.relatedOrderIds : [];
+  const activeIds = restoredSessionHasActiveWork(session)
+    ? (Array.isArray(session.activeJobIds) ? session.activeJobIds : [])
+    : [];
+  const directIds = [
+    ...activeIds,
     session.linkedOrderId,
-    ...(Array.isArray(session.relatedOrderIds) ? session.relatedOrderIds : [])
+    ...(options.includeRelatedHistory === true ? relatedIds : [])
   ].map((item) => String(item || '').trim()).filter(Boolean);
-  return [...new Set(ids)].slice(0, 8);
+  if (!directIds.length && relatedIds.length) {
+    directIds.push(String(relatedIds[0] || '').trim());
+  }
+  const max = options.includeRelatedHistory === true ? 8 : 1;
+  return [...new Set(directIds)].filter(Boolean).slice(0, max);
 }
 
 function restoredSessionOrderCardHtml(job = {}) {
@@ -4793,7 +4576,11 @@ function restoredSessionOrderCardHtml(job = {}) {
     taskLabel(job.taskType || job.workflowTask || 'work'),
     orderId ? `#${orderId.slice(0, 8)}` : ''
   ].filter(Boolean).join(' ');
-  const summary = deliveryText(job) || job.failureReason || job.prompt || '';
+  const summary = completed
+    ? 'The delivery is rendered below. Use Show result only if you need to reload it.'
+    : failed
+      ? (job.failureReason || job.failure_reason || 'This order ended without a successful delivery.')
+      : (waiting ? 'Waiting for approval or connector action.' : (job.prompt || 'Order details are available.'));
   const meta = [
     `Status: ${qualityBlocked ? 'blocked by quality gate' : statusDisplayLabel(status || 'created')}`,
     job.createdAt ? `Started: ${shortDateTime(job.createdAt)}` : '',
@@ -4866,6 +4653,9 @@ async function renderRestoredSessionOrderContext(session = {}, options = {}) {
     failures.length ? `<div class="chat-hint">${escapeHtml(`Could not load: ${failures.join(' / ')}`)}</div>` : ''
   ].filter(Boolean).join('\n\n');
   appendMessage('system', body, { label: 'Order history', tone: jobs.some((job) => !jobHasDeliveryResult(job)) ? 'warn' : 'info', record: false });
+  for (const job of jobs) {
+    if (jobHasDeliveryResult(job)) renderDeliveryOnce(job);
+  }
   const activeJob = jobs.find((job) => !jobHasDeliveryResult(job));
   const primary = activeJob || jobs[0] || null;
   if (primary?.id) {
@@ -5731,6 +5521,7 @@ async function backfillChatDeliveries(options = {}) {
   const jobs = await refreshRecentJobs({ force: true, limit: 30 });
   let delivered = 0;
   const activeOrderId = String(options.orderId || state.orderId || '').trim();
+  const notifyMilestones = options.notifyMilestones !== false;
   for (const job of jobs) {
     const safeId = String(job?.id || '').trim();
     if (!safeId) continue;
@@ -5740,7 +5531,7 @@ async function backfillChatDeliveries(options = {}) {
     if (!matchesTracked && !matchesRecovery) continue;
     rememberTrackedOrder(safeId);
     if (!state.orderId && matchesRecovery) state.orderId = safeId;
-    notifyOrderMilestone(job);
+    if (notifyMilestones) notifyOrderMilestone(job);
     if (jobHasDeliveryResult(job)) {
       if (options.renderTerminalDeliveries === false && !matchesRecovery) continue;
       if (renderDeliveryOnce(job, { force: options.force === true })) delivered += 1;
@@ -7230,11 +7021,6 @@ function normalizeLlmIntakeQuestions(value = []) {
     .slice(0, 4);
 }
 
-function leaderTaskTypeFromIntentResult(prompt = '', result = {}) {
-  const text = `${prompt}\n${result?.summary || ''}\n${result?.narrowing_question || ''}`.toLowerCase();
-  return explicitLeaderTaskTypeFromText(`${result?.intent || ''}\n${text}`);
-}
-
 function taskTypeFromOpenChatIntent(result = {}) {
   const briefTask = String(result?.order_brief || result?.orderBrief || '').match(/^Task:\s*([a-z0-9_-]+)/im)?.[1] || '';
   if (briefTask) return briefTask.trim().toLowerCase();
@@ -7265,9 +7051,10 @@ async function handleChatIntentWithLlm(prompt = '') {
     const explicitLeaderTaskType = explicitLeaderChangeTaskTypeFromText(prompt);
     const lockedOwner = lockedLeaderOwnerForPrompt(prompt, { leaderChangeRequested: Boolean(explicitLeaderTaskType) })
       || lockedAgentOwnerForPrompt(prompt, { leaderChangeRequested: Boolean(explicitLeaderTaskType) });
-    const automaticLeaderTaskType = leaderTaskTypeFromIntentResult(prompt, result);
-    if (!explicitLeaderTaskType && suggestLeaderChangeIfNeeded(automaticLeaderTaskType, prompt, 'openai_intake', { preparedPrompt: prompt })) return true;
-    const leaderTaskType = explicitLeaderTaskType || (lockedOwner?.type === 'leader' ? lockedOwner.taskType : '') || automaticLeaderTaskType;
+    const intentTaskType = taskTypeFromOpenChatIntent(result);
+    const intentLeaderTaskType = normalizeLeaderTaskType(intentTaskType);
+    if (!explicitLeaderTaskType && suggestLeaderChangeIfNeeded(intentLeaderTaskType, prompt, 'openai_intake', { preparedPrompt: prompt })) return true;
+    const leaderTaskType = explicitLeaderTaskType || (lockedOwner?.type === 'leader' ? lockedOwner.taskType : '') || intentLeaderTaskType;
     const preserveAgentOwnedLeaderIntake = Boolean(leaderTaskType);
     if (preserveAgentOwnedLeaderIntake) {
       await prepareOrder(prompt, {
@@ -7282,7 +7069,6 @@ async function handleChatIntentWithLlm(prompt = '') {
       });
       return true;
     }
-    const intentTaskType = taskTypeFromOpenChatIntent(result);
     if (openChatIntentShouldUseStepIntake(result)) {
       await prepareOrder(prompt, {
         originalPrompt: prompt,
@@ -7311,8 +7097,6 @@ async function handleChatIntentWithLlm(prompt = '') {
       return true;
     }
     const explicitLeaderTaskType = explicitLeaderChangeTaskTypeFromText(prompt);
-    const automaticLeaderTaskType = leaderTaskTypeFromIntentResult(prompt, result);
-    if (!explicitLeaderTaskType && suggestLeaderChangeIfNeeded(automaticLeaderTaskType, prompt, 'openai_prepare', { preparedPrompt: brief || prompt })) return true;
     await prepareOrder(brief || prompt, {
       originalPrompt: prompt,
       intakeChecked: true,
@@ -7784,13 +7568,6 @@ async function prepareOrder(prompt, options = {}) {
     };
     state.activeLeaderLocked = true;
     renderActiveLeaderStatus();
-  }
-  const automaticLeaderTaskType = leaderTaskTypeFromIntentResult(prompt, {});
-  if (!requestedLeaderOwner && suggestLeaderChangeIfNeeded(automaticLeaderTaskType, options.originalPrompt || prompt, 'prepare_order', {
-    preparedPrompt: prompt,
-    skipLeaderChangeProposal: options.skipLeaderChangeProposal === true
-  })) {
-    return;
   }
   state.pendingLeaderChange = null;
   const lockedOwner = lockedLeaderOwnerForPrompt(prompt, { ...options, leaderChangeRequested });
@@ -8506,16 +8283,7 @@ els.composer.addEventListener('submit', async (event) => {
     } else if (await handleChatIntentWithLlm(prompt)) {
       // OpenAI classified this as chat, clarification, or an order-ready brief.
     } else {
-      const fallbackLeaderTaskType = leaderTaskTypeFromIntentResult(prompt, {});
-      await prepareOrder(prompt, {
-        skipOpenAiIntent: true,
-        ...(fallbackLeaderTaskType ? {
-          taskType: fallbackLeaderTaskType,
-          activeLeaderTaskType: fallbackLeaderTaskType,
-          activeLeaderName: taskLabel(fallbackLeaderTaskType),
-          activeLeaderLocked: true
-        } : {})
-      });
+      await prepareOrder(prompt, { skipOpenAiIntent: true });
     }
   } catch (error) {
     appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error' });
@@ -8593,7 +8361,7 @@ els.chatThread.addEventListener('click', async (event) => {
       appendTextMessage('assistant', 'The app handoff context is no longer available. Reload the delivery or run the order again.', { tone: 'error', label: 'App handoff' });
       return;
     }
-    payload = appTransferPayloadWithEditedText(payload, appHandoffButton);
+    payload = appTransferPayloadWithEditedText(payload, appHandoffButton, { compactTransferText });
     const contractError = appHandoffPayloadContractError(manifest, payload);
     if (contractError) {
       appendTextMessage('assistant', contractError, { tone: 'error', label: 'App handoff' });

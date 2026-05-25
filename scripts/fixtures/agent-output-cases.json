@@ -269,11 +269,21 @@
       "id": "list-creator-public-source-list",
       "file": "list-creator.js",
       "kind": "list_creator",
-      "prompt": "Create a public-source prospect list brief for startup founders likely to buy AI agent setup. Include source trace and qualification reasons.",
+      "prompt": "Find 3 public-source prospect rows for startup founders likely to buy AI agent setup. Include company URL, qualification reason, public contact path or contact-missing label, row-level source ledger, duplicate/exclusion review, CRM/cold_email field map, approval owner, and not-imported/not-contacted execution labels. Use public sources only and do not claim rows are approved, imported, enriched, queued, or contacted.",
       "body": {
         "input": {
           "target_segment": "startup founders",
-          "source_policy": "public sources only"
+          "geography": "United States",
+          "requested_count": 3,
+          "offer": "AI agent setup",
+          "source_policy": "public sources only",
+          "approval_owner": "founder",
+          "destination_system": "cold_email review",
+          "search_queries": [
+            "startup founder tools directory contact AI automation",
+            "startup founder newsletter contact SaaS tools",
+            "founder community company contact page AI tools"
+          ]
         }
       }
     },
