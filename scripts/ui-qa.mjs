@@ -33,6 +33,7 @@ const deliveryRendererJsPath = new URL('../public/delivery-renderer.js', import.
 const appHandoffGateJsPath = new URL('../public/app-handoff-gate.js', import.meta.url);
 const appHandoffTransferJsPath = new URL('../public/app-handoff-transfer.js', import.meta.url);
 const appContextGateJsPath = new URL('../public/app-context-gate.js', import.meta.url);
+const measurementEvidenceGateJsPath = new URL('../public/measurement-evidence-gate.js', import.meta.url);
 const agentProgressViewJsPath = new URL('../public/agent-progress-view.js', import.meta.url);
 const appManifestRegistryPath = new URL('../public/app-manifest-registry.js', import.meta.url);
 const analyticsJsPath = new URL('../public/analytics-console.js', import.meta.url);
@@ -95,6 +96,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(deliveryRendererJsPath)
 execFileSync(process.execPath, ['--check', fileURLToPath(appHandoffGateJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(appHandoffTransferJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(appContextGateJsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(measurementEvidenceGateJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(agentProgressViewJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(appManifestRegistryPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(appsJsPath)], { stdio: 'pipe' });
@@ -153,6 +155,7 @@ const deliveryRendererJs = readFileSync(deliveryRendererJsPath, 'utf8');
 const appHandoffGateJs = readFileSync(appHandoffGateJsPath, 'utf8');
 const appHandoffTransferJs = readFileSync(appHandoffTransferJsPath, 'utf8');
 const appContextGateJs = readFileSync(appContextGateJsPath, 'utf8');
+const measurementEvidenceGateJs = readFileSync(measurementEvidenceGateJsPath, 'utf8');
 const agentProgressViewJs = readFileSync(agentProgressViewJsPath, 'utf8');
 const appManifestRegistryJs = readFileSync(appManifestRegistryPath, 'utf8');
 const appsDomainJs = readFileSync(appsDomainPath, 'utf8');
@@ -422,23 +425,23 @@ assert.ok(connectorGateJs.includes("leader_quality_gate_failed") && connectorGat
 assert.ok(chatJs.includes('function jobHasDeliveryResult') && chatJs.includes('jobBlockedByLeaderQualityGate(job)'), 'Leader quality gate blockers should render as failed delivery/retry states, not active waiting states.');
 assert.ok(chatJs.includes('nextProgressPollAt = Date.now() + retryDelayMs'), 'Chat polling should retry transient 503-style failures without stopping the order.');
 assert.ok(!chatJs.includes('Progress check temporarily failed'), 'Transient progress errors should not be posted into chat as worker-log noise.');
-assert.ok(chatJs.includes('answerSaysAnalyticsAvailable'), 'Chat intake should detect when the user says GA4/Search Console is available.');
+assert.ok(chatJs.includes('measurementEvidenceAnswerSaysAvailable as answerSaysAnalyticsAvailable'), 'Chat intake should delegate GA4/Search Console availability detection to the measurement evidence gate.');
 assert.ok(chatJs.includes("from './app-context-gate.js"), 'Chat app-context matching should be delegated to the app context gate module.');
+assert.ok(chatJs.includes("from './measurement-evidence-gate.js"), 'Chat measurement evidence routing should be delegated to the measurement evidence gate module.');
 assert.ok(appContextGateJs.includes('appContextMatchesManifest'), 'App context gate should own manifest-based app context matching.');
 assert.ok(appContextGateJs.includes('appContextStatusForDraft'), 'App context gate should own draft app-context status extraction.');
+assert.ok(measurementEvidenceGateJs.includes('export function measurementEvidenceAppManifest'), 'Measurement evidence gate should own manifest-based app selection.');
+assert.ok(measurementEvidenceGateJs.includes('export function measurementEvidenceContractRequired'), 'Measurement evidence gate should own explicit context requirement detection.');
+assert.ok(measurementEvidenceGateJs.includes('export function measurementEvidenceTextExplicitlyRequests'), 'Measurement evidence gate should own explicit user GA4/Search Console request detection.');
 assert.ok(appManifestRegistryJs.includes('contextContract'), 'Measurement evidence app matching should be declared in the app manifest.');
 assert.ok(chatJs.includes('contextContract: app.contextContract || app.context_contract || manifest.contextContract || manifest.context_contract || null'), 'Chat app manifest normalization should preserve app context contracts.');
 assert.ok(chatJs.includes('contextContract: { ...(existing.contextContract || {}), ...(normalized.contextContract || {}) }'), 'Chat app manifest merging should not drop app context contracts.');
-assert.ok(chatJs.includes('function measurementEvidenceContractRequired'), 'Chat should gate measurement evidence app prompts on explicit draft/server contracts.');
-assert.ok(chatJs.includes('function textExplicitlyRequestsMeasurementEvidence'), 'Chat should allow explicit GA4/Search Console user requests without broad task inference.');
+assert.ok(measurementEvidenceGateJs.includes('export function measurementEvidenceContractRequired'), 'Chat should gate measurement evidence app prompts on explicit draft/server contracts.');
+assert.ok(measurementEvidenceGateJs.includes('export function measurementEvidenceTextExplicitlyRequests'), 'Chat should allow explicit GA4/Search Console user requests without broad task inference.');
 assert.ok(!chatJs.includes('function orderNeedsMeasurementEvidence'), 'Chat must not infer measurement app needs from task/prompt tokens.');
 assert.ok(!chatJs.includes('function intakeShouldOfferMeasurementEvidenceChoice'), 'Chat must not offer analytics app choices from broad growth/SEO intent.');
-const measurementEvidenceRoutingSource = chatJs.slice(
-  chatJs.indexOf('function growthLeaderNeedsDataHint'),
-  chatJs.indexOf('function authGrantedGoogleCapabilities')
-);
-assert.ok(!measurementEvidenceRoutingSource.includes('seo|cvr|conversion'), 'Measurement evidence routing must not use SEO/CVR/conversion prompt heuristics.');
-assert.ok(!measurementEvidenceRoutingSource.includes('inferWorkIntentTaskType(prompt)'), 'Measurement evidence routing must not use chat task inference to show app surfaces.');
+assert.ok(!measurementEvidenceGateJs.includes('seo|cvr|conversion'), 'Measurement evidence routing must not use SEO/CVR/conversion prompt heuristics.');
+assert.ok(!measurementEvidenceGateJs.includes('inferWorkIntentTaskType(prompt)'), 'Measurement evidence routing must not use chat task inference to show app surfaces.');
 const analyticsContextManifest = {
   id: 'analytics-console',
   name: 'Analytics Console',
@@ -1201,6 +1204,8 @@ assert.ok(!chatJs.includes('if (!text) return payload;'), 'Editable SaaS handoff
 assert.ok(appHandoffTransferJs.includes('export function appHandoffContractTextMinimum'), 'Generic app handoff text minimum validation should live in the transfer module.');
 assert.ok(appHandoffTransferJs.includes('export function appHandoffPayloadContractError'), 'Generic app handoffs should validate manifest-declared input constraints before opening the app.');
 assert.ok(appHandoffTransferJs.includes('explicitMetadataText(file, [') && appHandoffTransferJs.includes("'post_text'"), 'Dedicated social handoff text should prefer explicit file metadata before legacy content extraction.');
+assert.ok(appHandoffTransferJs.includes('function appHandoffTransferPostText') && appHandoffTransferJs.includes('payload.x_post_packet'), 'X Client Ops handoff should recover post_text from packet-shaped AIAGENT output.');
+assert.ok(appHandoffTransferJs.includes('x_post_packet: payload.x_post_packet || payload.xPostPacket || null'), 'X Client Ops transfer should preserve the source x_post_packet in raw_context.');
 assert.ok(appManifestRegistryJs.includes('constraints:') && appManifestRegistryJs.includes('minLength: 1, maxLength: 280'), 'X Client Ops text length should be declared in its app manifest contract.');
 assert.ok(appHandoffTransferJs.includes('requires handoff text before opening the app'), 'Required app handoff text should block empty SaaS handoffs before opening an external action app.');
 assert.ok(!chatJs.includes('function appHandoffPayloadContractError'), 'Chat must not duplicate manifest text constraint validation.');
@@ -1313,6 +1318,8 @@ assert.ok(analyticsJs.includes('ANALYTICS_CONTEXT_PACKET_KEYS') && analyticsJs.i
 assert.ok(analyticsJs.includes('ANALYTICS_CONTEXT_KEY_ALIASES') && analyticsJs.includes('rowsFromStructuredPayload'), 'Analytics Console should restore top-level app-contract keys and structured JSON artifact content from AIAGENT handoffs.');
 assert.ok(caitAppBridge.includes('APP_CONTEXT_RAW_PRESERVE_KEYS') && caitAppBridge.includes('rawContextWithPreservedContractKeys'), 'CAIt app context bridge should not drop top-level app-contract keys before apps can restore them.');
 assert.ok(caitAppBridge.includes("'deliveryPackage'") && appContextDomainJs.includes("'delivery_package'"), 'CAIt app context normalization should preserve package-shaped delivery contracts for Delivery Manager.');
+assert.ok(appContextDomainJs.includes("'post_text'") && caitAppBridge.includes("'post_text'"), 'CAIt app context normalization should preserve X Client Ops post_text contract fields.');
+assert.ok(appContextDomainJs.includes("'agent_context'") && caitAppBridge.includes("'agent_context'"), 'CAIt app context normalization should preserve app-agent transfer strategy context fields.');
 assert.ok(caitAppBridge.includes('Create a List Creator order from this Lead Ops sourcing request.'), 'Lead Ops sourcing requests should produce a direct List Creator chat prompt.');
 assert.ok(appManifestRegistryJs.includes("'analytics_context', 'search_console_packet', 'ga4_packet'"), 'Analytics Console manifest should declare packet-shaped app input contracts.');
 assert.ok(appContextDomainJs.includes("'analytics_context'") && appContextDomainJs.includes("'search_console_packet'") && appContextDomainJs.includes("'ga4_packet'") && appContextDomainJs.includes("'google_report_status'"), 'Server app context normalization should preserve Analytics Console packet and top-level contract keys.');

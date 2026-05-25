@@ -879,6 +879,49 @@ try {
   if (!String(xClientFallbackContext.raw_context?.strategy || '').includes('skeptical operators')) throw new Error('X Client Ops fallback raw_context did not preserve strategy');
   if (xClientFallbackContext.raw_context?.settings?.brandName !== 'CAIt') throw new Error('X Client Ops fallback raw_context did not preserve settings');
 
+  const xClientPacketOnlyContext = appContextFromTransferPayload('x-client-ops', {
+    transfer_id: 'transfer-x-client-packet-only',
+    title: 'X Client Ops packet-only handoff',
+    summary: 'AIAGENT returned only x_post_packet/social_copy_packet contract fields.',
+    x_post_packet: {
+      post_text: 'Packet-only approved copy should still reach the X Client Ops approval queue.',
+      strategy: 'Audience: operators who need durable social approvals after AIAGENT output.',
+      source: 'packet-only-x-post.md'
+    },
+    social_copy_packet: {
+      channel: 'x',
+      exact_copy: 'Fallback social copy should be available if x_post_packet text is missing.'
+    },
+    settings: {
+      brandName: 'CAIt',
+      targetClient: 'AIAGENT operators',
+      defaultCta: 'Keep approvals in the SaaS queue'
+    },
+    delivery: {
+      summary: 'Packet-only X handoff still needs server-side retained context.',
+      artifacts: [{
+        name: 'packet-only-x-post.md',
+        artifactType: 'x_post_packet',
+        contentPreview: 'Packet-only X handoff artifact preview.'
+      }]
+    }
+  }, {
+    manifestById: () => ({
+      id: 'x-client-ops',
+      name: 'X Client Ops',
+      requiresApprovalFor: ['post_now'],
+      inputContract: {
+        schemaVersion: 'cait-app-agent-transfer/v1',
+        accepts: ['post_text', 'strategy', 'agent_context', 'delivery_summary', 'settings']
+      }
+    })
+  });
+  const xPacketOnlyArtifactsJson = JSON.stringify(xClientPacketOnlyContext.artifacts || []);
+  if (!xPacketOnlyArtifactsJson.includes('Packet-only approved copy should still reach')) throw new Error('X Client Ops packet-only handoff did not create post_text artifact');
+  if (!String(xClientPacketOnlyContext.raw_context?.strategy || '').includes('durable social approvals')) throw new Error('X Client Ops packet-only strategy was not recovered');
+  if (xClientPacketOnlyContext.raw_context?.post_text !== 'Packet-only approved copy should still reach the X Client Ops approval queue.') throw new Error('X Client Ops packet-only raw_context did not preserve recovered post text');
+  if (!JSON.stringify(xClientPacketOnlyContext.raw_context?.x_post_packet || {}).includes('packet-only-x-post.md')) throw new Error('X Client Ops packet-only source packet was not preserved');
+
   await openAppWithContext(page, '/lead-ops.html', {
     schema: 'cait-app-context/v1',
     source_app: 'qa_list_creator',

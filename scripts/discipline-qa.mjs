@@ -34,6 +34,7 @@ const openChatIntentSource = read('lib/open-chat-intent.js');
 const appHandoffGateSource = read('public/app-handoff-gate.js');
 const appHandoffTransferSource = read('public/app-handoff-transfer.js');
 const appContextGateSource = read('public/app-context-gate.js');
+const measurementEvidenceGateSource = read('public/measurement-evidence-gate.js');
 const agentProgressViewSource = read('public/agent-progress-view.js');
 const clientSource = read('public/client.js');
 const workActionRegistrySource = read('public/work-action-registry.js');
@@ -353,23 +354,20 @@ assert.equal(
   false,
   'chat measurement-evidence routing must not fall back to a privileged app id'
 );
-const measurementEvidenceRoutingSource = chatSource.slice(
-  chatSource.indexOf('function growthLeaderNeedsDataHint'),
-  chatSource.indexOf('function authGrantedGoogleCapabilities')
-);
 assert.ok(
-  measurementEvidenceRoutingSource.includes('function measurementEvidenceContractRequired')
-    && measurementEvidenceRoutingSource.includes('function textExplicitlyRequestsMeasurementEvidence'),
-  'chat measurement-evidence app routing must use explicit request/contract helpers'
+  chatSource.includes("from './measurement-evidence-gate.js")
+    && measurementEvidenceGateSource.includes('export function measurementEvidenceContractRequired')
+    && measurementEvidenceGateSource.includes('export function measurementEvidenceTextExplicitlyRequests'),
+  'chat measurement-evidence app routing must use the dedicated explicit request/contract gate'
 );
-assertNotIncludes(measurementEvidenceRoutingSource, [
+assertNotIncludes(measurementEvidenceGateSource, [
   'function orderNeedsMeasurementEvidence',
   'function intakeShouldOfferMeasurementEvidenceChoice',
   "inferWorkIntentTaskType(prompt)",
   "seo|cvr|conversion",
   "taskType\\n${text}",
   "growth|go[-\\s]?to[-\\s]?market"
-], 'public/chat.js measurement evidence app routing');
+], 'public/measurement-evidence-gate.js');
 assert.ok(
   chatSource.includes('appHandoffGateExplicitArtifactTypesFromFile'),
   'chat app handoff routing must consume artifact metadata through app-handoff-gate'

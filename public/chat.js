@@ -78,6 +78,16 @@ import {
   appContextStatusForDraft as appContextGateStatusForDraft
 } from './app-context-gate.js?v=20260524a';
 import {
+  measurementEvidenceAnswerSaysAvailable as answerSaysAnalyticsAvailable,
+  measurementEvidenceAppId as measurementEvidenceGateAppId,
+  measurementEvidenceAppManifest as measurementEvidenceGateAppManifest,
+  measurementEvidenceAppName as measurementEvidenceGateAppName,
+  measurementEvidenceContractRequired,
+  measurementEvidenceDraftExplicitlyRequests as draftExplicitlyRequestsMeasurementEvidence,
+  measurementEvidenceIntakeHasQuestion as intakeHasMeasurementEvidenceQuestion,
+  measurementEvidenceTextExplicitlyRequests as textExplicitlyRequestsMeasurementEvidence
+} from './measurement-evidence-gate.js?v=20260525a';
+import {
   BUILT_IN_APP_MANIFESTS as APP_AGENT_MANIFESTS,
   CORE_FEATURE_APP_IDS
 } from './app-manifest-registry.js?v=20260523a';
@@ -5964,26 +5974,15 @@ function startIntake(response = {}, originalPrompt = '') {
 }
 
 function measurementEvidenceAppManifest() {
-  return appManifestSources().find((entry) => {
-    const contract = entry.contextContract && typeof entry.contextContract === 'object' ? entry.contextContract : {};
-    const evidence = contract.evidence && typeof contract.evidence === 'object' ? contract.evidence : {};
-    const capabilities = listValues(entry.capabilities).map(normalizeUsageId);
-    const connectors = listValues(entry.requiredConnectors || entry.required_connectors).map(normalizeUsageId);
-    const sourceApps = listValues(contract.sourceApps || contract.source_apps).map(normalizeUsageId);
-    const loadedFlags = listValues(evidence.loadedFlags || evidence.loaded_flags);
-    const loadedArtifactTypes = listValues(evidence.loadedArtifactTypes || evidence.loaded_artifact_types);
-    return capabilities.includes('analytics_context')
-      && connectors.includes('google')
-      && (sourceApps.length || loadedFlags.length || loadedArtifactTypes.length);
-  }) || null;
+  return measurementEvidenceGateAppManifest(appManifestSources());
 }
 
 function measurementEvidenceAppId() {
-  return normalizeUsageId(measurementEvidenceAppManifest()?.id || '');
+  return measurementEvidenceGateAppId(appManifestSources());
 }
 
 function measurementEvidenceAppName() {
-  return measurementEvidenceAppManifest()?.name || 'measurement evidence app';
+  return measurementEvidenceGateAppName(appManifestSources());
 }
 
 function growthLeaderNeedsDataHint(sample = '') {
@@ -5993,65 +5992,6 @@ function growthLeaderNeedsDataHint(sample = '') {
     `GA4/Search Console を持っている場合は「GA4あります」と答えてください。${appName} を開き、Googleアカウント、プロパティ、サイトを選べるようにします。使わない場合は「アナリティクスをスキップ」と答えれば、仮説で進めます。`,
     sample
   );
-}
-
-function measurementEvidenceContractRequired(source = {}) {
-  if (!source || typeof source !== 'object') return false;
-  const input = source.input && typeof source.input === 'object' ? source.input : {};
-  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
-  const intake = source.intake && typeof source.intake === 'object' ? source.intake : {};
-  const objects = [source, input, broker, intake].filter((item) => item && typeof item === 'object');
-  const explicitRequiredKeys = [
-    'measurementEvidenceRequired',
-    'measurement_evidence_required',
-    'analyticsContextRequired',
-    'analytics_context_required',
-    'requiresMeasurementEvidence',
-    'requires_measurement_evidence'
-  ];
-  if (objects.some((object) => explicitRequiredKeys.some((key) => object[key] === true))) return true;
-  const requiredContextValues = objects
-    .flatMap((object) => [
-      object.requiredAppContexts,
-      object.required_app_contexts,
-      object.appContextRequirements,
-      object.app_context_requirements,
-      object.connectorContextRequirements,
-      object.connector_context_requirements
-    ])
-    .flatMap((value) => Array.isArray(value) ? value : (value ? [value] : []))
-    .flatMap((value) => {
-      if (value && typeof value === 'object') {
-        return [
-          value.type,
-          value.kind,
-          value.id,
-          value.capability,
-          value.artifact_type,
-          value.artifactType,
-          value.context_type,
-          value.contextType
-        ];
-      }
-      return [value];
-    })
-    .map(normalizeUsageId)
-    .filter(Boolean);
-  return requiredContextValues.some((value) => (
-    value === 'analytics_context'
-    || value === 'measurement_evidence'
-    || value === 'ga4_packet'
-    || value === 'search_console_packet'
-  ));
-}
-
-function textExplicitlyRequestsMeasurementEvidence(value = '') {
-  const text = String(value || '').trim();
-  if (!/(ga4|google analytics|search console|サーチコンソール|アナリティクス)/i.test(text)) return false;
-  if (/(skip analytics|without analytics|no analytics|アナリティクスをスキップ)/i.test(text)) return false;
-  if (/(ga4|google analytics|search console|サーチコンソール|アナリティクス).{0,32}(使わない|なし|無し|ありません|不要|skip|without|no)/i.test(text)) return false;
-  if (/(使わない|なし|無し|ありません|不要|skip|without|no).{0,32}(ga4|google analytics|search console|サーチコンソール|アナリティクス)/i.test(text)) return false;
-  return /(使う|使いたい|接続済み|あります|ある|available|connected|use|with|利用)/i.test(text);
 }
 
 function authGrantedGoogleCapabilities() {
@@ -6526,17 +6466,6 @@ function measurementEvidenceContextStatus(draft = null) {
   return appContextGateStatusForDraft(draft, measurementEvidenceAppManifest());
 }
 
-function draftExplicitlyRequestsMeasurementEvidence(draft = null) {
-  if (measurementEvidenceContractRequired(draft || {})) return true;
-  const text = [
-    draft?.prompt,
-    draft?.originalPrompt,
-    draft?.input?.original_prompt,
-    draft?.input?.originalPrompt
-  ].map((item) => String(item || '')).join('\n');
-  return textExplicitlyRequestsMeasurementEvidence(text);
-}
-
 function mergeUniqueContexts(existing = [], nextContext = null) {
   const list = Array.isArray(existing) ? existing.filter((context) => context && typeof context === 'object') : [];
   if (!nextContext || typeof nextContext !== 'object') return list;
@@ -6613,26 +6542,6 @@ function caitAppContextAnswerLine(context = {}) {
   if (appContextMatchesMeasurementEvidenceApp(context)) return appContextGateAnswerLine(context, measurementEvidenceAppManifest());
   return connectorPrompt.split('\n').map((line) => line.trim()).filter(Boolean)[0]
     || `Attached context from ${context?.source_app_label || context?.source_app || 'app'}.`;
-}
-
-function intakeHasMeasurementEvidenceQuestion(intake = {}) {
-  if (measurementEvidenceContractRequired(intake)) return true;
-  if (textExplicitlyRequestsMeasurementEvidence(intake.originalPrompt || intake.original_prompt || '')) return true;
-  const serverOwnedQuestionText = [
-    ...(Array.isArray(intake.questions) ? intake.questions : []),
-    ...(Array.isArray(intake.missingFields) ? intake.missingFields : []),
-    ...(Array.isArray(intake.missing_fields) ? intake.missing_fields : [])
-  ].join('\n');
-  return /(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics data|analytics context)/i.test(serverOwnedQuestionText);
-}
-
-function answerSaysAnalyticsAvailable(answer = '') {
-  const text = String(answer || '').trim();
-  if (!text) return false;
-  const mentionsAnalytics = /(ga4|google analytics|search console|サーチコンソール|アナリティクス|analytics)/i.test(text);
-  const affirmative = /(持って(?:い)?る|あります|ある|使えます|使える|接続済み|見れます|見られます|はい|yes|yeah|yep|have|available|connected)/i.test(text);
-  const negative = /(持って(?:い)?ない|ありません|ないです|無し|なし|未接続|見れない|見られない|no|not|don't|do not|without|unavailable)/i.test(text);
-  return !negative && (mentionsAnalytics ? affirmative || /あり/i.test(text) : affirmative);
 }
 
 async function openMeasurementEvidenceAppForIntake(intake = {}, answer = '') {

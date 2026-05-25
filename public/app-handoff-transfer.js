@@ -360,6 +360,86 @@ function appHandoffTransferContractArtifact(type = '', title = '', value = null,
   };
 }
 
+function appHandoffTransferFirstText(candidates = [], max = 2200) {
+  for (const candidate of candidates) {
+    const text = appHandoffTransferArtifactContent(candidate, max);
+    if (text) return text;
+  }
+  return '';
+}
+
+function appHandoffTransferPacketText(packet = null, max = 1200) {
+  if (!packet) return '';
+  if (typeof packet === 'string') return defaultCompactTransferText(packet, max);
+  if (typeof packet !== 'object') return '';
+  return appHandoffTransferFirstText([
+    packet.post_text,
+    packet.postText,
+    packet.approved_text,
+    packet.approvedText,
+    packet.exact_copy,
+    packet.exactCopy,
+    packet.text,
+    packet.copy,
+    packet.caption,
+    packet.tweet,
+    packet.x_post,
+    packet.xPost,
+    packet.social_post,
+    packet.socialPost,
+    packet.content,
+    packet.contentPreview,
+    packet.content_preview,
+    packet.body,
+    packet.draft?.post_text,
+    packet.draft?.postText,
+    packet.draft?.text
+  ], max);
+}
+
+function appHandoffTransferPostText(payload = {}, delivery = {}) {
+  const direct = appHandoffTransferFirstText([
+    payload.post_text,
+    payload.postText,
+    payload.text,
+    payload.action?.post_text,
+    payload.action?.postText,
+    payload.action?.text
+  ], 1200);
+  if (direct) return direct;
+  const packet = appHandoffTransferPacketText(
+    payload.x_post_packet
+      || payload.xPostPacket
+      || payload.social_copy_packet
+      || payload.socialCopyPacket
+      || payload.social_post
+      || payload.socialPost,
+    1200
+  );
+  if (packet) return packet;
+  const artifacts = Array.isArray(delivery.artifacts) ? delivery.artifacts : [];
+  for (const artifact of artifacts) {
+    const types = appHandoffTransferArtifactTypes(artifact).join(' ').toLowerCase();
+    if (!/(?:post_text|x_post|social_copy|social_post|tweet)/.test(types)) continue;
+    const text = appHandoffTransferPacketText(artifact, 1200);
+    if (text) return text;
+  }
+  return '';
+}
+
+function appHandoffTransferStrategyText(payload = {}, settings = {}) {
+  return appHandoffTransferFirstText([
+    payload.strategy,
+    payload.strategy_context,
+    payload.strategyContext,
+    payload.x_post_packet?.strategy,
+    payload.xPostPacket?.strategy,
+    payload.social_copy_packet?.strategy,
+    payload.socialCopyPacket?.strategy,
+    settings.workspaceNotes
+  ], 1800);
+}
+
 export function appContextFromTransferPayload(appId = '', payload = {}, options = {}) {
   const manifestById = options.manifestById || (() => ({}));
   const normalizeUsageId = options.normalizeUsageId || defaultNormalizeUsageId;
@@ -391,8 +471,8 @@ export function appContextFromTransferPayload(appId = '', payload = {}, options 
     content: file.content || '',
     summary: file.summary || ''
   }));
-  const postText = String(payload.text || payload.action?.text || '').trim();
-  const strategyText = String(payload.strategy || payload.settings?.workspaceNotes || '').trim();
+  const postText = appHandoffTransferPostText(payload, delivery);
+  const strategyText = appHandoffTransferStrategyText(payload, settings);
   const agentContext = payload.context || payload.transfer?.context || null;
   const settingsContext = settings && Object.keys(settings).length ? settings : null;
   const transferContractArtifacts = [
@@ -443,6 +523,8 @@ export function appContextFromTransferPayload(appId = '', payload = {}, options 
       agents: payload.agents || [],
       order,
       settings,
+      x_post_packet: payload.x_post_packet || payload.xPostPacket || null,
+      social_copy_packet: payload.social_copy_packet || payload.socialCopyPacket || null,
       delivery,
       action: payload.action || null,
       context: payload.context || null,
