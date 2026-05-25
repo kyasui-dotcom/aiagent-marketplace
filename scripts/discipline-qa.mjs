@@ -482,6 +482,21 @@ assertNotIncludes(appHandoffTransferSource, [
   'Internal links'
 ], 'public/app-handoff-transfer.js metadata extraction');
 assert.ok(
+  appHandoffTransferSource.includes('export function appHandoffSocialPostDraftFromDeliveryFiles'),
+  'app handoff transfer should own dedicated social handoff draft extraction'
+);
+assert.ok(
+  appHandoffTransferSource.includes('explicitMetadataText(file, [')
+    && appHandoffTransferSource.includes("'post_text'")
+    && appHandoffTransferSource.indexOf('explicitMetadataText(file, [') < appHandoffTransferSource.indexOf('const text = extractSocialPostTextFromDeliveryContent'),
+  'dedicated social handoff text must prefer explicit artifact metadata before legacy content extraction'
+);
+assert.equal(
+  chatSource.includes("from './delivery-action-contract.js"),
+  false,
+  'chat must not import delivery action parsing helpers directly for app handoff extraction'
+);
+assert.ok(
   appHandoffTransferSource.includes('function explicitMetadataText')
     && appHandoffTransferSource.includes('const metadata = file?.metadata && typeof file.metadata === \'object\' ? file.metadata : {};'),
   'app handoff transfer metadata must be copied only from explicit file metadata fields'

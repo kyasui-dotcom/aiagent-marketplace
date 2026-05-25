@@ -103,7 +103,7 @@ function safeMultilineText(value = '', max = 2000) {
 }
 
 function shouldPreserveMultilineValue(key = '') {
-  return /^(?:content|body|text|markdown|html|raw_markdown|rawMarkdown|campaign_operations_plan|campaignOperationsPlan|campaignOpsPlan|campaignPlan|campaign_markdown|campaignMarkdown)$/i.test(String(key || '').trim());
+  return /^(?:content|content_preview|contentPreview|body|text|markdown|html|raw_markdown|rawMarkdown|campaign_operations_plan|campaignOperationsPlan|campaignOpsPlan|campaignPlan|campaign_markdown|campaignMarkdown)$/i.test(String(key || '').trim());
 }
 
 function safeId(value = '') {
@@ -118,7 +118,7 @@ function safeList(value = [], max = 24) {
 function safeObjectList(value = [], max = 24) {
   return (Array.isArray(value) ? value : [])
     .filter((item) => item && typeof item === 'object')
-    .map((item) => compactObject(item, { depth: 4, maxText: 1200, maxArray: 12 }))
+    .map((item) => compactObject(item, { depth: 4, maxText: 6000, maxArray: 12 }))
     .slice(0, max);
 }
 

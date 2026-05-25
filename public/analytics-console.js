@@ -724,6 +724,172 @@ function rowList(value) {
   return [];
 }
 
+function uniqueRows(rows = []) {
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = JSON.stringify(row || {});
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function splitMarkdownTableRow(line = '') {
+  const trimmed = String(line || '').trim();
+  if (!/^\|.*\|$/.test(trimmed)) return [];
+  return trimmed
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.replace(/<br\s*\/?>/gi, ' ').replace(/\s+/g, ' ').trim());
+}
+
+function isMarkdownTableDivider(cells = []) {
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(String(cell || '').trim()));
+}
+
+function normalizeMarkdownHeader(value = '') {
+  const text = String(value || '').trim().toLowerCase();
+  if (/^(query|keyword|search term|検索|検索語句)$/.test(text)) return 'query';
+  if (/^(clicks?|クリック)$/.test(text)) return 'clicks';
+  if (/^(impressions?|impr\.?|表示回数)$/.test(text)) return 'impressions';
+  if (/^(position|avg position|rank|順位)$/.test(text)) return 'position';
+  if (/^(path|conversion path|journey|touchpoints?|経路)$/.test(text)) return 'path';
+  if (/^(page|landing page|url|lp|ページ)$/.test(text)) return 'page';
+  if (/^(sessions?|users?|views?|traffic|セッション)$/.test(text)) return 'sessions';
+  if (/^(conversions?|cv|purchases?|signups?|成果)$/.test(text)) return 'conversions';
+  if (/^(share|percent|percentage|割合)$/.test(text)) return 'share';
+  if (/^(cvr|conversion rate|cv rate|率)$/.test(text)) return 'cvr';
+  if (/^(channel|medium|source \/ medium|source\/medium|流入)$/.test(text)) return 'channel';
+  if (/^(source|source medium|source_medium|referrer|referral source|参照元)$/.test(text)) return 'source_medium';
+  if (/^(action|check|task|name|確認項目)$/.test(text)) return 'action';
+  if (/^(window|timing|due|期間)$/.test(text)) return 'window';
+  if (/^(status|state|状態)$/.test(text)) return 'status';
+  if (/^(note|memo|decision note|leader note|intent|detail|メモ)$/.test(text)) return 'note';
+  if (/^(value|property|site|source value|値)$/.test(text)) return 'value';
+  return text.replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+function numberFromMarkdown(value = '') {
+  const cleaned = String(value ?? '').replace(/,/g, '').replace(/%/g, '').trim();
+  const number = Number(cleaned);
+  return Number.isFinite(number) ? number : value;
+}
+
+function inferMarkdownAnalyticsType(row = {}, accepted = new Set()) {
+  const keys = new Set(Object.keys(row));
+  const hasAny = (...items) => items.some((item) => keys.has(item));
+  const hasAll = (...items) => items.every((item) => keys.has(item));
+  if (accepted.has('search_queries') && hasAll('query') && hasAny('clicks', 'impressions', 'position')) return 'search_queries';
+  if (accepted.has('landing_pages') && hasAny('page', 'path') && hasAny('sessions', 'conversions') && !hasAny('channel', 'source_medium')) return 'landing_pages';
+  if ((accepted.has('conversion_paths') || accepted.has('conversion_path')) && hasAll('path') && hasAny('channel', 'source_medium')) return 'conversion_paths';
+  if ((accepted.has('channel_sources') || accepted.has('channel_landing_pages')) && hasAll('source_medium') && hasAny('sessions', 'conversions')) return 'channel_sources';
+  if ((accepted.has('channel_mix') || accepted.has('channel_breakdown') || accepted.has('channel_breakdowns')) && hasAll('channel') && hasAny('sessions', 'clicks') && hasAny('conversions', 'cv', 'share', 'cvr') && !hasAny('path')) return 'channel_breakdown';
+  if ((accepted.has('measurement_queue') || accepted.has('post_run_measurement')) && hasAll('action') && hasAny('window', 'status')) return 'measurement_queue';
+  if (accepted.has('google_sources') && hasAll('source_medium', 'value')) return 'google_sources';
+  if (accepted.has('google_sources') && hasAll('channel', 'value')) return 'google_sources';
+  return '';
+}
+
+function canonicalMarkdownAnalyticsRow(row = {}, type = '') {
+  if (type === 'search_queries') {
+    return {
+      query: row.query || row.keyword || row.name || '',
+      clicks: numberFromMarkdown(row.clicks || row.sessions || 0),
+      impressions: numberFromMarkdown(row.impressions || row.value || 0),
+      position: row.position || '-',
+      note: row.note || ''
+    };
+  }
+  if (type === 'landing_pages') {
+    return {
+      page: row.page || row.path || row.url || '',
+      sessions: numberFromMarkdown(row.sessions || 0),
+      conversions: numberFromMarkdown(row.conversions || row.cv || 0),
+      note: row.note || ''
+    };
+  }
+  if (type === 'channel_sources') {
+    return {
+      channel: row.channel || '',
+      source_medium: row.source_medium || row.source || '',
+      sessions: numberFromMarkdown(row.sessions || 0),
+      conversions: numberFromMarkdown(row.conversions || row.cv || 0),
+      cvr: numberFromMarkdown(row.cvr || row.conversion_rate || 0)
+    };
+  }
+  if (type === 'conversion_paths') {
+    return {
+      channel: row.channel || row.source_medium || row.source || '',
+      path: row.path || '',
+      sessions: numberFromMarkdown(row.sessions || row.users || row.clicks || 0),
+      conversions: numberFromMarkdown(row.conversions || row.cv || 0),
+      cvr: numberFromMarkdown(row.cvr || row.conversion_rate || 0),
+      note: row.note || ''
+    };
+  }
+  if (type === 'channel_breakdown') {
+    return {
+      channel: row.channel || row.source_medium || '',
+      sessions: numberFromMarkdown(row.sessions || row.clicks || 0),
+      conversions: numberFromMarkdown(row.conversions || row.cv || 0),
+      share: numberFromMarkdown(row.share || row.percent || 0),
+      cvr: numberFromMarkdown(row.cvr || row.conversion_rate || 0)
+    };
+  }
+  if (type === 'measurement_queue') {
+    return {
+      action: row.action || row.check || row.name || '',
+      window: row.window || '-',
+      status: row.status || 'ready',
+      note: row.note || row.detail || ''
+    };
+  }
+  if (type === 'google_sources') {
+    return {
+      source: row.source_medium || row.channel || row.source || '',
+      value: row.value || row.property || row.site || ''
+    };
+  }
+  return row;
+}
+
+function markdownAnalyticsRows(value = '', accepted = new Set()) {
+  const text = String(value || '');
+  if (!text.includes('|')) return [];
+  const lines = text.split(/\r?\n/);
+  const rows = [];
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const headers = splitMarkdownTableRow(lines[index]).map(normalizeMarkdownHeader);
+    const divider = splitMarkdownTableRow(lines[index + 1]);
+    if (!headers.length || !isMarkdownTableDivider(divider)) continue;
+    index += 2;
+    while (index < lines.length) {
+      const cells = splitMarkdownTableRow(lines[index]);
+      if (!cells.length || isMarkdownTableDivider(cells)) break;
+      const row = {};
+      headers.forEach((header, cellIndex) => {
+        if (header) row[header] = cells[cellIndex] || '';
+      });
+      const type = inferMarkdownAnalyticsType(row, accepted);
+      if (type) rows.push(canonicalMarkdownAnalyticsRow(row, type));
+      index += 1;
+    }
+  }
+  return rows;
+}
+
+function directArtifactRows(artifact = {}, accepted = new Set()) {
+  if (Array.isArray(artifact.rows) || Array.isArray(artifact.items) || Array.isArray(artifact.data) || Array.isArray(artifact.values)) {
+    return rowList(artifact);
+  }
+  const inferred = inferMarkdownAnalyticsType(
+    Object.fromEntries(Object.keys(artifact).map((key) => [normalizeMarkdownHeader(key), artifact[key]])),
+    accepted
+  );
+  return inferred ? [artifact] : [];
+}
+
 function rowsFromStructuredPayload(payload = {}, accepted = new Set()) {
   if (!payload || typeof payload !== 'object') return [];
   const rows = [];
@@ -784,9 +950,17 @@ function artifactRows(context = {}, types = []) {
         parseStructuredPayload(artifact.content_preview),
         artifact.payload && typeof artifact.payload === 'object' ? artifact.payload : null
       ].filter(Boolean);
+      const markdownPayloads = [
+        artifact.content,
+        artifact.contentPreview,
+        artifact.content_preview,
+        artifact.markdown,
+        artifact.body
+      ].filter((value) => typeof value === 'string' && value.trim());
       return [
-        ...(typeMatches ? rowList(artifact) : []),
-        ...parsedPayloads.flatMap((payload) => rowsFromStructuredPayload(payload, accepted))
+        ...(typeMatches ? directArtifactRows(artifact, accepted) : []),
+        ...parsedPayloads.flatMap((payload) => rowsFromStructuredPayload(payload, accepted)),
+        ...markdownPayloads.flatMap((payload) => markdownAnalyticsRows(payload, accepted))
       ];
     });
   return [...directRows, ...artifactRowsFromPayload];
@@ -836,7 +1010,7 @@ function applyInboundContext(context = null) {
       row.query || row.keyword || row.name || 'unknown query',
       Number(row.clicks || row.sessions || 0),
       row.position || row.avg_position || '-',
-      Number(row.conversions || row.cv || row.purchases || 0),
+      Number(row.impressions || row.impr || row.value || row.conversions || row.cv || row.purchases || 0),
       row.note || row.decision_note || row.intent || context.summary || ''
     ]);
   }
@@ -925,10 +1099,10 @@ function applyInboundContext(context = null) {
     ]);
   }
 
-  const measurementRows = [
+  const measurementRows = uniqueRows([
     ...artifactRows(context, 'measurement_queue'),
     ...artifactRows(context, 'post_run_measurement')
-  ];
+  ]);
   if (measurementRows.length) {
     data.measurement = measurementRows.map((row) => [
       row.action || row.name || row.check || 'Imported measurement check',

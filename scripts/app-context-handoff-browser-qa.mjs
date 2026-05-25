@@ -266,6 +266,61 @@ try {
   if (!JSON.stringify(nestedAnalyticsPacket.raw_context?.received_context || {}).includes('analytics_context')) throw new Error('analytics nested packet source was not preserved in server raw_context');
   if (!JSON.stringify(nestedAnalyticsPacket.artifacts || []).includes('aiagent stable analytics handoff')) throw new Error('analytics nested packet rows were not returned for reuse');
 
+  await openAppWithContext(page, `/analytics-console.html?chat_return_to=${encodeURIComponent('/chat?thread=analytics-markdown')}&chat_handoff_id=analytics-markdown-handoff`, {
+    schema: 'cait-app-context/v1',
+    source_app: 'qa_markdown_growth_agent',
+    source_app_label: 'QA Markdown Growth Agent',
+    title: 'Markdown analytics delivery',
+    summary: 'AIAGENT returned analytics rows as Markdown report tables instead of structured JSON.',
+    artifacts: [{
+      type: 'file',
+      name: 'analytics-report.md',
+      contentPreview: [
+        '## Search queries',
+        '| Query | Clicks | Position | Impressions | Note |',
+        '| --- | ---: | ---: | ---: | --- |',
+        '| markdown stable ops | 144 | 1.8 | 2400 | Markdown query row should become retained analytics evidence. |',
+        '',
+        '## Landing pages',
+        '| Page | Sessions | Conversions | Note |',
+        '| --- | ---: | ---: | --- |',
+        '| /markdown-stable-ops | 730 | 23 | Markdown landing page row should survive handoff. |',
+        '',
+        '## Channel breakdown',
+        '| Channel | Sessions | Conversions | Share | CVR |',
+        '| --- | ---: | ---: | ---: | ---: |',
+        '| Organic Search | 730 | 23 | 82 | 3.2% |',
+        '',
+        '## Conversion paths',
+        '| Channel | Path | Sessions | Conversions | CVR | Note |',
+        '| --- | --- | ---: | ---: | ---: | --- |',
+        '| Organic Search | Markdown report -> retained SaaS packet -> signup | 118 | 7 | 5.9% | Confirm Markdown tables are reusable. |',
+        '',
+        '## Measurement queue',
+        '| Action | Window | Status | Note |',
+        '| --- | --- | --- | --- |',
+        '| Markdown report 7d follow-up | 7d | scheduled | Compare retained query clicks after execution. |'
+      ].join('\n')
+    }]
+  });
+  await page.waitForSelector('#primaryTable');
+  await page.click('[data-section="queries"]');
+  await page.waitForFunction(() => document.querySelector('#primaryTable')?.textContent?.includes('markdown stable ops'));
+  if (!(await page.textContent('#primaryTable')).includes('markdown stable ops')) throw new Error('analytics Markdown search query table was not imported');
+  if (!(await page.textContent('#primaryTable')).includes('2,400')) throw new Error('analytics Markdown search query impressions were not preserved');
+  await page.click('[data-section="pages"]');
+  await page.waitForFunction(() => document.querySelector('#primaryTable')?.textContent?.includes('/markdown-stable-ops'));
+  if (!(await page.textContent('#primaryTable')).includes('/markdown-stable-ops')) throw new Error('analytics Markdown landing page table was not imported');
+  await page.click('[data-section="dashboard"]');
+  await page.waitForFunction(() => document.querySelector('#channelChart')?.textContent?.includes('Markdown report -> retained SaaS packet -> signup'));
+  if (!(await page.textContent('#channelChart')).includes('Markdown report -> retained SaaS packet -> signup')) throw new Error('analytics Markdown conversion path table was not imported');
+  await page.click('[data-section="measurement"]');
+  await page.waitForFunction(() => document.querySelector('#primaryTable')?.textContent?.includes('Markdown report 7d follow-up'));
+  if (!(await page.textContent('#primaryTable')).includes('Markdown report 7d follow-up')) throw new Error('analytics Markdown measurement queue table was not imported');
+  const markdownAnalyticsPacket = JSON.parse(await page.textContent('#contextPreview'));
+  if (markdownAnalyticsPacket.raw_context?.chat_handoff_id !== 'analytics-markdown-handoff') throw new Error('analytics Markdown handoff id was not preserved');
+  if (!JSON.stringify(markdownAnalyticsPacket.artifacts || []).includes('markdown stable ops')) throw new Error('analytics Markdown rows were not returned for app contract reuse');
+
   await openAppWithContext(page, `/publisher-approval.html?chat_return_to=${encodeURIComponent('/chat?thread=publisher')}&chat_handoff_id=publisher-handoff`, {
     schema: 'cait-app-context/v1',
     source_app: 'qa_publisher',

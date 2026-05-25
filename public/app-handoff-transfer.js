@@ -1,3 +1,5 @@
+import { extractSocialPostTextFromDeliveryContent } from './delivery-action-contract.js?v=20260501a';
+
 function defaultCompactTransferText(value = '', max = 1200) {
   const text = String(value || '').replace(/\r\n/g, '\n').trim();
   if (text.length <= max) return text;
@@ -83,6 +85,43 @@ export function appHandoffDeliveryArtifactsFromJob(job = {}, options = {}) {
       contentPreview: compactTransferText(file?.content || '', 900)
     };
   }).slice(0, 8);
+}
+
+export function appHandoffSocialPostDraftFromFile(file = {}, options = {}) {
+  const maxLength = Number(options.maxLength || 0);
+  const explicit = explicitMetadataText(file, [
+    'post_text',
+    'postText',
+    'approved_text',
+    'approvedText',
+    'exact_copy',
+    'exactCopy',
+    'caption',
+    'draft_text',
+    'draftText'
+  ]);
+  if (explicit && (!maxLength || explicit.length <= maxLength)) {
+    return {
+      text: explicit,
+      source: String(file?.name || 'delivery file metadata').trim() || 'delivery file metadata'
+    };
+  }
+  if (options.allowContentExtraction === false) return null;
+  const text = extractSocialPostTextFromDeliveryContent(file?.content || '', { maxLength });
+  return text
+    ? {
+        text,
+        source: String(file?.name || 'delivery file').trim() || 'delivery file'
+      }
+    : null;
+}
+
+export function appHandoffSocialPostDraftFromDeliveryFiles(files = [], options = {}) {
+  for (const file of Array.isArray(files) ? files : []) {
+    const draft = appHandoffSocialPostDraftFromFile(file, options);
+    if (draft?.text) return draft;
+  }
+  return null;
 }
 
 export function appHandoffActionKind(manifest = {}, options = {}) {

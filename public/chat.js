@@ -7,7 +7,6 @@ import {
   chatEngineDraftBrief,
   chatEngineIsNeedsInputResponse
 } from './chat-engine.js?v=20260509a';
-import { extractSocialPostTextFromDeliveryContent } from './delivery-action-contract.js?v=20260501a';
 import {
   connectorGateApprovalAnchor,
   connectorGateAuthorityHandledBySaasHandoff,
@@ -70,6 +69,7 @@ import {
   appHandoffBaseTransferPacket,
   appHandoffContractTextLimit,
   appHandoffPayloadContractError,
+  appHandoffSocialPostDraftFromDeliveryFiles,
   appTransferPayloadWithEditedText
 } from './app-handoff-transfer.js?v=20260525a';
 import {
@@ -3507,16 +3507,7 @@ function socialPostDraftFromJob(job = {}) {
     const explicitTypes = explicitHandoffArtifactTypesFromFile(file);
     return ['post_text', 'social_post_pack', 'social_copy_packet', 'social_post', 'x_post', 'x_post_packet'].some((type) => explicitTypes.has(type));
   });
-  for (const file of orderedFiles) {
-    const text = extractSocialPostTextFromDeliveryContent(file?.content || '', { maxLength: 1200 });
-    if (text) {
-      return {
-        text,
-        source: String(file?.name || 'delivery file').trim() || 'delivery file'
-      };
-    }
-  }
-  return null;
+  return appHandoffSocialPostDraftFromDeliveryFiles(orderedFiles, { maxLength: 1200 });
 }
 
 function compactStrategyText(value = '', max = 1500) {
