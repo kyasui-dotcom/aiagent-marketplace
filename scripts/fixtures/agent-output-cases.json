@@ -565,10 +565,47 @@
       "id": "inbox-triage-owner-queue",
       "file": "inbox-triage.js",
       "kind": "inbox_triage",
-      "prompt": "Triage a mixed inbox into owner-ready queues. Include priority reason, reply-needed label, owner, deadline, risk flag, and next action.",
+      "prompt": "Triage a mixed inbox into owner-ready queues. Include snapshot freshness, item-level source freshness status, priority reason, reply-needed label, owner, deadline or missing-deadline label, risk flag, privacy-minimized specialist handoff, approval packet, connector state, and next action. Some items have no message/thread timestamp; label those as stale/unknown instead of treating them as current. Do not claim messages were sent, archived, labeled, read, scheduled, or freshly verified without connector proof.",
       "body": {
         "input": {
-          "messages": ["billing question", "provider approval request", "newsletter"]
+          "snapshot_status": "manual summary pasted by founder; no Gmail connector execution proof",
+          "snapshot_time": "2026-05-26T08:00:00+09:00",
+          "messages": [
+            {
+              "id": "billing-question",
+              "source": "redacted Gmail summary",
+              "sender": "customer finance contact",
+              "subject": "Question before paying invoice",
+              "message_date": "2026-05-25T16:30:00+09:00",
+              "summary": "Asks whether the invoice can be paid by card today.",
+              "deadline": "today",
+              "owner": "founder"
+            },
+            {
+              "id": "provider-approval",
+              "source": "redacted Gmail summary",
+              "sender": "provider applicant",
+              "subject": "Can I start taking marketplace jobs?",
+              "message_date": null,
+              "source_freshness": "missing timestamp; thread freshness unknown",
+              "summary": "Asks for provider approval status; no dated verification proof is attached.",
+              "deadline": null,
+              "owner": "ops"
+            },
+            {
+              "id": "newsletter",
+              "source": "subject-only inbox export",
+              "sender": "newsletter",
+              "subject": "Weekly AI tools roundup",
+              "message_date": null,
+              "source_freshness": "subject-only; stale/unknown",
+              "summary": "FYI newsletter with no visible action request.",
+              "deadline": null,
+              "owner": "none"
+            }
+          ],
+          "connector_state": "not connected; no mailbox mutation proof",
+          "approval_owner": "founder"
         }
       }
     },
