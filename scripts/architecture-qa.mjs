@@ -145,24 +145,24 @@ assert.equal(
   'API route matcher should not match extra path segments'
 );
 
-const cmoBoundaryForbiddenPattern = /\b(?:cmo|cmo_leader|cait_cmo|marketing_leader|free_web_growth|agent_team_launch)\b|CMO|マーケ責任者|マーケティング責任者/;
+const agentBoundaryForbiddenPattern = /\b(?:cmo|cmo_leader|cait_cmo|marketing_leader|free_web_growth|agent_team_launch)\b|CMO|マーケ責任者|マーケティング責任者/;
 assert.equal(
   existsSync(path.join(root, 'lib/builtin-agents/runtime/cmo-workflow.js')),
   false,
-  'CMO-specific workflow runtime must not live outside lib/builtin-agents/agents/cmo-leader.js.'
+  'Agent-specific workflow runtimes must not live outside the owning agent definition file.'
 );
-const cmoBoundarySources = [
+const agentBoundarySources = [
   ['worker.js', workerSource],
   ['lib/shared.js', sharedSource],
   ['lib/orchestration.js', orchestrationSource],
   ['public/chat.js', chatSource],
   ['public/client.js', clientSource]
 ];
-for (const [fileName, source] of cmoBoundarySources) {
+for (const [fileName, source] of agentBoundarySources) {
   assert.equal(
-    cmoBoundaryForbiddenPattern.test(source),
+    agentBoundaryForbiddenPattern.test(source),
     false,
-    `${fileName} must not contain CMO/free-web-growth/agent-team special casing; agent-specific behavior belongs in the agent definition.`
+    `${fileName} must not contain named agent/leader special casing; agent-specific behavior belongs in the owning agent definition.`
   );
 }
 assert.ok(

@@ -37,6 +37,7 @@ const appHandoffTransferSource = read('public/app-handoff-transfer.js');
 const appContextGateSource = read('public/app-context-gate.js');
 const measurementEvidenceGateSource = read('public/measurement-evidence-gate.js');
 const agentProgressViewSource = read('public/agent-progress-view.js');
+const adsOpsSource = read('public/ads-ops.js');
 const clientSource = read('public/client.js');
 const workActionRegistrySource = read('public/work-action-registry.js');
 const workIntentResolverSource = read('public/work-intent-resolver.js');
@@ -239,7 +240,7 @@ for (const caseId of agentOutputCases.groups.marketing || []) {
   );
 }
 
-const agentSpecificBoundaryPattern = /\b(?:cmo|cmo_leader|cait_cmo|marketing_leader|free_web_growth|agent_team_launch)\b|CMO|マーケ責任者|マーケティング責任者/;
+const namedAgentBoundaryPattern = /\b(?:cmo|cmo_leader|cait_cmo|marketing_leader|free_web_growth|agent_team_launch)\b|CMO|マーケ責任者|マーケティング責任者/;
 for (const [fileName, source] of [
   ['worker.js', workerSource],
   ['lib/orchestration.js', orchestrationSource],
@@ -247,7 +248,7 @@ for (const [fileName, source] of [
   ['lib/shared.js', sharedSource]
 ]) {
   assert.equal(
-    agentSpecificBoundaryPattern.test(source),
+    namedAgentBoundaryPattern.test(source),
     false,
     `${fileName} must not contain leader/agent-specific business routing; put it in the relevant agent file`
   );
@@ -545,6 +546,12 @@ assert.ok(
     && appHandoffTransferSource.includes('? appHandoffTransferPostText(payload, delivery)')
     && appHandoffTransferSource.includes(': \'\';'),
   'app handoff transfer must create post_text artifacts only for apps whose manifest explicitly accepts post_text'
+);
+assert.ok(
+  adsOpsSource.includes('const ADS_MARKDOWN_ARTIFACT_TYPES = Object.freeze([')
+    && adsOpsSource.includes('const adsFiles = files.filter((file) => artifactMatches(file, ADS_MARKDOWN_ARTIFACT_TYPES));')
+    && !adsOpsSource.includes('/ads saas|advertis|広告|campaign structure|budget cap|stop rules/i.test(content)'),
+  'Ads Launch Console must parse Markdown only from explicit Ads artifact contracts, not from body text keywords'
 );
 for (const [moduleName, symbol] of [
   ['public/chat-session-state.js', 'compactChatRuntimeSnapshot'],

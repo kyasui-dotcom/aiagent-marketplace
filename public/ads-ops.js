@@ -1,4 +1,4 @@
-import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526b';
+import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526c';
 
 const els = {
   returnToChatLink: document.getElementById('adsReturnToChatLink'),
@@ -67,6 +67,7 @@ const ADS_CONTRACT_ALIASES = Object.freeze({
   campaign_structure: Object.freeze(['campaignStructure', 'ad_groups', 'adGroups', 'campaign_sections', 'campaignSections']),
   budget_cap_and_cpa_assumption: Object.freeze(['budgetCapAndCpaAssumption', 'budget_guardrails', 'budgetGuardrails', 'budget_cap', 'budgetCap', 'target_cpa', 'targetCpa', 'target_cpa_assumptions', 'targetCpaAssumptions', 'cpa_assumption', 'cpaAssumption']),
   budget_guardrails: Object.freeze(['budgetGuardrails', 'budget_cap_and_cpa_assumption', 'budgetCapAndCpaAssumption', 'budget_cap', 'budgetCap', 'target_cpa_assumptions', 'targetCpaAssumptions']),
+  pre_launch_measurement_blocker: Object.freeze(['preLaunchMeasurementBlocker', 'measurement_blocker', 'measurementBlocker', 'measurement_blocker_packet', 'measurementBlockerPacket', 'tracking_blocker', 'trackingBlocker', 'pre_launch_tracking_blocker', 'preLaunchTrackingBlocker']),
   stop_rules: Object.freeze(['stopRules']),
   creative_asset_packet: Object.freeze(['creativeAssetPacket', 'approval_ready_ad_asset_packet', 'approvalReadyAdAssetPacket', 'ad_asset_packet', 'adAssetPacket', 'creative_assets', 'creativeAssets', 'ad_creatives', 'adCreatives']),
   ads_saas_handoff: Object.freeze(['adsSaasHandoff', 'ads_saas_handoff_packet', 'adsSaasHandoffPacket', 'ads_saas_fields', 'adsSaasFields', 'ads_handoff', 'adsHandoff']),
@@ -76,6 +77,41 @@ const ADS_CONTRACT_ALIASES = Object.freeze({
   execution_status_labels: Object.freeze(['executionStatusLabels', 'execution_status', 'executionStatus', 'status_labels', 'statusLabels']),
   measurement_plan: Object.freeze(['measurementPlan', 'measurement_checks', 'measurementChecks', 'conversion_tracking_plan', 'conversionTrackingPlan', 'tracking_plan', 'trackingPlan', 'post_launch_measurement', 'postLaunchMeasurement'])
 });
+
+const ADS_MARKDOWN_ARTIFACT_TYPES = Object.freeze([
+  'ads_plan',
+  'ads_plan_packet',
+  'paid_ads_plan',
+  'ad_plan',
+  'ad_campaign_plan',
+  'paid_acquisition_plan',
+  'campaign_structure',
+  'budget_cap_and_cpa_assumption',
+  'budget_guardrails',
+  'target_cpa_assumptions',
+  'pre_launch_measurement_blocker',
+  'measurement_blocker',
+  'measurement_blocker_packet',
+  'tracking_blocker',
+  'pre_launch_tracking_blocker',
+  'stop_rules',
+  'creative_asset_packet',
+  'approval_ready_ad_asset_packet',
+  'ad_asset_packet',
+  'creative_assets',
+  'ads_saas_handoff',
+  'ads_saas_handoff_packet',
+  'ads_saas_fields',
+  'approval_and_launch_boundary',
+  'approval_checklist',
+  'missing_execution_inputs',
+  'launch_approval_handoff',
+  'launch_approval_handoff_packet',
+  'execution_status_labels',
+  'measurement_plan',
+  'measurement_checks',
+  'conversion_tracking_plan'
+]);
 
 function firstValue(source = {}, keys = []) {
   const object = objectValue(source);
@@ -253,6 +289,7 @@ function parseAdsMarkdown(markdown = '') {
   const provider = sectionText(sections, ['provider', '媒体']);
   const campaignStructure = bulletRows(sectionText(sections, ['campaign structure', 'キャンペーン構成']), 'Structure');
   const budgetRows = bulletRows(sectionText(sections, ['budget cap and cpa assumption', '予算上限と cpa 仮説']), 'Budget');
+  const blockerRows = bulletRows(sectionText(sections, ['pre-launch measurement blocker', '配信前の計測ブロッカー', 'measurement blocker', 'tracking blocker']), 'Measurement blocker');
   const stopRules = bulletRows(sectionText(sections, ['stop rules', '停止ルール']), 'Stop rule');
   const creativeRows = bulletRows(sectionText(sections, ['creative asset packet', 'クリエイティブアセット案']), 'Creative');
   const handoffRows = bulletRows(sectionText(sections, ['ads saas handoff', 'ads saas 引き継ぎ']), 'Ads SaaS handoff');
@@ -265,6 +302,7 @@ function parseAdsMarkdown(markdown = '') {
     provider: compact(provider, 300),
     campaignStructure,
     budgetRows,
+    blockerRows,
     stopRules,
     creativeRows,
     handoffRows,
@@ -283,6 +321,7 @@ function emptyAdsRecord() {
     provider: '',
     campaignStructure: [],
     budgetRows: [],
+    blockerRows: [],
     stopRules: [],
     creativeRows: [],
     handoffRows: [],
@@ -306,7 +345,8 @@ function mergeRows(...groups) {
 function adsRecordFromContext(context = {}) {
   if (!context) return emptyAdsRecord();
   const files = deliveryFiles(context);
-  const markdown = files.map(fileContent).find((content) => /ads saas|advertis|広告|campaign structure|budget cap|stop rules/i.test(content)) || '';
+  const adsFiles = files.filter((file) => artifactMatches(file, ADS_MARKDOWN_ARTIFACT_TYPES));
+  const markdown = adsFiles.map(fileContent).find(Boolean) || '';
   const parsed = parseAdsMarkdown(markdown);
   const raw = objectValue(context.raw_context);
   const contractFields = objectValue(raw.contract_fields);
@@ -320,13 +360,14 @@ function adsRecordFromContext(context = {}) {
     provider: text(adsPlan.provider || handoff.provider || parsed.provider, 'Provider not verified'),
     campaignStructure: mergeRows(rowsFor(context, ['campaign_structure']), rowsFromValue(adsPlan.campaign_structure || adsPlan.campaignStructure, 'Structure'), parsed.campaignStructure),
     budgetRows: mergeRows(rowsFor(context, ['budget_cap_and_cpa_assumption', 'budget_guardrails']), rowsFromValue(firstValue(handoff, ['budget_cap', 'budgetCap', 'target_cpa', 'targetCpa']), 'Budget'), parsed.budgetRows),
+    blockerRows: mergeRows(rowsFor(context, ['pre_launch_measurement_blocker']), rowsFromValue(adsPlan.pre_launch_measurement_blocker || adsPlan.preLaunchMeasurementBlocker || handoff.pre_launch_measurement_blocker || handoff.preLaunchMeasurementBlocker, 'Measurement blocker'), parsed.blockerRows),
     stopRules: mergeRows(rowsFor(context, ['stop_rules']), rowsFromValue(adsPlan.stop_rules || adsPlan.stopRules || handoff.stop_rules || handoff.stopRules, 'Stop rule'), parsed.stopRules),
     creativeRows: mergeRows(rowsFor(context, ['creative_asset_packet']), rowsFromValue(adsPlan.creative_asset_packet || adsPlan.creativeAssetPacket, 'Creative'), parsed.creativeRows),
     handoffRows: mergeRows(rowsFor(context, ['ads_saas_handoff', 'ads_saas_handoff_packet']), rowsFromValue(handoff, 'Ads SaaS handoff'), parsed.handoffRows),
     approvalRows: mergeRows(rowsFor(context, ['approval_and_launch_boundary', 'launch_approval_handoff']), parsed.approvalRows),
     executionRows: mergeRows(rowsFor(context, ['execution_status_labels']), parsed.executionRows),
     measurementRows: mergeRows(rowsFor(context, ['measurement_plan', 'measurement_loop']), parsed.measurementRows),
-    sourceFiles: files.map(fileName).filter(Boolean)
+    sourceFiles: adsFiles.map(fileName).filter(Boolean)
   };
 }
 
@@ -336,6 +377,7 @@ function hasPlan(record = adsRecord) {
 
 function readinessItems() {
   const budgetReady = adsRecord.budgetRows.length > 0;
+  const blockerReady = adsRecord.blockerRows.length > 0;
   const stopReady = adsRecord.stopRules.length > 0;
   const creativeReady = adsRecord.creativeRows.length > 0;
   const handoffReady = adsRecord.handoffRows.length > 0;
@@ -351,6 +393,11 @@ function readinessItems() {
       title: 'Budget and CPA are explicit',
       detail: budgetReady ? `${adsRecord.budgetRows.length} budget row(s) are retained.` : 'Budget cap or CPA assumption is missing.',
       status: budgetReady ? 'ready' : 'pending'
+    },
+    {
+      title: 'Measurement blocker is explicit',
+      detail: blockerReady ? `${adsRecord.blockerRows.length} pre-launch blocker row(s) are retained before spend.` : 'Conversion tracking blocker is missing or not separated.',
+      status: blockerReady ? 'ready' : 'pending'
     },
     {
       title: 'Stop rules travel with the packet',
@@ -384,6 +431,7 @@ function auditItems() {
   return [
     { key: 'ads_plan', title: 'Ads plan', detail: hasPlan() ? `${adsRecord.title} is loaded.` : 'Missing ads_plan or Ads Planner delivery file.', status: hasPlan() ? 'ready' : 'blocked' },
     { key: 'budget_cap_and_cpa_assumption', title: 'Budget and CPA', detail: adsRecord.budgetRows.length ? `${adsRecord.budgetRows.length} budget row(s).` : 'Missing budget cap or CPA assumption.', status: adsRecord.budgetRows.length ? 'ready' : 'pending' },
+    { key: 'pre_launch_measurement_blocker', title: 'Pre-launch measurement blocker', detail: adsRecord.blockerRows.length ? `${adsRecord.blockerRows.length} blocker row(s).` : 'Missing conversion tracking blocker before spend.', status: adsRecord.blockerRows.length ? 'ready' : 'pending' },
     { key: 'stop_rules', title: 'Stop rules', detail: adsRecord.stopRules.length ? `${adsRecord.stopRules.length} stop rule(s).` : 'Missing stop_rules.', status: adsRecord.stopRules.length ? 'ready' : 'pending' },
     { key: 'creative_asset_packet', title: 'Creative asset packet', detail: adsRecord.creativeRows.length ? `${adsRecord.creativeRows.length} creative draft row(s).` : 'Missing creative_asset_packet.', status: adsRecord.creativeRows.length ? 'ready' : 'pending' },
     { key: 'ads_saas_handoff', title: 'Ads SaaS handoff', detail: adsRecord.handoffRows.length ? `${adsRecord.handoffRows.length} handoff row(s).` : 'Missing ads_saas_handoff.', status: adsRecord.handoffRows.length ? 'ready' : 'pending' },
@@ -480,6 +528,7 @@ function renderTables() {
   ]);
   els.adsLaunchTable.innerHTML = tableHtml(['Gate', 'Retained detail', 'Status'], [
     ...adsRecord.budgetRows.map((item) => ['Budget / CPA', `${item.label}: ${item.detail}`, item.status || 'review']),
+    ...adsRecord.blockerRows.map((item) => ['Pre-launch measurement blocker', `${item.label}: ${item.detail}`, item.status || 'blocks launch']),
     ...adsRecord.stopRules.map((item) => ['Stop rule', `${item.label}: ${item.detail}`, item.status || 'review']),
     ...adsRecord.creativeRows.map((item) => ['Creative draft', `${item.label}: ${item.detail}`, item.status || 'draft']),
     ...adsRecord.handoffRows.map((item) => ['Ads SaaS handoff', `${item.label}: ${item.detail}`, item.status || 'pending']),
@@ -517,6 +566,7 @@ function buildAdsContext() {
       adsRecord.objective ? `Objective: ${adsRecord.objective}` : '',
       adsRecord.audience ? `Audience: ${adsRecord.audience}` : '',
       adsRecord.provider ? `Provider: ${adsRecord.provider}` : '',
+      `Pre-launch measurement blockers: ${adsRecord.blockerRows.length}`,
       `Stop rules: ${adsRecord.stopRules.length}`,
       `Creative rows: ${adsRecord.creativeRows.length}`,
       `Ads SaaS handoff rows: ${adsRecord.handoffRows.length}`,
@@ -532,6 +582,7 @@ function buildAdsContext() {
       { type: 'ads_plan', rows: [{ title: adsRecord.title, objective: adsRecord.objective, audience: adsRecord.audience, provider: adsRecord.provider }] },
       { type: 'campaign_structure', rows: adsRecord.campaignStructure },
       { type: 'budget_cap_and_cpa_assumption', rows: adsRecord.budgetRows },
+      { type: 'pre_launch_measurement_blocker', rows: adsRecord.blockerRows },
       { type: 'stop_rules', rows: adsRecord.stopRules },
       { type: 'creative_asset_packet', rows: adsRecord.creativeRows },
       { type: 'ads_saas_handoff', rows: adsRecord.handoffRows },
@@ -542,6 +593,7 @@ function buildAdsContext() {
     ],
     metrics: [
       { label: 'stop_rules', value: adsRecord.stopRules.length },
+      { label: 'pre_launch_measurement_blockers', value: adsRecord.blockerRows.length },
       { label: 'creative_asset_rows', value: adsRecord.creativeRows.length },
       { label: 'ads_saas_handoff_rows', value: adsRecord.handoffRows.length },
       { label: 'approval_rows', value: adsRecord.approvalRows.length },

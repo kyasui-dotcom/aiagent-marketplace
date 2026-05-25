@@ -131,18 +131,18 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     description: 'Paid acquisition launch gate for Ads Planner output: budget caps, stop rules, creative drafts, Ads SaaS handoff fields, approvals, execution labels, and measurement checks before spend.',
     baseUrl: '/ads-ops.html',
     entryUrl: '/ads-ops.html',
-    capabilities: ['ads_plan', 'budget_guardrails', 'stop_rules', 'creative_asset_packet', 'ads_saas_handoff', 'launch_approval_handoff', 'measurement_plan'],
+    capabilities: ['ads_plan', 'budget_guardrails', 'pre_launch_measurement_blocker', 'stop_rules', 'creative_asset_packet', 'ads_saas_handoff', 'launch_approval_handoff', 'measurement_plan'],
     requiredConnectors: ['ads_saas'],
     requiresApprovalFor: ['ads_launch', 'budget_spend', 'bid_change', 'external_send'],
     inputContract: {
       schemaVersion: 'cait-app-context/v1',
-      accepts: ['ads_plan', 'ads_plan_packet', 'paid_ads_plan', 'ad_plan', 'ad_campaign_plan', 'paid_acquisition_plan', 'delivery_files', 'campaign_structure', 'budget_cap_and_cpa_assumption', 'budget_guardrails', 'target_cpa_assumptions', 'stop_rules', 'creative_asset_packet', 'approval_ready_ad_asset_packet', 'ad_asset_packet', 'creative_assets', 'ads_saas_handoff', 'ads_saas_handoff_packet', 'ads_saas_fields', 'approval_and_launch_boundary', 'approval_checklist', 'missing_execution_inputs', 'launch_approval_handoff', 'launch_approval_handoff_packet', 'execution_status_labels', 'measurement_plan', 'measurement_checks', 'conversion_tracking_plan'],
+      accepts: ['ads_plan', 'ads_plan_packet', 'paid_ads_plan', 'ad_plan', 'ad_campaign_plan', 'paid_acquisition_plan', 'delivery_files', 'campaign_structure', 'budget_cap_and_cpa_assumption', 'budget_guardrails', 'target_cpa_assumptions', 'pre_launch_measurement_blocker', 'measurement_blocker', 'measurement_blocker_packet', 'tracking_blocker', 'stop_rules', 'creative_asset_packet', 'approval_ready_ad_asset_packet', 'ad_asset_packet', 'creative_assets', 'ads_saas_handoff', 'ads_saas_handoff_packet', 'ads_saas_fields', 'approval_and_launch_boundary', 'approval_checklist', 'missing_execution_inputs', 'launch_approval_handoff', 'launch_approval_handoff_packet', 'execution_status_labels', 'measurement_plan', 'measurement_checks', 'conversion_tracking_plan'],
       returns: ['artifacts', 'approval_requests', 'metrics', 'recommended_next_actions']
     },
     contextContract: {
       sourceApps: ['ads_launch_console'],
       evidence: {
-        loadedArtifactTypes: ['ads_plan', 'ads_saas_handoff', 'stop_rules', 'creative_asset_packet', 'execution_status_labels', 'measurement_plan'],
+        loadedArtifactTypes: ['ads_plan', 'ads_saas_handoff', 'pre_launch_measurement_blocker', 'stop_rules', 'creative_asset_packet', 'execution_status_labels', 'measurement_plan'],
         summaryFields: ['ads_handoff_audit']
       }
     },

@@ -1023,6 +1023,9 @@ try {
     creative_asset_packet: [
       { label: 'Headline draft', detail: 'Stable operations after AIAGENT output', status: 'draft_only' }
     ],
+    pre_launch_measurement_blocker: [
+      { label: 'Conversion tracking', detail: 'Do not create, submit, launch, or spend until GA4 and Ads conversion proof is attached.', status: 'blocks_launch' }
+    ],
     stop_rules: [
       { label: 'Spend stop', detail: 'Pause if first checkpoint exceeds 120 USD without a qualified conversion.' }
     ],
@@ -1051,6 +1054,10 @@ try {
           '',
           '## Provider',
           'google_ads. Connector status: needs confirmation.',
+          '',
+          '## Pre-launch measurement blocker',
+          '- Conversion tracking: Do not create, submit, launch, or spend until GA4 and Ads conversion proof is attached.',
+          '- Proof needed next: tag firing and test conversion evidence.',
           '',
           '## Campaign structure',
           '- Campaign: retained SaaS operations proof',
@@ -1086,22 +1093,25 @@ try {
       requiresApprovalFor: ['ads_launch', 'budget_spend'],
       inputContract: {
         schemaVersion: 'cait-app-context/v1',
-        accepts: ['ads_plan', 'delivery_files', 'ads_saas_handoff', 'creative_asset_packet', 'stop_rules', 'execution_status_labels', 'measurement_plan']
+        accepts: ['ads_plan', 'delivery_files', 'ads_saas_handoff', 'creative_asset_packet', 'pre_launch_measurement_blocker', 'stop_rules', 'execution_status_labels', 'measurement_plan']
       }
     })
   });
   if (!JSON.stringify(adsTransferContext.artifacts || []).includes('ads_saas_handoff')) throw new Error('ads transfer context did not preserve ads_saas_handoff artifact');
+  if (!JSON.stringify(adsTransferContext.artifacts || []).includes('pre_launch_measurement_blocker')) throw new Error('ads transfer context did not preserve pre_launch_measurement_blocker artifact');
   if (!JSON.stringify(adsTransferContext.raw_context?.contract_fields || {}).includes('500 USD approved cap')) throw new Error('ads transfer context did not preserve contract fields in raw_context');
   await openAppWithContext(page, `/ads-ops.html?chat_return_to=${encodeURIComponent('/chat?thread=ads-transfer')}&chat_handoff_id=ads-transfer-handoff`, adsTransferContext);
   await page.waitForSelector('#adsPlanTable');
   await page.waitForFunction(() => document.querySelector('#adsRecordTitle')?.textContent?.includes('Ads Planner launch handoff'));
   if (!(await page.textContent('#adsPlanTable')).includes('SaaS operators who distrust')) throw new Error('ads markdown audience was not imported');
+  if (!(await page.textContent('#adsLaunchTable')).includes('Do not create, submit, launch, or spend until GA4')) throw new Error('ads pre-launch measurement blocker was not imported');
   if (!(await page.textContent('#adsLaunchTable')).includes('500 USD approved cap')) throw new Error('ads budget cap was not imported');
   if (!(await page.textContent('#adsLaunchTable')).includes('Stable operations after AIAGENT output')) throw new Error('ads creative asset packet was not imported');
   if (!(await page.textContent('#adsMeasurementTable')).includes('24h spend check')) throw new Error('ads measurement plan was not imported');
   if (!(await page.textContent('#adsHandoffNotice')).includes('CAIt ads handoff session is attached')) throw new Error('ads server context notice was not rendered');
   const adsPacket = JSON.parse(await page.textContent('#adsContextPreview'));
   if (adsPacket.raw_context?.chat_handoff_id !== 'ads-transfer-handoff') throw new Error('ads chat handoff id was not preserved in packet');
+  if (!JSON.stringify(adsPacket.artifacts || []).includes('pre_launch_measurement_blocker')) throw new Error('ads packet did not return pre_launch_measurement_blocker for app contract reuse');
   if (!JSON.stringify(adsPacket.artifacts || []).includes('ads_saas_handoff')) throw new Error('ads packet did not return ads_saas_handoff for app contract reuse');
   if (!JSON.stringify(adsPacket.raw_context?.received_context || {}).includes('ads-planner-delivery.md')) throw new Error('ads source delivery file was not preserved in raw_context');
 
@@ -1116,6 +1126,9 @@ try {
     },
     targetCpaAssumptions: [
       { label: 'Alias CPA assumption', detail: '45 USD until conversion tracking is verified.' }
+    ],
+    measurementBlockerPacket: [
+      { label: 'Alias tracking blocker', detail: 'Keep the plan blocked until Ads SaaS reports conversion action proof.', status: 'blocks_launch' }
     ],
     approvalReadyAdAssetPacket: [
       { label: 'Alias headline draft', detail: 'AIAGENT output, retained before spend', status: 'draft_only' }
@@ -1136,7 +1149,7 @@ try {
       requiresApprovalFor: ['ads_launch', 'budget_spend'],
       inputContract: {
         schemaVersion: 'cait-app-context/v1',
-        accepts: ['ads_plan', 'budget_cap_and_cpa_assumption', 'creative_asset_packet', 'ads_saas_handoff', 'launch_approval_handoff', 'measurement_plan']
+        accepts: ['ads_plan', 'budget_cap_and_cpa_assumption', 'pre_launch_measurement_blocker', 'creative_asset_packet', 'ads_saas_handoff', 'launch_approval_handoff', 'measurement_plan']
       }
     })
   });
@@ -1146,11 +1159,13 @@ try {
   await page.waitForSelector('#adsPlanTable');
   await page.waitForFunction(() => document.querySelector('#adsRecordTitle')?.textContent?.includes('Ads Planner alias handoff'));
   if (!(await page.textContent('#adsPlanTable')).includes('Operators worried AIAGENT')) throw new Error('ads alias plan was not imported');
+  if (!(await page.textContent('#adsLaunchTable')).includes('Alias tracking blocker')) throw new Error('ads measurementBlockerPacket alias was not imported');
   if (!(await page.textContent('#adsLaunchTable')).includes('Alias headline draft')) throw new Error('ads approval_ready_ad_asset_packet alias was not imported');
   if (!(await page.textContent('#adsLaunchTable')).includes('Launch owner approval')) throw new Error('ads launch_approval_handoff_packet alias was not imported');
   if (!(await page.textContent('#adsMeasurementTable')).includes('Alias 48h quality check')) throw new Error('ads conversion_tracking_plan alias was not imported');
   const adsAliasPacket = JSON.parse(await page.textContent('#adsContextPreview'));
   if (adsAliasPacket.raw_context?.chat_handoff_id !== 'ads-alias-handoff') throw new Error('ads alias handoff id was not preserved');
+  if (!JSON.stringify(adsAliasPacket.artifacts || []).includes('Alias tracking blocker')) throw new Error('ads alias measurement blocker was not returned for reuse');
   if (!JSON.stringify(adsAliasPacket.artifacts || []).includes('AIAGENT output, retained before spend')) throw new Error('ads alias creative packet was not returned for reuse');
 
   await openAppWithContext(page, '/lead-ops.html', {
