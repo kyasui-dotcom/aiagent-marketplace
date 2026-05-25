@@ -455,11 +455,23 @@
       "id": "data-analysis-metric-audit",
       "file": "data-analysis.js",
       "kind": "data_analysis",
-      "prompt": "Analyze a small funnel dataset for paid agent order conversion. Include dataset status, metric definitions, findings, caveats, query notes, and next decision.",
+      "prompt": "Analyze a small funnel dataset for paid agent order conversion. Use the supplied sample rows to show row coverage, metric definitions, a derived metric calculation table with formula/numerator/denominator, findings, caveats, query notes, and next decision. Do not claim full-funnel performance, verified conversion tracking, or a computed rate without visible rows and instrumentation proof.",
       "body": {
         "input": {
           "columns": ["sessions", "signup", "order_started", "paid_order"],
-          "dataset_status": "sample rows supplied"
+          "dataset_status": "sample rows supplied",
+          "date_range": "2026-05-01 to 2026-05-14",
+          "conversion_event_status": "paid_order tracking unverified",
+          "sample_rows": [
+            { "segment": "organic_search", "sessions": 420, "signup": 9, "order_started": 3, "paid_order": 0 },
+            { "segment": "direct", "sessions": 310, "signup": 5, "order_started": 1, "paid_order": 0 },
+            { "segment": "community_referral", "sessions": 180, "signup": 4, "order_started": 2, "paid_order": 1 }
+          ],
+          "expected_calculations": [
+            "signup_rate = signup / sessions",
+            "order_start_rate = order_started / sessions",
+            "paid_order_rate = paid_order / sessions"
+          ]
         }
       }
     },

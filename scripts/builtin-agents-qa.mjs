@@ -181,9 +181,9 @@ const workSupportContractExpectations = [
   {
     kind: 'data_analysis',
     actions: ['prepare_metric_audit', 'prepare_analysis_memo', 'verify_conversion_instrumentation'],
-    requiredSections: ['Question', 'Dataset status', 'Conversion instrumentation verification', 'Metric definitions', 'Findings', 'Caveats', 'Analysis notes', 'Next decision'],
-    guidedSections: ['Question', 'Dataset status', 'Conversion instrumentation verification', 'Analytics admin/access status', 'Metric definitions', 'Findings', 'Caveats', 'Analysis notes', 'Next decision'],
-    forbiddenClaims: ['data-backed conclusion without dataset evidence', 'causal claim without test design', 'conversion conclusion without instrumentation proof', 'GA4/Search Console verified without admin evidence']
+    requiredSections: ['Question', 'Dataset status', 'Conversion instrumentation verification', 'Row-level sample audit', 'Metric definitions', 'Derived metric calculation table', 'Findings', 'Caveats', 'Analysis notes', 'Next decision'],
+    guidedSections: ['Question', 'Dataset status', 'Conversion instrumentation verification', 'Analytics admin/access status', 'Row-level sample audit', 'Metric definitions', 'Derived metric calculation table', 'Findings', 'Caveats', 'Analysis notes', 'Next decision'],
+    forbiddenClaims: ['data-backed conclusion without dataset evidence', 'causal claim without test design', 'conversion conclusion without instrumentation proof', 'GA4/Search Console verified without admin evidence', 'computed conversion rate without row count, numerator, denominator, and formula', 'full-funnel conclusion from sample rows without caveat']
   },
   {
     kind: 'diligence',
