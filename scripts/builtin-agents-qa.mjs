@@ -159,7 +159,7 @@ const productResearchContractExpectations = [
     actions: ['prepare_source_backed_memo', 'prepare_decision_recommendation', 'prepare_verification_queue', 'prepare_decision_handoff_packet'],
     requiredSections: ['Answer first', 'Source status', 'Source ledger', 'Current vs inferred facts', 'Options', 'Recommendation', 'Verification queue', 'Verification gaps', 'Source access boundary', 'Decision handoff packet', 'Execution status labels'],
     guidedSections: ['Answer first', 'Source status', 'Source ledger', 'Current vs inferred facts', 'Options', 'Recommendation', 'Verification queue', 'Verification gaps', 'Source access boundary', 'Decision handoff packet', 'Execution status labels'],
-    forbiddenClaims: ['verification completed without source', 'verified market demand without source proof', 'source access granted without connector proof', 'decision adopted without owner approval', 'recommendation implemented without execution proof']
+    forbiddenClaims: ['verification completed without source', 'market demand conclusion before source collection queue', 'verified market demand without source proof', 'source access granted without connector proof', 'decision adopted without owner approval', 'recommendation implemented without execution proof']
   }
 ];
 

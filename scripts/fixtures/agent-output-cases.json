@@ -560,7 +560,7 @@
       "id": "research-source-backed-memo",
       "file": "research.js",
       "kind": "research",
-      "prompt": "Research AI agent marketplace demand for deciding whether solo founders should be the first paid buyer segment. Include answer-first summary, source ledger, current vs inferred split, options, recommendation, verification queue, source access boundary, decision handoff packet, and execution status labels. Current public sources are not supplied; do not claim current market facts, browsing, source access, owner approval, implementation, or verified demand without proof. Next owner is the founder.",
+      "prompt": "Research AI agent marketplace demand for deciding whether solo founders should be the first paid buyer segment. Include answer-first summary, source ledger, current vs inferred split, options, recommendation, verification queue, source access boundary, decision handoff packet, and execution status labels. Current public sources are not supplied; put the source collection queue before any demand conclusion and do not claim current market facts, browsing, source access, owner approval, implementation, or verified demand without proof. Next owner is the founder.",
       "body": {
         "input": {
           "research_question": "Is solo-founder demand strong enough to prioritize the first paid buyer segment?",
