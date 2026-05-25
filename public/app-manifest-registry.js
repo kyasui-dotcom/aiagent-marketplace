@@ -125,6 +125,36 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     reusePrompt: 'Open Campaign Operations to inspect retained campaign state, queues, SaaS readiness, waiting conditions, and measurement loops.'
   },
   {
+    id: 'ads-launch-console',
+    name: 'Ads Launch Console',
+    kind: 'application_agent',
+    description: 'Paid acquisition launch gate for Ads Planner output: budget caps, stop rules, creative drafts, Ads SaaS handoff fields, approvals, execution labels, and measurement checks before spend.',
+    baseUrl: '/ads-ops.html',
+    entryUrl: '/ads-ops.html',
+    capabilities: ['ads_plan', 'budget_guardrails', 'stop_rules', 'creative_asset_packet', 'ads_saas_handoff', 'launch_approval_handoff', 'measurement_plan'],
+    requiredConnectors: ['ads_saas'],
+    requiresApprovalFor: ['ads_launch', 'budget_spend', 'bid_change', 'external_send'],
+    inputContract: {
+      schemaVersion: 'cait-app-context/v1',
+      accepts: ['ads_plan', 'ads_plan_packet', 'paid_ads_plan', 'delivery_files', 'campaign_structure', 'budget_cap_and_cpa_assumption', 'budget_guardrails', 'stop_rules', 'creative_asset_packet', 'ads_saas_handoff', 'ads_saas_handoff_packet', 'approval_and_launch_boundary', 'launch_approval_handoff', 'execution_status_labels', 'measurement_plan'],
+      returns: ['artifacts', 'approval_requests', 'metrics', 'recommended_next_actions']
+    },
+    contextContract: {
+      sourceApps: ['ads_launch_console'],
+      evidence: {
+        loadedArtifactTypes: ['ads_plan', 'ads_saas_handoff', 'stop_rules', 'creative_asset_packet', 'execution_status_labels', 'measurement_plan'],
+        summaryFields: ['ads_handoff_audit']
+      }
+    },
+    tags: ['ads', 'paid-acquisition', 'approval'],
+    directCommandAliases: ['ads ops', 'ads launch', 'ads console', 'ads planner handoff', 'google ads', 'meta ads', '広告運用', '広告出稿'],
+    owner: 'cait-managed',
+    status: 'active',
+    verificationStatus: 'cait_managed',
+    mcp: { enabled: false, serverUrl: '/mcp', tools: ['cait.list_apps'], resources: ['cait://apps'], status: 'paused' },
+    reusePrompt: 'Open Ads Launch Console to review budget, stop rules, creative drafts, launch approval, Ads SaaS readiness, and measurement before any spend.'
+  },
+  {
     id: 'x-client-ops',
     name: 'X Client Ops',
     kind: 'application_agent',

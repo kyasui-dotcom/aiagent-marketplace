@@ -526,8 +526,9 @@ assert.ok(
 assert.ok(
   appHandoffTransferSource.includes('explicitMetadataText(file, [')
     && appHandoffTransferSource.includes("'post_text'")
-    && appHandoffTransferSource.indexOf('explicitMetadataText(file, [') < appHandoffTransferSource.indexOf('const text = extractSocialPostTextFromDeliveryContent'),
-  'dedicated social handoff text must prefer explicit artifact metadata before legacy content extraction'
+    && !appHandoffTransferSource.includes('extractSocialPostTextFromDeliveryContent')
+    && !appHandoffTransferSource.includes('allowContentExtraction'),
+  'dedicated social handoff text must come from explicit artifact metadata, not delivery body extraction'
 );
 assert.equal(
   chatSource.includes("from './delivery-action-contract.js"),

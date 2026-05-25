@@ -14,6 +14,7 @@ const analyticsHtmlPath = new URL('../public/analytics-console.html', import.met
 const publisherHtmlPath = new URL('../public/publisher-approval.html', import.meta.url);
 const leadOpsHtmlPath = new URL('../public/lead-ops.html', import.meta.url);
 const campaignOperationsHtmlPath = new URL('../public/campaign-operations.html', import.meta.url);
+const adsOpsHtmlPath = new URL('../public/ads-ops.html', import.meta.url);
 const deliveryManagerHtmlPath = new URL('../public/delivery-manager.html', import.meta.url);
 const legalNoticeHtmlPath = new URL('../public/legal-notice.html', import.meta.url);
 const tokushohoRedirectHtmlPath = new URL('../public/tokushoho.html', import.meta.url);
@@ -40,6 +41,7 @@ const analyticsJsPath = new URL('../public/analytics-console.js', import.meta.ur
 const publisherJsPath = new URL('../public/publisher-approval.js', import.meta.url);
 const leadOpsJsPath = new URL('../public/lead-ops.js', import.meta.url);
 const campaignOperationsJsPath = new URL('../public/campaign-operations.js', import.meta.url);
+const adsOpsJsPath = new URL('../public/ads-ops.js', import.meta.url);
 const deliveryManagerJsPath = new URL('../public/delivery-manager.js', import.meta.url);
 const caitAppBridgePath = new URL('../public/cait-app-bridge.js', import.meta.url);
 const loginJsPath = new URL('../public/login.js', import.meta.url);
@@ -109,6 +111,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(analyticsJsPath)], { st
 execFileSync(process.execPath, ['--check', fileURLToPath(publisherJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(leadOpsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(campaignOperationsJsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(adsOpsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(deliveryManagerJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(caitAppBridgePath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatEnginePath)], { stdio: 'pipe' });
@@ -136,6 +139,7 @@ const analyticsHtml = readFileSync(analyticsHtmlPath, 'utf8');
 const publisherHtml = readFileSync(publisherHtmlPath, 'utf8');
 const leadOpsHtml = readFileSync(leadOpsHtmlPath, 'utf8');
 const campaignOperationsHtml = readFileSync(campaignOperationsHtmlPath, 'utf8');
+const adsOpsHtml = readFileSync(adsOpsHtmlPath, 'utf8');
 const deliveryManagerHtml = readFileSync(deliveryManagerHtmlPath, 'utf8');
 const legalNoticeHtml = readFileSync(legalNoticeHtmlPath, 'utf8');
 const tokushohoRedirectHtml = readFileSync(tokushohoRedirectHtmlPath, 'utf8');
@@ -164,6 +168,7 @@ const analyticsJs = readFileSync(analyticsJsPath, 'utf8');
 const publisherJs = readFileSync(publisherJsPath, 'utf8');
 const leadOpsJs = readFileSync(leadOpsJsPath, 'utf8');
 const campaignOperationsJs = readFileSync(campaignOperationsJsPath, 'utf8');
+const adsOpsJs = readFileSync(adsOpsJsPath, 'utf8');
 const deliveryManagerJs = readFileSync(deliveryManagerJsPath, 'utf8');
 const caitAppBridge = readFileSync(caitAppBridgePath, 'utf8');
 const loginJs = readFileSync(loginJsPath, 'utf8');
@@ -234,6 +239,8 @@ const appSurfaceSources = [
   leadOpsJs,
   campaignOperationsHtml,
   campaignOperationsJs,
+  adsOpsHtml,
+  adsOpsJs,
   deliveryManagerHtml,
   deliveryManagerJs,
   caitAppBridge
@@ -662,6 +669,7 @@ assert.ok(appManifestRegistryJs.includes('analytics-console'), 'Shared app regis
 assert.ok(appManifestRegistryJs.includes('publisher-approval-studio'), 'Shared app registry should include Publisher and Approval Studio.');
 assert.ok(appManifestRegistryJs.includes('lead-ops-console'), 'Shared app registry should include Lead Ops.');
 assert.ok(appManifestRegistryJs.includes('campaign-operations'), 'Shared app registry should include Campaign Operations.');
+assert.ok(appManifestRegistryJs.includes('ads-launch-console'), 'Shared app registry should include Ads Launch Console.');
 assert.ok(appsJs.includes('CORE_FEATURE_APP_IDS'), 'Apps hub should filter core CAIt features out of app registry rendering.');
 assert.ok(!appsJs.includes("['delivery-manager', { tag: 'Follow-up'"), 'Apps hub should not feature Deliveries as a registered app.');
 assert.ok(appsHtml.includes('cait-app-context/v1'), 'Apps hub should explain the shared context contract.');
@@ -744,6 +752,15 @@ assert.ok(campaignOperationsHtml.includes('id="campaignHandoffNotice"'), 'Campai
 assert.ok(campaignOperationsHtml.includes('id="campaignHandoffAuditList"'), 'Campaign Operations should show AIAGENT handoff audit gaps.');
 assert.ok(campaignOperationsHtml.includes('id="campaignContextPreview"'), 'Campaign Operations should preview the CAIt packet.');
 assert.ok(campaignOperationsHtml.includes('AIAGENT chat output'), 'Campaign Operations should explain the before state for one-off AIAGENT chat output.');
+assert.ok(adsOpsHtml.includes('Ads Launch Console'), 'Ads Launch Console should be a first-class app page.');
+assert.ok(adsOpsHtml.includes('href="/apps.html"'), 'Ads Launch Console should link back to the apps hub.');
+assert.ok(adsOpsHtml.includes('id="sendAdsContextBtn"'), 'Ads Launch Console should send context to CAIt.');
+assert.ok(adsOpsHtml.includes('/ads-ops.js?v=20260526a'), 'Ads Launch Console should load the app-context receiving controller.');
+assert.ok(adsOpsHtml.includes('id="adsReadinessList"'), 'Ads Launch Console should show operational readiness.');
+assert.ok(adsOpsHtml.includes('id="adsHandoffNotice"'), 'Ads Launch Console should show CAIt handoff session state.');
+assert.ok(adsOpsHtml.includes('id="adsHandoffAuditList"'), 'Ads Launch Console should show AIAGENT handoff audit gaps.');
+assert.ok(adsOpsHtml.includes('id="adsContextPreview"'), 'Ads Launch Console should preview the CAIt packet.');
+assert.ok(adsOpsHtml.includes('AIAGENT ads plan'), 'Ads Launch Console should explain the before state for one-off AIAGENT ads output.');
 assert.ok(deliveryManagerHtml.includes('Deliveries'), 'Deliveries should be a first-class CAIt feature page.');
 assert.ok(deliveryManagerHtml.includes('href="/chat"'), 'Deliveries should link back to chat.');
 assert.ok(deliveryManagerHtml.includes('id="downloadSelectedBtn"'), 'Delivery Manager should expose downloadable delivery files.');
@@ -770,31 +787,37 @@ const caitManagedSurfaceEntries = [
     name: 'Analytics Console',
     html: analyticsHtml,
     ownScript: '/analytics-console.js',
-    forbiddenScripts: ['/publisher-approval.js', '/lead-ops.js', '/campaign-operations.js', '/delivery-manager.js', '/client.js', '/chat.js']
+    forbiddenScripts: ['/publisher-approval.js', '/lead-ops.js', '/campaign-operations.js', '/ads-ops.js', '/delivery-manager.js', '/client.js', '/chat.js']
   },
   {
     name: 'Publisher and Approval Studio',
     html: publisherHtml,
     ownScript: '/publisher-approval.js',
-    forbiddenScripts: ['/analytics-console.js', '/lead-ops.js', '/campaign-operations.js', '/delivery-manager.js', '/client.js', '/chat.js']
+    forbiddenScripts: ['/analytics-console.js', '/lead-ops.js', '/campaign-operations.js', '/ads-ops.js', '/delivery-manager.js', '/client.js', '/chat.js']
   },
   {
     name: 'Lead Ops Console',
     html: leadOpsHtml,
     ownScript: '/lead-ops.js',
-    forbiddenScripts: ['/analytics-console.js', '/publisher-approval.js', '/campaign-operations.js', '/delivery-manager.js', '/client.js', '/chat.js']
+    forbiddenScripts: ['/analytics-console.js', '/publisher-approval.js', '/campaign-operations.js', '/ads-ops.js', '/delivery-manager.js', '/client.js', '/chat.js']
   },
   {
     name: 'Campaign Operations',
     html: campaignOperationsHtml,
     ownScript: '/campaign-operations.js',
-    forbiddenScripts: ['/analytics-console.js', '/publisher-approval.js', '/lead-ops.js', '/delivery-manager.js', '/client.js', '/chat.js']
+    forbiddenScripts: ['/analytics-console.js', '/publisher-approval.js', '/lead-ops.js', '/ads-ops.js', '/delivery-manager.js', '/client.js', '/chat.js']
+  },
+  {
+    name: 'Ads Launch Console',
+    html: adsOpsHtml,
+    ownScript: '/ads-ops.js',
+    forbiddenScripts: ['/analytics-console.js', '/publisher-approval.js', '/lead-ops.js', '/campaign-operations.js', '/delivery-manager.js', '/client.js', '/chat.js']
   },
   {
     name: 'Delivery Manager',
     html: deliveryManagerHtml,
     ownScript: '/delivery-manager.js',
-    forbiddenScripts: ['/analytics-console.js', '/publisher-approval.js', '/lead-ops.js', '/campaign-operations.js', '/client.js', '/chat.js']
+    forbiddenScripts: ['/analytics-console.js', '/publisher-approval.js', '/lead-ops.js', '/campaign-operations.js', '/ads-ops.js', '/client.js', '/chat.js']
   }
 ];
 
@@ -846,6 +869,24 @@ assert.ok(campaignOperationsJs.includes('nextActionOwner'), 'Campaign Operations
 assert.ok(campaignOperationsJs.includes('campaignOperationsPlan'), 'Campaign Operations should accept top-level camelCase campaign operations plan handoff fields.');
 assert.ok(campaignOperationsJs.includes('campaignPlanArtifactsFromTransferDelivery'), 'Campaign Operations should recover generic transfer delivery artifacts from raw_context.delivery.');
 assert.ok(appContextDomainJs.includes('campaign_operations_plan'), 'Server-side app context should preserve campaign operations plan contract fields in raw_context.');
+assert.ok(adsOpsJs.includes("source_app: 'ads_launch_console'"), 'Ads Launch Console app logic should stay in ads-ops.js.');
+assert.ok(adsOpsJs.includes("fetchCaitAppContextFromUrl"), 'Ads Launch Console should receive CAIt app contexts.');
+assert.ok(adsOpsJs.includes("type: 'ads_plan'"), 'Ads Launch Console should return ads_plan artifacts.');
+assert.ok(adsOpsJs.includes("type: 'budget_cap_and_cpa_assumption'"), 'Ads Launch Console should return budget/CPA artifacts.');
+assert.ok(adsOpsJs.includes("type: 'stop_rules'"), 'Ads Launch Console should return stop_rules artifacts.');
+assert.ok(adsOpsJs.includes("type: 'creative_asset_packet'"), 'Ads Launch Console should return creative_asset_packet artifacts.');
+assert.ok(adsOpsJs.includes("type: 'ads_saas_handoff'"), 'Ads Launch Console should return ads_saas_handoff artifacts.');
+assert.ok(adsOpsJs.includes("type: 'approval_and_launch_boundary'"), 'Ads Launch Console should return approval boundary artifacts.');
+assert.ok(adsOpsJs.includes("type: 'execution_status_labels'"), 'Ads Launch Console should return execution status label artifacts.');
+assert.ok(adsOpsJs.includes("type: 'measurement_plan'"), 'Ads Launch Console should return measurement_plan artifacts.');
+assert.ok(adsOpsJs.includes('ads_handoff_audit'), 'Ads Launch Console should include handoff audit details in raw_context.');
+assert.ok(appContextDomainJs.includes('ads_saas_handoff'), 'Server-side app context should preserve Ads SaaS handoff contract fields in raw_context.');
+assert.ok(caitAppBridge.includes('ads_saas_handoff'), 'Client app-context bridge should preserve Ads SaaS handoff contract fields.');
+assert.ok(!adsOpsJs.includes("source_app: 'analytics_console'"), 'Ads Launch Console JS should not contain Analytics app logic.');
+assert.ok(!adsOpsJs.includes("source_app: 'publisher_approval_studio'"), 'Ads Launch Console JS should not contain Publisher app logic.');
+assert.ok(!adsOpsJs.includes("source_app: 'lead_ops_console'"), 'Ads Launch Console JS should not contain Lead Ops app logic.');
+assert.ok(!adsOpsJs.includes("source_app: 'campaign_operations'"), 'Ads Launch Console JS should not contain Campaign Operations app logic.');
+assert.ok(!adsOpsJs.includes("source_app: 'delivery_manager'"), 'Ads Launch Console JS should not contain Delivery Manager app logic.');
 assert.ok(!campaignOperationsJs.includes("source_app: 'analytics_console'"), 'Campaign Operations JS should not contain Analytics app logic.');
 assert.ok(!campaignOperationsJs.includes("source_app: 'publisher_approval_studio'"), 'Campaign Operations JS should not contain Publisher app logic.');
 assert.ok(!campaignOperationsJs.includes("source_app: 'lead_ops_console'"), 'Campaign Operations JS should not contain Lead Ops app logic.');
@@ -869,7 +910,7 @@ assert.ok(chatHtml.includes('id="openAppListBtn"'));
 assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
-assert.ok(appsHtml.includes('/apps.js?v=20260526a'), 'Apps page should load the current server-side context history controller.');
+assert.ok(appsHtml.includes('/apps.js?v=20260526b'), 'Apps page should load the current server-side context history controller.');
 assert.ok(appsHtml.includes('data-app-registry-list'), 'Apps page should expose the live app registry list.');
 assert.ok(appsHtml.includes('/.well-known/mcp.json') && appsHtml.includes('Disabled by default'), 'Apps page should describe MCP as disabled by default.');
 assert.ok(appsHtml.includes('COMING SOON'), 'Apps MCP tab should be labeled coming soon while MCP is paused.');
@@ -1040,13 +1081,16 @@ assert.ok(deliveryManagerJs.includes('groupedDeliveries'), 'Delivery Manager sho
 assert.ok(deliveryManagerJs.includes('isLeaderDelivery'), 'Delivery Manager should put leader runs first inside each work item.');
 assert.ok(deliveryManagerJs.includes('delivery-work-group'), 'Delivery Manager should render work items as dropdown groups.');
 assert.ok(deliveryManagerJs.includes('approvalGateForDelivery'), 'Delivery Manager should derive human approval checkpoints from each delivery.');
+assert.ok(!deliveryManagerJs.includes("handoff_targets: ['cmo_leader', 'seo_specialist', 'build_team_leader']"), 'Delivery Manager contexts must not hardcode follow-up agent targets.');
+assert.ok(!deliveryManagerJs.includes("source: 'delivery_status'"), 'Delivery Manager must not synthesize authority_request objects from delivery status text.');
 assert.ok(deliveryManagerJs.includes('/approve'), 'Delivery Manager approval gate should call the server approval resume endpoint.');
 assert.ok(deliveryManagerJs.includes('approval_gate'), 'Delivery Manager should include approval gate state in reusable app context.');
 assert.ok(appConsoleCss.includes('.delivery-approval-gate'), 'Delivery Manager approval gate should have app-console styling.');
 assert.ok(!deliveryManagerJs.includes('local delivery samples'), 'Delivery Manager should not depend on local delivery sample payloads.');
 
 assert.ok(chatJs.includes("from './chat-engine.js?v=20260525a'"), 'Chat JS should use root-relative shared chat engine import.');
-assert.ok(appHandoffTransferJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'App handoff transfer should use root-relative delivery action import for legacy social-post extraction.');
+assert.ok(!appHandoffTransferJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'App handoff transfer must not parse delivery body text for legacy social-post extraction.');
+assert.ok(!appHandoffTransferJs.includes('extractSocialPostTextFromDeliveryContent'), 'Dedicated app handoff text should come from explicit artifact metadata only.');
 assert.ok(!chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should not import delivery action parsing helpers directly.');
 assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260525b'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
 assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
@@ -1561,6 +1605,8 @@ assert.ok(worker.includes("'/analytics-console.html'"));
 assert.ok(worker.includes("'/publisher-approval.html'"));
 assert.ok(worker.includes("'/lead-ops.html'"));
 assert.ok(worker.includes("'/campaign-operations.html'"));
+assert.ok(worker.includes("'/ads-ops.html'"));
+assert.ok(worker.includes("'/ads-ops.js'"));
 assert.ok(worker.includes("'/delivery-manager.html'"));
 assert.ok(worker.includes("'/cait-app-bridge.js'"));
 assert.ok(worker.includes("'/app-manifest-registry.js'"));

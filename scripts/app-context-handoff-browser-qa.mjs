@@ -1002,6 +1002,109 @@ try {
   if (xClientPacketOnlyContext.raw_context?.post_text !== 'Packet-only approved copy should still reach the X Client Ops approval queue.') throw new Error('X Client Ops packet-only raw_context did not preserve recovered post text');
   if (!JSON.stringify(xClientPacketOnlyContext.raw_context?.x_post_packet || {}).includes('packet-only-x-post.md')) throw new Error('X Client Ops packet-only source packet was not preserved');
 
+  await page.goto(`${base}/ads-ops.html`);
+  await page.waitForSelector('#adsPlanTable');
+  if (!(await page.textContent('#adsRecordMeta')).includes('No server-side Ads Planner context is loaded yet')) throw new Error('ads empty state was not rendered');
+  await page.goto(`${base}/ads-ops.html?chat_return_to=${encodeURIComponent('/chat?thread=ads')}&chat_handoff_id=ads-handoff-empty`);
+  await page.waitForSelector('#adsHandoffNotice:not([hidden])');
+  if (!(await page.textContent('#adsHandoffNotice')).includes('no server ads packet is loaded yet')) throw new Error('ads chat-return-only warning was not rendered');
+  if (!(await page.textContent('#adsReadinessList')).includes('Send to CAIt will create the server-side ads packet')) throw new Error('ads chat-return-only readiness overclaimed server context');
+
+  const adsTransferContext = appContextFromTransferPayload('ads-launch-console', {
+    transfer_id: 'transfer-ads-launch',
+    title: 'Ads Planner launch handoff',
+    summary: 'Ads Planner returned contract fields and a Markdown delivery file.',
+    ads_saas_handoff: {
+      provider: 'google_ads',
+      budget_cap: '500 USD approved cap',
+      target_cpa: '40 USD assumption',
+      account_status: 'needs connector confirmation'
+    },
+    creative_asset_packet: [
+      { label: 'Headline draft', detail: 'Stable operations after AIAGENT output', status: 'draft_only' }
+    ],
+    stop_rules: [
+      { label: 'Spend stop', detail: 'Pause if first checkpoint exceeds 120 USD without a qualified conversion.' }
+    ],
+    execution_status_labels: [
+      { label: 'campaign_created', detail: 'false' },
+      { label: 'launched', detail: 'false' },
+      { label: 'spent', detail: 'false' }
+    ],
+    measurement_plan: [
+      { label: '24h spend check', detail: 'Review cost and qualified conversion signal.', status: 'scheduled' }
+    ],
+    delivery: {
+      summary: 'Prepared approval-gated paid acquisition plan.',
+      artifacts: [{
+        name: 'ads-planner-delivery.md',
+        artifactType: 'ads_plan',
+        artifactTypes: ['ads_plan', 'ads_saas_handoff'],
+        contentPreview: [
+          '# Ads plan',
+          '',
+          '## Objective',
+          'Prove CAIt can retain stable paid acquisition operations after AIAGENT output.',
+          '',
+          '## Audience',
+          'SaaS operators who distrust disposable AIAGENT chat output.',
+          '',
+          '## Provider',
+          'google_ads. Connector status: needs confirmation.',
+          '',
+          '## Campaign structure',
+          '- Campaign: retained SaaS operations proof',
+          '',
+          '## Budget cap and CPA assumption',
+          '- Budget cap: 500 USD approved cap',
+          '- Target CPA: 40 USD assumption',
+          '',
+          '## Stop rules',
+          '- Spend stop: Pause if first checkpoint exceeds 120 USD without a qualified conversion.',
+          '',
+          '## Creative asset packet',
+          '- Headline draft: Stable operations after AIAGENT output',
+          '',
+          '## Ads SaaS handoff',
+          '- Required before execution: connected Google Ads account and launch owner.',
+          '',
+          '## Approval and launch boundary',
+          '- Approval condition: budget, stop rules, creative, tracking, and launch owner are explicit.',
+          '',
+          '## Execution status labels',
+          '- campaign_created: false / submitted: false / launched: false / spent: false.',
+          '',
+          '## Measurement plan',
+          '- 24h spend check: Review cost and qualified conversion signal.'
+        ].join('\n')
+      }]
+    }
+  }, {
+    manifestById: () => ({
+      id: 'ads-launch-console',
+      name: 'Ads Launch Console',
+      requiresApprovalFor: ['ads_launch', 'budget_spend'],
+      inputContract: {
+        schemaVersion: 'cait-app-context/v1',
+        accepts: ['ads_plan', 'delivery_files', 'ads_saas_handoff', 'creative_asset_packet', 'stop_rules', 'execution_status_labels', 'measurement_plan']
+      }
+    })
+  });
+  if (!JSON.stringify(adsTransferContext.artifacts || []).includes('ads_saas_handoff')) throw new Error('ads transfer context did not preserve ads_saas_handoff artifact');
+  if (!JSON.stringify(adsTransferContext.raw_context?.contract_fields || {}).includes('500 USD approved cap')) throw new Error('ads transfer context did not preserve contract fields in raw_context');
+  await openAppWithContext(page, `/ads-ops.html?chat_return_to=${encodeURIComponent('/chat?thread=ads-transfer')}&chat_handoff_id=ads-transfer-handoff`, adsTransferContext);
+  await page.waitForSelector('#adsPlanTable');
+  await page.waitForFunction(() => document.querySelector('#adsRecordTitle')?.textContent?.includes('Ads Planner launch handoff'));
+  if (!(await page.textContent('#adsPlanTable')).includes('SaaS operators who distrust')) throw new Error('ads markdown audience was not imported');
+  if (!(await page.textContent('#adsLaunchTable')).includes('500 USD approved cap')) throw new Error('ads budget cap was not imported');
+  if (!(await page.textContent('#adsLaunchTable')).includes('Stable operations after AIAGENT output')) throw new Error('ads creative asset packet was not imported');
+  if (!(await page.textContent('#adsMeasurementTable')).includes('24h spend check')) throw new Error('ads measurement plan was not imported');
+  if (!(await page.textContent('#adsHandoffNotice')).includes('CAIt ads handoff session is attached')) throw new Error('ads server context notice was not rendered');
+  const adsPacket = JSON.parse(await page.textContent('#adsContextPreview'));
+  if (adsPacket.raw_context?.chat_handoff_id !== 'ads-transfer-handoff') throw new Error('ads chat handoff id was not preserved in packet');
+  if (!JSON.stringify(adsPacket.artifacts || []).includes('ads_saas_handoff')) throw new Error('ads packet did not return ads_saas_handoff for app contract reuse');
+  if (!JSON.stringify(adsPacket.raw_context?.received_context || {}).includes('ads-planner-delivery.md')) throw new Error('ads source delivery file was not preserved in raw_context');
+
   await openAppWithContext(page, '/lead-ops.html', {
     schema: 'cait-app-context/v1',
     source_app: 'qa_list_creator',

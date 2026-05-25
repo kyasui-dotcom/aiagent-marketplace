@@ -1,5 +1,3 @@
-import { extractSocialPostTextFromDeliveryContent } from './delivery-action-contract.js?v=20260501a';
-
 function defaultCompactTransferText(value = '', max = 1200) {
   const text = String(value || '').replace(/\r\n/g, '\n').trim();
   if (text.length <= max) return text;
@@ -106,14 +104,7 @@ export function appHandoffSocialPostDraftFromFile(file = {}, options = {}) {
       source: String(file?.name || 'delivery file metadata').trim() || 'delivery file metadata'
     };
   }
-  if (options.allowContentExtraction === false) return null;
-  const text = extractSocialPostTextFromDeliveryContent(file?.content || '', { maxLength });
-  return text
-    ? {
-        text,
-        source: String(file?.name || 'delivery file').trim() || 'delivery file'
-      }
-    : null;
+  return null;
 }
 
 export function appHandoffSocialPostDraftFromDeliveryFiles(files = [], options = {}) {
@@ -448,6 +439,50 @@ function appHandoffTransferStrategyText(payload = {}, settings = {}) {
   ], 1800);
 }
 
+const APP_HANDOFF_ADS_CONTRACT_FIELDS = Object.freeze([
+  'ads_plan',
+  'ads_plan_packet',
+  'paid_ads_plan',
+  'campaign_structure',
+  'budget_cap_and_cpa_assumption',
+  'budget_guardrails',
+  'stop_rules',
+  'creative_asset_packet',
+  'ads_saas_handoff',
+  'ads_saas_handoff_packet',
+  'approval_and_launch_boundary',
+  'launch_approval_handoff',
+  'execution_status_labels',
+  'measurement_plan'
+]);
+
+function appHandoffTransferCamelKey(value = '') {
+  return String(value || '').replace(/_([a-z0-9])/g, (_, char) => char.toUpperCase());
+}
+
+function appHandoffTransferContractValue(payload = {}, key = '') {
+  const camel = appHandoffTransferCamelKey(key);
+  const raw = payload.raw_context && typeof payload.raw_context === 'object' ? payload.raw_context : {};
+  const candidates = [
+    payload[key],
+    payload[camel],
+    raw[key],
+    raw[camel],
+    payload.delivery?.[key],
+    payload.delivery?.[camel],
+    payload.context?.[key],
+    payload.context?.[camel]
+  ];
+  return candidates.find((item) => item != null && item !== '');
+}
+
+function appHandoffTransferContractFields(manifest = {}, payload = {}) {
+  return Object.fromEntries(APP_HANDOFF_ADS_CONTRACT_FIELDS
+    .filter((key) => appHandoffTransferManifestAccepts(manifest, key))
+    .map((key) => [key, appHandoffTransferContractValue(payload, key)])
+    .filter(([, value]) => value != null && value !== ''));
+}
+
 export function appContextFromTransferPayload(appId = '', payload = {}, options = {}) {
   const manifestById = options.manifestById || (() => ({}));
   const normalizeUsageId = options.normalizeUsageId || defaultNormalizeUsageId;
@@ -485,11 +520,13 @@ export function appContextFromTransferPayload(appId = '', payload = {}, options 
   const strategyText = appHandoffTransferStrategyText(payload, settings);
   const agentContext = payload.context || payload.transfer?.context || null;
   const settingsContext = settings && Object.keys(settings).length ? settings : null;
+  const acceptedContractFields = appHandoffTransferContractFields(manifest, payload);
   const transferContractArtifacts = [
     appHandoffTransferContractArtifact('post_text', 'Prepared post text', postText, { max: 1200 }),
     appHandoffTransferContractArtifact('strategy', 'Strategy context', strategyText, { max: 1800 }),
     appHandoffTransferContractArtifact('agent_context', 'Agent context', agentContext, { max: 2200 }),
-    appHandoffTransferContractArtifact('settings', 'App settings', settingsContext, { max: 1800 })
+    appHandoffTransferContractArtifact('settings', 'App settings', settingsContext, { max: 1800 }),
+    ...Object.entries(acceptedContractFields).map(([key, value]) => appHandoffTransferContractArtifact(key, key.replace(/_/g, ' '), value, { max: 2200 }))
   ].filter(Boolean);
   const artifacts = [
     ...fileArtifacts,
@@ -533,6 +570,8 @@ export function appContextFromTransferPayload(appId = '', payload = {}, options 
       agents: payload.agents || [],
       order,
       settings,
+      contract_fields: acceptedContractFields,
+      ...acceptedContractFields,
       x_post_packet: payload.x_post_packet || payload.xPostPacket || null,
       social_copy_packet: payload.social_copy_packet || payload.socialCopyPacket || null,
       delivery,

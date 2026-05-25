@@ -212,21 +212,6 @@ function authorityRequestFromJob(job = {}) {
     ownerLabel: job.workflowAgentName || job.assignedAgentId || job.taskType || ''
   });
   if (fromExecutor) return fromExecutor;
-  const failureText = [
-    job.failureCategory,
-    job.failureReason,
-    job.dispatch?.completionStatus,
-    report.completion_state,
-    report.summary
-  ].map((item) => String(item || '')).join(' ');
-  if (/blocked_waiting_for_approval|approval_required|authority|required|connector|oauth|publish|send|post|承認|接続|投稿|送信/i.test(failureText)) {
-    return normalizeAuthorityRequest({
-      reason: job.failureReason || report.summary || 'This run is waiting for explicit approval before it can continue.',
-      source: 'delivery_status'
-    }, {
-      ownerLabel: job.workflowAgentName || job.assignedAgentId || job.taskType || ''
-    });
-  }
   return null;
 }
 
@@ -968,8 +953,7 @@ function buildContext() {
       title: 'CAIt delivery context',
       summary: 'No delivery package is currently loaded. Refresh server jobs or open Deliveries from a CAIt context handoff.',
       facts: ['No delivery selected'],
-      recommended_next_actions: ['Refresh server-side jobs or return to chat and select a delivery.'],
-      handoff_targets: ['cmo_leader', 'seo_specialist', 'build_team_leader']
+      recommended_next_actions: ['Refresh server-side jobs or return to chat and select a delivery.']
     });
   }
   const approvalGate = approvalGateForDelivery(delivery);
@@ -1003,7 +987,6 @@ function buildContext() {
       delivery.nextAction || 'Ask a leader to run follow-up with this delivery.',
       'Use external action tools only after approval and connector state are visible.'
     ].filter(Boolean),
-    handoff_targets: ['cmo_leader', 'seo_specialist', 'build_team_leader'],
     raw_context: {
       ...(importedContext ? { received_context: importedContext } : {}),
       source_context_id: importedContext?.id || '',
