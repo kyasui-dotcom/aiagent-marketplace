@@ -379,10 +379,11 @@
       "id": "code-agent-patch-handoff",
       "file": "code.js",
       "kind": "code",
-      "prompt": "Prepare an implementation handoff for fixing a delivery item renderer bug. Include affected files, patch plan, validation evidence, risks, rollback, and PR notes.",
+      "prompt": "Prepare an implementation handoff for fixing a delivery item renderer bug. No repository diff has been supplied yet, so label the current delivery planned-only unless execution evidence exists. Include affected files, patch plan, validation command/result boundary, validation evidence or unrun reason, risks, rollback, and PR notes. Do not claim files were changed, tests passed, or a PR was opened without proof.",
       "body": {
         "input": {
           "affected_files": ["public/delivery-renderer.js", "lib/delivery-items.js"],
+          "change_status": "no repository diff supplied",
           "validation_command": "npm run qa:builtin-agents"
         }
       }
