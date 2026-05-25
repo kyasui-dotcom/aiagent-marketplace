@@ -449,11 +449,17 @@
       "id": "legal-leader-policy-boundary",
       "file": "legal-leader.js",
       "kind": "legal_leader",
-      "prompt": "Prepare a policy review packet for marketplace provider terms. Include issue map, risk level, draft clauses, jurisdiction assumptions, and attorney-review flags.",
+      "prompt": "Prepare a provider marketplace terms review packet for Japan-based AI agent orders. Include a top jurisdiction and reviewer-needed snapshot, source material status, issue map, risk levels, draft clause options, attorney review queue, approval/execution status labels, and open questions. Source materials are partial; do not claim definitive legal advice, attorney review, owner approval, publication, or compliance clearance without proof. Next owner is the founder.",
       "body": {
         "input": {
           "jurisdiction": "Japan",
-          "policy": "provider marketplace terms"
+          "business_context": "AI agent marketplace where customers order managed agent work and providers may receive payouts",
+          "policy": "provider marketplace terms",
+          "source_material_status": "draft provider terms outline only; no privacy policy, refund policy, payout schedule, provider contract, or attorney memo supplied",
+          "data_payment_flows": "customer account data, order instructions, Stripe/PayJP-style payment flow, provider payout records",
+          "expected_deliverable": "founder-ready issue spotting packet with draft-only clauses and counsel questions",
+          "review_owner": "founder before qualified counsel",
+          "next_owner": "founder"
         }
       }
     },
