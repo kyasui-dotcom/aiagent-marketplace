@@ -243,9 +243,9 @@ const externalCommunicationContractExpectations = [
   {
     kind: 'indie_hackers',
     actions: ['prepare_indie_hackers_post_packet', 'prepare_indie_hackers_reply_plan', 'prepare_indie_hackers_publish_handoff'],
-    requiredSections: ['Founder story angle', 'Community fit', 'CTA softness', 'Manual publish boundary', 'Execution status labels'],
-    guidedSections: ['CTA softness', 'Manual publish boundary', 'Execution status labels'],
-    forbiddenClaims: ['published', 'posted', 'commented']
+    requiredSections: ['Founder story angle', 'Community/source status', 'Proof-safe claim ledger', 'Exact post draft', 'CTA softness', 'Story vs ad rewrite notes', 'Manual publish boundary', 'Post-publish update packet', 'Execution status labels'],
+    guidedSections: ['Proof-safe claim ledger', 'CTA softness', 'Story vs ad rewrite notes', 'Manual publish boundary', 'Post-publish update packet', 'Execution status labels'],
+    forbiddenClaims: ['published', 'posted', 'commented', 'metric verified without source proof', 'community rules checked without dated source', 'post approved without owner evidence', 'feedback collected without returned evidence']
   }
 ];
 
