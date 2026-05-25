@@ -605,11 +605,12 @@
       "id": "teardown-competitor-wedge",
       "file": "teardown.js",
       "kind": "teardown",
-      "prompt": "Teardown a competitor landing page for an AI agent marketplace. Include competitor classification, observed facts, inference, comparison table, wedge, and first test.",
+      "prompt": "Teardown a competitor landing page for an AI agent marketplace. The only competitor evidence supplied is a URL, with no readable page text or screenshot. Include source access status, competitor classification, observed facts, observed-unavailable labels, bounded inference, comparison table, wedge, first test, and verification queue. Do not claim the landing page was observed unless readable source evidence is supplied.",
       "body": {
         "input": {
           "competitor_url": "https://example.com",
-          "decision": "positioning"
+          "decision": "positioning",
+          "source_access_status": "url_only_no_page_content"
         }
       }
     },
