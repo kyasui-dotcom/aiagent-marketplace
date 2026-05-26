@@ -53,12 +53,73 @@
       "id": "cmo-leader-growth-plan",
       "file": "cmo-leader.js",
       "kind": "cmo_leader",
-      "prompt": "Create a marketing plan for https://aiagent-marketplace.net to increase paid agent orders from solo founders. Separate strategy, specialist work, Publisher handoff, and actions that need approval.",
+      "prompt": "Create one executive growth plan for https://aiagent-marketplace.net to increase paid agent orders from solo founders. Use the supplied GA4 baseline, Search Console rows, current landing-page status, proof status, and existing article inventory. Include a source coverage ledger, priority diagnosis, channel priority table, 2-week execution plan, measurement checklist, owner approval boundary, and inputs needed next. Keep any missing source status explicit instead of inventing traffic, query, page, or content performance, and do not claim anything was published, handed off, ingested, or externally executed.",
       "body": {
         "input": {
           "target_url": "https://aiagent-marketplace.net",
           "conversion_goal": "paid agent order",
-          "audience": "solo founders"
+          "audience": "solo founders",
+          "ga4": {
+            "source_status": "owner-supplied export; connector not executed by agent",
+            "date_range": "2026-05-01 to 2026-05-24",
+            "sessions": 1200,
+            "signups": 18,
+            "paid_orders": 0,
+            "paid_order_event_status": "not verified"
+          },
+          "search_console": {
+            "source_status": "partial owner-supplied query/page export; connector not executed by agent",
+            "date_range": "2026-05-01 to 2026-05-24",
+            "rows": [
+              {
+                "query": "ai agent marketplace",
+                "landing_page": "https://aiagent-marketplace.net/",
+                "impressions": 420,
+                "clicks": 18,
+                "position": 11.8
+              },
+              {
+                "query": "hire ai agent",
+                "landing_page": "https://aiagent-marketplace.net/",
+                "impressions": 130,
+                "clicks": 3,
+                "position": 18.2
+              }
+            ],
+            "missing_exports": [
+              "pricing page queries",
+              "brand query rows"
+            ]
+          },
+          "landing_page": {
+            "source_status": "homepage URL and owner summary supplied; full current copy not supplied",
+            "known_sections": [
+              "hero",
+              "order CTA"
+            ],
+            "missing_sections": [
+              "full page copy",
+              "trust/proof block",
+              "pricing page copy"
+            ]
+          },
+          "proof_status": "no verified customer testimonials, case studies, or revenue outcomes supplied",
+          "existing_content_inventory": {
+            "source_status": "partial owner-supplied list",
+            "articles": [
+              {
+                "title": "What is an AI agent marketplace?",
+                "url": "https://aiagent-marketplace.net/blog/ai-agent-marketplace",
+                "status": "draft outline only; performance not supplied"
+              }
+            ],
+            "missing": [
+              "published article performance",
+              "internal link map"
+            ]
+          },
+          "approval_owner": "founder",
+          "execution_boundary": "no Publisher, CMS, ads, social, email, or analytics connector execution proof supplied"
         }
       }
     },

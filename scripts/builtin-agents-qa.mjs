@@ -840,6 +840,14 @@ globalThis.fetch = async (url, options = {}) => {
   return configuredOpenAiFetch(url, options);
 };
 const cmoRawDefinition = sampleAgentDefinitionForKind('cmo_leader');
+assert.ok(
+  cmoRawDefinition.deliveryContract?.requiredDeliverySections?.includes('Source coverage ledger'),
+  'CMO Leader delivery contract should require a source coverage ledger'
+);
+assert.ok(
+  cmoRawDefinition.deliveryContract?.forbiddenClaims?.some((item) => /query intent|page performance|content gap/i.test(item)),
+  'CMO Leader delivery contract should forbid inferred search/page/content performance claims without supplied evidence'
+);
 const cmoRawDelivery = await cmoRawDefinition.provider.runJob({
   kind: 'cmo_leader',
   definition: cmoRawDefinition,
