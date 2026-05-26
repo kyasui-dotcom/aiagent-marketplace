@@ -766,11 +766,58 @@
       "id": "meeting-notes-action-log",
       "file": "meeting-notes.js",
       "kind": "meeting_notes",
-      "prompt": "Turn meeting notes into minutes, decision log, accountable action items, owners, deadlines, follow-up draft, source-to-action trace, owner-visible handoff packets, and private context scope.",
+      "prompt": "Turn the provider approval workflow transcript into minutes, decision log, accountable action items, owners, deadlines, follow-up draft, line-level source ledger, source-to-action trace, owner-visible handoff packets, private context scope, distribution approval gate, and execution status labels. Each action item must cite transcript line IDs or be labeled inferred/ambiguous. Keep the private aside out of owner-visible handoffs, and do not claim minutes were distributed, tasks assigned, or follow-ups sent without proof.",
       "body": {
         "input": {
           "meeting_topic": "provider approval workflow",
-          "participants": ["ops", "engineering", "support"]
+          "meeting_date": "2026-05-26",
+          "participants": ["ops lead", "engineering owner", "support lead"],
+          "transcript_source_status": "owner-supplied line-numbered transcript excerpt; no recording or calendar connector proof supplied",
+          "transcript_lines": [
+            {
+              "line_id": "L01",
+              "speaker": "ops lead",
+              "text": "We agreed not to approve new providers until identity verification evidence is attached to the provider record."
+            },
+            {
+              "line_id": "L02",
+              "speaker": "engineering owner",
+              "text": "I can add the provider record evidence-required flag by Friday, but I need support to confirm the exact document checklist."
+            },
+            {
+              "line_id": "L03",
+              "speaker": "support lead",
+              "text": "Support will draft the checklist tomorrow and mark which fields are customer-visible versus internal-only."
+            },
+            {
+              "line_id": "L04",
+              "speaker": "ops lead",
+              "text": "Please send the checklist draft to me for approval before anyone updates provider-facing copy."
+            },
+            {
+              "line_id": "L05",
+              "speaker": "ops lead",
+              "text": "Private aside: one provider's failed verification details should stay out of the owner handoff."
+            },
+            {
+              "line_id": "L06",
+              "speaker": "engineering owner",
+              "text": "No tasks have been created in Linear yet, and no follow-up email has been sent."
+            }
+          ],
+          "expected_owner_visible_handoffs": [
+            "engineering owner needs only the evidence-required flag task and checklist dependency",
+            "support lead needs only the checklist task and visibility classification request",
+            "ops lead needs approval queue and unresolved questions"
+          ],
+          "private_context": [
+            {
+              "source_line": "L05",
+              "handling": "withhold from owner-visible handoffs unless founder explicitly approves disclosure"
+            }
+          ],
+          "connector_status": "no Linear, Gmail, or calendar connector execution proof supplied",
+          "approval_owner": "ops lead"
         }
       }
     },

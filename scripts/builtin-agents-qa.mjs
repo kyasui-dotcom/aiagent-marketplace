@@ -98,9 +98,9 @@ const operationsContractExpectations = [
   {
     kind: 'meeting_notes',
     actions: ['prepare_meeting_minutes', 'extract_action_items', 'prepare_minutes_distribution_handoff', 'prepare_action_owner_handoff'],
-    requiredSections: ['Decision log', 'Action items', 'Follow-up draft', 'Distribution approval gate', 'Source-to-action trace', 'Owner handoff packet', 'Private context scope', 'Execution status labels'],
-    guidedSections: ['Source-to-action trace', 'Owner handoff packet', 'Private context scope', 'Execution status labels'],
-    forbiddenClaims: ['minutes distributed without proof', 'raw transcript forwarded without scope', 'owner action accepted without owner proof', 'follow-up sent without connector proof']
+    requiredSections: ['Decision log', 'Action items', 'Follow-up draft', 'Distribution approval gate', 'Line-level source ledger', 'Source-to-action trace', 'Owner handoff packet', 'Private context scope', 'Execution status labels'],
+    guidedSections: ['Line-level source ledger', 'Source-to-action trace', 'Owner handoff packet', 'Private context scope', 'Execution status labels'],
+    forbiddenClaims: ['minutes distributed without proof', 'action item without cited source line or inference label', 'raw transcript forwarded without scope', 'private aside exposed in owner-visible handoff', 'owner action accepted without owner proof', 'follow-up sent without connector proof']
   },
   {
     kind: 'meeting_prep',
