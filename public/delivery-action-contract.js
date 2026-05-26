@@ -7,8 +7,8 @@ const CONNECTOR_ACTION_LABELS = Object.freeze({
 const DELIVERY_ACTION_CONTRACTS = Object.freeze({
   article_draft: Object.freeze({
     type: 'article_draft',
-    title: 'ARTICLE DRAFT DETECTED',
-    description: 'CAIt detected a publishable long-form draft. Route it into publish preparation or export it as-is.',
+    title: 'ARTICLE DRAFT CONTRACT',
+    description: 'The agent returned an explicit publishable long-form draft contract. Route it into publish preparation or export it as-is.',
     copyLabel: 'COPY ARTICLE',
     prepareLabel: 'PREPARE PUBLISH ORDER',
     connectAction: '',
@@ -58,8 +58,8 @@ const DELIVERY_ACTION_CONTRACTS = Object.freeze({
 });
 
 const DELIVERY_UI_TEXT = Object.freeze({
-  articleDetectedLabel: 'ARTICLE DETECTED',
-  articleDetectedDescription: 'CAIt detected a publishable article draft from this delivery. Confirm the target and URL path before preparing the next execution.',
+  articleDetectedLabel: 'ARTICLE DRAFT CONTRACT',
+  articleDetectedDescription: 'This delivery returned explicit article draft metadata. Confirm the target and URL path before preparing the next execution.',
   genericReasonFallback: 'Detected from the previous delivery and ready for the next action.',
   executionStoppedNotice: 'Execution for this delivery is stopped because the user cancelled it. Clear the stop state to run it again.',
   googleSourcesTitle: 'GOOGLE SOURCES',

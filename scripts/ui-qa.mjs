@@ -390,6 +390,7 @@ const clientFlexibleToolCandidates = clientJs.slice(
 );
 assert.ok(clientFlexibleToolCandidates.includes('Social publishing handoff'), 'Social publishing hints should point to SaaS/app handoff.');
 assert.ok(!/title:\s*'X Ops Connector'|action:\s*'connect_x'|action:\s*'post_current_to_x'|POST EXACT TEXT|DRAFT ONLY|connected X account|Connect your X account with OAuth first/.test(clientFlexibleToolCandidates), 'Flexible social publishing tools must not expose direct X OAuth or posting actions.');
+assert.ok(clientJs.includes("from './client-delivery-files.js?v=20260526b'"), 'Legacy client should load the explicit-contract delivery file parser cache key.');
 assert.ok(!clientJs.includes('function postCurrentComposerToX'), 'Client chat must not post composer text directly to X.');
 assert.ok(!clientJs.includes("'/api/connectors/x/post'"), 'Client chat must not call the X posting endpoint directly.');
 assert.ok(!workActionRegistry.includes("post_current_to_x: { kind: 'executor' }"), 'Work action registry must not expose direct chat-to-X execution.');
@@ -927,8 +928,8 @@ assert.ok(!adsOpsJs.includes("source_app: 'campaign_operations'"), 'Ads Launch C
 assert.ok(!adsOpsJs.includes("source_app: 'delivery_manager'"), 'Ads Launch Console JS should not contain Delivery Manager app logic.');
 assert.ok(growthOpsJs.includes("source_app: 'growth_experiment_console'"), 'Growth Experiment Console app logic should stay in growth-ops.js.');
 assert.ok(growthOpsJs.includes("fetchCaitAppContextFromUrl"), 'Growth Experiment Console should receive CAIt app contexts.');
-assert.ok(growthOpsHtml.includes('/growth-ops.js?v=20260526g'), 'Growth Experiment Console should bump the script cache key for explicit approval-request passthrough changes.');
-assert.ok(growthOpsHtml.includes('Publisher activation lane') && growthOpsHtml.includes('openGrowthPublisherBtn'), 'Growth Experiment Console should expose a Publisher activation lane.');
+assert.ok(growthOpsHtml.includes('/growth-ops.js?v=20260526h'), 'Growth Experiment Console should bump the script cache key for competitor-style workspace UX changes.');
+assert.ok(growthOpsHtml.includes('Growth & Publisher Workspace') && growthOpsHtml.includes('Experiment scorecard') && growthOpsHtml.includes('Publisher activation lane') && growthOpsHtml.includes('openGrowthPublisherBtn'), 'Growth Experiment Console should expose a familiar scorecard and Publisher approval workspace.');
 assert.ok(growthOpsJs.includes("type: 'growth_experiment_packet'"), 'Growth Experiment Console should return growth_experiment_packet artifacts.');
 assert.ok(growthOpsJs.includes("type: 'no_paid_growth_plan_packet'"), 'Growth Experiment Console should return no_paid_growth_plan_packet artifacts for Free Web Growth Leader reuse.');
 assert.ok(growthOpsJs.includes("type: 'organic_specialist_handoff_packet'"), 'Growth Experiment Console should return organic_specialist_handoff_packet artifacts for specialist handoff reuse.');

@@ -52,15 +52,12 @@ import {
   chatEngineIsNeedsInputResponse
 } from './chat-engine.js?v=20260501a';
 import {
-  articleCandidateFromClassification,
   articleCandidateFromDelivery,
   buildDeliveryZipBlob,
-  deliveryClassificationInput,
   genericDeliverableFromClassification,
   genericDeliverableFromExplicitFiles,
-  normalizeArticleText,
-  shouldClassifyDeliveryCandidate
-} from './client-delivery-files.js?v=20260526a';
+  normalizeArticleText
+} from './client-delivery-files.js?v=20260526b';
 import { compactClientText as compactChatText } from './client-text-utils.js?v=20260521a';
 import {
   deliveryFileDisplayTitle,
@@ -15457,9 +15454,8 @@ function marketingDeliverableForJob(job = null) {
   if (!job?.id) return { genericDeliverable: null, article: null, summaryText: '', previewText: '', previewLabel: '', report: null, files: [] };
   const report = job.output?.report || null;
   const files = visibleDeliveryFiles(job.output?.files);
-  const cached = state.deliveryPublishClassifications?.[job.id] || null;
-  const genericDeliverable = genericDeliverableFromClassification(job, cached);
-  const article = articleCandidateFromDelivery(job, report || {}, files) || articleCandidateFromClassification(job, cached);
+  const genericDeliverable = null;
+  const article = articleCandidateFromDelivery(job, report || {}, files);
   const summaryText = deliverySummaryText(report || {});
   const previewText = String(genericDeliverable?.content || article?.content || summaryText || files[0]?.content || '').trim();
   const previewLabel = genericDeliverable?.title || article?.title || files[0]?.name || '';
@@ -15862,45 +15858,6 @@ function downloadDeliveryZip(files = [], run = null) {
   link.remove();
   URL.revokeObjectURL(url);
   flash(`Downloaded ${fileName}.`, 'ok');
-}
-
-async function classifyDeliveryArticleCandidate(run = null, report = {}, files = []) {
-  if (!run?.id) return null;
-  const input = deliveryClassificationInput(report, files);
-  if (!input?.content) return null;
-  const key = String(run.id);
-  state.deliveryPublishClassifications[key] = { status: 'pending' };
-  try {
-    const payload = await api('/api/deliveries/classify', {
-      method: 'POST',
-      body: JSON.stringify({
-        job_id: run.id,
-        task_type: run.taskType || '',
-        file_name: input.fileName || '',
-        format: input.format || '',
-        title: input.title || '',
-        content: input.content || ''
-      })
-    });
-    const cached = {
-      status: 'done',
-      contentType: String(payload?.content_type || 'other'),
-      title: String(payload?.title || ''),
-      suggestedSlug: String(payload?.suggested_slug || ''),
-      confidence: Number(payload?.confidence || 0),
-      reason: String(payload?.reason || ''),
-      actionContract: resolveDeliveryActionContract(payload?.content_type || 'other', payload?.action_contract),
-      content: input.content,
-      fileName: input.fileName,
-      format: input.format
-    };
-    state.deliveryPublishClassifications[key] = cached;
-    if (state.selectedJobId === key) renderRunDelivery(selectedJob());
-    return cached;
-  } catch (error) {
-    state.deliveryPublishClassifications[key] = { status: 'error', error: String(error?.message || error) };
-    return null;
-  }
 }
 
 function deliveryActionMeta(deliverable = null) {
@@ -18428,15 +18385,12 @@ function resolveDeliveryCandidates(run = null, report = {}, files = [], cachedPu
   const explicitDeliverable = genericDeliverableFromExplicitFiles(report, files);
   return {
     genericDeliverable: explicitDeliverable || genericDeliverableFromClassification(run, cachedPublishClassification),
-    article: articleCandidateFromDelivery(run, report || {}, files) || articleCandidateFromClassification(run, cachedPublishClassification)
+    article: articleCandidateFromDelivery(run, report || {}, files)
   };
 }
 
 function maybeClassifyDeliveryCandidates(run = null, report = {}, files = [], candidates = {}, cachedPublishClassification = null) {
-  if (candidates?.article || candidates?.genericDeliverable) return;
-  if (shouldClassifyDeliveryCandidate(run, report || {}, files, candidates?.article || null, cachedPublishClassification)) {
-    void classifyDeliveryArticleCandidate(run, report || {}, files);
-  }
+  return;
 }
 
 function hideDeliveryFollowupPanel() {

@@ -31,6 +31,7 @@ const deliveryRendererSource = read('public/delivery-renderer.js');
 const deliveryItemsSource = read('lib/delivery-items.js');
 const deliveryRoutesSource = read('lib/routes/deliveries.js');
 const deliveryManagerSource = read('public/delivery-manager.js');
+const deliveryActionContractSource = read('public/delivery-action-contract.js');
 const openChatIntentSource = read('lib/open-chat-intent.js');
 const chatHtmlSource = read('public/chat.html');
 const appHandoffGateSource = read('public/app-handoff-gate.js');
@@ -525,6 +526,44 @@ assert.ok(
   clientDeliveryFilesSource.includes("['social_post_pack', 'email_pack', 'code_handoff', 'report_bundle'].includes(type)")
     && clientDeliveryFilesSource.includes('execution_candidate === true'),
   'client generic delivery actions must require explicit agent/provider execution-candidate file metadata'
+);
+const clientArticleCandidateSource = clientDeliveryFilesSource.slice(
+  clientDeliveryFilesSource.indexOf('export function articleCandidateFromDelivery'),
+  clientDeliveryFilesSource.indexOf('export function articleCandidateFromClassification')
+);
+assert.ok(
+  clientDeliveryFilesSource.includes('const ARTICLE_DRAFT_CONTRACT_TYPES = Object.freeze(new Set([')
+    && clientDeliveryFilesSource.includes('function hasExplicitArticleDraftContract')
+    && clientArticleCandidateSource.includes('hasExplicitArticleDraftContract(report)')
+    && clientArticleCandidateSource.includes('explicitArticleFile(files)'),
+  'client article publish cards must require explicit article_draft agent/provider metadata'
+);
+assertNotIncludes(clientArticleCandidateSource, [
+  'deliveryClassificationInput(report, files)',
+  'textLooksLikeArticle(content)',
+  '/(article|blog|post|seo|landing)/'
+], 'public/client-delivery-files.js article publish candidate');
+const clientArticleClassificationSource = clientDeliveryFilesSource.slice(
+  clientDeliveryFilesSource.indexOf('export function articleCandidateFromClassification'),
+  clientDeliveryFilesSource.indexOf('export function genericDeliverableFromClassification')
+);
+assert.ok(
+  clientArticleClassificationSource.includes('return null;'),
+  'body-derived article classification must not create publish cards without explicit article_draft metadata'
+);
+const clientShouldClassifyDeliverySource = clientDeliveryFilesSource.slice(
+  clientDeliveryFilesSource.indexOf('export function shouldClassifyDeliveryCandidate'),
+  clientDeliveryFilesSource.length
+);
+assert.ok(
+  clientShouldClassifyDeliverySource.includes('return false;')
+    && !clientShouldClassifyDeliverySource.includes('deliveryClassificationInput(report, files)'),
+  'client must not invoke body-derived delivery classification to create publish preparation cards'
+);
+assert.ok(
+  deliveryActionContractSource.includes('ARTICLE DRAFT CONTRACT')
+    && !deliveryActionContractSource.includes('CAIt detected a publishable article draft from this delivery.'),
+  'delivery publish UI copy must describe explicit article contracts, not body-text detection'
 );
 const clientPreorderIntentSource = clientSource.slice(clientSource.indexOf('function preorderIntentLlmAnswerFromResult'), clientSource.indexOf('function openChatPreparedOrderActions'));
 assert.ok(

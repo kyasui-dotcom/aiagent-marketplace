@@ -12,27 +12,82 @@
   <style>
     .growth-workspace {
       display: grid;
-      gap: 16px;
+      gap: 14px;
     }
     .growth-title {
       margin: 0;
-      font-size: 24px;
-      line-height: 1.2;
+      font-size: 22px;
+      line-height: 1.18;
     }
-    .growth-grid {
+    .growth-product-head,
+    .growth-tabbar,
+    .growth-stage-row {
+      border: 1px solid #d8dee6;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .growth-product-head {
       display: grid;
-      grid-template-columns: minmax(260px, 390px) minmax(0, 1fr);
-      gap: 16px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: center;
+      padding: 14px;
+    }
+    .growth-tabbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 6px;
+    }
+    .growth-tabbar a {
+      color: #394150;
+      font-size: 13px;
+      font-weight: 740;
+      line-height: 1;
+      padding: 9px 10px;
+      border-radius: 6px;
+      text-decoration: none;
+    }
+    .growth-tabbar a.active,
+    .growth-tabbar a:hover {
+      background: #eef3ff;
+      color: #164baf;
+    }
+    .growth-board {
+      display: grid;
+      grid-template-columns: minmax(245px, 300px) minmax(0, 1fr) minmax(285px, 355px);
+      gap: 14px;
+      align-items: start;
+    }
+    .growth-main-stack,
+    .growth-inspector,
+    .growth-sidebar {
+      display: grid;
+      gap: 12px;
     }
     .growth-panel {
       border: 1px solid #d8dee6;
       border-radius: 8px;
       background: #fff;
-      padding: 14px;
+      padding: 12px;
     }
     .growth-section {
       display: grid;
       gap: 12px;
+    }
+    .growth-panel-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 10px;
+    }
+    .growth-panel-head h2,
+    .growth-panel-head h3 {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.25;
     }
     .growth-table {
       width: 100%;
@@ -46,19 +101,23 @@
       text-align: left;
       vertical-align: top;
     }
+    .growth-table th {
+      color: #667085;
+      font-size: 11px;
+      font-weight: 760;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      background: #f8fafc;
+    }
     .growth-table td {
       overflow-wrap: anywhere;
-    }
-    .growth-stack {
-      display: grid;
-      gap: 10px;
     }
     .growth-record-card {
       width: 100%;
       text-align: left;
       border: 1px solid #d8dee6;
       border-radius: 8px;
-      background: #f8fafc;
+      background: #fff;
       padding: 10px;
     }
     .growth-record-card strong {
@@ -79,8 +138,34 @@
       flex-wrap: wrap;
       gap: 8px;
     }
+    .growth-status-strip {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .growth-status-strip .metric-card {
+      padding: 10px;
+    }
+    .growth-stage-row {
+      padding: 10px;
+    }
+    .growth-stage-row .workflow-strip {
+      border: 0;
+      padding: 0;
+      background: transparent;
+    }
+    .growth-preview-toggle summary {
+      cursor: pointer;
+      color: #394150;
+      font-size: 13px;
+      font-weight: 760;
+    }
+    .growth-preview-toggle[open] summary {
+      margin-bottom: 8px;
+    }
     @media (max-width: 860px) {
-      .growth-grid {
+      .growth-product-head,
+      .growth-board {
         grid-template-columns: 1fr;
       }
       .growth-action-row > * {
@@ -110,161 +195,135 @@
       </header>
 
       <section class="workspace growth-workspace">
-        <div class="workspace-head">
+        <section class="growth-product-head" aria-label="Growth Publisher workspace header">
           <div>
-            <span class="kicker">Growth experiment operations</span>
-            <h1 class="growth-title">Turn Growth AIAGENT output into a retained experiment launch gate.</h1>
-            <p class="growth-meta">No-paid growth plan, specialist handoff, bottleneck, ICP/offer, hypothesis, exact artifact, activation owner, measurement owner, threshold, kill rule, proof tracker, and review date stay attached to the next CAIt run.</p>
+            <h1 class="growth-title">Growth & Publisher Workspace</h1>
+            <p class="growth-meta">Experiment scorecard, launch guardrails, and publishing approval queue.</p>
           </div>
-        </div>
+          <span class="status-pill pending" id="growthReadinessPill">No growth packet loaded</span>
+        </section>
+
+        <nav class="growth-tabbar" aria-label="Growth workspace views">
+          <a class="active" href="#experiment">Summary</a>
+          <a href="#activation">Activation</a>
+          <a href="#measurement">Measurement</a>
+          <a href="#publisher">Publish</a>
+        </nav>
 
         <section class="notice" id="growthHandoffNotice" hidden aria-label="CAIt growth handoff notice"></section>
 
-        <section class="ops-story-grid" aria-label="Growth experiment value">
-          <article class="panel ops-story-panel">
-            <div class="status-row compact-head">
-              <div>
-                <span class="kicker">Before / After</span>
-                <h2>From broad growth advice to one measurable experiment record.</h2>
-              </div>
-              <span class="status-pill pending" id="growthReadinessPill">No growth packet loaded</span>
-            </div>
-            <div class="ops-compare-grid">
-              <section class="ops-compare-card before">
-                <span class="ops-compare-label">Before</span>
-                <h3>AIAGENT growth answer</h3>
-                <ul class="ops-bullet-list">
-                  <li>No-paid growth plans, specialist handoffs, owners, and proof can remain mixed in Markdown.</li>
-                  <li>An experiment can look launch-ready without approval or measurement state.</li>
-                  <li>The next operator may not know when to stop, review, or continue.</li>
-                </ul>
-              </section>
-              <section class="ops-compare-card after">
-                <span class="ops-compare-label">After</span>
-                <h3>Growth Experiment Console SaaS</h3>
-                <ul class="ops-bullet-list">
-                  <li>Plan, specialist handoff, exact artifact, activation, and measurement are separated.</li>
-                  <li>Launch stays blocked until owner, approval, proof, and review date are visible.</li>
-                  <li>CAIt receives a server-side context packet for follow-up operations.</li>
-                </ul>
-              </section>
-            </div>
-          </article>
-          <article class="panel ops-readiness-panel">
-            <div class="status-row compact-head">
-              <div>
-                <span class="kicker">Experiment readiness</span>
-                <h2>What must survive the handoff</h2>
-              </div>
-            </div>
-            <div class="ops-readiness-list" id="growthReadinessList"></div>
-          </article>
-        </section>
-
-        <section class="workflow-strip" aria-label="Growth experiment workflow">
-          <div class="workflow-step current" id="growthStepExperiment">
-            <span class="step-index">1</span>
-            <span><strong>Experiment</strong><span>Recover bottleneck, ICP/offer, and hypothesis.</span></span>
-          </div>
-          <div class="workflow-step" id="growthStepActivation">
-            <span class="step-index">2</span>
-            <span><strong>Activation</strong><span>Keep exact artifact, owner, and approval explicit.</span></span>
-          </div>
-          <div class="workflow-step" id="growthStepMeasurement">
-            <span class="step-index">3</span>
-            <span><strong>Measurement</strong><span>Attach threshold, kill rule, proof, and review date.</span></span>
-          </div>
-          <div class="workflow-step" id="growthStepPublisher">
-            <span class="step-index">4</span>
-            <span><strong>Publisher</strong><span>Move the approved artifact into Publisher review.</span></span>
-          </div>
-        </section>
-
-        <section class="growth-panel growth-section" aria-label="Publisher activation lane">
-          <div class="status-row">
-            <div>
-              <span class="kicker">Publisher activation lane</span>
-              <h2>Turn the experiment into approval-ready publishing work.</h2>
-            </div>
-            <span class="status-pill pending" id="growthPublisherPill">Publisher packet not ready</span>
-          </div>
-          <p class="growth-meta" id="growthPublisherSummary">Load a Growth packet to create LP, social copy, and approval queue context for Publisher.</p>
-          <div class="ops-readiness-list" id="growthPublisherList"></div>
-          <div class="growth-action-row">
-            <button id="openGrowthPublisherBtn" class="primary-btn" type="button">Open in Publisher</button>
-            <button id="copyGrowthPublisherBtn" class="ghost-btn" type="button">Copy Publisher packet</button>
-          </div>
-          <pre class="context-preview growth-preview" id="growthPublisherPreview"></pre>
-        </section>
-
-        <section class="growth-panel growth-section" aria-label="AIAGENT growth handoff audit">
-          <div class="status-row">
-            <div>
-              <span class="kicker">AIAGENT handoff audit</span>
-              <h2>Launch gaps are visible before traffic or product changes move.</h2>
-            </div>
-            <span class="status-pill pending" id="growthHandoffAuditPill">No packet audited</span>
-          </div>
-          <p class="growth-meta" id="growthHandoffAuditSummary">Open this app from a Growth handoff to audit experiment, artifact, activation, measurement, proof, and review continuity.</p>
-          <div class="handoff-audit-grid" id="growthHandoffAuditList"></div>
-        </section>
-
-        <section class="metric-strip" aria-label="Growth experiment summary">
-          <article class="metric-card">
-            <span>Experiment anchors</span>
-            <strong id="growthExperimentMetric">0</strong>
-            <small>Bottleneck, ICP/offer, hypothesis, and experiment packet retained.</small>
-          </article>
-          <article class="metric-card">
-            <span>Artifact rows</span>
-            <strong id="growthArtifactMetric">0</strong>
-            <small>Exact artifact and execution packet rows ready for review.</small>
-          </article>
-          <article class="metric-card">
-            <span>Activation gates</span>
-            <strong id="growthActivationMetric">0</strong>
-            <small>Activation, approval, measurement owner, and review date checks.</small>
-          </article>
-          <article class="metric-card">
-            <span>Measurement checks</span>
-            <strong id="growthMeasurementMetric">0</strong>
-            <small>Tracking, threshold, kill rule, status, and proof rows.</small>
-          </article>
-        </section>
-
-        <div class="growth-grid">
-          <aside class="growth-panel growth-stack" aria-label="Recovered growth experiment">
+        <div class="growth-board">
+          <aside class="growth-sidebar" aria-label="Experiment control rail">
             <article class="growth-record-card">
               <strong id="growthRecordTitle">No Growth packet loaded</strong>
-              <span class="growth-meta" id="growthRecordMeta">Open from CAIt or paste/send an app context to populate this console.</span>
+              <span class="growth-meta" id="growthRecordMeta">Open from CAIt or send a Growth app context to populate this workspace.</span>
             </article>
-            <table class="growth-table" id="growthExperimentTable" aria-label="Growth experiment overview"></table>
+            <section class="growth-panel growth-section" aria-label="Experiment readiness">
+              <div class="growth-panel-head">
+                <h2>Readiness</h2>
+              </div>
+              <div class="ops-readiness-list" id="growthReadinessList"></div>
+            </section>
+            <section class="growth-status-strip" aria-label="Growth experiment summary">
+              <article class="metric-card">
+                <span>Experiment</span>
+                <strong id="growthExperimentMetric">0</strong>
+              </article>
+              <article class="metric-card">
+                <span>Artifact</span>
+                <strong id="growthArtifactMetric">0</strong>
+              </article>
+              <article class="metric-card">
+                <span>Activation</span>
+                <strong id="growthActivationMetric">0</strong>
+              </article>
+              <article class="metric-card">
+                <span>Measure</span>
+                <strong id="growthMeasurementMetric">0</strong>
+              </article>
+            </section>
           </aside>
 
-          <section class="growth-panel growth-section">
-            <div class="status-row">
-              <h2>Exact artifact and activation</h2>
-            </div>
-            <table class="growth-table" id="growthActivationTable" aria-label="Growth activation review"></table>
+          <section class="growth-main-stack" aria-label="Experiment scorecard">
+            <section class="growth-panel growth-section" id="experiment">
+              <div class="growth-panel-head">
+                <h2>Experiment scorecard</h2>
+              </div>
+              <table class="growth-table" id="growthExperimentTable" aria-label="Growth experiment overview"></table>
+            </section>
+            <section class="growth-panel growth-section" id="activation">
+              <div class="growth-panel-head">
+                <h2>Activation and artifact</h2>
+              </div>
+              <table class="growth-table" id="growthActivationTable" aria-label="Growth activation review"></table>
+            </section>
+            <section class="growth-panel growth-section" id="measurement">
+              <div class="growth-panel-head">
+                <h2>Measurement and health</h2>
+              </div>
+              <table class="growth-table" id="growthMeasurementTable" aria-label="Growth measurement review"></table>
+            </section>
           </section>
+
+          <aside class="growth-inspector" aria-label="Publishing inspector">
+            <section class="growth-stage-row" aria-label="Growth experiment workflow">
+              <div class="workflow-strip">
+                <div class="workflow-step current" id="growthStepExperiment">
+                  <span class="step-index">1</span>
+                  <span><strong>Draft</strong><span>Experiment source.</span></span>
+                </div>
+                <div class="workflow-step" id="growthStepActivation">
+                  <span class="step-index">2</span>
+                  <span><strong>Stage</strong><span>Artifact and owner.</span></span>
+                </div>
+                <div class="workflow-step" id="growthStepMeasurement">
+                  <span class="step-index">3</span>
+                  <span><strong>Health</strong><span>Metric and stop rule.</span></span>
+                </div>
+                <div class="workflow-step" id="growthStepPublisher">
+                  <span class="step-index">4</span>
+                  <span><strong>Publish</strong><span>Publisher review.</span></span>
+                </div>
+              </div>
+            </section>
+
+            <section class="growth-panel growth-section" id="publisher" aria-label="Publisher activation lane">
+              <div class="growth-panel-head">
+                <h2>Publisher activation lane</h2>
+                <span class="status-pill pending" id="growthPublisherPill">Publisher packet not ready</span>
+              </div>
+              <p class="growth-meta" id="growthPublisherSummary">Load a Growth packet to create LP, social copy, and approval queue context for Publisher.</p>
+              <div class="ops-readiness-list" id="growthPublisherList"></div>
+              <div class="growth-action-row">
+                <button id="openGrowthPublisherBtn" class="primary-btn" type="button">Open in Publisher</button>
+                <button id="copyGrowthPublisherBtn" class="ghost-btn" type="button">Copy Publisher packet</button>
+              </div>
+              <details class="growth-preview-toggle">
+                <summary>Publisher packet JSON</summary>
+                <pre class="context-preview growth-preview" id="growthPublisherPreview"></pre>
+              </details>
+            </section>
+
+            <section class="growth-panel growth-section" aria-label="AIAGENT growth handoff audit">
+              <div class="growth-panel-head">
+                <h2>Handoff audit</h2>
+                <span class="status-pill pending" id="growthHandoffAuditPill">No packet audited</span>
+              </div>
+              <p class="growth-meta" id="growthHandoffAuditSummary">Open this app from a Growth handoff to audit experiment, artifact, activation, measurement, proof, and review continuity.</p>
+              <div class="handoff-audit-grid" id="growthHandoffAuditList"></div>
+            </section>
+
+            <section class="growth-panel growth-section">
+              <details class="growth-preview-toggle">
+                <summary>Returned CAIt packet JSON</summary>
+                <pre class="context-preview growth-preview" id="growthContextPreview"></pre>
+              </details>
+            </section>
+          </aside>
         </div>
-
-        <section class="growth-panel growth-section">
-          <div class="status-row">
-            <h2>Measurement, proof, and stop rule</h2>
-          </div>
-          <table class="growth-table" id="growthMeasurementTable" aria-label="Growth measurement review"></table>
-        </section>
-
-        <section class="growth-panel growth-section">
-          <div class="status-row">
-            <h2>Returned CAIt packet</h2>
-          </div>
-          <pre class="context-preview growth-preview" id="growthContextPreview"></pre>
-        </section>
       </section>
     </section>
   </main>
-  <script type="module" src="/growth-ops.js?v=20260526g"></script>
+  <script type="module" src="/growth-ops.js?v=20260526h"></script>
 </body>
 </html>

@@ -239,11 +239,53 @@ export function deliveryClassificationInput(report = {}, files = []) {
   };
 }
 
+const ARTICLE_DRAFT_CONTRACT_TYPES = Object.freeze(new Set([
+  'article_draft',
+  'seo_article',
+  'seo_page_artifact',
+  'wordpress_draft',
+  'wordpress_draft_packet'
+]));
+
+function normalizedContractTypesFromValue(value = null) {
+  if (!value || typeof value !== 'object') return [];
+  const rawTypes = [
+    value.content_type,
+    value.contentType,
+    value.artifact_type,
+    value.artifactType,
+    value.item_type,
+    value.itemType,
+    value.type,
+    ...(Array.isArray(value.artifact_types) ? value.artifact_types : []),
+    ...(Array.isArray(value.artifactTypes) ? value.artifactTypes : [])
+  ];
+  return rawTypes
+    .flatMap((item) => Array.isArray(item) ? item : [item])
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function hasExplicitArticleDraftContract(value = null) {
+  return normalizedContractTypesFromValue(value).some((type) => ARTICLE_DRAFT_CONTRACT_TYPES.has(type));
+}
+
+function explicitArticleFile(files = []) {
+  return (Array.isArray(files) ? files : []).find((file) => (
+    file
+    && String(file.content || '').trim()
+    && hasExplicitArticleDraftContract(file)
+  )) || null;
+}
+
 export function articleCandidateFromDelivery(run = null, report = {}, files = []) {
-  const deliveryInput = deliveryClassificationInput(report, files);
-  if (!deliveryInput) return null;
-  const { content, fileName, format, title: hintedTitle } = deliveryInput;
-  if (!textLooksLikeArticle(content) && !fileName) return null;
+  const explicitFile = explicitArticleFile(files);
+  const reportHasExplicitArticle = hasExplicitArticleDraftContract(report);
+  const content = rawDeliveryText(explicitFile?.content || (reportHasExplicitArticle ? (report?.article || report?.content || report?.draft || report?.answer || '') : ''));
+  if (!normalizeArticleText(content)) return null;
+  const fileName = String(explicitFile?.name || report?.file_name || report?.fileName || '').trim();
+  const format = String(explicitFile?.type || report?.format || report?.mime_type || report?.mimeType || 'text/markdown').trim();
+  const hintedTitle = inferArticleTitleFromText(content);
   const title = compactClientText(
     String(report?.title || report?.headline || hintedTitle || `${run?.taskType || 'article'} draft`),
     140
@@ -261,18 +303,7 @@ export function articleCandidateFromDelivery(run = null, report = {}, files = []
 }
 
 export function articleCandidateFromClassification(run = null, cached = null) {
-  if (!run?.id || !cached || cached.status !== 'done' || cached.contentType !== 'article_draft' || !cached.content) return null;
-  const title = compactClientText(String(cached.title || inferArticleTitleFromText(cached.content) || `${run?.taskType || 'article'} draft`), 140);
-  const suggestedSlug = slugifyArticleTitle(String(cached.suggestedSlug || title));
-  return {
-    type: 'article_draft',
-    title,
-    content: rawDeliveryText(cached.content),
-    fileName: String(cached.fileName || `${suggestedSlug}.md`),
-    format: String(cached.format || 'text/markdown'),
-    suggestedSlug,
-    source: 'openai'
-  };
+  return null;
 }
 
 export function genericDeliverableFromClassification(run = null, cached = null) {
@@ -324,17 +355,5 @@ export function genericDeliverableFromExplicitFiles(report = {}, files = []) {
 }
 
 export function shouldClassifyDeliveryCandidate(run = null, report = {}, files = [], article = null, cached = null) {
-  if (!run?.id || article) return false;
-  if (String(run.status || '') !== 'completed') return false;
-  if (cached && ['pending', 'done', 'error'].includes(String(cached.status || ''))) return false;
-  const input = deliveryClassificationInput(report, files);
-  if (!input?.content) return false;
-  const normalized = normalizeArticleText(input.content);
-  if (normalized.length < 500) return false;
-  return Boolean(
-    /^#\s+.+$/m.test(normalized)
-    || /\n##\s+.+/m.test(normalized)
-    || /\.(md|mdx|markdown|html|txt)$/i.test(String(input.fileName || ''))
-    || /(markdown|html|text)/i.test(String(input.format || ''))
-  );
+  return false;
 }

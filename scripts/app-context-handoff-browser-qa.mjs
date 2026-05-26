@@ -1247,7 +1247,7 @@ try {
   if (!JSON.stringify(adsAliasPacket.artifacts || []).includes('AIAGENT output, retained before spend')) throw new Error('ads alias creative packet was not returned for reuse');
 
   await page.goto(`${base}/growth-ops.html`);
-  await page.waitForSelector('#growthPublisherPreview');
+  await page.waitForSelector('#growthPublisherPreview', { state: 'attached' });
   const emptyGrowthPublisherPacket = JSON.parse(await page.textContent('#growthPublisherPreview'));
   if (JSON.stringify(emptyGrowthPublisherPacket.artifacts || []).includes('site_publish_packet')) throw new Error('empty Growth console must not synthesize a site_publish_packet');
   if (JSON.stringify(emptyGrowthPublisherPacket.approval_requests || []).includes('publish_change')) throw new Error('empty Growth console must not synthesize Publisher approval requests');
@@ -1462,7 +1462,7 @@ try {
   if (!JSON.stringify(agentGrowthPublisherContext.raw_context?.contract_fields?.growth_publisher_handoff_packet || {}).includes('final activation page outline')) throw new Error('agent Growth Publisher handoff was not canonicalized into contract_fields');
   if (!JSON.stringify(agentGrowthPublisherContext.raw_context?.contract_fields?.publisher_activation_packet || {}).includes('Open Publisher')) throw new Error('agent Publisher activation packet was not canonicalized into contract_fields');
   await openAppWithContext(page, `/growth-ops.html?chat_return_to=${encodeURIComponent('/chat?thread=agent-growth-publisher')}&chat_handoff_id=agent-growth-publisher`, agentGrowthPublisherContext);
-  await page.waitForSelector('#growthPublisherPreview');
+  await page.waitForSelector('#growthPublisherPreview', { state: 'attached' });
   await page.waitForFunction(() => document.querySelector('#growthRecordTitle')?.textContent?.includes('Agent Growth Publisher activation'));
   if (!(await page.textContent('#growthActivationTable')).includes('final activation page outline')) throw new Error('Growth Console did not render the agent Growth-to-Publisher handoff rows');
   if (!(await page.textContent('#growthPublisherPill')).includes('Publisher packet ready')) throw new Error('agent Growth-to-Publisher handoff did not ready the Publisher lane');
