@@ -271,9 +271,9 @@ const marketingExecutionContractExpectations = [
   {
     kind: 'campaign_operations',
     actions: ['prepare_campaign_record', 'prepare_publisher_queue', 'prepare_planned_action_queue', 'prepare_measurement_loop'],
-    requiredSections: ['Planned action queue', 'Now (Week 0-1)', 'Next (Week 1-3)', 'Waiting conditions', 'Measurement loop', 'Next action owner'],
-    guidedSections: ['Planned action queue', 'Now (Week 0-1)', 'Next (Week 1-3)', 'Waiting conditions', 'Measurement loop', 'Next action owner'],
-    forbiddenClaims: ['blocked item ready', 'waiting item executed', 'week 0 action completed without proof', 'week 1-3 action completed without proof', 'expansion ready without measurement', 'outcome decided without measurement']
+    requiredSections: ['Asset status queue', 'Planned action queue', 'Now (Week 0-1)', 'Next (Week 1-3)', 'Waiting conditions', 'Measurement loop', 'Next action owner'],
+    guidedSections: ['Asset status queue', 'Planned action queue', 'Now (Week 0-1)', 'Next (Week 1-3)', 'Waiting conditions', 'Measurement loop', 'Next action owner'],
+    forbiddenClaims: ['unapproved asset queued as approved', 'measurement-waiting asset treated as winner', 'blocked asset queued for Publisher ingest', 'blocked item ready', 'waiting item executed', 'week 0 action completed without proof', 'week 1-3 action completed without proof', 'expansion ready without measurement', 'outcome decided without measurement']
   },
   {
     kind: 'ads_planner',
@@ -1046,6 +1046,7 @@ const fallbackCampaignOps = await campaignOperations.provider.runJob({
 assertUserFacingDelivery(fallbackCampaignOps, 'campaign_operations fallback delivery', [
   /## Campaign state/i,
   /## Publisher queue/i,
+  /## Asset status queue/i,
   /## Approval backlog/i,
   /## Connector readiness/i,
   /## Planned action queue/i,
@@ -1057,6 +1058,7 @@ assertUserFacingDelivery(fallbackCampaignOps, 'campaign_operations fallback deli
 ]);
 const fallbackCampaignContent = fallbackCampaignOps.files?.[0]?.content || '';
 assert.match(fallbackCampaignContent, /Publisher ingest: not verified/i, 'campaign_operations fallback must label Publisher ingest as unverified');
+assert.match(fallbackCampaignContent, /approved-ready[\s\S]*draft-needs-approval[\s\S]*measurement-waiting[\s\S]*blocked/i, 'campaign_operations fallback must expose asset status classifications');
 assert.doesNotMatch(fallbackCampaignContent, /\bpublished\b|\bsent\b|\blaunched\b/i, 'campaign_operations fallback must not claim external execution');
 const fallbackCampaignOpsJa = await campaignOperations.provider.runJob({
   kind: 'campaign_operations',
@@ -1078,6 +1080,7 @@ const fallbackCampaignOpsJa = await campaignOperations.provider.runJob({
 });
 const fallbackCampaignContentJa = fallbackCampaignOpsJa.files?.[0]?.content || '';
 assert.match(fallbackCampaignContentJa, /## キャンペーン状態/i, 'campaign_operations Japanese fallback should keep localized section headings');
+assert.match(fallbackCampaignContentJa, /## アセットステータスキュー/i, 'campaign_operations Japanese fallback should localize asset status queue');
 assert.match(fallbackCampaignContentJa, /## コネクタ準備状況/i, 'campaign_operations Japanese fallback should localize connector readiness');
 assert.match(fallbackCampaignContentJa, /## 実行予定キュー/i, 'campaign_operations Japanese fallback should localize planned action queue');
 assert.match(fallbackCampaignContentJa, /## Now \(Week 0-1\)/i, 'campaign_operations Japanese fallback should keep the near-term action window label stable');

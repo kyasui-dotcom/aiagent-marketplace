@@ -151,12 +151,50 @@
       "id": "campaign-operations-publisher-queue",
       "file": "campaign-operations.js",
       "kind": "campaign_operations",
-      "prompt": "Turn the CMO launch design into a Campaign record, Publisher queue, approval backlog, and measurement loop. Do not claim anything has been published.",
+      "prompt": "Turn the CMO launch design into a Campaign record, Publisher queue, asset status queue, approval backlog, and measurement loop. Classify mixed assets as approved-ready, draft-needs-approval, measurement-waiting, or blocked before Publisher intake. Do not claim anything has been published, ingested, approved, measured, expanded, or queued as ready without proof.",
       "body": {
         "campaign": {
           "objective": "increase signups",
           "audience": "founders",
-          "targetUrl": "https://aiagent-marketplace.net"
+          "targetUrl": "https://aiagent-marketplace.net",
+          "channels": ["owned site", "X", "email", "ads"],
+          "kpis": ["signup conversion", "publisher item approval rate", "qualified order starts"],
+          "assets": [
+            {
+              "id": "homepage-hero-copy",
+              "title": "Homepage hero rewrite",
+              "channel": "owned site",
+              "approval_status": "approved by founder in CMO handoff",
+              "measurement_status": "not measured yet",
+              "owner": "landing page owner"
+            },
+            {
+              "id": "x-launch-thread",
+              "title": "X launch thread draft",
+              "channel": "X",
+              "approval_status": "draft; owner approval missing",
+              "measurement_status": "not applicable until posted",
+              "owner": "founder"
+            },
+            {
+              "id": "lifecycle-email",
+              "title": "Signup lifecycle email",
+              "channel": "email",
+              "approval_status": "approved copy",
+              "measurement_status": "first-send results pending after approved send; measurement-waiting",
+              "owner": "email ops"
+            },
+            {
+              "id": "google-ads-creative",
+              "title": "Google Ads creative packet",
+              "channel": "ads",
+              "approval_status": "blocked; conversion tracking unverified",
+              "measurement_status": "conversion event proof missing",
+              "owner": "ads owner"
+            }
+          ],
+          "connector_status": "Publisher, ESP, X, Ads, and Analytics connector execution proof not supplied",
+          "approval_owner": "founder"
         }
       }
     },
