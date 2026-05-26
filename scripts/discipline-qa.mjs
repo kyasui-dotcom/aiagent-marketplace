@@ -577,6 +577,14 @@ assert.ok(
     && appHandoffTransferSource.includes(': \'\';'),
   'app handoff transfer must create post_text artifacts only for apps whose manifest explicitly accepts post_text'
 );
+const appHandoffTransferPostTextSource = appHandoffTransferSource.slice(
+  appHandoffTransferSource.indexOf('function appHandoffTransferPostText'),
+  appHandoffTransferSource.indexOf('function appHandoffTransferManifestAccepts')
+);
+assertNotIncludes(appHandoffTransferPostTextSource, [
+  'payload.text',
+  'payload.action?.text'
+], 'public/app-handoff-transfer.js post_text extraction');
 assert.ok(
   adsOpsSource.includes('const ADS_MARKDOWN_ARTIFACT_TYPES = Object.freeze([')
     && adsOpsSource.includes('const adsFiles = files.filter((file) => artifactMatches(file, ADS_MARKDOWN_ARTIFACT_TYPES));')

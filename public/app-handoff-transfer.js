@@ -216,14 +216,20 @@ export function appTransferPayloadWithEditedText(payload = {}, trigger = null, o
   const source = String(editable.dataset.appTransferSource || payload.source || payload.action?.source || 'CAIt chat action').trim();
   const title = String(editable.dataset.appTransferTitle || payload.title || payload.action?.title || 'CAIt app handoff').trim();
   const settings = payload.settings && typeof payload.settings === 'object' ? payload.settings : {};
+  const hadExplicitPostText = payload.post_text != null
+    || payload.postText != null
+    || payload.action?.post_text != null
+    || payload.action?.postText != null;
   return {
     ...payload,
     text,
+    ...(hadExplicitPostText ? { post_text: text } : {}),
     source,
     title,
     action: {
       ...(payload.action && typeof payload.action === 'object' ? payload.action : {}),
       text,
+      ...(hadExplicitPostText ? { post_text: text } : {}),
       source,
       title
     },
@@ -392,10 +398,8 @@ function appHandoffTransferPostText(payload = {}, delivery = {}) {
   const direct = appHandoffTransferFirstText([
     payload.post_text,
     payload.postText,
-    payload.text,
     payload.action?.post_text,
-    payload.action?.postText,
-    payload.action?.text
+    payload.action?.postText
   ], 1200);
   if (direct) return direct;
   const packet = appHandoffTransferPacketText(
@@ -515,6 +519,8 @@ const APP_HANDOFF_PRICING_CONTRACT_ALIASES = Object.freeze({
 
 const APP_HANDOFF_GROWTH_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqueStrings([
   'growth_experiment_packet',
+  'no_paid_growth_plan_packet',
+  'organic_specialist_handoff_packet',
   'growth_asset_handoff_packet',
   'growth_activation_handoff_packet',
   'bottleneck',
@@ -542,9 +548,11 @@ const APP_HANDOFF_GROWTH_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqu
 ]));
 
 const APP_HANDOFF_GROWTH_CONTRACT_ALIASES = Object.freeze({
-  growth_experiment_packet: Object.freeze(['growthExperimentPacket', 'growth_packet', 'growthPacket', 'experiment_packet', 'experimentPacket', 'growth_plan_packet', 'growthPlanPacket']),
-  growth_asset_handoff_packet: Object.freeze(['growthAssetHandoffPacket', 'growth_asset_packet', 'growthAssetPacket', 'asset_handoff_packet', 'assetHandoffPacket']),
-  growth_activation_handoff_packet: Object.freeze(['growthActivationHandoffPacket', 'growth_activation_packet', 'growthActivationPacket', 'activation_handoff_packet', 'activationHandoffPacket']),
+  growth_experiment_packet: Object.freeze(['growthExperimentPacket', 'growth_packet', 'growthPacket', 'experiment_packet', 'experimentPacket', 'growth_plan_packet', 'growthPlanPacket', 'no_paid_growth_plan_packet', 'noPaidGrowthPlanPacket', 'organic_growth_plan_packet', 'organicGrowthPlanPacket']),
+  no_paid_growth_plan_packet: Object.freeze(['noPaidGrowthPlanPacket', 'organic_growth_plan_packet', 'organicGrowthPlanPacket', 'growth_experiment_packet', 'growthExperimentPacket']),
+  organic_specialist_handoff_packet: Object.freeze(['organicSpecialistHandoffPacket', 'specialist_handoff_packet', 'specialistHandoffPacket', 'growth_asset_handoff_packet', 'growthAssetHandoffPacket', 'growth_activation_handoff_packet', 'growthActivationHandoffPacket']),
+  growth_asset_handoff_packet: Object.freeze(['growthAssetHandoffPacket', 'growth_asset_packet', 'growthAssetPacket', 'asset_handoff_packet', 'assetHandoffPacket', 'organic_specialist_handoff_packet', 'organicSpecialistHandoffPacket']),
+  growth_activation_handoff_packet: Object.freeze(['growthActivationHandoffPacket', 'growth_activation_packet', 'growthActivationPacket', 'activation_handoff_packet', 'activationHandoffPacket', 'organic_specialist_handoff_packet', 'organicSpecialistHandoffPacket']),
   bottleneck: Object.freeze(['growth_bottleneck', 'growthBottleneck']),
   icp_and_offer: Object.freeze(['icpAndOffer', 'icp_offer', 'icpOffer', 'target_segment_offer', 'targetSegmentOffer']),
   experiment_hypothesis: Object.freeze(['experimentHypothesis', 'hypothesis', 'growth_hypothesis', 'growthHypothesis']),

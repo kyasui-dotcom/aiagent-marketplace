@@ -681,8 +681,8 @@ assert.ok(!appsHtml.includes('Register your own app'), 'Apps hub should not impl
 assert.ok(appsHtml.includes('Self-service app registration is not open yet'), 'Apps hub should set the short-term app registration boundary.');
 assert.ok(appsHtml.includes('data-featured-app-list'), 'Apps hub should render featured workflows from the app registry.');
 assert.ok(appsJs.includes('sameOriginAppUrl'), 'Apps hub should normalize CAIt-managed app URLs to the current origin.');
-assert.ok(appsJs.includes("from './app-manifest-registry.js?v=20260526f'"), 'Apps hub should reuse the shared app manifest registry.');
-assert.ok(chatJs.includes("from './app-manifest-registry.js?v=20260526f'"), 'Chat should reuse the shared app manifest registry.');
+assert.ok(appsJs.includes("from './app-manifest-registry.js?v=20260526g'"), 'Apps hub should reuse the shared app manifest registry.');
+assert.ok(chatJs.includes("from './app-manifest-registry.js?v=20260526g'"), 'Chat should reuse the shared app manifest registry.');
 assert.ok(appManifestRegistryJs.includes("owner: 'cait-managed'"), 'CAIt-managed app surfaces should not be labeled as built-in apps.');
 assert.ok(appManifestRegistryJs.includes("verificationStatus: 'cait_managed'"), 'CAIt-managed app surfaces should have explicit verification status.');
 assert.ok(appManifestRegistryJs.includes('analytics-console'), 'Shared app registry should include Analytics Console.');
@@ -927,14 +927,16 @@ assert.ok(growthOpsJs.includes("type: 'tracking_specification'"), 'Growth Experi
 assert.ok(growthOpsJs.includes("type: 'execution_proof_tracker'"), 'Growth Experiment Console should return execution_proof_tracker artifacts.');
 assert.ok(growthOpsJs.includes('growth_handoff_audit'), 'Growth Experiment Console should include handoff audit details in raw_context.');
 assert.ok(appContextDomainJs.includes('growth_experiment_packet'), 'Server-side app context should preserve growth experiment packet contract fields in raw_context.');
+assert.ok(appContextDomainJs.includes('no_paid_growth_plan_packet') && appContextDomainJs.includes('organic_specialist_handoff_packet'), 'Server-side app context should preserve Free Web Growth Leader packet contracts.');
 assert.ok(appContextDomainJs.includes('growth_activation_handoff_packet'), 'Server-side app context should preserve growth activation handoff contract fields in raw_context.');
 assert.ok(caitAppBridge.includes('growth_experiment_packet'), 'Client app-context bridge should preserve growth experiment packet contract fields.');
+assert.ok(caitAppBridge.includes('noPaidGrowthPlanPacket') && caitAppBridge.includes('organicSpecialistHandoffPacket'), 'Client app-context bridge should preserve Free Web Growth Leader aliases.');
 assert.ok(caitAppBridge.includes('growthActivationHandoffPacket'), 'Client app-context bridge should preserve growth activation aliases.');
 assert.ok(caitAppBridge.includes('measurementSurface') && caitAppBridge.includes('proofSource') && caitAppBridge.includes('nextDecision'), 'Client app-context bridge should preserve Growth measurement surface, proof source, and next decision aliases.');
 assert.ok(appHandoffTransferJs.includes('APP_HANDOFF_GROWTH_CONTRACT_FIELDS'), 'Generic app handoff transfer should preserve Growth contract fields.');
-assert.ok(appManifestRegistryJs.includes("'growth_experiment_packet'") && appManifestRegistryJs.includes("'kill_rule'") && appManifestRegistryJs.includes("'next_decision'"), 'Growth Experiment app manifest should declare retained growth handoff contracts.');
+assert.ok(appManifestRegistryJs.includes("'growth_experiment_packet'") && appManifestRegistryJs.includes("'no_paid_growth_plan_packet'") && appManifestRegistryJs.includes("'organic_specialist_handoff_packet'") && appManifestRegistryJs.includes("'kill_rule'") && appManifestRegistryJs.includes("'next_decision'"), 'Growth Experiment app manifest should declare retained growth handoff contracts.');
 assert.ok(growthOpsJs.includes('const GROWTH_MARKDOWN_ARTIFACT_TYPES = Object.freeze(['), 'Growth Experiment Console should gate Markdown parsing on explicit Growth artifact contracts.');
-assert.ok(growthOpsJs.includes("'7_day_experiment'") && growthOpsJs.includes("'owner_responsibility_map'") && growthOpsJs.includes("'proof_source'"), 'Growth Experiment Console should recover Growth agent section headings as retained rows.');
+assert.ok(growthOpsJs.includes("'7_day_experiment'") && growthOpsJs.includes("'no_paid_growth_plan_packet'") && growthOpsJs.includes("'organic_specialist_handoff_packet'") && growthOpsJs.includes("'owner_responsibility_map'") && growthOpsJs.includes("'proof_source'"), 'Growth Experiment Console should recover Growth agent and Free Web Growth Leader section headings as retained rows.');
 assert.ok(growthOpsJs.includes('const growthFiles = deliveryFiles(context).filter((file) => artifactMatches(file, GROWTH_MARKDOWN_ARTIFACT_TYPES));'), 'Growth Experiment Console must not choose Growth files from body text keywords.');
 assert.ok(!growthOpsJs.includes('/growth|experiment|施策/i.test(content)'), 'Growth Experiment Console must not infer growth handoff intent from delivery body text.');
 assert.ok(!growthOpsJs.includes("source_app: 'analytics_console'"), 'Growth Experiment Console JS should not contain Analytics app logic.');
@@ -996,7 +998,7 @@ assert.ok(chatHtml.includes('id="openAppListBtn"'));
 assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
-assert.ok(appsHtml.includes('/apps.js?v=20260526f'), 'Apps page should load the current server-side context history controller.');
+assert.ok(appsHtml.includes('/apps.js?v=20260526g'), 'Apps page should load the current server-side context history controller.');
 assert.ok(worker.includes("'/pricing-ops.html'") && worker.includes("'/pricing-ops.js'"), 'Worker should no-cache Pricing Decision Console assets after deploy.');
 assert.ok(appsHtml.includes('data-app-registry-list'), 'Apps page should expose the live app registry list.');
 assert.ok(appsHtml.includes('/.well-known/mcp.json') && appsHtml.includes('Disabled by default'), 'Apps page should describe MCP as disabled by default.');
@@ -1491,14 +1493,19 @@ assert.ok(appContextDomainJs.includes("'agent_context'") && caitAppBridge.includ
 const growthNormalizedContext = normalizeCaitAppContext({
   source_app: 'growth_experiment_console',
   title: 'Growth packet',
-  growthExperimentPacket: 'Line one\nLine two',
+  noPaidGrowthPlanPacket: 'Line one\nLine two',
+  organicSpecialistHandoffPacket: [{ label: 'Organic specialist handoff', detail: 'SEO specialist owns no-paid launch proof' }],
   growthActivationHandoffPacket: [{ label: 'Activation owner', detail: 'Growth owner approves launch' }],
   measurementSurface: [{ label: 'Measurement surface', detail: 'Analytics Console retained context report' }],
   nextDecision: [{ label: 'Next decision', detail: 'Continue after proof review' }]
 });
 assert.ok(
-  String(growthNormalizedContext.raw_context?.growth_experiment_packet || '').includes('Line one\nLine two'),
-  'Server app context normalization should preserve multiline growth experiment packets from explicit top-level aliases.'
+  String(growthNormalizedContext.raw_context?.no_paid_growth_plan_packet || '').includes('Line one\nLine two'),
+  'Server app context normalization should preserve multiline no-paid growth plan packets from explicit top-level aliases.'
+);
+assert.ok(
+  JSON.stringify(growthNormalizedContext.raw_context?.organic_specialist_handoff_packet || []).includes('SEO specialist owns no-paid launch proof'),
+  'Server app context normalization should preserve organic specialist handoff packets.'
 );
 assert.ok(
   JSON.stringify(growthNormalizedContext.raw_context?.growth_activation_handoff_packet || []).includes('Growth owner approves launch'),
@@ -1512,7 +1519,8 @@ assert.ok(
 const growthTransferContext = appContextFromTransferPayload('growth-experiment-console', {
   transfer_id: 'growth-transfer-qa',
   title: 'Growth experiment handoff',
-  growthExperimentPacket: { hypothesis: 'Retained app context raises activation trust', status: 'review_required' },
+  noPaidGrowthPlanPacket: { hypothesis: 'Retained app context raises activation trust without paid ads', status: 'review_required' },
+  organicSpecialistHandoffPacket: { owner: 'SEO specialist', action: 'publish organic landing page test after approval' },
   growthActivationHandoffPacket: { owner: 'growth owner', action: 'publish landing page test after approval' },
   killRule: [{ label: 'Kill rule', detail: 'Stop if qualified signup rate stays below threshold' }],
   measurementSurface: [{ label: 'Measurement surface', detail: 'Analytics Console retained context report' }],
@@ -1523,13 +1531,17 @@ const growthTransferContext = appContextFromTransferPayload('growth-experiment-c
     id: 'growth-experiment-console',
     name: 'Growth Experiment Console',
     inputContract: {
-      accepts: ['growth_experiment_packet', 'growth_activation_handoff_packet', 'kill_rule', 'measurement_surface', 'proof_source', 'next_decision']
+      accepts: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'growth_activation_handoff_packet', 'kill_rule', 'measurement_surface', 'proof_source', 'next_decision']
     }
   })
 });
 assert.ok(
-  JSON.stringify(growthTransferContext.raw_context?.contract_fields || {}).includes('Retained app context raises activation trust'),
-  'Growth app handoff transfer should canonicalize explicit growth packet aliases into contract_fields.'
+  JSON.stringify(growthTransferContext.raw_context?.contract_fields || {}).includes('without paid ads'),
+  'Growth app handoff transfer should canonicalize explicit no-paid growth packet aliases into contract_fields.'
+);
+assert.ok(
+  JSON.stringify(growthTransferContext.raw_context?.contract_fields || {}).includes('SEO specialist'),
+  'Growth app handoff transfer should canonicalize organic specialist handoff aliases into contract_fields.'
 );
 assert.ok(
   JSON.stringify(growthTransferContext.artifacts || []).includes('kill rule'),

@@ -910,9 +910,41 @@ try {
   if (genericActionJson.includes('"artifact_type":"post_text"')) throw new Error('generic app context must not synthesize post_text artifacts from action.text');
   if (genericActionTextContext.raw_context?.post_text) throw new Error('generic app context must not set raw_context.post_text without a post_text app contract');
 
+  const xActionOnlyContext = appContextFromTransferPayload('x-client-ops', {
+    transfer_id: 'transfer-x-action-only-text',
+    title: 'X action-only handoff',
+    action: {
+      kind: 'app_handoff',
+      text: 'This action text is not an explicit post_text contract.',
+      source: 'generic-delivery.md'
+    },
+    delivery: {
+      summary: 'The target app accepts post_text, but the payload did not provide one.',
+      artifacts: [{
+        name: 'generic-delivery.md',
+        artifactType: 'delivery_summary',
+        artifactTypes: ['delivery_summary'],
+        contentPreview: 'Generic delivery summary.'
+      }]
+    }
+  }, {
+    manifestById: () => ({
+      id: 'x-client-ops',
+      name: 'X Client Ops',
+      inputContract: {
+        schemaVersion: 'cait-app-agent-transfer/v1',
+        accepts: ['post_text', 'strategy', 'agent_context', 'delivery_summary', 'settings']
+      }
+    })
+  });
+  const xActionOnlyJson = JSON.stringify(xActionOnlyContext);
+  if (xActionOnlyJson.includes('"artifact_type":"post_text"')) throw new Error('post_text app context must not synthesize post_text artifacts from action.text alone');
+  if (xActionOnlyContext.raw_context?.post_text) throw new Error('post_text app context must not set raw_context.post_text from action.text alone');
+
   const xClientFallbackContext = appContextFromTransferPayload('x-client-ops', {
     transfer_id: 'transfer-x-client-fallback',
     title: 'X Client Ops fallback handoff',
+    post_text: 'CAIt keeps final social actions stable by handing approved copy to a SaaS queue before posting.',
     text: 'CAIt keeps final social actions stable by handing approved copy to a SaaS queue before posting.',
     source: 'x-post-delivery.md',
     strategy: 'Audience: skeptical operators. Goal: prove app-backed approval and retention before X posting.',
@@ -1171,7 +1203,13 @@ try {
   const growthTransferContext = appContextFromTransferPayload('growth-experiment-console', {
     transfer_id: 'transfer-growth-experiment',
     title: 'Growth experiment handoff',
-    summary: 'Growth agent returned an experiment packet that must survive as stable SaaS operations.',
+    summary: 'Free Web Growth Leader returned no-paid plan and specialist handoff packets that must survive as stable SaaS operations.',
+    noPaidGrowthPlanPacket: [
+      { label: 'No-paid growth plan', detail: 'Organic launch lane proves CAIt can retain AIAGENT experiment state without paid ads.', status: 'selected' }
+    ],
+    organicSpecialistHandoffPacket: [
+      { label: 'Organic specialist handoff', detail: 'SEO specialist receives retained plan, exact artifact, owner map, and proof source.', status: 'handoff_ready' }
+    ],
     growthExperimentPacket: [
       { label: 'Bottleneck', detail: 'AIAGENT users distrust chat-only outputs because no operation state survives.', status: 'validated' },
       { label: 'ICP and offer', detail: 'Founder who needs retained growth experiments with proof before launch.', status: 'selected' },
@@ -1276,16 +1314,20 @@ try {
       requiresApprovalFor: ['growth_activation', 'publish_change'],
       inputContract: {
         schemaVersion: 'cait-app-context/v1',
-        accepts: ['growth_experiment_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet', '7_day_experiment', 'growth_activation_handoff_packet', 'owner_responsibility_map', 'tracking_specification', 'measurement_surface', 'metric_threshold', 'kill_rule', 'stop_rules', 'measurement_owner', 'proof_source', 'review_date', 'execution_proof_tracker', 'next_decision', 'delivery_files']
+        accepts: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet', '7_day_experiment', 'growth_activation_handoff_packet', 'owner_responsibility_map', 'tracking_specification', 'measurement_surface', 'metric_threshold', 'kill_rule', 'stop_rules', 'measurement_owner', 'proof_source', 'review_date', 'execution_proof_tracker', 'next_decision', 'delivery_files']
       }
     })
   });
+  if (!JSON.stringify(growthTransferContext.raw_context?.contract_fields || {}).includes('Organic launch lane')) throw new Error('growth transfer context did not preserve no-paid growth plan packet');
+  if (!JSON.stringify(growthTransferContext.raw_context?.contract_fields || {}).includes('SEO specialist receives')) throw new Error('growth transfer context did not preserve organic specialist handoff packet');
   if (!JSON.stringify(growthTransferContext.artifacts || []).includes('growth_activation_handoff_packet')) throw new Error('growth transfer context did not preserve activation handoff artifact');
   if (!JSON.stringify(growthTransferContext.raw_context?.contract_fields || {}).includes('follow-up-order rate')) throw new Error('growth transfer context did not preserve metric threshold in raw_context');
   await openAppWithContext(page, `/growth-ops.html?chat_return_to=${encodeURIComponent('/chat?thread=growth')}&chat_handoff_id=growth-handoff`, growthTransferContext);
   await page.waitForSelector('#growthExperimentTable');
   await page.waitForFunction(() => document.querySelector('#growthRecordTitle')?.textContent?.includes('Growth experiment handoff'));
+  if (!(await page.textContent('#growthExperimentTable')).includes('Organic launch lane')) throw new Error('growth no-paid plan packet was not imported');
   if (!(await page.textContent('#growthExperimentTable')).includes('AIAGENT users distrust')) throw new Error('growth bottleneck was not imported');
+  if (!(await page.textContent('#growthActivationTable')).includes('SEO specialist receives')) throw new Error('growth organic specialist handoff was not imported');
   if (!(await page.textContent('#growthActivationTable')).includes('server-side retained experiment state')) throw new Error('growth exact artifact was not imported');
   if (!(await page.textContent('#growthActivationTable')).includes('measurement owner validates proof source')) throw new Error('growth owner responsibility map was not imported');
   if (!(await page.textContent('#growthMeasurementTable')).includes('follow-up-order rate improves')) throw new Error('growth metric threshold was not imported');
@@ -1298,6 +1340,8 @@ try {
   if (growthPacket.raw_context?.chat_handoff_id !== 'growth-handoff') throw new Error('growth chat handoff id was not preserved in packet');
   if (!JSON.stringify(growthPacket.artifacts || []).includes('growth_experiment_packet')) throw new Error('growth packet did not return growth_experiment_packet for app contract reuse');
   if (!JSON.stringify(growthPacket.artifacts || []).includes('growth_activation_handoff_packet')) throw new Error('growth packet did not return growth_activation_handoff_packet for app contract reuse');
+  if (!JSON.stringify(growthPacket.raw_context?.received_context || {}).includes('no_paid_growth_plan_packet')) throw new Error('growth source no-paid plan contract was not preserved in raw_context');
+  if (!JSON.stringify(growthPacket.raw_context?.received_context || {}).includes('organic_specialist_handoff_packet')) throw new Error('growth source organic specialist contract was not preserved in raw_context');
   if (!JSON.stringify(growthPacket.raw_context?.next_decision || {}).includes('follow-up order')) throw new Error('growth next decision was not returned in raw_context');
   if (!JSON.stringify(growthPacket.raw_context?.received_context || {}).includes('growth-experiment.md')) throw new Error('growth source delivery file was not preserved in raw_context');
 

@@ -1,4 +1,4 @@
-import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526g';
+import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526h';
 
 const els = {
   returnToChatLink: document.getElementById('growthReturnToChatLink'),
@@ -56,9 +56,11 @@ function camelKey(value = '') {
 }
 
 const GROWTH_CONTRACT_ALIASES = Object.freeze({
-  growth_experiment_packet: Object.freeze(['growthExperimentPacket', 'growth_packet', 'growthPacket', 'experiment_packet', 'experimentPacket', 'growth_plan_packet', 'growthPlanPacket']),
-  growth_asset_handoff_packet: Object.freeze(['growthAssetHandoffPacket', 'growth_asset_packet', 'growthAssetPacket', 'asset_handoff_packet', 'assetHandoffPacket']),
-  growth_activation_handoff_packet: Object.freeze(['growthActivationHandoffPacket', 'growth_activation_packet', 'growthActivationPacket', 'activation_handoff_packet', 'activationHandoffPacket']),
+  growth_experiment_packet: Object.freeze(['growthExperimentPacket', 'growth_packet', 'growthPacket', 'experiment_packet', 'experimentPacket', 'growth_plan_packet', 'growthPlanPacket', 'no_paid_growth_plan_packet', 'noPaidGrowthPlanPacket', 'organic_growth_plan_packet', 'organicGrowthPlanPacket']),
+  no_paid_growth_plan_packet: Object.freeze(['noPaidGrowthPlanPacket', 'organic_growth_plan_packet', 'organicGrowthPlanPacket', 'growth_experiment_packet', 'growthExperimentPacket']),
+  organic_specialist_handoff_packet: Object.freeze(['organicSpecialistHandoffPacket', 'specialist_handoff_packet', 'specialistHandoffPacket', 'growth_asset_handoff_packet', 'growthAssetHandoffPacket', 'growth_activation_handoff_packet', 'growthActivationHandoffPacket']),
+  growth_asset_handoff_packet: Object.freeze(['growthAssetHandoffPacket', 'growth_asset_packet', 'growthAssetPacket', 'asset_handoff_packet', 'assetHandoffPacket', 'organic_specialist_handoff_packet', 'organicSpecialistHandoffPacket']),
+  growth_activation_handoff_packet: Object.freeze(['growthActivationHandoffPacket', 'growth_activation_packet', 'growthActivationPacket', 'activation_handoff_packet', 'activationHandoffPacket', 'organic_specialist_handoff_packet', 'organicSpecialistHandoffPacket']),
   bottleneck: Object.freeze(['growth_bottleneck', 'growthBottleneck']),
   icp_and_offer: Object.freeze(['icpAndOffer', 'icp_offer', 'icpOffer', 'target_segment_offer', 'targetSegmentOffer']),
   experiment_hypothesis: Object.freeze(['experimentHypothesis', 'hypothesis', 'growth_hypothesis', 'growthHypothesis']),
@@ -83,6 +85,8 @@ const GROWTH_CONTRACT_ALIASES = Object.freeze({
 
 const GROWTH_MARKDOWN_ARTIFACT_TYPES = Object.freeze([
   'growth_experiment_packet',
+  'no_paid_growth_plan_packet',
+  'organic_specialist_handoff_packet',
   'growth_asset_handoff_packet',
   'growth_activation_handoff_packet',
   'growth_packet',
@@ -300,16 +304,16 @@ function collectGrowthRecord(context = null) {
   const title = text(context.title, 'Growth experiment packet');
   const summary = text(context.summary, 'Growth AIAGENT context was restored as a retained app packet.');
   const experimentRows = uniqueRows([
-    ...rowsFor(context, ['growth_experiment_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'execution_packet']),
-    ...markdownRowsFor(context, ['growth_experiment_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'execution_packet'])
+    ...rowsFor(context, ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'execution_packet']),
+    ...markdownRowsFor(context, ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'execution_packet'])
   ]);
   const artifactRows = uniqueRows([
-    ...rowsFor(context, ['growth_asset_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet']),
-    ...markdownRowsFor(context, ['growth_asset_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet'])
+    ...rowsFor(context, ['growth_asset_handoff_packet', 'organic_specialist_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet']),
+    ...markdownRowsFor(context, ['growth_asset_handoff_packet', 'organic_specialist_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet'])
   ]);
   const activationRows = uniqueRows([
-    ...rowsFor(context, ['growth_activation_handoff_packet', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'review_date']),
-    ...markdownRowsFor(context, ['growth_activation_handoff_packet', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'review_date'])
+    ...rowsFor(context, ['growth_activation_handoff_packet', 'organic_specialist_handoff_packet', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'review_date']),
+    ...markdownRowsFor(context, ['growth_activation_handoff_packet', 'organic_specialist_handoff_packet', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'review_date'])
   ]);
   const measurementRows = uniqueRows([
     ...rowsFor(context, ['tracking_specification', 'metric_threshold', 'kill_rule', 'proof_source', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan', 'next_decision']),
@@ -328,12 +332,12 @@ function collectGrowthRecord(context = null) {
 
 function auditGrowthRecord(record = {}, context = {}) {
   const json = JSON.stringify(context || {}).toLowerCase();
-  const hasExperimentPacket = /growth_experiment_packet|growthexperimentpacket|growth_packet|experiment_packet/.test(json);
+  const hasExperimentPacket = /growth_experiment_packet|growthexperimentpacket|growth_packet|experiment_packet|no_paid_growth_plan_packet|nopaidgrowthplanpacket/.test(json);
   return [
-    { key: 'growth_experiment_packet', label: 'Experiment packet', ok: hasExperimentPacket, detail: hasExperimentPacket ? 'Growth experiment source packet is retained.' : 'Missing growth_experiment_packet or experiment_packet contract.' },
+    { key: 'growth_experiment_packet', label: 'Experiment packet', ok: hasExperimentPacket, detail: hasExperimentPacket ? 'Growth experiment or no-paid growth plan source packet is retained.' : 'Missing growth_experiment_packet, no_paid_growth_plan_packet, or experiment_packet contract.' },
     { key: 'experiment_inputs', label: 'Experiment inputs', ok: record.experimentRows.length >= 3, detail: record.experimentRows.length >= 3 ? `${record.experimentRows.length} experiment row(s) retained.` : 'Need bottleneck, ICP/offer, hypothesis, or experiment packet rows.' },
     { key: 'exact_artifact_packet', label: 'Exact artifact', ok: record.artifactRows.length > 0, detail: record.artifactRows.length ? `${record.artifactRows.length} artifact/execution row(s) retained.` : 'Missing exact_artifact_packet or execution_packet.' },
-    { key: 'activation_owner', label: 'Activation owner', ok: /activation_owner|activationowner|implementation_owner/.test(json), detail: /activation_owner|activationowner|implementation_owner/.test(json) ? 'Activation owner is attached.' : 'Missing activation owner before launch.' },
+    { key: 'activation_owner', label: 'Activation owner', ok: /activation_owner|activationowner|implementation_owner|organic_specialist_handoff_packet|organicspecialisthandoffpacket/.test(json), detail: /activation_owner|activationowner|implementation_owner|organic_specialist_handoff_packet|organicspecialisthandoffpacket/.test(json) ? 'Activation owner or organic specialist handoff is attached.' : 'Missing activation owner or specialist handoff before launch.' },
     { key: 'measurement_owner', label: 'Measurement owner', ok: /measurement_owner|measurementowner|measurement_surface|measurementsurface/.test(json), detail: /measurement_owner|measurementowner|measurement_surface|measurementsurface/.test(json) ? 'Measurement owner or surface is attached.' : 'Missing measurement owner or surface before launch.' },
     { key: 'review_date', label: 'Review date', ok: /review_date|reviewdate|next_review_date/.test(json), detail: /review_date|reviewdate|next_review_date/.test(json) ? 'Review date is retained.' : 'Missing review_date for the experiment decision.' },
     { key: 'metric_threshold', label: 'Metric threshold', ok: /metric_threshold|metricthreshold|success_metric|threshold|success_criteria/.test(json), detail: /metric_threshold|metricthreshold|success_metric|threshold|success_criteria/.test(json) ? 'Metric threshold is retained.' : 'Missing metric_threshold or success criteria.' },

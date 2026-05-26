@@ -115,6 +115,8 @@ assert.ok(seededAdsLaunch?.directCommandAliases?.includes('ads launch'), 'defaul
 const seededGrowthExperiment = initial.apps.find((item) => item.id === 'growth-experiment-console');
 assert.ok(seededGrowthExperiment, 'default Growth Experiment Console app should be seeded');
 assert.ok(seededGrowthExperiment?.inputContract?.accepts?.includes('growth_experiment_packet'), 'default Growth Experiment Console app seed should accept growth experiment packets');
+assert.ok(seededGrowthExperiment?.inputContract?.accepts?.includes('no_paid_growth_plan_packet'), 'default Growth Experiment Console app seed should accept no-paid growth plan packets');
+assert.ok(seededGrowthExperiment?.inputContract?.accepts?.includes('organic_specialist_handoff_packet'), 'default Growth Experiment Console app seed should accept organic specialist handoff packets');
 assert.ok(seededGrowthExperiment?.inputContract?.accepts?.includes('growth_activation_handoff_packet'), 'default Growth Experiment Console app seed should accept growth activation handoff packets');
 assert.ok(seededGrowthExperiment?.requiresApprovalFor?.includes('growth_activation'), 'default Growth Experiment Console app seed should keep activation approval-gated');
 assert.ok(seededGrowthExperiment?.directCommandAliases?.includes('growth experiment'), 'default Growth Experiment Console app seed should expose direct command aliases outside chat code');

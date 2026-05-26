@@ -158,21 +158,21 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     id: 'growth-experiment-console',
     name: 'Growth Experiment Console',
     kind: 'application_agent',
-    description: 'Growth experiment console that retains bottleneck, ICP/offer, hypothesis, exact artifact packet, owner map, measurement surface, proof source, threshold, kill rule, review date, next decision, and status labels before launch.',
+    description: 'Growth experiment console that retains no-paid growth plan, specialist handoff, bottleneck, ICP/offer, hypothesis, exact artifact packet, owner map, measurement surface, proof source, threshold, kill rule, review date, next decision, and status labels before launch.',
     baseUrl: '/growth-ops.html',
     entryUrl: '/growth-ops.html',
-    capabilities: ['growth_experiment_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'tracking_specification', 'metric_threshold', 'kill_rule', 'measurement_surface', 'proof_source', 'execution_proof_tracker', 'next_decision'],
+    capabilities: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'tracking_specification', 'metric_threshold', 'kill_rule', 'measurement_surface', 'proof_source', 'execution_proof_tracker', 'next_decision'],
     requiredConnectors: [],
     requiresApprovalFor: ['growth_activation', 'publish_change', 'external_send'],
     inputContract: {
       schemaVersion: 'cait-app-context/v1',
-      accepts: ['growth_experiment_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'growth_packet', 'experiment_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet', '7_day_experiment', 'seven_day_experiment', 'experiment_plan', 'tracking_specification', 'metric_threshold', 'success_criteria', 'kill_rule', 'stop_rules', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'proof_source', 'review_date', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan', 'next_decision', 'delivery_files'],
+      accepts: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'growth_packet', 'experiment_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet', '7_day_experiment', 'seven_day_experiment', 'experiment_plan', 'tracking_specification', 'metric_threshold', 'success_criteria', 'kill_rule', 'stop_rules', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'proof_source', 'review_date', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan', 'next_decision', 'delivery_files'],
       returns: ['artifacts', 'approval_requests', 'metrics', 'recommended_next_actions']
     },
     contextContract: {
       sourceApps: ['growth_experiment_console'],
       evidence: {
-        loadedArtifactTypes: ['growth_experiment_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'tracking_specification', 'metric_threshold', 'kill_rule', 'measurement_surface', 'proof_source', 'execution_proof_tracker', 'next_decision'],
+        loadedArtifactTypes: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'tracking_specification', 'metric_threshold', 'kill_rule', 'measurement_surface', 'proof_source', 'execution_proof_tracker', 'next_decision'],
         summaryFields: ['growth_handoff_audit']
       }
     },

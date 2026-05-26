@@ -71,7 +71,7 @@ import {
   appHandoffPayloadContractError,
   appHandoffSocialPostDraftFromDeliveryFiles,
   appTransferPayloadWithEditedText
-} from './app-handoff-transfer.js?v=20260526f';
+} from './app-handoff-transfer.js?v=20260526g';
 import {
   appContextAnswerLine as appContextGateAnswerLine,
   appContextMatchesManifest as appContextGateMatchesManifest,
@@ -90,7 +90,7 @@ import {
 import {
   BUILT_IN_APP_MANIFESTS as APP_AGENT_MANIFESTS,
   CORE_FEATURE_APP_IDS
-} from './app-manifest-registry.js?v=20260526f';
+} from './app-manifest-registry.js?v=20260526g';
 import {
   progressNarratorHtml as agentProgressNarratorHtml,
   progressNarratorProgress as agentProgressNarratorProgress,
@@ -3754,10 +3754,13 @@ function dedicatedAppHandoffTitle(entry = {}) {
 function dedicatedAppTransferPayload(entry = {}, job = {}, draft = {}, strategy = {}) {
   const appId = normalizeUsageId(entry.id || '');
   const transfer = appHandoffBaseTransferPacket(appId, job, appHandoffTransferOptions({ draft, strategy, actionKind: 'dedicated_app_handoff' }));
+  const sourceKind = appHandoffGateDedicatedTextSourceKind(entry, { normalizeUsageId, listValues });
+  const postText = sourceKind === 'social_post_text' ? String(draft?.text || '').trim() : '';
   return {
     schema_version: entry?.inputContract?.schemaVersion || 'cait-app-agent-transfer/v1',
     transfer_id: transfer.transfer_id,
     text: String(draft?.text || '').trim(),
+    ...(postText ? { post_text: postText } : {}),
     source: String(draft?.source || 'CAIt delivery').trim(),
     title: dedicatedAppHandoffTitle(entry),
     jobId: String(job?.id || '').trim(),
