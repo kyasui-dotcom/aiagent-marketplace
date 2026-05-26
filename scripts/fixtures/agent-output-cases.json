@@ -308,11 +308,34 @@
       "id": "instagram-creative-packet",
       "file": "instagram.js",
       "kind": "instagram",
-      "prompt": "Prepare an Instagram carousel and caption for an AI agent marketplace launch. Include visual brief, hashtags, and schedule handoff boundary.",
+      "prompt": "Prepare an Instagram carousel and caption outline for an AI agent marketplace launch. Include destination URL/copy status, visual asset readiness matrix, visual brief, content outline guidance, exact caption-or-outline, hashtags, approval checklist, schedule handoff boundary, and execution status labels. Some image assets are missing or rights-unverified, so separate supplied assets from production tasks and do not claim media exists, rights are cleared, copy is approved, the post is queued, or anything was posted.",
       "body": {
         "input": {
           "format": "carousel",
-          "audience": "founders"
+          "audience": "solo founders",
+          "offer": "AI agent marketplace for ordering managed agent work",
+          "destination_url_status": "draft URL supplied; not approved for Instagram bio/link sticker",
+          "approved_copy_status": "no approved caption or landing-page copy supplied",
+          "visual_assets": [
+            {
+              "frame": 1,
+              "asset": "product dashboard screenshot",
+              "status": "supplied as internal screenshot; rights unverified; must redact private data before use"
+            },
+            {
+              "frame": 2,
+              "asset": "sample delivered agent output screenshot",
+              "status": "missing; production task"
+            },
+            {
+              "frame": 3,
+              "asset": "founder workflow diagram",
+              "status": "missing; production task"
+            }
+          ],
+          "proof_status": "no customer testimonials, revenue metric, or case-study proof supplied",
+          "account_status": "target Instagram account not connected; no connector execution proof",
+          "approval_owner": "founder"
         }
       }
     },

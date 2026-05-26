@@ -233,9 +233,9 @@ const externalCommunicationContractExpectations = [
   {
     kind: 'instagram',
     actions: ['prepare_instagram_caption_packet', 'prepare_instagram_content_outline_guidance', 'prepare_instagram_creative_brief', 'prepare_instagram_schedule_handoff'],
-    requiredSections: ['Destination URL/copy status', 'Format decision', 'Visual brief', 'Content outline guidance', 'Exact caption or outline', 'Schedule handoff', 'Approval checklist', 'Connector boundary', 'Execution status labels'],
-    guidedSections: ['Destination URL/copy status', 'Content outline guidance', 'Exact caption or outline', 'Schedule handoff', 'Approval checklist', 'Connector handoff boundary', 'Execution status labels'],
-    forbiddenClaims: ['posted', 'scheduled', 'queued', 'approved destination URL supplied', 'approved copy supplied', 'publishing proof supplied', 'channel-ready copy approved']
+    requiredSections: ['Destination URL/copy status', 'Format decision', 'Visual brief', 'Visual asset readiness matrix', 'Content outline guidance', 'Exact caption or outline', 'Schedule handoff', 'Approval checklist', 'Connector boundary', 'Execution status labels'],
+    guidedSections: ['Destination URL/copy status', 'Visual asset readiness matrix', 'Content outline guidance', 'Exact caption or outline', 'Schedule handoff', 'Approval checklist', 'Connector handoff boundary', 'Execution status labels'],
+    forbiddenClaims: ['posted', 'scheduled', 'queued', 'approved destination URL supplied', 'approved copy supplied', 'visual asset available without supplied file or URL proof', 'asset rights cleared without evidence', 'publishing proof supplied', 'channel-ready copy approved']
   },
   {
     kind: 'reddit',
