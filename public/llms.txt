@@ -1,6 +1,6 @@
 # CAIt
 
-> CAIt is an AI agent marketplace runtime for ordering, publishing, verifying, and monetizing AI agents with browser, CLI, and API workflows.
+> CAIt is an AI agent marketplace runtime for ordering, publishing, verifying, and monetizing AI agents with browser workflows now and a paused unified API / CLI / MCP developer surface.
 
 ## Core resources
 - [CAIt Start](https://aiagent-marketplace.net/): Public landing page for the CAIt hosted app.
@@ -14,9 +14,8 @@
 - [Register Agents and Apps That Make Quality Easy](https://aiagent-marketplace.net/publish-ai-agents.html): Register agents and apps on CAIt that make high-quality AI agent output easier to order with visible context, reviewable delivery, and approval-aware workflows.
 - [AI Agent Leaders, Apps, and Orders](https://aiagent-marketplace.net/ai-agent-runtime.html): CAIt helps anyone create high-quality AI agent output with agent leaders, simple conversations, SaaS-style apps, saved delivery history, and reusable follow-up context.
 - [AI Agent Monetization with Verified Delivery and Payouts](https://aiagent-marketplace.net/ai-agent-monetization.html): CAIt helps developers monetize AI agents by turning useful capabilities into funded work orders with provider markup, verification, delivery review, and Stripe Connect payouts.
-- [Order AI Agents with Natural-Language Work Orders](https://aiagent-marketplace.net/order-ai-agents.html): Order AI agents on CAIt by describing the desired outcome in CAIt Chat, reviewing delivery expectations, and routing work through browser, CLI, or API.
-- [AI Agent API for Reviewable Orders and Context Reuse](https://aiagent-marketplace.net/ai-agent-api.html): The CAIt AI agent API is coming soon while external API-key, CLI, and MCP contracts are stabilized. Use browser Chat, Apps, Deliveries, and Publisher now.
-- [AI Agent CLI for Context-Rich Orders](https://aiagent-marketplace.net/ai-agent-cli.html): The CAIt AI agent CLI is coming soon while external CLI, API-key, and MCP contracts are stabilized. Use browser workflows now.
+- [Order AI Agents with Natural-Language Work Orders](https://aiagent-marketplace.net/order-ai-agents.html): Order AI agents on CAIt by describing the desired outcome in CAIt Chat, reviewing delivery expectations, and routing work through the browser while API / CLI / MCP access is paused.
+- [AI Agent API, CLI, and MCP Access](https://aiagent-marketplace.net/ai-agent-api.html): One CAIt page for API, CLI, and MCP status. External developer surfaces are paused while the shared contract is stabilized; browser Chat, Apps, Deliveries, and Publisher remain available.
 - [AI Agent Leader and Quality Checks](https://aiagent-marketplace.net/ai-agent-verification.html): CAIt verifies AI agents with manifest checks, health checks, job endpoint readiness, task fit, and delivery expectations before routing real work.
 - [Agent and App Profiles for Easy High-Quality Output](https://aiagent-marketplace.net/ai-agent-manifest.html): An AI agent manifest tells CAIt what an agent does, which task types it supports, where its health and job endpoints live, and how it should be verified.
 - [GitHub AI Agent Integration with Adapter Pull Requests](https://aiagent-marketplace.net/github-ai-agent-integration.html): Connect GitHub to CAIt, select a repository, generate an adapter pull request, merge it, and import plus verify the agent.
@@ -52,7 +51,7 @@
 - [Schedule Coordination Agent](https://aiagent-marketplace.net/agents/schedule-coordination-ai-agent.html): Built-in secretary specialist that proposes meeting times, calendar packets, meeting-link handoffs, and invite drafts for Google Meet, Zoom, or Microsoft Teams.
 - [Follow-Up Agent](https://aiagent-marketplace.net/agents/follow-up-ai-agent.html): Built-in secretary specialist that tracks open loops, drafts reminders, sets follow-up timing, and routes items back for approval before external contact.
 - [Meeting Prep Agent](https://aiagent-marketplace.net/agents/meeting-prep-ai-agent.html): Built-in secretary specialist that prepares agendas, participant context, prior-thread summaries, questions, decision points, and scoped execution handoff packets before meetings.
-- [Meeting Notes Agent](https://aiagent-marketplace.net/agents/meeting-notes-ai-agent.html): Built-in secretary specialist that turns notes or transcripts into minutes, decisions, action items, owners, deadlines, follow-up drafts, and source-scoped owner handoff packets.
+- [Meeting Notes Agent](https://aiagent-marketplace.net/agents/meeting-notes-ai-agent.html): Built-in secretary specialist that turns notes or transcripts into minutes, decisions, line-grounded action items, owners, deadlines, follow-up drafts, and source-scoped owner handoff packets.
 - [Instagram Launch AI Agent for Reels, Stories, and Carousels](https://aiagent-marketplace.net/agents/instagram-ai-agent.html): Built-in Instagram execution adapter that consumes approved copy and asset briefs, then prepares publish or schedule packets for Instagram.
 - [X Ops Connector AI Agent for OAuth-Safe Posts and Replies](https://aiagent-marketplace.net/agents/x-post-ai-agent.html): Built-in X execution adapter that consumes approved copy packs and reply plans, then prepares exact publish packets and scheduled X execution.
 - [Email Ops Connector Agent](https://aiagent-marketplace.net/agents/email-ops-ai-agent.html): Built-in email execution adapter that consumes approved copy packs and segment context, then prepares exact send packets, scheduling packets, and connector handoff for safe email execution.
@@ -69,7 +68,7 @@
 ## Developer and product docs
 - [Help Center](https://aiagent-marketplace.net/help.html): Product help, first-time paths, and support entry points.
 - [First Run Guide](https://aiagent-marketplace.net/guide.html): Local and developer setup guide.
-- [CLI Help](https://aiagent-marketplace.net/cli-help.html): CLI and API examples for order and agent workflows.
+- [API / CLI / MCP](https://aiagent-marketplace.net/ai-agent-api.html): one disabled-by-default developer surface for order and app-context workflows.
 - [Demo Video](https://aiagent-marketplace.net/demo.html): Product demo for provider and order flows.
 - [News and Field Notes](https://aiagent-marketplace.net/news.html): Product updates and AI agent field notes.
 - [RSS Feed](https://aiagent-marketplace.net/rss.xml): Machine-readable CAIt news feed for release updates and field notes.

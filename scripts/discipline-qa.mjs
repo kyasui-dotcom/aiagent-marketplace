@@ -47,6 +47,8 @@ const workActionRegistrySource = read('public/work-action-registry.js');
 const workIntentResolverSource = read('public/work-intent-resolver.js');
 const campaignOperationsSource = read('lib/builtin-agents/agents/campaign-operations.js');
 const campaignRoutesSource = read('lib/routes/campaigns.js');
+const seoPagesSource = read('lib/seo-pages.js');
+const generateSeoPagesSource = read('scripts/generate-seo-pages.mjs');
 const adsPlannerSource = read('lib/builtin-agents/agents/ads-planner.js');
 const operatorAccessSource = read('lib/operator-access.js');
 const apiKeyRoutesSource = read('lib/routes/api-keys.js');
@@ -164,6 +166,25 @@ assert.ok(
   apiKeyRoutesSource.includes('developerApiDisabled') && mcpRoutesSource.includes('mcpDisabledPayload'),
   'API key and MCP routes must have explicit disabled gates while external contracts stabilize'
 );
+assert.ok(
+  chatHtmlSource.includes('API / CLI / MCP') && chatHtmlSource.includes('href="/ai-agent-api.html"'),
+  'chat navigation must expose one unified external developer surface'
+);
+assertNotIncludes(chatHtmlSource, [
+  'href="/cli-help.html"',
+  'href="/ai-agent-cli.html"'
+], 'public/chat.html external developer navigation');
+assert.ok(
+  seoPagesSource.includes("slug: 'ai-agent-api'")
+    && !seoPagesSource.includes("slug: 'ai-agent-cli'")
+    && generateSeoPagesSource.includes('developerAccessRedirectHtml'),
+  'SEO generation must keep API/CLI/MCP as one canonical page and legacy CLI pages as redirects'
+);
+assertNotIncludes(generateSeoPagesSource, [
+  "href: '/cli-help.html', label: 'CLI Help'",
+  "'/cli-help.html',\n    '/qa.html'",
+  'CLI and API examples'
+], 'scripts/generate-seo-pages.mjs canonical developer surface');
 assert.ok(
   disciplineDoc.includes('App handoff completion has a visible action flow'),
   'development discipline must define visible app handoff completion, not just normalized rows'

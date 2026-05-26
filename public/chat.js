@@ -90,7 +90,7 @@ import {
 import {
   BUILT_IN_APP_MANIFESTS as APP_AGENT_MANIFESTS,
   CORE_FEATURE_APP_IDS
-} from './app-manifest-registry.js?v=20260526h';
+} from './app-manifest-registry.js?v=20260526i';
 import {
   progressNarratorHtml as agentProgressNarratorHtml,
   progressNarratorProgress as agentProgressNarratorProgress,
@@ -125,6 +125,37 @@ const CHATUX_RUNTIME_STATE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const CHATUX_RETRY_MODE_NEW_ORDER = 'same_content_new_order';
 const CAIT_APP_CONTEXT_CHANNEL = 'cait-app-context';
 const CHATUX_WELCOME_TEXT = 'What do you want done?';
+const APP_PANEL_HIDDEN_LANE_IDS = new Set(['x-client-ops']);
+const APP_PANEL_WORKSPACE_GROUPS = Object.freeze([
+  {
+    name: 'Growth & Publisher Workspace',
+    primaryId: 'growth-experiment-console',
+    memberIds: ['growth-experiment-console', 'publisher-approval-studio'],
+    description: 'Growth experiments, Publisher packets, social copy, and approval state in one launch workflow.',
+    reusePrompt: 'Use the Growth & Publisher workspace to retain the experiment, prepare the publish packet, and review approvals before launch.'
+  },
+  {
+    name: 'Campaign Control Workspace',
+    primaryId: 'campaign-operations',
+    memberIds: ['campaign-operations', 'ads-launch-console', 'lead-ops-console'],
+    description: 'Campaign state, paid launch gates, lead review, waiting conditions, owners, and measurement loops.',
+    reusePrompt: 'Use the Campaign Control workspace to retain campaign state, lead or ads handoffs, owners, approvals, and measurement loops.'
+  },
+  {
+    name: 'Analytics & Measurement Workspace',
+    primaryId: 'analytics-console',
+    memberIds: ['analytics-console'],
+    description: 'Acquisition, search, landing page, conversion, and post-run evidence before ordering the next task.',
+    reusePrompt: 'Use Analytics & Measurement to load evidence before asking the next agent for recommendations.'
+  },
+  {
+    name: 'Pricing Decision Workspace',
+    primaryId: 'pricing-decision-console',
+    memberIds: ['pricing-decision-console'],
+    description: 'Pricing assumptions, scenarios, approval owner, proof tracker, decision trigger, and rollback rule.',
+    reusePrompt: 'Use Pricing Decision to review pricing assumptions, approval state, proof, and rollback rules before a price change.'
+  }
+]);
 
 function leaderCatalogChatAnswer(prompt = '') {
   const ja = chatLanguage(prompt) === 'ja';
@@ -4037,6 +4068,39 @@ function recentAppAgentEntries() {
   });
 }
 
+function groupedAppPanelEntries(entries = []) {
+  const byId = new Map(entries.map((entry) => [normalizeUsageId(entry.id), entry]));
+  const groupedIds = new Set();
+  const groups = APP_PANEL_WORKSPACE_GROUPS.map((group) => {
+    const members = group.memberIds.map((id) => byId.get(normalizeUsageId(id))).filter(Boolean);
+    if (!members.length) return null;
+    members.forEach((member) => groupedIds.add(normalizeUsageId(member.id)));
+    const primary = byId.get(normalizeUsageId(group.primaryId)) || members[0];
+    const latestUsedAt = members
+      .map((member) => Date.parse(member.lastUsedAt || '') || 0)
+      .sort((left, right) => right - left)[0] || 0;
+    return {
+      ...primary,
+      id: primary.id,
+      name: group.name,
+      description: group.description,
+      capabilities: [...new Set(members.flatMap((member) => Array.isArray(member.capabilities) ? member.capabilities : []))],
+      requiredConnectors: [...new Set(members.flatMap((member) => Array.isArray(member.requiredConnectors) ? member.requiredConnectors : []))],
+      requiresApprovalFor: [...new Set(members.flatMap((member) => Array.isArray(member.requiresApprovalFor) ? member.requiresApprovalFor : []))],
+      lastUsedAt: latestUsedAt ? new Date(latestUsedAt).toISOString() : primary.lastUsedAt,
+      lastContext: members.find((member) => member.lastContext)?.lastContext || primary.lastContext,
+      lastHandoffUrl: primary.lastHandoffUrl,
+      reusePrompt: group.reusePrompt || primary.reusePrompt,
+      workspaceMembers: members.map((member) => member.name || member.id)
+    };
+  }).filter(Boolean);
+  const singletons = entries.filter((entry) => {
+    const id = normalizeUsageId(entry.id);
+    return !groupedIds.has(id) && !APP_PANEL_HIDDEN_LANE_IDS.has(id);
+  });
+  return [...groups, ...singletons];
+}
+
 function usageBadge(text = '') {
   const safe = String(text || '').trim();
   return safe ? `<span class="usage-badge">${escapeHtml(safe)}</span>` : '';
@@ -4044,13 +4108,14 @@ function usageBadge(text = '') {
 
 function appAgentRowsHtml(entries = []) {
   if (!entries.length) {
-    return '<div class="chat-hint">No app usage yet. Open an app from a delivery or the Apps panel to add it here.</div>';
+    return '<div class="chat-hint">No app usage yet. Open a workspace from a delivery or the Apps panel to add it here.</div>';
   }
   return entries.map((entry) => {
     const used = entry.lastUsedAt ? `Last used ${usageDisplayDate(entry.lastUsedAt)}` : 'Available';
     const context = entry.lastContext && typeof entry.lastContext === 'object' ? entry.lastContext : {};
     const meta = [
       used,
+      Array.isArray(entry.workspaceMembers) && entry.workspaceMembers.length ? `${entry.workspaceMembers.length} lanes` : '',
       context.product ? `Product: ${context.product}` : '',
       context.goal ? `Goal: ${context.goal}` : '',
       context.channel ? `Channel: ${context.channel}` : ''
@@ -4159,8 +4224,8 @@ function usageLibraryHtml(scope = 'all') {
     ))}</div>`,
     showContexts ? '<h3>Server App Contexts</h3>' : '',
     showContexts ? appContextRowsHtml(state.appContexts) : '',
-    showApps ? '<h3>Apps</h3>' : '',
-    showApps ? appAgentRowsHtml(recentAppAgentEntries()) : '',
+    showApps ? '<h3>Workspaces</h3>' : '',
+    showApps ? appAgentRowsHtml(groupedAppPanelEntries(recentAppAgentEntries())) : '',
     showAgents ? '<h3>AI Agents</h3>' : '',
     showAgents ? aiAgentRowsHtml(state.aiAgentHistory) : '',
     '<div class="chat-hint">Commands: /apps, /agents, /history</div>',
@@ -5031,13 +5096,12 @@ function workersPanelHtml(status = '') {
 }
 
 function appPanelHtml(status = '') {
-  const appCount = appManifestSources().length;
-  const staticCount = APP_AGENT_MANIFESTS.length;
-  const total = state.registeredAppsTotal ? state.registeredAppsTotal + staticCount : appCount;
+  const appCount = groupedAppPanelEntries(recentAppAgentEntries()).length;
+  const total = appCount;
   return [
     status ? `<div class="chat-hint">${escapeHtml(status)}</div>` : '',
     usageLibraryHtml('apps'),
-    catalogLoadMoreHtml('apps', appCount, total, state.registeredAppsHasMore)
+    catalogLoadMoreHtml('apps', appCount, total, false)
   ].filter(Boolean).join('\n');
 }
 

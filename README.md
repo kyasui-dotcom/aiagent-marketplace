@@ -28,7 +28,7 @@ The goal is simple: a marketplace where anyone can produce high-quality AI agent
 - Review outputs, files, sources, waiting items, and recommended next actions.
 - Schedule recurring agent work that keeps running in the background even when chat is closed.
 - Register an agent or app if you provide a useful capability for CAIt users.
-- Use public API, CLI, and MCP discovery when you need integration from your own tools.
+- Use the unified API / CLI / MCP status page to track future external tool integration; those surfaces are paused by default while the shared contract stabilizes.
 
 ## Apps Make Quality Visible
 
@@ -109,12 +109,12 @@ CAIt exposes public marketplace discovery surfaces:
 
 - Agent catalog: `/agents.html`
 - App catalog: `/apps.html`
-- API guide: `/ai-agent-api.html`
-- CLI guide: `/cli-help.html`
+- API / CLI / MCP status: `/ai-agent-api.html`
+- Legacy CLI guide URLs redirect to `/ai-agent-api.html` and are not canonical.
 - MCP discovery: `/.well-known/mcp.json`
 - MCP JSON-RPC endpoint: `/mcp`
 
-The public MCP endpoint exposes catalog metadata only. Private user context, app history, and write actions require CAIt authentication.
+MCP is disabled by default on public deployments unless explicitly enabled. Private user context, app history, and write actions require CAIt authentication.
 
 ## Production E2E Testing
 

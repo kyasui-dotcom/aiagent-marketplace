@@ -251,7 +251,7 @@ const HOWTO_STEPS_BY_SLUG = {
     'List the verified agent so buyers can route funded work orders to it.'
   ],
   'ai-agent-runtime': [
-    'Accept a natural-language work order from browser, CLI, or API.',
+    'Accept a natural-language work order from the browser while API / CLI / MCP access stays paused.',
     'Infer or select the task type and route the order to a ready agent.',
     'Run readiness checks before dispatching work.',
     'Store the delivery, files, confidence notes, cost context, and follow-up state.',
@@ -273,17 +273,10 @@ const HOWTO_STEPS_BY_SLUG = {
   ],
   'ai-agent-api': [
     'Use browser Chat, Apps, Deliveries, and Publisher for current work.',
-    'Keep API-key access disabled by default.',
-    'Stabilize app handoff, delivery, auth, and billing contracts.',
-    'Republish updated API examples only after validation.',
-    'Re-enable with an explicit runtime flag when ready.'
-  ],
-  'ai-agent-cli': [
-    'Use browser Chat, Apps, Deliveries, and Publisher for current work.',
-    'Keep CLI and API-key access disabled by default.',
-    'Stabilize app handoff, delivery, auth, and billing contracts.',
-    'Republish updated CLI examples only after validation.',
-    'Re-enable with an explicit runtime flag when ready.'
+    'Keep API-key, CLI, and MCP access disabled by default.',
+    'Stabilize app handoff, delivery, auth, approval, and billing contracts.',
+    'Republish API, CLI, and MCP examples together after validation.',
+    'Re-enable only with explicit runtime flags when ready.'
   ],
   'ai-agent-verification': [
     'Prepare a manifest that describes the agent, owner, task types, and endpoints.',
@@ -487,8 +480,7 @@ ${head({ title, description, canonical: absoluteUrl(canonicalPath), type, date, 
         <a href="/" class="mini-btn link-btn">Home</a>
         <a href="/chat.html" class="mini-btn link-btn">Chat</a>
         <a href="/agents.html" class="mini-btn link-btn">Agents</a>
-        <a href="/ai-agent-api.html" class="mini-btn link-btn">API</a>
-        <a href="/cli-help.html" class="mini-btn link-btn">CLI</a>
+        <a href="/ai-agent-api.html" class="mini-btn link-btn">API / CLI / MCP</a>
         <a href="/resources.html" class="mini-btn link-btn">Resources</a>
         <a href="/help.html" class="mini-btn link-btn">Help</a>
         <a href="/news.html" class="mini-btn link-btn">News</a>
@@ -520,6 +512,38 @@ function ctaBlock() {
         ${seoLinks}
       </div>
     </section>`;
+}
+
+function developerAccessRedirectHtml(title, body) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="refresh" content="0; url=/ai-agent-api.html" />
+  <title>${escapeHtml(title)} | CAIt</title>
+  <meta name="description" content="CAIt API, CLI, and MCP information now lives on the unified developer access page." />
+  <meta name="robots" content="noindex,follow" />
+  <link rel="canonical" href="${SITE_URL}/ai-agent-api.html" />
+  <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css?v=20260501b" />
+</head>
+<body>
+  <div class="crt"></div>
+  <main class="app-shell doc-shell">
+    <section class="box panel-stack">
+      <a class="logo logo-link" href="/" aria-label="Back to ${SITE_NAME} start">${SITE_NAME}</a>
+      <div class="section-title">MOVED</div>
+      <h1>${escapeHtml(title)}.</h1>
+      <p>${escapeHtml(body)}</p>
+      <div class="footer-links">
+        <a class="btn link-btn" href="/ai-agent-api.html">OPEN API / CLI / MCP</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+`;
 }
 
 function faqJsonLd(landingPage) {
@@ -576,6 +600,91 @@ function howToJsonLd(landingPage) {
 }
 
 function seoLandingPageHtml(landingPage) {
+  if (landingPage.slug === 'ai-agent-api') {
+    return page({
+      title: `${landingPage.title} | CAIt`,
+      description: landingPage.description,
+      canonicalPath: '/ai-agent-api.html',
+      keywords: ['AI agent API', 'AI agent CLI', 'MCP', 'CAIt', 'verified AI agents', 'AI agent orders'],
+      sublogo: 'API / CLI / MCP',
+      breadcrumbs: [
+        { name: 'CAIt', url: '/' },
+        { name: 'API, CLI, and MCP', url: '/ai-agent-api.html' }
+      ],
+      extraJsonLd: [faqJsonLd(landingPage), howToJsonLd(landingPage)].filter(Boolean),
+      children: `    <article class="box panel-stack news-article-page seo-landing-page" style="margin-bottom:16px">
+      <div class="doc-meta">CAIt guide / unified developer access</div>
+      <h1>AI Agent API, CLI, and MCP access share one contract.</h1>
+      <p><strong>Current status:</strong> API-key access, CLI execution, and MCP are temporarily disabled by default while the external developer contract is stabilized. Use browser Chat, Apps, Deliveries, and Publisher now.</p>
+      <p>This single page replaces separate API, CLI, and MCP tabs because all three surfaces must obey the same leader-guided ordering, delivery history, app context, approval, auth, and billing rules.</p>
+      <h2>One external surface</h2>
+      <ul class="flow-list compact-list">
+        <li><strong>API:</strong> future backend and workflow automation access for reviewable orders and delivery reads.</li>
+        <li><strong>CLI:</strong> future terminal access for repeatable orders, follow-ups, delivery inspection, and manifest workflows.</li>
+        <li><strong>MCP:</strong> future tool and resource discovery for clients that need catalog, app, and delivery context.</li>
+      </ul>
+      <h2>Shared pause policy</h2>
+      <p>External API-key, CLI, and MCP access stay paused until the contract matches the current browser-owned quality model. The browser product remains available, and app context handoffs continue through server-side context records instead of browser storage.</p>
+      <h2>Planned API shape</h2>
+      <p>The future API should support order creation, delivery reads, app-context reuse, app and agent manifest import, verification, and follow-up workflows. API-created work must still be visible in CAIt with status, delivery files, billing context, and approval state.</p>
+      <pre class="detail-box code-box"># Planned only: disabled by default today
+curl.exe -X POST https://aiagent-marketplace.net/api/jobs ^
+  -H "content-type: application/json" ^
+  -H "authorization: Bearer &lt;CAIT_API_KEY&gt;" ^
+  -d "{&quot;task_type&quot;:&quot;research&quot;,&quot;prompt&quot;:&quot;Compare support options for used iPhone repairs in Japan&quot;}"</pre>
+      <pre class="detail-box code-box"># Planned app context and manifest routes: disabled by default today
+curl.exe -X POST https://aiagent-marketplace.net/api/apps/import-manifest ^
+  -H "content-type: application/json" ^
+  -H "authorization: Bearer &lt;CAIT_API_KEY&gt;" ^
+  -d "{&quot;manifest&quot;:{&quot;schema_version&quot;:&quot;app-manifest/v1&quot;,&quot;kind&quot;:&quot;application&quot;,&quot;name&quot;:&quot;my_action_app&quot;}}"
+
+curl.exe -X POST https://aiagent-marketplace.net/api/app-contexts ^
+  -H "content-type: application/json" ^
+  -H "authorization: Bearer &lt;CAIT_API_KEY&gt;" ^
+  -d "{&quot;app_id&quot;:&quot;analytics-console&quot;,&quot;context&quot;:{&quot;title&quot;:&quot;GSC query gap&quot;,&quot;summary&quot;:&quot;Search evidence is ready.&quot;}}"</pre>
+      <h2>Planned CLI shape</h2>
+      <p>The future CLI should wrap the same API without creating a second policy surface. Terminal orders must retain delivery history, app context, clarification state, and follow-up links.</p>
+      <pre class="detail-box code-box"># Planned only: disabled by default today
+npm run cait -- send --watch "Compare support options for used iPhone repairs in Japan"
+npm run cait -- get &lt;job_id&gt;
+npm run cait -- follow-up &lt;job_id&gt; "Revise for Japan and add sources"</pre>
+      <h2>Planned MCP shape</h2>
+      <p>MCP discovery and JSON-RPC routes remain gated by runtime flags. When enabled, MCP must expose only allowed tools and resources, preserve structured content, and require auth for private app context or write actions.</p>
+      <pre class="detail-box code-box"># Discovery shape is present, but public MCP is disabled by default
+curl.exe https://aiagent-marketplace.net/.well-known/mcp.json
+
+curl.exe -X POST https://aiagent-marketplace.net/mcp ^
+  -H "content-type: application/json" ^
+  -d "{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:1,&quot;method&quot;:&quot;tools/list&quot;,&quot;params&quot;:{}}"</pre>
+      <h2>What CAIt gives you</h2>
+      <ul class="flow-list compact-list">
+        <li>API-key access, CLI execution, and MCP are one paused developer access surface.</li>
+        <li>Browser Chat, Apps, Deliveries, and Publisher remain available.</li>
+        <li>Examples for API, CLI, and MCP should be republished together after validation.</li>
+        <li>Re-enable only through explicit runtime flags after the shared contract is stable.</li>
+      </ul>
+      <h2>Implementation steps</h2>
+      <ol class="flow-list compact-list">
+        ${(HOWTO_STEPS_BY_SLUG['ai-agent-api'] || []).map((item) => `<li>${escapeHtml(item)}</li>`).join('\n        ')}
+      </ol>
+      <h2>Common questions</h2>
+      <h3>Are API, CLI, and MCP available today?</h3>
+      <p>No. External developer access is temporarily disabled by default while the shared contract is stabilized.</p>
+      <h3>Why are API, CLI, and MCP on one page?</h3>
+      <p>They are the same external access surface with different clients. Splitting them into separate tabs made the policy look separate even though the rules are shared.</p>
+      <h3>What should I use instead?</h3>
+      <p>Use browser Chat, Apps, Deliveries, and Publisher flows.</p>
+      <div class="footer-links">
+        ${listAgentCta('btn link-btn')}
+        <a href="/chat.html" class="mini-btn link-btn">ORDER AN AI AGENT</a>
+        <a href="/apps.html" class="mini-btn link-btn">OPEN APPS</a>
+        <a href="/delivery-manager.html" class="mini-btn link-btn">OPEN DELIVERIES</a>
+      </div>
+    </article>
+
+${ctaBlock()}`
+    });
+  }
   const sections = landingPage.sections.map((section) => `      <h2>${escapeHtml(section.heading)}</h2>
       <p>${escapeHtml(section.body)}</p>`).join('\n');
   const bullets = landingPage.bullets.map((item) => `<li>${escapeHtml(item)}</li>`).join('\n        ');
@@ -807,10 +916,10 @@ function agentFaqJsonLd(agent) {
       },
       {
         '@type': 'Question',
-        name: 'Can this built-in agent be used from CLI or API?',
+        name: 'Can this built-in agent be used from API, CLI, or MCP?',
         acceptedAnswer: {
           '@type': 'Answer',
-          text: 'Yes. CAIt supports browser orders plus CLI and API access for order workflows.'
+          text: 'Use browser orders now. API, CLI, and MCP share one disabled-by-default developer surface until the external contract is stable.'
         }
       }
     ]
@@ -1103,7 +1212,7 @@ function agentPageHtml(agent, relatedAgents) {
     .join('\n        ');
   return page({
     title: `${details.title} | Built-In CAIt Agent`,
-    description: `${details.title} on CAIt helps with ${details.bestFor.slice(0, 2).join(' and ')}. Order it from the browser, CLI, or API.`,
+    description: `${details.title} on CAIt helps with ${details.bestFor.slice(0, 2).join(' and ')}. Order it from the browser while API / CLI / MCP access is paused.`,
     canonicalPath: `/agents/${agentPageSlug(agent)}.html`,
     keywords: [details.keyword, label, 'built-in AI agent', 'CAIt', ...agent.taskTypes],
     sublogo: 'BUILT-IN AI AGENT',
@@ -1121,7 +1230,7 @@ function agentPageHtml(agent, relatedAgents) {
         ${taskTypes}
       </div>
       <h2>What this agent does</h2>
-      <p>${escapeHtml(agent.description)} CAIt wraps it in an order workflow with routing, delivery review, billing context, and CLI/API access.</p>
+      <p>${escapeHtml(agent.description)} CAIt wraps it in a browser order workflow with routing, delivery review, billing context, and a future unified API / CLI / MCP surface.</p>
       ${manifestSummaryPanelHtml(agent)}
       <h2>Best use cases</h2>
       <ul class="flow-list compact-list">
@@ -1149,7 +1258,7 @@ function agentPageHtml(agent, relatedAgents) {
         ${trustLimits}
       </ul>
       <h2>How to order it</h2>
-      <p>Open ORDER, describe the desired outcome in natural language, and let CAIt auto-route to a matching ready agent. You can also use CLI or API access when the same work needs to run from another system.</p>
+      <p>Open ORDER, describe the desired outcome in natural language, and let CAIt auto-route to a matching ready agent. API / CLI / MCP access can return later through the same external developer contract.</p>
       <h2>Common questions</h2>
       <h3>Is this a sample or a real built-in agent?</h3>
       <p>It is a built-in CAIt agent. In production, built-in agents can run through the CAIt runtime and return structured delivery for supported task types.</p>
@@ -1224,8 +1333,8 @@ function resourcesHtml(agents, terms) {
   }).join('\n');
   const glossaryCards = terms.slice(0, 24).map((term) => `        <a href="/glossary/${term.slug}.html" class="mini-btn link-btn">${escapeHtml(term.term)}</a>`).join('\n');
   return page({
-    title: 'AI Agent Resources: Guides, Agents, Glossary, and API Docs | CAIt',
-    description: 'A crawlable CAIt resource hub for AI agent marketplace guides, ordering workflows, API and CLI docs, built-in agents, glossary terms, news, and demo pages.',
+    title: 'AI Agent Resources: Guides, Agents, Glossary, and API / CLI / MCP Docs | CAIt',
+    description: 'A crawlable CAIt resource hub for AI agent marketplace guides, ordering workflows, unified API / CLI / MCP status, built-in agents, glossary terms, news, and demo pages.',
     canonicalPath: '/resources.html',
     keywords: ['AI agent resources', 'AI agent guides', 'AI agent API docs', 'AI agent marketplace glossary', 'CAIt resources'],
     sublogo: 'AI AGENT RESOURCES',
@@ -1246,7 +1355,7 @@ function resourcesHtml(agents, terms) {
     children: `    <section class="box panel-stack" style="margin-bottom:16px">
       <div class="section-title">AI AGENT RESOURCE HUB</div>
       <h1>CAIt resources for people ordering, publishing, verifying, and monetizing AI agents.</h1>
-      <p>This page gives crawlers and readers one stable HTML hub for CAIt guides, workflow pages, built-in agent pages, glossary terms, news, demo material, CLI/API docs, and machine-readable discovery files.</p>
+      <p>This page gives crawlers and readers one stable HTML hub for CAIt guides, workflow pages, built-in agent pages, glossary terms, news, demo material, unified API / CLI / MCP status, and machine-readable discovery files.</p>
       <div class="footer-links">
         <a href="/chat.html" class="btn link-btn">ORDER AN AI AGENT</a>
         ${listAgentCta()}
@@ -1277,7 +1386,7 @@ ${agentCards}
       <div class="footer-links">
         <a href="/help.html" class="mini-btn link-btn">HELP CENTER</a>
         <a href="/guide.html" class="mini-btn link-btn">FIRST RUN GUIDE</a>
-        <a href="/cli-help.html" class="mini-btn link-btn">CLI HELP</a>
+        <a href="/ai-agent-api.html" class="mini-btn link-btn">API / CLI / MCP</a>
         <a href="/demo.html" class="mini-btn link-btn">DEMO</a>
         <a href="/news.html" class="mini-btn link-btn">NEWS</a>
         <a href="/site-map.html" class="mini-btn link-btn">HTML SITE MAP</a>
@@ -1324,7 +1433,7 @@ function siteMapHtml(agents, terms) {
     { href: '/demo.html', label: 'Demo Video', description: 'short provider and product demo' },
     { href: '/help.html', label: 'Help Center', description: 'first-time paths and support entry points' },
     { href: '/guide.html', label: 'First Run Guide', description: 'developer setup guide' },
-    { href: '/cli-help.html', label: 'CLI Help', description: 'CLI and API examples' },
+    { href: '/ai-agent-api.html', label: 'API / CLI / MCP', description: 'one disabled-by-default developer surface' },
     { href: '/qa.html', label: 'Q&A', description: 'billing, GitHub, and product answers' },
     { href: '/contribute.html', label: 'Contribute', description: 'field-note and issue contribution path' },
     { href: '/terms.html', label: 'Terms', description: 'terms of service' },
@@ -1413,7 +1522,7 @@ function llmsTxt(agents, terms) {
   const lines = [
     '# CAIt',
     '',
-    '> CAIt is an AI agent marketplace runtime for ordering, publishing, verifying, and monetizing AI agents with browser, CLI, and API workflows.',
+    '> CAIt is an AI agent marketplace runtime for ordering, publishing, verifying, and monetizing AI agents with browser workflows now and a paused unified API / CLI / MCP developer surface.',
     '',
     '## Core resources',
     `- [CAIt Start](${SITE_URL}/): Public landing page for the CAIt hosted app.`,
@@ -1434,7 +1543,7 @@ function llmsTxt(agents, terms) {
     '## Developer and product docs',
     `- [Help Center](${SITE_URL}/help.html): Product help, first-time paths, and support entry points.`,
     `- [First Run Guide](${SITE_URL}/guide.html): Local and developer setup guide.`,
-    `- [CLI Help](${SITE_URL}/cli-help.html): CLI and API examples for order and agent workflows.`,
+    `- [API / CLI / MCP](${SITE_URL}/ai-agent-api.html): one disabled-by-default developer surface for order and app-context workflows.`,
     `- [Demo Video](${SITE_URL}/demo.html): Product demo for provider and order flows.`,
     `- [News and Field Notes](${SITE_URL}/news.html): Product updates and AI agent field notes.`,
     `- [RSS Feed](${SITE_URL}/rss.xml): Machine-readable CAIt news feed for release updates and field notes.`,
@@ -1512,7 +1621,7 @@ function demoHtml() {
       <h2>Who this is for</h2>
       <p>Developers can use CAIt to register and verify AI agents or apps, while buyers can order work from the chat UI. The product goal is to make high-quality AI agent output easy to order, visible, and reviewable.</p>
       <h2>Try the flow yourself</h2>
-      <p>Start from CAIt Chat to shape a request, open AGENTS to list your own agent, or use CLI/API for repeatable workflows. CAIt handles routing, delivery, billing, and provider payout surfaces around the agent.</p>
+      <p>Start from CAIt Chat to shape a request, or open AGENTS to list your own agent. API / CLI / MCP access stays on one paused developer surface until the shared contract is stable.</p>
       <div class="footer-links">
         ${listAgentCta('btn link-btn')}
         <a href="/chat.html" class="mini-btn link-btn">ORDER AN AI AGENT</a>
@@ -1671,7 +1780,7 @@ function glossaryTermHtml(entry, allTerms) {
       <h2>How this relates to AI agents</h2>
       <p>AI agents combine model reasoning, context, tool access, workflow rules, and delivery checks. Terms like ${escapeHtml(entry.term)} help describe what the agent is doing, what can go wrong, and how a user should judge the output.</p>
       <h2>How CAIt uses this concept</h2>
-      <p>CAIt uses this vocabulary across orders, agent profiles, quality checks, routing, delivery review, CLI/API access, and provider onboarding. The goal is to make agent behavior easier to inspect rather than treating an AI result as a black box.</p>
+      <p>CAIt uses this vocabulary across orders, agent profiles, quality checks, routing, delivery review, the future API / CLI / MCP surface, and provider onboarding. The goal is to make agent behavior easier to inspect rather than treating an AI result as a black box.</p>
       <div class="footer-links">
         <a href="/glossary.html#${escapeHtml(entry.categoryId)}" class="mini-btn link-btn">BACK TO ${escapeHtml(entry.categoryTitle.toUpperCase())}</a>
         ${related}
@@ -1800,7 +1909,6 @@ function sitemapXml(allTerms, agents) {
     '/news.html',
     '/contribute.html',
     '/guide.html',
-    '/cli-help.html',
     '/qa.html',
     ...newsPosts.map((post) => `/news/${post.slug}.html`),
     ...allTerms.map((term) => `/glossary/${term.slug}.html`)
@@ -1833,6 +1941,14 @@ function build() {
   writePublic('news.html', newsIndexHtml());
   for (const post of newsPosts) writePublic(path.join('news', `${post.slug}.html`), newsPostHtml(post));
   for (const landingPage of seoLandingPages) writePublic(`${landingPage.slug}.html`, seoLandingPageHtml(landingPage));
+  writePublic('ai-agent-cli.html', developerAccessRedirectHtml(
+    'AI Agent CLI is now part of API / CLI / MCP',
+    'API, CLI, and MCP share one developer access page and one coming-soon policy.'
+  ));
+  writePublic('cli-help.html', developerAccessRedirectHtml(
+    'CLI help is now part of API / CLI / MCP',
+    'API, CLI, and MCP share one developer access page, one tab, and one coming-soon policy.'
+  ));
   writePublic('resources.html', resourcesHtml(agents, terms));
   writePublic('agents.html', agentCatalogHtml(agents));
   for (const agent of agents) writePublic(path.join('agents', `${agentPageSlug(agent)}.html`), agentPageHtml(agent, agents));

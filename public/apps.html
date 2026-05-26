@@ -27,7 +27,7 @@
           <a href="/delivery-manager.html">Deliveries</a>
           <a href="/agents.html">Agents</a>
           <a href="/publish-ai-agents.html">Publish</a>
-          <a href="/ai-agent-api.html">API</a>
+          <a href="/ai-agent-api.html">API / CLI / MCP</a>
           <a href="/resources.html">Resources</a>
         </nav>
         <div class="app-header-actions">
@@ -36,12 +36,11 @@
       </header>
       <div class="app-layout">
         <aside class="side-nav" aria-label="App categories">
-          <a class="active" href="#catalog">App catalog <span data-app-count>Total</span></a>
-          <a href="#context">Context apps <span data-context-app-count>06</span></a>
-          <a href="#action">Action apps <span data-action-app-count>01</span></a>
-          <a href="#mcp">MCP <span>COMING SOON</span></a>
+          <a class="active" href="#catalog">Workspaces <span data-app-count>Total</span></a>
+          <a href="#context">Context workspaces <span data-context-app-count>03</span></a>
+          <a href="#action">Action lanes <span data-action-app-count>01</span></a>
           <a href="#recent-contexts">Recent contexts <span>API</span></a>
-          <a href="#builders">For builders <span>API</span></a>
+          <a href="#builders">For builders <span>API / CLI / MCP</span></a>
         </aside>
         <section class="workspace">
           <div class="workspace-head">
@@ -58,17 +57,17 @@
 
           <section class="metric-strip app-metrics" aria-label="App registry summary">
             <article class="metric-card">
-              <span>Registered apps</span>
+              <span>Workspaces</span>
               <strong data-app-count>...</strong>
-              <small>Loaded from <code>/api/apps</code></small>
+              <small>Merged from <code>/api/apps</code></small>
             </article>
             <article class="metric-card">
-              <span>Context apps</span>
+              <span>Context workspaces</span>
               <strong data-context-app-count>...</strong>
               <small>Return agent-ready evidence packets</small>
             </article>
             <article class="metric-card">
-              <span>Action apps</span>
+              <span>Action lanes</span>
               <strong data-action-app-count>...</strong>
               <small>Keep actions reviewable</small>
             </article>
@@ -110,8 +109,8 @@
             <div class="workspace-head compact-head">
               <div>
                 <span class="kicker">Live registry</span>
-                <h2>Registered apps</h2>
-                <p>The app hub reads the same registry used by chat handoffs, so users can find SaaS-style tools that make context visible before ordering agent work.</p>
+                <h2>Operational workspaces</h2>
+                <p>The app hub reads the same registry used by chat handoffs, then merges related app lanes so users see fewer SaaS-style workspaces before ordering agent work.</p>
               </div>
               <a class="ghost-btn" href="/ai-agent-manifest.html">Contract guide</a>
             </div>
@@ -124,7 +123,7 @@
             <div class="workspace-head compact-head">
               <div>
                 <span class="kicker">Featured workflows</span>
-                <h2>Start from the app that holds the missing context.</h2>
+                <h2>Start from the workspace that holds the missing context.</h2>
               </div>
             </div>
             <div class="three-col" data-featured-app-list>
@@ -146,25 +145,6 @@
             </div>
           </section>
 
-          <section class="panel" id="mcp" aria-label="MCP app and agent discovery">
-            <div class="workspace-head compact-head">
-              <div>
-                <span class="kicker">MCP discovery</span>
-                <h2>Expose agents and apps only after the external contract is stable.</h2>
-              <p>CAIt keeps the MCP discovery shape in code, but the public endpoint is temporarily disabled by default. It can be re-enabled with an explicit runtime flag after CLI/API/MCP contracts are aligned with the current app handoff model.</p>
-              </div>
-              <a class="ghost-btn" href="/.well-known/mcp.json">View MCP discovery</a>
-            </div>
-            <table class="data-table" aria-label="MCP endpoints">
-              <thead><tr><th>Endpoint</th><th>Purpose</th><th>Access</th></tr></thead>
-              <tbody>
-                <tr><td><code>/.well-known/mcp.json</code></td><td>Discovery metadata for MCP clients.</td><td>Disabled by default</td></tr>
-                <tr><td><code>/mcp</code></td><td>JSON-RPC endpoint for tools, resources, resource templates, prompts, ping, and batch catalog requests.</td><td>Disabled by default</td></tr>
-                <tr><td><code>app manifest mcp</code></td><td>Provider apps can declare their own MCP server URL, tools, resources, scopes, and transport.</td><td>Verified during app registration</td></tr>
-              </tbody>
-            </table>
-          </section>
-
           <section class="split-main" id="builders">
             <article class="panel">
               <h2>How apps make quality visible</h2>
@@ -180,10 +160,20 @@
               </table>
             </article>
             <article class="panel">
-              <h2>Future partner app registration</h2>
-              <p>Provider apps will need a manifest, entry URL, optional handoff endpoint, health check, capabilities, approval requirements, optional MCP server metadata, billing contract, and the context shape they return. For now, CAIt keeps this contract documented without opening self-service app registration.</p>
+              <h2>One API / CLI / MCP developer surface</h2>
+              <p>Provider apps will need a manifest, entry URL, optional handoff endpoint, health check, capabilities, approval requirements, optional MCP server metadata, billing contract, and the context shape they return. API, CLI, and MCP are documented on one page and remain disabled by default until this shared contract is stable.</p>
+              <table class="data-table" aria-label="Unified developer access">
+                <thead><tr><th>Surface</th><th>Purpose</th><th>Access</th></tr></thead>
+                <tbody>
+                  <tr><td><code>API</code></td><td>Reviewable orders, app contexts, deliveries, and manifest workflows.</td><td>Disabled by default</td></tr>
+                  <tr><td><code>CLI</code></td><td>Terminal wrapper around the same API and delivery history.</td><td>Disabled by default</td></tr>
+                  <tr><td><code>MCP</code></td><td>Discovery metadata, tools, resources, resource templates, and prompts.</td><td>Disabled by default</td></tr>
+                </tbody>
+              </table>
               <div class="inline-actions">
                 <a class="primary-btn" href="/ai-agent-manifest.html">Read the manifest guide</a>
+                <a class="ghost-btn" href="/ai-agent-api.html">API / CLI / MCP</a>
+                <a class="ghost-btn" href="/.well-known/mcp.json">MCP discovery</a>
                 <a class="ghost-btn" href="/login?next=%2Fchat&amp;source=apps_partner_question">Ask in chat</a>
               </div>
             </article>
@@ -192,6 +182,6 @@
       </div>
     </section>
   </main>
-  <script type="module" src="/apps.js?v=20260526h"></script>
+  <script type="module" src="/apps.js?v=20260526j"></script>
 </body>
 </html>

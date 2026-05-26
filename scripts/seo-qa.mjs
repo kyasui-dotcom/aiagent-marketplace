@@ -63,7 +63,8 @@ assert.ok(home.includes('/resources.html'), 'home should link resources hub');
 assert.ok(home.includes('/agents.html'), 'home should link to built-in agent catalog');
 assert.ok(home.includes('/publish-ai-agents.html'), 'home should link publish page');
 assert.ok(home.includes('/ai-agent-api.html'), 'home should link API page');
-assert.ok(home.includes('/cli-help.html'), 'home should link CLI help page');
+assert.ok(home.includes('API / CLI / MCP'), 'home should expose one API/CLI/MCP developer link');
+assert.ok(!home.includes('/cli-help.html'), 'home should not expose a separate CLI help page link');
 assert.ok(home.includes('/help.html'), 'home should link help page');
 assert.ok(home.includes('/news.html'), 'home should link news page');
 assert.ok(!home.includes('/chatux/'), 'home should not link retired chatux UI');
@@ -76,6 +77,9 @@ assert.ok(resources.includes('aria-label="Breadcrumb"'), 'resources should have 
 assert.ok(resources.includes('/no-api-key-ai-agents.html'), 'resources should link no API key guide');
 assert.ok(resources.includes('/ai-agent-marketplace.html'), 'resources should link core guide');
 assert.ok(resources.includes('/ai-agent-api.html'), 'resources should link workflow guide');
+assert.ok(resources.includes('API / CLI / MCP'), 'resources should expose one unified developer access page');
+assert.ok(!resources.includes('/ai-agent-cli.html'), 'resources should not index a separate CLI landing page');
+assert.ok(!resources.includes('/cli-help.html'), 'resources should not link a separate CLI help page');
 assert.ok(resources.includes('/agents/prompt-brushup-ai-agent.html'), 'resources should link agent pages');
 assert.ok(resources.includes('/glossary/ai-agent.html'), 'resources should link glossary terms');
 assert.ok(resources.includes('/llms.txt'), 'resources should link llms.txt');
@@ -185,7 +189,6 @@ for (const landingPage of seoLandingPages) {
     'ai-agent-monetization',
     'order-ai-agents',
     'ai-agent-api',
-    'ai-agent-cli',
     'ai-agent-verification',
     'ai-agent-manifest',
     'github-ai-agent-integration',
@@ -206,6 +209,8 @@ assert.ok(statSync(path.join(root, 'public/videos/cait-marketplace-demo-thumbnai
 
 const sitemap = read('public/sitemap.xml');
 assert.ok(sitemap.includes(`${SITE_URL}/sitemap.xml`) === false, 'sitemap should contain page URLs, not itself');
+assert.ok(!sitemap.includes(`${SITE_URL}/ai-agent-cli.html`), 'sitemap should not index the legacy CLI redirect page');
+assert.ok(!sitemap.includes(`${SITE_URL}/cli-help.html`), 'sitemap should not index the legacy CLI help redirect page');
 assert.ok(sitemap.includes(`${SITE_URL}/resources.html`), 'sitemap should include resources hub');
 assert.ok(sitemap.includes(`${SITE_URL}/site-map.html`), 'sitemap should include HTML site map');
 const latestNewsDate = newsPosts.map((post) => post.date).sort((a, b) => b.localeCompare(a))[0];
@@ -235,6 +240,9 @@ const llms = read('public/llms.txt');
 assert.ok(llms.includes(`# ${SITE_NAME}`), 'llms should have title');
 assert.ok(llms.includes(`${SITE_URL}/resources.html`), 'llms should link resources hub');
 assert.ok(llms.includes(`${SITE_URL}/site-map.html`), 'llms should link HTML site map');
+assert.ok(llms.includes(`${SITE_URL}/ai-agent-api.html`), 'llms should link the unified API / CLI / MCP page');
+assert.ok(!llms.includes(`${SITE_URL}/ai-agent-cli.html`), 'llms should not advertise a separate CLI landing page');
+assert.ok(!llms.includes(`${SITE_URL}/cli-help.html`), 'llms should not advertise a separate CLI help page');
 assert.ok(llms.includes(`${SITE_URL}/ai-agent-marketplace.html`), 'llms should link core guides');
 assert.ok(llms.includes(`${SITE_URL}/agents/prompt-brushup-ai-agent.html`), 'llms should link agent pages');
 assert.ok(llms.includes(`${SITE_URL}/glossary/ai-agent.html`), 'llms should link glossary pages');

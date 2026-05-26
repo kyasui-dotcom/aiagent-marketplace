@@ -1,20 +1,48 @@
 import {
   BUILT_IN_APP_MANIFESTS as FALLBACK_BUILT_IN_APPS,
   CORE_FEATURE_APP_IDS
-} from './app-manifest-registry.js?v=20260526h';
+} from './app-manifest-registry.js?v=20260526i';
 
 const listEl = document.querySelector('[data-context-list]');
 const registryListEl = document.querySelector('[data-app-registry-list]');
 const featuredListEl = document.querySelector('[data-featured-app-list]');
-const FEATURED_APP_IDS = Object.freeze([
-  'analytics-console',
-  'publisher-approval-studio',
-  'lead-ops-console',
-  'campaign-operations',
-  'ads-launch-console',
-  'growth-experiment-console',
-  'pricing-decision-console',
-  'x-client-ops'
+const APP_WORKSPACE_GROUPS = Object.freeze([
+  {
+    id: 'growth-publisher-workspace',
+    name: 'Growth & Publisher Workspace',
+    primaryId: 'growth-experiment-console',
+    entryId: 'growth-experiment-console',
+    memberIds: ['growth-experiment-console', 'publisher-approval-studio'],
+    description: 'Retain Growth experiments, measurement guardrails, Publisher packets, social copy, and approval state in one launch workflow.',
+    tags: ['growth', 'publisher', 'approval']
+  },
+  {
+    id: 'campaign-control-workspace',
+    name: 'Campaign Control Workspace',
+    primaryId: 'campaign-operations',
+    entryId: 'campaign-operations',
+    memberIds: ['campaign-operations', 'ads-launch-console', 'lead-ops-console'],
+    description: 'Manage campaign state, paid launch gates, lead review, waiting conditions, owners, and measurement loops as one operations workspace.',
+    tags: ['campaigns', 'ads', 'leads']
+  },
+  {
+    id: 'analytics-measurement-workspace',
+    name: 'Analytics & Measurement Workspace',
+    primaryId: 'analytics-console',
+    entryId: 'analytics-console',
+    memberIds: ['analytics-console'],
+    description: 'Keep acquisition, search, landing page, conversion, and post-run evidence available before ordering the next agent task.',
+    tags: ['analytics', 'seo', 'measurement']
+  },
+  {
+    id: 'pricing-decision-workspace',
+    name: 'Pricing Decision Workspace',
+    primaryId: 'pricing-decision-console',
+    entryId: 'pricing-decision-console',
+    memberIds: ['pricing-decision-console'],
+    description: 'Review pricing assumptions, scenarios, approval owner, proof tracker, decision trigger, and rollback rule before price changes.',
+    tags: ['pricing', 'finance', 'approval']
+  }
 ]);
 
 function escapeHtml(value = '') {
@@ -96,6 +124,46 @@ function normalizeApp(record = {}) {
   };
 }
 
+function uniqueList(values = []) {
+  return [...new Set(values.map((item) => String(item || '').trim()).filter(Boolean))];
+}
+
+function workspaceGroupsFromApps(records = []) {
+  const apps = records.map(normalizeApp).filter(Boolean);
+  const byId = new Map(apps.map((app) => [app.id, app]));
+  const groupedIds = new Set();
+  const groups = APP_WORKSPACE_GROUPS.map((group) => {
+    const members = group.memberIds.map((id) => byId.get(id)).filter(Boolean);
+    if (!members.length) return null;
+    members.forEach((member) => groupedIds.add(member.id));
+    const primary = byId.get(group.primaryId) || members[0];
+    const entry = byId.get(group.entryId) || primary;
+    const requiresApprovalFor = uniqueList(members.flatMap((member) => member.requiresApprovalFor));
+    return {
+      id: group.id,
+      primaryId: primary.id,
+      name: group.name,
+      description: group.description,
+      entryUrl: entry.entryUrl || primary.entryUrl,
+      status: uniqueList(members.map((member) => member.status)).join(', ') || 'active',
+      verificationStatus: uniqueList(members.map((member) => member.verificationStatus)).join(', ') || 'cait_managed',
+      owner: uniqueList(members.map((member) => member.owner)).join(', '),
+      capabilities: uniqueList(members.flatMap((member) => member.capabilities)),
+      requiredConnectors: uniqueList(members.flatMap((member) => member.requiredConnectors)),
+      requiresApprovalFor,
+      returns: uniqueList(members.flatMap((member) => member.returns)),
+      tags: uniqueList([...(group.tags || []), ...members.flatMap((member) => member.tags)]),
+      isAction: requiresApprovalFor.length > 0 || members.some((member) => member.isAction),
+      isWorkspace: true,
+      members
+    };
+  }).filter(Boolean);
+  const singletons = apps
+    .filter((app) => !groupedIds.has(app.id) && app.id !== 'x-client-ops')
+    .map((app) => ({ ...app, primaryId: app.id, members: [app], isWorkspace: false }));
+  return [...groups, ...singletons];
+}
+
 function sameOriginAppUrl(value = '') {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -138,31 +206,37 @@ function updateAppMetrics(apps = []) {
 
 function renderApps(records = []) {
   if (!registryListEl) return;
-  const apps = records.map(normalizeApp).filter(Boolean);
+  const apps = workspaceGroupsFromApps(records);
   updateAppMetrics(apps);
   if (!apps.length) {
-    registryListEl.innerHTML = '<div class="notice">No registered apps are visible yet.</div>';
+    registryListEl.innerHTML = '<div class="notice">No operational workspaces are visible yet.</div>';
     return;
   }
   registryListEl.innerHTML = apps.map((app) => {
     const meta = [
-      appTypeLabel(app),
+      app.isWorkspace ? 'Merged workspace' : appTypeLabel(app),
+      app.members?.length ? `${app.members.length} lane${app.members.length === 1 ? '' : 's'}` : '',
       app.status ? `Status: ${app.status}` : '',
       app.verificationStatus ? `Verification: ${app.verificationStatus}` : '',
       app.owner ? `Owner: ${app.owner}` : ''
     ].filter(Boolean).join(' / ');
-    const openUrl = sameOriginAppUrl(app.entryUrl) || `/chat?app_id=${encodeURIComponent(app.id)}`;
+    const openUrl = sameOriginAppUrl(app.entryUrl) || `/chat?app_id=${encodeURIComponent(app.primaryId || app.id)}`;
+    const memberLinks = (app.members || []).map((member) => {
+      const href = sameOriginAppUrl(member.entryUrl) || `/chat?app_id=${encodeURIComponent(member.id)}`;
+      return `<a class="mini-chip" href="${escapeHtml(href)}">${escapeHtml(member.name)}</a>`;
+    }).join('');
     return [
       '<article class="app-registry-row">',
       '<div>',
-      `<div class="status-row"><h3>${escapeHtml(app.name)}</h3><span class="status-pill">${escapeHtml(appTypeLabel(app))}</span></div>`,
+      `<div class="status-row"><h3>${escapeHtml(app.name)}</h3><span class="status-pill">${escapeHtml(app.isWorkspace ? 'Workspace' : appTypeLabel(app))}</span></div>`,
       `<p class="context-meta">${escapeHtml(meta)}</p>`,
       app.description ? `<p>${escapeHtml(compact(app.description, 180))}</p>` : '',
       '<div class="inline-actions">',
       renderAppChips(app.requiredConnectors, 'No connector'),
       renderAppChips(app.requiresApprovalFor, app.isAction ? 'Approval required' : ''),
-      app.mcp.enabled ? '<span class="mini-chip">MCP ready</span>' : '',
+      app.mcp?.enabled ? '<span class="mini-chip">MCP ready</span>' : '',
       '</div>',
+      memberLinks ? `<div class="inline-actions workspace-lanes" aria-label="Included app lanes">${memberLinks}</div>` : '',
       '</div>',
       '<div class="context-actions">',
       `<a class="primary-btn" href="${escapeHtml(openUrl)}">Open</a>`,
@@ -174,16 +248,13 @@ function renderApps(records = []) {
 
 function renderFeaturedApps(records = []) {
   if (!featuredListEl) return;
-  const apps = records.map(normalizeApp).filter(Boolean);
-  const featured = FEATURED_APP_IDS
-    .map((id) => apps.find((app) => app.id === id))
-    .filter(Boolean);
+  const featured = workspaceGroupsFromApps(records);
   if (!featured.length) {
-    featuredListEl.innerHTML = '<div class="notice">No featured apps are visible yet.</div>';
+    featuredListEl.innerHTML = '<div class="notice">No featured workspaces are visible yet.</div>';
     return;
   }
   featuredListEl.innerHTML = featured.map((app) => {
-    const href = sameOriginAppUrl(app.entryUrl) || `/chat?app_id=${encodeURIComponent(app.id)}`;
+    const href = sameOriginAppUrl(app.entryUrl) || `/chat?app_id=${encodeURIComponent(app.primaryId || app.id)}`;
     const labelSource = app.tags.length ? app.tags : (app.capabilities.length ? app.capabilities : [appTypeLabel(app)]);
     const tag = labelSource.slice(0, 2).map((item) => String(item || '').replace(/[_-]+/g, ' ')).join(' / ');
     return [
@@ -193,7 +264,8 @@ function renderFeaturedApps(records = []) {
       `<p>${escapeHtml(compact(app.description, 150))}</p>`,
       '<div class="inline-actions">',
       renderAppChips(app.tags.length ? app.tags : app.capabilities, ''),
-      app.mcp.enabled ? '<span class="mini-chip">MCP</span>' : '',
+      app.members?.length ? `<span class="mini-chip">${escapeHtml(`${app.members.length} lanes`)}</span>` : '',
+      app.mcp?.enabled ? '<span class="mini-chip">MCP</span>' : '',
       '</div>',
       '</a>'
     ].join('');

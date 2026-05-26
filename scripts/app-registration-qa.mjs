@@ -159,7 +159,7 @@ const snapshotSource = readFileSync(new URL('../lib/snapshot.js', import.meta.ur
 const chat = readFileSync(new URL('../public/chat.js', import.meta.url), 'utf8');
 const cli = readFileSync(new URL('../scripts/external-chat.mjs', import.meta.url), 'utf8');
 const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
-const cliHelp = readFileSync(new URL('../public/cli-help.html', import.meta.url), 'utf8');
+const developerHelp = readFileSync(new URL('../public/ai-agent-api.html', import.meta.url), 'utf8');
 
 const sourceExposesApiRoute = (source, routeKey) => {
   const route = API_ROUTES[routeKey];
@@ -211,8 +211,8 @@ assert.ok(readme.includes('/api/apps/import-manifest'), 'README should document 
 assert.ok(readme.includes('App registration with CAIt API key'), 'README should document app registration');
 assert.ok(readme.includes('App context handoff'), 'README should document server-side app context handoff');
 assert.ok(readme.includes('/api/app-contexts'), 'README should document the app context API');
-assert.ok(cliHelp.includes('/api/apps/import-manifest'), 'CLI help page should document app manifest import');
-assert.ok(cliHelp.includes('/api/app-contexts'), 'CLI help page should document app context API');
-assert.ok(cliHelp.includes('APP CONTEXT HANDOFF'), 'CLI help page should document app context handoff');
+assert.ok(developerHelp.includes('/api/apps/import-manifest'), 'API/CLI/MCP page should document app manifest import');
+assert.ok(developerHelp.includes('/api/app-contexts'), 'API/CLI/MCP page should document app context API');
+assert.ok(developerHelp.includes('app context'), 'API/CLI/MCP page should document app context handoff');
 
 console.log('app registration qa passed');

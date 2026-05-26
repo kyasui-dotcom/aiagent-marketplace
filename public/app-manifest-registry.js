@@ -218,15 +218,15 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     id: 'x-client-ops',
     name: 'X Client Ops',
     kind: 'application_agent',
-    description: 'X post drafting, strategy context transfer, and approval-ready posting queue for CAIt action handoffs.',
+    description: 'X post drafting, account/reply target retention, strategy context transfer, proof source, schedule window, and approval-ready posting queue for CAIt action handoffs.',
     baseUrl: X_CLIENT_OPS_URL,
     entryUrl: X_CLIENT_OPS_URL,
-    capabilities: ['x_post_draft', 'x_post_queue', 'social_action'],
+    capabilities: ['x_post_draft', 'x_post_queue', 'social_action', 'reply_target', 'posting_window', 'proof_source'],
     requiredConnectors: ['x'],
     requiresApprovalFor: ['post_now', 'send_external'],
     inputContract: {
       schemaVersion: 'cait-app-agent-transfer/v1',
-      accepts: ['post_text', 'strategy', 'agent_context', 'delivery_summary', 'settings'],
+      accepts: ['post_text', 'strategy', 'agent_context', 'delivery_summary', 'settings', 'x_post_packet', 'social_copy_packet', 'x_account', 'reply_target', 'thread_context', 'posting_window', 'approval_owner', 'proof_source', 'execution_status_labels'],
       constraints: {
         text: { minLength: 1, maxLength: 280 }
       },
@@ -240,7 +240,7 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
       method: 'POST',
       openUrlParam: 'cait_handoff',
       dedicatedDelivery: {
-        artifactTypes: ['post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet'],
+        artifactTypes: ['post_text', 'strategy', 'delivery_summary', 'social_copy_packet', 'social_post_pack', 'x_post_packet', 'reply_target', 'posting_window', 'proof_source'],
         preparedTextSource: 'social_post_text',
         requiresPreparedText: true,
         suppressGenericCard: true

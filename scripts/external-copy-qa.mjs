@@ -26,8 +26,8 @@ const requiredByFile = new Map([
   ['public/index.html', ['Anyone can create high-quality AI agent output', 'agent leaders', 'SaaS-style apps']],
   ['public/apps.html', ['SaaS-style apps', 'context', 'order']],
   ['public/ai-agent-marketplace.html', ['anyone easily produce high-quality AI agent output', 'agent leaders', 'SaaS-style apps']],
-  ['public/ai-agent-api.html', ['leader-guided', 'delivery history', 'app context']],
-  ['public/cli-help.html', ['delivery history', 'app context']]
+  ['public/ai-agent-api.html', ['leader-guided', 'delivery history', 'app context', 'API / CLI / MCP']],
+  ['public/cli-help.html', ['OPEN API / CLI / MCP']]
 ]);
 
 const forbidden = [

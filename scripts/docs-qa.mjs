@@ -16,6 +16,7 @@ const resourcesHtml = read('public/resources.html');
 const agentsHtml = read('public/agents.html');
 const siteMapHtml = read('public/site-map.html');
 const guideHtml = read('public/guide.html');
+const apiHtml = read('public/ai-agent-api.html');
 const cliHtml = read('public/cli-help.html');
 const qaHtml = read('public/qa.html');
 const newsHtml = read('public/news.html');
@@ -46,9 +47,10 @@ for (const [name, html] of [
 assert.ok(indexHtml.includes('<main class="home-shell" aria-label="CAIt landing page">'), 'index should be the public landing page');
 assert.ok(indexHtml.includes('Anyone can create high-quality AI agent output'), 'index should explain the anyone-can-create-high-quality-output positioning');
 assert.ok(indexHtml.includes('/login?next=%2Fchat&amp;source=start'), 'index START should send visitors to the dedicated login path for chat');
-for (const href of ['/login?next=%2Fchat', '/resources.html', '/rss.xml', '/feed.xml', '/publish-ai-agents.html', '/ai-agent-api.html', '/agents.html', '/cli-help.html', '/help.html', '/news.html']) {
+for (const href of ['/login?next=%2Fchat', '/resources.html', '/rss.xml', '/feed.xml', '/publish-ai-agents.html', '/ai-agent-api.html', '/agents.html', '/help.html', '/news.html']) {
   assert.ok(indexHtml.includes(href), `index should link ${href}`);
 }
+assert.ok(!indexHtml.includes('/cli-help.html'), 'index should not expose a separate CLI tab/page link');
 assert.ok(!indexHtml.includes('/?tab=work'), 'index should not link retired work tab route');
 assert.ok(!indexHtml.includes('/?tab=agents'), 'index should not link retired agents tab route');
 
@@ -100,8 +102,8 @@ assert.ok(resourcesHtml.includes('/rss.xml'));
 assert.ok(resourcesHtml.includes('/feed.xml'));
 assert.ok(resourcesHtml.includes('/agents/prompt-brushup-ai-agent.html'));
 assert.ok(resourcesHtml.includes('/glossary/ai-agent.html'));
-assert.ok(resourcesHtml.includes('External API-key access is paused'), 'Resource hub should show API as coming soon while external surfaces are paused.');
-assert.ok(resourcesHtml.includes('Terminal ordering and provider CLI examples are paused'), 'Resource hub should show CLI as coming soon while external surfaces are paused.');
+assert.ok(resourcesHtml.includes('API / CLI / MCP'), 'Resource hub should expose one developer access link.');
+assert.ok(resourcesHtml.includes('External developer surfaces are paused'), 'Resource hub should show the unified developer surface as paused.');
 
 assert.ok(agentsHtml.includes('QUALITY FLOW'));
 assert.ok(agentsHtml.includes('DELIVERY READINESS'));
@@ -143,20 +145,14 @@ assert.ok(guideHtml.includes('first high-quality AI agent order'));
 assert.ok(guideHtml.includes('app context'));
 assert.ok(guideHtml.includes('delivery history'));
 
-assert.ok(cliHtml.includes('API AND CLI GUIDE'));
-assert.ok(cliHtml.includes('curl.exe'));
-assert.ok(cliHtml.includes('QUALITY WORKFLOW CHECKLIST'));
-assert.ok(cliHtml.includes('delivery history'));
-assert.ok(cliHtml.includes('ONE USER-SCOPED KEY'));
-assert.ok(cliHtml.includes('AGENT REGISTRATION WITH CAIt API KEY'));
-assert.ok(cliHtml.includes('npm run cait:key -- create --label codex-desktop'));
-assert.ok(cliHtml.includes('https://aiagent-marketplace.net/api/jobs'));
-assert.ok(cliHtml.includes('needs_input'));
-assert.ok(cliHtml.includes('skip_intake'));
-assert.ok(cliHtml.includes('https://aiagent-marketplace.net/api/agents/import-manifest'));
-assert.ok(cliHtml.includes('Authorization: Bearer'));
-assert.ok(cliHtml.includes('APP CONTEXT HANDOFF'));
-assert.ok(cliHtml.includes('CONTEXT-FIRST ORDERING'));
+assert.ok(apiHtml.includes('API / CLI / MCP'));
+assert.ok(apiHtml.includes('curl.exe'));
+assert.ok(apiHtml.includes('delivery history'));
+assert.ok(apiHtml.includes('app context'));
+assert.ok(apiHtml.includes('disabled by default'));
+assert.ok(apiHtml.includes('https://aiagent-marketplace.net/api/jobs'));
+assert.ok(apiHtml.includes('/.well-known/mcp.json'));
+assert.ok(cliHtml.includes('OPEN API / CLI / MCP'));
 
 assert.ok(qaHtml.includes('Q&A'));
 assert.ok(qaHtml.includes('agent leaders, simple chat, and SaaS-style apps'));

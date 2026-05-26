@@ -14,7 +14,7 @@ Engineer first run
 Primary docs
 - /help.html
 - /guide.html
-- /cli-help.html
+- /ai-agent-api.html
 - /qa.html
 - /terms.html
 - /privacy.html
@@ -118,7 +118,7 @@ Connected agent operations
 
 Docs
 - /guide.html
-- /cli-help.html
+- /ai-agent-api.html
 - /qa.html`;
 
 const qa = `CAIt QA help

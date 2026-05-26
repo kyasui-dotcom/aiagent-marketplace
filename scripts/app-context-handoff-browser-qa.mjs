@@ -969,7 +969,7 @@ try {
       name: 'X Client Ops',
       inputContract: {
         schemaVersion: 'cait-app-agent-transfer/v1',
-        accepts: ['post_text', 'strategy', 'agent_context', 'delivery_summary', 'settings']
+        accepts: ['post_text', 'strategy', 'agent_context', 'delivery_summary', 'settings', 'x_post_packet', 'social_copy_packet', 'x_account', 'reply_target', 'thread_context', 'posting_window', 'approval_owner', 'proof_source', 'execution_status_labels']
       }
     })
   });
@@ -1040,6 +1040,12 @@ try {
       channel: 'x',
       exact_copy: 'Fallback social copy should be available if x_post_packet text is missing.'
     },
+    targetAccount: '@cait_ops',
+    replyToTweetId: '1789000000000000000',
+    threadContext: 'Reply only after checking the original post and the retained approval request.',
+    postingWindow: '2026-06-01 09:00 Asia/Tokyo after human approval',
+    proofSource: 'Retain app_context_id plus X Client Ops queue screenshot before posting.',
+    executionStatusLabels: ['needs-review', 'approval-required', 'scheduled-after-approval'],
     settings: {
       brandName: 'CAIt',
       targetClient: 'AIAGENT operators',
@@ -1060,7 +1066,7 @@ try {
       requiresApprovalFor: ['post_now'],
       inputContract: {
         schemaVersion: 'cait-app-agent-transfer/v1',
-        accepts: ['post_text', 'strategy', 'agent_context', 'delivery_summary', 'settings']
+        accepts: ['post_text', 'strategy', 'agent_context', 'delivery_summary', 'settings', 'x_post_packet', 'social_copy_packet', 'x_account', 'reply_target', 'thread_context', 'posting_window', 'approval_owner', 'proof_source', 'execution_status_labels']
       }
     })
   });
@@ -1069,6 +1075,10 @@ try {
   if (!String(xClientPacketOnlyContext.raw_context?.strategy || '').includes('durable social approvals')) throw new Error('X Client Ops packet-only strategy was not recovered');
   if (xClientPacketOnlyContext.raw_context?.post_text !== 'Packet-only approved copy should still reach the X Client Ops approval queue.') throw new Error('X Client Ops packet-only raw_context did not preserve recovered post text');
   if (!JSON.stringify(xClientPacketOnlyContext.raw_context?.x_post_packet || {}).includes('packet-only-x-post.md')) throw new Error('X Client Ops packet-only source packet was not preserved');
+  if (!JSON.stringify(xClientPacketOnlyContext.raw_context?.contract_fields || {}).includes('@cait_ops')) throw new Error('X Client Ops packet-only handoff did not preserve target account');
+  if (!JSON.stringify(xClientPacketOnlyContext.raw_context?.contract_fields || {}).includes('1789000000000000000')) throw new Error('X Client Ops packet-only handoff did not preserve reply target');
+  if (!JSON.stringify(xClientPacketOnlyContext.artifacts || []).includes('posting_window')) throw new Error('X Client Ops packet-only handoff did not create posting_window artifact');
+  if (!JSON.stringify(xClientPacketOnlyContext.artifacts || []).includes('proof_source')) throw new Error('X Client Ops packet-only handoff did not create proof_source artifact');
 
   await page.goto(`${base}/ads-ops.html`);
   await page.waitForSelector('#adsPlanTable');

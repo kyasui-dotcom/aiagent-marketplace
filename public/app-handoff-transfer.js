@@ -603,18 +603,44 @@ const APP_HANDOFF_PUBLISHER_CONTRACT_ALIASES = Object.freeze({
   approval_checklist: Object.freeze(['approvalChecklist', 'pre_publish_checklist', 'prePublishChecklist'])
 });
 
+const APP_HANDOFF_X_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqueStrings([
+  'x_post_packet',
+  'social_copy_packet',
+  'x_account',
+  'reply_target',
+  'thread_context',
+  'posting_window',
+  'approval_owner',
+  'proof_source',
+  'execution_status_labels'
+]));
+
+const APP_HANDOFF_X_CONTRACT_ALIASES = Object.freeze({
+  x_post_packet: Object.freeze(['xPostPacket', 'twitter_post_packet', 'twitterPostPacket']),
+  social_copy_packet: Object.freeze(['socialCopyPacket', 'social_post_pack', 'socialPostPack']),
+  x_account: Object.freeze(['xAccount', 'account', 'target_account', 'targetAccount']),
+  reply_target: Object.freeze(['replyTarget', 'reply_to', 'replyTo', 'reply_to_tweet_id', 'replyToTweetId', 'target_url', 'targetUrl']),
+  thread_context: Object.freeze(['threadContext', 'conversation_context', 'conversationContext']),
+  posting_window: Object.freeze(['postingWindow', 'schedule_window', 'scheduleWindow', 'scheduled_for', 'scheduledFor']),
+  approval_owner: Object.freeze(['approvalOwner']),
+  proof_source: Object.freeze(['proofSource', 'execution_proof_source', 'executionProofSource']),
+  execution_status_labels: Object.freeze(['executionStatusLabels', 'execution_status', 'executionStatus', 'status_labels', 'statusLabels', 'approval_state', 'approvalState', 'queue_status', 'queueStatus'])
+});
+
 const APP_HANDOFF_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqueStrings([
   ...APP_HANDOFF_ADS_CONTRACT_FIELDS,
   ...APP_HANDOFF_PRICING_CONTRACT_FIELDS,
   ...APP_HANDOFF_GROWTH_CONTRACT_FIELDS,
-  ...APP_HANDOFF_PUBLISHER_CONTRACT_FIELDS
+  ...APP_HANDOFF_PUBLISHER_CONTRACT_FIELDS,
+  ...APP_HANDOFF_X_CONTRACT_FIELDS
 ]));
 
 const APP_HANDOFF_CONTRACT_ALIASES = Object.freeze({
   ...APP_HANDOFF_ADS_CONTRACT_ALIASES,
   ...APP_HANDOFF_PRICING_CONTRACT_ALIASES,
   ...APP_HANDOFF_GROWTH_CONTRACT_ALIASES,
-  ...APP_HANDOFF_PUBLISHER_CONTRACT_ALIASES
+  ...APP_HANDOFF_PUBLISHER_CONTRACT_ALIASES,
+  ...APP_HANDOFF_X_CONTRACT_ALIASES
 });
 
 function appHandoffTransferUniqueStrings(items = []) {
