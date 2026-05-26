@@ -923,9 +923,16 @@ assert.ok(!adsOpsJs.includes("source_app: 'campaign_operations'"), 'Ads Launch C
 assert.ok(!adsOpsJs.includes("source_app: 'delivery_manager'"), 'Ads Launch Console JS should not contain Delivery Manager app logic.');
 assert.ok(growthOpsJs.includes("source_app: 'growth_experiment_console'"), 'Growth Experiment Console app logic should stay in growth-ops.js.');
 assert.ok(growthOpsJs.includes("fetchCaitAppContextFromUrl"), 'Growth Experiment Console should receive CAIt app contexts.');
+assert.ok(growthOpsHtml.includes('/growth-ops.js?v=20260526e'), 'Growth Experiment Console should bump the script cache key for Publisher-lane contract-gate changes.');
+assert.ok(growthOpsHtml.includes('Publisher activation lane') && growthOpsHtml.includes('openGrowthPublisherBtn'), 'Growth Experiment Console should expose a Publisher activation lane.');
 assert.ok(growthOpsJs.includes("type: 'growth_experiment_packet'"), 'Growth Experiment Console should return growth_experiment_packet artifacts.');
 assert.ok(growthOpsJs.includes("type: 'no_paid_growth_plan_packet'"), 'Growth Experiment Console should return no_paid_growth_plan_packet artifacts for Free Web Growth Leader reuse.');
 assert.ok(growthOpsJs.includes("type: 'organic_specialist_handoff_packet'"), 'Growth Experiment Console should return organic_specialist_handoff_packet artifacts for specialist handoff reuse.');
+assert.ok(growthOpsJs.includes("type: 'site_publish_packet'") && growthOpsJs.includes("type: 'social_copy_packet'"), 'Growth Experiment Console should generate Publisher-ready launch packets.');
+assert.ok(growthOpsJs.includes('createPublisherServerContext') && growthOpsJs.includes("app_id: 'publisher-approval-studio'"), 'Growth Experiment Console should open Publisher through a server-side app context.');
+assert.ok(growthOpsJs.includes('source_growth_packet'), 'Growth-to-Publisher packets should retain the source Growth packet for audit and follow-up measurement.');
+assert.ok(growthOpsJs.includes('function buildPublisherLaunchBlockerPacket') && growthOpsJs.includes('Growth Experiment Console will not synthesize Publisher delivery artifacts until the required Growth contracts are explicit.'), 'Growth Experiment Console must not synthesize Publisher artifacts from partial Growth context.');
+assert.ok(growthOpsJs.includes('Complete missing Growth anchors before Publisher can open; no publish packet is synthesized from partial context.'), 'Growth Publisher lane should block incomplete packets instead of opening with review gaps.');
 assert.ok(growthOpsJs.includes("type: 'growth_asset_handoff_packet'"), 'Growth Experiment Console should return growth_asset_handoff_packet artifacts.');
 assert.ok(growthOpsJs.includes("type: 'growth_activation_handoff_packet'"), 'Growth Experiment Console should return growth_activation_handoff_packet artifacts.');
 assert.ok(growthOpsJs.includes("type: 'tracking_specification'"), 'Growth Experiment Console should return tracking_specification artifacts.');

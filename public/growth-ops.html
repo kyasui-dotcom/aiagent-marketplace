@@ -74,9 +74,17 @@
       max-height: 360px;
       overflow: auto;
     }
+    .growth-action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
     @media (max-width: 860px) {
       .growth-grid {
         grid-template-columns: 1fr;
+      }
+      .growth-action-row > * {
+        flex: 1 1 100%;
       }
     }
   </style>
@@ -166,6 +174,27 @@
             <span class="step-index">3</span>
             <span><strong>Measurement</strong><span>Attach threshold, kill rule, proof, and review date.</span></span>
           </div>
+          <div class="workflow-step" id="growthStepPublisher">
+            <span class="step-index">4</span>
+            <span><strong>Publisher</strong><span>Move the approved artifact into Publisher review.</span></span>
+          </div>
+        </section>
+
+        <section class="growth-panel growth-section" aria-label="Publisher activation lane">
+          <div class="status-row">
+            <div>
+              <span class="kicker">Publisher activation lane</span>
+              <h2>Turn the experiment into approval-ready publishing work.</h2>
+            </div>
+            <span class="status-pill pending" id="growthPublisherPill">Publisher packet not ready</span>
+          </div>
+          <p class="growth-meta" id="growthPublisherSummary">Load a Growth packet to create LP, social copy, and approval queue context for Publisher.</p>
+          <div class="ops-readiness-list" id="growthPublisherList"></div>
+          <div class="growth-action-row">
+            <button id="openGrowthPublisherBtn" class="primary-btn" type="button">Open in Publisher</button>
+            <button id="copyGrowthPublisherBtn" class="ghost-btn" type="button">Copy Publisher packet</button>
+          </div>
+          <pre class="context-preview growth-preview" id="growthPublisherPreview"></pre>
         </section>
 
         <section class="growth-panel growth-section" aria-label="AIAGENT growth handoff audit">
@@ -236,6 +265,6 @@
       </section>
     </section>
   </main>
-  <script type="module" src="/growth-ops.js?v=20260526c"></script>
+  <script type="module" src="/growth-ops.js?v=20260526e"></script>
 </body>
 </html>

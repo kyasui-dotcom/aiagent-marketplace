@@ -39,6 +39,7 @@ const appContextGateSource = read('public/app-context-gate.js');
 const measurementEvidenceGateSource = read('public/measurement-evidence-gate.js');
 const agentProgressViewSource = read('public/agent-progress-view.js');
 const adsOpsSource = read('public/ads-ops.js');
+const growthOpsSource = read('public/growth-ops.js');
 const clientSource = read('public/client.js');
 const clientDeliveryFilesSource = read('public/client-delivery-files.js');
 const workActionRegistrySource = read('public/work-action-registry.js');
@@ -591,6 +592,17 @@ assert.ok(
     && !adsOpsSource.includes('/ads saas|advertis|広告|campaign structure|budget cap|stop rules/i.test(content)'),
   'Ads Launch Console must parse Markdown only from explicit Ads artifact contracts, not from body text keywords'
 );
+assert.ok(
+  growthOpsSource.includes('function buildPublisherLaunchBlockerPacket')
+    && growthOpsSource.includes('Growth Experiment Console will not synthesize Publisher delivery artifacts until the required Growth contracts are explicit.')
+    && growthOpsSource.includes('if (!launchRows.every((item) => item.ready)) return buildPublisherLaunchBlockerPacket(launchRows);'),
+  'Growth Experiment Console must not synthesize Publisher artifacts or approval requests from incomplete Growth context'
+);
+assertNotIncludes(growthOpsSource, [
+  'Publisher can open now, but missing Growth anchors will stay visible as review gaps.',
+  'const activationReady = record.activationRows.some((item) => /owner|approval|review/i.test',
+  'const measurementReady = record.measurementRows.some((item) => /threshold|metric|kill|stop|proof|review/i.test'
+], 'public/growth-ops.js Publisher readiness contract gate');
 assert.ok(
   deliveryManagerSource.includes('function explicitDeliveryContractTokens')
     && deliveryManagerSource.includes('function explicitExternalWriteRequested')

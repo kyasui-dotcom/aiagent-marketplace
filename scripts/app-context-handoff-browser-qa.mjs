@@ -1200,6 +1200,13 @@ try {
   if (!JSON.stringify(adsAliasPacket.artifacts || []).includes('Alias tracking blocker')) throw new Error('ads alias measurement blocker was not returned for reuse');
   if (!JSON.stringify(adsAliasPacket.artifacts || []).includes('AIAGENT output, retained before spend')) throw new Error('ads alias creative packet was not returned for reuse');
 
+  await page.goto(`${base}/growth-ops.html`);
+  await page.waitForSelector('#growthPublisherPreview');
+  const emptyGrowthPublisherPacket = JSON.parse(await page.textContent('#growthPublisherPreview'));
+  if (JSON.stringify(emptyGrowthPublisherPacket.artifacts || []).includes('site_publish_packet')) throw new Error('empty Growth console must not synthesize a site_publish_packet');
+  if (JSON.stringify(emptyGrowthPublisherPacket.approval_requests || []).includes('publish_change')) throw new Error('empty Growth console must not synthesize Publisher approval requests');
+  if (!(await page.locator('#openGrowthPublisherBtn').isDisabled())) throw new Error('Growth Publisher open button should be disabled until explicit contracts are ready');
+
   const growthTransferContext = appContextFromTransferPayload('growth-experiment-console', {
     transfer_id: 'transfer-growth-experiment',
     title: 'Growth experiment handoff',
@@ -1350,6 +1357,20 @@ try {
   if (!JSON.stringify(growthPacket.raw_context?.received_context || {}).includes('organic_specialist_handoff_packet')) throw new Error('growth source organic specialist contract was not preserved in raw_context');
   if (!JSON.stringify(growthPacket.raw_context?.next_decision || {}).includes('follow-up order')) throw new Error('growth next decision was not returned in raw_context');
   if (!JSON.stringify(growthPacket.raw_context?.received_context || {}).includes('growth-experiment.md')) throw new Error('growth source delivery file was not preserved in raw_context');
+  if (!(await page.textContent('#growthPublisherPill')).includes('Publisher packet ready')) throw new Error('growth Publisher lane did not become ready from retained experiment anchors');
+  const growthPublisherPacket = JSON.parse(await page.textContent('#growthPublisherPreview'));
+  if (!JSON.stringify(growthPublisherPacket.artifacts || []).includes('site_publish_packet')) throw new Error('growth Publisher packet did not include site_publish_packet');
+  if (!JSON.stringify(growthPublisherPacket.artifacts || []).includes('social_copy_packet')) throw new Error('growth Publisher packet did not include social_copy_packet');
+  if (!JSON.stringify(growthPublisherPacket.approval_requests || []).includes('publish_change')) throw new Error('growth Publisher packet did not include approval request');
+  if (!JSON.stringify(growthPublisherPacket.raw_context?.source_growth_packet || {}).includes('growth_experiment_packet')) throw new Error('growth Publisher packet did not retain the source Growth packet');
+  await openAppWithContext(page, `/publisher-approval.html?chat_return_to=${encodeURIComponent('/chat?thread=growth-publisher')}&chat_handoff_id=growth-publisher-handoff`, growthPublisherPacket);
+  await page.waitForSelector('#contentList');
+  await page.waitForFunction(() => document.querySelector('#titleInput')?.value?.includes('Growth experiment handoff activation page'));
+  if ((await page.inputValue('#connectorCapabilityInput')) !== 'site_publish_packet') throw new Error('Publisher did not load Growth packet as site_publish_packet');
+  if (!(await page.inputValue('#bodyInput')).includes('Measurement and stop rule')) throw new Error('Publisher did not retain Growth measurement guardrails in body');
+  if (!(await page.textContent('#approvalTable')).includes('Approve Publisher activation')) throw new Error('Publisher approval queue did not include Growth activation approval');
+  const growthPublisherRoundtrip = JSON.parse(await page.textContent('#packetPreview'));
+  if (!JSON.stringify(growthPublisherRoundtrip.raw_context?.received_context || {}).includes('source_growth_packet')) throw new Error('Publisher packet did not retain source Growth context after roundtrip');
 
   const pricingTransferContext = appContextFromTransferPayload('pricing-decision-console', {
     transfer_id: 'transfer-pricing-decision',

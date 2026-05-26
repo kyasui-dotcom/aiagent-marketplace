@@ -13,6 +13,13 @@ const els = {
   growthStepExperiment: document.getElementById('growthStepExperiment'),
   growthStepActivation: document.getElementById('growthStepActivation'),
   growthStepMeasurement: document.getElementById('growthStepMeasurement'),
+  growthStepPublisher: document.getElementById('growthStepPublisher'),
+  growthPublisherPill: document.getElementById('growthPublisherPill'),
+  growthPublisherSummary: document.getElementById('growthPublisherSummary'),
+  growthPublisherList: document.getElementById('growthPublisherList'),
+  openGrowthPublisherBtn: document.getElementById('openGrowthPublisherBtn'),
+  copyGrowthPublisherBtn: document.getElementById('copyGrowthPublisherBtn'),
+  growthPublisherPreview: document.getElementById('growthPublisherPreview'),
   growthExperimentMetric: document.getElementById('growthExperimentMetric'),
   growthArtifactMetric: document.getElementById('growthArtifactMetric'),
   growthActivationMetric: document.getElementById('growthActivationMetric'),
@@ -118,6 +125,17 @@ const GROWTH_MARKDOWN_ARTIFACT_TYPES = Object.freeze([
   'measurement_plan',
   'next_decision'
 ]);
+
+const GROWTH_EXPERIMENT_CONTRACT_TYPES = Object.freeze(['growth_experiment_packet', 'no_paid_growth_plan_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'execution_packet']);
+const GROWTH_ARTIFACT_CONTRACT_TYPES = Object.freeze(['growth_asset_handoff_packet', 'organic_specialist_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet']);
+const GROWTH_ACTIVATION_CONTRACT_TYPES = Object.freeze(['growth_activation_handoff_packet', 'organic_specialist_handoff_packet', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'review_date']);
+const GROWTH_MEASUREMENT_CONTRACT_TYPES = Object.freeze(['tracking_specification', 'metric_threshold', 'kill_rule', 'proof_source', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan', 'next_decision']);
+const GROWTH_PUBLISHER_REQUIRED_CONTRACT_GROUPS = Object.freeze({
+  experiment: GROWTH_EXPERIMENT_CONTRACT_TYPES,
+  artifact: Object.freeze(['growth_asset_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact']),
+  activation: Object.freeze(['growth_activation_handoff_packet', 'activation_owner', 'approval_owner', 'owner_responsibility_map']),
+  measurement: GROWTH_MEASUREMENT_CONTRACT_TYPES
+});
 
 function firstValue(source = {}, keys = []) {
   const object = objectValue(source);
@@ -295,6 +313,27 @@ function uniqueRows(rows = []) {
   });
 }
 
+function rowsText(rows = [], max = 900) {
+  return uniqueRows(rows)
+    .map((item) => [item.label, item.detail, item.status].filter(Boolean).join(': '))
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, max);
+}
+
+function firstMatchingRow(rows = [], pattern = /./) {
+  return rows.find((item) => pattern.test(`${item.label} ${item.detail}`)) || null;
+}
+
+function slugFromTitle(value = '') {
+  const slug = text(value, 'growth-experiment')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return `/${slug || 'growth-experiment'}`;
+}
+
 function emptyGrowthRecord() {
   return {
     title: 'No Growth packet loaded',
@@ -312,20 +351,20 @@ function collectGrowthRecord(context = null) {
   const title = text(context.title, 'Growth experiment packet');
   const summary = text(context.summary, 'Growth AIAGENT context was restored as a retained app packet.');
   const experimentRows = uniqueRows([
-    ...rowsFor(context, ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'execution_packet']),
-    ...markdownRowsFor(context, ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'execution_packet'])
+    ...rowsFor(context, GROWTH_EXPERIMENT_CONTRACT_TYPES),
+    ...markdownRowsFor(context, GROWTH_EXPERIMENT_CONTRACT_TYPES)
   ]);
   const artifactRows = uniqueRows([
-    ...rowsFor(context, ['growth_asset_handoff_packet', 'organic_specialist_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet']),
-    ...markdownRowsFor(context, ['growth_asset_handoff_packet', 'organic_specialist_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet'])
+    ...rowsFor(context, GROWTH_ARTIFACT_CONTRACT_TYPES),
+    ...markdownRowsFor(context, GROWTH_ARTIFACT_CONTRACT_TYPES)
   ]);
   const activationRows = uniqueRows([
-    ...rowsFor(context, ['growth_activation_handoff_packet', 'organic_specialist_handoff_packet', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'review_date']),
-    ...markdownRowsFor(context, ['growth_activation_handoff_packet', 'organic_specialist_handoff_packet', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'review_date'])
+    ...rowsFor(context, GROWTH_ACTIVATION_CONTRACT_TYPES),
+    ...markdownRowsFor(context, GROWTH_ACTIVATION_CONTRACT_TYPES)
   ]);
   const measurementRows = uniqueRows([
-    ...rowsFor(context, ['tracking_specification', 'metric_threshold', 'kill_rule', 'proof_source', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan', 'next_decision']),
-    ...markdownRowsFor(context, ['tracking_specification', 'metric_threshold', 'kill_rule', 'proof_source', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan', 'next_decision'])
+    ...rowsFor(context, GROWTH_MEASUREMENT_CONTRACT_TYPES),
+    ...markdownRowsFor(context, GROWTH_MEASUREMENT_CONTRACT_TYPES)
   ]);
   if (!experimentRows.length) experimentRows.push(...firstAvailableRows(context, ['seven_day_experiment', 'experiment_plan']));
   if (!measurementRows.some((item) => /metric|threshold|success|criteria/i.test(`${item.label} ${item.detail}`))) {
@@ -341,12 +380,16 @@ function collectGrowthRecord(context = null) {
 function auditGrowthRecord(record = {}, context = {}) {
   const json = JSON.stringify(context || {}).toLowerCase();
   const hasExperimentPacket = /growth_experiment_packet|growthexperimentpacket|growth_packet|experiment_packet|no_paid_growth_plan_packet|nopaidgrowthplanpacket/.test(json);
+  const activationText = JSON.stringify(record.activationRows || []).toLowerCase();
+  const measurementText = JSON.stringify(record.measurementRows || []).toLowerCase();
+  const activationOwnerReady = /activation_owner|activationowner|implementation_owner|growth_activation_handoff_packet|growthactivationhandoffpacket|organic_specialist_handoff_packet|organicspecialisthandoffpacket|owner_responsibility_map|ownerresponsibilitymap|activation owner|approval owner/.test(`${json} ${activationText}`);
+  const measurementOwnerReady = /measurement_owner|measurementowner|measurement_surface|measurementsurface|owner_responsibility_map|ownerresponsibilitymap|measurement owner|measurement surface|proof_source|proofsource/.test(`${json} ${activationText} ${measurementText}`);
   return [
     { key: 'growth_experiment_packet', label: 'Experiment packet', ok: hasExperimentPacket, detail: hasExperimentPacket ? 'Growth experiment or no-paid growth plan source packet is retained.' : 'Missing growth_experiment_packet, no_paid_growth_plan_packet, or experiment_packet contract.' },
     { key: 'experiment_inputs', label: 'Experiment inputs', ok: record.experimentRows.length >= 3, detail: record.experimentRows.length >= 3 ? `${record.experimentRows.length} experiment row(s) retained.` : 'Need bottleneck, ICP/offer, hypothesis, or experiment packet rows.' },
     { key: 'exact_artifact_packet', label: 'Exact artifact', ok: record.artifactRows.length > 0, detail: record.artifactRows.length ? `${record.artifactRows.length} artifact/execution row(s) retained.` : 'Missing exact_artifact_packet or execution_packet.' },
-    { key: 'activation_owner', label: 'Activation owner', ok: /activation_owner|activationowner|implementation_owner|organic_specialist_handoff_packet|organicspecialisthandoffpacket/.test(json), detail: /activation_owner|activationowner|implementation_owner|organic_specialist_handoff_packet|organicspecialisthandoffpacket/.test(json) ? 'Activation owner or organic specialist handoff is attached.' : 'Missing activation owner or specialist handoff before launch.' },
-    { key: 'measurement_owner', label: 'Measurement owner', ok: /measurement_owner|measurementowner|measurement_surface|measurementsurface/.test(json), detail: /measurement_owner|measurementowner|measurement_surface|measurementsurface/.test(json) ? 'Measurement owner or surface is attached.' : 'Missing measurement owner or surface before launch.' },
+    { key: 'activation_owner', label: 'Activation owner', ok: activationOwnerReady, detail: activationOwnerReady ? 'Activation owner or specialist handoff is attached.' : 'Missing activation owner or specialist handoff before launch.' },
+    { key: 'measurement_owner', label: 'Measurement owner', ok: measurementOwnerReady, detail: measurementOwnerReady ? 'Measurement owner, surface, or proof owner is attached.' : 'Missing measurement owner or surface before launch.' },
     { key: 'review_date', label: 'Review date', ok: /review_date|reviewdate|next_review_date/.test(json), detail: /review_date|reviewdate|next_review_date/.test(json) ? 'Review date is retained.' : 'Missing review_date for the experiment decision.' },
     { key: 'metric_threshold', label: 'Metric threshold', ok: /metric_threshold|metricthreshold|success_metric|threshold|success_criteria/.test(json), detail: /metric_threshold|metricthreshold|success_metric|threshold|success_criteria/.test(json) ? 'Metric threshold is retained.' : 'Missing metric_threshold or success criteria.' },
     { key: 'kill_rule', label: 'Kill rule', ok: /kill_rule|killrule|stop_rule|stop_rules/.test(json), detail: /kill_rule|killrule|stop_rule|stop_rules/.test(json) ? 'Kill rule is retained.' : 'Missing kill_rule or stop_rules.' },
@@ -368,14 +411,202 @@ function renderTable(el, headers = [], rows = []) {
 
 function readinessRows(record = growthRecord) {
   const packetRetained = record.audit.some((item) => item.key === 'growth_experiment_packet' && item.ok);
+  const activationContractRows = retainedRowsFor(GROWTH_ACTIVATION_CONTRACT_TYPES);
+  const metricRows = retainedRowsFor(['metric_threshold', 'tracking_specification', 'measurement_plan']);
+  const killRows = retainedRowsFor(['kill_rule']);
+  const proofRows = retainedRowsFor(['proof_source', 'execution_proof_tracker', 'execution_status_labels']);
   return [
     { label: 'Server context', ready: Boolean(importedContext), detail: importedContext ? 'Server-side growth packet is loaded.' : 'Send to CAIt will create the server-side growth packet reference.' },
     { label: 'Experiment packet', ready: packetRetained && record.experimentRows.length > 0, detail: packetRetained ? `${record.experimentRows.length} experiment row(s) retained from a Growth or no-paid plan packet.` : 'Add growth_experiment_packet, no_paid_growth_plan_packet, bottleneck, ICP/offer, or hypothesis.' },
     { label: 'Exact artifact', ready: record.artifactRows.length > 0, detail: record.artifactRows.length ? `${record.artifactRows.length} artifact row(s) retained.` : 'Add exact_artifact_packet or execution_packet.' },
-    { label: 'Activation boundary', ready: record.activationRows.some((item) => /owner|approval|review/i.test(`${item.label} ${item.detail}`)), detail: record.activationRows.length ? 'Owner, approval, or review state is visible.' : 'Add activation owner, approval owner, measurement owner, and review date.' },
-    { label: 'Metric and kill rule', ready: record.measurementRows.some((item) => /threshold|metric|kill|stop/i.test(`${item.label} ${item.detail}`)), detail: record.measurementRows.length ? 'Tracking, threshold, or stop rule is retained.' : 'Add tracking_specification, metric_threshold, and kill_rule.' },
-    { label: 'Proof tracker', ready: record.measurementRows.some((item) => /proof|status|launch|measured/i.test(`${item.label} ${item.detail}`)), detail: record.measurementRows.some((item) => /proof|status|launch|measured/i.test(`${item.label} ${item.detail}`)) ? 'Proof or execution status rows are retained.' : 'Add execution_proof_tracker and execution_status_labels.' }
+    { label: 'Activation boundary', ready: activationContractRows.length > 0, detail: activationContractRows.length ? 'Activation, owner, approval, or review contract is visible.' : 'Add activation owner, approval owner, measurement owner, and review date.' },
+    { label: 'Metric and kill rule', ready: metricRows.length > 0 && killRows.length > 0, detail: metricRows.length && killRows.length ? 'Tracking/metric and kill-rule contracts are retained.' : 'Add tracking_specification, metric_threshold, and kill_rule.' },
+    { label: 'Proof tracker', ready: proofRows.length > 0, detail: proofRows.length ? 'Proof or execution status contract rows are retained.' : 'Add execution_proof_tracker and execution_status_labels.' }
   ];
+}
+
+function publisherLaunchRows(record = growthRecord) {
+  const experimentRows = retainedRowsFor(GROWTH_PUBLISHER_REQUIRED_CONTRACT_GROUPS.experiment);
+  const artifactRows = retainedRowsFor(GROWTH_PUBLISHER_REQUIRED_CONTRACT_GROUPS.artifact);
+  const activationRows = retainedRowsFor(GROWTH_PUBLISHER_REQUIRED_CONTRACT_GROUPS.activation);
+  const metricRows = retainedRowsFor(['metric_threshold', 'tracking_specification', 'measurement_plan']);
+  const killRows = retainedRowsFor(['kill_rule']);
+  const proofRows = retainedRowsFor(['proof_source', 'execution_proof_tracker', 'execution_status_labels']);
+  const reviewRows = retainedRowsFor(['review_date', 'next_decision']);
+  const experimentReady = Boolean(importedContext) && experimentRows.length > 0 && record.experimentRows.length > 0;
+  const artifactReady = artifactRows.length > 0 && record.artifactRows.length > 0;
+  const activationReady = activationRows.length > 0;
+  const measurementReady = metricRows.length > 0 && killRows.length > 0 && proofRows.length > 0 && reviewRows.length > 0;
+  return [
+    { label: 'Experiment source', ready: experimentReady, detail: experimentReady ? `${experimentRows.length} explicit Growth experiment contract row(s) retained.` : 'Load a server-side growth_experiment_packet or no_paid_growth_plan_packet first.' },
+    { label: 'Draftable artifact', ready: artifactReady, detail: artifactReady ? `${artifactRows.length} explicit artifact contract row(s) retained.` : 'Add explicit exact_artifact_packet, page_or_channel_artifact, or growth_asset_handoff_packet before Publisher review.' },
+    { label: 'Approval owner', ready: activationReady, detail: activationReady ? `${activationRows.length} explicit activation/owner contract row(s) retained.` : 'Add explicit activation owner, approval owner, owner map, or growth activation handoff before opening Publisher.' },
+    { label: 'Measurement guardrail', ready: measurementReady, detail: measurementReady ? `${metricRows.length + killRows.length + proofRows.length + reviewRows.length} explicit measurement contract row(s) retained.` : 'Add explicit metric threshold, proof source, review date or next decision, and kill rule.' }
+  ];
+}
+
+function publisherLaunchReady() {
+  return publisherLaunchRows().every((item) => item.ready);
+}
+
+function buildPublisherLaunchBlockerPacket(rows = publisherLaunchRows()) {
+  return buildCaitAppContext({
+    source_app: 'growth_experiment_console',
+    source_app_label: 'Growth Experiment Console',
+    title: 'Publisher launch packet not ready',
+    summary: 'Growth Experiment Console will not synthesize Publisher delivery artifacts until the required Growth contracts are explicit.',
+    facts: rows.map((item) => `${item.label}: ${item.ready ? 'ready' : 'missing'}`),
+    artifacts: [{
+      type: 'growth_publisher_handoff_audit',
+      artifact_type: 'growth_publisher_handoff_audit',
+      title: 'Growth to Publisher readiness audit',
+      rows
+    }],
+    recommended_next_actions: [
+      'Return to CAIt or the responsible Growth leader and request explicit Growth experiment, artifact, activation, and measurement contracts.',
+      'Open Publisher only after those contracts are retained in a server-side app context.'
+    ],
+    handoff_targets: ['growth-experiment-console'],
+    raw_context: {
+      chat_handoff_id: chatHandoffId(),
+      chat_return_to: chatReturnTo(),
+      received_context: importedContext,
+      growth_to_publisher_lane: {
+        ready: rows.filter((item) => item.ready).map((item) => item.label),
+        missing: rows.filter((item) => !item.ready).map((item) => item.label)
+      }
+    }
+  });
+}
+
+function buildPublisherLaunchPacket() {
+  const launchRows = publisherLaunchRows();
+  if (!launchRows.every((item) => item.ready)) return buildPublisherLaunchBlockerPacket(launchRows);
+  const experimentSummary = rowsText(growthRecord.experimentRows, 1400);
+  const artifactSummary = rowsText(growthRecord.artifactRows, 1400);
+  const activationSummary = rowsText(growthRecord.activationRows, 1000);
+  const measurementSummary = rowsText(growthRecord.measurementRows, 1200);
+  const hypothesis = firstMatchingRow(growthRecord.experimentRows, /hypothesis|仮説/i);
+  const offer = firstMatchingRow(growthRecord.experimentRows, /icp|offer|audience|target/i);
+  const threshold = firstMatchingRow(growthRecord.measurementRows, /threshold|metric|success|criteria/i);
+  const killRule = firstMatchingRow(growthRecord.measurementRows, /kill|stop/i);
+  const proof = firstMatchingRow(growthRecord.measurementRows, /proof|source|evidence/i);
+  const review = firstMatchingRow(growthRecord.measurementRows, /review|date|next decision|continue/i);
+  const owner = firstMatchingRow(growthRecord.activationRows, /owner|approval/i);
+  const title = text(growthRecord.title, 'Growth experiment activation');
+  const pageTitle = `${title} activation page`;
+  const risk = [
+    killRule ? `Kill rule: ${killRule.detail}` : '',
+    threshold ? `Threshold: ${threshold.detail}` : '',
+    proof ? `Proof source: ${proof.detail}` : ''
+  ].filter(Boolean).join(' ');
+  const body = [
+    `Experiment source:\n${experimentSummary || growthRecord.summary}`,
+    artifactSummary ? `\nActivation artifact:\n${artifactSummary}` : '',
+    activationSummary ? `\nApproval and owner:\n${activationSummary}` : '',
+    measurementSummary ? `\nMeasurement and stop rule:\n${measurementSummary}` : ''
+  ].filter(Boolean).join('\n\n');
+  return buildCaitAppContext({
+    source_app: 'growth_experiment_console',
+    source_app_label: 'Growth Experiment Console',
+    title: `Publisher launch packet: ${title}`,
+    summary: 'Growth Experiment Console is handing the retained experiment into Publisher so planning becomes approval-ready publishing work.',
+    facts: [
+      `Growth experiment: ${title}`,
+      hypothesis ? `Hypothesis: ${hypothesis.detail}` : '',
+      offer ? `ICP / offer: ${offer.detail}` : '',
+      owner ? `Approval owner: ${owner.detail}` : '',
+      threshold ? `Metric threshold: ${threshold.detail}` : '',
+      killRule ? `Kill rule: ${killRule.detail}` : '',
+      proof ? `Proof source: ${proof.detail}` : '',
+      review ? `Review / next decision: ${review.detail}` : '',
+      'Publisher lane: LP/page packet, social copy packet, and approval request are generated from retained Growth context.'
+    ].filter(Boolean),
+    artifacts: [
+      {
+        type: 'site_publish_packet',
+        artifact_type: 'site_publish_packet',
+        contract_type: 'site_publish_packet',
+        item_type: 'page',
+        channel_key: 'owned_site',
+        destination: 'Owned site / Publisher',
+        connector: 'publisher',
+        connector_capability: 'site_publish_packet',
+        publish_method: 'publisher_review_or_selected_connector',
+        action_type: 'publish_change',
+        market: 'Global',
+        locale: 'en',
+        owner: owner?.detail || 'Growth owner',
+        title: pageTitle,
+        slug: slugFromTitle(title),
+        meta: hypothesis ? hypothesis.detail : growthRecord.summary,
+        h1: title,
+        primary_cta: 'Start retained growth experiment',
+        body,
+        status: 'needs approval',
+        risk: risk || 'Review growth hypothesis, artifact, measurement threshold, proof source, and kill rule before publishing.'
+      },
+      {
+        type: 'social_copy_packet',
+        artifact_type: 'social_copy_packet',
+        contract_type: 'social_copy_packet',
+        item_type: 'post',
+        channel_key: 'social',
+        destination: 'Social copy packet',
+        connector: 'manual',
+        connector_capability: 'manual.copy',
+        publish_method: 'manual_social_copy',
+        action_type: 'social_post',
+        title: `${title} social post`,
+        body: [
+          hypothesis ? hypothesis.detail : growthRecord.summary,
+          threshold ? `Success check: ${threshold.detail}` : '',
+          proof ? `Proof: ${proof.detail}` : ''
+        ].filter(Boolean).join('\n'),
+        status: 'needs approval',
+        risk: 'Social copy must match the approved Growth experiment and Publisher review state.'
+      },
+      {
+        type: 'growth_experiment_packet',
+        title,
+        rows: growthRecord.experimentRows
+      },
+      {
+        type: 'growth_measurement_guardrail',
+        rows: growthRecord.measurementRows
+      }
+    ],
+    approval_requests: [{
+      id: `growth-publisher-${Date.now().toString(36)}`,
+      title: `Approve Publisher activation for ${title}`,
+      artifact_type: 'site_publish_packet',
+      action_type: 'publish_change',
+      status: 'needs approval',
+      channel: 'owned_site',
+      connector: 'publisher',
+      connector_capability: 'site_publish_packet',
+      destination: 'Owned site / Publisher',
+      market: 'Global',
+      locale: 'en',
+      blocker: risk || 'Growth activation requires Publisher approval before publication.'
+    }],
+    recommended_next_actions: [
+      'Open Publisher, review the generated LP/page packet, and approve or request changes.',
+      'Ask CAIt from Publisher to draft final LP and social variants only after the Growth hypothesis and measurement guardrails are accepted.',
+      'Return Publisher approval and execution proof back to Growth before deciding continue or stop.'
+    ],
+    handoff_targets: ['publisher-approval-studio', 'cmo_leader', 'seo_specialist'],
+    raw_context: {
+      chat_handoff_id: chatHandoffId(),
+      chat_return_to: chatReturnTo(),
+      received_context: importedContext,
+      source_growth_packet: contextPacket(),
+      growth_to_publisher_lane: {
+        ready: publisherLaunchRows().filter((item) => item.ready).map((item) => item.label),
+        missing: publisherLaunchRows().filter((item) => !item.ready).map((item) => item.label)
+      }
+    }
+  });
 }
 
 function chatUrlParams() {
@@ -520,6 +751,33 @@ function renderReadiness() {
   if (els.growthStepExperiment) els.growthStepExperiment.classList.toggle('current', growthRecord.experimentRows.length > 0);
   if (els.growthStepActivation) els.growthStepActivation.classList.toggle('current', growthRecord.artifactRows.length > 0 || growthRecord.activationRows.length > 0);
   if (els.growthStepMeasurement) els.growthStepMeasurement.classList.toggle('current', growthRecord.measurementRows.length > 0);
+  if (els.growthStepPublisher) els.growthStepPublisher.classList.toggle('current', publisherLaunchReady());
+}
+
+function renderPublisherLane() {
+  const items = publisherLaunchRows();
+  const ready = items.filter((item) => item.ready).length;
+  const allReady = ready === items.length;
+  if (els.growthPublisherPill) {
+    els.growthPublisherPill.textContent = allReady ? 'Publisher packet ready' : `${ready}/${items.length} publisher checks ready`;
+    els.growthPublisherPill.className = `status-pill ${allReady ? 'ready' : 'pending'}`;
+  }
+  if (els.growthPublisherSummary) {
+    els.growthPublisherSummary.textContent = allReady
+      ? 'This Growth experiment can open Publisher with LP/page, social copy, approval request, and measurement guardrails attached.'
+      : 'Complete missing Growth anchors before Publisher can open; no publish packet is synthesized from partial context.';
+  }
+  if (els.growthPublisherList) {
+    els.growthPublisherList.innerHTML = items.map((item) => [
+      `<div class="ops-readiness-item ${item.ready ? 'ready' : 'pending'}">`,
+      `<span>${escapeHtml(item.label)}</span>`,
+      `<strong>${escapeHtml(item.ready ? 'Ready' : 'Needed')}</strong>`,
+      `<p>${escapeHtml(item.detail)}</p>`,
+      '</div>'
+    ].join('')).join('');
+  }
+  if (els.openGrowthPublisherBtn) els.openGrowthPublisherBtn.disabled = !allReady;
+  if (els.copyGrowthPublisherBtn) els.copyGrowthPublisherBtn.disabled = !allReady;
 }
 
 function render() {
@@ -535,7 +793,70 @@ function render() {
   renderNotice();
   renderAudit();
   renderReadiness();
+  renderPublisherLane();
   if (els.growthContextPreview) els.growthContextPreview.textContent = JSON.stringify(contextPacket(), null, 2);
+  if (els.growthPublisherPreview) els.growthPublisherPreview.textContent = JSON.stringify(buildPublisherLaunchPacket(), null, 2);
+}
+
+async function sameOriginCsrfToken() {
+  try {
+    const response = await fetch('/auth/status', { headers: { accept: 'application/json' }, credentials: 'same-origin' });
+    if (!response.ok) return '';
+    const data = await response.json().catch(() => ({}));
+    return text(data?.csrfToken);
+  } catch {
+    return '';
+  }
+}
+
+async function createPublisherServerContext(context = {}) {
+  const headers = { 'content-type': 'application/json', accept: 'application/json' };
+  const csrfToken = await sameOriginCsrfToken();
+  if (csrfToken) headers['x-aiagent2-csrf'] = csrfToken;
+  const response = await fetch('/api/app-contexts', {
+    method: 'POST',
+    headers,
+    credentials: 'same-origin',
+    body: JSON.stringify({
+      app_id: 'publisher-approval-studio',
+      context
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.app_context_id) throw new Error(text(data?.error, `Publisher context create failed (${response.status})`));
+  return data;
+}
+
+async function openPublisherWithGrowthPacket() {
+  if (!els.openGrowthPublisherBtn) return;
+  if (!publisherLaunchReady()) {
+    if (els.growthHandoffNotice) {
+      els.growthHandoffNotice.hidden = false;
+      els.growthHandoffNotice.textContent = 'Publisher packet is not ready. Complete the explicit Growth experiment, artifact, activation, and measurement contracts first.';
+    }
+    return;
+  }
+  const previous = els.openGrowthPublisherBtn.textContent;
+  els.openGrowthPublisherBtn.disabled = true;
+  els.openGrowthPublisherBtn.textContent = 'Opening Publisher...';
+  try {
+    const record = await createPublisherServerContext(buildPublisherLaunchPacket());
+    const url = new URL('/publisher-approval.html', window.location.origin);
+    url.searchParams.set('cait_app_context_id', record.app_context_id);
+    if (record.app_context_token) url.searchParams.set('cait_app_context_token', record.app_context_token);
+    const returnTo = chatReturnTo();
+    if (returnTo) url.searchParams.set('chat_return_to', returnTo);
+    const handoff = chatHandoffId();
+    if (handoff) url.searchParams.set('chat_handoff_id', handoff);
+    window.location.href = `${url.pathname}${url.search}`;
+  } catch (error) {
+    els.openGrowthPublisherBtn.disabled = false;
+    els.openGrowthPublisherBtn.textContent = previous;
+    if (els.growthHandoffNotice) {
+      els.growthHandoffNotice.hidden = false;
+      els.growthHandoffNotice.textContent = `Could not open Publisher packet: ${text(error?.message, 'unknown error')}`;
+    }
+  }
 }
 
 async function init() {
@@ -575,6 +896,29 @@ if (els.sendGrowthContextBtn) {
         els.growthHandoffNotice.textContent = `Could not send growth context: ${text(error?.message, 'unknown error')}`;
       }
     }
+  };
+}
+
+if (els.copyGrowthPublisherBtn) {
+  els.copyGrowthPublisherBtn.onclick = async () => {
+    try {
+      if (!publisherLaunchReady()) throw new Error('Publisher packet is not ready; complete the explicit Growth contracts first.');
+      await copyContextJson(buildPublisherLaunchPacket());
+      els.copyGrowthPublisherBtn.textContent = 'Copied';
+      window.setTimeout(() => { els.copyGrowthPublisherBtn.textContent = 'Copy Publisher packet'; }, 1200);
+    } catch (error) {
+      els.copyGrowthPublisherBtn.textContent = 'Copy Publisher packet';
+      if (els.growthHandoffNotice) {
+        els.growthHandoffNotice.hidden = false;
+        els.growthHandoffNotice.textContent = `Could not copy Publisher packet: ${text(error?.message, 'clipboard unavailable')}`;
+      }
+    }
+  };
+}
+
+if (els.openGrowthPublisherBtn) {
+  els.openGrowthPublisherBtn.onclick = () => {
+    void openPublisherWithGrowthPacket();
   };
 }
 
