@@ -217,7 +217,7 @@
       "id": "seo-specialist-rewrite",
       "file": "seo-specialist.js",
       "kind": "seo_specialist",
-      "prompt": "Rewrite the homepage for the keyword AI agent marketplace. Target English-speaking founders and signup conversion. Use the supplied Search Console rows to create a row-level landing intent map, and explicitly keep any missing query/page exports unverified instead of inferring their performance. Include SERP/source status and Publisher handoff boundary.",
+      "prompt": "Rewrite the homepage for the keyword AI agent marketplace. Target English-speaking founders and signup conversion. Use the supplied Search Console rows to create a row-level landing intent map, and put requested-but-unsupplied query/page exports into a missing export queue with required fields, owner/source, status, and blocked SEO decision instead of inferring performance or CTA priority. Include SERP/source status and Publisher handoff boundary.",
       "body": {
         "input": {
           "target_url": "https://aiagent-marketplace.net",
@@ -247,8 +247,20 @@
               }
             ],
             "missing_exports": [
-              "pricing page query/page rows",
-              "brand query rows"
+              {
+                "requested_set": "pricing page query/page rows",
+                "required_fields": ["query", "landing_page", "impressions", "clicks", "ctr", "position", "date_range", "property"],
+                "owner_or_source": "founder Search Console export",
+                "status": "not supplied",
+                "blocked_decision": "do not rank pricing-page CTA priority from Search Console until rows return"
+              },
+              {
+                "requested_set": "brand query rows",
+                "required_fields": ["query", "landing_page", "impressions", "clicks", "ctr", "position", "date_range", "property"],
+                "owner_or_source": "founder Search Console export",
+                "status": "not supplied",
+                "blocked_decision": "do not claim brand intent demand or performance until rows return"
+              }
             ]
           }
         }
