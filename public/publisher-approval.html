@@ -9,7 +9,7 @@
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/app-console.css?v=20260507b" />
-  <script type="module" src="/publisher-approval.js?v=20260526a"></script>
+  <script type="module" src="/publisher-approval.js?v=20260526b"></script>
 </head>
 <body>
   <main class="app-console-shell" aria-label="CAIt Publisher and Approval Studio">
@@ -142,7 +142,7 @@
                   <h3>Publisher-driven SaaS workflow</h3>
                   <ul class="ops-bullet-list">
                     <li>Approval queue, destination profile, and market/locale stay visible.</li>
-                    <li>GitHub PR, WordPress draft, and X readiness remain tied to the packet.</li>
+                    <li>GitHub PR, WordPress draft, X, and Instagram asset-readiness gates remain tied to the packet.</li>
                     <li>CAIt receives a server-side context reference for the next run.</li>
                   </ul>
                 </section>
@@ -238,6 +238,7 @@
                 <div class="field-row"><label for="profileHandleInput">Account / profile</label><input id="profileHandleInput" placeholder="@handle, page owner, community, or publication account" /></div>
                 <div class="field-row"><label for="profileUrlInput">Profile URL</label><input id="profileUrlInput" placeholder="https://instagram.com/your-profile" /></div>
                 <div class="field-row"><label for="mediaAssetsInput">Media assets</label><textarea id="mediaAssetsInput" placeholder="Image/video URLs, screenshots, carousel frames, b-roll, or asset blockers"></textarea></div>
+                <div class="field-row"><label for="visualAssetReadinessInput">Visual asset readiness</label><textarea id="visualAssetReadinessInput" placeholder="Frame/shot status: supplied URL, missing production task, rights unverified, proof placeholder"></textarea></div>
                 <div class="field-row"><label for="channelRulesInput">Channel rules</label><textarea id="channelRulesInput" placeholder="Caption limits, community rules, link policy, required tags, or compliance notes"></textarea></div>
                 <div class="field-row"><label for="approvalChecklistInput">Approval checklist</label><textarea id="approvalChecklistInput" placeholder="Profile, destination, assets, exact copy, proof, schedule, and connector checks"></textarea></div>
                 <div class="field-row"><label for="marketInput">Market</label><input id="marketInput" placeholder="Global, US, EU, APAC..." /></div>

@@ -1,7 +1,7 @@
 import {
   BUILT_IN_APP_MANIFESTS as FALLBACK_BUILT_IN_APPS,
   CORE_FEATURE_APP_IDS
-} from './app-manifest-registry.js?v=20260526g';
+} from './app-manifest-registry.js?v=20260526h';
 
 const listEl = document.querySelector('[data-context-list]');
 const registryListEl = document.querySelector('[data-app-registry-list]');

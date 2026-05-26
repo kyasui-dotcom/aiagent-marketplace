@@ -40,6 +40,7 @@ const measurementEvidenceGateSource = read('public/measurement-evidence-gate.js'
 const agentProgressViewSource = read('public/agent-progress-view.js');
 const adsOpsSource = read('public/ads-ops.js');
 const growthOpsSource = read('public/growth-ops.js');
+const pricingOpsSource = read('public/pricing-ops.js');
 const clientSource = read('public/client.js');
 const clientDeliveryFilesSource = read('public/client-delivery-files.js');
 const workActionRegistrySource = read('public/work-action-registry.js');
@@ -601,8 +602,20 @@ assert.ok(
 assertNotIncludes(growthOpsSource, [
   'Publisher can open now, but missing Growth anchors will stay visible as review gaps.',
   'const activationReady = record.activationRows.some((item) => /owner|approval|review/i.test',
-  'const measurementReady = record.measurementRows.some((item) => /threshold|metric|kill|stop|proof|review/i.test'
+  'const measurementReady = record.measurementRows.some((item) => /threshold|metric|kill|stop|proof|review/i.test',
+  'approval_requests: growthRecord.activationRows.some'
 ], 'public/growth-ops.js Publisher readiness contract gate');
+assert.ok(
+  growthOpsSource.includes('approval_requests: explicitApprovalRequestsFromContext()'),
+  'Growth app context must pass through explicit approval_requests instead of creating approval waits from row text'
+);
+assertNotIncludes(pricingOpsSource, [
+  'approval_requests: pricingRecord.riskRows.some'
+], 'public/pricing-ops.js approval boundary');
+assert.ok(
+  pricingOpsSource.includes('approval_requests: explicitApprovalRequestsFromContext()'),
+  'Pricing app context must pass through explicit approval_requests instead of creating approval waits from risk row text'
+);
 assert.ok(
   deliveryManagerSource.includes('function explicitDeliveryContractTokens')
     && deliveryManagerSource.includes('function explicitExternalWriteRequested')

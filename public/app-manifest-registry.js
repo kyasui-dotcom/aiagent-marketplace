@@ -44,12 +44,12 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     baseUrl: '/publisher-approval.html',
     entryUrl: '/publisher-approval.html',
     contextIngestUrl: '/api/publisher/context-ingest',
-    capabilities: ['content_management', 'approval_queue', 'directory_submission_packet', 'publisher_change_set', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'instagram_post_packet', 'site_publish_packet', 'wordpress_draft_packet'],
+    capabilities: ['content_management', 'approval_queue', 'directory_submission_packet', 'publisher_change_set', 'community_post_packet', 'social_copy_packet', 'x_post_packet', 'reddit_post_packet', 'indie_hackers_packet', 'instagram_post_packet', 'visual_asset_readiness_matrix', 'site_publish_packet', 'wordpress_draft_packet'],
     requiredConnectors: [],
     requiresApprovalFor: ['publish_change', 'directory_submit', 'github_pr', 'wordpress_draft', 'x_post', 'reddit_post', 'indie_hackers_post', 'instagram_post', 'external_send'],
     inputContract: {
       schemaVersion: 'cait-app-context/v1',
-      accepts: ['article_draft', 'seo_article', 'seo_page_artifact', 'landing_page', 'landing_page_change', 'site_publish_packet', 'publisher_packet', 'publishing_packet', 'publish_packet', 'content_package', 'publisher_content_package', 'wordpress_draft', 'wordpress_draft_packet', 'directory_submission', 'directory_packet', 'community_post_packet', 'social_copy_packet', 'social_post', 'x_post', 'x_post_packet', 'reddit_post', 'reddit_post_packet', 'indie_hackers_post', 'indie_hackers_packet', 'instagram_post', 'instagram_post_packet', 'approval_request'],
+      accepts: ['article_draft', 'seo_article', 'seo_page_artifact', 'landing_page', 'landing_page_change', 'site_publish_packet', 'publisher_packet', 'publishing_packet', 'publish_packet', 'content_package', 'publisher_content_package', 'wordpress_draft', 'wordpress_draft_packet', 'directory_submission', 'directory_packet', 'community_post_packet', 'social_copy_packet', 'social_post', 'x_post', 'x_post_packet', 'reddit_post', 'reddit_post_packet', 'indie_hackers_post', 'indie_hackers_packet', 'instagram_post', 'instagram_post_packet', 'visual_asset_readiness_matrix', 'visual_asset_rights_status', 'visual_asset_gap', 'media_assets', 'approval_checklist', 'approval_request'],
       destinationConnectors: {
         owned_site: { connector: 'publisher', capability: 'site_publish_packet', method: 'publisher_review_or_selected_connector' },
         github_pr: { connector: 'github', capability: 'github.write_pr', method: 'github_pr' },
@@ -161,18 +161,18 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
     description: 'Growth experiment console that retains no-paid growth plan, specialist handoff, bottleneck, ICP/offer, hypothesis, exact artifact packet, owner map, measurement surface, proof source, threshold, kill rule, review date, next decision, and status labels before launch.',
     baseUrl: '/growth-ops.html',
     entryUrl: '/growth-ops.html',
-    capabilities: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'tracking_specification', 'metric_threshold', 'kill_rule', 'measurement_surface', 'proof_source', 'execution_proof_tracker', 'next_decision'],
+    capabilities: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'growth_publisher_handoff_packet', 'publisher_activation_packet', 'tracking_specification', 'metric_threshold', 'kill_rule', 'measurement_surface', 'proof_source', 'execution_proof_tracker', 'next_decision'],
     requiredConnectors: [],
     requiresApprovalFor: ['growth_activation', 'publish_change', 'external_send'],
     inputContract: {
       schemaVersion: 'cait-app-context/v1',
-      accepts: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'growth_packet', 'experiment_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet', '7_day_experiment', 'seven_day_experiment', 'experiment_plan', 'tracking_specification', 'metric_threshold', 'success_criteria', 'kill_rule', 'stop_rules', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'proof_source', 'review_date', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan', 'next_decision', 'delivery_files'],
+      accepts: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'growth_publisher_handoff_packet', 'growth_launch_packet', 'publisher_activation_packet', 'growth_to_publisher_packet', 'growth_packet', 'experiment_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet', '7_day_experiment', 'seven_day_experiment', 'experiment_plan', 'tracking_specification', 'metric_threshold', 'success_criteria', 'kill_rule', 'stop_rules', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'proof_source', 'review_date', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan', 'next_decision', 'delivery_files'],
       returns: ['artifacts', 'approval_requests', 'metrics', 'recommended_next_actions']
     },
     contextContract: {
       sourceApps: ['growth_experiment_console'],
       evidence: {
-        loadedArtifactTypes: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'tracking_specification', 'metric_threshold', 'kill_rule', 'measurement_surface', 'proof_source', 'execution_proof_tracker', 'next_decision'],
+        loadedArtifactTypes: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'growth_publisher_handoff_packet', 'publisher_activation_packet', 'tracking_specification', 'metric_threshold', 'kill_rule', 'measurement_surface', 'proof_source', 'execution_proof_tracker', 'next_decision'],
         summaryFields: ['growth_handoff_audit']
       }
     },

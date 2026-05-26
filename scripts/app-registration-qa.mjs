@@ -105,6 +105,7 @@ assert.ok(seededXClientOps?.directCommandAliases?.includes('x ops'), 'default X 
 const seededPublisher = initial.apps.find((item) => item.id === 'publisher-approval-studio');
 assert.equal(seededPublisher?.contextIngestUrl, '/api/publisher/context-ingest', 'default Publisher app seed should expose its context ingest route');
 assert.ok(seededPublisher?.directCommandAliases?.includes('approval studio'), 'default Publisher app seed should expose direct command aliases outside chat code');
+assert.ok(seededPublisher?.inputContract?.accepts?.includes('visual_asset_readiness_matrix'), 'default Publisher app seed should accept Instagram visual asset readiness packets');
 const seededAnalytics = initial.apps.find((item) => item.id === 'analytics-console');
 assert.ok(seededAnalytics?.directCommandAliases?.includes('ga4'), 'default Analytics app seed should expose direct command aliases outside chat code');
 const seededAdsLaunch = initial.apps.find((item) => item.id === 'ads-launch-console');
@@ -118,6 +119,7 @@ assert.ok(seededGrowthExperiment?.inputContract?.accepts?.includes('growth_exper
 assert.ok(seededGrowthExperiment?.inputContract?.accepts?.includes('no_paid_growth_plan_packet'), 'default Growth Experiment Console app seed should accept no-paid growth plan packets');
 assert.ok(seededGrowthExperiment?.inputContract?.accepts?.includes('organic_specialist_handoff_packet'), 'default Growth Experiment Console app seed should accept organic specialist handoff packets');
 assert.ok(seededGrowthExperiment?.inputContract?.accepts?.includes('growth_activation_handoff_packet'), 'default Growth Experiment Console app seed should accept growth activation handoff packets');
+assert.ok(seededGrowthExperiment?.inputContract?.accepts?.includes('growth_publisher_handoff_packet'), 'default Growth Experiment Console app seed should accept agent Growth-to-Publisher handoff packets');
 assert.ok(seededGrowthExperiment?.requiresApprovalFor?.includes('growth_activation'), 'default Growth Experiment Console app seed should keep activation approval-gated');
 assert.ok(seededGrowthExperiment?.directCommandAliases?.includes('growth experiment'), 'default Growth Experiment Console app seed should expose direct command aliases outside chat code');
 const seededPricingDecision = initial.apps.find((item) => item.id === 'pricing-decision-console');

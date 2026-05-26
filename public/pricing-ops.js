@@ -1,4 +1,4 @@
-import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526f';
+import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526i';
 
 const els = {
   returnToChatLink: document.getElementById('pricingReturnToChatLink'),
@@ -269,6 +269,22 @@ function uniqueRows(rows = []) {
   });
 }
 
+function objectList(value = []) {
+  return (Array.isArray(value) ? value : []).filter((item) => item && typeof item === 'object' && !Array.isArray(item));
+}
+
+function explicitApprovalRequestsFromContext(context = importedContext) {
+  const raw = objectValue(context?.raw_context);
+  const received = objectValue(raw.received_context);
+  const contractFields = objectValue(raw.contract_fields);
+  return [
+    ...objectList(context?.approval_requests || context?.approvalRequests),
+    ...objectList(raw.approval_requests || raw.approvalRequests),
+    ...objectList(received.approval_requests || received.approvalRequests),
+    ...objectList(contractFields.approval_requests || contractFields.approvalRequests)
+  ];
+}
+
 function emptyPricingRecord() {
   return {
     title: 'No Pricing/CFO packet loaded',
@@ -363,9 +379,7 @@ function contextPacket() {
       { label: 'risk_rows', value: pricingRecord.riskRows.length },
       { label: 'anchors_ready', value: ready.length }
     ],
-    approval_requests: pricingRecord.riskRows.some((item) => /approval|owner|price change|billing/i.test(`${item.label} ${item.detail}`))
-      ? [{ id: 'pricing-change-approval', action_type: 'price_change', status: 'needs approval', title: 'Approve pricing change before execution' }]
-      : [],
+    approval_requests: explicitApprovalRequestsFromContext(),
     recommended_next_actions: [
       'Review retained assumptions, scenarios, approval owner, trigger, proof tracker, and rollback rule before asking CAIt to continue.',
       'Do not change pricing or billing externally until the approval owner confirms the retained price-change handoff.'

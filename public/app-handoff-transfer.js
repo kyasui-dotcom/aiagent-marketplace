@@ -523,6 +523,10 @@ const APP_HANDOFF_GROWTH_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqu
   'organic_specialist_handoff_packet',
   'growth_asset_handoff_packet',
   'growth_activation_handoff_packet',
+  'growth_publisher_handoff_packet',
+  'growth_launch_packet',
+  'publisher_activation_packet',
+  'growth_to_publisher_packet',
   'bottleneck',
   'icp_and_offer',
   'experiment_hypothesis',
@@ -553,6 +557,10 @@ const APP_HANDOFF_GROWTH_CONTRACT_ALIASES = Object.freeze({
   organic_specialist_handoff_packet: Object.freeze(['organicSpecialistHandoffPacket', 'specialist_handoff_packet', 'specialistHandoffPacket', 'growth_asset_handoff_packet', 'growthAssetHandoffPacket', 'growth_activation_handoff_packet', 'growthActivationHandoffPacket']),
   growth_asset_handoff_packet: Object.freeze(['growthAssetHandoffPacket', 'growth_asset_packet', 'growthAssetPacket', 'asset_handoff_packet', 'assetHandoffPacket', 'organic_specialist_handoff_packet', 'organicSpecialistHandoffPacket']),
   growth_activation_handoff_packet: Object.freeze(['growthActivationHandoffPacket', 'growth_activation_packet', 'growthActivationPacket', 'activation_handoff_packet', 'activationHandoffPacket', 'organic_specialist_handoff_packet', 'organicSpecialistHandoffPacket']),
+  growth_publisher_handoff_packet: Object.freeze(['growthPublisherHandoffPacket', 'growth_launch_packet', 'growthLaunchPacket', 'publisher_activation_packet', 'publisherActivationPacket', 'growth_to_publisher_packet', 'growthToPublisherPacket']),
+  growth_launch_packet: Object.freeze(['growthLaunchPacket', 'growth_publisher_handoff_packet', 'growthPublisherHandoffPacket', 'publisher_activation_packet', 'publisherActivationPacket', 'growth_to_publisher_packet', 'growthToPublisherPacket']),
+  publisher_activation_packet: Object.freeze(['publisherActivationPacket', 'growth_publisher_handoff_packet', 'growthPublisherHandoffPacket', 'growth_launch_packet', 'growthLaunchPacket', 'growth_to_publisher_packet', 'growthToPublisherPacket']),
+  growth_to_publisher_packet: Object.freeze(['growthToPublisherPacket', 'growth_publisher_handoff_packet', 'growthPublisherHandoffPacket', 'growth_launch_packet', 'growthLaunchPacket', 'publisher_activation_packet', 'publisherActivationPacket']),
   bottleneck: Object.freeze(['growth_bottleneck', 'growthBottleneck']),
   icp_and_offer: Object.freeze(['icpAndOffer', 'icp_offer', 'icpOffer', 'target_segment_offer', 'targetSegmentOffer']),
   experiment_hypothesis: Object.freeze(['experimentHypothesis', 'hypothesis', 'growth_hypothesis', 'growthHypothesis']),
@@ -577,16 +585,36 @@ const APP_HANDOFF_GROWTH_CONTRACT_ALIASES = Object.freeze({
   next_decision: Object.freeze(['nextDecision', 'decision_rule', 'decisionRule', 'continue_or_stop_rule', 'continueOrStopRule'])
 });
 
+const APP_HANDOFF_PUBLISHER_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqueStrings([
+  'instagram_post_packet',
+  'visual_asset_readiness_matrix',
+  'visual_asset_rights_status',
+  'visual_asset_gap',
+  'media_assets',
+  'approval_checklist'
+]));
+
+const APP_HANDOFF_PUBLISHER_CONTRACT_ALIASES = Object.freeze({
+  instagram_post_packet: Object.freeze(['instagramPostPacket', 'instagram_post', 'instagramPost']),
+  visual_asset_readiness_matrix: Object.freeze(['visualAssetReadinessMatrix', 'asset_readiness_matrix', 'assetReadinessMatrix', 'media_readiness_matrix', 'mediaReadinessMatrix']),
+  visual_asset_rights_status: Object.freeze(['visualAssetRightsStatus', 'asset_rights_status', 'assetRightsStatus', 'rights_status', 'rightsStatus']),
+  visual_asset_gap: Object.freeze(['visualAssetGap', 'asset_gap', 'assetGap', 'media_asset_gap', 'mediaAssetGap']),
+  media_assets: Object.freeze(['mediaAssets', 'visual_assets', 'visualAssets', 'asset_requirements', 'assetRequirements']),
+  approval_checklist: Object.freeze(['approvalChecklist', 'pre_publish_checklist', 'prePublishChecklist'])
+});
+
 const APP_HANDOFF_CONTRACT_FIELDS = Object.freeze(appHandoffTransferUniqueStrings([
   ...APP_HANDOFF_ADS_CONTRACT_FIELDS,
   ...APP_HANDOFF_PRICING_CONTRACT_FIELDS,
-  ...APP_HANDOFF_GROWTH_CONTRACT_FIELDS
+  ...APP_HANDOFF_GROWTH_CONTRACT_FIELDS,
+  ...APP_HANDOFF_PUBLISHER_CONTRACT_FIELDS
 ]));
 
 const APP_HANDOFF_CONTRACT_ALIASES = Object.freeze({
   ...APP_HANDOFF_ADS_CONTRACT_ALIASES,
   ...APP_HANDOFF_PRICING_CONTRACT_ALIASES,
-  ...APP_HANDOFF_GROWTH_CONTRACT_ALIASES
+  ...APP_HANDOFF_GROWTH_CONTRACT_ALIASES,
+  ...APP_HANDOFF_PUBLISHER_CONTRACT_ALIASES
 });
 
 function appHandoffTransferUniqueStrings(items = []) {

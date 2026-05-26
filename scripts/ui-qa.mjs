@@ -681,11 +681,11 @@ assert.ok(!appsHtml.includes('Register your own app'), 'Apps hub should not impl
 assert.ok(appsHtml.includes('Self-service app registration is not open yet'), 'Apps hub should set the short-term app registration boundary.');
 assert.ok(appsHtml.includes('data-featured-app-list'), 'Apps hub should render featured workflows from the app registry.');
 assert.ok(appsJs.includes('sameOriginAppUrl'), 'Apps hub should normalize CAIt-managed app URLs to the current origin.');
-assert.ok(appsJs.includes("from './app-manifest-registry.js?v=20260526g'"), 'Apps hub should reuse the shared app manifest registry.');
+assert.ok(appsJs.includes("from './app-manifest-registry.js?v=20260526h'"), 'Apps hub should reuse the shared app manifest registry.');
 assert.ok(appsJs.includes('const FEATURED_APP_IDS = Object.freeze(['), 'Apps hub should keep only featured app ids outside the shared registry.');
 assert.ok(!appsJs.includes('const featureCopy = new Map'), 'Apps hub featured copy should come from shared app manifests, not duplicate app descriptions.');
 assert.ok(!appsJs.includes("'/analytics-console.html',"), 'Apps hub same-origin URL handling should not duplicate a hard-coded built-in app path list.');
-assert.ok(chatJs.includes("from './app-manifest-registry.js?v=20260526g'"), 'Chat should reuse the shared app manifest registry.');
+assert.ok(chatJs.includes("from './app-manifest-registry.js?v=20260526h'"), 'Chat should reuse the shared app manifest registry.');
 assert.ok(appManifestRegistryJs.includes("owner: 'cait-managed'"), 'CAIt-managed app surfaces should not be labeled as built-in apps.');
 assert.ok(appManifestRegistryJs.includes("verificationStatus: 'cait_managed'"), 'CAIt-managed app surfaces should have explicit verification status.');
 assert.ok(appManifestRegistryJs.includes('analytics-console'), 'Shared app registry should include Analytics Console.');
@@ -726,7 +726,7 @@ assert.ok(analyticsHtml.includes('id="analyticsQueriesCount"'), 'Analytics Conso
 assert.ok(publisherHtml.includes('Publisher & Approval'), 'Publisher and Approval Studio should be a first-class app page.');
 assert.ok(publisherHtml.includes('href="/apps.html"'), 'Publisher Studio should link back to the apps hub.');
 assert.ok(publisherHtml.includes('id="approvalTable"'), 'Publisher Studio should include an approval queue.');
-assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260526a'), 'Publisher Studio should load the app-context receiving controller.');
+assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260526b'), 'Publisher Studio should load the app-context receiving controller.');
 assert.ok(publisherHtml.includes('id="publisherStepApproval"'), 'Publisher Studio should show approval progress before handoff.');
 assert.ok(publisherHtml.includes('id="channelSelect"'), 'Publisher Studio should expose media/channel separation.');
 assert.ok(publisherHtml.includes('id="connectorInput"'), 'Publisher Studio should expose the publish connector per channel.');
@@ -735,6 +735,7 @@ assert.ok(publisherHtml.includes('id="publishMethodInput"'), 'Publisher Studio s
 assert.ok(publisherHtml.includes('id="profileHandleInput"'), 'Publisher Studio should expose the destination account/profile per channel.');
 assert.ok(publisherHtml.includes('id="profileUrlInput"'), 'Publisher Studio should expose the destination profile URL per channel.');
 assert.ok(publisherHtml.includes('id="mediaAssetsInput"'), 'Publisher Studio should expose media asset requirements per channel.');
+assert.ok(publisherHtml.includes('id="visualAssetReadinessInput"'), 'Publisher Studio should expose Instagram visual asset readiness before approval.');
 assert.ok(publisherHtml.includes('id="channelRulesInput"'), 'Publisher Studio should expose channel rules per destination profile.');
 assert.ok(publisherHtml.includes('id="approvalChecklistInput"'), 'Publisher Studio should expose a channel approval checklist.');
 assert.ok(publisherHtml.includes('id="dataCheckList"'), 'Publisher Studio should show media-specific data checks before publishing.');
@@ -854,7 +855,7 @@ for (const app of caitManagedSurfaceEntries) {
 }
 
 assert.ok(analyticsJs.includes("source_app: 'analytics_console'"), 'Analytics app logic should stay in analytics-console.js.');
-assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260526f"), 'Analytics Console should load the latest CAIt app bridge.');
+assert.ok(analyticsJs.includes("cait-app-bridge.js?v=20260526i"), 'Analytics Console should load the latest CAIt app bridge.');
 assert.ok(caitAppBridge.includes("`${origin}/auth/status`"), 'CAIt app bridge should read auth status before same-origin context handoff.');
 assert.ok(caitAppBridge.includes("headers['x-aiagent2-csrf'] = csrfToken"), 'CAIt app bridge should attach CSRF token to same-origin context handoff writes.');
 assert.ok(caitAppBridge.includes('createServerAppContextWithRetry'), 'CAIt app bridge should retry server-side app context writes.');
@@ -923,7 +924,7 @@ assert.ok(!adsOpsJs.includes("source_app: 'campaign_operations'"), 'Ads Launch C
 assert.ok(!adsOpsJs.includes("source_app: 'delivery_manager'"), 'Ads Launch Console JS should not contain Delivery Manager app logic.');
 assert.ok(growthOpsJs.includes("source_app: 'growth_experiment_console'"), 'Growth Experiment Console app logic should stay in growth-ops.js.');
 assert.ok(growthOpsJs.includes("fetchCaitAppContextFromUrl"), 'Growth Experiment Console should receive CAIt app contexts.');
-assert.ok(growthOpsHtml.includes('/growth-ops.js?v=20260526e'), 'Growth Experiment Console should bump the script cache key for Publisher-lane contract-gate changes.');
+assert.ok(growthOpsHtml.includes('/growth-ops.js?v=20260526g'), 'Growth Experiment Console should bump the script cache key for explicit approval-request passthrough changes.');
 assert.ok(growthOpsHtml.includes('Publisher activation lane') && growthOpsHtml.includes('openGrowthPublisherBtn'), 'Growth Experiment Console should expose a Publisher activation lane.');
 assert.ok(growthOpsJs.includes("type: 'growth_experiment_packet'"), 'Growth Experiment Console should return growth_experiment_packet artifacts.');
 assert.ok(growthOpsJs.includes("type: 'no_paid_growth_plan_packet'"), 'Growth Experiment Console should return no_paid_growth_plan_packet artifacts for Free Web Growth Leader reuse.');
@@ -931,6 +932,8 @@ assert.ok(growthOpsJs.includes("type: 'organic_specialist_handoff_packet'"), 'Gr
 assert.ok(growthOpsJs.includes("type: 'site_publish_packet'") && growthOpsJs.includes("type: 'social_copy_packet'"), 'Growth Experiment Console should generate Publisher-ready launch packets.');
 assert.ok(growthOpsJs.includes('createPublisherServerContext') && growthOpsJs.includes("app_id: 'publisher-approval-studio'"), 'Growth Experiment Console should open Publisher through a server-side app context.');
 assert.ok(growthOpsJs.includes('source_growth_packet'), 'Growth-to-Publisher packets should retain the source Growth packet for audit and follow-up measurement.');
+assert.ok(growthOpsJs.includes('growth_publisher_handoff_packet') && growthOpsJs.includes('publisher_activation_packet'), 'Growth Experiment Console should accept agent-produced Growth-to-Publisher handoff packets.');
+assert.ok(growthOpsJs.includes('agent_growth_publisher_handoff_packet') && growthOpsJs.includes('Agent Publisher handoff'), 'Growth-to-Publisher packets should keep agent handoff rows through Publisher activation.');
 assert.ok(growthOpsJs.includes('function buildPublisherLaunchBlockerPacket') && growthOpsJs.includes('Growth Experiment Console will not synthesize Publisher delivery artifacts until the required Growth contracts are explicit.'), 'Growth Experiment Console must not synthesize Publisher artifacts from partial Growth context.');
 assert.ok(growthOpsJs.includes('Complete missing Growth anchors before Publisher can open; no publish packet is synthesized from partial context.'), 'Growth Publisher lane should block incomplete packets instead of opening with review gaps.');
 assert.ok(growthOpsJs.includes("type: 'growth_asset_handoff_packet'"), 'Growth Experiment Console should return growth_asset_handoff_packet artifacts.');
@@ -941,15 +944,24 @@ assert.ok(growthOpsJs.includes('growth_handoff_audit'), 'Growth Experiment Conso
 assert.ok(appContextDomainJs.includes('growth_experiment_packet'), 'Server-side app context should preserve growth experiment packet contract fields in raw_context.');
 assert.ok(appContextDomainJs.includes('no_paid_growth_plan_packet') && appContextDomainJs.includes('organic_specialist_handoff_packet'), 'Server-side app context should preserve Free Web Growth Leader packet contracts.');
 assert.ok(appContextDomainJs.includes('growth_activation_handoff_packet'), 'Server-side app context should preserve growth activation handoff contract fields in raw_context.');
+assert.ok(appContextDomainJs.includes('growth_publisher_handoff_packet') && appContextDomainJs.includes('publisherActivationPacket'), 'Server-side app context should preserve agent Growth-to-Publisher handoff contract fields.');
 assert.ok(caitAppBridge.includes('growth_experiment_packet'), 'Client app-context bridge should preserve growth experiment packet contract fields.');
 assert.ok(caitAppBridge.includes('noPaidGrowthPlanPacket') && caitAppBridge.includes('organicSpecialistHandoffPacket'), 'Client app-context bridge should preserve Free Web Growth Leader aliases.');
 assert.ok(caitAppBridge.includes('growthActivationHandoffPacket'), 'Client app-context bridge should preserve growth activation aliases.');
+assert.ok(caitAppBridge.includes('growthPublisherHandoffPacket') && caitAppBridge.includes('publisherActivationPacket'), 'Client app-context bridge should preserve agent Growth-to-Publisher aliases.');
 assert.ok(caitAppBridge.includes('measurementSurface') && caitAppBridge.includes('proofSource') && caitAppBridge.includes('nextDecision'), 'Client app-context bridge should preserve Growth measurement surface, proof source, and next decision aliases.');
+assert.ok(appContextDomainJs.includes('visual_asset_readiness_matrix') && caitAppBridge.includes('visualAssetReadinessMatrix'), 'App context should preserve Instagram visual asset readiness contract aliases.');
 assert.ok(appHandoffTransferJs.includes('APP_HANDOFF_GROWTH_CONTRACT_FIELDS'), 'Generic app handoff transfer should preserve Growth contract fields.');
-assert.ok(appManifestRegistryJs.includes("'growth_experiment_packet'") && appManifestRegistryJs.includes("'no_paid_growth_plan_packet'") && appManifestRegistryJs.includes("'organic_specialist_handoff_packet'") && appManifestRegistryJs.includes("'kill_rule'") && appManifestRegistryJs.includes("'next_decision'"), 'Growth Experiment app manifest should declare retained growth handoff contracts.');
+assert.ok(appHandoffTransferJs.includes('growth_publisher_handoff_packet') && appHandoffTransferJs.includes('growthPublisherHandoffPacket'), 'Generic app handoff transfer should canonicalize agent Growth-to-Publisher packet aliases.');
+assert.ok(appHandoffTransferJs.includes('APP_HANDOFF_PUBLISHER_CONTRACT_FIELDS') && appHandoffTransferJs.includes('visualAssetReadinessMatrix'), 'Generic app handoff transfer should canonicalize Publisher visual asset readiness aliases.');
+assert.ok(appHandoffGateJs.includes('growth_publisher_handoff_packet') && appHandoffGateJs.includes('publisher_activation_packet'), 'Generic app handoff routing should recognize agent Growth-to-Publisher packet types.');
+assert.ok(appHandoffGateJs.includes('visual_asset_readiness_matrix') && appManifestRegistryJs.includes('visual_asset_readiness_matrix'), 'Publisher app routing and manifest should recognize visual asset readiness packets.');
+assert.ok(appManifestRegistryJs.includes("'growth_experiment_packet'") && appManifestRegistryJs.includes("'no_paid_growth_plan_packet'") && appManifestRegistryJs.includes("'organic_specialist_handoff_packet'") && appManifestRegistryJs.includes("'growth_publisher_handoff_packet'") && appManifestRegistryJs.includes("'kill_rule'") && appManifestRegistryJs.includes("'next_decision'"), 'Growth Experiment app manifest should declare retained growth handoff contracts.');
 assert.ok(growthOpsJs.includes('const GROWTH_MARKDOWN_ARTIFACT_TYPES = Object.freeze(['), 'Growth Experiment Console should gate Markdown parsing on explicit Growth artifact contracts.');
 assert.ok(growthOpsJs.includes("'7_day_experiment'") && growthOpsJs.includes("'no_paid_growth_plan_packet'") && growthOpsJs.includes("'organic_specialist_handoff_packet'") && growthOpsJs.includes("'owner_responsibility_map'") && growthOpsJs.includes("'proof_source'"), 'Growth Experiment Console should recover Growth agent and Free Web Growth Leader section headings as retained rows.');
 assert.ok(growthOpsJs.includes('const growthFiles = deliveryFiles(context).filter((file) => artifactMatches(file, GROWTH_MARKDOWN_ARTIFACT_TYPES));'), 'Growth Experiment Console must not choose Growth files from body text keywords.');
+assert.ok(growthOpsJs.includes('approval_requests: explicitApprovalRequestsFromContext()'), 'Growth Experiment Console should pass through explicit approval requests only.');
+assert.ok(!growthOpsJs.includes("approval_requests: growthRecord.activationRows.some"), 'Growth Experiment Console must not synthesize approval requests from activation row text.');
 assert.ok(!growthOpsJs.includes('/growth|experiment|施策/i.test(content)'), 'Growth Experiment Console must not infer growth handoff intent from delivery body text.');
 assert.ok(!growthOpsJs.includes("source_app: 'analytics_console'"), 'Growth Experiment Console JS should not contain Analytics app logic.');
 assert.ok(!growthOpsJs.includes("source_app: 'publisher_approval_studio'"), 'Growth Experiment Console JS should not contain Publisher app logic.');
@@ -960,6 +972,7 @@ assert.ok(!growthOpsJs.includes("source_app: 'pricing_decision_console'"), 'Grow
 assert.ok(!growthOpsJs.includes("source_app: 'delivery_manager'"), 'Growth Experiment Console JS should not contain Delivery Manager app logic.');
 assert.ok(pricingOpsJs.includes("source_app: 'pricing_decision_console'"), 'Pricing Decision Console app logic should stay in pricing-ops.js.');
 assert.ok(pricingOpsJs.includes("fetchCaitAppContextFromUrl"), 'Pricing Decision Console should receive CAIt app contexts.');
+assert.ok(pricingOpsHtml.includes('/pricing-ops.js?v=20260526b'), 'Pricing Decision Console should bump the script cache key for explicit approval-request passthrough changes.');
 assert.ok(pricingOpsJs.includes("type: 'pricing_decision_packet'"), 'Pricing Decision Console should return pricing_decision_packet artifacts.');
 assert.ok(pricingOpsJs.includes("type: 'scenario_table'"), 'Pricing Decision Console should return scenario_table artifacts.');
 assert.ok(pricingOpsJs.includes("type: 'sensitivity_table'"), 'Pricing Decision Console should return sensitivity_table artifacts.');
@@ -976,6 +989,8 @@ assert.ok(caitAppBridge.includes('priceChangePacket') && caitAppBridge.includes(
 assert.ok(appHandoffTransferJs.includes('APP_HANDOFF_PRICING_CONTRACT_FIELDS'), 'Generic app handoff transfer should preserve Pricing/CFO contract fields.');
 assert.ok(appManifestRegistryJs.includes("'pricing_decision_packet'") && appManifestRegistryJs.includes("'rollback_or_continue_rule'"), 'Pricing Decision app manifest should declare retained pricing handoff contracts.');
 assert.ok(pricingOpsJs.includes('const PRICING_MARKDOWN_ARTIFACT_TYPES = Object.freeze(['), 'Pricing Decision Console should gate Markdown parsing on explicit Pricing/CFO artifact contracts.');
+assert.ok(pricingOpsJs.includes('approval_requests: explicitApprovalRequestsFromContext()'), 'Pricing Decision Console should pass through explicit approval requests only.');
+assert.ok(!pricingOpsJs.includes("approval_requests: pricingRecord.riskRows.some"), 'Pricing Decision Console must not synthesize approval requests from risk row text.');
 assert.ok(!pricingOpsJs.includes('/pricing|価格|price/i.test(content)'), 'Pricing Decision Console must not infer pricing handoff intent from delivery body text.');
 assert.ok(!pricingOpsJs.includes("source_app: 'analytics_console'"), 'Pricing Decision Console JS should not contain Analytics app logic.');
 assert.ok(!pricingOpsJs.includes("source_app: 'publisher_approval_studio'"), 'Pricing Decision Console JS should not contain Publisher app logic.');
@@ -1010,7 +1025,7 @@ assert.ok(chatHtml.includes('id="openAppListBtn"'));
 assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
-assert.ok(appsHtml.includes('/apps.js?v=20260526g'), 'Apps page should load the current server-side context history controller.');
+assert.ok(appsHtml.includes('/apps.js?v=20260526h'), 'Apps page should load the current server-side context history controller.');
 assert.ok(worker.includes("'/pricing-ops.html'") && worker.includes("'/pricing-ops.js'"), 'Worker should no-cache Pricing Decision Console assets after deploy.');
 assert.ok(appsHtml.includes('data-app-registry-list'), 'Apps page should expose the live app registry list.');
 assert.ok(appsHtml.includes('/.well-known/mcp.json') && appsHtml.includes('Disabled by default'), 'Apps page should describe MCP as disabled by default.');
@@ -1120,8 +1135,10 @@ assert.ok(publisherJs.includes("key: 'indie_hackers'"), 'Publisher Studio should
 assert.ok(publisherJs.includes("key: 'instagram'"), 'Publisher Studio should keep Instagram as its own publish destination.');
 assert.ok(publisherJs.includes('itemProfileHandle'), 'Publisher Studio should carry account/profile metadata through editable packets.');
 assert.ok(publisherJs.includes('itemMediaAssets'), 'Publisher Studio should carry media asset metadata through editable packets.');
+assert.ok(publisherJs.includes('itemVisualAssetReadiness') && publisherJs.includes('visual_asset_readiness_matrix'), 'Publisher Studio should carry Instagram visual asset readiness through editable packets.');
 assert.ok(publisherJs.includes('Instagram profile is identified'), 'Publisher Studio should run Instagram-specific profile readiness checks.');
 assert.ok(publisherJs.includes('Instagram media assets are attached'), 'Publisher Studio should run Instagram-specific media readiness checks.');
+assert.ok(publisherJs.includes('Instagram asset readiness matrix is retained'), 'Publisher Studio should show Instagram asset-readiness retention before posting.');
 assert.ok(publisherJs.includes('manual_social_copy'), 'Publisher Studio should keep generic social copy out of GitHub PR fallback.');
 assert.ok(publisherJs.includes('Generic publishing packet'), 'Publisher Studio should not default ambiguous packets to GitHub PR.');
 assert.ok(publisherJs.includes('wordpress_application_password'), 'Publisher Studio should expose WordPress as an external-app style publish connector.');
@@ -1193,7 +1210,7 @@ assert.ok(chatJs.includes("from './chat-engine.js?v=20260525a'"), 'Chat JS shoul
 assert.ok(!appHandoffTransferJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'App handoff transfer must not parse delivery body text for legacy social-post extraction.');
 assert.ok(!appHandoffTransferJs.includes('extractSocialPostTextFromDeliveryContent'), 'Dedicated app handoff text should come from explicit artifact metadata only.');
 assert.ok(!chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should not import delivery action parsing helpers directly.');
-assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260526f'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
+assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260526i'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
 assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
 assert.ok(chatJs.includes('await consumeCaitAppContextForChat()'), 'Chat should await server-side app context retrieval before filling the composer.');
 assert.ok(chatJs.includes('refreshAppContexts'), 'Chat Apps panel should load reusable app contexts from the server.');
@@ -1508,6 +1525,7 @@ const growthNormalizedContext = normalizeCaitAppContext({
   noPaidGrowthPlanPacket: 'Line one\nLine two',
   organicSpecialistHandoffPacket: [{ label: 'Organic specialist handoff', detail: 'SEO specialist owns no-paid launch proof' }],
   growthActivationHandoffPacket: [{ label: 'Activation owner', detail: 'Growth owner approves launch' }],
+  growthPublisherHandoffPacket: [{ label: 'Agent Publisher activation', detail: 'Agent output is ready to hand to Publisher after Growth approval' }],
   measurementSurface: [{ label: 'Measurement surface', detail: 'Analytics Console retained context report' }],
   nextDecision: [{ label: 'Next decision', detail: 'Continue after proof review' }]
 });
@@ -1524,6 +1542,10 @@ assert.ok(
   'Server app context normalization should preserve explicit growth activation handoff packets.'
 );
 assert.ok(
+  JSON.stringify(growthNormalizedContext.raw_context?.growth_publisher_handoff_packet || []).includes('ready to hand to Publisher'),
+  'Server app context normalization should preserve agent Growth-to-Publisher handoff packets.'
+);
+assert.ok(
   JSON.stringify(growthNormalizedContext.raw_context?.measurement_surface || []).includes('Analytics Console retained context report')
     && JSON.stringify(growthNormalizedContext.raw_context?.next_decision || []).includes('Continue after proof review'),
   'Server app context normalization should preserve growth measurement surface and next decision aliases.'
@@ -1534,6 +1556,7 @@ const growthTransferContext = appContextFromTransferPayload('growth-experiment-c
   noPaidGrowthPlanPacket: { hypothesis: 'Retained app context raises activation trust without paid ads', status: 'review_required' },
   organicSpecialistHandoffPacket: { owner: 'SEO specialist', action: 'publish organic landing page test after approval' },
   growthActivationHandoffPacket: { owner: 'growth owner', action: 'publish landing page test after approval' },
+  growthPublisherHandoffPacket: { owner: 'growth owner', action: 'send retained activation packet to Publisher after approval' },
   killRule: [{ label: 'Kill rule', detail: 'Stop if qualified signup rate stays below threshold' }],
   measurementSurface: [{ label: 'Measurement surface', detail: 'Analytics Console retained context report' }],
   proofSource: [{ label: 'Proof source', detail: 'Attach app_context_id screenshot before claiming launch' }],
@@ -1543,7 +1566,7 @@ const growthTransferContext = appContextFromTransferPayload('growth-experiment-c
     id: 'growth-experiment-console',
     name: 'Growth Experiment Console',
     inputContract: {
-      accepts: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'growth_activation_handoff_packet', 'kill_rule', 'measurement_surface', 'proof_source', 'next_decision']
+      accepts: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'growth_activation_handoff_packet', 'growth_publisher_handoff_packet', 'kill_rule', 'measurement_surface', 'proof_source', 'next_decision']
     }
   })
 });
@@ -1562,6 +1585,10 @@ assert.ok(
 assert.ok(
   JSON.stringify(growthTransferContext.raw_context?.contract_fields?.organic_specialist_handoff_packet || {}).includes('SEO specialist'),
   'Growth app handoff transfer should keep organic specialist handoff aliases under the organic_specialist_handoff_packet key.'
+);
+assert.ok(
+  JSON.stringify(growthTransferContext.raw_context?.contract_fields?.growth_publisher_handoff_packet || {}).includes('Publisher after approval'),
+  'Growth app handoff transfer should keep agent Growth-to-Publisher packets under the growth_publisher_handoff_packet key.'
 );
 assert.ok(
   JSON.stringify(growthTransferContext.artifacts || []).includes('kill rule'),

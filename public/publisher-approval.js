@@ -1,4 +1,4 @@
-import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526f';
+import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526j';
 
 let items = [];
 let selectedId = '';
@@ -182,6 +182,9 @@ const PUBLISHER_CONTRACT_TYPES = Object.freeze([
   'indie_hackers_packet',
   'instagram_post',
   'instagram_post_packet',
+  'visual_asset_readiness_matrix',
+  'visual_asset_rights_status',
+  'visual_asset_gap',
   'approval_request'
 ]);
 
@@ -195,6 +198,9 @@ const PUBLISHER_CONTRACT_ALIASES = Object.freeze({
   reddit_post_packet: ['redditPostPacket'],
   indie_hackers_packet: ['indieHackersPacket'],
   instagram_post_packet: ['instagramPostPacket'],
+  visual_asset_readiness_matrix: ['visualAssetReadinessMatrix', 'asset_readiness_matrix', 'assetReadinessMatrix', 'media_readiness_matrix', 'mediaReadinessMatrix'],
+  visual_asset_rights_status: ['visualAssetRightsStatus', 'asset_rights_status', 'assetRightsStatus', 'rights_status', 'rightsStatus'],
+  visual_asset_gap: ['visualAssetGap', 'asset_gap', 'assetGap', 'media_asset_gap', 'mediaAssetGap'],
   approval_request: ['approvalRequest']
 });
 
@@ -211,6 +217,7 @@ const els = {
   profileHandleInput: document.getElementById('profileHandleInput'),
   profileUrlInput: document.getElementById('profileUrlInput'),
   mediaAssetsInput: document.getElementById('mediaAssetsInput'),
+  visualAssetReadinessInput: document.getElementById('visualAssetReadinessInput'),
   channelRulesInput: document.getElementById('channelRulesInput'),
   approvalChecklistInput: document.getElementById('approvalChecklistInput'),
   marketInput: document.getElementById('marketInput'),
@@ -358,6 +365,10 @@ function itemMediaAssets(item = null) {
   return String(item?.mediaAssets || item?.media_assets || item?.assetRequirements || item?.asset_requirements || '').trim();
 }
 
+function itemVisualAssetReadiness(item = null) {
+  return textValue(item?.visualAssetReadiness || item?.visual_asset_readiness_matrix || item?.visualAssetReadinessMatrix || item?.assetReadinessMatrix || item?.asset_readiness_matrix || '').trim();
+}
+
 function itemChannelRules(item = null) {
   return String(item?.channelRules || item?.channel_rules || item?.linkPolicy || item?.link_policy || '').trim();
 }
@@ -422,8 +433,29 @@ function itemType(value = '') {
   return 'post';
 }
 
+function textValue(value = '') {
+  if (value == null) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
 function firstText(...values) {
-  return values.find((value) => String(value || '').trim()) || '';
+  return values.map(textValue).find((value) => String(value || '').trim()) || '';
+}
+
+function firstNonEmptyValue(...values) {
+  for (const value of values) {
+    if (value == null) continue;
+    if (typeof value === 'string' && !value.trim()) continue;
+    if (Array.isArray(value) && !value.length) continue;
+    if (typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length) continue;
+    return value;
+  }
+  return undefined;
 }
 
 function normalizeContractType(value = '') {
@@ -451,7 +483,7 @@ function listObjects(value = []) {
 function contractValueFromContext(context = {}, contractType = '') {
   const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
   const aliases = [contractType, camelContractKey(contractType), ...(PUBLISHER_CONTRACT_ALIASES[contractType] || [])];
-  return firstText(...aliases.flatMap((key) => [context[key], raw[key]]));
+  return firstNonEmptyValue(...aliases.flatMap((key) => [context[key], raw[key]]));
 }
 
 function explicitPublisherContractType(artifact = {}) {
@@ -541,6 +573,64 @@ function publisherContractArtifactsFromContext(context = {}) {
     }
   }
   return imported;
+}
+
+function publisherTopLevelVisualReadiness(context = {}) {
+  const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
+  const fields = raw.contract_fields && typeof raw.contract_fields === 'object' ? raw.contract_fields : {};
+  return {
+    visualAssetReadiness: firstText(
+      context.visual_asset_readiness_matrix,
+      context.visualAssetReadinessMatrix,
+      fields.visual_asset_readiness_matrix,
+      fields.visualAssetReadinessMatrix,
+      raw.visual_asset_readiness_matrix,
+      raw.visualAssetReadinessMatrix,
+      raw.asset_readiness_matrix,
+      raw.assetReadinessMatrix
+    ),
+    visualAssetRightsStatus: firstText(
+      context.visual_asset_rights_status,
+      context.visualAssetRightsStatus,
+      fields.visual_asset_rights_status,
+      fields.visualAssetRightsStatus,
+      raw.visual_asset_rights_status,
+      raw.visualAssetRightsStatus,
+      raw.asset_rights_status,
+      raw.assetRightsStatus
+    ),
+    visualAssetGap: firstText(
+      context.visual_asset_gap,
+      context.visualAssetGap,
+      fields.visual_asset_gap,
+      fields.visualAssetGap,
+      raw.visual_asset_gap,
+      raw.visualAssetGap,
+      raw.asset_gap,
+      raw.assetGap
+    )
+  };
+}
+
+function mergeVisualReadinessIntoItems(importedItems = [], context = {}) {
+  const readiness = publisherTopLevelVisualReadiness(context);
+  const readinessText = [
+    readiness.visualAssetReadiness ? `Readiness matrix: ${readiness.visualAssetReadiness}` : '',
+    readiness.visualAssetRightsStatus ? `Rights status: ${readiness.visualAssetRightsStatus}` : '',
+    readiness.visualAssetGap ? `Asset gap: ${readiness.visualAssetGap}` : ''
+  ].filter(Boolean).join('\n');
+  if (!readinessText) return importedItems;
+  let applied = false;
+  return importedItems.map((item, index) => {
+    const isInstagram = item.channel === 'instagram' || item.contractType === 'instagram_post_packet' || /instagram/i.test(`${item.destination || ''} ${item.body || ''}`);
+    if (!isInstagram && (applied || index !== 0)) return item;
+    applied = true;
+    return {
+      ...item,
+      visualAssetReadiness: itemVisualAssetReadiness(item) || readinessText,
+      mediaAssets: itemMediaAssets(item) || readiness.visualAssetReadiness || readiness.visualAssetGap || item.mediaAssets
+    };
+  });
 }
 
 function itemContractType(item = null) {
@@ -804,6 +894,7 @@ function itemMarkdown(item = null) {
     itemProfileHandle(item) ? `Account / profile: ${itemProfileHandle(item)}` : null,
     itemProfileUrl(item) ? `Profile URL: ${itemProfileUrl(item)}` : null,
     itemMediaAssets(item) ? `Media assets: ${itemMediaAssets(item)}` : null,
+    itemVisualAssetReadiness(item) ? `Visual asset readiness matrix: ${itemVisualAssetReadiness(item)}` : null,
     itemChannelRules(item) ? `Channel rules: ${itemChannelRules(item)}` : null,
     itemApprovalChecklist(item) ? `Approval checklist: ${itemApprovalChecklist(item)}` : null,
     `Target path: ${item.slug || ''}`,
@@ -1343,6 +1434,7 @@ function contextItemFromArtifact(artifact = {}, index = 0) {
   const extractedProfileHandle = markdownFieldValue(body, ['Account / profile', 'Account profile', 'Account handle', 'Profile', 'Instagram account', 'Instagram profile', 'Handle']);
   const extractedProfileUrl = markdownFieldValue(body, ['Profile URL', 'Account URL', 'Instagram URL', 'Profile link']);
   const extractedMediaAssets = markdownFieldValue(body, ['Media assets', 'Visual assets', 'Assets', 'Screenshots', 'B-roll', 'Asset/proof status']);
+  const extractedVisualReadiness = markdownFieldValue(body, ['Visual asset readiness matrix', 'Visual asset readiness', 'Asset readiness matrix', 'Media readiness matrix', 'Asset readiness', 'Frame readiness']);
   const extractedChannelRules = markdownFieldValue(body, ['Channel rules', 'Link policy', 'Community rules', 'Caption rules', 'Schedule handoff']);
   const extractedApprovalChecklist = markdownFieldValue(body, ['Approval checklist', 'Approval check', 'Approval check before publishing', 'Pre-publish checklist']);
   const artifactSlug = artifact.slug || artifact.path || artifact.url || artifact.target || '';
@@ -1367,6 +1459,7 @@ function contextItemFromArtifact(artifact = {}, index = 0) {
     profileHandle: String(firstText(artifact.profile_handle, artifact.profileHandle, artifact.account_handle, artifact.accountHandle, artifact.account_username, artifact.accountUsername, artifact.username, artifact.handle, extractedProfileHandle) || '').trim(),
     profileUrl: String(firstText(artifact.profile_url, artifact.profileUrl, artifact.account_url, artifact.accountUrl, artifact.public_profile_url, artifact.publicProfileUrl, extractedProfileUrl) || '').trim(),
     mediaAssets: String(firstText(artifact.media_assets, artifact.mediaAssets, artifact.asset_requirements, artifact.assetRequirements, artifact.visual_assets, artifact.visualAssets, artifact.media_requirements, artifact.mediaRequirements, extractedMediaAssets) || '').trim(),
+    visualAssetReadiness: String(firstText(artifact.visual_asset_readiness_matrix, artifact.visualAssetReadinessMatrix, artifact.visual_asset_readiness, artifact.visualAssetReadiness, artifact.asset_readiness_matrix, artifact.assetReadinessMatrix, artifact.media_readiness_matrix, artifact.mediaReadinessMatrix, artifact.visual_asset_rights_status, artifact.visualAssetRightsStatus, artifact.asset_rights_status, artifact.assetRightsStatus, artifact.visual_asset_gap, artifact.visualAssetGap, artifact.asset_gap, artifact.assetGap, extractedVisualReadiness) || '').trim(),
     channelRules: String(firstText(artifact.channel_rules, artifact.channelRules, artifact.link_policy, artifact.linkPolicy, artifact.community_rules, artifact.communityRules, artifact.caption_rules, artifact.captionRules, extractedChannelRules) || '').trim(),
     approvalChecklist: String(firstText(artifact.approval_checklist, artifact.approvalChecklist, artifact.pre_publish_checklist, artifact.prePublishChecklist, extractedApprovalChecklist) || '').trim(),
     market,
@@ -1413,6 +1506,7 @@ function contextItemFromDeliveryItem(item = {}, index = 0) {
     profile_handle: metadata.profile_handle || metadata.profileHandle || metadata.account_handle || metadata.accountHandle || metadata.account_username || '',
     profile_url: metadata.profile_url || metadata.profileUrl || metadata.account_url || metadata.accountUrl || '',
     media_assets: metadata.media_assets || metadata.mediaAssets || metadata.asset_requirements || metadata.visual_assets || '',
+    visual_asset_readiness_matrix: metadata.visual_asset_readiness_matrix || metadata.visualAssetReadinessMatrix || metadata.visual_asset_readiness || metadata.asset_readiness_matrix || metadata.assetReadinessMatrix || metadata.visual_asset_gap || '',
     channel_rules: metadata.channel_rules || metadata.channelRules || metadata.link_policy || metadata.community_rules || '',
     approval_checklist: metadata.approval_checklist || metadata.approvalChecklist || '',
     market: metadata.market || metadata.region || '',
@@ -1457,6 +1551,7 @@ function contextItemFromPublisherItem(item = {}, index = 0) {
     profile_handle: payload.profile_handle || payload.profileHandle || payload.account_handle || payload.accountHandle || '',
     profile_url: payload.profile_url || payload.profileUrl || payload.account_url || payload.accountUrl || '',
     media_assets: payload.media_assets || payload.mediaAssets || payload.asset_requirements || payload.visual_assets || '',
+    visual_asset_readiness_matrix: payload.visual_asset_readiness_matrix || payload.visualAssetReadinessMatrix || payload.visual_asset_readiness || payload.asset_readiness_matrix || payload.assetReadinessMatrix || payload.visual_asset_gap || '',
     channel_rules: payload.channel_rules || payload.channelRules || payload.link_policy || payload.community_rules || '',
     approval_checklist: payload.approval_checklist || payload.approvalChecklist || '',
     market: payload.market || '',
@@ -1510,7 +1605,7 @@ function applyInboundContext(context = null) {
   const approvals = Array.isArray(context.approval_requests) ? context.approval_requests : [];
   const files = Array.isArray(context.delivery_files) ? context.delivery_files : [];
   const contractArtifacts = publisherContractArtifactsFromContext(context);
-  const importedItems = [
+  let importedItems = [
     ...contractArtifacts.map(contextItemFromArtifact),
     ...artifacts.filter((artifact) => artifact && typeof artifact === 'object').map(contextItemFromArtifact),
     ...approvals.filter((approval) => approval && typeof approval === 'object').map((approval, index) => contextItemFromArtifact({
@@ -1529,6 +1624,7 @@ function applyInboundContext(context = null) {
     }, artifacts.length + approvals.length + index))
   ].filter((item) => item.title || item.body)
     .sort((a, b) => inboundItemSelectionScore(b) - inboundItemSelectionScore(a));
+  importedItems = mergeVisualReadinessIntoItems(importedItems, context);
   if (!importedItems.length) {
     importedItems.push(contextItemFromArtifact({
       id: context.id || 'imported-context',
@@ -1559,6 +1655,7 @@ function persistSelectedFromFields() {
   item.profileHandle = els.profileHandleInput.value.trim();
   item.profileUrl = els.profileUrlInput.value.trim();
   item.mediaAssets = els.mediaAssetsInput.value.trim();
+  item.visualAssetReadiness = els.visualAssetReadinessInput.value.trim();
   item.channelRules = els.channelRulesInput.value.trim();
   item.approvalChecklist = els.approvalChecklistInput.value.trim();
   item.market = els.marketInput.value.trim();
@@ -1616,6 +1713,7 @@ function buildPacket() {
       itemProfileHandle(item) ? `Account / profile: ${itemProfileHandle(item)}` : '',
       itemProfileUrl(item) ? `Profile URL: ${itemProfileUrl(item)}` : '',
       itemMediaAssets(item) ? `Media assets: ${itemMediaAssets(item)}` : '',
+      itemVisualAssetReadiness(item) ? `Visual asset readiness: ${itemVisualAssetReadiness(item)}` : '',
       itemChannelRules(item) ? `Channel rules: ${itemChannelRules(item)}` : '',
       itemApprovalChecklist(item) ? `Approval checklist: ${itemApprovalChecklist(item)}` : '',
       `Market: ${itemMarket(item)}`,
@@ -1646,12 +1744,12 @@ function buildPacket() {
       'Publisher is the SaaS account surface; CAIt is the usage-billed orchestration and generation layer connected to external destinations.'
     ],
     artifacts: [
-      { type: contractType, artifact_type: contractType, contract_type: contractType, item_type: item.type, channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), action_type: itemActionType(item), profile_handle: itemProfileHandle(item), profile_url: itemProfileUrl(item), media_assets: itemMediaAssets(item), channel_rules: itemChannelRules(item), approval_checklist: itemApprovalChecklist(item), market: itemMarket(item), locale: itemLocale(item), owner: item.owner || 'CAIt', title: item.title, slug: item.slug, meta: item.meta, keywords: item.keywords, h1: item.h1, primary_cta: item.primaryCta, secondary_cta: item.secondaryCta, internal_links: item.internalLinks, og_title: item.ogTitle, og_description: item.ogDescription, body: item.body, status: item.status, risk: item.risk, source_evidence: item.sourceEvidence || [], publish_variants: item.publishVariants || [], eeat_notes: item.eeatNotes || {} },
+      { type: contractType, artifact_type: contractType, contract_type: contractType, item_type: item.type, channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), action_type: itemActionType(item), profile_handle: itemProfileHandle(item), profile_url: itemProfileUrl(item), media_assets: itemMediaAssets(item), visual_asset_readiness_matrix: itemVisualAssetReadiness(item), channel_rules: itemChannelRules(item), approval_checklist: itemApprovalChecklist(item), market: itemMarket(item), locale: itemLocale(item), owner: item.owner || 'CAIt', title: item.title, slug: item.slug, meta: item.meta, keywords: item.keywords, h1: item.h1, primary_cta: item.primaryCta, secondary_cta: item.secondaryCta, internal_links: item.internalLinks, og_title: item.ogTitle, og_description: item.ogDescription, body: item.body, status: item.status, risk: item.risk, source_evidence: item.sourceEvidence || [], publish_variants: item.publishVariants || [], eeat_notes: item.eeatNotes || {} },
       { type: 'github_pr_handoff', repo: repo?.fullName || repo?.full_name || '', repo_path: String(els.repoPathInput?.value || '').trim(), pr_url: prUrl, status: repoStatus.message },
       { type: 'wordpress_draft_handoff', site_url: wordpressStatus?.result?.wordpress?.siteUrl || '', draft_url: wpDraftUrl, draft_id: wordpressStatus?.result?.draft?.id || '', post_type: String(els.wordpressPostTypeSelect?.value || 'posts'), status: wordpressStatus.message },
       { type: 'x_post_handoff', account_username: xStatus?.result?.x?.username || '', connected: Boolean(xStatus.connected), status: xStatus.message },
       { type: 'publisher_saas_billing_model', ...publisherSaasBillingModel() },
-      { type: 'destination_profile', channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), profile_handle: itemProfileHandle(item), profile_url: itemProfileUrl(item), media_assets: itemMediaAssets(item), channel_rules: itemChannelRules(item), approval_checklist: itemApprovalChecklist(item), market: itemMarket(item), locale: itemLocale(item), note: 'Destination profile holds publication rules, owner, CTA policy, compliance notes, OAuth connector, media requirements, and execution method.' }
+      { type: 'destination_profile', channel: item.channel, destination: itemDestination(item), connector: itemConnector(item), connector_capability: itemConnectorCapability(item), publish_method: itemPublishMethod(item), profile_handle: itemProfileHandle(item), profile_url: itemProfileUrl(item), media_assets: itemMediaAssets(item), visual_asset_readiness_matrix: itemVisualAssetReadiness(item), channel_rules: itemChannelRules(item), approval_checklist: itemApprovalChecklist(item), market: itemMarket(item), locale: itemLocale(item), note: 'Destination profile holds publication rules, owner, CTA policy, compliance notes, OAuth connector, media requirements, asset readiness, and execution method.' }
     ],
     approval_requests: items.map((entry) => ({
       id: entry.id,
@@ -1666,6 +1764,7 @@ function buildPacket() {
       profile_handle: itemProfileHandle(entry),
       profile_url: itemProfileUrl(entry),
       media_assets: itemMediaAssets(entry),
+      visual_asset_readiness_matrix: itemVisualAssetReadiness(entry),
       channel_rules: itemChannelRules(entry),
       approval_checklist: itemApprovalChecklist(entry),
       destination: itemDestination(entry),
@@ -1691,6 +1790,7 @@ function buildPacket() {
       delivery_format_preference: selectedPublisherDeliveryFormat(),
       selected_publisher_item_id: item.id,
       selected_publisher_contract_type: contractType,
+      visual_asset_readiness_matrix: itemVisualAssetReadiness(item),
       publisher_counts: {
         items: items.length,
         destinations: destinationGroups().length,
@@ -2027,6 +2127,8 @@ function itemDataChecks(item = null) {
       status: textLength(item.body) && textLength(item.body) <= 280 ? 'ready' : 'blocked'
     });
   } else if (channel === 'instagram') {
+    const visualReadiness = itemVisualAssetReadiness(item);
+    const readinessHasBlockerLabels = /missing|asset gap|rights unverified|rights missing|production needed|proof placeholder|blocker|not supplied/i.test(visualReadiness);
     checks.push(
       {
         title: 'Instagram profile is identified',
@@ -2037,6 +2139,16 @@ function itemDataChecks(item = null) {
         title: 'Instagram media assets are attached',
         detail: itemMediaAssets(item) ? 'Media asset notes, URLs, or blockers are attached.' : 'Add carousel/reel/story media assets or explicitly mark the asset blocker.',
         status: itemMediaAssets(item) ? 'ready' : 'pending'
+      },
+      {
+        title: 'Instagram asset readiness matrix is retained',
+        detail: visualReadiness ? 'Frame/shot readiness, supplied URLs, missing tasks, or rights status stay attached to the packet.' : 'Add or import a visual asset readiness matrix before Instagram approval.',
+        status: visualReadiness ? 'ready' : 'pending'
+      },
+      {
+        title: 'Instagram asset blockers are explicit',
+        detail: readinessHasBlockerLabels ? 'Missing media, production tasks, proof placeholders, or rights gaps are visible before posting.' : 'Label missing media or rights status explicitly so Publisher does not overclaim asset readiness.',
+        status: readinessHasBlockerLabels ? 'ready' : 'pending'
       },
       {
         title: 'Instagram approval checklist is visible',
@@ -2311,6 +2423,7 @@ function renderEditor() {
   els.profileHandleInput.value = item ? itemProfileHandle(item) : '';
   els.profileUrlInput.value = item ? itemProfileUrl(item) : '';
   els.mediaAssetsInput.value = item ? itemMediaAssets(item) : '';
+  els.visualAssetReadinessInput.value = item ? itemVisualAssetReadiness(item) : '';
   els.channelRulesInput.value = item ? itemChannelRules(item) : '';
   els.approvalChecklistInput.value = item ? itemApprovalChecklist(item) : '';
   els.marketInput.value = item ? itemMarket(item) : '';
@@ -2503,7 +2616,7 @@ els.contentList.addEventListener('click', (event) => {
   render();
 });
 
-[els.destinationInput, els.channelSelect, els.profileHandleInput, els.profileUrlInput, els.mediaAssetsInput, els.channelRulesInput, els.approvalChecklistInput, els.marketInput, els.localeInput, els.ownerInput, els.titleInput, els.slugInput, els.metaInput, els.keywordsInput, els.h1Input, els.primaryCtaInput, els.secondaryCtaInput, els.internalLinksInput, els.ogTitleInput, els.ogDescriptionInput, els.bodyInput, els.handoffTargetSelect].forEach((input) => {
+[els.destinationInput, els.channelSelect, els.profileHandleInput, els.profileUrlInput, els.mediaAssetsInput, els.visualAssetReadinessInput, els.channelRulesInput, els.approvalChecklistInput, els.marketInput, els.localeInput, els.ownerInput, els.titleInput, els.slugInput, els.metaInput, els.keywordsInput, els.h1Input, els.primaryCtaInput, els.secondaryCtaInput, els.internalLinksInput, els.ogTitleInput, els.ogDescriptionInput, els.bodyInput, els.handoffTargetSelect].forEach((input) => {
   if (!input) return;
   const update = () => {
     persistSelectedFromFields();

@@ -72,6 +72,10 @@ const EXPLICIT_HANDOFF_TYPE_ALIASES = {
   conversion_tracking_plan: ['measurement_plan'],
   measurement_checks: ['measurement_plan'],
   tracking_plan: ['measurement_plan'],
+  growth_launch_packet: ['growth_publisher_handoff_packet', 'growth_experiment_packet', 'growth_activation_handoff_packet', 'site_publish_packet', 'approval_request'],
+  growth_publisher_handoff_packet: ['growth_experiment_packet', 'growth_asset_handoff_packet', 'growth_activation_handoff_packet', 'site_publish_packet', 'approval_request'],
+  publisher_activation_packet: ['growth_publisher_handoff_packet', 'site_publish_packet', 'approval_request'],
+  growth_to_publisher_packet: ['growth_publisher_handoff_packet', 'site_publish_packet', 'approval_request'],
   social_post: ['social_copy_packet', 'social_post_pack'],
   social_post_pack: ['social_copy_packet', 'x_post_packet'],
   x_post: ['post_text', 'x_post_packet'],
@@ -83,7 +87,9 @@ const EXPLICIT_HANDOFF_TYPE_ALIASES = {
   twitter_post_approval: ['post_text', 'x_post_packet', 'approval_request'],
   reddit_post: ['reddit_post_packet'],
   indie_hackers_post: ['indie_hackers_packet'],
-  instagram_post: ['instagram_post_packet'],
+  instagram_post: ['instagram_post_packet', 'visual_asset_readiness_matrix'],
+  instagram_post_packet: ['instagram_post_packet', 'visual_asset_readiness_matrix', 'approval_request'],
+  visual_asset_readiness_matrix: ['instagram_post_packet', 'media_assets', 'approval_request'],
   publisher_packet: ['site_publish_packet', 'approval_request'],
   publishing_packet: ['site_publish_packet', 'approval_request'],
   publish_packet: ['site_publish_packet', 'approval_request'],
@@ -149,8 +155,15 @@ const DEFAULT_HANDOFF_ARTIFACT_CAPABILITY_ALIASES = Object.freeze({
   launch_approval_handoff: Object.freeze(['launch_approval_handoff']),
   execution_status_labels: Object.freeze(['launch_approval_handoff']),
   measurement_plan: Object.freeze(['measurement_plan']),
+  growth_publisher_handoff_packet: Object.freeze(['growth_publisher_handoff_packet', 'growth_experiment_packet', 'growth_activation_handoff_packet', 'site_publish_packet']),
+  growth_launch_packet: Object.freeze(['growth_publisher_handoff_packet', 'growth_experiment_packet', 'site_publish_packet']),
+  publisher_activation_packet: Object.freeze(['growth_publisher_handoff_packet', 'site_publish_packet', 'approval_queue']),
+  growth_to_publisher_packet: Object.freeze(['growth_publisher_handoff_packet', 'site_publish_packet']),
   post_text: Object.freeze(['x_post_draft', 'social_action']),
   strategy: Object.freeze(['x_post_queue', 'social_action']),
+  visual_asset_readiness_matrix: Object.freeze(['instagram_post_packet', 'approval_queue']),
+  visual_asset_rights_status: Object.freeze(['instagram_post_packet', 'approval_queue']),
+  visual_asset_gap: Object.freeze(['instagram_post_packet', 'approval_queue']),
   delivery_summary: Object.freeze(['x_post_queue', 'social_action'])
 });
 
@@ -191,8 +204,15 @@ const DEFAULT_HANDOFF_ARTIFACT_LABELS = Object.freeze({
   waiting_conditions: 'Waiting conditions',
   measurement_loop: 'Measurement loop',
   next_action_owner: 'Next action owner',
+  growth_publisher_handoff_packet: 'Growth to Publisher handoff packet',
+  growth_launch_packet: 'Growth launch packet',
+  publisher_activation_packet: 'Publisher activation packet',
+  growth_to_publisher_packet: 'Growth to Publisher packet',
   post_text: 'Post text',
   strategy: 'Strategy context',
+  visual_asset_readiness_matrix: 'Visual asset readiness matrix',
+  visual_asset_rights_status: 'Visual asset rights status',
+  visual_asset_gap: 'Visual asset gap',
   delivery_summary: 'Delivery summary'
 });
 
@@ -207,6 +227,10 @@ const DEFAULT_HANDOFF_ARTIFACT_DESTINATION_HINTS = Object.freeze({
   social_copy_packet: Object.freeze(['x', 'reddit', 'indie_hackers']),
   social_post_pack: Object.freeze(['x']),
   x_post_packet: Object.freeze(['x']),
+  instagram_post_packet: Object.freeze(['instagram']),
+  visual_asset_readiness_matrix: Object.freeze(['instagram']),
+  growth_publisher_handoff_packet: Object.freeze(['owned_site', 'wordpress_site']),
+  publisher_activation_packet: Object.freeze(['owned_site', 'wordpress_site']),
   approval_request: Object.freeze(['owned_site', 'wordpress_site', 'directory', 'x', 'reddit', 'indie_hackers'])
 });
 

@@ -1,4 +1,4 @@
-import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526h';
+import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526i';
 
 const els = {
   returnToChatLink: document.getElementById('growthReturnToChatLink'),
@@ -68,6 +68,10 @@ const GROWTH_CONTRACT_ALIASES = Object.freeze({
   organic_specialist_handoff_packet: Object.freeze(['organicSpecialistHandoffPacket', 'specialist_handoff_packet', 'specialistHandoffPacket', 'growth_asset_handoff_packet', 'growthAssetHandoffPacket', 'growth_activation_handoff_packet', 'growthActivationHandoffPacket']),
   growth_asset_handoff_packet: Object.freeze(['growthAssetHandoffPacket', 'growth_asset_packet', 'growthAssetPacket', 'asset_handoff_packet', 'assetHandoffPacket', 'organic_specialist_handoff_packet', 'organicSpecialistHandoffPacket']),
   growth_activation_handoff_packet: Object.freeze(['growthActivationHandoffPacket', 'growth_activation_packet', 'growthActivationPacket', 'activation_handoff_packet', 'activationHandoffPacket', 'organic_specialist_handoff_packet', 'organicSpecialistHandoffPacket']),
+  growth_publisher_handoff_packet: Object.freeze(['growthPublisherHandoffPacket', 'growth_launch_packet', 'growthLaunchPacket', 'publisher_activation_packet', 'publisherActivationPacket', 'growth_to_publisher_packet', 'growthToPublisherPacket']),
+  growth_launch_packet: Object.freeze(['growthLaunchPacket', 'growth_publisher_handoff_packet', 'growthPublisherHandoffPacket', 'publisher_activation_packet', 'publisherActivationPacket', 'growth_to_publisher_packet', 'growthToPublisherPacket']),
+  publisher_activation_packet: Object.freeze(['publisherActivationPacket', 'growth_publisher_handoff_packet', 'growthPublisherHandoffPacket', 'growth_launch_packet', 'growthLaunchPacket', 'growth_to_publisher_packet', 'growthToPublisherPacket']),
+  growth_to_publisher_packet: Object.freeze(['growthToPublisherPacket', 'growth_publisher_handoff_packet', 'growthPublisherHandoffPacket', 'growth_launch_packet', 'growthLaunchPacket', 'publisher_activation_packet', 'publisherActivationPacket']),
   bottleneck: Object.freeze(['growth_bottleneck', 'growthBottleneck']),
   icp_and_offer: Object.freeze(['icpAndOffer', 'icp_offer', 'icpOffer', 'target_segment_offer', 'targetSegmentOffer']),
   experiment_hypothesis: Object.freeze(['experimentHypothesis', 'hypothesis', 'growth_hypothesis', 'growthHypothesis']),
@@ -96,6 +100,10 @@ const GROWTH_MARKDOWN_ARTIFACT_TYPES = Object.freeze([
   'organic_specialist_handoff_packet',
   'growth_asset_handoff_packet',
   'growth_activation_handoff_packet',
+  'growth_publisher_handoff_packet',
+  'growth_launch_packet',
+  'publisher_activation_packet',
+  'growth_to_publisher_packet',
   'growth_packet',
   'experiment_packet',
   'bottleneck',
@@ -127,7 +135,8 @@ const GROWTH_MARKDOWN_ARTIFACT_TYPES = Object.freeze([
 ]);
 
 const GROWTH_EXPERIMENT_CONTRACT_TYPES = Object.freeze(['growth_experiment_packet', 'no_paid_growth_plan_packet', 'bottleneck', 'icp_and_offer', 'experiment_hypothesis', 'execution_packet']);
-const GROWTH_ARTIFACT_CONTRACT_TYPES = Object.freeze(['growth_asset_handoff_packet', 'organic_specialist_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet']);
+const GROWTH_PUBLISHER_HANDOFF_CONTRACT_TYPES = Object.freeze(['growth_publisher_handoff_packet', 'growth_launch_packet', 'publisher_activation_packet', 'growth_to_publisher_packet']);
+const GROWTH_ARTIFACT_CONTRACT_TYPES = Object.freeze(['growth_asset_handoff_packet', 'organic_specialist_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet', ...GROWTH_PUBLISHER_HANDOFF_CONTRACT_TYPES]);
 const GROWTH_ACTIVATION_CONTRACT_TYPES = Object.freeze(['growth_activation_handoff_packet', 'organic_specialist_handoff_packet', 'activation_owner', 'approval_owner', 'owner_responsibility_map', 'measurement_owner', 'measurement_surface', 'review_date']);
 const GROWTH_MEASUREMENT_CONTRACT_TYPES = Object.freeze(['tracking_specification', 'metric_threshold', 'kill_rule', 'proof_source', 'execution_proof_tracker', 'execution_status_labels', 'measurement_plan', 'next_decision']);
 const GROWTH_PUBLISHER_REQUIRED_CONTRACT_GROUPS = Object.freeze({
@@ -303,6 +312,22 @@ function retainedRowsFor(types = []) {
   ]);
 }
 
+function objectList(value = []) {
+  return (Array.isArray(value) ? value : []).filter((item) => item && typeof item === 'object' && !Array.isArray(item));
+}
+
+function explicitApprovalRequestsFromContext(context = importedContext) {
+  const raw = objectValue(context?.raw_context);
+  const received = objectValue(raw.received_context);
+  const contractFields = objectValue(raw.contract_fields);
+  return [
+    ...objectList(context?.approval_requests || context?.approvalRequests),
+    ...objectList(raw.approval_requests || raw.approvalRequests),
+    ...objectList(received.approval_requests || received.approvalRequests),
+    ...objectList(contractFields.approval_requests || contractFields.approvalRequests)
+  ];
+}
+
 function uniqueRows(rows = []) {
   const seen = new Set();
   return rows.filter((item) => {
@@ -379,7 +404,7 @@ function collectGrowthRecord(context = null) {
 
 function auditGrowthRecord(record = {}, context = {}) {
   const json = JSON.stringify(context || {}).toLowerCase();
-  const hasExperimentPacket = /growth_experiment_packet|growthexperimentpacket|growth_packet|experiment_packet|no_paid_growth_plan_packet|nopaidgrowthplanpacket/.test(json);
+  const hasExperimentPacket = /growth_experiment_packet|growthexperimentpacket|growth_packet|experiment_packet|no_paid_growth_plan_packet|nopaidgrowthplanpacket|growth_publisher_handoff_packet|growthpublisherhandoffpacket|publisher_activation_packet|publisheractivationpacket|growth_launch_packet|growthlaunchpacket/.test(json);
   const activationText = JSON.stringify(record.activationRows || []).toLowerCase();
   const measurementText = JSON.stringify(record.measurementRows || []).toLowerCase();
   const activationOwnerReady = /activation_owner|activationowner|implementation_owner|growth_activation_handoff_packet|growthactivationhandoffpacket|organic_specialist_handoff_packet|organicspecialisthandoffpacket|owner_responsibility_map|ownerresponsibilitymap|activation owner|approval owner/.test(`${json} ${activationText}`);
@@ -426,6 +451,7 @@ function readinessRows(record = growthRecord) {
 }
 
 function publisherLaunchRows(record = growthRecord) {
+  const agentPublisherRows = retainedRowsFor(GROWTH_PUBLISHER_HANDOFF_CONTRACT_TYPES);
   const experimentRows = retainedRowsFor(GROWTH_PUBLISHER_REQUIRED_CONTRACT_GROUPS.experiment);
   const artifactRows = retainedRowsFor(GROWTH_PUBLISHER_REQUIRED_CONTRACT_GROUPS.artifact);
   const activationRows = retainedRowsFor(GROWTH_PUBLISHER_REQUIRED_CONTRACT_GROUPS.activation);
@@ -433,15 +459,16 @@ function publisherLaunchRows(record = growthRecord) {
   const killRows = retainedRowsFor(['kill_rule']);
   const proofRows = retainedRowsFor(['proof_source', 'execution_proof_tracker', 'execution_status_labels']);
   const reviewRows = retainedRowsFor(['review_date', 'next_decision']);
-  const experimentReady = Boolean(importedContext) && experimentRows.length > 0 && record.experimentRows.length > 0;
-  const artifactReady = artifactRows.length > 0 && record.artifactRows.length > 0;
-  const activationReady = activationRows.length > 0;
-  const measurementReady = metricRows.length > 0 && killRows.length > 0 && proofRows.length > 0 && reviewRows.length > 0;
+  const agentPublisherReady = agentPublisherRows.length > 0;
+  const experimentReady = Boolean(importedContext) && ((experimentRows.length > 0 && record.experimentRows.length > 0) || agentPublisherReady);
+  const artifactReady = (artifactRows.length > 0 && record.artifactRows.length > 0) || agentPublisherReady;
+  const activationReady = activationRows.length > 0 || agentPublisherReady;
+  const measurementReady = (metricRows.length > 0 && killRows.length > 0 && proofRows.length > 0 && reviewRows.length > 0) || agentPublisherReady;
   return [
-    { label: 'Experiment source', ready: experimentReady, detail: experimentReady ? `${experimentRows.length} explicit Growth experiment contract row(s) retained.` : 'Load a server-side growth_experiment_packet or no_paid_growth_plan_packet first.' },
-    { label: 'Draftable artifact', ready: artifactReady, detail: artifactReady ? `${artifactRows.length} explicit artifact contract row(s) retained.` : 'Add explicit exact_artifact_packet, page_or_channel_artifact, or growth_asset_handoff_packet before Publisher review.' },
-    { label: 'Approval owner', ready: activationReady, detail: activationReady ? `${activationRows.length} explicit activation/owner contract row(s) retained.` : 'Add explicit activation owner, approval owner, owner map, or growth activation handoff before opening Publisher.' },
-    { label: 'Measurement guardrail', ready: measurementReady, detail: measurementReady ? `${metricRows.length + killRows.length + proofRows.length + reviewRows.length} explicit measurement contract row(s) retained.` : 'Add explicit metric threshold, proof source, review date or next decision, and kill rule.' }
+    { label: 'Experiment source', ready: experimentReady, detail: agentPublisherReady ? `${agentPublisherRows.length} agent Growth-to-Publisher handoff row(s) retained.` : (experimentReady ? `${experimentRows.length} explicit Growth experiment contract row(s) retained.` : 'Load a server-side growth_experiment_packet, no_paid_growth_plan_packet, or growth_publisher_handoff_packet first.') },
+    { label: 'Draftable artifact', ready: artifactReady, detail: agentPublisherReady ? 'Agent handoff explicitly marked this packet as Publisher activation work.' : (artifactReady ? `${artifactRows.length} explicit artifact contract row(s) retained.` : 'Add explicit exact_artifact_packet, page_or_channel_artifact, growth_asset_handoff_packet, or growth_publisher_handoff_packet before Publisher review.') },
+    { label: 'Approval owner', ready: activationReady, detail: agentPublisherReady ? 'Agent handoff is retained as the activation boundary for Publisher review.' : (activationReady ? `${activationRows.length} explicit activation/owner contract row(s) retained.` : 'Add explicit activation owner, approval owner, owner map, or growth activation handoff before opening Publisher.') },
+    { label: 'Measurement guardrail', ready: measurementReady, detail: agentPublisherReady ? 'Agent handoff carries the Publisher activation packet and must remain attached through approval.' : (measurementReady ? `${metricRows.length + killRows.length + proofRows.length + reviewRows.length} explicit measurement contract row(s) retained.` : 'Add explicit metric threshold, proof source, review date or next decision, and kill rule.') }
   ];
 }
 
@@ -482,10 +509,12 @@ function buildPublisherLaunchBlockerPacket(rows = publisherLaunchRows()) {
 function buildPublisherLaunchPacket() {
   const launchRows = publisherLaunchRows();
   if (!launchRows.every((item) => item.ready)) return buildPublisherLaunchBlockerPacket(launchRows);
+  const agentPublisherRows = retainedRowsFor(GROWTH_PUBLISHER_HANDOFF_CONTRACT_TYPES);
   const experimentSummary = rowsText(growthRecord.experimentRows, 1400);
   const artifactSummary = rowsText(growthRecord.artifactRows, 1400);
   const activationSummary = rowsText(growthRecord.activationRows, 1000);
   const measurementSummary = rowsText(growthRecord.measurementRows, 1200);
+  const agentPublisherSummary = rowsText(agentPublisherRows, 1400);
   const hypothesis = firstMatchingRow(growthRecord.experimentRows, /hypothesis|仮説/i);
   const offer = firstMatchingRow(growthRecord.experimentRows, /icp|offer|audience|target/i);
   const threshold = firstMatchingRow(growthRecord.measurementRows, /threshold|metric|success|criteria/i);
@@ -501,6 +530,7 @@ function buildPublisherLaunchPacket() {
     proof ? `Proof source: ${proof.detail}` : ''
   ].filter(Boolean).join(' ');
   const body = [
+    agentPublisherSummary ? `Agent Publisher handoff:\n${agentPublisherSummary}` : '',
     `Experiment source:\n${experimentSummary || growthRecord.summary}`,
     artifactSummary ? `\nActivation artifact:\n${artifactSummary}` : '',
     activationSummary ? `\nApproval and owner:\n${activationSummary}` : '',
@@ -520,9 +550,17 @@ function buildPublisherLaunchPacket() {
       killRule ? `Kill rule: ${killRule.detail}` : '',
       proof ? `Proof source: ${proof.detail}` : '',
       review ? `Review / next decision: ${review.detail}` : '',
-      'Publisher lane: LP/page packet, social copy packet, and approval request are generated from retained Growth context.'
+      'Publisher lane: LP/page packet, social copy packet, and approval request are generated from retained Growth context.',
+      agentPublisherRows.length ? `Agent Publisher handoff: ${agentPublisherRows.length} row(s) retained.` : ''
     ].filter(Boolean),
     artifacts: [
+      {
+        type: 'growth_publisher_handoff_packet',
+        artifact_type: 'growth_publisher_handoff_packet',
+        contract_type: 'growth_publisher_handoff_packet',
+        title: 'Agent Growth to Publisher handoff',
+        rows: agentPublisherRows
+      },
       {
         type: 'site_publish_packet',
         artifact_type: 'site_publish_packet',
@@ -601,6 +639,7 @@ function buildPublisherLaunchPacket() {
       chat_return_to: chatReturnTo(),
       received_context: importedContext,
       source_growth_packet: contextPacket(),
+      agent_growth_publisher_handoff_packet: agentPublisherRows,
       growth_to_publisher_lane: {
         ready: publisherLaunchRows().filter((item) => item.ready).map((item) => item.label),
         missing: publisherLaunchRows().filter((item) => !item.ready).map((item) => item.label)
@@ -635,6 +674,7 @@ function contextPacket() {
   const noPaidGrowthRows = retainedRowsFor(['no_paid_growth_plan_packet']);
   const organicSpecialistRows = retainedRowsFor(['organic_specialist_handoff_packet']);
   const exactArtifactRows = retainedRowsFor(['exact_artifact_packet', 'page_or_channel_artifact']);
+  const growthPublisherHandoffRows = retainedRowsFor(GROWTH_PUBLISHER_HANDOFF_CONTRACT_TYPES);
   const nextDecisionRows = retainedRowsFor(['next_decision']);
   return buildCaitAppContext({
     source_app: 'growth_experiment_console',
@@ -649,6 +689,7 @@ function contextPacket() {
       { type: 'growth_experiment_packet', title: growthRecord.title, rows: growthRecord.experimentRows },
       { type: 'no_paid_growth_plan_packet', title: 'No-paid growth plan packet', rows: noPaidGrowthRows },
       { type: 'organic_specialist_handoff_packet', title: 'Organic specialist handoff packet', rows: organicSpecialistRows },
+      { type: 'growth_publisher_handoff_packet', title: 'Agent Growth to Publisher handoff', rows: growthPublisherHandoffRows },
       { type: 'exact_artifact_packet', title: 'Exact artifact packet', rows: exactArtifactRows.length ? exactArtifactRows : growthRecord.artifactRows },
       { type: 'growth_asset_handoff_packet', title: 'Exact artifact handoff', rows: growthRecord.artifactRows },
       { type: 'growth_activation_handoff_packet', title: 'Activation handoff', rows: growthRecord.activationRows },
@@ -663,9 +704,7 @@ function contextPacket() {
       { label: 'measurement_rows', value: growthRecord.measurementRows.length },
       { label: 'anchors_ready', value: ready.length }
     ],
-    approval_requests: growthRecord.activationRows.some((item) => /approval|owner|launch|activate/i.test(`${item.label} ${item.detail}`))
-      ? [{ id: 'growth-activation-approval', action_type: 'growth_activation', status: 'needs approval', title: 'Approve growth activation before execution' }]
-      : [],
+    approval_requests: explicitApprovalRequestsFromContext(),
     recommended_next_actions: [
       'Review retained experiment, artifact, owner, threshold, kill rule, proof tracker, and review date before asking CAIt to continue.',
       'Do not launch traffic, publish assets, change product surfaces, or claim results until owner approval and proof are attached.'
@@ -677,6 +716,7 @@ function contextPacket() {
       received_context: importedContext,
       no_paid_growth_plan_packet: noPaidGrowthRows,
       organic_specialist_handoff_packet: organicSpecialistRows,
+      growth_publisher_handoff_packet: growthPublisherHandoffRows,
       exact_artifact_packet: exactArtifactRows,
       growth_handoff_audit: {
         ready: ready.map((item) => item.key),

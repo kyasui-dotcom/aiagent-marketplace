@@ -152,6 +152,42 @@ try {
   if (!JSON.stringify(nestedPublisherPacket.raw_context?.received_context || {}).includes('publisher_packet')) throw new Error('publisher nested source packet was not preserved in server raw_context');
   if (!JSON.stringify(nestedPublisherPacket.artifacts || []).includes('site_publish_packet')) throw new Error('publisher nested packet was not returned as a site_publish_packet artifact');
 
+  const instagramTransferContext = appContextFromTransferPayload('publisher-approval-studio', {
+    transfer_id: 'transfer-instagram-readiness',
+    title: 'Instagram launch asset readiness',
+    summary: 'Instagram AIAGENT returned visual asset readiness separately from the post packet.',
+    instagramPostPacket: {
+      title: 'Stable operations carousel',
+      destination: 'Instagram',
+      channel_key: 'instagram',
+      profile_handle: '@cait_ops',
+      caption: 'Stable AIAGENT operations need retained approval and asset state before posting.',
+      body: 'Caption: Stable AIAGENT operations need retained approval and asset state before posting.'
+    },
+    visualAssetReadinessMatrix: [
+      { frame: '1', status: 'supplied', url: 'https://cdn.example.com/frame-1.png', rights: 'approved' },
+      { frame: '2', status: 'missing production task', rights: 'rights unverified' }
+    ],
+    visualAssetRightsStatus: 'Frame 1 approved; frame 2 rights unverified.',
+    visualAssetGap: 'Frame 2 product screenshot is missing.'
+  }, {
+    manifestById: () => ({
+      id: 'publisher-approval-studio',
+      name: 'Publisher & Approval Studio',
+      inputContract: { accepts: ['instagram_post_packet', 'visual_asset_readiness_matrix', 'visual_asset_rights_status', 'visual_asset_gap', 'media_assets', 'approval_checklist'] },
+      requiresApprovalFor: ['instagram_post']
+    })
+  });
+  if (!JSON.stringify(instagramTransferContext.raw_context?.contract_fields || {}).includes('rights unverified')) throw new Error('instagram readiness transfer did not canonicalize visual readiness fields');
+  await openAppWithContext(page, `/publisher-approval.html?chat_return_to=${encodeURIComponent('/chat?thread=instagram-readiness')}&chat_handoff_id=instagram-readiness-handoff`, instagramTransferContext);
+  await page.waitForSelector('#contentList');
+  await page.waitForFunction(() => document.querySelector('#channelSelect')?.value === 'instagram');
+  if (!(await page.inputValue('#visualAssetReadinessInput')).includes('rights unverified')) throw new Error('publisher did not restore Instagram visual asset readiness into the editor');
+  if (!(await page.textContent('#dataCheckList')).includes('Instagram asset readiness matrix is retained')) throw new Error('publisher did not show Instagram visual asset readiness check');
+  const instagramPublisherPacket = JSON.parse(await page.textContent('#packetPreview'));
+  if (!JSON.stringify(instagramPublisherPacket.artifacts || []).includes('visual_asset_readiness_matrix')) throw new Error('publisher did not return Instagram visual readiness in artifacts');
+  if (!JSON.stringify(instagramPublisherPacket.raw_context || {}).includes('Frame 2 product screenshot is missing')) throw new Error('publisher did not keep Instagram visual readiness in raw_context');
+
   await page.goto(`${base}/lead-ops.html`);
   await page.waitForSelector('#leadTable');
   if (!(await page.textContent('#leadTable')).includes('No lead rows loaded.')) throw new Error('lead empty state was not rendered');
@@ -1321,7 +1357,7 @@ try {
       requiresApprovalFor: ['growth_activation', 'publish_change'],
       inputContract: {
         schemaVersion: 'cait-app-context/v1',
-        accepts: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet', '7_day_experiment', 'growth_activation_handoff_packet', 'owner_responsibility_map', 'tracking_specification', 'measurement_surface', 'metric_threshold', 'kill_rule', 'stop_rules', 'measurement_owner', 'proof_source', 'review_date', 'execution_proof_tracker', 'next_decision', 'delivery_files']
+        accepts: ['growth_experiment_packet', 'no_paid_growth_plan_packet', 'organic_specialist_handoff_packet', 'exact_artifact_packet', 'page_or_channel_artifact', 'execution_packet', '7_day_experiment', 'growth_activation_handoff_packet', 'growth_publisher_handoff_packet', 'growth_launch_packet', 'publisher_activation_packet', 'growth_to_publisher_packet', 'owner_responsibility_map', 'tracking_specification', 'measurement_surface', 'metric_threshold', 'kill_rule', 'stop_rules', 'measurement_owner', 'proof_source', 'review_date', 'execution_proof_tracker', 'next_decision', 'delivery_files']
       }
     })
   });
@@ -1357,6 +1393,7 @@ try {
   if (!JSON.stringify(growthPacket.raw_context?.received_context || {}).includes('organic_specialist_handoff_packet')) throw new Error('growth source organic specialist contract was not preserved in raw_context');
   if (!JSON.stringify(growthPacket.raw_context?.next_decision || {}).includes('follow-up order')) throw new Error('growth next decision was not returned in raw_context');
   if (!JSON.stringify(growthPacket.raw_context?.received_context || {}).includes('growth-experiment.md')) throw new Error('growth source delivery file was not preserved in raw_context');
+  if (JSON.stringify(growthPacket.approval_requests || []).includes('growth_activation')) throw new Error('Growth Console must not synthesize growth approval requests from activation row text');
   if (!(await page.textContent('#growthPublisherPill')).includes('Publisher packet ready')) throw new Error('growth Publisher lane did not become ready from retained experiment anchors');
   const growthPublisherPacket = JSON.parse(await page.textContent('#growthPublisherPreview'));
   if (!JSON.stringify(growthPublisherPacket.artifacts || []).includes('site_publish_packet')) throw new Error('growth Publisher packet did not include site_publish_packet');
@@ -1371,6 +1408,63 @@ try {
   if (!(await page.textContent('#approvalTable')).includes('Approve Publisher activation')) throw new Error('Publisher approval queue did not include Growth activation approval');
   const growthPublisherRoundtrip = JSON.parse(await page.textContent('#packetPreview'));
   if (!JSON.stringify(growthPublisherRoundtrip.raw_context?.received_context || {}).includes('source_growth_packet')) throw new Error('Publisher packet did not retain source Growth context after roundtrip');
+
+  const agentGrowthPublisherContext = appContextFromTransferPayload('growth-experiment-console', {
+    transfer_id: 'transfer-agent-growth-publisher',
+    title: 'Agent Growth Publisher activation',
+    summary: 'Growth agent returned a Publisher-ready activation packet that should enter the merged SaaS flow without manual copy/paste.',
+    growthPublisherHandoffPacket: [
+      { label: 'Agent Publisher handoff', detail: 'Agent wrote final activation page outline and social copy for Publisher review.', status: 'publisher_ready' },
+      { label: 'Publisher target', detail: 'Owned site page plus social copy packet after Growth approval.', status: 'selected' }
+    ],
+    publisherActivationPacket: [
+      { label: 'Publisher activation', detail: 'Open Publisher with retained Growth guardrails, owner, proof, and stop rule attached.', status: 'approval_required' }
+    ],
+    growthExperimentPacket: [
+      { label: 'Experiment hypothesis', detail: 'Agent handoff users trust CAIt when Publisher receives retained operational state.', status: 'review' }
+    ],
+    growthActivationHandoffPacket: [
+      { label: 'Approval owner', detail: 'Growth owner approves before Publisher publishes.', status: 'needs approval' }
+    ],
+    metricThreshold: [
+      { label: 'Metric threshold', detail: 'Proceed if Publisher-open to approved-launch rate improves by 20%.', status: 'threshold' }
+    ],
+    killRule: [
+      { label: 'Kill rule', detail: 'Stop if no approved Publisher activation exists after the review date.', status: 'required' }
+    ],
+    proofSource: [
+      { label: 'Proof source', detail: 'Retain app_context_id and Publisher approval screenshot.', status: 'required' }
+    ],
+    reviewDate: [
+      { label: 'Review date', detail: '2026-06-03', status: 'scheduled' }
+    ]
+  }, {
+    manifestById: () => ({
+      id: 'growth-experiment-console',
+      name: 'Growth Experiment Console',
+      requiresApprovalFor: ['growth_activation', 'publish_change'],
+      inputContract: {
+        schemaVersion: 'cait-app-context/v1',
+        accepts: ['growth_experiment_packet', 'growth_activation_handoff_packet', 'growth_publisher_handoff_packet', 'publisher_activation_packet', 'metric_threshold', 'kill_rule', 'proof_source', 'review_date']
+      }
+    })
+  });
+  if (!JSON.stringify(agentGrowthPublisherContext.raw_context?.contract_fields?.growth_publisher_handoff_packet || {}).includes('final activation page outline')) throw new Error('agent Growth Publisher handoff was not canonicalized into contract_fields');
+  if (!JSON.stringify(agentGrowthPublisherContext.raw_context?.contract_fields?.publisher_activation_packet || {}).includes('Open Publisher')) throw new Error('agent Publisher activation packet was not canonicalized into contract_fields');
+  await openAppWithContext(page, `/growth-ops.html?chat_return_to=${encodeURIComponent('/chat?thread=agent-growth-publisher')}&chat_handoff_id=agent-growth-publisher`, agentGrowthPublisherContext);
+  await page.waitForSelector('#growthPublisherPreview');
+  await page.waitForFunction(() => document.querySelector('#growthRecordTitle')?.textContent?.includes('Agent Growth Publisher activation'));
+  if (!(await page.textContent('#growthActivationTable')).includes('final activation page outline')) throw new Error('Growth Console did not render the agent Growth-to-Publisher handoff rows');
+  if (!(await page.textContent('#growthPublisherPill')).includes('Publisher packet ready')) throw new Error('agent Growth-to-Publisher handoff did not ready the Publisher lane');
+  const agentGrowthPublisherPacket = JSON.parse(await page.textContent('#growthPublisherPreview'));
+  if (!JSON.stringify(agentGrowthPublisherPacket.artifacts || []).includes('growth_publisher_handoff_packet')) throw new Error('agent Growth Publisher packet did not keep growth_publisher_handoff_packet artifact');
+  if (!JSON.stringify(agentGrowthPublisherPacket.raw_context?.agent_growth_publisher_handoff_packet || {}).includes('final activation page outline')) throw new Error('agent Growth Publisher packet did not retain agent handoff rows in raw_context');
+  if (!JSON.stringify(agentGrowthPublisherPacket.artifacts || []).includes('site_publish_packet')) throw new Error('agent Growth Publisher packet did not create a site_publish_packet');
+  await openAppWithContext(page, `/publisher-approval.html?chat_return_to=${encodeURIComponent('/chat?thread=agent-growth-publisher-review')}&chat_handoff_id=agent-growth-publisher-review`, agentGrowthPublisherPacket);
+  await page.waitForSelector('#contentList');
+  await page.waitForFunction(() => document.querySelector('#bodyInput')?.value?.includes('Agent Publisher handoff'));
+  if ((await page.inputValue('#connectorCapabilityInput')) !== 'site_publish_packet') throw new Error('Publisher did not load agent Growth handoff as site_publish_packet');
+  if (!(await page.inputValue('#bodyInput')).includes('final activation page outline')) throw new Error('Publisher did not retain agent Growth-to-Publisher handoff content in body');
 
   const pricingTransferContext = appContextFromTransferPayload('pricing-decision-console', {
     transfer_id: 'transfer-pricing-decision',
@@ -1484,6 +1578,7 @@ try {
   if (pricingPacket.raw_context?.chat_handoff_id !== 'pricing-handoff') throw new Error('pricing chat handoff id was not preserved in packet');
   if (!JSON.stringify(pricingPacket.artifacts || []).includes('pricing_decision_packet')) throw new Error('pricing packet did not return pricing_decision_packet for app contract reuse');
   if (!JSON.stringify(pricingPacket.artifacts || []).includes('price_change_handoff')) throw new Error('pricing packet did not return price_change_handoff for app contract reuse');
+  if (JSON.stringify(pricingPacket.approval_requests || []).includes('price_change')) throw new Error('Pricing Console must not synthesize price-change approval requests from risk row text');
   if (!JSON.stringify(pricingPacket.raw_context?.received_context || {}).includes('pricing-cfo-decision.md')) throw new Error('pricing source delivery file was not preserved in raw_context');
 
   await openAppWithContext(page, '/lead-ops.html', {
