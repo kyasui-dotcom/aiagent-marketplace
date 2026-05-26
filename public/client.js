@@ -133,6 +133,7 @@ import {
   OPEN_CHAT_SESSION_MAX_MESSAGES,
   OPEN_CHAT_SESSION_MAX_SESSIONS
 } from './client-open-chat-session-utils.js?v=20260522a';
+import { createClientOpenChatHistoryUtils } from './client-open-chat-history-utils.js?v=20260527a';
 import { createOrderDraftUtils } from './client-order-draft-utils.js?v=20260522a';
 import {
   createClientAnalyticsUtils,
@@ -935,7 +936,6 @@ const {
   normalizeOpenChatMode,
   serializeOpenChatMessageForSession,
   makeOpenChatSessionId,
-  openChatSessionOrderIdsFromMessages,
   openChatSessionHasLinkedWork,
   normalizeOpenChatSession,
   hasOpenChatSessionPayloadContent,
@@ -2165,243 +2165,6 @@ function clearOpenChatDispatchDraftState(options = {}) {
   }
 }
 
-function ensureCurrentOpenChatSessionId(options = {}) {
-  if (state.currentOpenChatSessionId) return state.currentOpenChatSessionId;
-  const force = options.force === true;
-  const hasContent = force
-    || currentOpenChatHasMeaningfulContent()
-    || Boolean(String(state.openChatPreparedBrief || '').trim())
-    || Boolean(String(els.jobPrompt?.value || '').trim());
-  if (!hasContent) return '';
-  state.currentOpenChatSessionId = makeOpenChatSessionId();
-  return state.currentOpenChatSessionId;
-}
-
-function writeOpenChatSessions(sessions = []) {
-  let merged = [];
-  for (const session of Array.isArray(sessions) ? sessions : []) {
-    merged = upsertOpenChatSessionCollection(merged, session);
-  }
-  state.openChatRuntimeSessions = merged;
-  return true;
-}
-
-function readOpenChatSessions() {
-  const serverSessions = openChatSessionsFromSnapshot(state.snapshot);
-  const runtimeSessions = Array.isArray(state.openChatRuntimeSessions) ? state.openChatRuntimeSessions : [];
-  let merged = upsertOpenChatSessionCollection(serverSessions);
-  for (const runtimeSession of runtimeSessions) {
-    merged = upsertOpenChatSessionCollection(merged, runtimeSession);
-  }
-  const currentPayload = currentOpenChatSessionPayload(merged, { createId: false });
-  if (currentPayload && hasOpenChatSessionPayloadContent(currentPayload)) {
-    merged = upsertOpenChatSessionCollection(merged, currentPayload);
-  }
-  return merged;
-}
-
-function openChatServerSessionIdFromTranscriptId(id = '') {
-  const safeId = compactChatText(String(id || '').trim().replace(/^server_/, ''), 140);
-  return safeId ? `server_${safeId}` : '';
-}
-
-function openChatTranscriptIdFromServerSessionId(sessionId = '') {
-  const id = compactChatText(String(sessionId || '').trim(), 160);
-  if (!id) return '';
-  return id.startsWith('server_') ? id.slice('server_'.length) : id;
-}
-
-function normalizeOpenChatMemoryDeleteId(id = '') {
-  return compactChatText(String(id || '').trim().replace(/^server_/, ''), 160);
-}
-
-function collectOpenChatMemoryDeleteIds(source = {}) {
-  const ids = new Set();
-  const remember = (value = '') => {
-    const normalized = normalizeOpenChatMemoryDeleteId(value);
-    if (normalized) ids.add(normalized);
-  };
-  const rememberJob = (value = '') => {
-    const normalized = normalizeOpenChatMemoryDeleteId(value);
-    if (!normalized) return;
-    ids.add(normalized);
-    ids.add(normalized.startsWith('job_') ? normalized : `job_${normalized}`);
-  };
-  remember(source?.id);
-  remember(source?.sessionId || source?.session_id);
-  remember(openChatTranscriptIdFromServerSessionId(source?.id || ''));
-  rememberJob(source?.linkedOrderId || source?.linked_order_id || source?.orderId || source?.order_id);
-  const activeJobIds = Array.isArray(source?.activeJobIds || source?.active_job_ids)
-    ? (source.activeJobIds || source.active_job_ids)
-    : [];
-  activeJobIds.forEach((jobId) => rememberJob(jobId));
-  return [...ids];
-}
-
-function readDeletedOpenChatServerSessionIds() {
-  return new Set();
-}
-
-function writeDeletedOpenChatServerSessionIds(ids = []) {
-  return false;
-}
-
-function rememberDeletedOpenChatServerSessionIds(ids = []) {
-  const current = readDeletedOpenChatServerSessionIds();
-  for (const id of Array.isArray(ids) ? ids : [ids]) {
-    const normalized = openChatServerSessionIdFromTranscriptId(id);
-    if (normalized) current.add(normalized);
-  }
-  return writeDeletedOpenChatServerSessionIds(current);
-}
-
-function removeSnapshotChatMemoryItems(transcriptIds = []) {
-  const hidden = new Set((Array.isArray(transcriptIds) ? transcriptIds : [transcriptIds])
-    .map((id) => normalizeOpenChatMemoryDeleteId(id))
-    .filter(Boolean));
-  if (!hidden.size || !Array.isArray(state.snapshot?.chatMemory)) return;
-  state.snapshot.chatMemory = state.snapshot.chatMemory.filter((item) => {
-    const itemIds = collectOpenChatMemoryDeleteIds(item);
-    return !itemIds.some((id) => hidden.has(id));
-  });
-}
-
-function sessionFromServerChatMemory(item = {}) {
-  const transcriptId = compactChatText(item.id || '', 120);
-  const sessionId = compactChatText(item.sessionId || item.session_id || '', 120);
-  const id = sessionId || (transcriptId ? `server_${transcriptId}` : '');
-  const prompt = compactChatText(item.prompt || '', 9000);
-  const answer = compactChatText(item.answer || '', 9000);
-  if (!id || !prompt) return null;
-  const createdAt = Number.isFinite(Date.parse(item.createdAt || '')) ? new Date(item.createdAt).toISOString() : new Date().toISOString();
-  const updatedAt = Number.isFinite(Date.parse(item.updatedAt || '')) ? new Date(item.updatedAt).toISOString() : createdAt;
-  return normalizeOpenChatSession({
-    id,
-    sessionId,
-    serverManaged: true,
-    activeWork: Boolean(item.activeWork),
-    activeJobIds: Array.isArray(item.activeJobIds) ? item.activeJobIds.slice(0, 24) : [],
-    linkedOrderId: compactChatText(item.linkedOrderId || '', 120),
-    title: prompt,
-    createdAt,
-    updatedAt,
-    openChatMode: 'order',
-    openChatLastStatus: 'Loaded from account chat memory.',
-    openChatLastStatusTone: 'info',
-    messages: [
-      { role: 'user', body: prompt, ts: createdAt },
-      ...(answer ? [{ role: 'assistant', body: answer, tone: item.status === 'blocked' ? 'warn' : 'info', ts: createdAt }] : [])
-    ]
-  });
-}
-
-function openChatSessionsFromSnapshot(snapshot = state.snapshot) {
-  const memory = Array.isArray(snapshot?.chatMemory) ? snapshot.chatMemory : [];
-  return memory
-    .map(sessionFromServerChatMemory)
-    .filter(Boolean)
-    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
-    .slice(0, OPEN_CHAT_SESSION_MAX_SESSIONS);
-}
-
-function mergeServerChatMemorySessions(snapshot = {}) {
-  const serverSessions = openChatSessionsFromSnapshot(snapshot);
-  const runtimeSessions = Array.isArray(state.openChatRuntimeSessions) ? state.openChatRuntimeSessions : [];
-  let merged = upsertOpenChatSessionCollection(runtimeSessions);
-  for (const serverSession of serverSessions) {
-    merged = upsertOpenChatSessionCollection(merged, serverSession);
-  }
-  const before = JSON.stringify(runtimeSessions.map((item) => `${item.id}:${item.updatedAt}`));
-  const after = JSON.stringify(merged.map((item) => `${item.id}:${item.updatedAt}`));
-  if (before === after) return false;
-  writeOpenChatSessions(merged);
-  return true;
-}
-
-function currentOpenChatSessionPayload(existingSessions = null, options = {}) {
-  const messages = (Array.isArray(state.orderChatMessages) ? state.orderChatMessages : [])
-    .slice(-OPEN_CHAT_SESSION_MAX_MESSAGES)
-    .map(serializeOpenChatMessageForSession)
-    .filter((message) => String(message.body || '').trim());
-  const createId = options.createId !== false;
-  const currentId = state.currentOpenChatSessionId
-    || (createId ? ensureCurrentOpenChatSessionId({ force: messages.length > 0 }) : '');
-  if (!currentId) return null;
-  const pool = Array.isArray(existingSessions) ? existingSessions : [];
-  const existing = pool.find((session) => session.id === currentId) || {};
-  const now = new Date().toISOString();
-  return normalizeOpenChatSession({
-    ...existing,
-    id: currentId,
-    createdAt: existing.createdAt || now,
-    updatedAt: now,
-    openChatMode: openChatMode(),
-    openChatPreparedBrief: compactChatText(state.openChatPreparedBrief || '', 9000),
-    openChatParallelPlan: Array.isArray(state.openChatParallelPlan) ? state.openChatParallelPlan.slice(0, 8) : [],
-    openChatClarifyOptions: Array.isArray(state.openChatClarifyOptions) ? state.openChatClarifyOptions.slice(0, 8) : [],
-    openChatVagueChoicePrompt: compactChatText(state.openChatVagueChoicePrompt || '', 2000),
-    openChatNaturalChoiceIntent: compactChatText(state.openChatNaturalChoiceIntent || '', 160),
-    openChatIntentShiftPrompt: compactChatText(state.openChatIntentShiftPrompt || '', 2000),
-    openChatIdeaBacklogPrompt: compactChatText(state.openChatIdeaBacklogPrompt || '', 2000),
-    openChatLeaderIntakePrompt: compactChatText(state.openChatLeaderIntakePrompt || '', 2000),
-    openChatLeaderIntakeTask: compactChatText(state.openChatLeaderIntakeTask || '', 120),
-    openChatPendingQuestionPrompt: compactChatText(state.openChatPendingQuestionPrompt || '', 4000),
-    openChatPendingQuestionTask: compactChatText(state.openChatPendingQuestionTask || '', 120),
-    openChatPendingQuestionPattern: compactChatText(state.openChatPendingQuestionPattern || '', 120),
-    openChatLastStatus: compactChatText(state.openChatLastStatus || '', 1000),
-    openChatLastStatusTone: ['ok', 'warn', 'error', 'info'].includes(String(state.openChatLastStatusTone || '')) ? state.openChatLastStatusTone : 'info',
-    openChatDecisionSuppressedBriefKey: compactChatText(state.openChatDecisionSuppressedBriefKey || '', 80),
-    jobPrompt: compactChatText(els.jobPrompt?.value || '', 9000),
-    jobUrls: compactChatText(els.jobUrls?.value || '', 5000),
-    jobType: compactChatText(els.jobType?.value || '', 80),
-    selectedAgentId: compactChatText(state.selectedAgentId || els.jobAgentId?.value || '', 120),
-    messages
-  });
-}
-
-function persistCurrentOpenChatSession() {
-  const session = currentOpenChatSessionPayload(Array.isArray(state.openChatRuntimeSessions) ? state.openChatRuntimeSessions : [], { createId: true });
-  if (!session || !hasOpenChatSessionPayloadContent(session)) return null;
-  state.currentOpenChatSessionId = session.id;
-  const runtimeSessions = Array.isArray(state.openChatRuntimeSessions) ? state.openChatRuntimeSessions : [];
-  writeOpenChatSessions(upsertOpenChatSessionCollection(runtimeSessions, session));
-  renderOpenChatSessionControls();
-  return session;
-}
-
-function markCurrentOpenChatSessionLinkedOrder(orderId = '', options = {}) {
-  const safeOrderId = compactChatText(orderId || '', 120);
-  if (!safeOrderId) return null;
-  ensureCurrentOpenChatSessionId({ force: true });
-  const runtimeSessions = Array.isArray(state.openChatRuntimeSessions) ? state.openChatRuntimeSessions : [];
-  const current = currentOpenChatSessionPayload(runtimeSessions, { createId: true }) || {
-    id: state.currentOpenChatSessionId,
-    messages: []
-  };
-  const active = !isTerminalOrderStatus(options.status || '');
-  const nextActiveJobIds = [...new Set([
-    ...(Array.isArray(current.activeJobIds) ? current.activeJobIds : []),
-    safeOrderId
-  ].map((item) => compactChatText(item, 120)).filter(Boolean))]
-    .filter((item) => active || item !== safeOrderId);
-  const session = normalizeOpenChatSession({
-    ...current,
-    activeWork: active ? true : nextActiveJobIds.length > 0,
-    linkedOrderId: current.linkedOrderId || safeOrderId,
-    activeJobIds: nextActiveJobIds,
-    openChatPreparedBrief: '',
-    openChatParallelPlan: [],
-    openChatClarifyOptions: [],
-    jobPrompt: ''
-  });
-  clearOpenChatDispatchDraftState();
-  writeOpenChatSessions(upsertOpenChatSessionCollection(runtimeSessions, session));
-  renderOpenChatSessionControls();
-  renderOpenChatChoiceBar();
-  syncCreateJobButtonForCurrentPrompt();
-  return session;
-}
-
 function renderOpenChatSessionControls() {
   renderOpenChatSessionControlsElement(els, {
     sessions: dedupeOpenChatSessionsForDisplay(readOpenChatSessions()),
@@ -2440,167 +2203,50 @@ function renderWorkChatEntryCard(auth = state.snapshot?.auth || {}) {
   });
 }
 
-function loadOpenChatSession(sessionId = '') {
-  const session = readOpenChatSessions().find((item) => item.id === sessionId);
-  if (!session) {
-    flash('Chat session not found.', 'warn');
-    renderOpenChatSessionControls();
-    return;
-  }
-  finishOpenChatTyping({ render: false });
-  clearOpenChatOrderProgressTimer();
-  clearOpenChatAcceptanceProgressTimer();
-  clearLiveSnapshotRefreshTimer();
-  state.openChatProgressOrderId = '';
-  state.openChatProgressLastKey = '';
-  state.openChatProgressPollCount = 0;
-  state.openChatPendingDispatchMessageId = '';
-  state.currentOpenChatSessionId = session.id;
-  state.orderChatMessages = session.messages.map(serializeOpenChatMessageForSession);
-  state.openChatMode = normalizeOpenChatMode(session.openChatMode || 'clarify');
-  const sessionHasLinkedWork = openChatSessionHasLinkedWork(session, state.orderChatMessages);
-  state.openChatPreparedBrief = sessionHasLinkedWork ? '' : compactChatText(session.openChatPreparedBrief || '', 9000);
-  state.openChatParallelPlan = sessionHasLinkedWork ? [] : (Array.isArray(session.openChatParallelPlan) ? session.openChatParallelPlan.slice(0, 8) : []);
-  state.openChatClarifyOptions = sessionHasLinkedWork ? [] : (Array.isArray(session.openChatClarifyOptions) ? session.openChatClarifyOptions.slice(0, 8) : []);
-  state.openChatVagueChoicePrompt = sessionHasLinkedWork ? '' : compactChatText(session.openChatVagueChoicePrompt || '', 2000);
-  state.openChatNaturalChoiceIntent = sessionHasLinkedWork ? '' : compactChatText(session.openChatNaturalChoiceIntent || '', 160);
-  state.openChatIntentShiftPrompt = sessionHasLinkedWork ? '' : compactChatText(session.openChatIntentShiftPrompt || '', 2000);
-  state.openChatIdeaBacklogPrompt = sessionHasLinkedWork ? '' : compactChatText(session.openChatIdeaBacklogPrompt || '', 2000);
-  state.openChatLeaderIntakePrompt = sessionHasLinkedWork ? '' : compactChatText(session.openChatLeaderIntakePrompt || '', 2000);
-  state.openChatLeaderIntakeTask = sessionHasLinkedWork ? '' : compactChatText(session.openChatLeaderIntakeTask || '', 120);
-  state.openChatPendingQuestionPrompt = sessionHasLinkedWork ? '' : compactChatText(session.openChatPendingQuestionPrompt || '', 4000);
-  state.openChatPendingQuestionTask = sessionHasLinkedWork ? '' : compactChatText(session.openChatPendingQuestionTask || '', 120);
-  state.openChatPendingQuestionPattern = sessionHasLinkedWork ? '' : compactChatText(session.openChatPendingQuestionPattern || '', 120);
-  state.openChatLastStatus = compactChatText(session.openChatLastStatus || 'Chat session loaded.\n\nContinue from the restored context.', 1000);
-  state.openChatLastStatusTone = ['ok', 'warn', 'error', 'info'].includes(String(session.openChatLastStatusTone || '')) ? session.openChatLastStatusTone : 'info';
-  state.openChatDecisionSuppressedBriefKey = compactChatText(session.openChatDecisionSuppressedBriefKey || '', 80);
-  state.openChatDecisionSuppressed = sessionHasLinkedWork;
-  state.selectedAgentId = compactChatText(session.selectedAgentId || '', 120);
-  if (els.jobAgentId) els.jobAgentId.value = state.selectedAgentId;
-  state.pendingIntake = null;
-  state.intakeConfirmed = false;
-  state.intakeAnswer = '';
-  state.orderComposerDirtySinceSend = false;
-  state.openChatPausedByTabLeave = false;
-  state.openChatHistoryOpen = false;
-  state.openChatEntryDismissed = Boolean(
-    state.snapshot?.auth?.loggedIn
-      || (Array.isArray(state.orderChatMessages) ? state.orderChatMessages.length : 0)
-      || String(session.jobPrompt || '').trim()
-  );
-  if (els.jobPrompt) els.jobPrompt.value = sessionHasLinkedWork ? '' : session.jobPrompt || '';
-  if (els.jobUrls) els.jobUrls.value = session.jobUrls || '';
-  if (els.jobType) els.jobType.value = sessionHasLinkedWork ? '' : session.jobType || '';
-  renderOrderComposer();
-  const statusParts = String(state.openChatLastStatus || '').split(/\n\n+/);
-  updateWorkChatStatusCard(statusParts.shift() || 'Chat session loaded.', statusParts.join('\n\n') || 'Continue from the restored context.', state.openChatLastStatusTone);
-  void backfillTrackedJobsIntoSnapshot(state.snapshot || {});
-  scheduleLiveSnapshotRefresh(state.snapshot || {});
-  flash('Chat session loaded.', 'ok');
-}
-
-function startNewOpenChatSession(options = {}) {
-  finishOpenChatTyping({ render: false });
-  clearOpenChatOrderProgressTimer();
-  clearOpenChatAcceptanceProgressTimer();
-  clearLiveSnapshotRefreshTimer();
-  state.currentOpenChatSessionId = '';
-  state.orderChatMessages = [];
-  state.openChatProgressOrderId = '';
-  state.openChatProgressLastKey = '';
-  state.openChatProgressPollCount = 0;
-  state.openChatPendingDispatchMessageId = '';
-  state.openChatHistoryOpen = false;
-  state.openChatEntryDismissed = Boolean(state.snapshot?.auth?.loggedIn);
-  state.openChatPausedByTabLeave = false;
-  state.openChatMode = 'clarify';
-  state.openChatDecisionSuppressedBriefKey = '';
-  state.openChatDecisionSuppressed = false;
-  clearOrderComposerPrompt();
-  state.openChatLastStatus = '';
-  state.openChatLastStatusTone = 'info';
-  renderOrderComposer();
-  scheduleLiveSnapshotRefresh(state.snapshot || {});
-  if (!options.silent) flash('New chat started.', 'info');
-}
-
-async function deleteOpenChatSession(sessionId = '') {
-  const targetId = compactChatText(sessionId || '', 160);
-  if (!targetId) return;
-  const targetSession = readOpenChatSessions().find((session) => session.id === targetId) || null;
-  const serverMemoryIds = targetSession?.serverManaged
-    ? collectOpenChatMemoryDeleteIds(targetSession)
-    : [];
-  writeOpenChatSessions((Array.isArray(state.openChatRuntimeSessions) ? state.openChatRuntimeSessions : [])
-    .filter((session) => String(session?.id || '').trim() !== targetId));
-  if (state.currentOpenChatSessionId === targetId) startNewOpenChatSession({ silent: true });
-  removeSnapshotChatMemoryItems(serverMemoryIds);
-  renderOpenChatSessionControls();
-  if (!serverMemoryIds.length || !state.snapshot?.auth?.loggedIn) {
-    flash('Saved chat removed from this browser session.', 'info');
-    return;
-  }
-  const results = await Promise.allSettled(serverMemoryIds.map((memoryId) => (
-    api(`/api/settings/chat-memory/${encodeURIComponent(memoryId)}`, { method: 'DELETE' })
-  )));
-  const fulfilled = results
-    .filter((result) => result.status === 'fulfilled')
-    .map((result) => result.value);
-  const latestChatMemory = fulfilled.findLast?.((result) => Array.isArray(result?.chatMemory))
-    || [...fulfilled].reverse().find((result) => Array.isArray(result?.chatMemory));
-  if (Array.isArray(latestChatMemory?.chatMemory) && state.snapshot) state.snapshot.chatMemory = latestChatMemory.chatMemory;
-  const cancelled = fulfilled.reduce((count, result) => count + (Array.isArray(result?.cancelled_job_ids) ? result.cancelled_job_ids.length : 0), 0);
-  if (fulfilled.length) {
-    flash(cancelled ? 'Chat deleted and linked work stopped.' : 'Chat deleted from account history.', 'info');
-  } else {
-    const error = results.find((result) => result.status === 'rejected')?.reason || new Error('Account history update failed.');
-    flash(`Chat hidden locally. Account history update failed: ${error.message}`, 'warn');
-  }
-}
-
-async function clearOpenChatHistory() {
-  const serverTranscriptIds = new Set();
-  const remember = (ids = []) => {
-    for (const id of Array.isArray(ids) ? ids : [ids]) {
-      const normalized = normalizeOpenChatMemoryDeleteId(id);
-      if (normalized) serverTranscriptIds.add(normalized);
-    }
-  };
-  for (const item of Array.isArray(state.snapshot?.chatMemory) ? state.snapshot.chatMemory : []) {
-    remember(collectOpenChatMemoryDeleteIds(item));
-  }
-  for (const session of readOpenChatSessions()) {
-    if (session?.serverManaged) remember(collectOpenChatMemoryDeleteIds(session));
-  }
-  startNewOpenChatSession({ silent: true });
-  writeOpenChatSessions([]);
-  removeSnapshotChatMemoryItems(Array.from(serverTranscriptIds));
-  renderOpenChatSessionControls();
-  const transcriptIds = Array.from(serverTranscriptIds);
-  if (state.snapshot?.auth?.loggedIn && transcriptIds.length) {
-    const results = await Promise.allSettled(transcriptIds.map((transcriptId) => {
-      return transcriptId
-        ? api(`/api/settings/chat-memory/${encodeURIComponent(transcriptId)}`, { method: 'DELETE' })
-        : Promise.resolve();
-    }));
-    const fulfilled = results
-      .filter((result) => result.status === 'fulfilled')
-      .map((result) => result.value);
-    const latestChatMemory = fulfilled.findLast?.((result) => Array.isArray(result?.chatMemory))
-      || [...fulfilled].reverse().find((result) => Array.isArray(result?.chatMemory));
-    if (Array.isArray(latestChatMemory?.chatMemory) && state.snapshot) state.snapshot.chatMemory = latestChatMemory.chatMemory;
-    if (!fulfilled.length) {
-      flash('Chat hidden locally. Account history update failed.', 'warn');
-      return;
-    }
-  }
-  flash(transcriptIds.length ? 'Account chat history deleted.' : 'No saved account chat history to delete.', 'info');
-}
-
-function toggleOpenChatHistory() {
-  state.openChatHistoryOpen = !state.openChatHistoryOpen;
-  renderOpenChatSessionControls();
-}
+const clientOpenChatHistoryUtils = createClientOpenChatHistoryUtils({
+  openChatSessionMaxMessages: OPEN_CHAT_SESSION_MAX_MESSAGES,
+  openChatSessionMaxSessions: OPEN_CHAT_SESSION_MAX_SESSIONS,
+  getState: () => state,
+  getEls: () => els,
+  makeOpenChatSessionId: () => makeOpenChatSessionId(),
+  currentOpenChatHasMeaningfulContent: () => currentOpenChatHasMeaningfulContent(),
+  openChatMode: () => openChatMode(),
+  normalizeOpenChatMode: (value) => normalizeOpenChatMode(value),
+  serializeOpenChatMessageForSession: (message) => serializeOpenChatMessageForSession(message),
+  openChatSessionHasLinkedWork: (session, messages) => openChatSessionHasLinkedWork(session, messages),
+  normalizeOpenChatSession: (session) => normalizeOpenChatSession(session),
+  hasOpenChatSessionPayloadContent: (payload) => hasOpenChatSessionPayloadContent(payload),
+  upsertOpenChatSessionCollection: (sessions, session) => upsertOpenChatSessionCollection(sessions, session),
+  clearOpenChatDispatchDraftState: (options) => clearOpenChatDispatchDraftState(options),
+  finishOpenChatTyping: (options) => finishOpenChatTyping(options),
+  clearOpenChatOrderProgressTimer: () => clearOpenChatOrderProgressTimer(),
+  clearOpenChatAcceptanceProgressTimer: () => clearOpenChatAcceptanceProgressTimer(),
+  clearLiveSnapshotRefreshTimer: () => clearLiveSnapshotRefreshTimer(),
+  renderOrderComposer: () => renderOrderComposer(),
+  renderOpenChatSessionControls: () => renderOpenChatSessionControls(),
+  renderOpenChatChoiceBar: () => renderOpenChatChoiceBar(),
+  syncCreateJobButtonForCurrentPrompt: () => syncCreateJobButtonForCurrentPrompt(),
+  updateWorkChatStatusCard: (title, body, tone) => updateWorkChatStatusCard(title, body, tone),
+  backfillTrackedJobsIntoSnapshot: (snapshot) => backfillTrackedJobsIntoSnapshot(snapshot),
+  scheduleLiveSnapshotRefresh: (snapshot) => scheduleLiveSnapshotRefresh(snapshot),
+  isTerminalOrderStatus: (status) => isTerminalOrderStatus(status),
+  api: (path, init) => api(path, init),
+  flash: (message, tone) => flash(message, tone)
+});
+const {
+  ensureCurrentOpenChatSessionId,
+  writeOpenChatSessions,
+  readOpenChatSessions,
+  mergeServerChatMemorySessions,
+  currentOpenChatSessionPayload,
+  persistCurrentOpenChatSession,
+  markCurrentOpenChatSessionLinkedOrder,
+  loadOpenChatSession,
+  startNewOpenChatSession,
+  deleteOpenChatSession,
+  clearOpenChatHistory,
+  toggleOpenChatHistory
+} = clientOpenChatHistoryUtils;
 
 function scheduledWorkTimeLabel(value = '') {
   if (!Number.isFinite(Date.parse(value))) return 'not scheduled';
