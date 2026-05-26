@@ -45,6 +45,7 @@ const adsOpsSource = read('public/ads-ops.js');
 const growthOpsSource = read('public/growth-ops.js');
 const pricingOpsSource = read('public/pricing-ops.js');
 const clientSource = read('public/client.js');
+const clientOpenChatPreorderIntentSource = read('public/client-open-chat-preorder-intent-utils.js');
 const clientDeliveryFilesSource = read('public/client-delivery-files.js');
 const workActionRegistrySource = read('public/work-action-registry.js');
 const workIntentResolverSource = read('public/work-intent-resolver.js');
@@ -606,13 +607,16 @@ assert.ok(
     && !deliveryActionContractSource.includes('CAIt detected a publishable article draft from this delivery.'),
   'delivery publish UI copy must describe explicit article contracts, not body-text detection'
 );
-const clientPreorderIntentSource = clientSource.slice(clientSource.indexOf('function preorderIntentLlmAnswerFromResult'), clientSource.indexOf('function openChatPreparedOrderActions'));
+const clientPreorderIntentBoundarySource = [
+  clientSource,
+  clientOpenChatPreorderIntentSource
+].join('\n');
 assert.ok(
-  clientPreorderIntentSource.includes('openChatServerLeaderIntakeGuardAnswer') && clientPreorderIntentSource.includes('prepareWorkOrderViaApi'),
+  clientPreorderIntentBoundarySource.includes('openChatServerLeaderIntakeGuardAnswer') && clientPreorderIntentBoundarySource.includes('prepareWorkOrderViaApi'),
   'legacy Open Chat LLM intake must preserve agent-owned leaderBehavior.intakeQuestions through prepare-order'
 );
 assert.ok(
-  !clientPreorderIntentSource.includes('dynamicIntakeQuestions: dynamicQuestions'),
+  !clientPreorderIntentBoundarySource.includes('dynamicIntakeQuestions: dynamicQuestions'),
   'legacy Open Chat must not render generic LLM leader intake questions'
 );
 const deliveryFilePrioritySource = chatSource.slice(
