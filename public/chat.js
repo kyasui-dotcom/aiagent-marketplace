@@ -285,6 +285,8 @@ const els = {
   composer: $('composer'),
   promptInput: $('promptInput'),
   composerModeHint: $('composerModeHint'),
+  composerControlsHint: $('composerControlsHint'),
+  deliveryFormatLabel: $('deliveryFormatLabel'),
   deliveryFormatSelect: $('deliveryFormatSelect'),
   sendMessageBtn: $('sendMessageBtn'),
   resetBtn: $('resetBtn'),
@@ -300,6 +302,7 @@ const els = {
   openInfoBtn: $('openInfoBtn'),
   adminNavLink: $('adminNavLink'),
   activeLeaderStatus: $('activeLeaderStatus'),
+  chatHeaderMenu: $('chatHeaderMenu'),
   utilityModal: $('utilityModal'),
   utilityModalTitle: $('utilityModalTitle'),
   utilityModalBody: $('utilityModalBody'),
@@ -1223,7 +1226,7 @@ function applyAuthState(auth = {}, options = {}) {
   if (els.adminNavLink) els.adminNavLink.hidden = !(auth?.isPlatformAdmin || auth?.admin);
   if (els.authStatus) {
     els.authStatus.innerHTML = loggedIn
-      ? `<span>Signed in as ${escapeHtml(login)}</span><button class="status-logout-btn" type="button" data-chat-logout>Sign out</button>`
+      ? `<span>Signed in as ${escapeHtml(login)}</span>`
       : `<a href="${escapeHtml(loginHref('google'))}">Google sign in</a> or <a href="${escapeHtml(loginHref('github'))}">GitHub sign in</a> to order`;
   }
   renderChatSessionSidebar();
@@ -2369,6 +2372,15 @@ function chatLanguage(sample = '') {
 
 function chatText(en, ja, sample = '') {
   return chatLanguage(sample) === 'ja' ? ja : en;
+}
+
+function chatUiLanguage() {
+  const pageLanguage = String(document.documentElement?.lang || '').toLowerCase();
+  return pageLanguage.startsWith('ja') ? 'ja' : 'en';
+}
+
+function chatUiText(en, ja) {
+  return chatUiLanguage() === 'ja' ? ja : en;
 }
 
 function detectedInputLanguage(sample = '') {
@@ -4525,6 +4537,10 @@ function closeUtilityModal() {
   els.utilityModal.hidden = true;
 }
 
+function closeChatHeaderMenu() {
+  if (els.chatHeaderMenu) els.chatHeaderMenu.open = false;
+}
+
 function jobUtilityRows(jobs = []) {
   const rows = (Array.isArray(jobs) ? jobs : []).filter((job) => job?.id).slice(0, 30).map((job) => {
     const task = taskLabel(job.taskType || job.workflowTask || 'work');
@@ -5639,26 +5655,44 @@ function updateComposerMode() {
   const intake = Boolean(state.pendingIntake);
   const active = Boolean(state.orderId && state.polling);
   const placeholder = intake ? PROMPT_PLACEHOLDERS.intake : (pending ? PROMPT_PLACEHOLDERS.pending : (active ? PROMPT_PLACEHOLDERS.active : PROMPT_PLACEHOLDERS.default));
-  const sample = state.pendingIntake?.originalPrompt || state.draft?.originalPrompt || state.draft?.prompt || state.conversationLanguage || '';
   els.promptInput.rows = intake ? 4 : (pending ? 2 : 3);
-  els.promptInput.placeholder = chatText(placeholder.en, placeholder.ja);
+  els.promptInput.placeholder = chatUiText(placeholder.en, placeholder.ja);
   if (els.composer) els.composer.dataset.mode = intake ? 'intake' : (pending ? 'draft' : (active ? 'active' : 'chat'));
+  if (els.deliveryFormatLabel) els.deliveryFormatLabel.textContent = chatUiText('Output', '出力');
+  if (els.deliveryFormatSelect) {
+    els.deliveryFormatSelect.setAttribute('aria-label', chatUiText('Preferred output format', '希望する出力形式'));
+    Array.from(els.deliveryFormatSelect.options || []).forEach((option) => {
+      option.textContent = chatUiText(option.dataset.labelEn || option.textContent, option.dataset.labelJa || option.textContent);
+    });
+  }
+  if (els.openScheduleComposerBtn) {
+    els.openScheduleComposerBtn.textContent = chatUiText('Schedule', '予約');
+    els.openScheduleComposerBtn.title = chatUiText('Scheduled work', '予約実行');
+    els.openScheduleComposerBtn.setAttribute('aria-label', els.openScheduleComposerBtn.title);
+  }
+  if (els.resetBtn) els.resetBtn.textContent = chatUiText('Reset', 'リセット');
+  if (els.composerControlsHint) {
+    els.composerControlsHint.textContent = chatUiText(
+      'Output sets the result format. Schedule runs it later.',
+      '出力は最終結果の形式です。予約は後で実行します。'
+    );
+  }
   if (els.sendMessageBtn) {
     const label = intake
-      ? chatText('Send answer', '回答を送信', sample)
-      : chatText('Send chat', 'チャット送信', sample);
+      ? chatUiText('Send answer', '回答を送信')
+      : chatUiText('Send chat', 'チャット送信');
     els.sendMessageBtn.textContent = label;
     els.sendMessageBtn.title = intake
-      ? chatText('Send this intake answer to continue. This does not dispatch the order.', 'このヒアリング回答を送って次へ進みます。発注はまだ実行されません。', sample)
-      : chatText('Send this message to chat.', 'このメッセージをチャットへ送信します。', sample);
+      ? chatUiText('Send this intake answer to continue. This does not dispatch the order.', 'このヒアリング回答を送って次へ進みます。発注はまだ実行されません。')
+      : chatUiText('Send this message to chat.', 'このメッセージをチャットへ送信します。');
     els.sendMessageBtn.setAttribute('aria-label', els.sendMessageBtn.title);
   }
   if (els.composerModeHint) {
     els.composerModeHint.textContent = intake
-      ? chatText('Answer the intake item here, then press Send answer. The order still waits for final approval.', 'この入力欄でヒアリングに答えてから「回答を送信」を押してください。発注は最後の承認まで実行されません。', sample)
+      ? chatUiText('Answer the intake item here, then press Send answer. The order still waits for final approval.', 'この入力欄でヒアリングに答えてから「回答を送信」を押してください。発注は最後の承認まで実行されません。')
       : (pending
-        ? chatText('Add changes here, or approve the prepared order when it looks right.', 'ここで追加修正を書くか、内容がよければ発注ドラフトを承認してください。', sample)
-        : chatText('Type a request, then send it to chat.', '依頼内容を入力してチャットへ送信してください。', sample));
+        ? chatUiText('Add changes here, or approve the prepared order when it looks right.', 'ここで追加修正を書くか、内容がよければ発注ドラフトを承認してください。')
+        : chatUiText('Type a request, then send it to chat.', '依頼内容を入力してチャットへ送信してください。'));
   }
 }
 
@@ -8748,6 +8782,7 @@ els.utilityModalBody?.addEventListener('submit', async (event) => {
 });
 
 els.openChatListBtn?.addEventListener('click', () => {
+  closeChatHeaderMenu();
   state.chatSidebarOpen = !state.chatSidebarOpen;
   renderChatSessionSidebar();
   void refreshChatSessionHistory({ force: true });
@@ -8778,6 +8813,7 @@ els.chatSessionList?.addEventListener('click', (event) => {
 });
 
 els.openScheduleBtn?.addEventListener('click', () => {
+  closeChatHeaderMenu();
   void showSchedulePanel();
 });
 
@@ -8786,17 +8822,31 @@ els.openScheduleComposerBtn?.addEventListener('click', () => {
 });
 
 els.openWorkerListBtn?.addEventListener('click', () => {
+  closeChatHeaderMenu();
   void showWorkerListPanel();
 });
 
-els.openAppListBtn?.addEventListener('click', () => { void showAppListPanel(); });
-els.openInfoBtn?.addEventListener('click', showInfoPanel);
+els.openAppListBtn?.addEventListener('click', () => {
+  closeChatHeaderMenu();
+  void showAppListPanel();
+});
+els.openInfoBtn?.addEventListener('click', () => {
+  closeChatHeaderMenu();
+  showInfoPanel();
+});
 els.utilityModalCloseBtn?.addEventListener('click', closeUtilityModal);
 els.utilityModal?.addEventListener('click', (event) => {
   if (event.target?.closest?.('[data-utility-close]')) closeUtilityModal();
 });
+document.addEventListener('click', (event) => {
+  if (!els.chatHeaderMenu?.open) return;
+  if (event.target?.closest?.('#chatHeaderMenu')) return;
+  closeChatHeaderMenu();
+});
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && els.utilityModal && !els.utilityModal.hidden) closeUtilityModal();
+  if (event.key !== 'Escape') return;
+  if (els.utilityModal && !els.utilityModal.hidden) closeUtilityModal();
+  closeChatHeaderMenu();
 });
 
 els.promptInput?.addEventListener('keydown', (event) => {

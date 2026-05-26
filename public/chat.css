@@ -198,6 +198,13 @@ textarea {
   background: rgba(255, 255, 255, 0.94);
 }
 
+.chatux-header-main {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .chatux-brand {
   display: inline-flex;
   align-items: center;
@@ -215,31 +222,28 @@ textarea {
   border-radius: 8px;
 }
 
-.chatux-nav {
-  flex: 1 1 280px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-
+.chatux-menu-item,
 .chatux-nav a {
   min-height: 32px;
-  display: inline-flex;
+  width: 100%;
+  display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0 10px;
   background: #ffffff;
-  color: var(--muted);
+  color: var(--ink);
   text-decoration: none;
   font-size: 12px;
   font-weight: 760;
-  line-height: 1;
+  line-height: 1.2;
+  cursor: pointer;
+  text-align: left;
 }
 
+.chatux-menu-item:hover,
+.chatux-menu-item:focus-visible,
 .chatux-nav a:hover,
 .chatux-nav a:focus-visible {
   border-color: var(--accent);
@@ -248,7 +252,7 @@ textarea {
 }
 
 .chatux-status {
-  max-width: 360px;
+  max-width: min(360px, 28vw);
   color: var(--muted);
   font-size: 13px;
   line-height: 1.35;
@@ -283,7 +287,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -304,6 +308,54 @@ textarea {
 .tool-icon-btn:focus-visible {
   border-color: var(--accent);
   outline: none;
+}
+
+.chatux-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.chatux-menu summary {
+  list-style: none;
+}
+
+.chatux-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.chatux-menu-trigger {
+  min-width: 82px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chatux-menu-panel {
+  position: absolute;
+  z-index: 35;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(320px, calc(100vw - 32px));
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+  box-shadow: 0 18px 44px rgba(27, 31, 29, 0.14);
+}
+
+.chatux-menu-section {
+  display: grid;
+  gap: 6px;
+}
+
+.chatux-menu-label {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 820;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
 
 .leader-status-pill {
@@ -615,6 +667,20 @@ textarea {
   gap: 8px;
 }
 
+.composer-controls {
+  display: grid;
+  gap: 7px;
+  align-content: start;
+}
+
+.composer-controls-hint {
+  max-width: 430px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: right;
+}
+
 .delivery-format-control {
   display: inline-flex;
   align-items: center;
@@ -629,6 +695,10 @@ textarea {
   color: var(--muted);
   font-size: 12px;
   font-weight: 750;
+}
+
+.delivery-format-control span {
+  color: var(--accent);
 }
 
 .delivery-format-control select {
@@ -1623,30 +1693,35 @@ button.agent-map-single:focus-visible {
   }
 
   .chatux-header {
-    align-items: flex-start;
+    align-items: center;
     gap: 10px;
   }
 
-  .chatux-nav {
-    order: 3;
-    width: 100%;
-    flex-basis: 100%;
+  .chatux-header-main {
+    gap: 8px;
+    flex: 1 1 auto;
   }
 
   .chatux-header-tools {
-    width: 100%;
-    justify-content: flex-start;
-    flex-wrap: wrap;
+    flex: 0 0 auto;
   }
 
   .chatux-status {
-    width: 100%;
-    max-width: none;
+    display: none;
+  }
+
+  .chatux-menu-panel {
+    right: -2px;
+    width: min(320px, calc(100vw - 28px));
+  }
+
+  .chatux-menu-trigger {
+    min-width: 76px;
     font-size: 12px;
   }
 
   .leader-status-pill {
-    max-width: 100%;
+    max-width: min(42vw, 210px);
   }
 
   .chatux-thread {
@@ -1664,6 +1739,11 @@ button.agent-map-single:focus-visible {
   .composer-actions {
     flex-wrap: wrap;
     justify-content: space-between;
+  }
+
+  .composer-controls-hint {
+    max-width: none;
+    text-align: left;
   }
 
   .delivery-format-control {
