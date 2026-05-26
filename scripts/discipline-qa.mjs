@@ -46,6 +46,7 @@ const growthOpsSource = read('public/growth-ops.js');
 const pricingOpsSource = read('public/pricing-ops.js');
 const clientSource = read('public/client.js');
 const clientOpenChatPreorderIntentSource = read('public/client-open-chat-preorder-intent-utils.js');
+const clientOpenChatPreLlmGuardSource = read('public/client-open-chat-pre-llm-guard-utils.js');
 const clientDeliveryFilesSource = read('public/client-delivery-files.js');
 const workActionRegistrySource = read('public/work-action-registry.js');
 const workIntentResolverSource = read('public/work-intent-resolver.js');
@@ -835,8 +836,9 @@ assertNotIncludes(inferDeliveryItemTypeSource, [
   'fileName'
 ], 'lib/delivery-items.js inferItemType');
 assert.ok(
-  clientSource.includes('function buildOpenChatPreLlmGuardAnswer'),
-  'client pre-dispatch UI answers must remain visible in the client controller until renamed/scoped deliberately'
+  clientOpenChatPreLlmGuardSource.includes('buildOpenChatPreLlmGuardAnswer: resolveOpenChatPreLlmGuard')
+    && clientSource.includes('createClientOpenChatPreLlmGuardUtils'),
+  'client pre-dispatch UI answers must remain client-owned, even when split into a dedicated client utility module'
 );
 assert.ok(
   clientSource.includes('pattern_server_leader_intake_contract'),

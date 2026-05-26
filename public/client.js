@@ -143,6 +143,7 @@ import {
 import { createClientOpenChatOrderProgressUtils } from './client-open-chat-order-progress-utils.js?v=20260526a';
 import { createClientOpenChatPreorderUtils } from './client-open-chat-preorder-utils.js?v=20260527a';
 import { createClientOpenChatPreorderIntentUtils } from './client-open-chat-preorder-intent-utils.js?v=20260527a';
+import { createClientOpenChatPreLlmGuardUtils } from './client-open-chat-pre-llm-guard-utils.js?v=20260527a';
 import { createOpenChatIntakeUtils } from './open-chat-intake-utils.js?v=20260527a';
 import {
   buildOpenChatIntentClarification,
@@ -942,6 +943,74 @@ const clientOpenChatPreorderIntentUtils = createClientOpenChatPreorderIntentUtil
 const {
   requestOpenChatPreorderIntentResolution
 } = clientOpenChatPreorderIntentUtils;
+
+const clientOpenChatPreLlmGuardUtils = createClientOpenChatPreLlmGuardUtils({
+  getState: () => state,
+  chatAnswerBody: (answer) => chatAnswerBody(answer),
+  chatAnswerKind: (answer) => chatAnswerKind(answer),
+  openChatLooksGreetingPrompt: (prompt) => openChatLooksGreetingPrompt(prompt),
+  openChatLooksLowInfoTestPrompt: (prompt) => openChatLooksLowInfoTestPrompt(prompt),
+  isStructuredOrderBrief: (brief) => isStructuredOrderBrief(brief),
+  structuredOrderBriefParts: (brief) => structuredOrderBriefParts(brief),
+  inferClientTaskSequence: (taskType, prompt) => inferClientTaskSequence(taskType, prompt),
+  currentRoutingTask: () => currentRoutingTask(),
+  openChatLooksStandaloneQuestionText: (prompt) => openChatLooksStandaloneQuestionText(prompt),
+  openChatProductQuestionContext: (prompt) => openChatProductQuestionContext(prompt),
+  openChatPromptInjectionGuard: (prompt) => openChatPromptInjectionGuard(prompt),
+  openChatLooksSensitiveSecret: (prompt) => openChatLooksSensitiveSecret(prompt),
+  openChatLooksUnsafeRequest: (prompt) => openChatLooksUnsafeRequest(prompt),
+  looksJapanese: (value) => looksJapanese(value),
+  openChatNormalizeDispatchTask: (taskType, originalPrompt, answer) => openChatNormalizeDispatchTask(taskType, originalPrompt, answer),
+  openChatLooksOrderIntentOnly: (prompt) => openChatLooksOrderIntentOnly(prompt),
+  lastOpenChatPreparedBrief: () => lastOpenChatPreparedBrief(),
+  mergeClarificationAnswersIntoBrief: (brief, answer) => mergeClarificationAnswersIntoBrief(brief, answer),
+  buildOpenChatDispatchBriefFromPendingAnswer: (original, prompt, taskType, inputCounts) => buildOpenChatDispatchBriefFromPendingAnswer(original, prompt, taskType, inputCounts),
+  openChatReadinessBlock: (taskType, prompt, inputCounts, config) => openChatReadinessBlock(taskType, prompt, inputCounts, config),
+  openChatHumanDispatchPreview: (brief, taskType, prompt, inputCounts) => openChatHumanDispatchPreview(brief, taskType, prompt, inputCounts),
+  cleanOpenChatClarificationAnswer: (answer) => cleanOpenChatClarificationAnswer(answer),
+  openChatReadyToRunBlock: (ja) => openChatReadyToRunBlock(ja),
+  openChatPendingLeaderIntakeContext: () => openChatPendingLeaderIntakeContext(),
+  openChatChoiceReplyToken: (prompt) => openChatChoiceReplyToken(prompt),
+  isOpenChatRunConfirmation: (prompt) => isOpenChatRunConfirmation(prompt),
+  openChatFollowupMode: (prompt) => openChatFollowupMode(prompt),
+  isOpenChatGenericProceed: (prompt) => isOpenChatGenericProceed(prompt),
+  buildOpenChatPromptInjectionAnswer: (prompt) => buildOpenChatPromptInjectionAnswer(prompt),
+  buildOpenChatLongPromptGuardAnswer: (prompt, inputCounts) => buildOpenChatLongPromptGuardAnswer(prompt, inputCounts),
+  buildOpenChatRecoveredLeaderIntakeAnswer: (prompt, inputCounts) => buildOpenChatRecoveredLeaderIntakeAnswer(prompt, inputCounts),
+  buildOpenChatLeaderIntakeFollowupAnswer: (prompt, inputCounts) => buildOpenChatLeaderIntakeFollowupAnswer(prompt, inputCounts),
+  buildOpenChatPatternGuardAnswer: (prompt, inputCounts, config) => buildOpenChatPatternGuardAnswer(prompt, inputCounts, config),
+  buildOpenChatPauseAnswer: (prompt) => buildOpenChatPauseAnswer(prompt),
+  buildOpenChatStatusAnswer: (prompt) => buildOpenChatStatusAnswer(prompt),
+  buildOpenChatLowInfoTestAnswer: (prompt) => buildOpenChatLowInfoTestAnswer(prompt),
+  buildOpenChatGreetingAnswer: (prompt) => buildOpenChatGreetingAnswer(prompt),
+  buildOpenChatIntentShiftFollowup: (prompt, inputCounts) => buildOpenChatIntentShiftFollowup(prompt, inputCounts),
+  buildOpenChatIdeaOperatorFollowup: (prompt, inputCounts) => buildOpenChatIdeaOperatorFollowup(prompt, inputCounts),
+  buildOpenChatNaturalChoiceFollowup: (prompt, inputCounts) => buildOpenChatNaturalChoiceFollowup(prompt, inputCounts),
+  buildOpenChatVagueChoiceFollowup: (prompt, inputCounts) => buildOpenChatVagueChoiceFollowup(prompt, inputCounts),
+  buildOpenChatPendingChoiceReminder: (prompt) => buildOpenChatPendingChoiceReminder(prompt),
+  buildOpenChatLeaderCatalogAnswer: (prompt) => buildOpenChatLeaderCatalogAnswer(prompt),
+  buildOpenChatRunConfirmationAnswer: (prompt) => buildOpenChatRunConfirmationAnswer(prompt),
+  buildOpenChatCommandAnswer: (prompt) => buildOpenChatCommandAnswer(prompt),
+  buildOpenChatFollowupAnswer: (prompt, inputCounts) => buildOpenChatFollowupAnswer(prompt, inputCounts),
+  buildOpenChatLeaderIntakeAnswer: (prompt, inputCounts) => buildOpenChatLeaderIntakeAnswer(prompt, inputCounts),
+  openChatIntentMatchText: (prompt) => openChatIntentMatchText(prompt),
+  openChatLooksGeneralHelpPrompt: (prompt) => openChatLooksGeneralHelpPrompt(prompt),
+  openChatMustUseLlmFallback: (prompt, fallbackAnswer) => openChatMustUseLlmFallback(prompt, fallbackAnswer),
+  shouldDeferOpenChatCommandForAnswer: (prompt) => shouldDeferOpenChatCommandForAnswer(prompt),
+  openChatCommandMode: (prompt) => openChatCommandMode(prompt),
+  openChatLooksHighStakesAdvice: (prompt) => openChatLooksHighStakesAdvice(prompt)
+});
+const {
+  shouldStoreOpenChatPendingQuestion,
+  openChatPendingQuestionTaskType,
+  buildOpenChatPendingQuestionFollowupAnswer,
+  openChatHasActiveLocalFollowupState,
+  buildOpenChatLocalPriorityAnswer,
+  buildOpenChatPreLlmGuardAnswer,
+  openChatShouldPreferOpenAiReasoning,
+  openChatLlmFallbackReason,
+  openChatLooksPreorderIntentLlmCandidate
+} = clientOpenChatPreLlmGuardUtils;
 
 const clientOpenChatIntakeUtils = createOpenChatIntakeUtils({
   getState: () => state,
@@ -4291,180 +4360,6 @@ function explicitOpenChatAssistMode(prompt = '') {
   if (hasOrderPrepContext && /(分解|分けて|分ける|切って|タスク化|マルチエージェント|分担|並列|split|break down|decompose|parallel|multi[- ]agent)/i.test(text)) return 'split';
   if (hasOrderPrepContext && /(英語化|英訳|短く|圧縮|トークン|省トークン|compact|token|execution brief)/i.test(text)) return 'compact';
   return '';
-}
-
-function openChatPendingQuestionContext() {
-  const prompt = String(state.openChatPendingQuestionPrompt || '').trim();
-  if (!prompt) return null;
-  return {
-    prompt,
-    taskType: String(state.openChatPendingQuestionTask || '').trim(),
-    patternId: String(state.openChatPendingQuestionPattern || '').trim()
-  };
-}
-
-function openChatAnswerAsksUserQuestion(answer) {
-  const body = chatAnswerBody(answer);
-  if (!body) return false;
-  return /(確認質問|発注前に確認できること|追加すると良い情報|不足分だけ聞きます|先にこれを教えてください|このまま返信|次の形で送ってください|教えてください|送ってください|短く追記してください|Useful details to confirm|Useful additions|Clarifying questions|Please answer these first|reply with missing constraints|Please send|Please add|Add one sentence|I will not repeat the whole intake)/i.test(body)
-    || /(?:\n|^)\s*(?:1|１)[\).．、:：]\s+.{4,}/.test(body);
-}
-
-function shouldStoreOpenChatPendingQuestion(prompt = '', answer = null) {
-  const kind = chatAnswerKind(answer);
-  if (!['clarify', 'assist'].includes(kind)) return false;
-  if (answer?.clearPendingQuestion || answer?.clearLeaderIntake) return false;
-  if (answer?.leaderIntakePrompt || answer?.leaderIntakeTask) return false;
-  if (answer?.vagueChoicePrompt || answer?.naturalChoiceIntent || answer?.intentShiftPrompt || answer?.ideaBacklogPrompt) return false;
-  if (Array.isArray(answer?.options) && answer.options.length) return false;
-  if (!openChatAnswerAsksUserQuestion(answer)) return false;
-  const source = String(answer?.nextPrompt || prompt || '').trim();
-  if (!source || openChatLooksGreetingPrompt(source) || openChatLooksLowInfoTestPrompt(source)) return false;
-  return true;
-}
-
-function openChatPendingQuestionTaskType(prompt = '', answer = null) {
-  const explicit = String(answer?.pendingQuestionTask || '').trim();
-  if (explicit) return explicit;
-  const source = String(answer?.nextPrompt || prompt || '').trim();
-  const parts = isStructuredOrderBrief(source) ? structuredOrderBriefParts(source) : {};
-  return parts.taskType || inferClientTaskSequence('', source)[0] || currentRoutingTask() || 'research';
-}
-
-function buildOpenChatPendingQuestionFollowupAnswer(prompt = '', inputCounts = {}) {
-  const pending = openChatPendingQuestionContext();
-  const answer = String(prompt || '').trim();
-  if (!pending || !answer || isStructuredOrderBrief(answer)) return null;
-  if (state.openChatLeaderIntakePrompt || state.openChatVagueChoicePrompt || state.openChatNaturalChoiceIntent || state.openChatIntentShiftPrompt || state.openChatIdeaBacklogPrompt) return null;
-  if (/^[0-9０-９]+$/.test(answer) && Array.isArray(state.openChatClarifyOptions) && state.openChatClarifyOptions.length) return null;
-  const questionLikeAnswer = openChatLooksStandaloneQuestionText(answer);
-  const asksStandaloneProductQuestion = openChatProductQuestionContext(answer)
-    && questionLikeAnswer;
-  if (openChatLooksGreetingPrompt(answer) || openChatLooksLowInfoTestPrompt(answer) || asksStandaloneProductQuestion) return null;
-  if (openChatPromptInjectionGuard(answer).blocked || openChatLooksSensitiveSecret(answer) || openChatLooksUnsafeRequest(answer)) return null;
-
-  const ja = looksJapanese(answer) || looksJapanese(pending.prompt);
-  const taskType = pending.taskType || inferClientTaskSequence('', pending.prompt)[0] || currentRoutingTask() || 'research';
-  const dispatchTask = openChatNormalizeDispatchTask(taskType, pending.prompt, answer);
-  if (openChatLooksOrderIntentOnly(answer)) {
-    return {
-      kind: 'clarify',
-      tone: 'info',
-      patternId: 'pattern_pending_order_intent_only',
-      pendingQuestionPrompt: pending.prompt,
-      pendingQuestionTask: dispatchTask,
-      pendingQuestionPattern: pending.patternId || 'pattern_pending_order_intent_only',
-      body: ja
-        ? [
-          '対応するオーダーに繋ぎます。まだ実行も課金もしていません。',
-          '',
-          `接続先: ${dispatchTask || 'matching agent'}`,
-          '',
-          'ただ、今のままだとAgentに渡す中身が薄く、納品の方向がぶれます。',
-          '次のうち分かる範囲だけ1行で足してください。',
-          '',
-          '1. 対象URLまたは商材/サービス内容',
-          '2. 誰に使ってほしいか、誰を集めたいか',
-          '3. 何を増やしたいか。例: 登録、購入、問い合わせ、認知',
-          '4. 制約。例: 広告費なし、英語、日本向け、今週中',
-          '',
-          '具体になったら「この指示をAgentに繋ぎます。修正があれば言ってください」という形で確認します。'
-        ].join('\n')
-        : [
-          'I will connect this to the matching order. Nothing has run or been billed yet.',
-          '',
-          `Route: ${dispatchTask || 'matching agent'}`,
-          '',
-          'Right now the agent handoff is still too thin, so the delivery could drift.',
-          'Add any of these in one line:',
-          '',
-          '1. Target URL or product/service',
-          '2. Audience or customer to attract',
-          '3. Desired outcome: signups, purchases, leads, awareness',
-          '4. Constraints: no paid ads, English, Japan, this week',
-          '',
-          'Once concrete enough, I will confirm: this instruction will be handed to the agent; tell me if anything should change.'
-        ].join('\n'),
-      status: 'Order intent received, but more context is needed.\n\nNo order was created and no billing occurred.'
-    };
-  }
-  const usefulShortAnswer = /(なし|特になし|任せ|おまかせ|日本|英語|日本語|表|箇条|無料|広告費|https?:\/\/|\d|none|n\/a|up to you|japan|english|table|free|organic)/i.test(answer);
-  if (answer.replace(/\s+/g, '').length < 6 && !usefulShortAnswer) {
-    return {
-      kind: 'clarify',
-      tone: 'warn',
-      patternId: 'pattern_pending_question_followup',
-      pendingQuestionPrompt: pending.prompt,
-      pendingQuestionTask: taskType,
-      pendingQuestionPattern: pending.patternId || 'pattern_pending_question_followup',
-      body: ja
-        ? [
-          '受け取りました。まだ反映先が曖昧なので、条件をもう一つだけ足してください。',
-          '',
-          '同じ質問は繰り返しません。',
-          '例: 対象URL、対象ユーザー、欲しい成果、制約、納品形式のどれか1つ。',
-          '',
-          'まだ注文も課金も発生しません。'
-        ].join('\n')
-        : [
-          'I received it, but it is still too thin to merge cleanly into the draft.',
-          '',
-          'I will not repeat the same question block.',
-          'Add one more detail such as the target URL, audience, desired outcome, constraint, or delivery format.',
-          '',
-          'No order or billing happens yet.'
-        ].join('\n'),
-      status: 'Need one more detail before SEND ORDER.'
-    };
-  }
-
-  const previousBrief = isStructuredOrderBrief(pending.prompt)
-    ? pending.prompt
-    : (isStructuredOrderBrief(lastOpenChatPreparedBrief()) ? lastOpenChatPreparedBrief() : '');
-  const nextBrief = previousBrief
-    ? mergeClarificationAnswersIntoBrief(previousBrief, answer)
-    : buildOpenChatDispatchBriefFromPendingAnswer(pending.prompt, answer, taskType, inputCounts);
-  const nextTaskType = structuredOrderBriefParts(nextBrief).taskType || dispatchTask || taskType;
-  const readinessBlock = openChatReadinessBlock(nextTaskType, nextBrief, inputCounts, { ja });
-  const previewBlock = openChatHumanDispatchPreview(nextBrief, nextTaskType, `${pending.prompt}\n${answer}`, inputCounts);
-  return {
-    kind: 'assist',
-    tone: 'ok',
-    patternId: 'pattern_pending_question_followup',
-    nextPrompt: nextBrief,
-    clearPendingQuestion: true,
-    clearClarifyOptions: true,
-    body: ja
-      ? [
-        '前回の質問への回答として反映しました。同じ質問は繰り返しません。',
-        '',
-        previewBlock,
-        '',
-        '反映した回答:',
-        cleanOpenChatClarificationAnswer(answer),
-        '',
-        readinessBlock,
-        '',
-        openChatReadyToRunBlock(true),
-        '',
-        'さらに条件を足す場合はそのまま追記してください。実行する場合だけログインして SEND ORDER してください。'
-      ].join('\n')
-      : [
-        'I merged this as the answer to the previous question. I will not repeat the same question block.',
-        '',
-        previewBlock,
-        '',
-        'Merged answer:',
-        cleanOpenChatClarificationAnswer(answer),
-        '',
-        readinessBlock,
-        '',
-        openChatReadyToRunBlock(false),
-        '',
-        'Add more constraints here if needed, or sign in and press SEND ORDER only when you want paid dispatch.'
-      ].join('\n'),
-    status: 'Question answer merged into draft.\n\nNo order was created and no billing occurred.'
-  };
 }
 
 function buildOpenChatFollowupAnswer(prompt = '', inputCounts = {}) {
@@ -7872,167 +7767,6 @@ function quickOrderChatAnswer(prompt = '', inputCounts = {}) {
   return ja
     ? `${PRODUCT_NAME} についての簡単な質問として受け取りました。ここでは、使い方、料金、ログイン、GitHub連携、支払い、納品、提供者収益について答えられます。実作業を依頼したい場合は、欲しい成果物を具体的に書いて、まず発注ブリーフを作ってください。`
     : `I read this as a quick ${PRODUCT_NAME} question. I can answer usage, pricing, login, GitHub, payment, delivery, and provider payout questions here. To order paid work, describe the deliverable so I can prepare the order brief first.`;
-}
-
-function openChatHasActiveLocalFollowupState(prompt = '') {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  if (!text) return false;
-  if (openChatPendingLeaderIntakeContext() || state.openChatPendingQuestionPrompt || state.openChatIntentShiftPrompt || state.openChatIdeaBacklogPrompt) return true;
-  if (state.openChatVagueChoicePrompt || state.openChatNaturalChoiceIntent) return true;
-  if (/^[0-9A-Da-d]$/.test(openChatChoiceReplyToken(text)) && Array.isArray(state.openChatClarifyOptions) && state.openChatClarifyOptions.length) return true;
-  if (lastOpenChatPreparedBrief() && (isOpenChatRunConfirmation(text) || openChatFollowupMode(text) || isOpenChatGenericProceed(text))) return true;
-  return false;
-}
-
-function buildOpenChatLocalPriorityAnswer(prompt = '', inputCounts = {}) {
-  const text = String(prompt || '').trim();
-  if (!text) return null;
-  const promptInjectionAnswer = buildOpenChatPromptInjectionAnswer(text);
-  if (promptInjectionAnswer) return promptInjectionAnswer;
-  const longPromptAnswer = buildOpenChatLongPromptGuardAnswer(text, inputCounts);
-  if (longPromptAnswer) return longPromptAnswer;
-  if (isStructuredOrderBrief(text)) return null;
-  const compact = text.replace(/\s+/g, ' ').trim();
-  const pauseAnswer = buildOpenChatPauseAnswer(compact);
-  if (pauseAnswer) return pauseAnswer;
-  const statusAnswer = buildOpenChatStatusAnswer(compact);
-  if (statusAnswer) return statusAnswer;
-  const recoveredLeaderIntakeAnswer = buildOpenChatRecoveredLeaderIntakeAnswer(compact, inputCounts);
-  if (recoveredLeaderIntakeAnswer) return recoveredLeaderIntakeAnswer;
-  const leaderIntakeFollowupAnswer = buildOpenChatLeaderIntakeFollowupAnswer(compact, inputCounts);
-  if (leaderIntakeFollowupAnswer) return leaderIntakeFollowupAnswer;
-  const pendingQuestionFollowupAnswer = buildOpenChatPendingQuestionFollowupAnswer(compact, inputCounts);
-  if (pendingQuestionFollowupAnswer) return pendingQuestionFollowupAnswer;
-  const precommandPatternAnswer = buildOpenChatPatternGuardAnswer(compact, inputCounts, { phase: 'precommand' });
-  if (precommandPatternAnswer) return precommandPatternAnswer;
-  const lowInfoTestAnswer = buildOpenChatLowInfoTestAnswer(compact);
-  if (lowInfoTestAnswer) return lowInfoTestAnswer;
-  const greetingAnswer = buildOpenChatGreetingAnswer(compact);
-  if (greetingAnswer) return greetingAnswer;
-  const intentShiftFollowup = buildOpenChatIntentShiftFollowup(compact, inputCounts);
-  if (intentShiftFollowup) return intentShiftFollowup;
-  const ideaOperatorFollowup = buildOpenChatIdeaOperatorFollowup(compact, inputCounts);
-  if (ideaOperatorFollowup) return ideaOperatorFollowup;
-  const naturalChoiceFollowup = buildOpenChatNaturalChoiceFollowup(compact, inputCounts);
-  if (naturalChoiceFollowup) return naturalChoiceFollowup;
-  const vagueChoiceFollowup = buildOpenChatVagueChoiceFollowup(compact, inputCounts);
-  if (vagueChoiceFollowup) return vagueChoiceFollowup;
-  const pendingChoiceReminder = buildOpenChatPendingChoiceReminder(compact);
-  if (pendingChoiceReminder) return pendingChoiceReminder;
-  const leaderCatalogAnswer = buildOpenChatLeaderCatalogAnswer(compact);
-  if (leaderCatalogAnswer) return leaderCatalogAnswer;
-  const runConfirmationAnswer = buildOpenChatRunConfirmationAnswer(compact);
-  if (runConfirmationAnswer) return runConfirmationAnswer;
-  const commandAnswer = buildOpenChatCommandAnswer(compact);
-  if (commandAnswer) return commandAnswer;
-  const followupAnswer = buildOpenChatFollowupAnswer(compact, inputCounts);
-  if (followupAnswer) return followupAnswer;
-  return null;
-}
-
-function buildOpenChatPreLlmGuardAnswer(prompt = '', inputCounts = {}) {
-  const text = String(prompt || '').trim();
-  if (!text || isStructuredOrderBrief(text)) return null;
-  const promptInjectionAnswer = buildOpenChatPromptInjectionAnswer(text);
-  if (promptInjectionAnswer) return promptInjectionAnswer;
-  const longPromptAnswer = buildOpenChatLongPromptGuardAnswer(text, inputCounts);
-  if (longPromptAnswer) return longPromptAnswer;
-  const compact = text.replace(/\s+/g, ' ').trim();
-  const pauseAnswer = buildOpenChatPauseAnswer(compact);
-  if (pauseAnswer) return pauseAnswer;
-  const statusAnswer = buildOpenChatStatusAnswer(compact);
-  if (statusAnswer) return statusAnswer;
-  const recoveredLeaderIntakeAnswer = buildOpenChatRecoveredLeaderIntakeAnswer(compact, inputCounts);
-  if (recoveredLeaderIntakeAnswer) return recoveredLeaderIntakeAnswer;
-  const leaderIntakeFollowupAnswer = buildOpenChatLeaderIntakeFollowupAnswer(compact, inputCounts);
-  if (leaderIntakeFollowupAnswer) return leaderIntakeFollowupAnswer;
-  const pendingQuestionFollowupAnswer = buildOpenChatPendingQuestionFollowupAnswer(compact, inputCounts);
-  if (pendingQuestionFollowupAnswer) return pendingQuestionFollowupAnswer;
-  const precommandPatternAnswer = buildOpenChatPatternGuardAnswer(compact, inputCounts, { phase: 'precommand' });
-  if (precommandPatternAnswer) return precommandPatternAnswer;
-  const localPriorityAnswer = buildOpenChatLocalPriorityAnswer(compact, inputCounts);
-  if (localPriorityAnswer) return localPriorityAnswer;
-  const commandAnswer = buildOpenChatCommandAnswer(compact);
-  if (commandAnswer) return commandAnswer;
-  const leaderIntakeAnswer = buildOpenChatLeaderIntakeAnswer(compact, inputCounts);
-  if (leaderIntakeAnswer) return leaderIntakeAnswer;
-  const naturalChoiceFollowup = buildOpenChatNaturalChoiceFollowup(compact, inputCounts);
-  if (naturalChoiceFollowup) return naturalChoiceFollowup;
-  const vagueChoiceFollowup = buildOpenChatVagueChoiceFollowup(compact, inputCounts);
-  if (vagueChoiceFollowup) return vagueChoiceFollowup;
-  const pendingChoiceReminder = buildOpenChatPendingChoiceReminder(compact);
-  if (pendingChoiceReminder) return pendingChoiceReminder;
-  return null;
-}
-
-function openChatShouldPreferOpenAiReasoning(prompt = '', inputCounts = {}) {
-  if (new URLSearchParams(window.location.search || '').has('smoke')) return false;
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  if (text.length < 3 || text.length > 1200) return false;
-  if (isStructuredOrderBrief(text)) return false;
-  if (Number(inputCounts.fileCount || 0) || Number(inputCounts.fileChars || 0)) return false;
-  if (openChatLooksGreetingPrompt(text) || openChatLooksLowInfoTestPrompt(text)) return false;
-  if (openChatPromptInjectionGuard(text).blocked) return false;
-  if (openChatLooksSensitiveSecret(text) || openChatLooksUnsafeRequest(text) || openChatLooksHighStakesAdvice(text)) return false;
-  if (openChatHasActiveLocalFollowupState(text)) {
-    if (/^[0-9０-９A-Da-dＡ-Ｄａ-ｄ]+$/.test(text) && Array.isArray(state.openChatClarifyOptions) && state.openChatClarifyOptions.length) return false;
-    if (shouldDeferOpenChatCommandForAnswer(text) || openChatCommandMode(text)) return false;
-    return true;
-  }
-  if (shouldDeferOpenChatCommandForAnswer(text)) return true;
-  if (openChatCommandMode(text)) return false;
-  return true;
-}
-
-function openChatLooksBareTopicPrompt(prompt = '') {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  const matchText = openChatIntentMatchText(text);
-  if (!text || text.length > 72) return false;
-  if (openChatLooksGreetingPrompt(text) || openChatLooksLowInfoTestPrompt(text) || openChatLooksGeneralHelpPrompt(text)) return false;
-  if (/^[0-9０-９]+$/.test(text)) return false;
-  if (/[?？。！？!,;:]/.test(text)) return false;
-  if (/\b(compare|research|analy[sz]e|review|summari[sz]e|write|draft|create|build|fix|debug|find|explain|translate|improve|triage|check|order|buy|sell)\b/i.test(matchText)) return false;
-  if (/(調査|比較|分析|レビュー|要約|作成|書いて|直して|修正|翻訳|改善|確認|教えて|調べ|探して|説明|発注|注文|買|売)/i.test(matchText)) return false;
-  if (/(CAIt|aiagent2|ai agent|agent|order|work|delivery|deposit|billing|payment|stripe|github|google|cli|api|payout|provider|manifest|verify|settings|エージェント|オーダー|注文|ワーク|納品|デポジット|残高|料金|課金|支払|お金|ログイン|登録|使い方|入金|出金|受け取り|マニフェスト|ベリファイ|検証|設定)/i.test(matchText)) return false;
-  const words = text.split(/\s+/).filter(Boolean);
-  return words.length <= 4 && /^[\p{L}\p{N}\s._#@+-]{1,72}$/u.test(text);
-}
-
-function openChatLlmFallbackReason(prompt = '', inputCounts = {}, fallbackAnswer = null) {
-  if (new URLSearchParams(window.location.search || '').has('smoke')) return false;
-  if (Number(inputCounts.urlCount || 0) || Number(inputCounts.fileCount || 0)) return false;
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  const matchText = openChatIntentMatchText(text);
-  if (text.length < 3 || text.length > 1200) return '';
-  if (isStructuredOrderBrief(text)) return false;
-  if (openChatLooksGreetingPrompt(text) || openChatLooksLowInfoTestPrompt(text) || openChatLooksGeneralHelpPrompt(text)) return false;
-  if (openChatPromptInjectionGuard(text).blocked) return false;
-  if (openChatLooksSensitiveSecret(text) || openChatLooksUnsafeRequest(text) || openChatLooksHighStakesAdvice(text)) return false;
-  if (fallbackAnswer?.skipOpenAiPolish === true) return '';
-  const mustUseLocalFallback = openChatMustUseLlmFallback(prompt, fallbackAnswer);
-  const patternId = String(fallbackAnswer?.patternId || '').trim();
-  if (fallbackAnswer && !mustUseLocalFallback) return '';
-  if (!fallbackAnswer && openChatShouldPreferOpenAiReasoning(text, inputCounts)) return 'default_openai_reasoning';
-  if (mustUseLocalFallback) return 'uncertain_local_answer';
-  if (patternId === 'pattern_low_info_ambiguous' && openChatLooksBareTopicPrompt(text)) return 'bare_topic_disambiguation';
-  if (fallbackAnswer) return '';
-  if (/(?:^|\b)(compare|research|analy[sz]e|review|summari[sz]e|write|draft|create|build|fix|debug|find|explain|translate|improve|triage|check)\b/i.test(matchText)
-    || /(調査|比較|分析|レビュー|要約|作成|書いて|直して|修正|翻訳|改善|確認|教えて|調べ|探して|説明)/i.test(matchText)) {
-    return '';
-  }
-  if (openChatLooksBareTopicPrompt(text)) return 'bare_topic_disambiguation';
-  if (/(cait|ai agent|agent|order|work|payment|billing|deposit|stripe|github|repo|manifest|verify|api key|settings|login|connect)/i.test(matchText)
-    && /(わから|分から|迷|どう|なに|何|help|stuck|confused|unknown|not sure|how|what|why)/i.test(matchText)) {
-    return 'service_question_uncertain';
-  }
-  return /(i want|i need|need to|trying to|not sure|what should i|how should i|how do i|make money|earn money|grow|sales|customers|users|conversion|launch|market|idea|app people want|したい|やりたい|どうすれば|どうしたら|何をすれば|何から|わからない|分からない|相談|稼ぎたい|儲けたい|売上|集客|ユーザー|顧客|反応|アイデア|アプリ)/i.test(matchText)
-    ? 'broad_goal_clarification'
-    : '';
-}
-
-function openChatLooksPreorderIntentLlmCandidate(prompt = '', inputCounts = {}, fallbackAnswer = null) {
-  if (fallbackAnswer) return openChatMustUseLlmFallback(prompt, fallbackAnswer);
-  return Boolean(openChatLlmFallbackReason(prompt, inputCounts, fallbackAnswer) || openChatShouldPreferOpenAiReasoning(prompt, inputCounts));
 }
 
 function openChatHasUncertaintyMarker(prompt = '') {
