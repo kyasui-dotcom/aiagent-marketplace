@@ -147,6 +147,39 @@ export function createClientOpenChatHistoryUtils(options = {}) {
     });
   }
 
+  function clearOrderComposerPromptState() {
+    const state = getState();
+    const els = getEls();
+    if (els.jobPrompt) els.jobPrompt.value = '';
+    if (els.jobUrls) els.jobUrls.value = '';
+    if (els.jobFiles) els.jobFiles.value = '';
+    state.orderInputFiles = [];
+    state.orderInputFileWarnings = [];
+    state.followupToJobId = '';
+    state.followupSourceTaskType = '';
+    state.followupSourceAgentId = '';
+    state.pendingIntake = null;
+    state.intakeConfirmed = false;
+    state.intakeAnswer = '';
+    state.pendingOrderConfirmation = null;
+    state.openChatPreparedBrief = '';
+    state.openChatParallelPlan = [];
+    state.openChatClarifyOptions = [];
+    state.openChatVagueChoicePrompt = '';
+    state.openChatNaturalChoiceIntent = '';
+    state.openChatIntentShiftPrompt = '';
+    state.openChatIdeaBacklogPrompt = '';
+    state.openChatLeaderIntakePrompt = '';
+    state.openChatLeaderIntakeTask = '';
+    state.openChatPendingQuestionPrompt = '';
+    state.openChatPendingQuestionTask = '';
+    state.openChatPendingQuestionPattern = '';
+    state.serverResolvedIntent = null;
+    state.serverPreparedOrder = null;
+    if (els.intakeAnswer) els.intakeAnswer.value = '';
+    if (els.jobType) els.jobType.value = '';
+  }
+
   function sessionFromServerChatMemory(item = {}) {
     const transcriptId = compactChatText(item.id || '', 120);
     const sessionId = compactChatText(item.sessionId || item.session_id || '', 120);
@@ -388,7 +421,8 @@ export function createClientOpenChatHistoryUtils(options = {}) {
     state.openChatMode = 'clarify';
     state.openChatDecisionSuppressedBriefKey = '';
     state.openChatDecisionSuppressed = false;
-    clearOpenChatDispatchDraftState({ clearComposer: true });
+    clearOrderComposerPromptState();
+    clearOpenChatDispatchDraftState({ clearComposer: false });
     state.openChatLastStatus = '';
     state.openChatLastStatusTone = 'info';
     renderOrderComposer();

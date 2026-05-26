@@ -26,6 +26,7 @@ const appConsoleCssPath = new URL('../public/app-console.css', import.meta.url);
 const adminCssPath = new URL('../public/admin.css', import.meta.url);
 const adminJsPath = new URL('../public/admin.js', import.meta.url);
 const clientJsPath = new URL('../public/client.js', import.meta.url);
+const clientOpenChatHistoryUtilsPath = new URL('../public/client-open-chat-history-utils.js', import.meta.url);
 const clientOpenChatOrderProgressUtilsPath = new URL('../public/client-open-chat-order-progress-utils.js', import.meta.url);
 const analyticsLoaderPath = new URL('../public/analytics-loader.js', import.meta.url);
 const chatJsPath = new URL('../public/chat.js', import.meta.url);
@@ -112,6 +113,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(loginJsPath)], { stdio:
 execFileSync(process.execPath, ['--check', fileURLToPath(fastAuthJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(adminJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientJsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatHistoryUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(analyticsLoaderPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(analyticsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(publisherJsPath)], { stdio: 'pipe' });
@@ -230,6 +232,9 @@ const onboardingJs = readFileSync(onboardingPath, 'utf8');
 const seoPages = readFileSync(seoPagesPath, 'utf8');
 const naturalLanguageNewsHtml = readFileSync(naturalLanguageNewsPath, 'utf8');
 const feedXml = readFileSync(feedXmlPath, 'utf8');
+const {
+  createClientOpenChatHistoryUtils
+} = await import(clientOpenChatHistoryUtilsPath.href);
 const {
   connectorGateAuthorityHandledBySaasHandoff,
   connectorGateAuthorityIsActionable,
@@ -1745,6 +1750,76 @@ assert.ok(chatJs.includes('payload._caitRecoveryRetried = true'), 'Chat recovery
 assert.ok(clientOpenChatOrderProgressUtilsJs.includes('client_order_id'), 'Open Chat order create should include a client order id for idempotent recovery.');
 assert.ok(clientOpenChatOrderProgressUtilsJs.includes('orderCreateRequestBody(payload)'), 'Open Chat order create should strip local recovery markers before POSTing.');
 assert.ok(clientOpenChatOrderProgressUtilsJs.includes('same idempotent order request once'), 'Open Chat recovery should safely retry the same idempotent create request once.');
+{
+  const state = {
+    snapshot: { auth: { loggedIn: false } },
+    currentOpenChatSessionId: 'session_existing',
+    orderChatMessages: [{ body: 'hello' }],
+    openChatProgressOrderId: 'job_123',
+    openChatProgressLastKey: 'k',
+    openChatProgressPollCount: 3,
+    openChatPendingDispatchMessageId: 'msg_1',
+    openChatHistoryOpen: true,
+    openChatEntryDismissed: true,
+    openChatPausedByTabLeave: true,
+    openChatMode: 'order',
+    openChatDecisionSuppressedBriefKey: 'brief_1',
+    openChatDecisionSuppressed: true,
+    orderInputFiles: [{ name: 'brief.txt' }],
+    orderInputFileWarnings: ['large'],
+    followupToJobId: 'job_followup',
+    followupSourceTaskType: 'seo',
+    followupSourceAgentId: 'agent_1',
+    pendingIntake: { question: 'Need target audience?' },
+    intakeConfirmed: true,
+    intakeAnswer: 'B2B SaaS',
+    pendingOrderConfirmation: { ready: true },
+    openChatPreparedBrief: 'prepared',
+    openChatParallelPlan: ['step'],
+    openChatClarifyOptions: ['option'],
+    openChatVagueChoicePrompt: 'vague',
+    openChatNaturalChoiceIntent: 'intent',
+    openChatIntentShiftPrompt: 'shift',
+    openChatIdeaBacklogPrompt: 'backlog',
+    openChatLeaderIntakePrompt: 'leader',
+    openChatLeaderIntakeTask: 'task',
+    openChatPendingQuestionPrompt: 'question',
+    openChatPendingQuestionTask: 'task',
+    openChatPendingQuestionPattern: 'pattern',
+    serverResolvedIntent: { task: 'seo' },
+    serverPreparedOrder: { id: 'order_1' },
+    openChatLastStatus: 'status',
+    openChatLastStatusTone: 'warn'
+  };
+  const els = {
+    jobPrompt: { value: 'Prompt' },
+    jobUrls: { value: 'https://example.com' },
+    jobFiles: { value: 'selected-file' },
+    intakeAnswer: { value: 'answer' },
+    jobType: { value: 'seo' }
+  };
+  const historyUtils = createClientOpenChatHistoryUtils({
+    getState: () => state,
+    getEls: () => els,
+    clearOpenChatDispatchDraftState: ({ clearComposer } = {}) => {
+      state.openChatPreparedBrief = '';
+      state.openChatParallelPlan = [];
+      state.openChatClarifyOptions = [];
+      if (clearComposer) {
+        els.jobPrompt.value = '';
+        els.jobType.value = '';
+      }
+    }
+  });
+  historyUtils.startNewOpenChatSession({ silent: true });
+  assert.equal(els.jobPrompt.value, '', 'New chat should clear the draft prompt.');
+  assert.equal(els.jobUrls.value, '', 'New chat should clear saved source URLs.');
+  assert.equal(els.jobFiles.value, '', 'New chat should clear file input selection.');
+  assert.equal(els.intakeAnswer.value, '', 'New chat should clear the intake answer field.');
+  assert.equal(state.followupToJobId, '', 'New chat should drop follow-up linkage.');
+  assert.deepEqual(state.orderInputFiles, [], 'New chat should clear staged order input files.');
+  assert.deepEqual(state.orderInputFileWarnings, [], 'New chat should clear staged file warnings.');
+}
 assert.ok(chatJs.includes('visibleDeliveryFiles(candidates)'), 'Chat delivery should hide internal workflow markdown bundles from user-facing files.');
 assert.ok(!chatJs.includes('internalAllDeliverablesFallbackFile'), 'Chat delivery must not synthesize readable bundles from internal workflow files.');
 assert.ok(!chatJs.includes('agent-deliverables-${id}.md'), 'Chat delivery must expose only agent-returned files, not generated readable bundles.');
