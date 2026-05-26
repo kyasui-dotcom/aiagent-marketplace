@@ -161,6 +161,7 @@ const appConsoleCss = readFileSync(appConsoleCssPath, 'utf8');
 const adminCss = readFileSync(adminCssPath, 'utf8');
 const adminJs = readFileSync(adminJsPath, 'utf8');
 const clientJs = readFileSync(clientJsPath, 'utf8');
+const clientOpenChatPreorderIntentJs = readFileSync(new URL('../public/client-open-chat-preorder-intent-utils.js', import.meta.url), 'utf8');
 const clientOpenChatOrderProgressUtilsJs = readFileSync(clientOpenChatOrderProgressUtilsPath, 'utf8');
 const clientAnalyticsUtilsJs = readFileSync(clientAnalyticsUtilsPath, 'utf8');
 const analyticsLoaderJs = readFileSync(analyticsLoaderPath, 'utf8');
@@ -365,9 +366,12 @@ assert.ok(chatJs.includes('openChatIntentShouldUseStepIntake'), 'Executable Open
 const chatIntentWithLlmSource = chatJs.slice(chatJs.indexOf('async function handleChatIntentWithLlm'), chatJs.indexOf('function addChatAdjustmentToDraft'));
 assert.ok(chatIntentWithLlmSource.includes('preserveAgentOwnedLeaderIntake'), 'OpenAI intake results for leaders should preserve agent-owned intake questions.');
 assert.ok(chatIntentWithLlmSource.includes('await prepareOrder(prompt') && !chatIntentWithLlmSource.includes("questionSource: 'openai'"), 'Chat must let server/agent-owned leader intake render questions instead of storing OpenAI questions directly.');
-const clientPreorderIntentLlmSource = clientJs.slice(clientJs.indexOf('function preorderIntentLlmAnswerFromResult'), clientJs.indexOf('function openChatPreparedOrderActions'));
-assert.ok(clientPreorderIntentLlmSource.includes('openChatServerLeaderIntakeGuardAnswer') && clientPreorderIntentLlmSource.includes('prepareWorkOrderViaApi'), 'Legacy Open Chat LLM leader intake must delegate to server/agent-owned prepare-order contracts.');
-assert.ok(!clientPreorderIntentLlmSource.includes('dynamicIntakeQuestions: dynamicQuestions'), 'Legacy Open Chat must not render OpenAI-provided leader intake questions directly.');
+const clientPreorderIntentBoundarySource = [
+  clientJs,
+  clientOpenChatPreorderIntentJs
+].join('\n');
+assert.ok(clientPreorderIntentBoundarySource.includes('openChatServerLeaderIntakeGuardAnswer') && clientPreorderIntentBoundarySource.includes('prepareWorkOrderViaApi'), 'Legacy Open Chat LLM leader intake must delegate to server/agent-owned prepare-order contracts.');
+assert.ok(!clientPreorderIntentBoundarySource.includes('dynamicIntakeQuestions: dynamicQuestions'), 'Legacy Open Chat must not render OpenAI-provided leader intake questions directly.');
 const prepareOrderSource = chatJs.slice(chatJs.indexOf('async function prepareOrder'), chatJs.indexOf('async function sendOrder'));
 assert.ok(prepareOrderSource.includes('Server-owned order intake questions could not be loaded'), 'Prepare-order failures should stop instead of falling back to client-generated intake questions.');
 assert.ok(!chatJs.includes('clientPrepareOrderIntakeFallback'), 'Chat must not synthesize fallback intake contracts when prepare-order fails.');
