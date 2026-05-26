@@ -134,6 +134,7 @@ import {
   OPEN_CHAT_SESSION_MAX_SESSIONS
 } from './client-open-chat-session-utils.js?v=20260522a';
 import { createClientOpenChatHistoryUtils } from './client-open-chat-history-utils.js?v=20260527a';
+import { createClientOpenChatComposerUtils } from './client-open-chat-composer-utils.js?v=20260527a';
 import { createOrderDraftUtils } from './client-order-draft-utils.js?v=20260522a';
 import {
   createClientAnalyticsUtils,
@@ -2122,86 +2123,43 @@ function setOpenChatMode(mode = 'clarify', options = {}) {
   }
 }
 
-function renderOpenChatModeControls() {
-  updateOpenChatModeControls(els, openChatMode());
-}
-
-function currentOpenChatSessionHasLinkedWork() {
-  const currentSessionId = compactChatText(state.currentOpenChatSessionId || '', 120);
-  const runtimeSession = currentSessionId && Array.isArray(state.openChatRuntimeSessions)
-    ? state.openChatRuntimeSessions.find((session) => session?.id === currentSessionId)
-    : null;
-  const messages = Array.isArray(state.orderChatMessages) && state.orderChatMessages.length
-    ? state.orderChatMessages
-    : (Array.isArray(runtimeSession?.messages) ? runtimeSession.messages : []);
-  return openChatSessionHasLinkedWork({
-    ...(runtimeSession || {}),
-    activeWork: Boolean(runtimeSession?.activeWork || hasActiveOpenChatOrderProgress()),
-    linkedOrderId: runtimeSession?.linkedOrderId || state.openChatProgressOrderId || '',
-    messages
-  }, messages);
-}
-
-function clearOpenChatDispatchDraftState(options = {}) {
-  state.openChatPreparedBrief = '';
-  state.openChatParallelPlan = [];
-  state.openChatClarifyOptions = [];
-  state.openChatVagueChoicePrompt = '';
-  state.openChatNaturalChoiceIntent = '';
-  state.openChatIntentShiftPrompt = '';
-  state.openChatIdeaBacklogPrompt = '';
-  state.openChatLeaderIntakePrompt = '';
-  state.openChatLeaderIntakeTask = '';
-  state.openChatPendingQuestionPrompt = '';
-  state.openChatPendingQuestionTask = '';
-  state.openChatPendingQuestionPattern = '';
-  state.pendingOrderConfirmation = null;
-  state.serverResolvedIntent = null;
-  state.serverPreparedOrder = null;
-  state.openChatDecisionSuppressed = true;
-  if (options.clearComposer !== false) {
-    if (els.jobPrompt) els.jobPrompt.value = '';
-    if (els.jobType) els.jobType.value = '';
-  }
-}
-
-function renderOpenChatSessionControls() {
-  renderOpenChatSessionControlsElement(els, {
-    sessions: dedupeOpenChatSessionsForDisplay(readOpenChatSessions()),
-    currentSessionId: compactChatText(state.currentOpenChatSessionId || '', 120),
-    loggedIn: Boolean(state.snapshot?.auth?.loggedIn),
-    historyOpen: Boolean(state.openChatHistoryOpen),
-    isStructuredOrderBrief: (value) => isStructuredOrderBrief(value),
-    openChatSessionTimeLabel: (value) => openChatSessionTimeLabel(value),
-    openChatSessionsShareIdentity: (left, right) => openChatSessionsShareIdentity(left, right),
-    onLoadSession: (sessionId) => loadOpenChatSession(sessionId),
-    onDeleteSession: (button, sessionId) => {
-      void runAction(button, async () => {
-        await deleteOpenChatSession(sessionId);
-      });
-    }
-  });
-}
-
-function currentOpenChatHasMeaningfulContent() {
-  const prompt = String(els.jobPrompt?.value || '').trim();
-  if (prompt) return true;
-  return (Array.isArray(state.orderChatMessages) ? state.orderChatMessages : [])
-    .some((message) => String(message?.body || '').trim() && !message.typing);
-}
-
-function shouldShowWorkChatEntryCard(auth = state.snapshot?.auth || {}) {
-  if (auth?.loggedIn) return false;
-  if (state.openChatEntryDismissed) return false;
-  return !currentOpenChatHasMeaningfulContent();
-}
-
-function renderWorkChatEntryCard(auth = state.snapshot?.auth || {}) {
-  renderWorkChatEntryCardElement(els, auth, {
-    show: shouldShowWorkChatEntryCard(auth),
-    setElementVisible: (element, visible) => setElementVisible(element, visible)
-  });
-}
+const clientOpenChatComposerUtils = createClientOpenChatComposerUtils({
+  getState: () => state,
+  getEls: () => els,
+  openChatMode: () => openChatMode(),
+  updateOpenChatModeControls: (composerEls, mode) => updateOpenChatModeControls(composerEls, mode),
+  readOpenChatSessions: () => readOpenChatSessions(),
+  dedupeOpenChatSessionsForDisplay: (sessions) => dedupeOpenChatSessionsForDisplay(sessions),
+  isStructuredOrderBrief: (value) => isStructuredOrderBrief(value),
+  openChatSessionTimeLabel: (value) => openChatSessionTimeLabel(value),
+  openChatSessionsShareIdentity: (left, right) => openChatSessionsShareIdentity(left, right),
+  loadOpenChatSession: (sessionId) => loadOpenChatSession(sessionId),
+  runAction: (button, action) => runAction(button, action),
+  deleteOpenChatSession: (sessionId) => deleteOpenChatSession(sessionId),
+  renderOpenChatSessionControlsElement: (composerEls, config) => renderOpenChatSessionControlsElement(composerEls, config),
+  renderWorkChatEntryCardElement: (composerEls, auth, config) => renderWorkChatEntryCardElement(composerEls, auth, config),
+  setElementVisible: (element, visible) => setElementVisible(element, visible),
+  hasActiveOpenChatOrderProgress: () => hasActiveOpenChatOrderProgress(),
+  openChatSessionHasLinkedWork: (session, messages) => openChatSessionHasLinkedWork(session, messages),
+  lastOpenChatPreparedBrief: () => lastOpenChatPreparedBrief(),
+  isOpenChatDecisionSuppressedForBrief: (brief) => isOpenChatDecisionSuppressedForBrief(brief),
+  looksJapanese: (value) => looksJapanese(value),
+  workOrderUiLabels: () => workOrderUiLabels(),
+  normalizeOpenChatIntentText: (value) => normalizeOpenChatIntentText(value),
+  openChatIntentMatchText: (value) => openChatIntentMatchText(value)
+});
+const {
+  renderOpenChatModeControls,
+  currentOpenChatSessionHasLinkedWork,
+  clearOpenChatDispatchDraftState,
+  renderOpenChatSessionControls,
+  currentOpenChatHasMeaningfulContent,
+  renderWorkChatEntryCard,
+  openChatPreviousAgentMessageBody,
+  openChatPreviousUserMessageBody,
+  openChatLastPromptWasOrderDecision,
+  openChatComposerDecisionOptions
+} = clientOpenChatComposerUtils;
 
 const clientOpenChatHistoryUtils = createClientOpenChatHistoryUtils({
   openChatSessionMaxMessages: OPEN_CHAT_SESSION_MAX_MESSAGES,
@@ -5611,42 +5569,6 @@ function openChatOrderDecisionBlock(ja = false) {
     ].join('\n');
 }
 
-function openChatPreviousAgentMessageBody() {
-  const messages = Array.isArray(state.orderChatMessages) ? state.orderChatMessages : [];
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role !== 'agent') continue;
-    return String(message.fullBody || message.body || '').trim();
-  }
-  return '';
-}
-
-function openChatPreviousUserMessageBody() {
-  const messages = Array.isArray(state.orderChatMessages) ? state.orderChatMessages : [];
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role !== 'user') continue;
-    return String(message.fullBody || message.body || '').trim();
-  }
-  return '';
-}
-
-function openChatLastPromptWasOrderDecision() {
-  const body = openChatPreviousAgentMessageBody();
-  if (!body) return false;
-  const text = openChatIntentMatchText(body);
-  const labels = workOrderUiLabels();
-  const sendLabel = normalizeOpenChatIntentText(labels.sendOrder).replace(/\s+/g, '');
-  const reviseLabel = normalizeOpenChatIntentText(labels.revise).replace(/\s+/g, '');
-  const addConstraintsLabel = normalizeOpenChatIntentText(labels.addConstraints).replace(/\s+/g, '');
-  const hasConfirm = /(1\s*(発注|注文|実行|send order|order|dispatch)|発注する|send order)/i.test(text)
-    || (Boolean(sendLabel) && text.includes(sendLabel));
-  const hasRevise = /(2\s*(修正|条件|制約|add constraints|revise)|条件を修正|制約を追加|add constraints|revise conditions)/i.test(text)
-    || (Boolean(reviseLabel) && text.includes(reviseLabel))
-    || (Boolean(addConstraintsLabel) && text.includes(addConstraintsLabel));
-  return hasConfirm && hasRevise;
-}
-
 function openChatPreorderDecisionCommand(prompt = '') {
   const clarified = resolveOpenChatClarifyReply(prompt);
   if (['confirm_preorder_order', 'revise_preorder_order', 'cancel_preorder_order'].includes(clarified)) return clarified;
@@ -5692,52 +5614,6 @@ function openChatPreorderClarifyOptions(options = [], ja = false) {
     ...option,
     label: ja ? option.labelJa : option.labelEn
   }));
-}
-
-function openChatDefaultDecisionOptions(ja = false) {
-  const labels = workOrderUiLabels();
-  return [
-    {
-      command: 'confirm_preorder_order',
-      label: ja ? '発注する' : labels.sendOrder,
-      description: ja ? 'Agentに送ります' : 'Dispatch to an agent'
-    },
-    {
-      command: 'revise_preorder_order',
-      label: ja ? '条件を修正する' : labels.revise,
-      description: ja ? 'チャットで条件を足します' : 'Add constraints in chat'
-    },
-    {
-      command: 'cancel_preorder_order',
-      label: ja ? 'キャンセル' : labels.cancel,
-      description: ja ? '下書きを破棄します' : 'Discard the draft'
-    }
-  ];
-}
-
-function openChatComposerDecisionOptions() {
-  if (state.openChatDecisionSuppressed) return [];
-  if (currentOpenChatSessionHasLinkedWork()) return [];
-  const preparedBrief = lastOpenChatPreparedBrief();
-  if (isOpenChatDecisionSuppressedForBrief(preparedBrief)) return [];
-  const rawOptions = Array.isArray(state.openChatClarifyOptions) ? state.openChatClarifyOptions : [];
-  const decisionOptions = rawOptions.filter((option) => ['confirm_preorder_order', 'revise_preorder_order', 'cancel_preorder_order'].includes(String(option?.command || '')));
-  const context = `${openChatPreviousAgentMessageBody()}\n${openChatPreviousUserMessageBody()}\n${preparedBrief}`;
-  const ja = looksJapanese(context);
-  if (decisionOptions.length) {
-    const defaults = openChatDefaultDecisionOptions(ja);
-    return defaults.map((fallback) => {
-      const matched = decisionOptions.find((option) => option.command === fallback.command) || {};
-      return {
-        ...fallback,
-        label: String(matched.label || (ja ? matched.labelJa : matched.labelEn) || fallback.label).trim() || fallback.label
-      };
-    });
-  }
-  if (openChatLastPromptWasOrderDecision() || isStructuredOrderBrief(preparedBrief)) {
-    return openChatDefaultDecisionOptions(ja);
-  }
-  return [];
 }
 
 function openChatLocalUserConversationText(extra = '') {
