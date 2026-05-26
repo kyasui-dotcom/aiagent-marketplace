@@ -683,13 +683,13 @@ assert.ok(appsHtml.includes('Self-service app registration is not open yet'), 'A
 assert.ok(appsHtml.includes('data-featured-app-list'), 'Apps hub should render featured workflows from the app registry.');
 assert.ok(appsHtml.includes('Operational workspaces') && appsHtml.includes('merges related app lanes'), 'Apps hub should present merged workspaces instead of exposing every internal SaaS lane.');
 assert.ok(appsJs.includes('sameOriginAppUrl'), 'Apps hub should normalize CAIt-managed app URLs to the current origin.');
-assert.ok(appsJs.includes("from './app-manifest-registry.js?v=20260526i'"), 'Apps hub should reuse the shared app manifest registry.');
-assert.ok(appsJs.includes('const APP_WORKSPACE_GROUPS = Object.freeze(['), 'Apps hub should group related internal app lanes into user-facing workspaces.');
-assert.ok(appsJs.includes('Growth & Publisher Workspace') && appsJs.includes('Campaign Control Workspace'), 'Apps hub should merge Growth/Publisher and Campaign/Ads/Lead lanes in the UI.');
-assert.ok(appsJs.includes('workspaceGroupsFromApps') && appsJs.includes("app.id !== 'x-client-ops'"), 'Apps hub should render merged workspaces and avoid showing X as a separate top-level SaaS.');
+assert.ok(appsJs.includes("from './app-manifest-registry.js?v=20260526k'"), 'Apps hub should reuse the shared app manifest registry.');
+assert.ok(appManifestRegistryJs.includes('export const APP_WORKSPACE_GROUPS = Object.freeze(['), 'Shared app registry should own related app-lane workspace grouping.');
+assert.ok(appManifestRegistryJs.includes('Growth & Publisher Workspace') && appManifestRegistryJs.includes('Campaign Control Workspace'), 'Shared app registry should merge Growth/Publisher and Campaign/Ads/Lead lanes in the UI.');
+assert.ok(appsJs.includes('workspaceGroupsFromApps') && appsJs.includes('APP_STANDALONE_HIDDEN_APP_IDS'), 'Apps hub should render merged workspaces and avoid showing hidden standalone lanes as top-level SaaS.');
 assert.ok(!appsJs.includes('const featureCopy = new Map'), 'Apps hub featured copy should come from shared app manifests, not duplicate app descriptions.');
 assert.ok(!appsJs.includes("'/analytics-console.html',"), 'Apps hub same-origin URL handling should not duplicate a hard-coded built-in app path list.');
-assert.ok(chatJs.includes("from './app-manifest-registry.js?v=20260526i'"), 'Chat should reuse the shared app manifest registry.');
+assert.ok(chatJs.includes("from './app-manifest-registry.js?v=20260526k'"), 'Chat should reuse the shared app manifest registry.');
 assert.ok(appManifestRegistryJs.includes("owner: 'cait-managed'"), 'CAIt-managed app surfaces should not be labeled as built-in apps.');
 assert.ok(appManifestRegistryJs.includes("verificationStatus: 'cait_managed'"), 'CAIt-managed app surfaces should have explicit verification status.');
 assert.ok(appManifestRegistryJs.includes('analytics-console'), 'Shared app registry should include Analytics Console.');
@@ -1030,8 +1030,8 @@ assert.ok(chatHtml.includes('id="openAppListBtn"'));
 assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
-assert.ok(chatHtml.includes('/chat.js?v=20260526j'), 'Chat page should load the current workspace-grouped Apps panel controller.');
-assert.ok(appsHtml.includes('/apps.js?v=20260526j'), 'Apps page should load the current workspace-grouped app hub controller.');
+assert.ok(chatHtml.includes('/chat.js?v=20260526k'), 'Chat page should load the current workspace-grouped Apps panel controller.');
+assert.ok(appsHtml.includes('/apps.js?v=20260526k'), 'Apps page should load the current workspace-grouped app hub controller.');
 assert.ok(worker.includes("'/pricing-ops.html'") && worker.includes("'/pricing-ops.js'"), 'Worker should no-cache Pricing Decision Console assets after deploy.');
 assert.ok(appsHtml.includes('data-app-registry-list'), 'Apps page should expose the live app registry list.');
 assert.ok(appsHtml.includes('One API / CLI / MCP developer surface') && appsHtml.includes('Disabled by default'), 'Apps page should describe API/CLI/MCP as one disabled-by-default developer surface.');
@@ -1041,7 +1041,7 @@ assert.ok(appsHtml.includes("server-side context API"), 'Apps page should explai
 assert.ok(appsHtml.includes('retained anchors without exposing the packet body'), 'Apps page should explain safe retained-anchor visibility.');
 assert.ok(appsJs.includes('/api/apps?limit=100'), 'Apps JS should load registered apps from the app catalog API.');
 assert.ok(appsJs.includes('MCP ready') && appsJs.includes('mcp.enabled === false ? false'), 'Apps JS should label MCP-ready app manifests only when they are not explicitly paused.');
-assert.ok(chatJs.includes('APP_PANEL_WORKSPACE_GROUPS') && chatJs.includes('groupedAppPanelEntries'), 'Chat Apps panel should show merged app workspaces instead of every internal lane.');
+assert.ok(chatJs.includes('APP_WORKSPACE_GROUPS') && chatJs.includes('groupedAppPanelEntries'), 'Chat Apps panel should show merged app workspaces from the shared app registry instead of every internal lane.');
 assert.ok(clientJs.includes('DEVELOPER_SURFACES_NOTICE'), 'Legacy CONNECT and SETTINGS tab content should share the external developer surface coming-soon notice.');
 assert.ok(clientJs.includes('CAIt API keys are coming soon'), 'Settings API-key actions should show a coming-soon state.');
 assert.ok(workActionRegistry.includes('API keys are currently coming soon'), 'Work action copy should not direct users to issue live API keys.');
@@ -1213,7 +1213,7 @@ assert.ok(deliveryManagerJs.includes('approval_gate'), 'Delivery Manager should 
 assert.ok(appConsoleCss.includes('.delivery-approval-gate'), 'Delivery Manager approval gate should have app-console styling.');
 assert.ok(!deliveryManagerJs.includes('local delivery samples'), 'Delivery Manager should not depend on local delivery sample payloads.');
 
-assert.ok(chatJs.includes("from './chat-engine.js?v=20260525a'"), 'Chat JS should use root-relative shared chat engine import.');
+assert.ok(chatJs.includes("from './chat-engine.js?v=20260526l'"), 'Chat JS should use root-relative shared chat engine import.');
 assert.ok(!appHandoffTransferJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'App handoff transfer must not parse delivery body text for legacy social-post extraction.');
 assert.ok(!appHandoffTransferJs.includes('extractSocialPostTextFromDeliveryContent'), 'Dedicated app handoff text should come from explicit artifact metadata only.');
 assert.ok(!chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should not import delivery action parsing helpers directly.');
@@ -1303,7 +1303,7 @@ assert.ok(chatJs.includes('function suggestLeaderChangeIfNeeded'), 'Chat should 
 assert.ok(chatJs.includes('data-chat-action="keep-leader"'), 'Chat should offer a keep-current-leader action when a different leader is suggested.');
 assert.ok(chatJs.includes('data-chat-action="switch-leader"'), 'Chat should offer an explicit switch-leader action instead of automatically changing the leader.');
 assert.ok(chatJs.includes('leaderChangeRequested'), 'Chat should mark explicit user leader-change requests separately from automatic reclassification.');
-assert.ok(chatJs.includes("chat-engine.js?v=20260525a"), 'Chat should cache-bust the chat engine when retry payload fields change.');
+assert.ok(chatJs.includes("chat-engine.js?v=20260526l"), 'Chat should cache-bust the chat engine when retry payload fields change.');
 assert.ok(chatJs.includes('function retryDraftFromJob'), 'Chat should prepare retries from the previous persisted order.');
 assert.ok(chatJs.includes("fetchVisibleJob(safeId, { force: true, progress: false, inspectOnly: true })"), 'Prepare retry should inspect the saved order without triggering progress side effects.');
 assert.ok(chatJs.includes('function handleRetryCommand'), 'Chat should treat typed retry commands as explicit retry preparation instead of a new order.');

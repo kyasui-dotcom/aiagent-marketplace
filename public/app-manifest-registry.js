@@ -2,6 +2,51 @@ export const X_CLIENT_OPS_URL = 'https://x.niche-s.com/';
 
 export const CORE_FEATURE_APP_IDS = Object.freeze(new Set(['delivery-manager']));
 
+export const APP_STANDALONE_HIDDEN_APP_IDS = Object.freeze(new Set(['x-client-ops']));
+
+export const APP_WORKSPACE_GROUPS = Object.freeze([
+  {
+    id: 'growth-publisher-workspace',
+    name: 'Growth & Publisher Workspace',
+    primaryId: 'growth-experiment-console',
+    entryId: 'growth-experiment-console',
+    memberIds: ['growth-experiment-console', 'publisher-approval-studio'],
+    description: 'Retain Growth experiments, measurement guardrails, Publisher packets, social copy, and approval state in one launch workflow.',
+    tags: ['growth', 'publisher', 'approval'],
+    reusePrompt: 'Use the Growth & Publisher workspace to retain the experiment, prepare the publish packet, and review approvals before launch.'
+  },
+  {
+    id: 'campaign-control-workspace',
+    name: 'Campaign Control Workspace',
+    primaryId: 'campaign-operations',
+    entryId: 'campaign-operations',
+    memberIds: ['campaign-operations', 'ads-launch-console', 'lead-ops-console'],
+    description: 'Manage campaign state, paid launch gates, lead review, waiting conditions, owners, and measurement loops as one operations workspace.',
+    tags: ['campaigns', 'ads', 'leads'],
+    reusePrompt: 'Use the Campaign Control workspace to retain campaign state, lead or ads handoffs, owners, approvals, and measurement loops.'
+  },
+  {
+    id: 'analytics-measurement-workspace',
+    name: 'Analytics & Measurement Workspace',
+    primaryId: 'analytics-console',
+    entryId: 'analytics-console',
+    memberIds: ['analytics-console'],
+    description: 'Keep acquisition, search, landing page, conversion, and post-run evidence available before ordering the next agent task.',
+    tags: ['analytics', 'seo', 'measurement'],
+    reusePrompt: 'Use Analytics & Measurement to load evidence before asking the next agent for recommendations.'
+  },
+  {
+    id: 'pricing-decision-workspace',
+    name: 'Pricing Decision Workspace',
+    primaryId: 'pricing-decision-console',
+    entryId: 'pricing-decision-console',
+    memberIds: ['pricing-decision-console'],
+    description: 'Review pricing assumptions, scenarios, approval owner, proof tracker, decision trigger, and rollback rule before price changes.',
+    tags: ['pricing', 'finance', 'approval'],
+    reusePrompt: 'Use Pricing Decision to review pricing assumptions, approval state, proof, and rollback rules before a price change.'
+  }
+]);
+
 export const BUILT_IN_APP_MANIFESTS = Object.freeze([
   {
     id: 'analytics-console',

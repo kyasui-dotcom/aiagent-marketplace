@@ -6,7 +6,7 @@ import {
   chatEngineBuildPrepareOrderPayload,
   chatEngineDraftBrief,
   chatEngineIsNeedsInputResponse
-} from './chat-engine.js?v=20260525a';
+} from './chat-engine.js?v=20260526l';
 import {
   connectorGateApprovalAnchor,
   connectorGateAuthorityHandledBySaasHandoff,
@@ -88,9 +88,11 @@ import {
   measurementEvidenceTextExplicitlyRequests as textExplicitlyRequestsMeasurementEvidence
 } from './measurement-evidence-gate.js?v=20260525a';
 import {
+  APP_STANDALONE_HIDDEN_APP_IDS,
+  APP_WORKSPACE_GROUPS,
   BUILT_IN_APP_MANIFESTS as APP_AGENT_MANIFESTS,
   CORE_FEATURE_APP_IDS
-} from './app-manifest-registry.js?v=20260526i';
+} from './app-manifest-registry.js?v=20260526k';
 import {
   progressNarratorHtml as agentProgressNarratorHtml,
   progressNarratorProgress as agentProgressNarratorProgress,
@@ -125,38 +127,6 @@ const CHATUX_RUNTIME_STATE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const CHATUX_RETRY_MODE_NEW_ORDER = 'same_content_new_order';
 const CAIT_APP_CONTEXT_CHANNEL = 'cait-app-context';
 const CHATUX_WELCOME_TEXT = 'What do you want done?';
-const APP_PANEL_HIDDEN_LANE_IDS = new Set(['x-client-ops']);
-const APP_PANEL_WORKSPACE_GROUPS = Object.freeze([
-  {
-    name: 'Growth & Publisher Workspace',
-    primaryId: 'growth-experiment-console',
-    memberIds: ['growth-experiment-console', 'publisher-approval-studio'],
-    description: 'Growth experiments, Publisher packets, social copy, and approval state in one launch workflow.',
-    reusePrompt: 'Use the Growth & Publisher workspace to retain the experiment, prepare the publish packet, and review approvals before launch.'
-  },
-  {
-    name: 'Campaign Control Workspace',
-    primaryId: 'campaign-operations',
-    memberIds: ['campaign-operations', 'ads-launch-console', 'lead-ops-console'],
-    description: 'Campaign state, paid launch gates, lead review, waiting conditions, owners, and measurement loops.',
-    reusePrompt: 'Use the Campaign Control workspace to retain campaign state, lead or ads handoffs, owners, approvals, and measurement loops.'
-  },
-  {
-    name: 'Analytics & Measurement Workspace',
-    primaryId: 'analytics-console',
-    memberIds: ['analytics-console'],
-    description: 'Acquisition, search, landing page, conversion, and post-run evidence before ordering the next task.',
-    reusePrompt: 'Use Analytics & Measurement to load evidence before asking the next agent for recommendations.'
-  },
-  {
-    name: 'Pricing Decision Workspace',
-    primaryId: 'pricing-decision-console',
-    memberIds: ['pricing-decision-console'],
-    description: 'Pricing assumptions, scenarios, approval owner, proof tracker, decision trigger, and rollback rule.',
-    reusePrompt: 'Use Pricing Decision to review pricing assumptions, approval state, proof, and rollback rules before a price change.'
-  }
-]);
-
 function leaderCatalogChatAnswer(prompt = '') {
   const ja = chatLanguage(prompt) === 'ja';
   return ja
@@ -4071,7 +4041,7 @@ function recentAppAgentEntries() {
 function groupedAppPanelEntries(entries = []) {
   const byId = new Map(entries.map((entry) => [normalizeUsageId(entry.id), entry]));
   const groupedIds = new Set();
-  const groups = APP_PANEL_WORKSPACE_GROUPS.map((group) => {
+  const groups = APP_WORKSPACE_GROUPS.map((group) => {
     const members = group.memberIds.map((id) => byId.get(normalizeUsageId(id))).filter(Boolean);
     if (!members.length) return null;
     members.forEach((member) => groupedIds.add(normalizeUsageId(member.id)));
@@ -4096,7 +4066,7 @@ function groupedAppPanelEntries(entries = []) {
   }).filter(Boolean);
   const singletons = entries.filter((entry) => {
     const id = normalizeUsageId(entry.id);
-    return !groupedIds.has(id) && !APP_PANEL_HIDDEN_LANE_IDS.has(id);
+    return !groupedIds.has(id) && !APP_STANDALONE_HIDDEN_APP_IDS.has(id);
   });
   return [...groups, ...singletons];
 }

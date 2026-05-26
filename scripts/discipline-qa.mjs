@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildIntakeClarification } from '../lib/shared.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -37,6 +38,7 @@ const chatHtmlSource = read('public/chat.html');
 const appHandoffGateSource = read('public/app-handoff-gate.js');
 const appHandoffTransferSource = read('public/app-handoff-transfer.js');
 const appContextGateSource = read('public/app-context-gate.js');
+const appManifestRegistrySource = read('public/app-manifest-registry.js');
 const measurementEvidenceGateSource = read('public/measurement-evidence-gate.js');
 const agentProgressViewSource = read('public/agent-progress-view.js');
 const adsOpsSource = read('public/ads-ops.js');
@@ -373,6 +375,18 @@ assert.ok(
     && chatSource.includes('contextContract: { ...(existing.contextContract || {}), ...(normalized.contextContract || {}) }'),
   'chat app manifest normalization must preserve app context contracts instead of silently downgrading to token matching'
 );
+assert.ok(
+  appManifestRegistrySource.includes('export const APP_WORKSPACE_GROUPS = Object.freeze([')
+    && appManifestRegistrySource.includes('export const APP_STANDALONE_HIDDEN_APP_IDS'),
+  'shared app registry must own app workspace grouping and standalone visibility policy'
+);
+assertNotIncludes(chatSource, [
+  'APP_PANEL_WORKSPACE_GROUPS',
+  'APP_PANEL_HIDDEN_LANE_IDS',
+  'Growth & Publisher Workspace',
+  'Campaign Control Workspace',
+  'Pricing Decision Workspace'
+], 'public/chat.js app workspace registry boundary');
 assert.equal(
   chatSource.includes("new URL('/analytics-console.html'"),
   false,
@@ -513,6 +527,33 @@ assert.ok(
   openChatDeliveryClassifierSource.includes('Do not infer app handoff, connector action, execution type, or delivery artifact type from the content.'),
   'Open Chat delivery classifier must be limited to article detection and must not create app/action artifact contracts from body text'
 );
+assert.ok(
+  openChatIntentSource.includes('For thin broad requests such as "I want more customers"')
+    && openChatIntentSource.includes('Use action="ask_clarifying_question".'),
+  'Open Chat intent confirmation must ask clarifying questions for thin broad goals instead of inventing a complete order brief'
+);
+assert.ok(
+  read('public/chat-engine.js').includes("{ original_prompt: String(options.originalPrompt || options.original_prompt || '').trim() }"),
+  'chat prepare-order payload must preserve the original user prompt when an LLM-generated brief is sent to the server'
+);
+assert.ok(
+  read('lib/routes/work-order.js').includes("prompt: String(body?.original_prompt || body?.originalPrompt || body?.input?.original_prompt || '').trim() || prompt"),
+  'server work-order intake must judge missing context from the original user prompt, not an LLM-expanded brief'
+);
+assert.ok(
+  sharedSource.includes('(?:を|が)?(して|してください|お願いします|したい|したいです|増やしたい|伸ばしたい|上げたい|改善したい|獲得したい)?')
+    && sharedSource.includes('集客')
+    && sharedSource.includes('shortBroadGoal'),
+  'Japanese thin-intent detection must catch phrases such as 集客をしたいです and 売上を増やしたい before preparing an order check'
+);
+for (const prompt of ['集客をしたいです', 'SEOしたい', '売上を増やしたい', '広告したい', 'LP改善したい', 'increase sales', 'do SEO', 'run ads']) {
+  const clarification = buildIntakeClarification({ prompt }, { taskType: 'research' });
+  assert.equal(
+    clarification?.status,
+    'needs_input',
+    `short ambiguous first request must require intake before order check: ${prompt}`
+  );
+}
 const clientGenericClassificationSource = clientDeliveryFilesSource.slice(
   clientDeliveryFilesSource.indexOf('export function genericDeliverableFromClassification'),
   clientDeliveryFilesSource.indexOf('export function genericDeliverableFromExplicitFiles')

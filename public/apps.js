@@ -1,50 +1,13 @@
 import {
+  APP_STANDALONE_HIDDEN_APP_IDS,
+  APP_WORKSPACE_GROUPS,
   BUILT_IN_APP_MANIFESTS as FALLBACK_BUILT_IN_APPS,
   CORE_FEATURE_APP_IDS
-} from './app-manifest-registry.js?v=20260526i';
+} from './app-manifest-registry.js?v=20260526k';
 
 const listEl = document.querySelector('[data-context-list]');
 const registryListEl = document.querySelector('[data-app-registry-list]');
 const featuredListEl = document.querySelector('[data-featured-app-list]');
-const APP_WORKSPACE_GROUPS = Object.freeze([
-  {
-    id: 'growth-publisher-workspace',
-    name: 'Growth & Publisher Workspace',
-    primaryId: 'growth-experiment-console',
-    entryId: 'growth-experiment-console',
-    memberIds: ['growth-experiment-console', 'publisher-approval-studio'],
-    description: 'Retain Growth experiments, measurement guardrails, Publisher packets, social copy, and approval state in one launch workflow.',
-    tags: ['growth', 'publisher', 'approval']
-  },
-  {
-    id: 'campaign-control-workspace',
-    name: 'Campaign Control Workspace',
-    primaryId: 'campaign-operations',
-    entryId: 'campaign-operations',
-    memberIds: ['campaign-operations', 'ads-launch-console', 'lead-ops-console'],
-    description: 'Manage campaign state, paid launch gates, lead review, waiting conditions, owners, and measurement loops as one operations workspace.',
-    tags: ['campaigns', 'ads', 'leads']
-  },
-  {
-    id: 'analytics-measurement-workspace',
-    name: 'Analytics & Measurement Workspace',
-    primaryId: 'analytics-console',
-    entryId: 'analytics-console',
-    memberIds: ['analytics-console'],
-    description: 'Keep acquisition, search, landing page, conversion, and post-run evidence available before ordering the next agent task.',
-    tags: ['analytics', 'seo', 'measurement']
-  },
-  {
-    id: 'pricing-decision-workspace',
-    name: 'Pricing Decision Workspace',
-    primaryId: 'pricing-decision-console',
-    entryId: 'pricing-decision-console',
-    memberIds: ['pricing-decision-console'],
-    description: 'Review pricing assumptions, scenarios, approval owner, proof tracker, decision trigger, and rollback rule before price changes.',
-    tags: ['pricing', 'finance', 'approval']
-  }
-]);
-
 function escapeHtml(value = '') {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -159,7 +122,7 @@ function workspaceGroupsFromApps(records = []) {
     };
   }).filter(Boolean);
   const singletons = apps
-    .filter((app) => !groupedIds.has(app.id) && app.id !== 'x-client-ops')
+    .filter((app) => !groupedIds.has(app.id) && !APP_STANDALONE_HIDDEN_APP_IDS.has(app.id))
     .map((app) => ({ ...app, primaryId: app.id, members: [app], isWorkspace: false }));
   return [...groups, ...singletons];
 }

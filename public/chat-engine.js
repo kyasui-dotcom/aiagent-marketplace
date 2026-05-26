@@ -46,6 +46,9 @@ export function chatEngineBuildPrepareOrderPayload(prompt = '', options = {}) {
   ).trim();
   return {
     prompt: String(prompt || '').trim(),
+    ...(String(options.originalPrompt || options.original_prompt || '').trim()
+      ? { original_prompt: String(options.originalPrompt || options.original_prompt || '').trim() }
+      : {}),
     requestedStrategy: String(options.requestedStrategy || CHAT_ENGINE_DEFAULT_REQUESTED_STRATEGY).trim() || CHAT_ENGINE_DEFAULT_REQUESTED_STRATEGY,
     ...(deliveryFormat ? { delivery_format: deliveryFormat } : {}),
     ...(taskType ? { task_type: taskType } : {}),
