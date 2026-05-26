@@ -682,6 +682,9 @@ assert.ok(appsHtml.includes('Self-service app registration is not open yet'), 'A
 assert.ok(appsHtml.includes('data-featured-app-list'), 'Apps hub should render featured workflows from the app registry.');
 assert.ok(appsJs.includes('sameOriginAppUrl'), 'Apps hub should normalize CAIt-managed app URLs to the current origin.');
 assert.ok(appsJs.includes("from './app-manifest-registry.js?v=20260526g'"), 'Apps hub should reuse the shared app manifest registry.');
+assert.ok(appsJs.includes('const FEATURED_APP_IDS = Object.freeze(['), 'Apps hub should keep only featured app ids outside the shared registry.');
+assert.ok(!appsJs.includes('const featureCopy = new Map'), 'Apps hub featured copy should come from shared app manifests, not duplicate app descriptions.');
+assert.ok(!appsJs.includes("'/analytics-console.html',"), 'Apps hub same-origin URL handling should not duplicate a hard-coded built-in app path list.');
 assert.ok(chatJs.includes("from './app-manifest-registry.js?v=20260526g'"), 'Chat should reuse the shared app manifest registry.');
 assert.ok(appManifestRegistryJs.includes("owner: 'cait-managed'"), 'CAIt-managed app surfaces should not be labeled as built-in apps.');
 assert.ok(appManifestRegistryJs.includes("verificationStatus: 'cait_managed'"), 'CAIt-managed app surfaces should have explicit verification status.');
@@ -921,6 +924,8 @@ assert.ok(!adsOpsJs.includes("source_app: 'delivery_manager'"), 'Ads Launch Cons
 assert.ok(growthOpsJs.includes("source_app: 'growth_experiment_console'"), 'Growth Experiment Console app logic should stay in growth-ops.js.');
 assert.ok(growthOpsJs.includes("fetchCaitAppContextFromUrl"), 'Growth Experiment Console should receive CAIt app contexts.');
 assert.ok(growthOpsJs.includes("type: 'growth_experiment_packet'"), 'Growth Experiment Console should return growth_experiment_packet artifacts.');
+assert.ok(growthOpsJs.includes("type: 'no_paid_growth_plan_packet'"), 'Growth Experiment Console should return no_paid_growth_plan_packet artifacts for Free Web Growth Leader reuse.');
+assert.ok(growthOpsJs.includes("type: 'organic_specialist_handoff_packet'"), 'Growth Experiment Console should return organic_specialist_handoff_packet artifacts for specialist handoff reuse.');
 assert.ok(growthOpsJs.includes("type: 'growth_asset_handoff_packet'"), 'Growth Experiment Console should return growth_asset_handoff_packet artifacts.');
 assert.ok(growthOpsJs.includes("type: 'growth_activation_handoff_packet'"), 'Growth Experiment Console should return growth_activation_handoff_packet artifacts.');
 assert.ok(growthOpsJs.includes("type: 'tracking_specification'"), 'Growth Experiment Console should return tracking_specification artifacts.');
@@ -1540,8 +1545,16 @@ assert.ok(
   'Growth app handoff transfer should canonicalize explicit no-paid growth packet aliases into contract_fields.'
 );
 assert.ok(
+  JSON.stringify(growthTransferContext.raw_context?.contract_fields?.no_paid_growth_plan_packet || {}).includes('without paid ads'),
+  'Growth app handoff transfer should keep explicit no-paid growth packet aliases under the no_paid_growth_plan_packet key.'
+);
+assert.ok(
   JSON.stringify(growthTransferContext.raw_context?.contract_fields || {}).includes('SEO specialist'),
   'Growth app handoff transfer should canonicalize organic specialist handoff aliases into contract_fields.'
+);
+assert.ok(
+  JSON.stringify(growthTransferContext.raw_context?.contract_fields?.organic_specialist_handoff_packet || {}).includes('SEO specialist'),
+  'Growth app handoff transfer should keep organic specialist handoff aliases under the organic_specialist_handoff_packet key.'
 );
 assert.ok(
   JSON.stringify(growthTransferContext.artifacts || []).includes('kill rule'),

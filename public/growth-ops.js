@@ -277,6 +277,14 @@ function firstAvailableRows(context = {}, types = []) {
   return [];
 }
 
+function retainedRowsFor(types = []) {
+  if (!importedContext) return [];
+  return uniqueRows([
+    ...types.flatMap((type) => rowsFor(importedContext, [type])),
+    ...types.flatMap((type) => markdownRowsFor(importedContext, [type]))
+  ]);
+}
+
 function uniqueRows(rows = []) {
   const seen = new Set();
   return rows.filter((item) => {
@@ -359,9 +367,10 @@ function renderTable(el, headers = [], rows = []) {
 }
 
 function readinessRows(record = growthRecord) {
+  const packetRetained = record.audit.some((item) => item.key === 'growth_experiment_packet' && item.ok);
   return [
     { label: 'Server context', ready: Boolean(importedContext), detail: importedContext ? 'Server-side growth packet is loaded.' : 'Send to CAIt will create the server-side growth packet reference.' },
-    { label: 'Experiment packet', ready: record.experimentRows.length >= 3, detail: record.experimentRows.length >= 3 ? `${record.experimentRows.length} experiment row(s) retained.` : 'Add bottleneck, ICP/offer, hypothesis, or experiment packet.' },
+    { label: 'Experiment packet', ready: packetRetained && record.experimentRows.length > 0, detail: packetRetained ? `${record.experimentRows.length} experiment row(s) retained from a Growth or no-paid plan packet.` : 'Add growth_experiment_packet, no_paid_growth_plan_packet, bottleneck, ICP/offer, or hypothesis.' },
     { label: 'Exact artifact', ready: record.artifactRows.length > 0, detail: record.artifactRows.length ? `${record.artifactRows.length} artifact row(s) retained.` : 'Add exact_artifact_packet or execution_packet.' },
     { label: 'Activation boundary', ready: record.activationRows.some((item) => /owner|approval|review/i.test(`${item.label} ${item.detail}`)), detail: record.activationRows.length ? 'Owner, approval, or review state is visible.' : 'Add activation owner, approval owner, measurement owner, and review date.' },
     { label: 'Metric and kill rule', ready: record.measurementRows.some((item) => /threshold|metric|kill|stop/i.test(`${item.label} ${item.detail}`)), detail: record.measurementRows.length ? 'Tracking, threshold, or stop rule is retained.' : 'Add tracking_specification, metric_threshold, and kill_rule.' },
@@ -392,6 +401,10 @@ function chatHandoffId() {
 
 function contextPacket() {
   const ready = growthRecord.audit.filter((item) => item.ok);
+  const noPaidGrowthRows = retainedRowsFor(['no_paid_growth_plan_packet']);
+  const organicSpecialistRows = retainedRowsFor(['organic_specialist_handoff_packet']);
+  const exactArtifactRows = retainedRowsFor(['exact_artifact_packet', 'page_or_channel_artifact']);
+  const nextDecisionRows = retainedRowsFor(['next_decision']);
   return buildCaitAppContext({
     source_app: 'growth_experiment_console',
     source_app_label: 'Growth Experiment Console',
@@ -403,6 +416,9 @@ function contextPacket() {
     ],
     artifacts: [
       { type: 'growth_experiment_packet', title: growthRecord.title, rows: growthRecord.experimentRows },
+      { type: 'no_paid_growth_plan_packet', title: 'No-paid growth plan packet', rows: noPaidGrowthRows },
+      { type: 'organic_specialist_handoff_packet', title: 'Organic specialist handoff packet', rows: organicSpecialistRows },
+      { type: 'exact_artifact_packet', title: 'Exact artifact packet', rows: exactArtifactRows.length ? exactArtifactRows : growthRecord.artifactRows },
       { type: 'growth_asset_handoff_packet', title: 'Exact artifact handoff', rows: growthRecord.artifactRows },
       { type: 'growth_activation_handoff_packet', title: 'Activation handoff', rows: growthRecord.activationRows },
       { type: 'tracking_specification', title: 'Measurement and tracking', rows: growthRecord.measurementRows },
@@ -428,6 +444,9 @@ function contextPacket() {
       chat_handoff_id: chatHandoffId(),
       chat_return_to: chatReturnTo(),
       received_context: importedContext,
+      no_paid_growth_plan_packet: noPaidGrowthRows,
+      organic_specialist_handoff_packet: organicSpecialistRows,
+      exact_artifact_packet: exactArtifactRows,
       growth_handoff_audit: {
         ready: ready.map((item) => item.key),
         missing: growthRecord.audit.filter((item) => !item.ok).map((item) => item.key)
@@ -436,7 +455,7 @@ function contextPacket() {
       growth_artifact_rows: growthRecord.artifactRows,
       growth_activation_rows: growthRecord.activationRows,
       growth_measurement_rows: growthRecord.measurementRows,
-      next_decision: growthRecord.measurementRows.find((item) => /next decision|decision rule|continue|stop/i.test(`${item.label} ${item.detail}`)) || null
+      next_decision: nextDecisionRows.length ? nextDecisionRows : (growthRecord.measurementRows.find((item) => /next decision|decision rule|continue|stop/i.test(`${item.label} ${item.detail}`)) || null)
     }
   });
 }

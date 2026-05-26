@@ -610,23 +610,10 @@ function appHandoffTransferContractValue(payload = {}, key = '', aliasMap = {}) 
 }
 
 function appHandoffTransferContractFields(manifest = {}, payload = {}) {
-  const seenValues = new Set();
   return Object.fromEntries(APP_HANDOFF_CONTRACT_FIELDS
     .filter((key) => appHandoffTransferManifestAccepts(manifest, key))
     .map((key) => [key, appHandoffTransferContractValue(payload, key, APP_HANDOFF_CONTRACT_ALIASES)])
-    .filter(([, value]) => {
-      if (value == null || value === '') return false;
-      const valueKey = (() => {
-        try {
-          return JSON.stringify(value);
-        } catch {
-          return String(value);
-        }
-      })();
-      if (seenValues.has(valueKey)) return false;
-      seenValues.add(valueKey);
-      return true;
-    }));
+    .filter(([, value]) => value != null && value !== ''));
 }
 
 export function appContextFromTransferPayload(appId = '', payload = {}, options = {}) {

@@ -6,6 +6,16 @@ import {
 const listEl = document.querySelector('[data-context-list]');
 const registryListEl = document.querySelector('[data-app-registry-list]');
 const featuredListEl = document.querySelector('[data-featured-app-list]');
+const FEATURED_APP_IDS = Object.freeze([
+  'analytics-console',
+  'publisher-approval-studio',
+  'lead-ops-console',
+  'campaign-operations',
+  'ads-launch-console',
+  'growth-experiment-console',
+  'pricing-decision-console',
+  'x-client-ops'
+]);
 
 function escapeHtml(value = '') {
   return String(value ?? '')
@@ -92,17 +102,10 @@ function sameOriginAppUrl(value = '') {
   try {
     const parsed = new URL(text, window.location.origin);
     const isBuiltInCaitHost = /^(?:www\.)?(?:aiagent-marketplace\.net|aiagent-market\.net|aiagent2\.net)$/i.test(parsed.hostname);
-    const isKnownLocalApp = [
-      '/analytics-console.html',
-      '/publisher-approval.html',
-      '/lead-ops.html',
-      '/campaign-operations.html',
-      '/ads-ops.html',
-      '/growth-ops.html',
-      '/pricing-ops.html',
-      '/apps.html'
-    ].includes(parsed.pathname);
-    if (isBuiltInCaitHost && isKnownLocalApp) {
+    const isAppSurfacePath = parsed.pathname === '/apps.html'
+      || /-(?:console|ops|operations)\.html$/i.test(parsed.pathname)
+      || /approval\.html$/i.test(parsed.pathname);
+    if (isBuiltInCaitHost && isAppSurfacePath) {
       return `${window.location.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
     return parsed.toString();
@@ -172,17 +175,7 @@ function renderApps(records = []) {
 function renderFeaturedApps(records = []) {
   if (!featuredListEl) return;
   const apps = records.map(normalizeApp).filter(Boolean);
-  const featureCopy = new Map([
-    ['analytics-console', { tag: 'SEO / CMO', description: 'Find the next growth move from traffic evidence.' }],
-    ['publisher-approval-studio', { tag: 'Approval', description: 'Review external publishing changes before they leave CAIt.' }],
-    ['lead-ops-console', { tag: 'Growth', description: 'Turn sourced leads into reviewed outreach drafts.' }],
-    ['campaign-operations', { tag: 'Operations', description: 'Keep campaign state, readiness, and measurement loops reusable.' }],
-    ['ads-launch-console', { tag: 'Paid ads', description: 'Keep budget, stop rules, launch approval, and measurement before spend.' }],
-    ['growth-experiment-console', { tag: 'Growth ops', description: 'Keep experiment, activation, measurement, proof, and kill-rule state.' }],
-    ['pricing-decision-console', { tag: 'Pricing', description: 'Keep price-change assumptions, scenarios, approval, and rollback state.' }],
-    ['x-client-ops', { tag: 'Social', description: 'Prepare approved social action packets.' }]
-  ]);
-  const featured = [...featureCopy.keys()]
+  const featured = FEATURED_APP_IDS
     .map((id) => apps.find((app) => app.id === id))
     .filter(Boolean);
   if (!featured.length) {
@@ -190,13 +183,14 @@ function renderFeaturedApps(records = []) {
     return;
   }
   featuredListEl.innerHTML = featured.map((app) => {
-    const copy = featureCopy.get(app.id) || {};
     const href = sameOriginAppUrl(app.entryUrl) || `/chat?app_id=${encodeURIComponent(app.id)}`;
+    const labelSource = app.tags.length ? app.tags : (app.capabilities.length ? app.capabilities : [appTypeLabel(app)]);
+    const tag = labelSource.slice(0, 2).map((item) => String(item || '').replace(/[_-]+/g, ' ')).join(' / ');
     return [
       `<a class="detail-card panel" href="${escapeHtml(href)}">`,
-      `<span class="kicker">${escapeHtml(copy.tag || appTypeLabel(app))}</span>`,
+      `<span class="kicker">${escapeHtml(tag || appTypeLabel(app))}</span>`,
       `<h2>${escapeHtml(app.name)}</h2>`,
-      `<p>${escapeHtml(copy.description || compact(app.description, 150))}</p>`,
+      `<p>${escapeHtml(compact(app.description, 150))}</p>`,
       '<div class="inline-actions">',
       renderAppChips(app.tags.length ? app.tags : app.capabilities, ''),
       app.mcp.enabled ? '<span class="mini-chip">MCP</span>' : '',

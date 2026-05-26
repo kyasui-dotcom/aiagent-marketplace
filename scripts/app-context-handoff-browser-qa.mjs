@@ -1319,7 +1319,9 @@ try {
     })
   });
   if (!JSON.stringify(growthTransferContext.raw_context?.contract_fields || {}).includes('Organic launch lane')) throw new Error('growth transfer context did not preserve no-paid growth plan packet');
+  if (!JSON.stringify(growthTransferContext.raw_context?.contract_fields?.no_paid_growth_plan_packet || {}).includes('Organic launch lane')) throw new Error('growth transfer context did not preserve the no_paid_growth_plan_packet contract key');
   if (!JSON.stringify(growthTransferContext.raw_context?.contract_fields || {}).includes('SEO specialist receives')) throw new Error('growth transfer context did not preserve organic specialist handoff packet');
+  if (!JSON.stringify(growthTransferContext.raw_context?.contract_fields?.organic_specialist_handoff_packet || {}).includes('SEO specialist receives')) throw new Error('growth transfer context did not preserve the organic_specialist_handoff_packet contract key');
   if (!JSON.stringify(growthTransferContext.artifacts || []).includes('growth_activation_handoff_packet')) throw new Error('growth transfer context did not preserve activation handoff artifact');
   if (!JSON.stringify(growthTransferContext.raw_context?.contract_fields || {}).includes('follow-up-order rate')) throw new Error('growth transfer context did not preserve metric threshold in raw_context');
   await openAppWithContext(page, `/growth-ops.html?chat_return_to=${encodeURIComponent('/chat?thread=growth')}&chat_handoff_id=growth-handoff`, growthTransferContext);
@@ -1339,7 +1341,11 @@ try {
   const growthPacket = JSON.parse(await page.textContent('#growthContextPreview'));
   if (growthPacket.raw_context?.chat_handoff_id !== 'growth-handoff') throw new Error('growth chat handoff id was not preserved in packet');
   if (!JSON.stringify(growthPacket.artifacts || []).includes('growth_experiment_packet')) throw new Error('growth packet did not return growth_experiment_packet for app contract reuse');
+  if (!JSON.stringify(growthPacket.artifacts || []).includes('no_paid_growth_plan_packet')) throw new Error('growth packet did not return no_paid_growth_plan_packet for app contract reuse');
+  if (!JSON.stringify(growthPacket.artifacts || []).includes('organic_specialist_handoff_packet')) throw new Error('growth packet did not return organic_specialist_handoff_packet for app contract reuse');
   if (!JSON.stringify(growthPacket.artifacts || []).includes('growth_activation_handoff_packet')) throw new Error('growth packet did not return growth_activation_handoff_packet for app contract reuse');
+  if (!JSON.stringify(growthPacket.raw_context?.no_paid_growth_plan_packet || {}).includes('Organic launch lane')) throw new Error('growth packet did not keep no_paid_growth_plan_packet as a top-level raw context field');
+  if (!JSON.stringify(growthPacket.raw_context?.organic_specialist_handoff_packet || {}).includes('SEO specialist receives')) throw new Error('growth packet did not keep organic_specialist_handoff_packet as a top-level raw context field');
   if (!JSON.stringify(growthPacket.raw_context?.received_context || {}).includes('no_paid_growth_plan_packet')) throw new Error('growth source no-paid plan contract was not preserved in raw_context');
   if (!JSON.stringify(growthPacket.raw_context?.received_context || {}).includes('organic_specialist_handoff_packet')) throw new Error('growth source organic specialist contract was not preserved in raw_context');
   if (!JSON.stringify(growthPacket.raw_context?.next_decision || {}).includes('follow-up order')) throw new Error('growth next decision was not returned in raw_context');
