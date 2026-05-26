@@ -74,9 +74,9 @@ const engineeringContractExpectations = [
   {
     kind: 'build_team_leader',
     actions: ['plan_implementation_team', 'resolve_parallel_work_boundaries', 'gate_validation_and_pr_handoff'],
-    requiredSections: ['File ownership', 'Shared files and sequencing', 'Write-intent conflict matrix', 'Serial/parallel decision', 'Integration owner and merge check', 'Risk and rollback path'],
-    guidedSections: ['File ownership', 'Shared files and sequencing', 'Write-intent conflict matrix', 'Serial/parallel decision', 'Execution slices', 'Integration gate', 'Integration owner and merge check', 'Validation commands', 'Risk and rollback path', 'PR handoff criteria'],
-    forbiddenClaims: ['safe parallel execution without shared-file review', 'serial-required work dispatched in parallel', 'shared contract changed without downstream owner']
+    requiredSections: ['File ownership', 'Shared files and sequencing', 'Write-intent conflict matrix', 'Conflict checkpoint', 'Serial/parallel decision', 'Integration owner and merge check', 'Risk and rollback path'],
+    guidedSections: ['File ownership', 'Shared files and sequencing', 'Write-intent conflict matrix', 'Conflict checkpoint', 'Serial/parallel decision', 'Execution slices', 'Integration gate', 'Integration owner and merge check', 'Validation commands', 'Risk and rollback path', 'PR handoff criteria'],
+    forbiddenClaims: ['safe parallel execution without shared-file review', 'implementation-ready claim without conflict checkpoint', 'serial-required work dispatched in parallel', 'shared contract changed without downstream owner']
   },
   {
     kind: 'cto_leader',

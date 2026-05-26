@@ -492,7 +492,7 @@
       "id": "build-team-leader-implementation",
       "file": "build-team-leader.js",
       "kind": "build_team_leader",
-      "prompt": "Lead a repo-aware bug fix for an order status page with multiple implementers. Include file ownership, write-intent conflict matrix, serial vs parallel sequencing, serial blockers, downstream contract owner, integration owner, validation commands, rollback path, and PR handoff criteria.",
+      "prompt": "Lead a repo-aware bug fix for an order status page with multiple implementers. The API, UI, and QA owners may touch the same route, UI state, and QA fixture files. Include file ownership, write-intent conflict matrix, pre-implementation conflict checkpoint, planned diff/no-diff labels per owner, serial vs parallel sequencing, serial blockers, downstream contract owner, integration owner, validation commands, rollback path, and PR handoff criteria. Do not mark the work implementation-ready or parallel-ready until shared-file conflicts and merge checks are explicit.",
       "body": {
         "input": {
           "affected_area": "order status page",
@@ -510,15 +510,26 @@
               "file": "lib/api-routes.js",
               "owners": ["API implementer", "UI implementer"],
               "writes": ["status endpoint response shape", "frontend-facing field contract"],
+              "planned_diff_status": {
+                "API implementer": "will change endpoint response fields",
+                "UI implementer": "no direct route diff; depends on frozen response contract"
+              },
+              "serial_blocker": "API response contract must be frozen before UI implementation",
               "downstream_contract_owner": "UI implementer"
             },
             {
               "file": "scripts/ui-qa.mjs",
               "owners": ["UI implementer", "QA owner"],
               "writes": ["order status assertion", "regression fixture coverage"],
+              "planned_diff_status": {
+                "UI implementer": "may update selectors or state fixture expectations",
+                "QA owner": "will update final assertions after UI field names are frozen"
+              },
+              "serial_blocker": "QA assertion update waits until UI owner confirms selector and status text",
               "downstream_contract_owner": "QA owner"
             }
           ],
+          "conflict_checkpoint": "Before implementation, freeze API response shape, UI status labels, QA selector names, integration owner, and merge/check order.",
           "owner_candidates": [
             "UI implementer",
             "API implementer",
