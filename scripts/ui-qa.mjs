@@ -162,6 +162,7 @@ const adminCss = readFileSync(adminCssPath, 'utf8');
 const adminJs = readFileSync(adminJsPath, 'utf8');
 const clientJs = readFileSync(clientJsPath, 'utf8');
 const clientOpenChatPreorderIntentJs = readFileSync(new URL('../public/client-open-chat-preorder-intent-utils.js', import.meta.url), 'utf8');
+const clientOpenChatQuickAnswerJs = readFileSync(new URL('../public/client-open-chat-quick-answer-utils.js', import.meta.url), 'utf8');
 const clientOpenChatOrderProgressUtilsJs = readFileSync(clientOpenChatOrderProgressUtilsPath, 'utf8');
 const clientAnalyticsUtilsJs = readFileSync(clientAnalyticsUtilsPath, 'utf8');
 const analyticsLoaderJs = readFileSync(analyticsLoaderPath, 'utf8');
@@ -385,10 +386,13 @@ assert.ok(chatJs.includes('rememberConversationLanguage(prompt)'), 'Chat should 
 assert.ok(chatJs.includes('PROMPT_PLACEHOLDERS'), 'Chat composer placeholders should be able to follow the selected conversation language.');
 assert.ok(chatJs.includes('will ask one item at a time before dispatch'), 'Leader intake should ask one item at a time instead of dumping all questions at once.');
 assert.equal((clientJs.match(/seo_specialist:\s*'SEO Specialist'/g) || []).length, 1, 'Open chat task labels should not keep duplicate seo_specialist entries.');
-const clientMarketingAgentListAnswer = clientJs.slice(
-  clientJs.indexOf('function buildOpenChatMarketingAgentListAnswer'),
-  clientJs.indexOf('function buildOpenChatLeaderCatalogAnswer')
-);
+const clientMarketingAgentListAnswer = [
+  clientJs.slice(
+    clientJs.indexOf('function buildOpenChatMarketingAgentListAnswer'),
+    clientJs.indexOf('function buildOpenChatLeaderCatalogAnswer')
+  ),
+  clientOpenChatQuickAnswerJs
+].join('\n');
 assert.ok(clientMarketingAgentListAnswer.includes('registered agent manifests'), 'Marketing agent list chat answer should point at registered manifests.');
 assert.ok(!/(Launch Team Leader|GROWTH OPERATOR AGENT|DIRECTORY SUBMISSION AGENT|ACQUISITION AUTOMATION AGENT|INSTAGRAM LAUNCH AGENT|X OPS CONNECTOR AGENT)/.test(clientMarketingAgentListAnswer), 'Client marketing agent list must not define sample-agent names or capabilities.');
 assert.ok(!/OAuth連携後は確認付きで投稿する|can post after X OAuth plus explicit confirmation/.test(clientMarketingAgentListAnswer), 'Client marketing agent list must not claim agent-specific external execution behavior.');
@@ -1941,7 +1945,7 @@ assert.ok(billingHelpers.includes("missing.push('payjpTenantReady')"), 'Provider
 assert.ok(billingHelpers.includes('payjp_tenant_review_started'), 'Agent registration money readiness should report whether PAY.JP tenant review has started.');
 assert.ok(billingHelpers.includes('payjp_tenant_application_url'), 'Agent registration money readiness should return the PAY.JP tenant onboarding URL when available.');
 assert.ok(billingHelpers.includes('money_actions_blocked'), 'Agent registration should report locked provider money actions without blocking registration.');
-assert.ok(clientJs.includes('Listing can proceed, but money actions stay locked'), 'Agent registration UI copy should allow listing while warning that money actions are locked.');
+assert.ok(/Listing can proceed, but (provider )?money actions stay locked/.test(clientJs), 'Agent registration UI copy should allow listing while warning that money actions are locked.');
 assert.ok(clientJs.includes('PAY.JP tenant review'), 'Agent registration UI copy should include PAY.JP tenant review as a money-action readiness condition.');
 for (const field of ['billingPhone', 'billingPostalCode', 'billingRegion', 'billingCity', 'billingAddressLine1', 'billingAddressLine2']) {
   assert.ok(clientJs.includes(field), `Settings UI should save provider registration billing field ${field}.`);
