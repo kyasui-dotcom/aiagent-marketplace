@@ -47,6 +47,7 @@ const pricingOpsSource = read('public/pricing-ops.js');
 const clientSource = read('public/client.js');
 const clientOpenChatPreorderIntentSource = read('public/client-open-chat-preorder-intent-utils.js');
 const clientOpenChatPreLlmGuardSource = read('public/client-open-chat-pre-llm-guard-utils.js');
+const clientOpenChatQuickAnswerSource = read('public/client-open-chat-quick-answer-utils.js');
 const clientDeliveryFilesSource = read('public/client-delivery-files.js');
 const workActionRegistrySource = read('public/work-action-registry.js');
 const workIntentResolverSource = read('public/work-intent-resolver.js');
@@ -903,10 +904,13 @@ assertNotIncludes(clientSource, [
   'Direct follow-up for previous order ${job.id}:',
   'Use input._broker.conversation.previousJob as the prior delivery context.'
 ], 'public/client.js');
-const clientMarketingAgentListAnswer = clientSource.slice(
-  clientSource.indexOf('function buildOpenChatMarketingAgentListAnswer'),
-  clientSource.indexOf('function buildOpenChatLeaderCatalogAnswer')
-);
+const clientMarketingAgentListAnswer = [
+  clientSource.slice(
+    clientSource.indexOf('function buildOpenChatMarketingAgentListAnswer'),
+    clientSource.indexOf('function buildOpenChatLeaderCatalogAnswer')
+  ),
+  clientOpenChatQuickAnswerSource
+].join('\n');
 assert.ok(
   clientMarketingAgentListAnswer.includes('registered agent manifests'),
   'client marketing agent list answer should route users to registered manifests instead of hardcoding sample agent definitions'

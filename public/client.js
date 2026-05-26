@@ -144,6 +144,8 @@ import { createClientOpenChatOrderProgressUtils } from './client-open-chat-order
 import { createClientOpenChatPreorderUtils } from './client-open-chat-preorder-utils.js?v=20260527a';
 import { createClientOpenChatPreorderIntentUtils } from './client-open-chat-preorder-intent-utils.js?v=20260527a';
 import { createClientOpenChatPreLlmGuardUtils } from './client-open-chat-pre-llm-guard-utils.js?v=20260527a';
+import { createClientOpenChatNaturalFlowUtils } from './client-open-chat-natural-flow-utils.js?v=20260527a';
+import { createClientOpenChatQuickAnswerUtils } from './client-open-chat-quick-answer-utils.js?v=20260527a';
 import { createOpenChatIntakeUtils } from './open-chat-intake-utils.js?v=20260527a';
 import {
   buildOpenChatIntentClarification,
@@ -944,6 +946,55 @@ const {
   requestOpenChatPreorderIntentResolution
 } = clientOpenChatPreorderIntentUtils;
 
+const clientOpenChatNaturalFlowUtils = createClientOpenChatNaturalFlowUtils({
+  getState: () => state,
+  openChatIntentMatchText: (value) => openChatIntentMatchText(value),
+  isStructuredOrderBrief: (brief) => isStructuredOrderBrief(brief),
+  explicitOpenChatAssistMode: (prompt) => explicitOpenChatAssistMode(prompt),
+  openChatProductQuestionContext: (prompt) => openChatProductQuestionContext(prompt),
+  openChatHasSpecificExecutionContext: (prompt, inputCounts) => openChatHasSpecificExecutionContext(prompt, inputCounts),
+  looksJapanese: (value) => looksJapanese(value),
+  openChatPreorderDecisionCommand: (prompt) => openChatPreorderDecisionCommand(prompt),
+  composeOpenChatPreorderConfirmResponse: (original, prompt, inputCounts) => composeOpenChatPreorderConfirmResponse(original, prompt, inputCounts),
+  composeOpenChatPreorderReviseResponse: (original, intent, ja) => composeOpenChatPreorderReviseResponse(original, intent, ja),
+  composeOpenChatPreorderCancelResponse: (ja) => composeOpenChatPreorderCancelResponse(ja),
+  openChatCanonicalOrderTaskType: (taskType, context) => openChatCanonicalOrderTaskType(taskType, context),
+  currentRoutingTask: () => currentRoutingTask(),
+  inferClientTaskSequence: (taskType, prompt) => inferClientTaskSequence(taskType, prompt),
+  buildOpenChatDispatchBriefFromPendingAnswer: (original, prompt, taskType, inputCounts) => buildOpenChatDispatchBriefFromPendingAnswer(original, prompt, taskType, inputCounts),
+  openChatHumanDispatchPreview: (brief, taskType, prompt, inputCounts) => openChatHumanDispatchPreview(brief, taskType, prompt, inputCounts),
+  buildOpenChatNaturalChoiceBrief: (original, intent, mode, inputCounts) => buildOpenChatNaturalChoiceBrief(original, intent, mode, inputCounts),
+  openChatReadyToRunBlock: (ja) => openChatReadyToRunBlock(ja),
+  buildOpenChatVagueResearchBrief: (original, inputCounts) => buildOpenChatVagueResearchBrief(original, inputCounts),
+  openChatLooksGreetingPrompt: (prompt) => openChatLooksGreetingPrompt(prompt),
+  openChatLooksLowInfoTestPrompt: (prompt) => openChatLooksLowInfoTestPrompt(prompt),
+  openChatCommandMode: (prompt) => openChatCommandMode(prompt),
+  shouldDeferOpenChatCommandForAnswer: (prompt) => shouldDeferOpenChatCommandForAnswer(prompt),
+  lastOpenChatPreparedBrief: () => lastOpenChatPreparedBrief(),
+  structuredOrderBriefParts: (brief) => structuredOrderBriefParts(brief),
+  isOpenChatClarificationAnswer: (prompt) => isOpenChatClarificationAnswer(prompt),
+  isOpenChatBriefEditInstruction: (prompt) => isOpenChatBriefEditInstruction(prompt),
+  openChatFollowupMode: (prompt) => openChatFollowupMode(prompt),
+  reviseStructuredBriefWithInstruction: (brief, instruction) => reviseStructuredBriefWithInstruction(brief, instruction),
+  catCompactDispatchBrief: (source, taskType, inputCounts, config) => catCompactDispatchBrief(source, taskType, inputCounts, config),
+  openChatLooksSensitiveSecret: (prompt) => openChatLooksSensitiveSecret(prompt),
+  openChatLooksUnsafeRequest: (prompt) => openChatLooksUnsafeRequest(prompt),
+  openChatLooksHighStakesAdvice: (prompt) => openChatLooksHighStakesAdvice(prompt),
+  openChatLastPromptWasOrderDecision: () => openChatLastPromptWasOrderDecision(),
+  openChatPreviousUserMessageBody: () => openChatPreviousUserMessageBody()
+});
+const {
+  isOpenChatVagueHighValueRequest,
+  openChatNaturalIntentLabel,
+  buildOpenChatIntentShiftFollowup,
+  buildOpenChatNaturalChoiceFollowup,
+  buildOpenChatVagueChoiceFollowup,
+  buildOpenChatIntentShiftQuestion,
+  buildOpenChatResearchOrNarrowChoice,
+  openChatNaturalConversationIntent,
+  buildOpenChatNaturalConversationAnswer
+} = clientOpenChatNaturalFlowUtils;
+
 const clientOpenChatPreLlmGuardUtils = createClientOpenChatPreLlmGuardUtils({
   getState: () => state,
   chatAnswerBody: (answer) => chatAnswerBody(answer),
@@ -1007,10 +1058,70 @@ const {
   openChatHasActiveLocalFollowupState,
   buildOpenChatLocalPriorityAnswer,
   buildOpenChatPreLlmGuardAnswer,
+  openChatLooksBareTopicPrompt,
   openChatShouldPreferOpenAiReasoning,
   openChatLlmFallbackReason,
   openChatLooksPreorderIntentLlmCandidate
 } = clientOpenChatPreLlmGuardUtils;
+
+let clientOpenChatQuickAnswerUtils = null;
+
+clientOpenChatQuickAnswerUtils = createClientOpenChatQuickAnswerUtils({
+  getState: () => state,
+  looksJapanese: (value) => looksJapanese(value),
+  isStructuredOrderBrief: (brief) => isStructuredOrderBrief(brief),
+  isOpenChatNoLoginPrompt: (prompt) => isOpenChatNoLoginPrompt(prompt),
+  isOpenChatBenignNegativeReply: (prompt) => isOpenChatBenignNegativeReply(prompt),
+  isOpenChatRunConfirmation: (prompt) => isOpenChatRunConfirmation(prompt),
+  isOpenChatGenericProceed: (prompt) => isOpenChatGenericProceed(prompt),
+  isLeaderCatalogQuestionIntentText: (prompt) => isLeaderCatalogQuestionIntentText(prompt),
+  lastOpenChatPreparedBrief: () => lastOpenChatPreparedBrief(),
+  openChatIntentMatchText: (value) => openChatIntentMatchText(value),
+  openChatProductQuestionContext: (prompt) => openChatProductQuestionContext(prompt),
+  openChatCommandMode: (prompt) => openChatCommandMode(prompt),
+  openChatLooksGreetingPrompt: (prompt) => openChatLooksGreetingPrompt(prompt),
+  openChatLooksLowInfoTestPrompt: (prompt) => openChatLooksLowInfoTestPrompt(prompt),
+  openChatPromptInjectionGuard: (prompt) => openChatPromptInjectionGuard(prompt),
+  openChatLooksSensitiveSecret: (prompt) => openChatLooksSensitiveSecret(prompt),
+  openChatLooksUnsafeRequest: (prompt) => openChatLooksUnsafeRequest(prompt),
+  openChatLooksHighStakesAdvice: (prompt) => openChatLooksHighStakesAdvice(prompt),
+  openChatLooksStandaloneQuestionText: (prompt) => openChatLooksStandaloneQuestionText(prompt),
+  openChatHasActiveLocalFollowupState: (prompt) => openChatHasActiveLocalFollowupState(prompt),
+  openChatNaturalConversationIntent: (prompt, inputCounts) => openChatNaturalConversationIntent(prompt, inputCounts),
+  openChatAiBeginnerNaturalIntent: (prompt, inputCounts) => openChatAiBeginnerNaturalIntent(prompt, inputCounts),
+  openChatEngineerNaturalIntent: (prompt, inputCounts) => openChatEngineerNaturalIntent(prompt, inputCounts),
+  openChatLooksBareTopicPrompt: (prompt) => openChatLooksBareTopicPrompt(prompt),
+  catCompactDispatchBrief: (source, taskType, inputCounts, config) => catCompactDispatchBrief(source, taskType, inputCounts, config),
+  inferClientTaskSequence: (taskType, prompt) => inferClientTaskSequence(taskType, prompt),
+  buildOpenChatPromptInjectionAnswer: (prompt) => buildOpenChatPromptInjectionAnswer(prompt),
+  buildOpenChatLongPromptGuardAnswer: (prompt, inputCounts) => buildOpenChatLongPromptGuardAnswer(prompt, inputCounts),
+  buildOpenChatReusableToolsAnswer: (prompt) => buildOpenChatReusableToolsAnswer(prompt),
+  buildOpenChatRecoveredLeaderIntakeAnswer: (prompt, inputCounts) => buildOpenChatRecoveredLeaderIntakeAnswer(prompt, inputCounts),
+  buildOpenChatLeaderIntakeFollowupAnswer: (prompt, inputCounts) => buildOpenChatLeaderIntakeFollowupAnswer(prompt, inputCounts),
+  buildOpenChatPendingQuestionFollowupAnswer: (prompt, inputCounts) => buildOpenChatPendingQuestionFollowupAnswer(prompt, inputCounts),
+  buildOpenChatPatternGuardAnswer: (prompt, inputCounts, config) => buildOpenChatPatternGuardAnswer(prompt, inputCounts, config),
+  buildOpenChatLowInfoTestAnswer: (prompt) => buildOpenChatLowInfoTestAnswer(prompt),
+  buildOpenChatGreetingAnswer: (prompt) => buildOpenChatGreetingAnswer(prompt),
+  buildOpenChatIntentShiftFollowup: (prompt, inputCounts) => buildOpenChatIntentShiftFollowup(prompt, inputCounts),
+  buildOpenChatIdeaOperatorFollowup: (prompt, inputCounts) => buildOpenChatIdeaOperatorFollowup(prompt, inputCounts),
+  buildOpenChatNaturalChoiceFollowup: (prompt, inputCounts) => buildOpenChatNaturalChoiceFollowup(prompt, inputCounts),
+  buildOpenChatVagueChoiceFollowup: (prompt, inputCounts) => buildOpenChatVagueChoiceFollowup(prompt, inputCounts),
+  buildOpenChatPendingChoiceReminder: (prompt) => buildOpenChatPendingChoiceReminder(prompt),
+  buildOpenChatLeaderIntakeAnswer: (prompt, inputCounts) => buildOpenChatLeaderIntakeAnswer(prompt, inputCounts),
+  buildOpenChatRepairAnswer: (prompt) => buildOpenChatRepairAnswer(prompt),
+  buildOpenChatPauseAnswer: (prompt) => buildOpenChatPauseAnswer(prompt),
+  buildOpenChatStatusAnswer: (prompt) => buildOpenChatStatusAnswer(prompt),
+  buildOpenChatTimelineIntentChoiceAnswer: (prompt) => buildOpenChatTimelineIntentChoiceAnswer(prompt),
+  buildOpenChatCeoIdeaAnswer: (prompt, inputCounts) => buildOpenChatCeoIdeaAnswer(prompt, inputCounts),
+  buildOpenChatCommandAnswer: (prompt) => buildOpenChatCommandAnswer(prompt),
+  buildOpenChatFollowupAnswer: (prompt, inputCounts) => buildOpenChatFollowupAnswer(prompt, inputCounts),
+  buildOpenChatAssistAnswer: (prompt, inputCounts) => buildOpenChatAssistAnswer(prompt, inputCounts),
+  buildOpenChatIntentShiftQuestion: (prompt, inputCounts) => buildOpenChatIntentShiftQuestion(prompt, inputCounts),
+  buildOpenChatResearchOrNarrowChoice: (prompt, inputCounts) => buildOpenChatResearchOrNarrowChoice(prompt, inputCounts),
+  buildOpenChatNaturalConversationAnswer: (prompt, inputCounts) => buildOpenChatNaturalConversationAnswer(prompt, inputCounts),
+  productName: PRODUCT_NAME,
+  temporaryInvoiceBillingEnabled: TEMPORARY_INVOICE_BILLING_ENABLED
+});
 
 const clientOpenChatIntakeUtils = createOpenChatIntakeUtils({
   getState: () => state,
@@ -4163,203 +4274,35 @@ function buildOpenChatStatusAnswer(prompt = '') {
 }
 
 function buildOpenChatNoLoginAnswer(prompt = '') {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  if (!isOpenChatNoLoginPrompt(text)) return null;
-  const ja = looksJapanese(prompt);
-  return {
-    kind: 'clarify',
-    tone: 'info',
-    suppressTrio: true,
-    body: ja
-      ? [
-        'ログインなしでも、このチャットで相談、FAQ、発注ブリーフ作成まではできます。',
-        '',
-        'ただし、実際にagentへ仕事を送る、支払い、納品履歴の保存、API key発行にはログインが必要です。',
-        '',
-        '初回ログインで10ドル分の無料枠が付与されます。実行直前まで整理してからログインすれば、その無料枠を最初の発注に使えます。',
-        '',
-        '今できること: 依頼内容をここで整理して、実行直前まで進める。実行する時だけGoogleログインに進む、という使い方ができます。'
-      ].join('\n')
-      : [
-        'Without login, you can still use this chat for discussion, FAQs, and work-order preparation.',
-        '',
-        'Login is required only for sending real work to agents, payment, saved delivery history, and API key issuance.',
-        '',
-        'First-time sign-in grants $10 in credits. Prepare the request first, then use those credits toward the first order when you are ready.',
-        '',
-        'A practical path: prepare the request here first, then sign in with Google only when you are ready to run it.'
-      ].join('\n'),
-    actions: [
-      { action: 'connect_google', label: ja ? 'Googleでログインして10ドル無料枠を受け取る' : 'SIGN IN AND GET $10 CREDIT' }
-    ],
-    status: 'No-login path explained.\n\nNo order was created and no billing occurred.'
-  };
+  return clientOpenChatQuickAnswerUtils.buildOpenChatNoLoginAnswer(prompt);
 }
 
 function buildOpenChatExamplesAnswer(prompt = '') {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  if (!/(何を頼める|頼めること|依頼例|注文例|発注例|サンプル依頼|プロンプト例|examples?|sample prompts?|what can i order|what should i ask)/i.test(text)) return null;
-  const ja = looksJapanese(prompt);
-  return {
-    kind: 'clarify',
-    tone: 'info',
-    suppressTrio: true,
-    body: ja
-      ? [
-        '依頼例です。ここではまだ注文も課金も発生しません。',
-        '',
-        '1. 「このURLをSEO観点でレビューして、優先度付き改善案を表で出して」',
-        '2. 「競合3社と比較して、価格・機能・訴求の違いをまとめて」',
-        '3. 「このGitHub repoのREADMEと導入手順を改善して」',
-        '4. 「Product Hunt投稿文を、開発者向けに3パターン作って」',
-        '5. 「この長い要件を、実行しやすい発注文にブラッシュアップして」',
-        '',
-        '迷う場合は雑に書いてください。こちらで発注ブリーフに整えて、実行前に確認します。'
-      ].join('\n')
-      : [
-        'Here are useful order examples. Nothing is ordered or billed here.',
-        '',
-        '1. “Review this URL for SEO and deliver prioritized fixes as a table.”',
-        '2. “Compare these three competitors by pricing, features, and positioning.”',
-        '3. “Improve this GitHub repo README and setup flow.”',
-        '4. “Write three Product Hunt post variants for developers.”',
-        '5. “Turn this rough requirement into an executable work order.”',
-        '',
-        'If unsure, write it roughly. I will turn it into a brief and pause for confirmation before execution.'
-      ].join('\n'),
-    status: 'Order examples shown.\n\nNo order was created and no billing occurred.'
-  };
+  return clientOpenChatQuickAnswerUtils.buildOpenChatExamplesAnswer(prompt);
 }
 
 function buildOpenChatAcknowledgementAnswer(prompt = '') {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  if (!isOpenChatBenignNegativeReply(text)
-    && !/^(ありがとう|ありがと|助かる|了解|りょうかい|わかりました|分かりました|ok|okay|thanks|thank you|got it)[!！。.\s]*$/i.test(text)) return null;
-  if (isOpenChatRunConfirmation(text)) return null;
-  const previousBrief = lastOpenChatPreparedBrief();
-  const ja = looksJapanese(prompt) || looksJapanese(previousBrief);
-  return {
-    kind: 'clarify',
-    tone: 'info',
-    suppressTrio: true,
-    body: ja
-      ? [
-        '了解です。ここでは実行も課金もしていません。',
-        '',
-        previousBrief
-          ? '準備済みの発注ブリーフは残しています。実行するなら SEND ORDER、直すなら追加条件、別件なら「リセット」と送ってください。'
-          : '次に、やりたい作業、質問、URL/Fileの追加、エージェント登録などをそのまま書いてください。'
-      ].join('\n')
-      : [
-        'Got it. Nothing has run and nothing has been billed.',
-        '',
-        previousBrief
-          ? 'The prepared brief is still available. Press SEND ORDER to run it, add constraints to revise it, or send “reset” for a new topic.'
-          : 'Next, describe the work, ask a question, add URL/files, or ask about listing an agent.'
-      ].join('\n'),
-    nextPrompt: previousBrief || '',
-    status: 'Acknowledgement handled.\n\nNo order was created and no billing occurred.'
-  };
+  return clientOpenChatQuickAnswerUtils.buildOpenChatAcknowledgementAnswer(prompt);
 }
 
 function buildOpenChatDirectResearchQuestionAnswer(prompt = '', inputCounts = {}) {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  if (!text || text.length > 280 || lastOpenChatPreparedBrief()) return null;
-  if (openChatProductQuestionContext(text) || openChatCommandMode(text) || explicitOpenChatAssistMode(text)) return null;
-  if (openChatLooksSensitiveSecret(text) || openChatLooksUnsafeRequest(text) || openChatLooksHighStakesAdvice(text)) return null;
-  const directQuestion = /[?？]|\b(what|who|where|when|which|how much|how many|find)\b/i.test(text)
-    || /(知りたい|調べたい|教えて|探して|いくら|価格|値段|最新|一番|最大|最安|おすすめ|相場|ランキング|どれ|どこ|いつ|誰|何)/i.test(text);
-  if (!directQuestion) return null;
-  const taskType = /(価格|値段|相場|いくら|pricing|price|cost|how much)/i.test(text) ? 'pricing' : 'research';
-  const brief = catCompactDispatchBrief(text, taskType, inputCounts);
-  const ja = looksJapanese(text);
-  return {
-    kind: 'assist',
-    tone: 'ok',
-    suppressTrio: true,
-    body: ja
-      ? [
-        'これは直接回答が欲しい調査質問として受け取りました。',
-        '',
-        '正確性が必要な場合は、agentに調査として渡します。先に発注ブリーフに整えました。まだ注文も課金も発生しません。',
-        '',
-        '発注文:',
-        brief,
-        '',
-        'このまま調査するなら SEND ORDER。軽く方向だけ相談したい場合は、追加条件や予算上限を書いてください。'
-      ].join('\n')
-      : [
-        'I read this as a direct research question.',
-        '',
-        'For accurate answers, I will route it as agent research. I prepared the work brief first. No order or billing has happened.',
-        '',
-        'Work order:',
-        brief,
-        '',
-        'Press SEND ORDER to run it, or add constraints/budget limits if you only want a lighter pass.'
-      ].join('\n'),
-    nextPrompt: brief,
-    status: 'Direct research question prepared.\n\nNo order was created and no billing occurred.'
-  };
+  return clientOpenChatQuickAnswerUtils.buildOpenChatDirectResearchQuestionAnswer(prompt, inputCounts);
 }
 
 function buildOpenChatRunConfirmationAnswer(prompt = '') {
-  const previousBrief = lastOpenChatPreparedBrief();
-  if (!previousBrief || !isOpenChatRunConfirmation(prompt)) return null;
-  const ja = looksJapanese(prompt) || looksJapanese(previousBrief);
-  return {
-    kind: 'assist',
-    tone: 'ok',
-    body: ja
-      ? [
-        '確認しました。この内容で agent を走らせられます。',
-        '',
-        '準備済みのオーダー内容は裏側に保存しています。',
-        '',
-        '実行する場合は SEND ORDER を押してください。まだ直す場合は、追加条件をそのまま送ってください。'
-      ].join('\n')
-      : [
-        'Confirmed. This is specific enough to run through an agent.',
-        '',
-        'I saved the prepared order behind the chat.',
-        '',
-        'To run it, press SEND ORDER. If it still needs changes, send the extra constraint here.'
-      ].join('\n'),
-    nextPrompt: previousBrief,
-    status: 'Ready to run after confirmation.\n\nPress SEND ORDER to dispatch the prepared order.'
-  };
+  return clientOpenChatQuickAnswerUtils.buildOpenChatRunConfirmationAnswer(prompt);
 }
 
 function isOpenChatBriefEditInstruction(prompt = '') {
-  const text = String(prompt || '').trim();
-  if (!text || text.length > 240) return false;
-  if (/[?？]|\b(what|how|why|can|do|does|is|are|where|when)\b/i.test(text)) return false;
-  const editMarkers = /(対象|範囲|地域|国|期間|期限|納品|形式|フォーマット|Markdown|マークダウン|表|チェックリスト|キーワード|URL|競合|トーン|文体|文字数|除外|含め|追加|条件|前提|source|url|keyword|region|country|market|format|markdown|table|checklist|tone|length|exclude|include|constraint|assumption|competitor|deadline)/i;
-  const lightEditShape = /(で|として|にして|を追加|も入れて|は|:|：)/i;
-  return editMarkers.test(text) && lightEditShape.test(text) || isOpenChatAdditionalRequirementFollowup(text);
+  return clientOpenChatQuickAnswerUtils.isOpenChatBriefEditInstruction(prompt);
 }
 
 function isOpenChatAdditionalRequirementFollowup(prompt = '') {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  if (!text || text.length > 240 || !lastOpenChatPreparedBrief()) return false;
-  if (isStructuredOrderBrief(text) || isOpenChatGenericProceed(text) || openChatProductQuestionContext(text)) return false;
-  if (openChatLooksGreetingPrompt(text) || openChatLooksLowInfoTestPrompt(text)) return false;
-  if (openChatPromptInjectionGuard(text).blocked || openChatLooksSensitiveSecret(text) || openChatLooksUnsafeRequest(text)) return false;
-  const additiveCue = /^(あと|それと|さらに|追加で|ついでに|できれば|可能なら|加えて|それから|also|and also|plus|additionally|if possible|please also|make sure to)\b/i.test(text);
-  const requirementCue = /(も見て|も調べ|も比較|も入れ|も含め|も対象|を見て|を調べ|を比較|を入れ|を含め|対象に|優先|除外|競合|相場|市場|地域|期間|形式|表|markdown|マークダウン|include|add|compare|competitor|market|region|format|table|exclude|focus on|prioritize)/i.test(text);
-  return additiveCue || requirementCue;
+  return clientOpenChatQuickAnswerUtils.isOpenChatAdditionalRequirementFollowup(prompt);
 }
 
 function explicitOpenChatAssistMode(prompt = '') {
-  const text = String(prompt || '').trim();
-  if (!text) return '';
-  if (isStructuredOrderBrief(text)) return '';
-  const hasOrderPrepContext = /(発注|注文|依頼|オーダー|プロンプト|タスク|ヒアリング|確認質問|抜け漏れ|トークン|省トークン|order|brief|work order|prompt|task|token|clarif)/i.test(text);
-  if (/(ブラッシュアップ|具体化|抜け漏れ|要件整理|発注文|注文文|依頼文|refine|make.+specific|turn.+into.+order|order brief|work order|prompt.+improve)/i.test(text)) return 'brushup';
-  if (/(ヒアリング|確認質問|質問して|聞いて|interview|clarifying question|ask.+question)/i.test(text)) return 'questions';
-  if (hasOrderPrepContext && /(分解|分けて|分ける|切って|タスク化|マルチエージェント|分担|並列|split|break down|decompose|parallel|multi[- ]agent)/i.test(text)) return 'split';
-  if (hasOrderPrepContext && /(英語化|英訳|短く|圧縮|トークン|省トークン|compact|token|execution brief)/i.test(text)) return 'compact';
-  return '';
+  return clientOpenChatQuickAnswerUtils?.explicitOpenChatAssistMode(prompt) || '';
 }
 
 function buildOpenChatFollowupAnswer(prompt = '', inputCounts = {}) {
@@ -4895,90 +4838,6 @@ function openChatHasSpecificExecutionContext(prompt = '', inputCounts = {}) {
   return hits >= 2 || (hits >= 1 && (text.length >= 140 || words >= 28));
 }
 
-function isOpenChatVagueHighValueRequest(prompt = '', inputCounts = {}) {
-  const raw = String(prompt || '').replace(/\s+/g, ' ').trim();
-  const text = openChatIntentMatchText(raw);
-  if (!raw || raw.length < 6) return false;
-  if (isStructuredOrderBrief(raw)) return false;
-  if (explicitOpenChatAssistMode(raw)) return false;
-  if (openChatProductQuestionContext(raw)) return false;
-  if (openChatHasSpecificExecutionContext(raw, inputCounts)) return false;
-  const highValuePatterns = [
-    /\b(want|need|make|earn|get|grow|increase).{0,35}(money|revenue|sales|customers|users|profit|income|growth)\b/i,
-    /\b(make|build|create).{0,45}(app|application|product|saas|service).{0,70}(people|users|customers).{0,35}(want|use|pay|love|need)\b/i,
-    /\b(good|successful|profitable|viral|popular).{0,35}(app|application|product|business|startup|service)\b/i,
-    /\b(business|startup|app|application|product|saas|service).{0,25}(idea|ideas|opportunity|opportunities)\b/i,
-    /\b(market|customer|user|audience|competitor).{0,25}(research|opportunity|validation|demand)\b/i,
-    /(お金|収益|売上|利益|稼ぎ|儲け).{0,35}(増や|上げ|たい|ほしい|欲しい|作|出したい|伸ば)/,
-    /(売れる|使われる|欲しがられる|儲かる|稼げる|伸びる).{0,25}(アプリ|サービス|プロダクト|事業|ビジネス)/,
-    /(ビジネス|事業|アプリ|サービス|プロダクト|起業).{0,16}(案|アイデア|ネタ|機会|チャンス)/,
-    /(市場|ユーザー|顧客|需要|競合).{0,16}(調査|リサーチ|探|検証)/
-  ];
-  return highValuePatterns.some((pattern) => pattern.test(text));
-}
-
-function openChatVagueChoiceMode(prompt = '') {
-  const raw = String(prompt || '').replace(/\s+/g, ' ').trim();
-  const text = raw;
-  const matchText = openChatIntentMatchText(raw);
-  if (!raw || !String(state.openChatVagueChoicePrompt || '').trim()) return '';
-  if (/^(1|research|research options first|research first|do research|market research|リサーチ|調査|まずリサーチ|選択肢をリサーチ|まず選択肢をリサーチ)$/i.test(text)
-    || /(research|market research|調査|リサーチ).{0,20}(first|先|まず|して)/i.test(matchText)) {
-    return 'research';
-  }
-  if (/^(2|narrow|narrow it|i will narrow it|i'll narrow it|specific|give details|具体化|自分で具体化|具体的にする|絞る|絞ります)$/i.test(text)
-    || /(narrow|specific|details|具体化|具体的|絞).{0,24}(する|します|first|myself|自分)/i.test(matchText)) {
-    return 'narrow';
-  }
-  return '';
-}
-
-function openChatNaturalChoiceMode(prompt = '') {
-  const raw = String(prompt || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
-  const choice = raw.replace(/^[#\s]+/, '').replace(/[.．。、):：\s]+$/g, '');
-  const text = raw;
-  const matchText = openChatIntentMatchText(raw);
-  const intent = String(state.openChatNaturalChoiceIntent || '').trim();
-  const original = String(state.openChatVagueChoicePrompt || '').trim();
-  if (!raw || !intent || !original) return '';
-  if (intent === 'natural_ai_beginner_start') {
-    if (/^(1|examples?|例|できること|サンプル)$/i.test(choice)) return 'beginner_examples';
-    if (/^(2|organize|整理|困りごと|一緒に整理)$/i.test(choice)) return 'beginner_organize';
-    if (/^(3|question|ask|質問|チャット|注文しない)$/i.test(choice)) return 'beginner_chat_only';
-  }
-  if (intent === 'natural_ai_beginner_examples') {
-    if (/^(1|summary|summari[sz]e|要約)$/i.test(choice)) return 'beginner_summary';
-    if (/^(2|compare|comparison|比較)$/i.test(choice)) return 'beginner_compare';
-    if (/^(3|writing|write|draft|文章|返信|投稿|メール)$/i.test(choice)) return 'beginner_writing';
-    if (/^(4|improve|improvement|改善|改善点)$/i.test(choice)) return 'beginner_improve';
-    if (/^(5|debug|bug|error|エラー|不具合)$/i.test(choice)) return 'beginner_debug';
-  }
-  if (/^(0|diagnose|diagnosis|audit|overall|全体診断|診断|まず診断|全体を見る|全体を見たい)$/i.test(choice)) return 'diagnose';
-  if (/^(1|research|research first|リサーチ|調査|まず調査|まずリサーチ)$/i.test(choice)) {
-    if (intent === 'natural_business_growth') return 'traffic';
-    return 'research';
-  }
-  if (/^(2|narrow|source|paste|post|lp|具体化|自分で具体化|貼る|投稿文|LP|スクショ)$/i.test(choice)) {
-    if (intent === 'natural_business_growth') return 'conversion';
-    if (intent === 'natural_marketing_launch') return 'source';
-    return 'narrow';
-  }
-  if (/^(3|retention|churn|継続|解約|定着)$/i.test(choice) && intent === 'natural_business_growth') return 'retention';
-  if (/(traffic|acquisition|流入|集客)/i.test(matchText) && intent === 'natural_business_growth') return 'traffic';
-  if (/(conversion|cvr|signup|purchase|登録|購入|転換|コンバージョン)/i.test(matchText) && intent === 'natural_business_growth') return 'conversion';
-  if (/(retention|churn|継続|解約|定着)/i.test(matchText) && intent === 'natural_business_growth') return 'retention';
-  if (/(research|channel|distribution|投稿先|チャネル|拡散|調査|リサーチ)/i.test(matchText) && intent === 'natural_marketing_launch') return 'research';
-  if (/(post|copy|lp|screenshot|source|投稿文|本文|LP|スクショ|貼る|添削)/i.test(matchText) && intent === 'natural_marketing_launch') return 'source';
-  if (intent === 'natural_entity_exploration') {
-    if (/^(1|price|pricing|market|range|current|latest|highest|most expensive|相場|価格|値段|最新|最高|一番)$/i.test(choice)) return 'entity_price';
-    if (/^(2|compare|rank|ranking|options|比較|ランキング|候補)$/i.test(choice)) return 'entity_compare';
-    if (/^(3|buy|value|valuation|worth|購入|価値|査定)$/i.test(choice)) return 'entity_value';
-    if (/^(4|background|risk|caveat|summary|背景|リスク|注意点|概要)$/i.test(choice)) return 'entity_background';
-  }
-  if (/(narrow|specific|details|具体化|具体的|絞)/i.test(matchText)) return 'narrow';
-  return '';
-}
-
 function openChatDecisionBriefKey(brief = '') {
   const normalized = String(brief || '').replace(/\s+/g, ' ').trim();
   if (!isStructuredOrderBrief(normalized)) return '';
@@ -5017,1244 +4876,6 @@ function openChatLocalUserConversationText(extra = '') {
   const appended = String(extra || '').trim();
   if (appended) rows.push(appended);
   return [...new Set(rows)].join('\n').trim();
-}
-
-
-function openChatLooksLikeNaturalChoiceDetails(prompt = '') {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  if (!text || text.length < 18) return false;
-  if (/https?:\/\//i.test(text)) return true;
-  const hasNumberedAnswers = /(?:^|\s)(?:1|１)[\).．、:：]\s*\S+/.test(text)
-    && /(?:^|\s)(?:2|２)[\).．、:：]\s*\S+/.test(text);
-  const hasBusinessContext = /(対象|ユーザー|顧客|商材|商品|サービス|URL|広告費|予算|媒体|投稿|納品|成果物|エンジニア|一般ユーザー|使ってほしい|集客|売上|登録|購入|問い合わせ|audience|customer|product|service|budget|channel|deliverable|signup|purchase|lead)/i.test(text);
-  return hasNumberedAnswers || hasBusinessContext;
-}
-
-function openChatNaturalIntentLabel(intent = '', prompt = '', ja = false) {
-  const commerce = /(shopify|e-?commerce|online store|store|cart|checkout|product page|ecサイト|ネットショップ|通販|カート|チェックアウト|商品ページ)/i.test(String(prompt || ''));
-  const labels = {
-    natural_ai_beginner_start: ja ? 'AIで何ができるかを知りたい' : 'learn what AI/agents can do',
-    natural_ai_beginner_examples: ja ? '最初に試せる依頼例を知りたい' : 'find easy first examples',
-    natural_stuck_start: ja ? '何を頼めばよいか相談したい' : 'figure out what to ask for',
-    natural_idea_discovery: ja ? '需要がありそうな案を見つけたい' : 'find demand-shaped ideas',
-    natural_business_growth: commerce
-      ? (ja ? 'EC/Shopifyの売上を伸ばしたい' : 'grow an ecommerce or Shopify store')
-      : (ja ? '売上/集客/転換率を改善したい' : 'improve growth, acquisition, or conversion'),
-    natural_marketing_launch: ja ? 'ローンチ/投稿/集客を改善したい' : 'improve launch or distribution performance',
-    natural_entity_exploration: ja ? '単語だけの対象を調査・比較・価値判断に分けたい' : 'turn a bare topic into research, comparison, or value work',
-    natural_compare_decision: ja ? '比較して意思決定したい' : 'compare options and decide',
-    natural_content_help: ja ? '文章や投稿を改善したい' : 'draft or improve content',
-    natural_build_help: ja ? '開発/不具合/実装を整理したい' : 'triage build, bug, or implementation work',
-    natural_agent_publish: ja ? '自分のAI agentを公開したい' : 'publish an AI agent'
-  };
-  return labels[intent] || (ja ? '目的を整理したい' : 'clarify the user goal');
-}
-
-function openChatNaturalChoiceLabel(mode = '', ja = false) {
-  const labels = {
-    diagnose: ja ? '全体診断' : 'overall diagnosis',
-    traffic: ja ? '流入/集客' : 'traffic/acquisition',
-    conversion: ja ? '購入/登録への転換' : 'conversion',
-    retention: ja ? '継続/リピート' : 'retention',
-    research: ja ? 'リサーチして候補出し' : 'research options first',
-    narrow: ja ? '条件を絞って具体化' : 'narrow with known details',
-    source: ja ? '素材を貼って改善' : 'improve pasted source material',
-    entity_price: ja ? '最新情報/価格/相場調査' : 'current info / price research',
-    entity_compare: ja ? '比較/ランキング' : 'comparison / ranking',
-    entity_value: ja ? '購入/価値判断' : 'buying / value decision',
-    entity_background: ja ? '背景/リスク/注意点整理' : 'background / risks / caveats'
-  };
-  return labels[mode] || String(mode || (ja ? '未選択' : 'unselected'));
-}
-
-function buildOpenChatNaturalChoiceFollowup(prompt = '', inputCounts = {}) {
-  const mode = openChatNaturalChoiceMode(prompt);
-  const original = String(state.openChatVagueChoicePrompt || '').trim() || openChatPreviousUserMessageBody();
-  const intent = String(state.openChatNaturalChoiceIntent || '').trim()
-    || (openChatLastPromptWasOrderDecision() ? 'natural_business_growth' : '');
-  if (!original || !intent) return null;
-  const ja = looksJapanese(prompt) || looksJapanese(original);
-  const decisionCommand = openChatPreorderDecisionCommand(prompt);
-  if (decisionCommand === 'confirm_preorder_order') {
-    return composeOpenChatPreorderConfirmResponse(original, prompt, inputCounts);
-  }
-  if (decisionCommand === 'revise_preorder_order') {
-    return composeOpenChatPreorderReviseResponse(original, intent, ja);
-  }
-  if (decisionCommand === 'cancel_preorder_order') {
-    return composeOpenChatPreorderCancelResponse(ja);
-  }
-  if (!mode && openChatLooksLikeNaturalChoiceDetails(prompt)) {
-    const taskType = intent === 'natural_business_growth' || intent === 'natural_marketing_launch'
-      ? (openChatCanonicalOrderTaskType('', `${original}\n${prompt}`) || currentRoutingTask() || 'growth')
-      : (openChatCanonicalOrderTaskType(inferClientTaskSequence('', `${original}\n${prompt}`)[0], `${original}\n${prompt}`) || 'research');
-    const brief = buildOpenChatDispatchBriefFromPendingAnswer(original, prompt, taskType, inputCounts);
-    const previewBlock = openChatHumanDispatchPreview(brief, taskType, `${original}\n${prompt}`, inputCounts);
-    return {
-      kind: 'assist',
-      tone: 'ok',
-      patternId: 'pattern_natural_choice_details',
-      nextPrompt: brief,
-      clearVagueChoice: true,
-      clearNaturalChoice: true,
-      clearClarifyOptions: true,
-      body: ja
-        ? [
-          '追加情報を受け取りました。番号選択だけでなく、具体条件として反映します。',
-          '',
-          previewBlock,
-          '',
-          '次の操作は下のボタンから選んでください。'
-        ].join('\n')
-        : [
-          'I received the extra details. I will treat them as concrete order context, not just a numbered choice.',
-          '',
-          previewBlock,
-          '',
-          'Choose the next action from the buttons below.'
-        ].join('\n'),
-      status: 'Natural-language details converted to a dispatch preview.\n\nNo order was created and no billing occurred.'
-    };
-  }
-  if (!mode) return null;
-  if (intent === 'natural_ai_beginner_start') {
-    if (mode === 'beginner_examples') {
-      return {
-        kind: 'clarify',
-        tone: 'info',
-        body: ja
-          ? [
-            '最初に試しやすい例を出します。番号だけで選べます。',
-            '',
-            '1. URLや文章を要約する',
-            '2. 2つの選択肢を比較する',
-            '3. 投稿文、メール、返信文を作る',
-            '4. 商品/サービス/ページの改善点を出す',
-            '5. エラーや不具合の原因を整理する',
-            '',
-            '選んだあと、対象URLや本文があれば貼ってください。まだ注文も課金も発生しません。'
-          ].join('\n')
-          : [
-            'Here are easy first examples. Reply with a number:',
-            '',
-            '1. Summarize a URL or text',
-            '2. Compare two options',
-            '3. Draft a post, email, or reply',
-            '4. Find improvements for a product, service, or page',
-            '5. Triage an error or bug',
-            '',
-            'After choosing, paste the URL or text if you have it. No order or billing happens yet.'
-          ].join('\n'),
-        naturalChoiceIntent: 'natural_ai_beginner_examples',
-        vagueChoicePrompt: original,
-        clearClarifyOptions: true,
-        status: 'Beginner examples shown.\n\nNo order was created and no billing occurred.'
-      };
-    }
-    if (mode === 'beginner_organize') {
-      return {
-        kind: 'clarify',
-        tone: 'info',
-        body: ja
-          ? [
-            'では、困りごとを作業依頼に変えるところから始めましょう。',
-            '',
-            '次のどれか1つだけ書いてください。',
-            '1. いま困っていること',
-            '2. 改善したいもののURLや文章',
-            '3. 作りたいもの、調べたいもの、比べたいもの',
-            '',
-            '短くて大丈夫です。こちらで発注前の形に整理します。まだ注文も課金も発生しません。'
-          ].join('\n')
-          : [
-            'Okay. Let us turn the problem into a request first.',
-            '',
-            'Send just one of these:',
-            '1. What you are stuck on',
-            '2. URL or text you want improved',
-            '3. Something you want made, researched, or compared',
-            '',
-            'Short is fine. I will organize it before any order. No order or billing happens yet.'
-          ].join('\n'),
-        clearVagueChoice: true,
-        clearNaturalChoice: true,
-        clearClarifyOptions: true,
-        status: 'Waiting for a simple problem statement.\n\nNo order was created and no billing occurred.'
-      };
-    }
-    if (mode === 'beginner_chat_only') {
-      return {
-        kind: 'clarify',
-        tone: 'info',
-        body: ja
-          ? [
-            '了解です。注文せずに、このチャットで質問だけできます。',
-            '',
-            '聞き方の例:',
-            'AI agentって何？',
-            '何を頼めますか？',
-            '料金はいつ発生しますか？',
-            'ChatGPTと何が違いますか？',
-            '',
-            'ここでの質問回答だけなら注文も課金も発生しません。'
-          ].join('\n')
-          : [
-            'Understood. You can ask questions here without ordering.',
-            '',
-            'Examples:',
-            'What is an AI agent?',
-            'What can I ask for?',
-            'When does billing happen?',
-            'How is this different from ChatGPT?',
-            '',
-            'Question-answer chat here does not create an order or billing.'
-          ].join('\n'),
-        clearVagueChoice: true,
-        clearNaturalChoice: true,
-        clearClarifyOptions: true,
-        status: 'Chat-only guidance shown.\n\nNo order was created and no billing occurred.'
-      };
-    }
-  }
-  if (intent === 'natural_ai_beginner_examples' && mode.startsWith('beginner_')) {
-    const labelJa = {
-      beginner_summary: '要約',
-      beginner_compare: '比較',
-      beginner_writing: '文章作成',
-      beginner_improve: '改善点出し',
-      beginner_debug: '不具合整理'
-    }[mode] || '作業';
-    const labelEn = {
-      beginner_summary: 'summary',
-      beginner_compare: 'comparison',
-      beginner_writing: 'writing',
-      beginner_improve: 'improvement',
-      beginner_debug: 'bug triage'
-    }[mode] || 'work';
-    return {
-      kind: 'clarify',
-      tone: 'info',
-      body: ja
-        ? [
-          `${labelJa}として進めるのがよさそうです。`,
-          '',
-          '次に、対象を1つください。',
-          mode === 'beginner_summary' ? '例: URL、文章、PDF、メモ' : '',
-          mode === 'beginner_compare' ? '例: AとB、比較したい基準、迷っている理由' : '',
-          mode === 'beginner_writing' ? '例: 返信したい相手、元文、伝えたいこと、トーン' : '',
-          mode === 'beginner_improve' ? '例: URL、商品説明、LP、スクショ、改善したい目的' : '',
-          mode === 'beginner_debug' ? '例: エラー文、何をしたら起きたか、期待する動き' : '',
-          '',
-          '対象をもらったら、発注前のブリーフに整理します。まだ注文も課金も発生しません。'
-        ].filter(Boolean).join('\n')
-        : [
-          `${labelEn} is a good starting path.`,
-          '',
-          'Next, send one target:',
-          mode === 'beginner_summary' ? 'Example: URL, text, PDF, or notes' : '',
-          mode === 'beginner_compare' ? 'Example: A and B, criteria, and why you are unsure' : '',
-          mode === 'beginner_writing' ? 'Example: recipient, source text, message, and tone' : '',
-          mode === 'beginner_improve' ? 'Example: URL, product copy, landing page, screenshot, and goal' : '',
-          mode === 'beginner_debug' ? 'Example: error text, steps that caused it, and expected behavior' : '',
-          '',
-          'After that, I will prepare a work brief before any order. No order or billing happens yet.'
-        ].filter(Boolean).join('\n'),
-      clearVagueChoice: true,
-      clearNaturalChoice: true,
-      clearClarifyOptions: true,
-      status: 'Beginner path selected.\n\nNo order was created and no billing occurred.'
-    };
-  }
-  if (mode === 'source' || mode === 'narrow') {
-    return {
-      kind: 'clarify',
-      tone: 'info',
-      body: ja
-        ? [
-          'では、先に材料を具体化しましょう。まだ注文も課金も発生しません。',
-          '',
-          intent === 'natural_marketing_launch'
-            ? '次のうち、あるものだけ貼ってください: 投稿文、LP/URL、スクショ、狙ったユーザー、反応数、どこに投稿したか。'
-            : '次のうち2-3個だけ入れてください: 対象ユーザー、商品/サービス、今の課題、URL、数値、競合、予算、期限。',
-          '',
-          'それをもとに、具体的な発注ブリーフに整理します。'
-        ].join('\n')
-        : [
-          'Okay. Let us add concrete material first. No order or billing happens yet.',
-          '',
-          intent === 'natural_marketing_launch'
-            ? 'Paste any of these: post copy, landing page/URL, screenshot, target user, response metrics, and where you posted it.'
-            : 'Send 2-3 of these: target user, product/service, current problem, URL, numbers, competitors, budget, or deadline.',
-          '',
-          'Then I will turn it into a concrete work brief.'
-        ].join('\n'),
-      clearVagueChoice: true,
-      clearNaturalChoice: true,
-      clearClarifyOptions: true,
-      status: 'Waiting for concrete source material.\n\nNo order was created and no billing occurred.'
-    };
-  }
-  const brief = buildOpenChatNaturalChoiceBrief(original, intent, mode, inputCounts);
-  const intentLabel = openChatNaturalIntentLabel(intent, original, ja);
-  const choiceLabel = openChatNaturalChoiceLabel(mode, ja);
-  return {
-    kind: 'assist',
-    tone: 'ok',
-    body: ja
-      ? [
-        'Agentに渡せる内容に整理しました。これはまだ注文ではなく、課金も発生しません。',
-        '',
-        `確認した意図: ${intentLabel}`,
-        `絞り込み結果: ${choiceLabel}`,
-        '',
-        mode === 'diagnose'
-          ? 'まず全体診断として、ボトルネック仮説と次の実験を出す形にします。'
-          : `選択された方向: ${mode}`,
-        '',
-        '発注文:',
-        brief,
-        '',
-        openChatReadyToRunBlock(true),
-        '',
-        '次の動き: 入力欄にこの発注文を入れました。内容を確認し、実行する場合だけログインして SEND ORDER してください。'
-      ].join('\n')
-      : [
-        'I organized this so it can be handed to the right agent. This is still chat only; no order was created and no billing occurred.',
-        '',
-        `Confirmed intent: ${intentLabel}`,
-        `Narrowed direction: ${choiceLabel}`,
-        '',
-        mode === 'diagnose'
-          ? 'I will treat this as an overall diagnosis and ask the agent to surface bottleneck hypotheses and next experiments.'
-          : `Selected direction: ${mode}`,
-        '',
-        'Work order:',
-        brief,
-        '',
-        openChatReadyToRunBlock(false),
-        '',
-        'Next: I put this brief back into the input box. Review it, then sign in and press SEND ORDER only when you want paid work to run.'
-      ].join('\n'),
-    nextPrompt: brief,
-    clearVagueChoice: true,
-    clearNaturalChoice: true,
-    clearClarifyOptions: true,
-    status: 'Context-specific work order prepared.\n\nNo order was created and no billing occurred.'
-  };
-}
-
-function buildOpenChatVagueChoiceFollowup(prompt = '', inputCounts = {}) {
-  const mode = openChatVagueChoiceMode(prompt);
-  const original = String(state.openChatVagueChoicePrompt || '').trim();
-  if (!mode || !original) return null;
-  const ja = looksJapanese(prompt) || looksJapanese(original);
-  if (mode === 'research') {
-    const brief = buildOpenChatVagueResearchBrief(original, inputCounts);
-    return {
-      kind: 'assist',
-      tone: 'ok',
-      body: ja
-        ? [
-          'リサーチ前提でAgentに渡せる内容に整理しました。これはまだ注文ではなく、課金も発生しません。',
-          '',
-          '市場調査は通常のチャット回答よりトークン/API使用量が増える可能性があります。実行する前に見積もりと最大予約額を確認してください。',
-          '',
-          'リサーチ用発注文:',
-          brief,
-          '',
-          openChatReadyToRunBlock(true),
-          '',
-          '次の動き: 入力欄にこの発注文を入れました。内容を確認し、実行する場合だけログインして SEND ORDER してください。'
-        ].join('\n')
-        : [
-          'I converted this into a research-first work order. This is still chat only; no order was created and no billing occurred.',
-          '',
-          'Market research can use more tokens/API calls than a simple chat answer. Review the estimate and max reserve before dispatch.',
-          '',
-          'Research work order:',
-          brief,
-          '',
-          openChatReadyToRunBlock(false),
-          '',
-          'Next: I put this brief back into the input box. Review it, then sign in and press SEND ORDER only when you want paid research to run.'
-        ].join('\n'),
-      nextPrompt: brief,
-      clearVagueChoice: true,
-      status: 'Research-first order brief prepared.\n\nNo order was created and no billing occurred. Review the estimate before paid dispatch.'
-    };
-  }
-  return {
-    kind: 'clarify',
-    tone: 'info',
-    body: ja
-      ? [
-        'では、先に具体化しましょう。まだ注文も課金も発生しません。',
-        '',
-        '次のうち2-3個だけ入れてください。',
-        '1. 誰向けか',
-        '2. 業界またはジャンル',
-        '3. 解決したい課題',
-        '4. 既存のURL、リポジトリ、商品、競合',
-        '5. 予算、期限、避けたいこと',
-        '',
-        'それをもとに、より絞った安めのOrderブリーフに整理します。'
-      ].join('\n')
-      : [
-        'Okay. Let us narrow it before any paid work. No order or billing happens yet.',
-        '',
-        'Send 2-3 of these:',
-        '1. Target user',
-        '2. Industry or app category',
-        '3. Problem to solve',
-        '4. Existing URL, repo, product, or competitors',
-        '5. Budget, deadline, or constraints',
-        '',
-        'Then I will turn it into a more focused and usually cheaper order brief.'
-      ].join('\n'),
-    clearVagueChoice: true,
-    clearClarifyOptions: true,
-    status: 'Waiting for narrower inputs.\n\nNo order was created and no billing occurred.'
-  };
-}
-
-function openChatIntentShiftChoiceMode(prompt = '') {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  if (!text || !String(state.openChatIntentShiftPrompt || '').trim()) return '';
-  if (/^(1|update|update current|merge|add to current|current|same draft|same order|今のdraft|今のドラフト|今の発注文|更新|統合|追加|1\.?\s*更新)$/i.test(text)
-    || /(update|merge|add|current|same|今の|現在|更新|統合|追加).{0,24}(draft|order|brief|発注文|ドラフト)/i.test(text)) {
-    return 'update';
-  }
-  if (/^(2|new|new draft|new order|rebuild|start over|separate|別件|新規|作り直し|新しく|2\.?\s*新規)$/i.test(text)
-    || /(new|rebuild|start over|separate|別件|新規|新しく|作り直).{0,24}(draft|order|brief|発注文|ドラフト)?/i.test(text)) {
-    return 'new';
-  }
-  return '';
-}
-
-function openChatIntentShiftImplicitMode(prompt = '') {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  if (!text) return '';
-  if (openChatLooksGreetingPrompt(text) || openChatLooksLowInfoTestPrompt(text)) return '';
-  if (openChatCommandMode(text) || shouldDeferOpenChatCommandForAnswer(text)) return '';
-  if (/(update|merge|add to current|same draft|same order|今の|現在|更新|統合|追加)/i.test(text)) return 'update';
-  if (/(new task|new request|new draft|new order|different task|different request|separate|別件|新規|別の依頼|別の作業|新しく|作り直し)/i.test(text)) return 'new';
-  if (text.length >= 12) return 'new';
-  return '';
-}
-
-function isOpenChatPossibleIntentShift(prompt = '', inputCounts = {}) {
-  const text = String(prompt || '').trim();
-  const previousBrief = lastOpenChatPreparedBrief();
-  if (!previousBrief || !text || isStructuredOrderBrief(text)) return false;
-  if (text.length < 18 && !Number(inputCounts.urlCount || 0) && !Number(inputCounts.fileCount || 0)) return false;
-  if (openChatIntentShiftChoiceMode(text)) return false;
-  if (openChatCommandMode(text) || explicitOpenChatAssistMode(text)) return false;
-  if (isOpenChatClarificationAnswer(text) || isOpenChatBriefEditInstruction(text) || openChatFollowupMode(text)) return false;
-  if (openChatProductQuestionContext(text)) return false;
-  const previous = structuredOrderBriefParts(previousBrief);
-  const previousGoal = String(previous.goal || '').toLowerCase();
-  const nextTask = inferClientTaskSequence('', text)[0] || '';
-  const previousTask = String(previous.taskType || '').toLowerCase();
-  const actionLike = /(作|調査|比較|分析|改善|レビュー|書い|作成|実装|探|まとめ|翻訳|稼|売上|伸ば|build|make|create|research|compare|analyze|review|write|improve|debug|fix|translate|grow|sell|launch)/i.test(text);
-  const sharedWords = text.toLowerCase().split(/\W+/).filter((word) => word.length >= 4 && previousGoal.includes(word)).length;
-  if (nextTask && previousTask && nextTask !== previousTask && actionLike) return true;
-  return actionLike && text.length >= 48 && sharedWords < 2;
-}
-
-function buildOpenChatIntentShiftFollowup(prompt = '', inputCounts = {}) {
-  const explicitMode = openChatIntentShiftChoiceMode(prompt);
-  const implicitMode = explicitMode ? '' : openChatIntentShiftImplicitMode(prompt);
-  const mode = explicitMode || implicitMode;
-  const original = String(state.openChatIntentShiftPrompt || '').trim();
-  const previousBrief = lastOpenChatPreparedBrief();
-  if (!mode || !original || !previousBrief) return null;
-  const ja = looksJapanese(prompt) || looksJapanese(original);
-  if (mode === 'update') {
-    const nextBrief = reviseStructuredBriefWithInstruction(previousBrief, original);
-    return {
-      kind: 'assist',
-      tone: 'ok',
-      clearIntentShift: true,
-      body: ja
-        ? [
-          '今のdraftに反映しました。まだ注文も課金も発生しません。',
-          '',
-          '更新後の発注文:',
-          nextBrief,
-          '',
-          '内容が合っていれば SEND ORDER。違う場合はさらに条件を足してください。'
-        ].join('\n')
-        : [
-          'I merged this into the current draft. Nothing has run or been billed yet.',
-          '',
-          'Updated draft order:',
-          nextBrief,
-          '',
-          'If this matches, press SEND ORDER. Otherwise add another correction.'
-        ].join('\n'),
-      nextPrompt: nextBrief,
-      status: 'Draft updated. Ready for SEND ORDER.'
-    };
-  }
-  const appended = explicitMode
-    ? original
-    : compactChatText(`${original}\n${String(prompt || '').trim()}`, 1800);
-  const taskType = inferClientTaskSequence('', appended)[0] || inferClientTaskSequence('', original)[0] || currentRoutingTask() || 'research';
-  const nextBrief = catCompactDispatchBrief(appended, taskType, inputCounts);
-  return {
-    kind: 'assist',
-    tone: 'ok',
-    clearIntentShift: true,
-    body: ja
-      ? [
-        explicitMode
-          ? '別件として新しいdraftを作りました。まだ注文も課金も発生していません。'
-          : '別件として受け取り、新しいdraftにまとめました。まだ注文も課金も発生していません。',
-        '',
-        '新しい発注文:',
-        nextBrief,
-        '',
-        '内容が合っていれば SEND ORDER。違う場合は条件を足してください。'
-      ].join('\n')
-      : [
-        explicitMode
-          ? 'I rebuilt this as a new draft. Nothing has run or been billed yet.'
-          : 'I treated this as a separate request and turned it into a new draft. Nothing has run or been billed yet.',
-        '',
-        'New draft order:',
-        nextBrief,
-        '',
-        'If this matches, press SEND ORDER. Otherwise add constraints.'
-      ].join('\n'),
-    nextPrompt: nextBrief,
-    status: 'New draft ready for SEND ORDER.'
-  };
-}
-
-function buildOpenChatIntentShiftQuestion(prompt = '', inputCounts = {}) {
-  const text = String(prompt || '').trim();
-  if (!isOpenChatPossibleIntentShift(text, inputCounts)) return null;
-  const previousBrief = lastOpenChatPreparedBrief();
-  const previous = structuredOrderBriefParts(previousBrief);
-  const nextTask = inferClientTaskSequence('', text)[0] || currentRoutingTask() || 'research';
-  const ja = looksJapanese(text);
-  return {
-    kind: 'clarify',
-    tone: 'warn',
-    intentShiftPrompt: text,
-    clearClarifyOptions: true,
-    body: ja
-      ? [
-        '今のdraftとは別件に見えます。',
-        '',
-        `現在のdraft: ${previous.taskType || 'research'} / ${compactChatText(previous.goal || previousBrief, 150)}`,
-        `新しい入力: ${nextTask} / ${compactChatText(text, 150)}`,
-        '',
-        'このまま続けるなら、どちらかで返してください。',
-        '1. 今のdraftを更新する',
-        '2. 別件として新しいdraftを作り直す',
-        '',
-        'そのまま追加条件を書いてくれれば、別件として新しいdraftにまとめることもできます。'
-      ].join('\n')
-      : [
-        'This looks separate from the current draft.',
-        '',
-        `Current draft: ${previous.taskType || 'research'} / ${compactChatText(previous.goal || previousBrief, 150)}`,
-        `New input: ${nextTask} / ${compactChatText(text, 150)}`,
-        '',
-        'Reply with one of these if you want to choose explicitly:',
-        '1. Update the current draft',
-        '2. Rebuild as a new draft order',
-        '',
-        'Or just send the new details and I will treat it as a separate draft.'
-      ].join('\n'),
-    status: 'Possible topic shift detected.'
-  };
-}
-
-function buildOpenChatResearchOrNarrowChoice(prompt = '', inputCounts = {}) {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  if (!isOpenChatVagueHighValueRequest(text, inputCounts)) return null;
-  const ja = looksJapanese(text);
-  return {
-    kind: 'clarify',
-    tone: 'warn',
-    vagueChoicePrompt: text,
-    clearClarifyOptions: true,
-    body: ja
-      ? [
-        'できます。今の内容だと「いきなり実行」より、先に方向を決めた方が外しにくいです。',
-        '',
-        '進め方は2つです。番号だけでも大丈夫です。',
-        '',
-        '1. まず選択肢をリサーチ',
-        '広めに調査して、有望な方向性を複数出します。通常のチャット回答よりトークン/API使用量が増える可能性があるため、実行前に見積もりを表示します。',
-        '',
-        '2. 自分で具体化',
-        'ターゲットユーザー、業界、アプリのジャンル、解決したい課題、URL、リポジトリ、制約などを教えてください。より絞った安めのOrderにできます。',
-        '',
-        '「1」または「リサーチ」、もしくは「2」または「具体化」と返してください。まだ注文も課金も発生しません。'
-      ].join('\n')
-      : [
-        'Yes. At this level, it is better to choose the direction before executing anything.',
-        '',
-        'Two good paths. A number is enough:',
-        '',
-        '1. Research options first',
-        'I can research promising directions and give you options to choose from. This may use more tokens/API calls than a simple chat answer, so I will show estimated cost/time before running it.',
-        '',
-        '2. Narrow it yourself first',
-        'Tell me the target user, industry, app category, problem, URL, repo, product, or constraints. Then I can prepare a more focused and usually cheaper order.',
-        '',
-        'Reply with “1” / “Research options first” or “2” / “I will narrow it”. No order or billing happens yet.'
-      ].join('\n'),
-    status: 'Choose research or narrow scope.\n\nNo order was created and no billing occurred.'
-  };
-}
-
-function openChatEngineerNaturalIntent(prompt = '', inputCounts = {}) {
-  const raw = String(prompt || '').replace(/\s+/g, ' ').trim();
-  const text = openChatIntentMatchText(raw);
-  if (!raw || isStructuredOrderBrief(raw)) return '';
-  if (Number(inputCounts.urlCount || 0) || Number(inputCounts.fileCount || 0)) return '';
-  if (/(agent|エージェント|aiagent|AIAGENT).{0,70}(github|repo|repository|manifest|adapter|verify|verification|publish|list|register|endpoint|エンドポイント|マニフェスト|アダプタ|ベリファイ|検証|公開|登録|agent化|エージェント化)|(?:github|repo|repository|manifest|adapter|verify|publish|endpoint|エンドポイント|マニフェスト|アダプタ).{0,70}(agent|エージェント|aiagent|AIAGENT)/i.test(text)) {
-    return 'natural_engineer_agent_adapter';
-  }
-  if (/(pull request|\bPR\b|diff|patch|code review|review my code|review this code|差分|プルリク|コードレビュー|レビューして|レビューお願い)/i.test(text)) {
-    return 'natural_engineer_code_review';
-  }
-  if (/(\bci\b|github actions?|workflow|build failed|test failed|tests? failing|deploy(?:ment)?|vercel|cloudflare|wrangler|docker|本番|ビルド|デプロイ|テスト落ち|Actions|落ちてる)/i.test(text)) {
-    return 'natural_engineer_ci_deploy';
-  }
-  if (/(stack trace|traceback|exception|typeerror|referenceerror|syntaxerror|runtime error|500|401|403|404|bug|debug|fix|broken|not working|crash|エラー|例外|スタックトレース|バグ|不具合|動かない|落ちる|壊れ|直して|修正して)/i.test(text)) {
-    return 'natural_engineer_bug_debug';
-  }
-  if (/(api|cli|sdk|curl|webhook|integration|integrate|external|automation|外部|連携|自動化).{0,70}(order|job|agent|key|token|run|request|call|use|注文|依頼|実行|呼び出|使|APIキー)|(?:order|job|agent|注文|依頼|実行).{0,70}(api|cli|sdk|curl|webhook|外部|連携|自動化)/i.test(text)) {
-    return 'natural_engineer_api_cli';
-  }
-  if (/(architecture|design review|system design|scalability|performance|security|rate limit|csp|xss|csrf|auth design|設計|アーキテクチャ|性能|パフォーマンス|セキュリティ|認証設計|スケール|脆弱性)/i.test(text)) {
-    return 'natural_engineer_architecture';
-  }
-  const featureVerb = /(implement|build|create|add|make|実装|追加|機能)/i.test(text);
-  const featureContext = /(repo|github|repository|code|api|endpoint|feature|migration|schema|database|auth|login|ui|component|server action|worker|queue|cron|backend|frontend|web app|app|script|コード|API|エンドポイント|DB|データベース|認証|ログイン|画面|コンポーネント|サーバー|ワーカー|キュー|フロントエンド|バックエンド|アプリ|スクリプト)/i.test(text);
-  if (featureVerb && featureContext) {
-    return 'natural_engineer_feature_impl';
-  }
-  return '';
-}
-
-function openChatAiBeginnerNaturalIntent(prompt = '', inputCounts = {}) {
-  const raw = String(prompt || '').replace(/\s+/g, ' ').trim();
-  const text = openChatIntentMatchText(raw);
-  if (!raw || isStructuredOrderBrief(raw)) return '';
-  if (Number(inputCounts.urlCount || 0) || Number(inputCounts.fileCount || 0)) return '';
-  if (openChatLooksSensitiveSecret(raw) || openChatLooksUnsafeRequest(raw) || openChatLooksHighStakesAdvice(raw)) return '';
-  if (/(chatgpt|chat gpt|claude|gemini|grok|copilot|普通のチャット|通常のAI|生成AI).{0,50}(違い|何が違|different|compare|versus|vs)|(?:違い|何が違|different).{0,50}(chatgpt|chat gpt|claude|gemini|copilot|普通のチャット|通常のAI|生成AI)/i.test(text)) {
-    return 'natural_ai_beginner_chatgpt_diff';
-  }
-  if (/(プロンプト|prompt|依頼文|指示文|頼み方|聞き方|書き方|うまく書け|何て書|なんて書|どう書|どう頼|どう依頼)/i.test(text)) {
-    return 'natural_ai_beginner_prompt_help';
-  }
-  if (/(ai agent|aiagent|AIエージェント|エージェント|agent|api key|apiキー|api|manifest|マニフェスト|verify|verification|ベリファイ|検証|delivery|納品|deposit|デポジット|token|トークン).{0,40}(とは|何|意味|わから|分から|説明|用語|初心者)|(?:とは|何|意味|わから|分から|説明|用語|初心者).{0,40}(ai agent|aiagent|AIエージェント|エージェント|agent|api key|apiキー|api|manifest|マニフェスト|verify|verification|ベリファイ|検証|delivery|納品|deposit|デポジット|token|トークン)/i.test(text)) {
-    return 'natural_ai_beginner_terms';
-  }
-  if (/(勝手に|いきなり|知らないうち|怖い|不安|失敗|キャンセル|返金|refund|charge|charged|bill|billing|課金|請求|支払い|料金|デポジット).{0,70}(課金|請求|支払|料金|お金|失敗|キャンセル|返金|怖い|不安|charge|charged|billing|refund|cancel)|(?:課金|請求|支払|料金|お金|失敗|キャンセル|返金|怖い|不安|charge|charged|billing|refund|cancel).{0,70}(勝手に|いきなり|知らないうち|怖い|不安|失敗|キャンセル|返金)/i.test(text)) {
-    return 'natural_ai_beginner_safety';
-  }
-  if (/(ai|AI|agent|エージェント|生成AI|チャット|このサービス|CAIt|cait).{0,70}(わから|分から|知らない|初心者|使ったことない|初めて|苦手|詳しくない|何から|どうすれば|助けて|教えて)|(?:わから|分から|知らない|初心者|使ったことない|初めて|苦手|詳しくない|何から|どうすれば|助けて|教えて).{0,70}(ai|AI|agent|エージェント|生成AI|チャット|このサービス|CAIt|cait)/i.test(text)) {
-    return 'natural_ai_beginner_start';
-  }
-  if (/(何ができる|なにができる|何を頼|なにを頼|どんなこと|使い道|例|サンプル|おすすめ|ユースケース|use cases?|examples?|what can|what should i ask|何をすれば|何から|どう使|まず試|試したい|デモ|demo)/i.test(text)
-    && /(ai|AI|agent|エージェント|CAIt|cait|このサービス|サービス|チャット|初心者|わから|分から|知らない|使ったことない|初めて|first|beginner|new to)/i.test(text)) {
-    return 'natural_ai_beginner_examples';
-  }
-  return '';
-}
-
-function openChatNaturalConversationIntent(prompt = '', inputCounts = {}) {
-  const raw = String(prompt || '').replace(/\s+/g, ' ').trim();
-  const text = openChatIntentMatchText(raw);
-  if (!raw || isStructuredOrderBrief(raw)) return '';
-  if (Number(inputCounts.urlCount || 0) || Number(inputCounts.fileCount || 0)) return '';
-  if (/(料金|課金|支払|デポジット|残高|billing|payment|deposit|balance|stripe|cost|price|budget|見積|費用|予算)/i.test(text)) return '';
-  const beginnerIntent = openChatAiBeginnerNaturalIntent(raw, inputCounts);
-  if (beginnerIntent) return beginnerIntent;
-  const engineerIntent = openChatEngineerNaturalIntent(raw, inputCounts);
-  if (engineerIntent) return engineerIntent;
-  if (openChatProductQuestionContext(raw) || explicitOpenChatAssistMode(raw)) return '';
-  if (openChatLooksSensitiveSecret(raw) || openChatLooksUnsafeRequest(raw) || openChatLooksHighStakesAdvice(raw)) return '';
-  if (/^(compare|research|analy[sz]e|review|summari[sz]e|write|create|build|fix|debug|調査|比較|分析|レビュー|要約|作成|実装|修正)\b/i.test(text)
-    && raw.split(/\s+/).filter(Boolean).length >= 5) return '';
-  if (/(product hunt|indie hackers|reddit|hacker news|x\.com|twitter|ツイート|投稿|ローンチ|公開|拡散|launch|marketing|distribution|posting)/i.test(text)) return 'natural_marketing_launch';
-  if (/(売上|集客|CVR|コンバージョン|登録|サインアップ|流入|アクセス|反応|ユーザー|顧客|解約|継続率|sales|customers|conversion|cvr|traffic|signups|retention|churn|growth)/i.test(text)) return 'natural_business_growth';
-  if (isOpenChatVagueHighValueRequest(raw, inputCounts) || /(もっとお金|金が欲しい|稼ぎたい|儲けたい|売れる.*作|使われる.*作|良い.*アプリ|いい.*アプリ|more money|make money|profitable idea|good app|app people want|people want to use)/i.test(text)) return 'natural_idea_discovery';
-  if (/(どっち|どれ|比較|選ぶ|選べ|迷って|A\/B|ab test|compare|which|choose|better option|versus|vs\.)/i.test(text)) return 'natural_compare_decision';
-  if (/(返信|返事|コメント|投稿文|ツイート|メール|文章|コピー|LP|見出し|reply|comment|post|tweet|email|copy|headline|landing page)/i.test(text)) return 'natural_content_help';
-  if (/(エラー|バグ|動かない|実装|コード|github|repo|repository|api|deploy|デプロイ|build|bug|error|code|app|website|web app|script)/i.test(text)) return 'natural_build_help';
-  if (/(エージェント|agent).{0,24}(売|稼|登録|公開|作|出したい|publish|list|marketplace|earn)/i.test(text)) return 'natural_agent_publish';
-  if (/(どこから|何から|なにから|何すれば|何を入力|なにを入力|何を打|なにを打|何て書|なんて書|どうすれば|どうしよう|わからない|分からない|迷って|迷う|困って|詰ま|反応ない|うまくいかない|stuck|not sure|confused|where.*start|what should i do|what should i type|what do i type|don't know|do not know)/i.test(text)) return 'natural_stuck_start';
-  return '';
-}
-
-function openChatNaturalConversationAnswerLines(intent = '', prompt = '') {
-  const ja = looksJapanese(prompt);
-  const topic = compactChatText(String(prompt || '').replace(/\s+/g, ' '), 140);
-  const commerce = /(shopify|e-?commerce|online store|store|cart|checkout|product page|ecサイト|ネットショップ|通販|カート|チェックアウト|商品ページ)/i.test(String(prompt || ''));
-  const table = {
-    natural_ai_beginner_start: {
-      ja: [
-        'AIに詳しくなくても大丈夫です。ここでは専門用語ではなく、「やってほしいこと」をそのまま書けば始められます。',
-        '',
-        topic ? `今の入力から拾ったこと: ${topic}` : '',
-        '',
-        'まずは次のどれかを選んでください。番号だけでも大丈夫です。',
-        '1. できることを例で見る',
-        '2. 自分の困りごとを一緒に整理する',
-        '3. 注文せずに、このチャットで質問する',
-        '',
-        'まだ注文も課金も発生しません。SEND ORDERを押すまで実作業は走りません。'
-      ],
-      en: [
-        'You do not need to understand AI to start. Write the thing you want done in normal words.',
-        '',
-        topic ? `What I picked up: ${topic}` : '',
-        '',
-        'Choose one. A number is enough:',
-        '1. Show examples of what I can ask for',
-        '2. Help me turn my problem into a request',
-        '3. Ask questions here without ordering',
-        '',
-        'No order or billing happens yet. Paid work does not run until you press SEND ORDER.'
-      ]
-    },
-    natural_ai_beginner_examples: {
-      ja: [
-        '頼めることは「調べる」「比べる」「文章を作る」「改善点を出す」「要約する」「開発や不具合を整理する」などです。',
-        '',
-        '最初に試すなら、このまま1つ選ぶのが安全です。',
-        '1. このURL/文章を要約して',
-        '2. AとBを比較しておすすめを出して',
-        '3. 投稿文やメールの返信を作って',
-        '4. 商品/サービスの改善点を出して',
-        '5. エラーや不具合の原因を整理して',
-        '',
-        '対象URL、文章、スクショ、ファイルがある場合は追加すると精度が上がります。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'Useful requests are things like research, comparison, writing, improvement ideas, summaries, and debugging triage.',
-        '',
-        'For a first try, pick one:',
-        '1. Summarize this URL/text',
-        '2. Compare A vs B and recommend one',
-        '3. Draft a post or email reply',
-        '4. Find improvements for my product/service',
-        '5. Triage an error or bug',
-        '',
-        'Add a URL, text, screenshot, or file when you have one. No order or billing happens yet.'
-      ]
-    },
-    natural_ai_beginner_prompt_help: {
-      ja: [
-        'プロンプトをうまく書く必要はありません。雑で大丈夫です。',
-        '',
-        'おすすめの形はこれだけです。',
-        '1. 何をしたいか',
-        '2. 対象は何か',
-        '3. どう受け取りたいか',
-        '',
-        '例: 「このURLを読んで、改善点を初心者向けに表で出して」',
-        '',
-        '入力が曖昧なら、こちらから足りない情報を聞いてから発注ブリーフに整理します。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'You do not need to write a perfect prompt. Rough is fine.',
-        '',
-        'Use this simple shape:',
-        '1. What you want done',
-        '2. What the target is',
-        '3. How you want the result delivered',
-        '',
-        'Example: “Read this URL and give me improvement ideas as a beginner-friendly table.”',
-        '',
-        'If the request is vague, I will ask for the missing detail before preparing the order brief. No order or billing happens yet.'
-      ]
-    },
-    natural_ai_beginner_terms: {
-      ja: [
-        '用語をかんたんに言うと、こうです。',
-        '',
-        'AI agent: 代わりに作業をするAI担当者のようなものです。',
-        'Prompt/依頼文: その担当者へのお願い文です。雑でも大丈夫です。',
-        'Delivery/納品: 作業後に受け取る結果です。文章、表、ファイル、要約などです。',
-        'Verify/検証: そのagentが本当に使えるか事前確認することです。',
-        'Billing/請求: 実作業の注文だけ月締め請求として扱います。',
-        '',
-        'まずは用語を覚えるより、「何をしてほしいか」を1文で書く方が早いです。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'Here are the terms in plain language:',
-        '',
-        'AI agent: an AI worker that can do a task for you.',
-        'Prompt/request: the instruction you give it. Rough wording is okay.',
-        'Delivery: the result you receive, such as text, tables, files, or summaries.',
-        'Verify: checking that an agent actually works before routing work to it.',
-        'Billing: paid work uses month-end billing after you send an order.',
-        '',
-        'You do not need to memorize the terms. Start by writing one sentence about what you want done. No order or billing happens yet.'
-      ]
-    },
-    natural_ai_beginner_safety: {
-      ja: [
-        '勝手に実作業や課金が走らないように、段階を分けています。',
-        '',
-        '1. SEND CHAT: 質問や整理だけ。注文も課金もなし。',
-        '2. PREPARE ORDER: 発注内容を下書きにするだけ。注文も課金もなし。',
-        '3. SEND ORDER: 内容と見積もりを確認したあと、実作業として送る操作。',
-        '',
-        '不安な場合は、まず「注文せずに説明して」「見積もりだけ見たい」「もっと安くしたい」と書いてください。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'The flow is split so paid work does not run by accident.',
-        '',
-        '1. SEND CHAT: questions or preparation only. No order or billing.',
-        '2. PREPARE ORDER: create a draft brief only. No order or billing.',
-        '3. SEND ORDER: dispatch paid work after you review the brief and estimate.',
-        '',
-        'If unsure, write “explain without ordering”, “show estimate only”, or “make it cheaper”. No order or billing happens yet.'
-      ]
-    },
-    natural_ai_beginner_chatgpt_diff: {
-      ja: [
-        'ChatGPTのような通常チャットとの違いは、「会話で終わるか、作業として納品まで扱うか」です。',
-        '',
-        '通常チャット: その場で相談や文章作成をする。',
-        'CAIt: 相談を発注ブリーフに整理し、必要ならagentへ作業を送り、納品結果として受け取る。',
-        '',
-        'つまり、最初は普通のチャットのように雑に相談して大丈夫です。実作業にする前に、内容、見積もり、納品形式を確認します。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'The difference from a normal ChatGPT-style chat is whether it stays as conversation or becomes delivered work.',
-        '',
-        'Normal chat: ask questions and draft text in the moment.',
-        'CAIt: turn the conversation into a work brief, route it to an agent when needed, and return a delivery.',
-        '',
-        'So you can start casually like a normal chat. Before paid work runs, CAIt shows the brief, estimate, and delivery shape. No order or billing happens yet.'
-      ]
-    },
-    natural_stuck_start: {
-      ja: [
-        '今は「何を頼むかを一緒に整理する」段階でよさそうです。',
-        '',
-        topic ? `拾った意図: ${topic}` : '',
-        '',
-        'まずは2択です。番号だけでも大丈夫です。',
-        '1. 選択肢をリサーチしてから決める',
-        '2. いま分かっている条件を使って、依頼文を具体化する',
-        '',
-        '迷っている場合は「1」で進めるのが安全です。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'This sounds like the “help me figure out what to ask for” stage.',
-        '',
-        topic ? `What I picked up: ${topic}` : '',
-        '',
-        'Start with one of two paths. A number is enough:',
-        '1. Research options first, then choose',
-        '2. Use what you already know and turn it into a concrete request',
-        '',
-        'If you are unsure, choose “1”. No order or billing happens yet.'
-      ]
-    },
-    natural_idea_discovery: {
-      ja: [
-        '方向性としては、いきなり作るより「需要がありそうな候補を出して、そこから選ぶ」方が失敗しにくいです。',
-        '',
-        '進め方は2つです。番号だけでも大丈夫です。',
-        '1. 市場/需要をリサーチして候補を出す',
-        '2. ジャンルや得意領域を先に教えて、狭く案出しする',
-        '',
-        'リサーチはトークン/API使用量が増える可能性があるので、実行前に見積もりを出します。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'I would not jump straight into building. First, find demand-shaped options, then choose one.',
-        '',
-        'Two paths. A number is enough:',
-        '1. Research market/demand and generate options',
-        '2. Tell me your preferred niche or strengths and narrow the ideas first',
-        '',
-        'Research may use more tokens/API calls, so CAIt will show an estimate before execution. No order or billing happens yet.'
-      ]
-    },
-    natural_business_growth: {
-      ja: commerce
-        ? [
-            'これはEC/Shopifyの売上改善相談として受け取りました。',
-            '',
-            'CAItでは、いきなり一般的な施策を出すより、まず「どこで売上が漏れているか」を切り分けてから、成長診断ブリーフにできます。',
-            '0. ストア全体を診断する',
-            '1. 購入意欲のある流入が少ない',
-            '2. 商品ページは見られるが購入/カート/決済まで進まない',
-            '3. リピート購入やメール/CRMが弱い',
-            '',
-            'どれに近いですか？分からなければ「0」または「診断」で大丈夫です。まだ注文も課金も発生しません。'
-          ]
-        : [
-            'これは「売上/集客/転換率を上げる」系の相談として受け取りました。',
-            '',
-            'CAItでは、まず原因を切り分けてから、必要なら調査/改善ブリーフに変換できます。',
-            '0. まず全体診断する',
-            '1. 流入が少ないのか',
-            '2. 見られているが登録/購入されないのか',
-            '3. 登録後に使われないのか',
-            '',
-            'どれに近いですか？分からなければ「0」または「診断」で、調査ブリーフに整理できます。まだ注文も課金も発生しません。'
-          ],
-      en: commerce
-        ? [
-            'I read this as an ecommerce growth problem.',
-            '',
-            'In CAIt, the useful first step is not generic marketing advice. First, split where the store is leaking sales, then turn that into a growth diagnosis brief.',
-            '0. Diagnose the whole store funnel first',
-            '1. Not enough qualified traffic',
-            '2. Product pages get visits, but people do not buy, add to cart, or complete checkout',
-            '3. Repeat purchase, email/CRM, or retention is weak',
-            '',
-            'Which is closest? If you are not sure, say “0” or “diagnose”. No order or billing happens yet.'
-          ]
-        : [
-            'I read this as a growth problem: sales, acquisition, conversion, or retention.',
-            '',
-            'In CAIt, the useful first step is to split the cause, then turn the right path into a research or improvement brief.',
-            '0. Diagnose the whole funnel first',
-            '1. Not enough traffic',
-            '2. People visit but do not sign up or buy',
-            '3. People sign up but do not keep using it',
-            '',
-            'Which is closest? If you are not sure, say “0” or “diagnose” and I can prepare a research brief. No order or billing happens yet.'
-          ]
-    },
-    natural_marketing_launch: {
-      ja: [
-        'これはローンチ/投稿/集客の改善として扱うのがよさそうです。',
-        '',
-        '次にやるなら2択です。',
-        '1. 投稿先と反応を見て、どこを改善すべきか調査する',
-        '2. 実際の投稿文、LP、スクショを貼って、表現と導線を直す',
-        '',
-        '「1」なら調査ブリーフ、「2」なら添削/改善ブリーフにして、次に SEND ORDER できます。'
-      ],
-      en: [
-        'This sounds like a launch, posting, or distribution problem.',
-        '',
-        'Two useful next steps:',
-        '1. Review channels and response signals to decide what to improve',
-        '2. Paste the actual post, landing page, or screenshot and improve the message/CTA',
-        '',
-        '“1” becomes a research brief. “2” becomes a copy/UX improvement brief, then SEND ORDER is available.'
-      ]
-    },
-    natural_compare_decision: {
-      ja: [
-        '比較判断ですね。今のままだと選択肢と判断基準が足りません。',
-        '',
-        '次の形で送ってください。',
-        'A: 候補1',
-        'B: 候補2',
-        '重視する基準: 価格、早さ、品質、売上見込み、リスクなど',
-        '',
-        '候補もこちらで探すなら「候補も探して」と返してください。比較表とおすすめを出す発注ブリーフにして、次に SEND ORDER できます。'
-      ],
-      en: [
-        'This is a comparison decision. I need the options and criteria first.',
-        '',
-        'Send it like this:',
-        'A: option 1',
-        'B: option 2',
-        'Criteria: price, speed, quality, revenue potential, risk, etc.',
-        '',
-        'If you want CAIt to find the options too, say “find the options too”. Then I can prepare a comparison-table brief and make SEND ORDER available.'
-      ]
-    },
-    natural_content_help: {
-      ja: [
-        '文章作成/返信/投稿の相談として受け取りました。',
-        '',
-        '作るには、最低限これだけください。',
-        '1. 元になる文章または状況',
-        '2. 誰に向けるか',
-        '3. トーン: 丁寧、カジュアル、短く、強め など',
-        '',
-        '貼ってくれれば、下書き、改善案、複数パターンにできます。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'I read this as writing, reply, or post help.',
-        '',
-        'Send the minimum context:',
-        '1. Source text or situation',
-        '2. Target audience',
-        '3. Tone: polite, casual, short, direct, etc.',
-        '',
-        'Then I can draft, improve, or produce variants. No order or billing happens yet.'
-      ]
-    },
-    natural_build_help: {
-      ja: [
-        '開発/実装/不具合系の相談として受け取りました。',
-        '',
-        '自然に進めるなら、まずこの3点です。',
-        '1. 何を作る、または直したいか',
-        '2. 対象repo、URL、エラー文、スクショ、関連ファイル',
-        '3. 完了条件: 何が動けばOKか',
-        '',
-        'repoを変更する作業なら、CAItはGitHub連携、sandbox branch、pull request、diff/test resultの形で受け渡します。',
-        '',
-        '情報が少ない場合は、先に質問して実装ブリーフに整理します。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'I read this as development, implementation, or debugging help.',
-        '',
-        'The useful starting point is:',
-        '1. What you want built or fixed',
-        '2. Target repo, URL, error, screenshot, or files',
-        '3. Acceptance condition: what should work when done',
-        '',
-        'For repo-changing work, CAIt uses GitHub connection, a sandbox branch, pull request, and diff/test result handoff.',
-        '',
-        'If context is thin, I will ask questions and prepare an implementation brief first. No order or billing happens yet.'
-      ]
-    },
-    natural_agent_publish: {
-      ja: [
-        '自分のAI agentを公開して収益化したい、という相談として受け取りました。',
-        '',
-        '進め方は2つです。',
-        '1. 既存のGitHub repoから登録する',
-        '2. まずagentの説明、入力、出力、料金設計を整理する',
-        '',
-        'repoがあるなら AGENTS の LIST YOUR AGENT へ進めます。登録はできますが、提供者の本人確認のadmin承認、引き落とし用の請求情報、PAY.JPテナント審査が揃うまで金銭処理はロックされます。'
-      ],
-      en: [
-        'I read this as wanting to publish and monetize your own AI agent.',
-        '',
-        'Two paths:',
-        '1. Register from an existing GitHub repo',
-        '2. First clarify the agent description, inputs, outputs, and pricing',
-        '',
-        'If you have a repo, go to AGENTS > LIST YOUR AGENT. Listing can proceed, but money actions stay locked until provider identity is admin-approved, billing details are ready, and PAY.JP tenant review is complete.'
-      ]
-    },
-    natural_engineer_bug_debug: {
-      ja: [
-        'デバッグ/不具合修正の相談として受け取りました。',
-        '',
-        '最短で直せる形にするには、次の4点が必要です。',
-        '1. エラー全文、ログ、またはスクリーンショット',
-        '2. 再現手順',
-        '3. 期待する挙動と実際の挙動',
-        '4. 対象repo、branch、関連ファイル、実行コマンド',
-        '',
-        'repo変更が必要な場合は、GitHub連携後にsandbox branchで作業し、PR URL、diff summary、test resultを納品します。',
-        '',
-        'ログやコードが長い場合はそのまま貼ってください。sourceとして分離し、実行ブリーフには原因調査、最小修正、回帰テストを入れます。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'I read this as debugging or bug-fix work.',
-        '',
-        'To make it executable, send these four things:',
-        '1. Full error, log, or screenshot',
-        '2. Reproduction steps',
-        '3. Expected behavior vs actual behavior',
-        '4. Target repo, branch, relevant files, and command',
-        '',
-        'When repo changes are needed, CAIt works after GitHub connection and returns a PR URL, diff summary, and test result from a sandbox branch.',
-        '',
-        'If logs or code are long, paste them as-is. I will separate them as source and prepare a brief for root-cause analysis, the smallest safe fix, and regression tests. No order or billing happens yet.'
-      ]
-    },
-    natural_engineer_code_review: {
-      ja: [
-        'コードレビュー/PRレビューの相談として受け取りました。',
-        '',
-        'レビューを外さないために、まず次をください。',
-        '1. PR URL、diff、または対象ファイル',
-        '2. 見てほしい観点: バグ、セキュリティ、性能、設計、テスト不足、破壊的変更',
-        '3. 受け取り方: findingsだけ、修正案付き、パッチ案付き など',
-        '',
-        'レビューは「重大度順の指摘」「根拠」「必要なテスト」に分ける発注ブリーフへ整理できます。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'I read this as code review or PR review work.',
-        '',
-        'To avoid a shallow review, send:',
-        '1. PR URL, diff, or target files',
-        '2. Focus: bugs, security, performance, architecture, missing tests, or regressions',
-        '3. Output shape: findings only, suggestions included, or patch plan included',
-        '',
-        'I can turn this into a review brief with severity-ordered findings, evidence, and test gaps. No order or billing happens yet.'
-      ]
-    },
-    natural_engineer_feature_impl: {
-      ja: [
-        '機能実装の相談として受け取りました。',
-        '',
-        'いきなり実装に走るより、先に受け入れ条件へ落とす方が安全です。',
-        '1. ユーザーが何をできるようになるか',
-        '2. 対象repo/stack/画面/API/DB',
-        '3. 既存の制約: 認証、課金、権限、互換性、デザイン',
-        '4. 完了条件: どのテストや画面確認が通ればOKか',
-        '',
-        'repo変更はローカルPCを直接触らず、GitHub repo + sandbox branch + pull requestで進める前提です。',
-        '',
-        'ここまで分かれば、実装ブリーフ、作業分割、テスト観点に整理できます。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'I read this as feature implementation work.',
-        '',
-        'Before coding, it should become acceptance criteria:',
-        '1. What the user should be able to do',
-        '2. Target repo, stack, screen, API, or database',
-        '3. Constraints: auth, billing, permissions, compatibility, design',
-        '4. Done condition: tests or screen checks that must pass',
-        '',
-        'Repo changes should use GitHub repo access, a sandbox branch, and pull request delivery rather than direct local-machine mutation.',
-        '',
-        'With that, I can prepare an implementation brief, task split, and verification plan. No order or billing happens yet.'
-      ]
-    },
-    natural_engineer_ci_deploy: {
-      ja: [
-        'CI/テスト/デプロイの失敗として受け取りました。',
-        '',
-        'このタイプはログなしで推測すると外しやすいので、まず次を確認します。',
-        '1. 失敗したサービス: GitHub Actions、Vercel、Cloudflare、Docker、local など',
-        '2. 失敗ログの末尾50-100行',
-        '3. 直前に入れた変更、対象branch/commit',
-        '4. 再実行してよいコマンド、触ってよい範囲',
-        '',
-        '受け取ったら、原因候補、最小修正、再発防止、再実行手順のブリーフにします。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'I read this as CI, test, or deployment failure work.',
-        '',
-        'Guessing without logs is risky, so first send:',
-        '1. Failing surface: GitHub Actions, Vercel, Cloudflare, Docker, local, etc.',
-        '2. Last 50-100 lines of the failure log',
-        '3. Recent change, target branch, or commit',
-        '4. Commands that may be rerun and files that may be touched',
-        '',
-        'Then I can prepare a brief with likely cause, smallest fix, prevention, and rerun steps. No order or billing happens yet.'
-      ]
-    },
-    natural_engineer_agent_adapter: {
-      ja: [
-        'GitHub repoをAI agentとして公開する相談として受け取りました。',
-        '',
-        '必要な流れは通常この順です。',
-        '1. repoを選ぶ',
-        '2. manifestを生成する',
-        '3. endpoint/adapterがなければPRで追加する',
-        '4. merge後にimport + verifyする',
-        '',
-        'repoがあるなら AGENTS の LIST YOUR AGENT へ進めます。迷う場合は、repo URL、何を入力にして何を納品するagentかを書いてください。登録はできますが、提供者の本人確認のadmin承認と引き落とし用の請求情報が揃うまで金銭処理はロックされます。'
-      ],
-      en: [
-        'I read this as publishing a GitHub repo as an AI agent.',
-        '',
-        'The usual flow is:',
-        '1. Choose the repo',
-        '2. Generate a manifest',
-        '3. Add an endpoint/adapter by PR if missing',
-        '4. Import and verify after merging',
-        '',
-        'If you have a repo, go to AGENTS > LIST YOUR AGENT. If unsure, send the repo URL and describe the agent input and delivery. Listing can proceed, but money actions stay locked until identity and billing are ready.'
-      ]
-    },
-    natural_engineer_api_cli: {
-      ja: [
-        'API/CLIからの利用相談として受け取りました。',
-        '',
-        '実装前に分けるべき点は3つです。',
-        '1. ブラウザのChat/Apps/Deliveries/Publisherで完結できるか',
-        '2. 外部CLI/API/MCPが必要な場合、どの契約が必要か',
-        '3. 再開時に必要な認証、課金元、納品の受け取り方法',
-        '',
-        '外部CLI/API/MCPは現在Coming soonです。安定するまではブラウザのChat、Apps、Deliveries、Publisherを使ってください。'
-      ],
-      en: [
-        'I read this as API or CLI integration work.',
-        '',
-        'Before implementation, split three decisions:',
-        '1. Whether browser Chat, Apps, Deliveries, or Publisher can handle it now',
-        '2. Which external CLI/API/MCP contract is needed later',
-        '3. Authentication, funding, and delivery retrieval needed when it returns',
-        '',
-        'External CLI/API/MCP are currently coming soon. Use browser Chat, Apps, Deliveries, and Publisher until the contract is stable.'
-      ]
-    },
-    natural_engineer_architecture: {
-      ja: [
-        '設計/セキュリティ/性能レビューの相談として受け取りました。',
-        '',
-        'この種の相談は、正解を急ぐより前提を固定した方が精度が上がります。',
-        '1. 現在の構成図または主要コンポーネント',
-        '2. 重要な制約: コスト、速度、セキュリティ、運用、期限',
-        '3. 今困っているリスク: XSS、CSRF、rate limit、DB、キュー、課金、権限など',
-        '4. 欲しい出力: threat model、改善優先度、設計案、移行計画',
-        '',
-        'これをもとに、判断材料と実装タスクへ分けたブリーフにできます。まだ注文も課金も発生しません。'
-      ],
-      en: [
-        'I read this as architecture, security, or performance review work.',
-        '',
-        'For this kind of work, fixing assumptions matters more than rushing to an answer:',
-        '1. Current architecture or major components',
-        '2. Constraints: cost, speed, security, ops, deadline',
-        '3. Risks: XSS, CSRF, rate limits, DB, queues, billing, permissions, etc.',
-        '4. Desired output: threat model, priorities, design options, or migration plan',
-        '',
-        'Then I can prepare a brief that separates decision points from implementation tasks. No order or billing happens yet.'
-      ]
-    }
-  };
-  const lines = ja ? table[intent]?.ja : table[intent]?.en;
-  return (Array.isArray(lines) ? lines : []).filter((line) => line !== null && line !== undefined);
-}
-
-function buildOpenChatNaturalConversationAnswer(prompt = '', inputCounts = {}) {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  const intent = openChatNaturalConversationIntent(text, inputCounts);
-  if (!intent) return null;
-  const ja = looksJapanese(text);
-  const lines = openChatNaturalConversationAnswerLines(intent, text);
-  if (!lines.length) return null;
-  const broadIntent = [
-    'natural_stuck_start',
-    'natural_idea_discovery',
-    'natural_business_growth',
-    'natural_marketing_launch',
-    'natural_ai_beginner_start',
-    'natural_ai_beginner_examples'
-  ].includes(intent);
-  const bodyLines = broadIntent
-    ? [
-        ja ? `こう受け取りました: ${openChatNaturalIntentLabel(intent, text, true)}` : `I read this as: ${openChatNaturalIntentLabel(intent, text, false)}`,
-        ja ? 'Agentに渡す前に、近い方向を選んでください。番号だけでも大丈夫です。' : 'Before handing this to an agent, choose the closest direction. A number is enough.',
-        '',
-        ...lines
-      ]
-    : lines;
-  return {
-    kind: 'clarify',
-    tone: 'info',
-    patternId: intent,
-    vagueChoicePrompt: broadIntent ? text : '',
-    naturalChoiceIntent: broadIntent ? intent : '',
-    clearClarifyOptions: true,
-    body: bodyLines.join('\n'),
-    status: ja
-      ? '方向を整理しました。番号か短い補足で続けてください。'
-      : 'Direction clarified. Reply with a number or a short follow-up.'
-  };
 }
 
 function openChatPatternAnswer(patternId = '', kind = 'clarify', tone = 'info', ja = false, jaLines = [], enLines = [], extra = {}) {
@@ -7317,456 +5938,39 @@ function buildOpenChatGreetingAnswer(prompt = '') {
 }
 
 function openChatLooksGeneralHelpPrompt(prompt = '') {
-  const raw = String(prompt || '').replace(/\s+/g, ' ').trim();
-  const text = openChatIntentMatchText(raw);
-  if (!raw || raw.length > 96) return false;
-  if (isStructuredOrderBrief(raw) || openChatLooksLowInfoTestPrompt(raw)) return false;
-  return /^(help|help me|can you help|can you help me|what can you do|what do you do|what can you help with|what can i do here|what can i ask|what should i ask|where should i start|how do i start|how should i start)[?!.！。\s]*$/i.test(raw)
-    || /^(ヘルプ|へるぷ|助けて|たすけて|何ができる|なにができる|何を頼める|なにを頼める|どう使う|使い方|何から始める|なにから始める|何から始めればいい|なにから始めればいい|どう始める)[?？!！。.\s]*$/i.test(raw)
-    || /^(help|start|confused)(?:\s+(?:cait|ai agent|service))*$/i.test(text);
+  return clientOpenChatQuickAnswerUtils.openChatLooksGeneralHelpPrompt(prompt);
 }
 
 function buildOpenChatGeneralHelpAnswer(prompt = '') {
-  if (!openChatLooksGeneralHelpPrompt(prompt)) return null;
-  const ja = looksJapanese(prompt);
-  const previousBrief = lastOpenChatPreparedBrief();
-  return {
-    kind: 'clarify',
-    tone: 'info',
-    patternId: 'pattern_general_help',
-    suppressTrio: true,
-    body: ja
-      ? [
-          'できます。ここではまず普通に相談して大丈夫です。',
-          '',
-          'よくある始め方:',
-          '1. URLや文章を要約して',
-          '2. AとBを比較して',
-          '3. 投稿文や返信を作って',
-          '4. エラー原因を整理して',
-          '',
-          'この画面は発注前提です。内容を発注ブリーフに整理して、SEND ORDER で実行します。'
-        ].join('\n')
-      : [
-          'Yes. Start by describing what you want in normal words.',
-          '',
-          'Common starts:',
-          '1. Summarize this URL or text',
-          '2. Compare A and B',
-          '3. Draft a post, reply, or email',
-          '4. Triage an error',
-          '',
-          'This screen is for work orders. I turn the request into a work-order brief and only dispatch after SEND ORDER.'
-        ].join('\n'),
-    nextPrompt: previousBrief || '',
-    status: 'Help answered in chat.\n\nNo order was created and no billing occurred.'
-  };
-}
-
-function openChatLooksMarketingAgentListPrompt(prompt = '') {
-  const raw = String(prompt || '').replace(/\s+/g, ' ').trim();
-  const text = openChatIntentMatchText(raw);
-  if (!raw || raw.length > 220) return false;
-  if (isStructuredOrderBrief(raw) || openChatLooksGreetingPrompt(raw) || openChatLooksLowInfoTestPrompt(raw)) return false;
-  const asksForList = /(一覧|リスト|見せて|教えて|ください|どれ|どんな|候補|おすすめ|探して|catalog|catalogue|list|show|browse|recommend|available|which)/i.test(text);
-  const hasAgent = /(agent|agents|ai agent|エージェント|AIエージェント)/i.test(text);
-  const hasMarketing = /(marketing|marketer|growth|go[-\s]?to[-\s]?market|gtm|launch|acquisition|lead gen|lead generation|outreach|seo|social|community|マーケ|マーケティング|集客|グロース|告知|ローンチ|SEO|SNS|ソーシャル|コミュニティ|リード獲得)/i.test(text);
-  return Boolean(asksForList && hasAgent && hasMarketing);
+  return clientOpenChatQuickAnswerUtils.buildOpenChatGeneralHelpAnswer(prompt);
 }
 
 function buildOpenChatMarketingAgentListAnswer(prompt = '') {
-  if (!openChatLooksMarketingAgentListPrompt(prompt)) return null;
-  const ja = looksJapanese(prompt);
-  return {
-    kind: 'quick',
-    tone: 'info',
-    patternId: 'pattern_marketing_agent_list',
-    suppressTrio: true,
-    actions: [
-      { action: 'browse_agents', label: 'BROWSE AGENTS' },
-      { action: 'use_agent_team', label: 'USE AGENT TEAM' }
-    ],
-    body: ja
-      ? [
-          'マーケティング系の agent 候補は登録済み agent manifest から選ばれます。',
-          '',
-          '- BROWSE AGENTS: 現在登録されている agent の task types、capabilities、manifest を確認します。',
-          '- USE AGENT TEAM: CAIt が manifest と注文内容を照合して、必要な leader または specialist に渡します。',
-          '- Send order 前なら、まだ実行も課金も発生しません。',
-          '',
-          '迷う場合は、対象サービス、目標、使いたいデータ、避けたい制約を書いてください。agent 固有の納品範囲や実行可否は各 manifest/provider contract に従います。'
-        ].join('\n')
-      : [
-          'Marketing agent candidates come from registered agent manifests.',
-          '',
-          '- BROWSE AGENTS: inspect currently registered agent task types, capabilities, and manifests.',
-          '- USE AGENT TEAM: CAIt matches the order against manifests and hands it to the relevant leader or specialist.',
-          '- Before Send order, nothing has run and nothing has been billed.',
-          '',
-          'If unsure, describe the target service, goal, available data, and constraints. Agent-specific scope and execution claims come from each manifest/provider contract.'
-        ].join('\n'),
-    status: 'Marketing agent list answered in chat.\n\nNo order was created and no billing occurred.'
-  };
+  return clientOpenChatQuickAnswerUtils.buildOpenChatMarketingAgentListAnswer(prompt);
 }
 
 function buildOpenChatLeaderCatalogAnswer(prompt = '') {
-  if (!isLeaderCatalogQuestionIntentText(prompt)) return null;
-  const ja = looksJapanese(prompt);
-  return {
-    kind: 'quick',
-    tone: 'info',
-    patternId: 'pattern_leader_catalog',
-    suppressTrio: true,
-    actions: [
-      { action: 'browse_agents', label: 'BROWSE AGENTS' },
-      { action: 'use_agent_team', label: 'USE AGENT TEAM' }
-    ],
-    body: ja
-      ? [
-          '利用できるリーダーは登録済みエージェントの manifest に従います。これは案内回答なので、まだ注文も課金も発生していません。',
-          '',
-          '- Team Leader: 複数エージェントの目的、根拠、順序、承認点、最終統合を管理する',
-          '- Specialist: 単一領域の調査、実装、分析、文章化などを直接担当する',
-          '- External/Sample Agent: manifest の task types、layer、capability に基づいて同じルールで扱われる',
-          '',
-          '迷う場合は、やりたい成果をそのまま書けば CAIt がリーダーか専門エージェントかを判断します。実行する場合だけ Send order を押してください。'
-        ].join('\n')
-      : [
-          'Available leaders come from registered agent manifests. This is a chat answer, so no order or billing happened.',
-          '',
-          '- Team Leader: coordinates objective, evidence, order, approvals, and final merge across agents.',
-          '- Specialist: handles a single concrete research, implementation, analysis, or writing lane.',
-          '- External/Sample Agent: routed by the same manifest task types, layer, and capabilities.',
-          '',
-          'If you are unsure, describe the outcome you want and CAIt will choose a leader or specialist. Paid work only starts when you press Send order.'
-        ].join('\n'),
-    status: 'Leader catalog answered in chat.\n\nNo order was created and no billing occurred.'
-  };
-}
-
-function openChatLooksRecurringWorkPrompt(prompt = '') {
-  const raw = String(prompt || '').replace(/\s+/g, ' ').trim();
-  const text = openChatIntentMatchText(raw);
-  if (!raw || raw.length > 1200) return false;
-  if (openChatLooksGreetingPrompt(raw) || openChatLooksLowInfoTestPrompt(raw)) return false;
-  return /\b(schedule|scheduled|recurring|repeat|every day|daily|weekly|hourly|cron|monitor|watch|check every|run every)\b/i.test(text)
-    || /(定期|毎日|毎週|毎時|スケジュール|くろん|クロン|cron|監視|モニタリング|繰り返し|定例|自動で|定期的)/i.test(text);
+  return clientOpenChatQuickAnswerUtils.buildOpenChatLeaderCatalogAnswer(prompt);
 }
 
 function buildOpenChatRecurringWorkAnswer(prompt = '', inputCounts = {}) {
-  if (!openChatLooksRecurringWorkPrompt(prompt)) return null;
-  const ja = looksJapanese(prompt);
-  const taskType = inferClientTaskSequence('', prompt)[0] || 'automation';
-  const sourceLine = inputCounts.urlCount || inputCounts.fileCount
-    ? `Sources: ${inputCounts.urlCount || 0} URL(s), ${inputCounts.fileCount || 0} file(s)`
-    : 'Sources: Written request only unless you add URLs/files before scheduling';
-  const brief = [
-    `Task: ${taskType}`,
-    `Goal: ${prompt}`,
-    'Schedule: recurring work. Use the Scheduled Work controls beside Chat History to choose daily, weekly, or hourly cadence.',
-    `Inputs: ${sourceLine}`,
-    'Execution: each scheduled run creates a normal CAIt order, uses the current balance at run time, and records delivery in Work history.',
-    'Deliver: answer-first result, relevant sources or assumptions, and a reusable summary.',
-    `Output language: ${ja ? 'Japanese' : 'English'}`,
-    'Acceptance: run only when balance and routing are valid; if an agent cannot run, record the failure and keep the next scheduled run.'
-  ].join('\n');
-  return {
-    kind: 'assist',
-    tone: 'ok',
-    patternId: 'pattern_recurring_work',
-    nextPrompt: brief,
-    body: ja
-      ? [
-          '定期実行の依頼として受け取りました。',
-          '',
-          'まず発注ブリーフに整理しました。下書きを確認して、左側の SCHEDULED ORDERS で頻度を選び、SCHEDULE DRAFT を押してください。',
-          '',
-          '重要: スケジュール作成時には課金しません。各実行タイミングで通常の注文として請求確認、ルーティング、予約を行います。',
-          '',
-          brief
-        ].join('\n')
-      : [
-          'I read this as recurring work.',
-          '',
-          'I prepared a work-order brief. Review it, choose the cadence in SCHEDULED ORDERS beside Chat History, then press SCHEDULE DRAFT.',
-          '',
-          'Important: scheduling itself is not billed. Each run becomes a normal order at run time, so billing readiness, routing, and reservation still apply.',
-          '',
-          brief
-        ].join('\n'),
-    status: 'Recurring work draft prepared.\n\nNo order was created and no billing occurred. Use SCHEDULED ORDERS to save the schedule.'
-  };
+  return clientOpenChatQuickAnswerUtils.buildOpenChatRecurringWorkAnswer(prompt, inputCounts);
 }
 
 function buildOpenChatPaymentQuestionAnswer(prompt = '') {
-  const raw = String(prompt || '').replace(/\s+/g, ' ').trim();
-  if (!raw || raw.length > 260) return null;
-  const text = openChatIntentMatchText(raw);
-  const paymentContext = /(stripe|billing|payment|deposit|balance|checkout|refund|plan|invoice|課金|請求|支払|決済|デポジット|残高|返金|プラン|請求書)/i.test(text);
-  const questionContext = /[?？]|(わから|分から|不明|教えて|どう|なに|何|とは|意味|できる|使い方|止ま|エラー|失敗|failed|error|how|what|why|where)/i.test(raw)
-    || /(help|stuck|confused|unknown|explain|how|what|why)/i.test(text);
-  if (!paymentContext || !questionContext) return null;
-  const ja = looksJapanese(raw);
-  return {
-    kind: 'quick',
-    tone: 'info',
-    patternId: 'pattern_payment_question',
-    body: ja
-      ? [
-          '支払い・請求まわりの質問として受け取りました。',
-          '',
-          TEMPORARY_INVOICE_BILLING_ENABLED
-            ? '現在、外部決済の画面表示は一時的に隠しています。SETTINGS -> PAYMENTS の REQUEST INVOICE から請求書対応で進めます。'
-            : '注文はカード登録後の月締め請求で支払えます。SETTINGS -> PAYMENTS からカード登録、プラン課金に進めます。',
-          '',
-          'FAQ回答や発注準備だけでは課金されません。実作業として送る場合だけ、見積もりと最大予約額を確認して SEND ORDER します。'
-        ].join('\n')
-      : [
-          'I read this as a payment or balance question.',
-          '',
-          TEMPORARY_INVOICE_BILLING_ENABLED
-            ? 'Hosted checkout is temporarily hidden. Use SETTINGS -> PAYMENTS -> REQUEST INVOICE for manual billing follow-up.'
-            : 'Orders use saved-card month-end billing. Open SETTINGS -> PAYMENTS for card setup or plan billing.',
-          '',
-          'FAQ replies and order prep are not billed. Paid work only starts when you review the estimate and press SEND ORDER.'
-        ].join('\n'),
-    status: 'Payment question answered in chat.\n\nNo order was created and no billing occurred.'
-  };
+  return clientOpenChatQuickAnswerUtils.buildOpenChatPaymentQuestionAnswer(prompt);
 }
 
 function openChatLooksLowInfoAmbiguousPrompt(prompt = '', inputCounts = {}) {
-  const text = String(prompt || '').replace(/\s+/g, ' ').trim();
-  const matchText = openChatIntentMatchText(text);
-  if (!text || text.length > 72) return false;
-  if (isStructuredOrderBrief(text) || openChatLooksLowInfoTestPrompt(text)) return false;
-  if (openChatLooksGreetingPrompt(text)) return false;
-  if (lastOpenChatPreparedBrief()) return false;
-  if (/^[0-9０-９]+$/.test(text) && (state.openChatNaturalChoiceIntent || state.openChatVagueChoicePrompt || (Array.isArray(state.openChatClarifyOptions) && state.openChatClarifyOptions.length))) return false;
-  if (Number(inputCounts.urlCount || 0) || Number(inputCounts.fileCount || 0)) return false;
-  if (/https?:\/\//i.test(text)) return false;
-  if (/(CAIt|aiagent2|ai agent|agent|order|work|delivery|deposit|billing|payment|stripe|github|google|cli|api|payout|provider|manifest|verify|settings|エージェント|オーダー|注文|ワーク|納品|デポジット|残高|料金|課金|支払|お金|ログイン|登録|使い方|入金|出金|受け取り|マニフェスト|ベリファイ|検証|設定)/i.test(matchText)) return false;
-  if (openChatNaturalConversationIntent(text, inputCounts)) return false;
-  if (openChatAiBeginnerNaturalIntent(text, inputCounts) || openChatEngineerNaturalIntent(text, inputCounts)) return false;
-  if (/^(reset|リセット|clear|クリア|start over|やり直し|back|戻る|copy brief|発注文をコピー|preview|納品プレビュー|status|状況|help|ヘルプ)[!！。.\s]*$/i.test(text)) return false;
-  const hasActionOrQuestion = /[?？]|\b(compare|research|analy[sz]e|review|summari[sz]e|write|draft|create|build|fix|debug|find|explain|translate|improve|triage|check|tell|show|order)\b|(?:調査|比較|分析|レビュー|要約|作成|書いて|直して|修正|翻訳|改善|確認|教えて|調べ|知りたい|探して|説明|発注|注文|何|なに|どう|ですか|ますか|始めれば|すれば|いいですか|わからない|分からない)/i.test(matchText);
-  if (hasActionOrQuestion) return false;
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length <= 3) return true;
-  return /^[\p{L}\p{N}\s._#@+-]{1,72}$/u.test(text) && !/[。！？!?、,;:]/.test(text);
+  return clientOpenChatQuickAnswerUtils.buildOpenChatLowInfoAmbiguousAnswer(prompt, inputCounts) !== null;
 }
 
 function buildOpenChatLowInfoAmbiguousAnswer(prompt = '', inputCounts = {}) {
-  if (!openChatLooksLowInfoAmbiguousPrompt(prompt, inputCounts)) return null;
-  const ja = looksJapanese(prompt);
-  const topic = compactChatText(String(prompt || '').replace(/\s+/g, ' '), 80);
-  const bareTopic = openChatLooksBareTopicPrompt(prompt);
-  return {
-    kind: 'clarify',
-    tone: 'info',
-    patternId: 'pattern_low_info_ambiguous',
-    naturalChoiceIntent: bareTopic ? 'natural_entity_exploration' : '',
-    vagueChoicePrompt: bareTopic ? String(prompt || '').trim() : '',
-    llmFallbackRecommended: bareTopic,
-    llmFallbackReason: bareTopic ? 'bare_topic_disambiguation' : '',
-    body: ja
-      ? (bareTopic ? [
-          `「${topic}」についてですね。`,
-          '',
-          'まだ「何をしたいか」が足りないので、Agentには渡しません。近い方向を選んでください。番号だけで大丈夫です。',
-          '',
-          `1. ${topic}の最新情報/価格/相場を調べる`,
-          `2. ${topic}を比較・ランキング化する`,
-          `3. ${topic}の売却/購入/価値判断をする`,
-          '4. 背景、リスク、注意点を整理する',
-          '',
-          '必要なら意図をもう少し自然に分解します。まだ注文も課金も発生しません。'
-        ] : [
-          topic ? `「${topic}」だけだと、まだ作業内容を特定できません。` : 'まだ作業内容を特定できません。',
-          '',
-          'この入力だけではAgentには渡しません。',
-          '',
-          '次は、やりたい動作を1つ足してください。例:',
-          '1. 調べて',
-          '2. 比較して',
-          '3. 要約して',
-          '4. 投稿文を作って',
-          '5. エラー原因を整理して',
-          '',
-          '例: 「ロレックスの最高価格を調べて、根拠URL付きで教えて」',
-          '',
-          'ここではまだ注文も課金も発生しません。'
-        ]).join('\n')
-      : (bareTopic ? [
-          `You mentioned “${topic}”.`,
-          '',
-          'I still need the action before I turn it into a work brief. Choose the closest direction. A number is enough:',
-          '',
-          `1. Research current info, price, or market range for ${topic}`,
-          `2. Compare or rank options around ${topic}`,
-          `3. Evaluate buying, value, or procurement decisions for ${topic}`,
-          '4. Summarize background, risks, and caveats',
-          '',
-          'If available, CAIt can use the pre-order LLM fallback to split this more naturally. No order or billing happens yet.'
-        ] : [
-          topic ? `“${topic}” is not enough to know the work you want yet.` : 'I do not have enough information to know the work you want yet.',
-          '',
-          'I will not turn this into an order brief.',
-          '',
-          'Add one action next. Examples:',
-          '1. Research it',
-          '2. Compare options',
-          '3. Summarize it',
-          '4. Draft a post',
-          '5. Triage an error',
-          '',
-          'Example: “Research the highest Rolex price and include source URLs.”',
-          '',
-          'No order or billing happens here.'
-        ]).join('\n'),
-    status: 'Low-information message kept in chat.\n\nNo order was created and no billing occurred.'
-  };
+  return clientOpenChatQuickAnswerUtils.buildOpenChatLowInfoAmbiguousAnswer(prompt, inputCounts);
 }
 
 function quickOrderChatAnswer(prompt = '', inputCounts = {}) {
-  const text = String(prompt || '').trim();
-  if (!text) return null;
-  const promptInjectionAnswer = buildOpenChatPromptInjectionAnswer(text);
-  if (promptInjectionAnswer) return promptInjectionAnswer;
-  const longPromptAnswer = buildOpenChatLongPromptGuardAnswer(text, inputCounts);
-  if (longPromptAnswer) return longPromptAnswer;
-  if (isStructuredOrderBrief(text)) return null;
-  const compact = text.replace(/\s+/g, ' ').trim();
-  const reusableToolsAnswer = buildOpenChatReusableToolsAnswer(compact);
-  if (reusableToolsAnswer) return reusableToolsAnswer;
-  const recoveredLeaderIntakeAnswer = buildOpenChatRecoveredLeaderIntakeAnswer(compact, inputCounts);
-  if (recoveredLeaderIntakeAnswer) return recoveredLeaderIntakeAnswer;
-  const leaderIntakeFollowupAnswer = buildOpenChatLeaderIntakeFollowupAnswer(compact, inputCounts);
-  if (leaderIntakeFollowupAnswer) return leaderIntakeFollowupAnswer;
-  const pendingQuestionFollowupAnswer = buildOpenChatPendingQuestionFollowupAnswer(compact, inputCounts);
-  if (pendingQuestionFollowupAnswer) return pendingQuestionFollowupAnswer;
-  const precommandPatternAnswer = buildOpenChatPatternGuardAnswer(compact, inputCounts, { phase: 'precommand' });
-  if (precommandPatternAnswer) return precommandPatternAnswer;
-  const lowInfoTestAnswer = buildOpenChatLowInfoTestAnswer(compact);
-  if (lowInfoTestAnswer) return lowInfoTestAnswer;
-  const greetingAnswer = buildOpenChatGreetingAnswer(compact);
-  if (greetingAnswer) return greetingAnswer;
-  const intentShiftFollowup = buildOpenChatIntentShiftFollowup(compact, inputCounts);
-  if (intentShiftFollowup) return intentShiftFollowup;
-  const ideaOperatorFollowup = buildOpenChatIdeaOperatorFollowup(compact, inputCounts);
-  if (ideaOperatorFollowup) return ideaOperatorFollowup;
-  const naturalChoiceFollowup = buildOpenChatNaturalChoiceFollowup(compact, inputCounts);
-  if (naturalChoiceFollowup) return naturalChoiceFollowup;
-  const vagueChoiceFollowup = buildOpenChatVagueChoiceFollowup(compact, inputCounts);
-  if (vagueChoiceFollowup) return vagueChoiceFollowup;
-  const pendingChoiceReminder = buildOpenChatPendingChoiceReminder(compact);
-  if (pendingChoiceReminder) return pendingChoiceReminder;
-  const generalHelpAnswer = buildOpenChatGeneralHelpAnswer(compact);
-  if (generalHelpAnswer) return generalHelpAnswer;
-  const leaderCatalogAnswer = buildOpenChatLeaderCatalogAnswer(compact);
-  if (leaderCatalogAnswer) return leaderCatalogAnswer;
-  const marketingAgentListAnswer = buildOpenChatMarketingAgentListAnswer(compact);
-  if (marketingAgentListAnswer) return marketingAgentListAnswer;
-  const recurringWorkAnswer = buildOpenChatRecurringWorkAnswer(compact, inputCounts);
-  if (recurringWorkAnswer) return recurringWorkAnswer;
-  const paymentQuestionAnswer = buildOpenChatPaymentQuestionAnswer(compact);
-  if (paymentQuestionAnswer) return paymentQuestionAnswer;
-  const leaderIntakeAnswer = buildOpenChatLeaderIntakeAnswer(compact, inputCounts);
-  if (leaderIntakeAnswer) return leaderIntakeAnswer;
-  const lowInfoAmbiguousAnswer = buildOpenChatLowInfoAmbiguousAnswer(compact, inputCounts);
-  if (lowInfoAmbiguousAnswer) return lowInfoAmbiguousAnswer;
-  const noLoginAnswer = buildOpenChatNoLoginAnswer(compact);
-  if (noLoginAnswer) return noLoginAnswer;
-  const repairAnswer = buildOpenChatRepairAnswer(compact);
-  if (repairAnswer) return repairAnswer;
-  const pauseAnswer = buildOpenChatPauseAnswer(compact);
-  if (pauseAnswer) return pauseAnswer;
-  const statusAnswer = buildOpenChatStatusAnswer(compact);
-  if (statusAnswer) return statusAnswer;
-  const timelineIntentChoiceAnswer = buildOpenChatTimelineIntentChoiceAnswer(compact);
-  if (timelineIntentChoiceAnswer) return timelineIntentChoiceAnswer;
-  const examplesAnswer = buildOpenChatExamplesAnswer(compact);
-  if (examplesAnswer) return examplesAnswer;
-  const runConfirmationAnswer = buildOpenChatRunConfirmationAnswer(compact);
-  if (runConfirmationAnswer) return runConfirmationAnswer;
-  const acknowledgementAnswer = buildOpenChatAcknowledgementAnswer(compact);
-  if (acknowledgementAnswer) return acknowledgementAnswer;
-  const ceoIdeaAnswer = buildOpenChatCeoIdeaAnswer(compact, inputCounts);
-  if (ceoIdeaAnswer) return ceoIdeaAnswer;
-  const commandAnswer = buildOpenChatCommandAnswer(compact);
-  if (commandAnswer) return commandAnswer;
-  const followupAnswer = buildOpenChatFollowupAnswer(compact, inputCounts);
-  if (followupAnswer) return followupAnswer;
-  const patternGuardAnswer = buildOpenChatPatternGuardAnswer(compact, inputCounts);
-  if (patternGuardAnswer) return patternGuardAnswer;
-  const naturalConversationAnswer = buildOpenChatNaturalConversationAnswer(compact, inputCounts);
-  if (naturalConversationAnswer) return naturalConversationAnswer;
-  const assistAnswer = buildOpenChatAssistAnswer(compact, inputCounts);
-  if (assistAnswer) return assistAnswer;
-  const intentShiftAnswer = buildOpenChatIntentShiftQuestion(compact, inputCounts);
-  if (intentShiftAnswer) return intentShiftAnswer;
-  const broadChoiceAnswer = buildOpenChatResearchOrNarrowChoice(compact, inputCounts);
-  if (broadChoiceAnswer) return broadChoiceAnswer;
-  const directResearchQuestionAnswer = buildOpenChatDirectResearchQuestionAnswer(compact, inputCounts);
-  if (directResearchQuestionAnswer) return directResearchQuestionAnswer;
-  if (Number(inputCounts.urlCount || 0) || Number(inputCounts.fileCount || 0)) return null;
-  if (compact.length > 260) return null;
-  const ja = looksJapanese(compact);
-  const matchText = openChatIntentMatchText(compact);
-  const hasQuestionShape = openChatLooksStandaloneQuestionText(compact);
-  const productContext = /\b(cait|ca\s*it|aiagent2|ai agent2|ai agent marketplace|aim|agent|order|work|delivery|deposit|billing|payment|stripe|github|google|cli|api|payout|provider|manifest|verify|verification)\b/i.test(matchText)
-    || /(CAIt|aiagent2|ai agent marketplace|エージェント|オーダー|注文|ワーク|納品|デポジット|残高|料金|課金|支払|ログイン|登録|使い方|できること|これは何|github|google|stripe|api|cli|入金|出金|受け取り|マニフェスト|ベリファイ|検証)/i.test(matchText);
-
-  if (!hasQuestionShape || !productContext) return null;
-
-  if (/(料金|課金|支払|デポジット|残高|プラン|billing|payment|deposit|balance|plan|stripe)/i.test(matchText)) {
-    if (TEMPORARY_INVOICE_BILLING_ENABLED) {
-      return ja
-        ? `注文は ${PRODUCT_NAME} の月締め請求として扱います。現在、外部決済の画面表示は一時的に隠しているため、SETTINGS -> PAYMENTS の REQUEST INVOICE で請求書を依頼してください。FAQ回答や発注準備だけなら課金されません。`
-        : `Orders use ${PRODUCT_NAME} month-end billing. Hosted checkout is temporarily hidden, so use SETTINGS -> PAYMENTS -> REQUEST INVOICE. Quick FAQ replies and order prep are not billed.`;
-    }
-    return ja
-      ? `注文はカード登録後の月締め請求で支払えます。SETTINGS -> PAYMENTS からカード登録とプラン課金に進めます。FAQ回答や発注準備だけなら課金されません。実作業の注文時だけ、見積もりと最大予約額を確認して進みます。`
-      : `Orders use saved-card month-end billing. Open SETTINGS -> PAYMENTS for card setup and plan billing. Quick FAQ replies and order prep are not billed. Paid work shows an estimate and max reserve before dispatch.`;
-  }
-  if (/(api key|apiキー|openai|anthropic|serp|model provider|モデル|プロバイダー|契約)/i.test(matchText)) {
-    return ja
-      ? `Built-in agent を使う場合、買い手側で OpenAI、Anthropic、検索APIなどを個別契約する必要はありません。${PRODUCT_NAME} の月締め請求で注文できます。自分の外部システムから注文したい場合は SETTINGS で CAIt API key を発行します。`
-      : `For managed sample agents, buyers do not need separate OpenAI, Anthropic, search, or model-provider API contracts. Use ${PRODUCT_NAME} month-end billing. External CLI/API/MCP access is coming soon.`;
-  }
-  if (/(github|git hub|agent.*登録|登録|publish|list|manifest|verify|verification|ベリファイ|検証|マニフェスト|公開)/i.test(matchText)) {
-    return ja
-      ? 'エージェントを公開する場合は GitHub 連携を使います。AGENTS で LIST YOUR AGENT を押し、repo 選択、manifest 生成、PR 作成、merge、import、verify の順で進めます。ORDER だけなら GitHub は不要です。'
-      : 'Publishing an agent uses GitHub. Open AGENTS, choose LIST YOUR AGENT, select a repo, generate the manifest, create/merge the PR, import it, then verify. Ordering work does not require GitHub.';
-  }
-  if (/(稼|売上|収益|payout|provider|connect|withdraw|受け取り|出金|入金|stripe connect)/i.test(matchText)) {
-    if (TEMPORARY_INVOICE_BILLING_ENABLED) {
-      return ja
-        ? 'エージェント提供者の収益はCAIt上で記録されます。現在、自動出金の画面表示は一時的に隠しているため、PROVIDERで状態を確認し、必要な場合はsupport@aiagent-marketplace.netへ手動出金の相談をしてください。'
-        : 'Provider earnings are tracked in CAIt. Automated withdrawals are temporarily hidden, so check PROVIDER for status and contact support@aiagent-marketplace.net for manual payout handling if needed.';
-    }
-    return ja
-      ? 'エージェント提供者の収益受け取りは、SETTINGS の PROVIDER 側でプロフィール保存、Stripe Connect、出金確認を行います。'
-      : 'Provider earnings are managed from SETTINGS -> PROVIDER. Save the provider profile, complete Stripe Connect, then withdraw eligible earnings.';
-  }
-  if (/(login|sign in|ログイン|google|github|アカウント|連携)/i.test(matchText)) {
-    return ja
-      ? 'Google ログインは注文、支払い、通常利用向けです。GitHub ログイン/連携はエージェント登録、repo 連携、提供者収益の受け取りに使います。両方を同じアカウントに連携できます。'
-      : 'Google login is for ordering, payments, and normal use. GitHub login/linking is for publishing agents, repo access, and provider payout flows. You can link both to the same account.';
-  }
-  if (/(delivery|納品|結果|ファイル|download|ダウンロード|source|sources|ソース)/i.test(matchText)) {
-    return ja
-      ? '納品は ORDER の DELIVERY に表示されます。完了後は要約、ファイル、入力ソース、実費、支払い内訳、フォローアップ導線を確認できます。必要に応じてファイルをダウンロードできます。'
-      : 'Completed delivery appears in ORDER > DELIVERY. It can include summary, files, input sources, actual billing, funding breakdown, and follow-up actions. Files can be downloaded when provided.';
-  }
-  if (/(使い方|何ができる|できること|how.*use|what.*do|what.*is|これは何|aiagent2.*とは|ai agent marketplace|order.*how|send.*order)/i.test(matchText)) {
-    return ja
-      ? `${PRODUCT_NAME} は、AIエージェントに作業を注文して納品を受け取るための実行基盤です。ここに依頼内容を書くと、まず発注ブリーフに整理し、正式オーダー時にルーティング、支払い、納品を扱います。FAQならこのチャットで回答し、実作業なら SEND ORDER で注文します。`
-      : `${PRODUCT_NAME} is a runtime for sending work to AI agents and receiving structured delivery. Write the outcome you want, and ${PRODUCT_SHORT_NAME} first prepares an order brief, then handles routing, billing, and delivery on formal dispatch. FAQ replies stay in chat; paid work uses SEND ORDER.`;
-  }
-
-  return ja
-    ? `${PRODUCT_NAME} についての簡単な質問として受け取りました。ここでは、使い方、料金、ログイン、GitHub連携、支払い、納品、提供者収益について答えられます。実作業を依頼したい場合は、欲しい成果物を具体的に書いて、まず発注ブリーフを作ってください。`
-    : `I read this as a quick ${PRODUCT_NAME} question. I can answer usage, pricing, login, GitHub, payment, delivery, and provider payout questions here. To order paid work, describe the deliverable so I can prepare the order brief first.`;
+  return clientOpenChatQuickAnswerUtils.quickOrderChatAnswer(prompt, inputCounts);
 }
 
 function openChatHasUncertaintyMarker(prompt = '') {
