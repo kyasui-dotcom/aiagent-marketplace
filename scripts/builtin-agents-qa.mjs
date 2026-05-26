@@ -173,10 +173,10 @@ const workSupportContractExpectations = [
   },
   {
     kind: 'hiring',
-    actions: ['prepare_jd_packet', 'prepare_screening_rubric'],
-    requiredSections: ['Role outcomes', 'Scorecard', 'Job description', 'Must-have and nice-to-have', 'Screening questions', 'Evaluation rubric', 'Exclusion risks'],
-    guidedSections: ['Role outcomes', 'Scorecard', 'Job description', 'Must-have and nice-to-have', 'Screening questions', 'Evaluation rubric', 'Exclusion risks'],
-    forbiddenClaims: ['generic JD without scorecard', 'candidate decision without evidence']
+    actions: ['prepare_jd_packet', 'prepare_screening_rubric', 'prepare_hiring_owner_handoff'],
+    requiredSections: ['Role outcomes', 'Scorecard', 'Job description', 'Must-have and nice-to-have', 'Screening questions', 'Evaluation rubric', 'Protected-class/legal risk gate', 'Candidate evidence boundary', 'Exclusion risks'],
+    guidedSections: ['Role outcomes', 'Scorecard', 'Job description', 'Must-have and nice-to-have', 'Screening questions', 'Evaluation rubric', 'Protected-class/legal risk gate', 'Candidate evidence boundary', 'Exclusion risks'],
+    forbiddenClaims: ['generic JD without scorecard', 'candidate decision without evidence', 'protected-class proxy requirement treated as a must-have', 'candidate fit or protected-class inference without job-related evidence']
   },
   {
     kind: 'data_analysis',
