@@ -565,6 +565,29 @@ textarea {
   background: rgba(255, 255, 255, 0.96);
 }
 
+.composer-field {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.composer-mode-hint {
+  min-height: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.composer[data-mode="intake"] .composer-mode-hint {
+  color: #174c3d;
+  font-weight: 760;
+}
+
+.composer[data-mode="intake"] textarea {
+  border-color: rgba(31, 107, 88, 0.42);
+  background: #f8fcfa;
+}
+
 .composer textarea {
   width: 100%;
   min-height: 58px;
@@ -966,6 +989,42 @@ textarea {
   padding: 11px 12px;
   font-size: 13px;
   font-weight: 760;
+}
+
+.agent-work-products {
+  margin-top: 12px;
+  border: 1px solid rgba(31, 107, 88, 0.18);
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+  white-space: normal;
+}
+
+.agent-work-products summary {
+  cursor: pointer;
+  padding: 11px 12px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.agent-work-product-list {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.agent-work-product-row {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(31, 107, 88, 0.14);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.agent-work-product-row strong {
+  overflow-wrap: anywhere;
 }
 
 .approval-card {

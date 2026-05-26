@@ -46,7 +46,7 @@ import {
   deliveryOrderActionsHtml as deliveryRendererOrderActionsHtml,
   deliveryRendererMeta,
   renderDeliveryBody
-} from './delivery-renderer.js?v=20260519a';
+} from './delivery-renderer.js?v=20260526a';
 import {
   deliveryFileDisplayTitle,
   deliveryFileProvenanceParts
@@ -284,6 +284,7 @@ const els = {
   chatThread: $('chatThread'),
   composer: $('composer'),
   promptInput: $('promptInput'),
+  composerModeHint: $('composerModeHint'),
   deliveryFormatSelect: $('deliveryFormatSelect'),
   sendMessageBtn: $('sendMessageBtn'),
   resetBtn: $('resetBtn'),
@@ -5638,8 +5639,27 @@ function updateComposerMode() {
   const intake = Boolean(state.pendingIntake);
   const active = Boolean(state.orderId && state.polling);
   const placeholder = intake ? PROMPT_PLACEHOLDERS.intake : (pending ? PROMPT_PLACEHOLDERS.pending : (active ? PROMPT_PLACEHOLDERS.active : PROMPT_PLACEHOLDERS.default));
+  const sample = state.pendingIntake?.originalPrompt || state.draft?.originalPrompt || state.draft?.prompt || state.conversationLanguage || '';
   els.promptInput.rows = intake ? 4 : (pending ? 2 : 3);
   els.promptInput.placeholder = chatText(placeholder.en, placeholder.ja);
+  if (els.composer) els.composer.dataset.mode = intake ? 'intake' : (pending ? 'draft' : (active ? 'active' : 'chat'));
+  if (els.sendMessageBtn) {
+    const label = intake
+      ? chatText('Send answer', '回答を送信', sample)
+      : chatText('Send chat', 'チャット送信', sample);
+    els.sendMessageBtn.textContent = label;
+    els.sendMessageBtn.title = intake
+      ? chatText('Send this intake answer to continue. This does not dispatch the order.', 'このヒアリング回答を送って次へ進みます。発注はまだ実行されません。', sample)
+      : chatText('Send this message to chat.', 'このメッセージをチャットへ送信します。', sample);
+    els.sendMessageBtn.setAttribute('aria-label', els.sendMessageBtn.title);
+  }
+  if (els.composerModeHint) {
+    els.composerModeHint.textContent = intake
+      ? chatText('Answer the intake item here, then press Send answer. The order still waits for final approval.', 'この入力欄でヒアリングに答えてから「回答を送信」を押してください。発注は最後の承認まで実行されません。', sample)
+      : (pending
+        ? chatText('Add changes here, or approve the prepared order when it looks right.', 'ここで追加修正を書くか、内容がよければ発注ドラフトを承認してください。', sample)
+        : chatText('Type a request, then send it to chat.', '依頼内容を入力してチャットへ送信してください。', sample));
+  }
 }
 
 function isNeedsInputResponse(response = {}) {

@@ -4985,6 +4985,19 @@ assert.equal(syntheticAgentTeamOutput.report?.completion_state, 'blocked_waiting
 assert.equal(syntheticAgentTeamOutput.summary, 'Leader final summary', 'leader-authored summary should remain the default integrated summary when available');
 assert.equal(syntheticAgentTeamOutput.report?.execution_candidate?.source_task_type, 'cmo_leader', 'final leader delivery should remain the selected execution candidate instead of a child action packet');
 assert.equal(syntheticAgentTeamOutput.report?.childRuns?.length, 4, 'integrated output should keep supporting work product summaries attached to the merged report');
+assert.equal(
+  syntheticAgentTeamOutput.report?.specialist_output_ledger?.length,
+  4,
+  'integrated output should expose a work-product ledger for every visible child run'
+);
+assert.ok(
+  syntheticAgentTeamOutput.report?.specialist_output_ledger?.some((item) => item.runId === 'data-specialist' && item.artifactState === 'available_in_child_run' && item.returnedFiles?.includes('data-analysis-delivery.md')),
+  'supporting specialist files omitted from the final bundle should remain reviewable in the work-product ledger'
+);
+assert.ok(
+  syntheticAgentTeamOutput.report?.specialist_output_ledger?.some((item) => item.runId === 'x-specialist' && item.hasAttachedDeliveryArtifact === true && item.attachedDeliveryFiles?.includes('x-post-pack.md')),
+  'explicit app-review packets should be marked as attached delivery artifacts in the work-product ledger'
+);
 assert.ok(
   syntheticAgentTeamOutput.report?.bullets?.some((item) => String(item || '').includes('Delivered content summary') && String(item || '').includes('Prepared X packet')),
   'parent report bullets should summarize the actual content produced by each specialist'

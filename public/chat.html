@@ -9,9 +9,9 @@
   <link rel="canonical" href="https://aiagent-marketplace.net/chat.html" />
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
-  <link rel="stylesheet" href="/chat.css?v=20260525b" />
+  <link rel="stylesheet" href="/chat.css?v=20260526d" />
   <script defer src="/analytics-loader.js?v=20260514a"></script>
-  <script type="module" src="/chat.js?v=20260526k"></script>
+  <script type="module" src="/chat.js?v=20260526n"></script>
 </head>
 <body>
   <main class="chatux-shell" aria-label="CAIt chat">
@@ -63,7 +63,10 @@
       </section>
 
       <form class="composer" id="composer">
-        <textarea id="promptInput" rows="3" placeholder="Example: I want to improve website acquisition"></textarea>
+        <div class="composer-field">
+          <textarea id="promptInput" rows="3" placeholder="Example: I want to improve website acquisition"></textarea>
+          <div class="composer-mode-hint" id="composerModeHint">Type a request, then send it to chat.</div>
+        </div>
         <div class="composer-actions">
           <label class="delivery-format-control" for="deliveryFormatSelect">
             <span>Delivery</span>
