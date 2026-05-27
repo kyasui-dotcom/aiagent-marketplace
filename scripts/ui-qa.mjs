@@ -37,6 +37,7 @@ const clientOpenChatOrderProgressUtilsPath = new URL('../public/client-open-chat
 const clientOpenChatPatternGuardUtilsPath = new URL('../public/open-chat-pattern-guard-utils.js', import.meta.url);
 const analyticsLoaderPath = new URL('../public/analytics-loader.js', import.meta.url);
 const chatJsPath = new URL('../public/chat.js', import.meta.url);
+const chatDeliveryFileUtilsPath = new URL('../public/chat-delivery-file-utils.js', import.meta.url);
 const accountSettingsJsPath = new URL('../public/account-settings.js', import.meta.url);
 const connectorGateJsPath = new URL('../public/connector-gate.js', import.meta.url);
 const chatSessionStateJsPath = new URL('../public/chat-session-state.js', import.meta.url);
@@ -186,6 +187,7 @@ const clientOpenChatPatternGuardUtilsJs = readFileSync(clientOpenChatPatternGuar
 const clientAnalyticsUtilsJs = readFileSync(clientAnalyticsUtilsPath, 'utf8');
 const analyticsLoaderJs = readFileSync(analyticsLoaderPath, 'utf8');
 const chatJs = readFileSync(chatJsPath, 'utf8');
+const chatDeliveryFileUtilsJs = readFileSync(chatDeliveryFileUtilsPath, 'utf8');
 const accountSettingsJs = readFileSync(accountSettingsJsPath, 'utf8');
 const connectorGateJs = readFileSync(connectorGateJsPath, 'utf8');
 const chatSessionStateJs = readFileSync(chatSessionStateJsPath, 'utf8');
@@ -489,11 +491,12 @@ assert.equal(
   'Structured X authority_request objects should still route to the SaaS handoff path.'
 );
 assert.ok(chatJs.includes('jobBlockedForSaasHandoff(job)'), 'SaaS handoff blockers should render as delivery/app-handoff states.');
-assert.ok(chatJs.includes('function sanitizeDeliveryMarkdownForUser'), 'Chat delivery rendering should sanitize internal workflow prompt text before display or download.');
+assert.ok(chatJs.includes("from './chat-delivery-file-utils.js"), 'Chat delivery file behavior should be delegated to the chat delivery file module.');
+assert.ok(chatDeliveryFileUtilsJs.includes('export function sanitizeDeliveryMarkdownForUser'), 'Chat delivery rendering should sanitize internal workflow prompt text before display or download.');
 assert.ok(chatJs.includes('sanitizeDeliveryFileForUser(file'), 'Chat delivery file cards should register sanitized files, not raw provider markdown.');
 assert.ok(!chatJs.includes('sanitizeDeliveryMarkdownForUser(cleanReadableBundleContent'), 'Chat delivery must not generate readable delivery bundles from internal handoff files.');
-assert.ok(chatJs.includes('USER_DELIVERY_INTERNAL_MARKERS'), 'Chat delivery sanitization should cover workflow handoff and prior specialist markers.');
-assert.ok(chatJs.includes('deliveryLineLooksInternal'), 'Chat delivery sanitization should remove provider implementation self-reporting lines.');
+assert.ok(chatDeliveryFileUtilsJs.includes('USER_DELIVERY_INTERNAL_MARKERS'), 'Chat delivery sanitization should cover workflow handoff and prior specialist markers.');
+assert.ok(chatDeliveryFileUtilsJs.includes('deliveryLineLooksInternal'), 'Chat delivery sanitization should remove provider implementation self-reporting lines.');
 assert.ok(appHandoffTransferJs.includes('export function appHandoffSocialPostDraftFromDeliveryFiles'), 'App handoff transfer should own social post draft extraction for dedicated handoff cards.');
 assert.ok(chatJs.includes('appHandoffSocialPostDraftFromDeliveryFiles(orderedFiles, { maxLength: 1200 })'), 'Chat should route explicit X/social post packs into X Client Ops through the app handoff transfer module.');
 assert.ok(appManifestRegistryJs.includes('x_post_packet') && appManifestRegistryJs.includes('reddit_post_packet') && appManifestRegistryJs.includes('indie_hackers_packet') && appManifestRegistryJs.includes('instagram_post_packet'), 'Publisher app handoff should accept media-separated site and social post packets as external-app content.');
@@ -1085,7 +1088,7 @@ assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
 assert.ok(chatHtml.includes('/chat.css?v=20260526f'), 'Chat page should load the current compact chat header and composer styles.');
-assert.ok(chatHtml.includes('/chat.js?v=20260527a'), 'Chat page should load the current compact chat header and composer controller.');
+assert.ok(chatHtml.includes('/chat.js?v=20260528a'), 'Chat page should load the current compact chat header and composer controller.');
 assert.ok(chatHtml.includes('id="chatHeaderMenu"') && chatHtml.includes('☰ Menu'), 'Chat header should collapse secondary actions into a menu.');
 assert.ok(chatHtml.includes('Chat history') && chatHtml.includes('Schedules') && chatHtml.includes('Agents and workers'), 'Chat menu should use specific workspace action labels.');
 assert.ok(chatHtml.includes('App tools') && chatHtml.includes('Apps hub'), 'Chat menu should distinguish app tools from the Apps hub page.');
@@ -1749,8 +1752,8 @@ assert.ok(agentOrchestrationDiscipline.includes('price, free CAIt-managed option
 assert.ok(agentOrchestrationDiscipline.includes('must not receive the CAIt session cookie directly'), 'Agent discipline should require scoped auth delegation for future external apps.');
 assert.ok(!chatJs.includes('最終アクション: X Client Ops'), 'X Client Ops delivery card should not show Japanese heading copy.');
 assert.ok(!chatJs.includes('過程で作成されたX投稿案'), 'X Client Ops delivery card should not show Japanese description copy.');
-assert.ok(chatJs.includes('URL.createObjectURL'));
-assert.ok(chatJs.includes('navigator.clipboard'));
+assert.ok(chatDeliveryFileUtilsJs.includes('URL.createObjectURL'));
+assert.ok(chatDeliveryFileUtilsJs.includes('navigator.clipboard'));
 assert.ok(chatJs.includes('state.trackedOrderIds:') || chatJs.includes('trackedOrderIds: new Set()'), 'Tracked orders should be in-memory only for the active chat session.');
 assert.ok(chatJs.includes('function clearActiveOrderMemory'), 'Chat should have a single helper for clearing active order-only runtime state.');
 assert.ok(chatJs.includes('state.trackedOrderIds.clear();'), 'Reset/new chat should clear tracked orders so old order history cannot attach to a blank chat.');
