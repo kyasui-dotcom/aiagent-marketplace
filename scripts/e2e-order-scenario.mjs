@@ -330,8 +330,20 @@ export function assertOrderScenarioQuality(job = {}, options = {}) {
     `raw agent delivery files must include substantial returned content: ${rawAgentFiles.map((file) => `${file.name}:${String(file.content || file.markdown || '').trim().length}`).join(', ')}`
   );
   assert.ok(
+    rawAgentFiles.every((file) => file.user_facing_delivery === true || file.userFacingDelivery === true),
+    `raw agent delivery files must be explicitly user-facing: ${rawAgentFiles.map((file) => file.name).join(', ')}`
+  );
+  assert.ok(
     rawAgentFiles.every((file) => !/^##\s*verbosity\s+medium\s*$/i.test(String(file.content || file.markdown || '').trim())),
     'raw agent delivery files must not expose Responses API text.verbosity metadata as the delivery'
+  );
+  assert.ok(
+    rawAgentFiles.every((file) => !/(^|\n)#{1,6}\s*(facts_verified|assumptions_used|evidence_gaps|artifact_for_next_agent|recommended_next_owner|structured handoff digest|supporting fact index|downstream handoff(?: summary| packet)?|採用判断表|publisher下書き状態|external app ingest status)\b/i.test(String(file.content || file.markdown || ''))),
+    `raw agent delivery files must read as user-facing markdown, not internal handoff structure: ${rawAgentFiles.map((file) => file.name).join(', ')}`
+  );
+  assert.ok(
+    !/(^|\n)\s*(?:[-*]\s*)?(source_task_type|source_agent_name|source_run_id|artifact_for_next_agent|recommended_next_owner)\s*[:：]/i.test(deliveryText),
+    'delivery must not expose internal source or handoff metadata inside markdown'
   );
   assert.ok(
     rawAgentFiles.every((file) => String(file.source_agent_name || file.sourceAgentName || '').trim() && String(file.source_task_type || file.sourceTaskType || '').trim() && String(file.source_run_id || file.sourceRunId || '').trim()),

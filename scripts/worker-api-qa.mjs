@@ -716,7 +716,7 @@ assert.ok(workflowLeaderHandoffSource.includes('workflow-handoff/v2'), 'workflow
 assert.ok(workflowLeaderHandoffSource.includes("handoffOwner: 'leader'"), 'workflow handoff should be explicitly owned by the leader, not orchestration.');
 assert.ok(workflowHandoffContextSource.includes('leader remains handoff owner'), 'downstream handoff prompt should state that orchestration only preserves durable state while the leader owns handoff.');
 assert.ok(workerSource.includes('workflow-execution-program/v1') || workflowLeaderHandoffSource.includes('workflow-execution-program/v1'), 'workflow handoff should carry explicit programmatic process state');
-assert.ok(workflowHandoffContextSource.includes('PRIOR SPECIALIST DELIVERABLES (mandatory context)'), 'downstream prompts should mark prior specialist deliverables as mandatory context');
+assert.ok(workflowHandoffContextSource.includes('USER-FACING PRIOR DELIVERABLES (primary reference material)'), 'downstream prompts should mark prior user-facing deliverables as the primary reference material');
 assert.ok(workerSource.includes('prior_layer_unavailable'), 'workflow dispatch should block downstream layers when a prior data/research layer fails or times out.');
 assert.ok(workflowHandoffContextSource.includes('Treat this as a blocker for quality'), 'workflow handoff prompt should not tell downstream agents to proceed from unavailable prior work.');
 assert.ok(workflowReconcileActionsSource.includes('function completeWorkflowSaasHandoffOnlyChild'), 'workflow SaaS handoff-only completion actions should be owned outside worker.js');
@@ -4665,8 +4665,8 @@ assert.ok(
   'planning-layer child should store workflow handoff context in additionalPrompt, not only JSON'
 );
 assert.ok(
-  planningWithPriorResearchAdditional.includes('PRIOR SPECIALIST DELIVERABLE:'),
-  'planning-layer child additionalPrompt should name prior specialist deliverables explicitly'
+  planningWithPriorResearchAdditional.includes('USER-FACING PRIOR DELIVERABLE:'),
+  'planning-layer child additionalPrompt should name prior user-facing deliverables explicitly'
 );
 assert.ok(
   planningWithPriorResearchAdditional.includes('Required usage signals:'),
@@ -4674,11 +4674,11 @@ assert.ok(
 );
 assert.ok(
   /File reference:\s+[^\n]+\.md/i.test(planningWithPriorResearchAdditional),
-  'planning-layer child additionalPrompt should reference prior research files without raw markdown injection'
+  'planning-layer child additionalPrompt should reference prior research files'
 );
 assert.ok(
-  !/```markdown[\s\S]*research delivery/i.test(planningWithPriorResearchAdditional),
-  'planning-layer child additionalPrompt should not inject prior research delivery markdown snippets'
+  /User-facing prior Markdown to reuse as source material:[\s\S]*```markdown[\s\S]*research delivery/i.test(planningWithPriorResearchAdditional),
+  'planning-layer child additionalPrompt should pass prior user-facing delivery markdown as source material'
 );
 assert.ok(
   planningWithPriorResearchAdditional.includes('PROCESS PROGRAM'),
@@ -4952,7 +4952,11 @@ const syntheticAgentTeamOutput = buildAgentTeamDeliveryOutput({
 ]);
 assert.ok(
   syntheticAgentTeamOutput.files?.every((file) => file.raw_agent_delivery === true),
-  'agent team output should expose only raw child-agent delivery files'
+  'agent team output should expose raw child-agent delivery files'
+);
+assert.ok(
+  syntheticAgentTeamOutput.files?.every((file) => file.user_facing_delivery === true && file.userFacingDelivery === true),
+  'raw child-agent delivery files should be explicitly marked as user-facing deliverables'
 );
 assert.ok(
   syntheticAgentTeamOutput.files?.some((file) => file.name === 'x-post-pack.md' && file.source_task_type === 'x_post'),
@@ -4966,6 +4970,10 @@ assert.equal(
 assert.ok(
   syntheticAgentTeamOutput.files?.every((file) => file.source_agent_name && file.source_task_type && file.source_run_id && file.display_title),
   'raw agent delivery files should carry review labels: agent name, task type, source run id, and display title'
+);
+assert.ok(
+  syntheticAgentTeamOutput.files?.every((file) => !/(^|\n)#{1,6}\s*(facts_verified|assumptions_used|evidence_gaps|artifact_for_next_agent|recommended_next_owner|structured handoff digest|supporting fact index|downstream handoff(?: summary| packet)?|採用判断表|publisher下書き状態|external app ingest status)\b/i.test(String(file.content || ''))),
+  'raw agent delivery markdown should not expose internal handoff headings'
 );
 assert.ok(
   syntheticAgentTeamOutput.report?.delivery_provenance_map?.some((item) => item.file === 'x-post-pack.md' && item.agentName === 'X Connector Agent' && item.taskType === 'x_post'),
@@ -5050,6 +5058,37 @@ assert.ok(
   !JSON.stringify(objectContentAgentTeamOutput).includes('[object Object]'),
   'agent team delivery output must not serialize object-shaped file content as [object Object]'
 );
+const internalHeadingAgentTeamOutput = buildAgentTeamDeliveryOutput({
+  workflow: { objective: 'Internal heading sanitization QA' },
+  prompt: 'Internal heading sanitization QA'
+}, [
+  {
+    id: 'internal-heading-child',
+    taskType: 'research',
+    workflowTask: 'research',
+    workflowAgentName: 'Research Agent',
+    status: 'completed',
+    createdAt: nowIso(),
+    completedAt: nowIso(),
+    input: { _broker: { workflow: { sequencePhase: 'research' } } },
+    output: {
+      summary: 'Research completed.',
+      report: { summary: 'Research completed.' },
+      files: [
+        {
+          name: 'research-delivery.md',
+          type: 'text/markdown',
+          content: '# Research delivery\n\n## facts_verified\n- Search Console was not supplied.\n\n## assumptions_used\n- The recommendation assumes no paid media budget.\n\n## evidence_gaps\n- Current query data is missing.\n\n## 採用判断表\n| data_analysis | adopted |\n| --- | --- |\n\n## Next steps\n- Supply Search Console export.'
+        }
+      ]
+    }
+  }
+]);
+const internalHeadingContent = String(internalHeadingAgentTeamOutput.files?.[0]?.content || '');
+assert.match(internalHeadingContent, /## 確認できたこと[\s\S]*Search Console was not supplied/, 'raw delivery sanitizer should rewrite useful snake_case evidence headings into user-facing headings');
+assert.match(internalHeadingContent, /## 前提[\s\S]*no paid media budget/, 'raw delivery sanitizer should rewrite assumptions into user-facing headings');
+assert.match(internalHeadingContent, /## 未確認事項[\s\S]*query data is missing/, 'raw delivery sanitizer should rewrite evidence gaps into user-facing headings');
+assert.doesNotMatch(internalHeadingContent, /facts_verified|assumptions_used|evidence_gaps|採用判断表|data_analysis/, 'raw delivery sanitizer should remove internal headings and agent adoption tables');
 assert.ok(
   !syntheticAgentTeamOutput.files?.some((file) => ['all-deliverables.md', 'review-ready-delivery.md', 'supporting-specialist-deliverables.md'].includes(file.name)),
   'agent team output must not expose generated delivery bundles as user-facing delivery files'
@@ -5069,7 +5108,7 @@ assert.equal(checkpointAllDeliverablesFile, undefined, 'checkpoint-only workflow
 const checkpointPartialDeliveryFile = checkpointOnlyAgentTeamOutput.files?.find((file) => file.name === 'workflow-partial-delivery.md');
 assert.equal(checkpointPartialDeliveryFile, undefined, 'checkpoint-only workflow output should not attach generated partial delivery markdown');
 assert.ok(
-  checkpointOnlyAgentTeamOutput.files?.some((file) => file.name === 'checkpoint.md' && file.raw_agent_delivery === true && String(file.content || '').includes('# checkpoint')),
+  checkpointOnlyAgentTeamOutput.files?.some((file) => file.name === 'checkpoint.md' && file.raw_agent_delivery === true && file.user_facing_delivery === true && String(file.content || '').includes('# checkpoint')),
   'checkpoint-only workflow output should expose the raw checkpoint leader file only'
 );
 
@@ -5104,6 +5143,7 @@ const syntheticLeaderOnlyOutput = buildAgentTeamDeliveryOutput({
   }
 ]);
 assert.equal(syntheticLeaderOnlyOutput.files?.[0]?.raw_agent_delivery, true, 'leader-only final output should keep the raw leader file as the delivery file');
+assert.equal(syntheticLeaderOnlyOutput.files?.[0]?.user_facing_delivery, true, 'leader-only final raw delivery file should be marked user-facing');
 assert.equal(syntheticLeaderOnlyOutput.report?.execution_candidate?.type, 'report_bundle');
 assert.ok(
   !String(syntheticLeaderOnlyOutput.files?.[0]?.content || '').includes('## Delivered content summaries'),

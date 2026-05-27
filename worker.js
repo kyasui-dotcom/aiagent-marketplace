@@ -3612,6 +3612,9 @@ function workflowConcreteArtifactFailureReason(job = {}) {
   if (/prior_handoff_specialist_packet|prior handoff packet|handoff packet|durable packet|Generation exceeded the retry budget|生成が長引いた|上流handoffの事実/i.test(text)) {
     return `${task} returned only a generic handoff packet, not the concrete deliverable required for this specialist.`;
   }
+  if (workflowDeliveryLooksInternalFacing(fileText || text)) {
+    return `${task} returned internal-facing handoff or orchestration markdown instead of a user-facing deliverable.`;
+  }
   const minChars = Math.max(0, Math.min(5000, Number(contract.min_chars || contract.minChars || 300) || 300));
   const requiresFile = contract.requires_file !== false && contract.requiresFile !== false;
   if (requiresFile && (!files.length || fileText.trim().length < minChars)) {
@@ -3639,6 +3642,17 @@ function workflowConcreteArtifactFailureReason(job = {}) {
     }
   }
   return '';
+}
+
+function workflowDeliveryLooksInternalFacing(text = '') {
+  const value = String(text || '');
+  if (!value.trim()) return false;
+  const headingPattern = /^#{1,6}\s*(?:facts_verified|assumptions_used|evidence_gaps|artifact_for_next_agent|recommended_next_owner|structured handoff digest|supporting fact index|downstream handoff(?: summary| packet)?|採用判断表|publisher下書き状態|external app ingest status)\b/gim;
+  if (headingPattern.test(value)) return true;
+  const internalLinePattern = /(?:^|\n)\s*(?:[-*]\s*)?(?:source_task_type|source_agent_name|source_run_id|artifact_for_next_agent|recommended_next_owner|Publisher下書き状態|External app ingest status)\s*[:：]/i;
+  if (internalLinePattern.test(value)) return true;
+  const agentMatrixPattern = /(?:^|\n)\s*\|\s*(?:data_analysis|research|teardown|media_planner|growth|seo_specialist|list_creator)\s*\|/i;
+  return agentMatrixPattern.test(value);
 }
 
 function recordWorkflowConcreteArtifactWarning(job = {}, reason = '', checkedAt = nowIso()) {
@@ -4209,7 +4223,7 @@ function workflowStructuredDigestPromptBlock(priorRuns = []) {
     : [];
   if (!runs.length) return '';
   return [
-    'STRUCTURED HANDOFF DIGEST (read this first; lightweight leader-condensed context before raw markdown):',
+    'SUPPORTING FACT INDEX (internal aid; do not copy these labels into the user delivery):',
     ...runs.map((run, index) => workflowStructuredDigestPromptLines(run, index))
   ].filter(Boolean).join('\n');
 }
@@ -4217,9 +4231,9 @@ function workflowStructuredDigestPromptBlock(priorRuns = []) {
 function workflowHandoffPromptDataFromRun(run = {}, index = 0, options = {}) {
   const task = workflowHandoffClip(run.taskType || run.workflowTask || `prior_${index + 1}`, 90);
   const status = workflowHandoffClip(run.status || 'completed', 40);
-  const lines = [`${index + 1}. PRIOR SPECIALIST DELIVERABLE: ${task} (${status})`];
+  const lines = [`${index + 1}. USER-FACING PRIOR DELIVERABLE: ${task} (${status})`];
   const structuredDigest = workflowStructuredDigestPromptLines(run, index);
-  if (structuredDigest) lines.push(`   Structured digest:\n${structuredDigest}`);
+  if (structuredDigest) lines.push(`   Supporting fact index (internal aid; do not copy labels):\n${structuredDigest}`);
   const jobId = workflowHandoffClip(run.jobId || '', 120);
   if (jobId) lines.push(`   Job ID: ${jobId}`);
   const summary = workflowHandoffClip(run.summary || run.reportSummary || '', 360);
@@ -4264,7 +4278,7 @@ function workflowHandoffPromptDataFromRun(run = {}, index = 0, options = {}) {
     ? workflowHandoffBlockClip(run.deliverableMarkdownExcerpt || run.deliverableMarkdown || '', 1600)
     : '';
   if (deliverableMarkdownExcerpt) {
-    lines.push(`   Prior deliverable markdown excerpt:\n\`\`\`markdown\n${deliverableMarkdownExcerpt}\n\`\`\``);
+    lines.push(`   User-facing prior Markdown to reuse as source material:\n\`\`\`markdown\n${deliverableMarkdownExcerpt}\n\`\`\``);
   }
   return lines.join('\n');
 }

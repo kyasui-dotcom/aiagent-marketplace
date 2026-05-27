@@ -392,11 +392,11 @@ assert.match(seoSpecialist.systemPrompt, /Publisher & Approval Studio batch hand
 
 const cmoLeaderSource = readFileSync(join(agentsDir, 'cmo-leader.js'), 'utf8');
 assert.ok(
-  cmoLeaderSource.includes('file_markdown must be one end-user-facing growth plan'),
-  'CMO leader LLM contract must treat file_markdown as an end-user growth plan, not an internal orchestration log'
+  cmoLeaderSource.includes('file_markdown is the raw agent delivery shown to the user'),
+  'CMO leader LLM contract must treat file_markdown as the user-visible raw agent delivery'
 );
 assert.ok(
-  cmoLeaderSource.includes('not an orchestration log or a bundle index'),
+  cmoLeaderSource.includes('not an orchestration log, internal handoff digest, adoption matrix, or bundle index'),
   'CMO leader LLM contract must not turn the final file into a bundle index of specialist outputs'
 );
 assert.ok(
@@ -408,8 +408,8 @@ assert.ok(
   'CMO leader final synthesis must not treat unapproved social or Publisher material as completed handoff'
 );
 assert.ok(
-  cmoLeaderSource.includes('If a selected specialist is known from CMO_AGENT_ACTION_CONTRACTS to produce a Publisher-reviewable artifact'),
-  'CMO leader must instruct Publisher-capable specialists from first dispatch'
+  cmoLeaderSource.includes('If a selected specialist is known from CMO_AGENT_ACTION_CONTRACTS to produce an app-reviewable artifact'),
+  'CMO leader must instruct app-review-capable specialists from first dispatch'
 );
 assert.ok(
   cmoLeaderSource.includes('publisherHandoff'),
@@ -433,7 +433,7 @@ for (const kind of ['data_analysis', 'research', 'media_planner', 'growth', 'lis
   assert.doesNotMatch(markdown, /Publisher review handoff/i, `${kind} should not receive Publisher review handoff instructions by default`);
 }
 assert.ok(
-  cmoLeaderSource.includes('never expose internal agent names'),
+  /never expose internal agent names/i.test(cmoLeaderSource),
   'CMO leader generation prompt must explicitly hide internal agent names from end-user Markdown'
 );
 assert.ok(
@@ -1299,7 +1299,7 @@ const cmoLeaderFinalContent = cmoLeaderFinalSynthesis.files?.[0]?.content || '';
 assert.match(cmoLeaderFinalContent, /SEO page work/i, 'CMO final synthesis should require LLM judgment over the preparation artifact content without exposing task ids');
 assert.match(cmoLeaderFinalContent, /Access analytics[\s\S]*554 sessions/i, 'CMO final synthesis should carry analytics evidence without exposing internal agent names');
 assert.match(cmoLeaderFinalContent, /Lead\/source list work[\s\S]*missing/i, 'CMO final synthesis should separate blocked lead/list work in user-facing language');
-assert.doesNotMatch(cmoLeaderFinalContent, /Adoption matrix|Specialist adoption matrix|DATA ANALYSIS AGENT|RESEARCH AGENT|LANDING PAGE CRITIQUE AGENT|seo_specialist|data_analysis|media_planner|list_creator|Publisher handoff draft prepared|External app ingest|Publisher\/SaaS|site_publish_packet|artifact_for_next_agent|recommended_next_owner|Downstream handoff/i, 'CMO final synthesis must not expose internal agent, routing, app, or handoff terms');
+assert.doesNotMatch(cmoLeaderFinalContent, /Adoption matrix|Specialist adoption matrix|DATA ANALYSIS AGENT|RESEARCH AGENT|LANDING PAGE CRITIQUE AGENT|seo_specialist|data_analysis|media_planner|list_creator|Publisher handoff draft prepared|External app ingest|Publisher\/SaaS|site_publish_packet|artifact_for_next_agent|recommended_next_owner|Downstream handoff|facts_verified|assumptions_used|evidence_gaps|採用判断表|source_task_type|source_agent_name/i, 'CMO final synthesis must not expose internal agent, routing, app, or handoff terms');
 assert.doesNotMatch(cmoLeaderFinalContent, /Landing page change packet prepared|Publish status:\s*prepared\s*\/\s*not/i, 'CMO final synthesis must not overclaim Publisher packet preparation');
 assert.doesNotMatch(JSON.stringify(cmoLeaderFinalSynthesis), /\[object Object\]/, 'CMO final synthesis must flatten object-shaped summary and next action fields');
 assert.equal(cmoLeaderFinalSynthesis.report?.leader_evaluation_required, true, 'CMO final report should mark LLM leader evaluation as required');
