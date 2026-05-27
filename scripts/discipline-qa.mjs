@@ -49,6 +49,7 @@ const clientOpenChatPreorderIntentSource = read('public/client-open-chat-preorde
 const clientOpenChatPreLlmGuardSource = read('public/client-open-chat-pre-llm-guard-utils.js');
 const clientOpenChatQuickAnswerSource = read('public/client-open-chat-quick-answer-utils.js');
 const clientOpenChatCommandSource = read('public/client-open-chat-command-utils.js');
+const clientFlexibleToolSource = read('public/client-flexible-tool-utils.js');
 const clientDeliveryFilesSource = read('public/client-delivery-files.js');
 const workActionRegistrySource = read('public/work-action-registry.js');
 const workIntentResolverSource = read('public/work-intent-resolver.js');
@@ -158,20 +159,16 @@ assert.ok(
   'development discipline must document that failed agent deliveries are not billed'
 );
 assert.ok(
-  disciplineDoc.includes('During beta, account registration, provider identity, agent registration, and work execution may remain available, but live checkout, card setup, charges, and payout movement must stay paused.'),
-  'development discipline must document beta billing pause behavior'
+  disciplineDoc.includes('all in-app payment processing is removed'),
+  'development discipline must document that payment processing is removed'
 );
 assert.ok(
-  disciplineDoc.includes('The short-term commercial model is CAIt selling AI agent services directly through a normal Stripe account'),
-  'development discipline must document the CAIt-operated Stripe sales model'
+  disciplineDoc.includes('Do not add or keep checkout, card setup, saved payment methods, customer charges, subscriptions, invoices, payment-provider onboarding, automatic provider revenue split, or payout movement.'),
+  'development discipline must forbid in-app payment surfaces'
 );
 assert.ok(
-  disciplineDoc.includes('open marketplace payments, automatic provider revenue split, and payment-provider tenant onboarding are out of scope'),
-  'development discipline must keep marketplace payment flows out of short-term scope'
-);
-assert.ok(
-  disciplineDoc.includes('Each account may use the beta free allowance up to $10 in welcome credits'),
-  'development discipline must document the per-account beta free allowance'
+  disciplineDoc.includes('Support may be donation-only outside CAIt; CAIt itself must not process donations'),
+  'development discipline must keep donation handling outside CAIt'
 );
 assert.ok(
   disciplineDoc.includes('do not create unlimited free test-mode order execution for normal users'),
@@ -964,9 +961,9 @@ assertNotIncludes(clientReusableToolsAnswer, [
   'CONNECT X',
   'X連携'
 ], 'public/client.js reusable tools answer');
-const clientFlexibleToolCandidates = clientSource.slice(
-  clientSource.indexOf('function flexibleToolCandidates'),
-  clientSource.indexOf('function activeFlexibleTool')
+const clientFlexibleToolCandidates = clientFlexibleToolSource.slice(
+  clientFlexibleToolSource.indexOf('function flexibleToolCandidates'),
+  clientFlexibleToolSource.indexOf('function activeFlexibleTool')
 );
 assert.ok(
   clientFlexibleToolCandidates.includes('Social publishing handoff'),

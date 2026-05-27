@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
 import worker from '../worker.js';
 import {
   chatEngineBuildIntakeCombinedPrompt,
@@ -9,7 +8,6 @@ import {
 import { deliveryCompletionEvidenceScoreForJob } from '../lib/delivery-completion-gate.js';
 
 const EMAIL_AUTH_SECRET = 'qa-login-leader-email-secret';
-const STRIPE_WEBHOOK_SECRET = 'whsec_login_leader_qa';
 const BASE = 'https://example.test';
 
 const env = {
@@ -17,9 +15,6 @@ const env = {
   ALLOW_IN_MEMORY_STORAGE: '1',
   SESSION_SECRET: 'login-leader-order-qa-session',
   EMAIL_AUTH_SECRET,
-  STRIPE_SECRET_KEY: 'sk_test_login_leader_qa',
-  STRIPE_WEBHOOK_SECRET,
-  STRIPE_DEFAULT_CURRENCY: 'USD',
   BUILTIN_OPENAI_API_KEY: 'sk_test_builtin_openai_login_leader',
   BASE_URL: BASE,
   SAMPLE_AGENT_ENDPOINT_BASE_URL: `${BASE}/sample-agents`,
@@ -93,12 +88,6 @@ function cookieHeaderFromSetCookie(value = '', name = 'aiagent2_session') {
   return end === -1 ? tail.trim() : tail.slice(0, end).trim();
 }
 
-function stripeSignatureForPayload(payload) {
-  const timestamp = Math.floor(Date.now() / 1000);
-  const signature = createHmac('sha256', STRIPE_WEBHOOK_SECRET).update(`${timestamp}.${payload}`).digest('hex');
-  return `t=${timestamp},v1=${signature}`;
-}
-
 async function request(path, init = {}, options = {}) {
   const waitUntilPromises = [];
   const headers = new Headers(init.headers || {});
@@ -159,38 +148,10 @@ async function loginWithEmail() {
   return sessionCookie;
 }
 
-async function registerCardForLoggedInAccount(sessionCookie) {
-  const setupPayload = JSON.stringify({
-    id: 'evt_login_leader_setup_1',
-    type: 'checkout.session.completed',
-    data: {
-      object: {
-        id: 'cs_login_leader_setup_1',
-        customer: 'cus_login_leader',
-        setup_intent: 'seti_login_leader_card',
-        metadata: {
-          aiagent2_kind: 'payment_method_setup',
-          aiagent2_account_login: 'leader@example.com'
-        }
-      }
-    }
-  });
-  const setupWebhook = await request('/api/stripe/webhook', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'stripe-signature': stripeSignatureForPayload(setupPayload)
-    },
-    body: setupPayload
-  }, { skipCsrf: true });
-  assert.equal(setupWebhook.status, 200, 'Stripe setup webhook should be accepted');
-  assert.equal(setupWebhook.body.ok, true);
-
+async function assertPaymentProcessingRemovedForLoggedInAccount(sessionCookie) {
   const settings = await request('/api/settings', {}, { sessionCookie });
   assert.equal(settings.status, 200);
-  assert.equal(settings.body.account.billing.mode, 'monthly_invoice');
-  assert.equal(settings.body.account.billing.invoiceApproved, true);
-  assert.equal(settings.body.account.stripe.defaultPaymentMethodId, 'pm_login_leader');
+  assert.equal(settings.body.account.stripe.defaultPaymentMethodId || '', '');
 }
 
 async function waitForWorkflowCompletion(workflowJobId, sessionCookie) {
@@ -274,20 +235,6 @@ async function main() {
         })
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
-    if (url === 'https://api.stripe.com/v1/setup_intents/seti_login_leader_card') {
-      return new Response(JSON.stringify({
-        id: 'seti_login_leader_card',
-        object: 'setup_intent',
-        payment_method: 'pm_login_leader'
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    }
-    if (url === 'https://api.stripe.com/v1/customers/cus_login_leader') {
-      return new Response(JSON.stringify({
-        id: 'cus_login_leader',
-        object: 'customer',
-        invoice_settings: { default_payment_method: 'pm_login_leader' }
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    }
     if (String(url || '').startsWith('https://api.search.brave.com/')) {
       return new Response(JSON.stringify({
         web: {
@@ -336,19 +283,15 @@ async function main() {
         budget_cap: 500
       })
     }, { sessionCookie });
-    assert.equal(welcomeFunded.status, 201, 'first logged-in leader order should be fundable by signup welcome credits before card registration');
+    assert.equal(welcomeFunded.status, 201, 'first logged-in leader order should be accepted without card registration');
     assert.equal(welcomeFunded.body.mode, 'workflow');
     assert.ok((welcomeFunded.body.planned_task_types || []).includes('cmo_leader'), 'welcome-funded leader order should preserve the requested leader task');
 
-    const settingsBeforeCard = await request('/api/settings', {}, { sessionCookie });
-    assert.equal(settingsBeforeCard.status, 200);
-    assert.ok(
-      Number(settingsBeforeCard.body.account.billing.welcomeCreditsReserved || 0) > 0
-        || Number(settingsBeforeCard.body.account.billing.welcomeCreditsConsumedTotal || 0) > 0,
-      'first cardless leader order should reserve or consume welcome credits'
-    );
+    const settingsBeforePayment = await request('/api/settings', {}, { sessionCookie });
+    assert.equal(settingsBeforePayment.status, 200);
+    assert.equal(settingsBeforePayment.body.account.stripe.defaultPaymentMethodId || '', '', 'card registration should remain absent after the first order');
 
-    await registerCardForLoggedInAccount(sessionCookie);
+    await assertPaymentProcessingRemovedForLoggedInAccount(sessionCookie);
 
     const initialPrepare = await request('/api/work/prepare-order', {
       method: 'POST',

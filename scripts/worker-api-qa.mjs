@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import worker from '../worker.js';
 import { createD1LikeStorage } from '../lib/storage.js';
 import { createBrokerAgentAssignmentHelpers } from '../lib/broker-agent-assignment.js';
@@ -27,15 +26,12 @@ const appSettingsRoutesSource = readFileSync(new URL('../lib/routes/app-settings
 const authRoutesSource = readFileSync(new URL('../lib/routes/auth.js', import.meta.url), 'utf8');
 const authStatusRoutesSource = readFileSync(new URL('../lib/routes/auth-status.js', import.meta.url), 'utf8');
 const apiKeyRoutesSource = readFileSync(new URL('../lib/routes/api-keys.js', import.meta.url), 'utf8');
-const billingRoutesSource = readFileSync(new URL('../lib/routes/billing.js', import.meta.url), 'utf8');
 const billingOutcomeSource = readFileSync(new URL('../lib/billing-outcome.js', import.meta.url), 'utf8');
 const campaignRoutesSource = readFileSync(new URL('../lib/routes/campaigns.js', import.meta.url), 'utf8');
 const catalogRoutesSource = readFileSync(new URL('../lib/routes/catalog.js', import.meta.url), 'utf8');
 const chatMemoryRoutesSource = readFileSync(new URL('../lib/routes/chat-memory.js', import.meta.url), 'utf8');
 const devJobRoutesSource = readFileSync(new URL('../lib/routes/dev-jobs.js', import.meta.url), 'utf8');
 const deliveryRoutesSource = readFileSync(new URL('../lib/routes/deliveries.js', import.meta.url), 'utf8');
-const billingSweepsSource = readFileSync(new URL('../lib/billing-sweeps.js', import.meta.url), 'utf8');
-const billingWebhooksSource = readFileSync(new URL('../lib/billing-webhooks.js', import.meta.url), 'utf8');
 const emailNotificationsSource = readFileSync(new URL('../lib/email-notifications.js', import.meta.url), 'utf8');
 const feedbackEmailSource = readFileSync(new URL('../lib/feedback-email.js', import.meta.url), 'utf8');
 const jobRoutesSource = readFileSync(new URL('../lib/routes/jobs.js', import.meta.url), 'utf8');
@@ -43,6 +39,7 @@ const jobAuthorityRoutesSource = readFileSync(new URL('../lib/routes/job-authori
 const mcpRoutesSource = readFileSync(new URL('../lib/routes/mcp.js', import.meta.url), 'utf8');
 const openChatIntentSource = readFileSync(new URL('../lib/open-chat-intent.js', import.meta.url), 'utf8');
 const openChatRoutesSource = readFileSync(new URL('../lib/routes/open-chat.js', import.meta.url), 'utf8');
+const orderCreateRequestHelpersSource = readFileSync(new URL('../lib/order-create-request-helpers.js', import.meta.url), 'utf8');
 const orderCreateRoutesSource = readFileSync(new URL('../lib/routes/order-create.js', import.meta.url), 'utf8');
 const pricingInputSource = readFileSync(new URL('../lib/pricing-input.js', import.meta.url), 'utf8');
 const publicReadModelSource = readFileSync(new URL('../lib/public-read-model.js', import.meta.url), 'utf8');
@@ -51,14 +48,12 @@ const requestAccessSource = readFileSync(new URL('../lib/request-access.js', imp
 const runtimeEnvSource = readFileSync(new URL('../lib/runtime-env.js', import.meta.url), 'utf8');
 const sampleAgentManifestRoutesSource = readFileSync(new URL('../lib/routes/sample-agent-manifest.js', import.meta.url), 'utf8');
 const snapshotSource = readFileSync(new URL('../lib/snapshot.js', import.meta.url), 'utf8');
-const stripeConnectedAccountSource = readFileSync(new URL('../lib/stripe-connected-account.js', import.meta.url), 'utf8');
 const workOrderRoutesSource = readFileSync(new URL('../lib/routes/work-order.js', import.meta.url), 'utf8');
 const providerIdentityRoutesSource = readFileSync(new URL('../lib/routes/provider-identity.js', import.meta.url), 'utf8');
 const recurringOrderRoutesSource = readFileSync(new URL('../lib/routes/recurring-orders.js', import.meta.url), 'utf8');
 const feedbackChatRoutesSource = readFileSync(new URL('../lib/routes/feedback-chat.js', import.meta.url), 'utf8');
 const exactActionRoutesSource = readFileSync(new URL('../lib/routes/exact-actions.js', import.meta.url), 'utf8');
 const settingsRoutesSource = readFileSync(new URL('../lib/routes/settings.js', import.meta.url), 'utf8');
-const billingHelpersSource = readFileSync(new URL('../lib/billing-helpers.js', import.meta.url), 'utf8');
 const brokerAgentAssignmentSource = readFileSync(new URL('../lib/broker-agent-assignment.js', import.meta.url), 'utf8');
 const authorityRequestsSource = readFileSync(new URL('../lib/authority-requests.js', import.meta.url), 'utf8');
 const githubAppAccessSource = readFileSync(new URL('../lib/github-app-access.js', import.meta.url), 'utf8');
@@ -208,8 +203,8 @@ assert.ok(runtimeEnvSource.includes('export function runtimeStorage'), 'runtime 
 assert.ok(runtimeEnvSource.includes('export function shouldInjectQaOrderCreateFault'), 'QA order-create fault policy should be owned by lib/runtime-env.js');
 assert.ok(runtimeEnvSource.includes('export async function fetchJson'), 'shared JSON fetch helper should be owned by lib/runtime-env.js');
 assert.ok(runtimeEnvSource.includes('export function githubClientId'), 'GitHub OAuth client id env parsing should be owned by lib/runtime-env.js');
-assert.ok(stripeConnectedAccountSource.includes('export function stripeConnectedAccountIdentityStatus'), 'Stripe connected account identity status should be owned by lib/stripe-connected-account.js');
-assert.ok(stripeConnectedAccountSource.includes('export function stripeConnectedAccountPatch'), 'Stripe connected account state patch should be owned by lib/stripe-connected-account.js');
+assert.equal(existsSync(new URL('../lib/stripe-connected-account.js', import.meta.url)), false, 'Stripe connected account helpers should be removed with in-app payouts.');
+assert.equal(existsSync(new URL('../lib/in-app-payments-removed.js', import.meta.url)), false, 'Removed payment compatibility routes should be deleted, not kept as 410 shims.');
 assert.ok(!workerSource.includes('function json(body'), 'worker.js must not keep HTTP JSON primitive implementation');
 assert.ok(!workerSource.includes('function legacyLegalNoticeRedirect'), 'worker.js must not keep legacy browser redirect implementation');
 assert.ok(!workerSource.includes('async function touchEvent'), 'worker.js must not keep event persistence helper implementation');
@@ -602,20 +597,16 @@ assert.ok(!workerSource.includes('function sanitizeChatSessionSnapshot'), 'worke
 assert.ok(!workerSource.includes('function feedbackEmailAddress'), 'worker.js must not keep feedback email address helper implementation');
 assert.ok(!workerSource.includes('async function forwardFeedbackReportEmail'), 'worker.js must not keep feedback report email delivery implementation');
 assert.ok(!workerSource.includes("import('cloudflare:email')"), 'worker.js must not import Cloudflare email directly for feedback delivery');
-assert.ok(billingRoutesSource.includes('async function getStripeStatus'), 'Stripe status route should be owned by lib/routes/billing.js');
-assert.equal(new RegExp('pay' + 'jp', 'i').test(billingRoutesSource), false, 'billing routes should not retain removed payment-provider implementation paths.');
-assert.ok(billingRoutesSource.includes('async function ensureStripeCustomerForCurrent'), 'Stripe customer ensure helper should be owned by billing routes.');
-assert.ok(billingRoutesSource.includes('async function createStripeSetupSessionForCurrent'), 'Stripe setup checkout route should be owned by lib/routes/billing.js');
-assert.ok(billingRoutesSource.includes('async function createStripeSubscriptionSessionForCurrent'), 'Stripe subscription checkout route should be owned by lib/routes/billing.js');
-assert.ok(billingRoutesSource.includes('async function createStripeConnectOnboardingForCurrent'), 'Stripe Connect onboarding route should be owned by lib/routes/billing.js');
-assert.ok(billingRoutesSource.includes('connect_not_enabled'), 'Stripe Connect onboarding should preserve Connect activation guidance.');
-assert.ok(billingRoutesSource.includes('async function createStripeProviderPayoutForCurrent'), 'Stripe provider payout route should be owned by lib/routes/billing.js');
-assert.ok(billingRoutesSource.includes('provider_identity_admin_approval_required'), 'Stripe provider payout should preserve provider identity approval gate.');
-assert.ok(billingRoutesSource.includes('minimum_payout_not_reached'), 'Stripe provider payout should preserve minimum payout guard.');
-assert.ok(billingRoutesSource.includes('async function triggerStripeMonthlyInvoiceChargeForCurrent'), 'Stripe monthly invoice charge route should be owned by lib/routes/billing.js');
-assert.ok(billingRoutesSource.includes('async function triggerStripeProviderMonthlyChargeForCurrent'), 'Stripe provider monthly charge route should be owned by lib/routes/billing.js');
-assert.ok(billingRoutesSource.includes('monthly_billing_not_selected'), 'Stripe monthly invoice charge should preserve monthly billing selection guard.');
-assert.ok(billingRoutesSource.includes('provider_monthly_not_captured'), 'Stripe provider monthly charge should preserve capture failure handling.');
+assert.equal(existsSync(new URL('../lib/routes/billing.js', import.meta.url)), false, 'Stripe billing routes should be removed after in-app payment removal.');
+assert.equal(existsSync(new URL('../lib/billing-helpers.js', import.meta.url)), false, 'Stripe billing helpers should be removed after in-app payment removal.');
+assert.equal(existsSync(new URL('../lib/billing-sweeps.js', import.meta.url)), false, 'provider monthly billing sweeps should be removed after payout removal.');
+assert.equal(existsSync(new URL('../lib/billing-webhooks.js', import.meta.url)), false, 'Stripe webhook handlers should be removed after in-app payment removal.');
+assert.equal(existsSync(new URL('../lib/stripe.js', import.meta.url)), false, 'Stripe API client should be removed after in-app payment removal.');
+assert.equal(existsSync(new URL('../lib/stripe-connected-account.js', import.meta.url)), false, 'Stripe connected-account helpers should be removed after payout removal.');
+assert.equal(apiRoutesSource.includes('/api/stripe/'), false, 'API route manifest should not expose Stripe routes.');
+assert.equal(apiRoutesSource.includes('/api/settings/billing'), false, 'API route manifest should not expose billing settings routes.');
+assert.equal(apiRoutesSource.includes('/api/settings/payout'), false, 'API route manifest should not expose payout settings routes.');
+assert.equal(workerSource.includes('/api/stripe/'), false, 'worker should not keep Stripe route wiring.');
 assert.ok(!workerSource.includes('async function getStripeStatus'), 'worker.js must not keep Stripe status route implementation');
 assert.equal(new RegExp('pay' + 'jp', 'i').test(workerSource), false, 'worker.js should not retain removed payment-provider route wiring.');
 assert.ok(!workerSource.includes('async function ensureStripeCustomerForCurrent'), 'worker.js must not keep Stripe customer ensure helper implementation');
@@ -625,20 +616,10 @@ assert.ok(!workerSource.includes('async function createStripeConnectOnboardingFo
 assert.ok(!workerSource.includes('async function createStripeProviderPayoutForCurrent'), 'worker.js must not keep Stripe provider payout route implementation');
 assert.ok(!workerSource.includes('async function triggerStripeMonthlyInvoiceChargeForCurrent'), 'worker.js must not keep Stripe monthly invoice charge route implementation');
 assert.ok(!workerSource.includes('async function triggerStripeProviderMonthlyChargeForCurrent'), 'worker.js must not keep Stripe provider monthly charge route implementation');
-assert.ok(billingHelpersSource.includes('function stripeStateForClient'), 'billing client state helpers should be owned outside worker.js');
-assert.equal(new RegExp('pay' + 'jp', 'i').test(billingHelpersSource), false, 'billing helpers should not retain removed payment-provider error helpers.');
 assert.ok(!workerSource.includes('function stripeStateForClient'), 'worker.js must not keep billing client state helper implementation');
-assert.ok(billingSweepsSource.includes('async function runProviderMonthlyBillingSweep'), 'provider monthly billing sweep should be owned by lib/billing-sweeps.js');
-assert.ok(billingSweepsSource.includes('function providerMonthlyBillingAutoConfig'), 'provider monthly billing auto config should be owned by lib/billing-sweeps.js');
-assert.ok(billingSweepsSource.includes('provider_monthly_billing_auto_retry'), 'provider monthly billing sweep should preserve failure notification source.');
 assert.ok(!workerSource.includes('async function runProviderMonthlyBillingSweep'), 'worker.js must not keep provider monthly billing sweep implementation');
 assert.ok(!workerSource.includes('function providerMonthlyBillingAutoConfig'), 'worker.js must not keep provider monthly billing auto config implementation');
 assert.ok(!workerSource.includes('function buildProviderMonthlyFailureReport'), 'worker.js must not keep provider monthly failure report implementation');
-assert.ok(billingWebhooksSource.includes('async function applyStripeWebhookEvent'), 'Stripe webhook event application should be owned by lib/billing-webhooks.js');
-assert.ok(billingWebhooksSource.includes('async function handleStripeWebhook'), 'Stripe webhook route handler should be owned by lib/billing-webhooks.js');
-assert.ok(billingWebhooksSource.includes('verifyStripeWebhookSignature'), 'Stripe webhook handler should preserve signature verification.');
-assert.ok(billingWebhooksSource.includes('subscription checkout completed'), 'Stripe webhook handler should preserve subscription checkout handling.');
-assert.ok(billingWebhooksSource.includes('refund recorded'), 'Stripe webhook handler should preserve refund handling.');
 assert.ok(!workerSource.includes('async function applyStripeWebhookEvent'), 'worker.js must not keep Stripe webhook event application implementation');
 assert.ok(!workerSource.includes('async function handleStripeWebhook'), 'worker.js must not keep Stripe webhook route handler implementation');
 assert.ok(emailNotificationsSource.includes('export function createEmailNotificationHelpers'), 'email notification send flows should be owned by lib/email-notifications.js');
@@ -788,10 +769,10 @@ assert.ok(orderCreateRoutesSource.includes('async function performSingleJobCreat
 assert.ok(!workerSource.includes('async function handleCreateJob'), 'worker.js must not keep the order create route implementation.');
 assert.ok(!workerSource.includes('async function handleCreateWorkflowJob'), 'worker.js must not keep the workflow order create route implementation.');
 assert.ok(!workerSource.includes('async function performSingleJobCreate'), 'worker.js must not keep the single-agent order create implementation.');
-assert.ok(workerSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
-assert.ok(workerSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');
+assert.ok(orderCreateRequestHelpersSource.includes('function clientOrderIdFromCreateBody'), 'order create should accept a client order id for idempotent retries.');
+assert.ok(orderCreateRequestHelpersSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');
 assert.ok(workerSource.includes('persistedJobForClientOrderId'), 'order create should check for an existing client order before creating a new job.');
-assert.ok(workerSource.includes('function orderCreateBodyIsSameContentNewOrderRetry'), 'same-content retry orders should be explicitly distinguished from follow-up continuations.');
+assert.ok(orderCreateRequestHelpersSource.includes('function orderCreateBodyIsSameContentNewOrderRetry'), 'same-content retry orders should be explicitly distinguished from follow-up continuations.');
 assert.ok(orderCreateRoutesSource.includes('sameContentRetryAsNewOrder && !clientOrderMatches'), 'same-content retry recovery must not attach to an older order by prompt or session match.');
 assert.ok(orderCreateRoutesSource.includes('async function loadSingleOrderCreateState'), 'single-agent order creation should have a targeted state loader for production-sized D1 databases.');
 assert.ok(orderCreateRoutesSource.includes('currentOrderRequesterContext(storage, request, env, { lightweight: true })'), 'order creation should authenticate browser sessions without loading the full production snapshot.');
@@ -799,7 +780,7 @@ assert.ok(orderCreateRoutesSource.includes('options.initialState || await loadSi
 assert.ok(/async function handleGetJob[\s\S]{0,250}currentOrderRequesterContext\(storage, request, env, \{ lightweight: true \}\)/.test(jobRoutesSource), 'live progress polling should authenticate without loading the full production snapshot.');
 assert.ok(jobRoutesSource.includes('inspect_only') && jobRoutesSource.includes('const shouldRunProgress = !inspectOnly'), 'job inspection for retry preparation should skip progress side effects.');
 assert.ok(jobRoutesSource.includes("refresh: job.jobKind === 'workflow'"), 'single-job progress polling should not run workflow handoff refresh work.');
-assert.ok(workerSource.includes('function orderCreateSkipIntake'), 'confirmed chat orders should skip pre-persistence intake checks on create.');
+assert.ok(orderCreateRequestHelpersSource.includes('function orderCreateSkipIntake'), 'confirmed chat orders should skip pre-persistence intake checks on create.');
 assert.ok(orderStrategySource.includes('orderStrategyWithFollowupContext'), 'follow-up orders should keep the previous order shape instead of rerouting AUTO before persistence.');
 assert.ok(orderStrategySource.includes('leaderFollowupSpecialistRouted'), 'leader follow-up artifact requests should route to specialist agents instead of single leader runs.');
 assert.ok(workerSource.includes('external_agent_dispatch_contract'), 'completion sweeps should recover via endpoint dispatch instead of Worker-side generation.');
@@ -851,9 +832,7 @@ assert.ok(dispatchResponseNormalizerSource.includes('function agentCompletionFai
 assert.ok(workerSource.includes('markAgentCompletionFailedFreeInState'), 'missing-deliverable completions must fail without billing instead of becoming warnings.');
 assert.ok(workerSource.includes('billing released: agent did not complete a user-facing delivery'), 'agent-side missing-deliverable failures must release billing.');
 assert.ok(workflowRetrySweepSource.includes('listRetryableDispatchJobs'), 'cron retry sweep must include retryable non-workflow agent jobs, not only workflow children.');
-assert.ok(billingHelpersSource.includes('function billingPausedForBeta'), 'billing helper module must expose a beta billing pause policy.');
-assert.ok(billingHelpersSource.includes("code: 'beta_billing_paused'"), 'live checkout, charge, and payout routes must return a beta pause code when billing is disabled.');
-assert.ok(billingHelpersSource.includes("Set BILLING_ACTIVATION_ENABLED=1"), 'beta billing pause must document the activation switch.');
+assert.equal(existsSync(new URL('../lib/in-app-payments-removed.js', import.meta.url)), false, 'payment removal must delete the retired 410 compatibility route module.');
 assert.ok(sampleAgentDefinitionsSource.includes('SAMPLE_AGENT_MANIFESTS'), 'agent index should derive manifests from individual agent files.');
 assert.ok(sampleAgentDefinitionsSource.includes('sampleAgentDefinitionForKind'), 'agent index should resolve a definition by its own manifest kind.');
 assert.ok(!sampleAgentDefinitionsSource.includes('sampleAgentPayload'), 'agent index must not own cross-agent payload generation.');
@@ -912,10 +891,7 @@ const env = {
   CAIT_MCP_ENABLED: '1',
   EXPOSE_JOB_SECRETS: '1',
   SESSION_SECRET: 'worker-api-qa-secret',
-  BILLING_ACTIVATION_ENABLED: '1',
-  STRIPE_SECRET_KEY: 'sk_test_worker_qa',
-  STRIPE_WEBHOOK_SECRET: 'whsec_worker_api_qa',
-  STRIPE_DEFAULT_CURRENCY: 'USD',
+  BILLING_ACTIVATION_ENABLED: '0',
   BASE_URL: 'https://example.test',
   SAMPLE_AGENT_ENDPOINT_BASE_URL: 'https://example.test/sample-agents',
   CAIT_ADMIN_API_TOKEN: 'worker-api-qa-admin-token',
@@ -1306,12 +1282,6 @@ async function buildSessionCookie(login, name, options = {}) {
   return cookie;
 }
 
-function stripeSignatureForPayload(payload) {
-  const timestamp = Math.floor(Date.now() / 1000);
-  const signature = createHmac('sha256', env.STRIPE_WEBHOOK_SECRET).update(`${timestamp}.${payload}`).digest('hex');
-  return `t=${timestamp},v1=${signature}`;
-}
-
 async function request(path, init = {}, options = {}) {
   const headers = new Headers(init.headers || {});
   if (options.sessionCookie) headers.set('cookie', options.sessionCookie);
@@ -1533,13 +1503,7 @@ const betaAuthStatus = await request('/auth/status', {}, { sessionCookie: daveSe
 assert.equal(betaAuthStatus.status, 200);
 assert.equal(betaAuthStatus.body.billingPaused, true, 'beta mode should expose billingPaused to the client');
 assert.equal(betaAuthStatus.body.canManagePayments, false, 'beta mode should keep account flows but hide live payment management');
-const betaStripeSetup = await request('/api/stripe/setup-session', {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({})
-}, { sessionCookie: daveSession, env: betaBillingEnv });
-assert.equal(betaStripeSetup.status, 409);
-assert.equal(betaStripeSetup.body.code, 'beta_billing_paused', 'beta mode should block hosted payment-method setup');
+assert.equal(apiRoutesSource.includes('/api/stripe/setup-session'), false, 'hosted payment-method setup route should not be declared.');
 
 const targetedSampleStorage = createD1LikeStorage(null, {
   allowInMemory: true,
@@ -6258,10 +6222,10 @@ const registeredWithMoneyLocked = await request('/api/agents', {
 }, { sessionCookie: samuraiSession });
 assert.equal(registeredWithMoneyLocked.status, 201, 'agent registration should be allowed before provider money readiness is complete');
 assert.equal(registeredWithMoneyLocked.body.provider_money_readiness.money_actions_blocked, true);
-assert.ok(registeredWithMoneyLocked.body.provider_money_readiness.missing_billing_fields.includes('billingPaymentMethod'));
-assert.ok(registeredWithMoneyLocked.body.provider_money_readiness.missing_billing_fields.includes('providerIdentityApproved'));
+assert.equal(registeredWithMoneyLocked.body.provider_money_readiness.payment_processing_removed, true);
+assert.deepEqual(registeredWithMoneyLocked.body.provider_money_readiness.missing_billing_fields, []);
 assert.equal(registeredWithMoneyLocked.body.provider_money_readiness.missing_billing_fields.includes('pay' + 'jpTenantReady'), false);
-assert.equal(registeredWithMoneyLocked.body.provider_money_readiness.manual_provider_settlement, true);
+assert.equal(registeredWithMoneyLocked.body.provider_money_readiness.manual_provider_settlement, false);
 assert.equal(('pay' + 'jp_tenant_review_started') in registeredWithMoneyLocked.body.provider_money_readiness, false);
 assert.equal(('pay' + 'jp_tenant_ready') in registeredWithMoneyLocked.body.provider_money_readiness, false);
 
@@ -6288,7 +6252,6 @@ assert.equal(githubDraftUnauthorized.status, 401);
 
 const originalFetch = globalThis.fetch;
 let capturedOpenAiIntentRequest = null;
-let workerQaConnectedAccountIdentityReady = false;
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
   const providerResponseForRequest = (requestBody = {}, usage = { total_cost_basis: 90, compute_cost: 30, tool_cost: 10, labor_cost: 50 }) => {
@@ -6421,82 +6384,6 @@ globalThis.fetch = async (input, init) => {
       })
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
-  if (url === 'https://api.stripe.com/v1/setup_intents/seti_worker_qa_card_1' || url === 'https://api.stripe.com/v1/setup_intents/seti_worker_qa_alice_card_1') {
-    const isAlice = url.includes('alice');
-    return new Response(JSON.stringify({
-      id: isAlice ? 'seti_worker_qa_alice_card_1' : 'seti_worker_qa_card_1',
-      object: 'setup_intent',
-      payment_method: isAlice ? 'pm_worker_qa_alice' : 'pm_worker_qa_dave'
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
-  }
-  if (url === 'https://api.stripe.com/v1/customers/cus_worker_qa_dave' || url === 'https://api.stripe.com/v1/customers/cus_worker_qa_alice') {
-    const isAlice = url.includes('alice');
-    return new Response(JSON.stringify({
-      id: isAlice ? 'cus_worker_qa_alice' : 'cus_worker_qa_dave',
-      object: 'customer',
-      invoice_settings: { default_payment_method: isAlice ? 'pm_worker_qa_alice' : 'pm_worker_qa_dave' }
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
-  }
-  if (url === 'https://api.stripe.com/v1/accounts' && String(init?.method || 'GET').toUpperCase() === 'POST') {
-    const params = new URLSearchParams(String(init?.body || ''));
-    assert.equal(params.get('type'), 'standard');
-    assert.equal(params.get('capabilities[transfers][requested]'), 'true');
-    assert.equal(params.has('controller[stripe_dashboard][type]'), false);
-    assert.equal(params.has('controller[fees][payer]'), false);
-    assert.equal(params.has('controller[losses][payments]'), false);
-    return new Response(JSON.stringify({
-      id: 'acct_worker_qa_alice',
-      object: 'account',
-      details_submitted: false,
-      charges_enabled: false,
-      payouts_enabled: false,
-      capabilities: { transfers: 'pending' },
-      requirements: {
-        currently_due: ['individual.verification.document'],
-        past_due: [],
-        disabled_reason: 'requirements.past_due'
-      }
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
-  }
-  if (url === 'https://api.stripe.com/v1/account_links' && String(init?.method || 'GET').toUpperCase() === 'POST') {
-    return new Response(JSON.stringify({
-      id: 'link_worker_qa_alice',
-      object: 'account_link',
-      url: 'https://connect.stripe.com/setup/worker-qa-alice'
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
-  }
-  if (url === 'https://api.stripe.com/v1/accounts/acct_worker_qa_alice') {
-    return new Response(JSON.stringify(workerQaConnectedAccountIdentityReady
-      ? {
-          id: 'acct_worker_qa_alice',
-          object: 'account',
-          details_submitted: true,
-          charges_enabled: true,
-          payouts_enabled: true,
-          capabilities: { transfers: 'active' },
-          requirements: { currently_due: [], past_due: [], disabled_reason: null }
-        }
-      : {
-          id: 'acct_worker_qa_alice',
-          object: 'account',
-          details_submitted: true,
-          charges_enabled: false,
-          payouts_enabled: false,
-          capabilities: { transfers: 'pending' },
-          requirements: {
-            currently_due: ['individual.verification.document'],
-            past_due: [],
-            disabled_reason: 'requirements.past_due'
-          }
-        }), { status: 200, headers: { 'content-type': 'application/json' } });
-  }
-  if (url === 'https://api.stripe.com/v1/transfers' && String(init?.method || 'GET').toUpperCase() === 'POST') {
-    return new Response(JSON.stringify({
-      id: 'tr_worker_qa_alice_payout',
-      object: 'transfer',
-      destination: 'acct_worker_qa_alice'
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
-  }
   if (url === 'https://worker-qa.example/manifest.json') {
     return new Response(JSON.stringify({
       schema_version: 'agent-manifest/v1',
@@ -6560,46 +6447,8 @@ globalThis.fetch = async (input, init) => {
   return originalFetch(input, init);
 };
 
-const aliceBillingReady = await request('/api/settings/billing', {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({
-    legalName: 'Alice Example LLC',
-    billingEmail: 'billing@example.com',
-    billingPhone: '+81-3-1234-5678',
-    billingPostalCode: '100-0001',
-    billingRegion: 'Tokyo',
-    billingCity: 'Chiyoda',
-    billingAddressLine1: '1-1 Chiyoda',
-    country: 'JP'
-  })
-}, { sessionCookie: aliceSession });
-assert.equal(aliceBillingReady.status, 200, 'agent registration QA account should have billing identity before import');
-
-const aliceSetupPayload = JSON.stringify({
-  id: 'evt_worker_qa_alice_setup_1',
-  type: 'checkout.session.completed',
-  data: {
-    object: {
-      id: 'cs_worker_qa_alice_setup_1',
-      customer: 'cus_worker_qa_alice',
-      setup_intent: 'seti_worker_qa_alice_card_1',
-      metadata: {
-        aiagent2_kind: 'payment_method_setup',
-        aiagent2_account_login: 'alice'
-      }
-    }
-  }
-});
-const aliceSetupWebhook = await request('/api/stripe/webhook', {
-  method: 'POST',
-  headers: {
-    'content-type': 'application/json',
-    'stripe-signature': stripeSignatureForPayload(aliceSetupPayload)
-  },
-  body: aliceSetupPayload
-});
-assert.equal(aliceSetupWebhook.status, 200, 'agent registration QA account should have a saved payment method before import');
+assert.equal(apiRoutesSource.includes('/api/settings/billing'), false, 'billing settings writes should be removed before import.');
+assert.equal(apiRoutesSource.includes('/api/stripe/webhook'), false, 'payment webhook writes should be removed before import.');
 
 const tinyIdentityPhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 const aliceRegistrationIdentity = await request('/api/settings/provider-identity', {
@@ -6909,7 +6758,8 @@ try {
   const adminUnfundedJob = await request(`/api/jobs/${adminUnfundedOrder.body.job_id}`, {}, { sessionCookie: adminSession, env: publicLockedEnv });
   assert.equal(adminUnfundedJob.status, 200);
   assert.equal(adminUnfundedJob.body.job.input._broker.billingMode, 'test');
-  assert.equal(adminUnfundedJob.body.job.billingReservation.mode, 'test');
+  assert.equal(adminUnfundedJob.body.job.billingReservation.mode, 'donation_only');
+  assert.equal(adminUnfundedJob.body.job.billingReservation.paymentProcessingRemoved, true);
   assert.equal(Number(adminUnfundedJob.body.job.billingReservation.reservedWelcomeCredits || 0), 0);
   assert.equal(Number(adminUnfundedJob.body.job.billingReservation.reservedDeposit || 0), 0);
 
@@ -7515,44 +7365,23 @@ try {
       agent_id: imported.body.agent.id,
       task_type: 'ops',
       prompt: 'Run the ops task beyond the beta free allowance without funding.',
-      estimated_total_cost_basis: WELCOME_CREDITS_GRANT_AMOUNT * 2
+      estimated_total_cost_basis: WELCOME_CREDITS_GRANT_AMOUNT * 2,
+      skip_intake: true
     })
   }, { sessionCookie: daveSession });
-  assert.equal(unfundedOrder.status, 402);
-  assert.equal(unfundedOrder.body.code, 'payment_method_missing');
-  assert.equal(unfundedOrder.body.billing_profile.mode, 'monthly_invoice');
+  assert.equal(unfundedOrder.status, 201);
+  const donationOnlyOrder = await request(`/api/jobs/${unfundedOrder.body.job_id}`, {}, { sessionCookie: daveSession });
+  assert.equal(donationOnlyOrder.status, 200);
+  assert.equal(donationOnlyOrder.body.job.billingReservation.mode, 'donation_only');
+  assert.equal(donationOnlyOrder.body.job.billingReservation.paymentProcessingRemoved, true);
 
-  const setupPayload = JSON.stringify({
-    id: 'evt_worker_qa_setup_1',
-    type: 'checkout.session.completed',
-    data: {
-      object: {
-        id: 'cs_worker_qa_setup_1',
-        customer: 'cus_worker_qa_dave',
-        setup_intent: 'seti_worker_qa_card_1',
-        metadata: {
-          aiagent2_kind: 'payment_method_setup',
-          aiagent2_account_login: 'dave'
-        }
-      }
-    }
-  });
-  const setupWebhook = await request('/api/stripe/webhook', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'stripe-signature': stripeSignatureForPayload(setupPayload)
-    },
-    body: setupPayload
-  });
-  assert.equal(setupWebhook.status, 200);
-  assert.equal(setupWebhook.body.ok, true);
+  assert.equal(apiRoutesSource.includes('/api/stripe/webhook'), false, 'payment webhook route should not be declared.');
 
   const daveSettingsCardReady = await request('/api/settings', {}, { sessionCookie: daveSession });
   assert.equal(daveSettingsCardReady.status, 200);
   assert.equal(daveSettingsCardReady.body.account.billing.depositBalance, 0);
   assert.equal(daveSettingsCardReady.body.account.billing.mode, 'monthly_invoice');
-  assert.equal(daveSettingsCardReady.body.account.stripe.defaultPaymentMethodId, 'pm_worker_qa_dave');
+  assert.equal(daveSettingsCardReady.body.account.stripe.defaultPaymentMethodId || '', '');
 
   const issuedOrderKey = await request('/api/settings/api-keys', {
     method: 'POST',
@@ -7748,42 +7577,11 @@ try {
 
   const providerSettingsAfter = await request('/api/settings', {}, { sessionCookie: aliceSession });
   assert.equal(providerSettingsAfter.status, 200);
-  assert.ok(Number(providerSettingsAfter.body.account?.payout?.pendingBalance || 0) > providerPendingBefore);
-  const providerPendingAfterOrders = Number(providerSettingsAfter.body.account?.payout?.pendingBalance || 0);
+  assert.equal(Number(providerSettingsAfter.body.account?.payout?.pendingBalance || 0), providerPendingBefore);
 
-  const providerPayoutProfile = await request('/api/settings/payout', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      providerEnabled: true,
-      entityType: 'individual',
-      legalName: 'Alice Example',
-      displayName: 'Alice Provider',
-      payoutEmail: 'alice-provider@example.test',
-      country: 'JP',
-      website: 'https://worker-qa.example'
-    })
-  }, { sessionCookie: aliceSession });
-  assert.equal(providerPayoutProfile.status, 200);
-  assert.equal(providerPayoutProfile.body.account.payout.providerEnabled, true);
-
-  const openedConnect = await request('/api/stripe/connect/onboarding', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({})
-  }, { sessionCookie: aliceSession });
-  assert.equal(openedConnect.status, 201);
-  assert.equal(openedConnect.body.account_id, 'acct_worker_qa_alice');
-  assert.ok(String(openedConnect.body.onboarding_url || '').startsWith('https://connect.stripe.com/'));
-
-  const blockedPayoutBeforeStripeIdentityFromRegistrationApproval = await request('/api/stripe/payout/run', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({})
-  }, { sessionCookie: aliceSession });
-  assert.equal(blockedPayoutBeforeStripeIdentityFromRegistrationApproval.status, 409);
-  assert.equal(blockedPayoutBeforeStripeIdentityFromRegistrationApproval.body.code, 'identity_verification_required');
-  assert.equal(blockedPayoutBeforeStripeIdentityFromRegistrationApproval.body.identity_verification.verified, false);
+  assert.equal(apiRoutesSource.includes('/api/settings/payout'), false, 'payout settings route should not be declared.');
+  assert.equal(apiRoutesSource.includes('/api/stripe/connect/onboarding'), false, 'payment-provider onboarding route should not be declared.');
+  assert.equal(apiRoutesSource.includes('/api/stripe/payout/run'), false, 'provider payout run route should not be declared.');
 
   const submittedProviderIdentity = await request('/api/settings/provider-identity', {
     method: 'POST',
@@ -7815,14 +7613,7 @@ try {
   assert.equal(adminProviderIdentity.body.identity_verification.fields.fullName, 'Alice Example');
   assert.ok(String(adminProviderIdentity.body.identity_verification.photo.dataUrl || '').startsWith('data:image/png;base64,'));
 
-  const blockedPayoutBeforeAdminApproval = await request('/api/stripe/payout/run', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({})
-  }, { sessionCookie: aliceSession });
-  assert.equal(blockedPayoutBeforeAdminApproval.status, 409);
-  assert.equal(blockedPayoutBeforeAdminApproval.body.code, 'provider_identity_admin_approval_required');
-  assert.equal(blockedPayoutBeforeAdminApproval.body.identity_verification.status, 'pending');
+  assert.equal(apiRoutesSource.includes('/api/stripe/payout/run'), false, 'provider payout route should stay absent before admin approval.');
 
   const approvedProviderIdentity = await request('/api/admin/provider-identities/alice', {
     method: 'POST',
@@ -7832,29 +7623,7 @@ try {
   assert.equal(approvedProviderIdentity.status, 200);
   assert.equal(approvedProviderIdentity.body.identity_verification.status, 'approved');
 
-  const blockedPayoutBeforeStripeIdentity = await request('/api/stripe/payout/run', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({})
-  }, { sessionCookie: aliceSession });
-  assert.equal(blockedPayoutBeforeStripeIdentity.status, 409);
-  assert.equal(blockedPayoutBeforeStripeIdentity.body.code, 'identity_verification_required');
-  assert.equal(blockedPayoutBeforeStripeIdentity.body.onboarding_required, true);
-  assert.equal(blockedPayoutBeforeStripeIdentity.body.identity_verification.verified, false);
-  assert.ok(blockedPayoutBeforeStripeIdentity.body.identity_verification.missing.includes('payouts_enabled'));
-  assert.ok(blockedPayoutBeforeStripeIdentity.body.identity_verification.missing.includes('transfers_capability_active'));
-
-  workerQaConnectedAccountIdentityReady = true;
-  const completedPayoutAfterIdentity = await request('/api/stripe/payout/run', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ force: true })
-  }, { sessionCookie: aliceSession });
-  assert.equal(completedPayoutAfterIdentity.status, 200);
-  assert.equal(completedPayoutAfterIdentity.body.transfer_id, 'tr_worker_qa_alice_payout');
-  assert.equal(completedPayoutAfterIdentity.body.account.stripe.identityVerified, true);
-  assert.equal(completedPayoutAfterIdentity.body.account.stripe.identityVerificationStatus, 'verified');
-  assert.ok(Number(completedPayoutAfterIdentity.body.pending_after || 0) < providerPendingAfterOrders);
+  assert.equal(apiRoutesSource.includes('/api/stripe/payout/run'), false, 'provider payout route should stay absent after identity approval.');
 
   const idempotentSinglePayload = {
     parent_agent_id: 'qa-idempotency',

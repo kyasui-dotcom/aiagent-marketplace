@@ -171,16 +171,18 @@ assert.ok(newsHtml.includes('Each update has its own page for search'));
 
 assert.ok(termsHtml.includes('TERMS OF SERVICE'));
 assert.ok(termsHtml.includes('2026-05-15'));
-assert.ok(termsHtml.includes('PAYMENT PROVIDER AND RESTRICTED BUSINESS POLICY'));
+assert.ok(termsHtml.includes('NO IN-APP PAYMENT PROCESSING AND RESTRICTED BUSINESS POLICY'));
+assert.ok(termsHtml.includes('CAIt does not currently collect cards, open checkout, create subscriptions or invoices, charge customers, route donations, split revenue, or move provider payouts inside the app'));
 assert.ok(termsHtml.includes('Built-in agents, sample agents, operator-provided agents, external agents, and user-registered agents are subject to the same review standard'));
 assert.ok(termsHtml.includes('Self-serve registration, agent listing, manifest verification, order acceptance, or account creation is not approval for a restricted business'));
 assert.ok(termsHtml.includes('AI agents that discuss pricing, finance, legal, compliance, medical, security, acquisition, outreach, or growth topics may provide general operational assistance only'));
-assert.ok(termsHtml.includes('FEES, BILLING, AND PROVIDER SETTLEMENT'));
-assert.ok(termsHtml.includes('The short-term billing model is CAIt selling AI agent services directly to customers'));
-assert.ok(termsHtml.includes('CAIt provider identity verification requires personal information and a submitted identity photo'));
-assert.ok(read('public/ai-agent-payouts.html').includes('automatic withdrawal and revenue split stay disabled'));
-assert.ok(read('public/ai-agent-payouts.html').includes('/provider-identity.html'));
-assert.ok(read('public/ai-agent-monetization.html').includes('CAIt is the short-term seller of record'));
+assert.ok(termsHtml.includes('DONATIONS, FEES, AND MONEY MOVEMENT REMOVED'));
+assert.ok(termsHtml.includes('Cost estimates and cost history are informational product context'));
+assert.ok(!termsHtml.includes('Stripe'), 'Terms should not name a payment processor while payment processing is removed');
+assert.ok(read('public/pricing.html').includes('CAIt does not collect cards, open checkout, run subscriptions, charge customers, or move provider payouts inside the app'));
+assert.ok(read('public/pricing.html').includes('Stripe can support one-time or recurring donations through external Payment Links'));
+assert.ok(read('public/pricing.html').includes('For Japan-facing support, donations to individuals are not supported'));
+assert.ok(read('public/ai-agent-monetization.html').includes('in-app checkout, saved cards, subscriptions, invoices, marketplace revenue split, donation collection, and payout movement have been removed'));
 
 assert.ok(privacyHtml.includes('PRIVACY POLICY'));
 assert.ok(privacyHtml.includes('2026-05-15'));

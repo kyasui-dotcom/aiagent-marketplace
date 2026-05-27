@@ -236,7 +236,7 @@ assert.deepEqual(
   { name: 'auth-status', limit: 600, windowMs: 60_000 },
   'HTTP policy should keep lightweight session checks out of the lower OAuth action bucket'
 );
-assert.equal(csrfExemptPath(API_ROUTES.STRIPE_WEBHOOK), true, 'HTTP policy should own Stripe webhook CSRF exemption');
+assert.equal(csrfExemptPath('/api/stripe/webhook'), false, 'Stripe webhook routes should not stay CSRF-exempt after payment removal');
 assert.equal(hasDeliveryExecutionConfirmation({ confirm_execute: true }), true, 'Delivery action contract should accept snake_case execution confirmation');
 assert.equal(hasDeliveryScheduleConfirmation({ confirmSchedule: true }), true, 'Delivery action contract should accept camelCase schedule confirmation');
 assert.deepEqual(

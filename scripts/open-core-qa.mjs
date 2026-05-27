@@ -49,8 +49,6 @@ const forbiddenTrackedFiles = [
 
 const suspiciousPatterns = [
   { name: 'OpenAI project key', regex: /\bsk-proj-[A-Za-z0-9_-]{20,}\b/g },
-  { name: 'Stripe live secret key', regex: /\bsk_live_[A-Za-z0-9]{20,}\b/g },
-  { name: 'Stripe live publishable key', regex: /\bpk_live_[A-Za-z0-9]{20,}\b/g },
   { name: 'GitHub personal access token', regex: /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g },
   { name: 'GitHub fine-grained token', regex: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g },
   { name: 'Slack token', regex: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g },
@@ -61,7 +59,6 @@ const suspiciousPatterns = [
 
 const allowList = new Set([
   '.env.example',
-  'scripts/stripe-qa.mjs',
   'scripts/worker-api-qa.mjs'
 ]);
 

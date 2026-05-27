@@ -246,11 +246,11 @@ export function createOpenChatPatternGuardUtils(options = {}) {
     }
     if (/(stripe|checkout|payment|billing|invoice|subscription|connect|payout|refund|決済|課金|請求|返金|サブスク|出金|Stripe)/i.test(text)) {
       add(
-        'stripe_account',
-        'Payment account context',
-        'Payment account context',
-        '決済/請求はCAItのSETTINGSで扱い、secret keyをチャットに貼らせません。',
-        'Payment work should use SETTINGS; secret keys should not be pasted into chat.',
+        'donation_only_support',
+        'Donation-only support context',
+        'Donation-only support context',
+        'CAIt内の決済/請求/出金は削除済みです。寄付・サポート方針だけSETTINGSで確認できます。',
+        'In-app payments, billing, and payouts are removed. SETTINGS only shows support/donation policy.',
         'open_payments'
       );
     }

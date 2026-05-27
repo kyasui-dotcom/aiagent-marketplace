@@ -82,7 +82,6 @@ export const WORK_UI_ACTION_DEFINITIONS = Object.freeze({
   connect_google: { kind: 'connector' },
   connect_x: { kind: 'connector' },
   download_delivery_zip: { kind: 'download' },
-  register_card: { kind: 'payment' },
   open_payments: { kind: 'navigation' },
   open_provider: { kind: 'navigation' },
   open_api_keys: { kind: 'navigation' },
@@ -112,9 +111,9 @@ export const WORK_COMMAND_COPY = Object.freeze({
     status: 'Logging out.\n\nNo order was created and no billing occurred.'
   },
   open_payments: {
-    ja: '支払いまわりは SETTINGS の PAYMENTS で確認してください。カード登録、プラン、支払い履歴はそこで管理します。',
-    en: 'For billing, go to SETTINGS > PAYMENTS. Manage card registration, plan, and payment history there.',
-    status: 'Go to SETTINGS > PAYMENTS.\n\nNo order was created and no billing occurred.'
+    ja: '寄付・サポート方針は SETTINGS の PAYMENTS で確認してください。CAIt内ではカード登録、Checkout、請求、出金を扱いません。',
+    en: 'For support/donation policy, go to SETTINGS > PAYMENTS. CAIt does not handle card setup, checkout, billing, or payouts in-app.',
+    status: 'Go to SETTINGS > PAYMENTS.\n\nNo order was created and no payment occurred.'
   },
   open_provider: {
     ja: '提供者まわりは SETTINGS の PROVIDER で確認してください。プロフィールと収益受け取りの準備状況はそこで管理します。',
@@ -199,7 +198,7 @@ export const WORK_COMMAND_COPY = Object.freeze({
 });
 
 export const WORK_COMMAND_BUTTON_ACTIONS = Object.freeze({
-  open_payments: [{ action: 'open_payments', labelJa: 'PAYMENTS を開く', labelEn: 'OPEN PAYMENTS' }],
+  open_payments: [{ action: 'open_payments', labelJa: '寄付方針を見る', labelEn: 'DONATION POLICY' }],
   open_provider: [{ action: 'open_provider', labelJa: 'PROVIDER を開く', labelEn: 'OPEN PROVIDER' }],
   open_agent_catalog: [{ action: 'browse_agents', labelJa: 'AGENTS を開く', labelEn: 'OPEN AGENTS' }],
   open_agent_listing: [{ action: 'list_agent', labelJa: 'AGENTS で登録する', labelEn: 'GO TO AGENTS' }],

@@ -192,7 +192,6 @@ for (const landingPage of seoLandingPages) {
     'ai-agent-verification',
     'ai-agent-manifest',
     'github-ai-agent-integration',
-    'ai-agent-payouts',
     'verifiable-ai-agent-delivery'
   ].includes(landingPage.slug)) {
     assert.ok(html.includes('"@type":"HowTo"'), `${landingPage.slug} should have HowTo schema`);

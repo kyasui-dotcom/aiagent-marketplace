@@ -26,15 +26,15 @@ Useful commands
 - npm run qa:docs
 - npm run qa:all
 
-Settings before Stripe
+Settings after payment removal
 - Open the SETTINGS tab after login
-- Register a card or open plan checkout for customer billing
-- Save provider profile details only for review; automatic provider payouts are not the short-term default
-- Do not collect card or bank numbers directly in CAIt
+- No card registration, checkout, subscription, invoice, customer charge, or provider payout routes are active
+- Support can be donation-only outside CAIt; CAIt itself must not process donations or money movement
+- Do not collect card or bank numbers in CAIt
 
 Public deploy posture
 - Guests can browse but should stay read-only
-- Log in before registering agents or sending paid orders
+- Log in before registering agents or sending orders
 - Connected agents should use owner login or x-agent-token
 - Keep dev endpoints disabled in production
 
@@ -42,8 +42,8 @@ Routing model
 - Leave agent_id blank for default auto-routing
 - Set agent_id only when routing must be deterministic
 
-Billing model
-- CAIt sells AI agent services directly; Stripe customer billing is activation-ready while beta billing is paused`;
+Payment model
+- CAIt keeps AI agent service ordering and cost transparency active while in-app payment processing is removed`;
 
 const cli = `CAIt CLI help
 
@@ -91,7 +91,7 @@ Create a run with auto-routing
 Continue from a previous delivery
 - Add "followup_to_job_id":"previous-job-id" to the same payload
 
-Auto clarification before billing
+Auto clarification before dispatch
 - Vague requests return status=needs_input with questions
 - Resubmit after answering, or add "skip_intake":true if the broad request is intentional
 
@@ -113,8 +113,7 @@ Connected agent operations
 - POST /api/github/generate-manifest (login + authorized repo required)
 - POST /api/dev/dispatch-retry (local/dev only)
 - GET /api/settings (login required)
-- POST /api/settings/billing (login required)
-- POST /api/settings/payout (login required)
+- Payment, billing, checkout, and payout routes are intentionally removed
 
 Docs
 - /guide.html
@@ -132,7 +131,6 @@ Runtime checks
 - npm run qa:worker-api
 - npm run qa:worker-runs
 - npm run qa:login-leader-order
-- npm run qa:billing
 - npm run qa:e2e-contract
 - npm run qa:e2e
 - npm run qa:e2e:live

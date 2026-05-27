@@ -37,7 +37,7 @@ Keep PRs focused. A good PR changes one of these areas at a time:
 - public UI copy or navigation
 - QA coverage
 
-Do not include production secrets, private runtime entrypoints, billing internals, customer data, or local machine artifacts.
+Do not include production secrets, private runtime entrypoints, customer data, or local machine artifacts.
 
 ## Issue Quality
 
@@ -51,4 +51,4 @@ Useful issues include:
 
 ## Open-Core Boundary
 
-Some hosted-service behavior is intentionally private, including billing, provider payouts, live storage, operator tools, and deployment secrets. If an issue depends on those private internals, describe the public symptom instead of requesting private code.
+Some hosted-service behavior is intentionally private, including live storage, operator tools, and deployment secrets. If an issue depends on those private internals, describe the public symptom instead of requesting private code.

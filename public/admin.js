@@ -275,7 +275,7 @@ function renderAccounts(accounts = []) {
     return [
       `<strong>${escapeHtml(account.login || account.displayName || '-')}</strong><small>${escapeHtml(account.email || account.id || '-')}</small>`,
       `<strong>${escapeHtml(providers)}</strong><small>API keys ${number(account.apiKeys?.active)} / ${number(account.apiKeys?.total)} / repos ${number(account.githubRepos)}</small>`,
-      `<strong>${escapeHtml(billing)}</strong><small>Stripe ${escapeHtml(account.stripeCustomerStatus || 'not_started')}</small>`,
+      `<strong>${escapeHtml(billing)}</strong><small>Payments removed</small>`,
       `<strong>${escapeHtml(relativeDate(account.createdAt))}</strong><small>${escapeHtml(formatDate(account.createdAt))}</small>`,
       `<strong>${escapeHtml(relativeDate(account.updatedAt || account.createdAt))}</strong><small>${escapeHtml(formatDate(account.updatedAt || account.createdAt))}</small>`
     ];

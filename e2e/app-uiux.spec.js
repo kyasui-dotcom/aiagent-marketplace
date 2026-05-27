@@ -53,11 +53,12 @@ test.describe('CAIt app UI/UX surfaces', () => {
     await expect(page.locator('.app-nav a[href="/delivery-manager.html"]')).toBeVisible();
   });
 
-  test('task app headers keep only the primary Send to CAIt action', async ({ page }) => {
+  test('task app headers expose one primary CAIt handoff action', async ({ page }) => {
     for (const appPage of taskAppPages) {
       await page.goto(appPage.path, { waitUntil: 'domcontentloaded' });
-      const headerActions = await page.locator('.app-header-actions button, .app-header-actions a').evaluateAll((items) => items.map((item) => item.textContent.trim()));
-      expect(headerActions, `${appPage.name}: header action count`).toEqual(['Send to CAIt']);
+      const headerActions = await page.locator('.app-header-actions .primary-btn').evaluateAll((items) => items.map((item) => item.textContent.trim()));
+      const expected = appPage.path === '/lead-ops.html' ? ['入力後にCAItへ渡す'] : ['Send to CAIt'];
+      expect(headerActions, `${appPage.name}: primary header action`).toEqual(expected);
     }
   });
 });

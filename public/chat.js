@@ -126,7 +126,23 @@ const CHATUX_RUNTIME_STATE_KEY = 'cait.chat.runtimeState.v1';
 const CHATUX_RUNTIME_STATE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const CHATUX_RETRY_MODE_NEW_ORDER = 'same_content_new_order';
 const CAIT_APP_CONTEXT_CHANNEL = 'cait-app-context';
+const CHATUX_UI_LANGUAGE_STORAGE_KEY = 'cait.uiLanguage.v1';
 const CHATUX_WELCOME_TEXT = 'What do you want done?';
+const CHATUX_WELCOME_TEXT_JA = '何をしたいですか？';
+
+function normalizeUiLanguage(value = '', fallback = 'en') {
+  const text = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  if (text.startsWith('ja')) return 'ja';
+  if (text.startsWith('en')) return 'en';
+  return fallback;
+}
+
+function initialChatUiLanguage() {
+  const stored = normalizeUiLanguage(safeLocalStorageGet(CHATUX_UI_LANGUAGE_STORAGE_KEY), '');
+  if (stored) return stored;
+  return normalizeUiLanguage(document.documentElement?.lang || '', 'en');
+}
+
 function leaderCatalogChatAnswer(prompt = '') {
   const ja = chatLanguage(prompt) === 'ja';
   return ja
@@ -216,6 +232,9 @@ const state = {
   workerAgentsHasMore: false,
   pendingRecoveryPayloads: [],
   busy: false,
+  uiLanguage: initialChatUiLanguage(),
+  uiLanguageSettingsFetchedAt: 0,
+  uiLanguageSettingsRequest: null,
   conversationLanguage: '',
   chatSessions: [],
   chatMessages: [],
@@ -767,7 +786,7 @@ function purgeChatStateForAccountBoundary(reason = 'account_boundary') {
   if (els.promptInput) els.promptInput.value = '';
   if (els.chatThread) {
     els.chatThread.innerHTML = '';
-    appendTextMessage('assistant', CHATUX_WELCOME_TEXT, { record: false });
+    appendTextMessage('assistant', chatWelcomeText(), { record: false });
   }
   renderActiveLeaderStatus();
   updateComposerMode();
@@ -832,7 +851,7 @@ function restoreChatMessagesFromSession(session = null) {
       });
     }
   } else {
-    appendTextMessage('assistant', CHATUX_WELCOME_TEXT, { record: false });
+    appendTextMessage('assistant', chatWelcomeText(), { record: false });
   }
 }
 
@@ -1127,7 +1146,7 @@ function startNewChatSession() {
   if (els.promptInput) els.promptInput.value = '';
   els.chatThread.innerHTML = '';
   renderActiveLeaderStatus();
-  appendTextMessage('assistant', CHATUX_WELCOME_TEXT, { record: false });
+  appendTextMessage('assistant', chatWelcomeText(), { record: false });
   updateComposerMode();
   renderChatSessionSidebar();
 }
@@ -1172,7 +1191,7 @@ function loadChatSession(sessionId = '', options = {}) {
       });
     }
   } else {
-    appendTextMessage('assistant', CHATUX_WELCOME_TEXT, { record: false });
+    appendTextMessage('assistant', chatWelcomeText(), { record: false });
   }
   renderActiveLeaderStatus();
   updateComposerMode();
@@ -1229,6 +1248,7 @@ function applyAuthState(auth = {}, options = {}) {
       ? `<span>Signed in as ${escapeHtml(login)}</span>`
       : `<a href="${escapeHtml(loginHref('google'))}">Google sign in</a> or <a href="${escapeHtml(loginHref('github'))}">GitHub sign in</a> to order`;
   }
+  if (loggedIn) void refreshUiLanguageFromAccount();
   renderChatSessionSidebar();
   return true;
 }
@@ -2364,10 +2384,7 @@ function looksJapanese(value = '') {
 }
 
 function chatLanguage(sample = '') {
-  if (state.conversationLanguage) return state.conversationLanguage;
-  const pageLanguage = String(document.documentElement?.lang || '').toLowerCase();
-  if (pageLanguage.startsWith('ja')) return 'ja';
-  return 'en';
+  return chatUiLanguage();
 }
 
 function chatText(en, ja, sample = '') {
@@ -2375,12 +2392,40 @@ function chatText(en, ja, sample = '') {
 }
 
 function chatUiLanguage() {
-  const pageLanguage = String(document.documentElement?.lang || '').toLowerCase();
-  return pageLanguage.startsWith('ja') ? 'ja' : 'en';
+  return normalizeUiLanguage(state.uiLanguage || document.documentElement?.lang || '', 'en');
 }
 
 function chatUiText(en, ja) {
   return chatUiLanguage() === 'ja' ? ja : en;
+}
+
+function chatWelcomeText() {
+  return chatUiText(CHATUX_WELCOME_TEXT, CHATUX_WELCOME_TEXT_JA);
+}
+
+function syncDocumentUiLanguage() {
+  const language = chatUiLanguage();
+  if (document.documentElement) document.documentElement.lang = language;
+  return language;
+}
+
+function refreshDefaultWelcomeMessage() {
+  const firstMessage = els.chatThread?.querySelector('.message.assistant .message-body');
+  if (!firstMessage) return;
+  const current = String(firstMessage.textContent || '').trim();
+  if (current === CHATUX_WELCOME_TEXT || current === CHATUX_WELCOME_TEXT_JA) {
+    firstMessage.textContent = chatWelcomeText();
+  }
+}
+
+function setChatUiLanguage(value = '', options = {}) {
+  const next = normalizeUiLanguage(value, 'en');
+  state.uiLanguage = next;
+  syncDocumentUiLanguage();
+  if (options.persist !== false) safeLocalStorageSet(CHATUX_UI_LANGUAGE_STORAGE_KEY, next);
+  refreshDefaultWelcomeMessage();
+  updateComposerMode();
+  return next;
 }
 
 function detectedInputLanguage(sample = '') {
@@ -2496,6 +2541,47 @@ async function apiWithRetry(path, options = {}, retryOptions = {}) {
     }
   }
   throw lastError || new Error('Request failed');
+}
+
+function accountSettingsUiLanguage(payload = {}) {
+  return normalizeUiLanguage(payload?.account?.profile?.uiLanguage || payload?.profile?.uiLanguage || '', '');
+}
+
+async function refreshUiLanguageFromAccount(options = {}) {
+  const loggedIn = Boolean(state.auth?.loggedIn || state.auth?.login || state.auth?.user);
+  if (!loggedIn) return chatUiLanguage();
+  const force = options.force === true;
+  if (!force && state.uiLanguageSettingsFetchedAt && Date.now() - state.uiLanguageSettingsFetchedAt < 60_000) {
+    return chatUiLanguage();
+  }
+  if (state.uiLanguageSettingsRequest) return state.uiLanguageSettingsRequest;
+  state.uiLanguageSettingsRequest = api('/api/settings', { method: 'GET', timeoutMs: 8000 })
+    .then((result) => {
+      const savedLanguage = accountSettingsUiLanguage(result);
+      state.uiLanguageSettingsFetchedAt = Date.now();
+      if (savedLanguage) setChatUiLanguage(savedLanguage);
+      return chatUiLanguage();
+    })
+    .catch(() => chatUiLanguage())
+    .finally(() => {
+      state.uiLanguageSettingsRequest = null;
+    });
+  return state.uiLanguageSettingsRequest;
+}
+
+async function saveChatUiLanguagePreference(value = '') {
+  const next = setChatUiLanguage(value);
+  const loggedIn = Boolean(state.auth?.loggedIn || state.auth?.login || state.auth?.user);
+  if (!loggedIn) return next;
+  const result = await api('/api/settings/profile', {
+    method: 'POST',
+    body: JSON.stringify({ uiLanguage: next }),
+    timeoutMs: 8000
+  });
+  state.uiLanguageSettingsFetchedAt = Date.now();
+  const savedLanguage = accountSettingsUiLanguage(result);
+  if (savedLanguage) setChatUiLanguage(savedLanguage);
+  return chatUiLanguage();
 }
 
 function setBusy(next) {
@@ -5147,19 +5233,30 @@ async function loadMoreUtilityCatalog(kind = '') {
   }
 }
 
-function showInfoPanel() {
+function showInfoPanel(statusMessage = '') {
   const auth = state.auth || {};
   const login = auth.login || auth.user?.login || auth.user?.email || '';
   const adminAction = auth.isPlatformAdmin || auth.admin ? '<a class="ghost-btn file-action" href="/admin">Admin</a>' : '';
+  const uiLanguage = chatUiLanguage();
+  const languageStatus = statusMessage
+    ? `<span class="utility-meta" data-ui-language-status>${escapeHtml(statusMessage)}</span>`
+    : `<span class="utility-meta" data-ui-language-status>${escapeHtml(chatUiText('English is the default. Change this only when you want CAIt UI text in another language.', '既定は英語です。CAItのUI表示を別の言語にしたい場合だけ変更してください。'))}</span>`;
   openUtilityModal('Info', [
     '<div class="utility-list">',
     '<div class="utility-row"><div class="utility-main">',
-    '<strong>Account</strong>',
+    `<strong>${escapeHtml(chatUiText('Account', 'アカウント'))}</strong>`,
     `<span class="utility-meta">${escapeHtml(login || 'Not signed in')}</span>`,
     '</div><div class="utility-actions">',
-    auth.loggedIn || login ? `${adminAction}<a class="ghost-btn file-action" href="/account-settings.html">Account settings</a><button class="ghost-btn file-action" type="button" data-chat-logout>Sign out</button>` : `<a class="ghost-btn file-action" href="${escapeHtml(loginHref('google'))}">Sign in</a>`,
+    auth.loggedIn || login ? `${adminAction}<a class="ghost-btn file-action" href="/account-settings.html">${escapeHtml(chatUiText('Account settings', 'アカウント設定'))}</a><button class="ghost-btn file-action" type="button" data-chat-logout>${escapeHtml(chatUiText('Sign out', 'サインアウト'))}</button>` : `<a class="ghost-btn file-action" href="${escapeHtml(loginHref('google'))}">${escapeHtml(chatUiText('Sign in', 'サインイン'))}</a>`,
     '</div></div>',
-    '<div class="utility-row"><div class="utility-main"><strong>Resources</strong><span class="utility-meta">Docs, terms, privacy, and help.</span></div><div class="utility-actions"><a class="ghost-btn file-action" href="/help.html">Help</a><a class="ghost-btn file-action" href="/resources.html">Resources</a></div></div>',
+    '<div class="utility-row"><div class="utility-main">',
+    `<strong>${escapeHtml(chatUiText('Language', '言語'))}</strong>`,
+    `<label class="utility-field" for="chatUiLanguageSelect"><span>${escapeHtml(chatUiText('Interface language', '表示言語'))}</span><select id="chatUiLanguageSelect" data-chat-ui-language><option value="en"${uiLanguage === 'en' ? ' selected' : ''}>English</option><option value="ja"${uiLanguage === 'ja' ? ' selected' : ''}>Japanese</option></select></label>`,
+    languageStatus,
+    '</div><div class="utility-actions">',
+    `<a class="ghost-btn file-action" href="/account-settings.html">${escapeHtml(chatUiText('Open settings', '設定を開く'))}</a>`,
+    '</div></div>',
+    `<div class="utility-row"><div class="utility-main"><strong>${escapeHtml(chatUiText('Resources', 'リソース'))}</strong><span class="utility-meta">${escapeHtml(chatUiText('Docs, terms, privacy, and help.', 'ドキュメント、利用規約、プライバシー、ヘルプです。'))}</span></div><div class="utility-actions"><a class="ghost-btn file-action" href="/help.html">${escapeHtml(chatUiText('Help', 'ヘルプ'))}</a><a class="ghost-btn file-action" href="/resources.html">${escapeHtml(chatUiText('Resources', 'リソース'))}</a></div></div>`,
     '</div>'
   ].join('\n'));
 }
@@ -8626,6 +8723,22 @@ els.chatThread.addEventListener('keydown', (event) => {
   input.closest('.intake-other-row')?.querySelector('[data-intake-other-add]')?.click();
 });
 
+els.utilityModalBody?.addEventListener('change', async (event) => {
+  const select = event.target.closest('[data-chat-ui-language]');
+  if (!select) return;
+  const next = normalizeUiLanguage(select.value, 'en');
+  const status = els.utilityModalBody?.querySelector('[data-ui-language-status]');
+  if (status) status.textContent = chatUiText('Saving language...', '言語を保存しています...');
+  try {
+    const savedLanguage = await saveChatUiLanguagePreference(next);
+    if (utilityModalIsOpen('Info')) {
+      showInfoPanel(savedLanguage === 'ja' ? '言語を保存しました。' : 'Language saved.');
+    }
+  } catch (error) {
+    if (status) status.textContent = orderErrorMessage(error);
+  }
+});
+
 els.utilityModalBody?.addEventListener('click', async (event) => {
   const logoutButton = event.target.closest('[data-chat-logout]');
   if (logoutButton) {
@@ -8860,6 +8973,7 @@ window.addEventListener('beforeunload', () => {
   saveChatRuntimeState('runtime_beforeunload');
 });
 
+setChatUiLanguage(state.uiLanguage, { persist: false });
 renderActiveLeaderStatus();
 updateComposerMode();
 renderChatSessionSidebar();

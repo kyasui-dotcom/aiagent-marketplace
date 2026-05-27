@@ -1,8 +1,5 @@
 import { API_ROUTES, apiRouteMatches } from './lib/api-routes.js';
-import { createBillingHelpers } from './lib/billing-helpers.js';
 import { createBillingOutcomeHelpers } from './lib/billing-outcome.js';
-import { createBillingSweepHandlers, providerMonthlyBillingAutoConfig } from './lib/billing-sweeps.js';
-import { createStripeWebhookHandlers } from './lib/billing-webhooks.js';
 import { SAMPLE_AGENT_KINDS, sampleAgentDefinitionForKind } from './lib/builtin-agents/agents/index.js';
 import { leaderReadableAgentCatalogIndex } from './lib/agent-catalog-index.js';
 import { createSnapshotHelpers, requestedBillingPeriod } from './lib/snapshot.js';
@@ -46,7 +43,6 @@ import { createPublicReadModelHelpers } from './lib/public-read-model.js';
 import { createRateLimitHelpers } from './lib/rate-limit.js';
 import { createRequestIdentityHelpers, createRequestVisibilityHelpers } from './lib/request-access.js';
 import { fetchJson, githubClientId, githubClientSecret, runtimeStorage, shouldInjectQaOrderCreateFault } from './lib/runtime-env.js';
-import { stripeConnectedAccountIdentityStatus, stripeConnectedAccountPatch as baseStripeConnectedAccountPatch } from './lib/stripe-connected-account.js';
 import { appendEmailDelivery, createEmailNotificationHelpers, resendConfigured, sendResendEmail, validateEmailAddress } from './lib/email-notifications.js';
 import { agentReviewerLogins, boolFlag, createOperatorAccessHelpers, feedbackReviewerLogins, platformAdminLogins, runtimePolicy } from './lib/operator-access.js';
 import {
@@ -92,7 +88,6 @@ import { createAgentExecutionRouteHandlers } from './lib/routes/agent-execution.
 import { createAuthRouteHandlers } from './lib/routes/auth.js';
 import { createAuthStatusRouteHandlers } from './lib/routes/auth-status.js';
 import { createApiKeyRouteHandlers } from './lib/routes/api-keys.js';
-import { createBillingRouteHandlers } from './lib/routes/billing.js';
 import { createCampaignRouteHandlers } from './lib/routes/campaigns.js';
 import { createCatalogRouteHandlers, catalogPagePayload } from './lib/routes/catalog.js';
 import { clearDeliveryCompletionGate, deliveryCompletionEvidenceScoreForJob, setDeliveryCompletionGate } from './lib/delivery-completion-gate.js';
@@ -120,6 +115,7 @@ import { WORKFLOW_HANDOFF_CONTEXT_START, createWorkflowHandoffContext } from './
 import { createWorkflowDispatchQueueHelpers } from './lib/workflow-dispatch-queue.js';
 import { createWorkflowLeaderHandoff } from './lib/workflow-leader-handoff.js';
 import { createWorkflowLeaderSequenceRepair } from './lib/workflow-leader-sequence-repair.js';
+import { createWorkflowJobProfileHelpers } from './lib/workflow-job-profile.js';
 import { createWorkflowParentReconcile } from './lib/workflow-parent-reconcile.js';
 import { createWorkflowPlanAssemblyHelpers } from './lib/workflow-plan-assembly.js';
 import { createWorkflowReconcileActions } from './lib/workflow-reconcile-actions.js';
@@ -143,13 +139,13 @@ import { createAgentEndpointHelpers } from './lib/agent-endpoints.js';
 import { createAgentResultPayloadHelpers } from './lib/agent-result-payload.js';
 import { buildConversionAnalytics, createConversionEventPayload } from './lib/conversion-analytics.js';
 import { parseBody } from './lib/http-body.js';
+import { clientOrderIdFromCreateBody, createOrderCreateRequestHelpers } from './lib/order-create-request-helpers.js';
 import { normalizeUsageForBilling, usageWithObservedJobTokens } from './lib/usage-accounting.js';
-import { API_COST_CATALOG_VERSION, BILLING_DISPLAY_CURRENCY, EXTERNAL_API_COST_CATALOG_USD, LLM_HIGH_WATERMARK_PRICE_PER_MTOK_USD, WELCOME_CREDITS_GRANT_AMOUNT, accountIdForLogin, accountIdentityForProvider, accountSettingsForIdentity, accountSettingsForLogin, agentLinksFromRecord, agentTagsFromRecord, aliasLoginsForAccount, applyStripeRefundToAccount, applySubscriptionRefillToAccount, authenticateOrderApiKey, billingAuditsForJobIds, billingModeFromJob, billingPeriodId, billingProfileForAccount, buildAdminDashboard, buildAgentId, buildFollowupConversationContext, buildIntakeClarification, buildMonthlyAccountSummary, chatSessionIdForJob, chatTrainingExamplesForClient, chatTranscriptsForClient, computeScore, connectorActionLabel, connectorOAuthActionInstruction, createChatTranscript, createFeedbackReport, createRecurringOrderInState, defaultLoginForAuthUser, deleteRecurringOrderInState, displayCurrencyToLedgerAmount, dueRecurringOrders, estimateBilling, estimateRunWindow, feedbackReportsForClient, hideChatMemoryTranscriptForLoginInState, inferAgentTagsFromSignals, inferTaskSequence, inferTaskType, isAgentOwnedByLogin, isBillableJob, isJobVisibleToLogin, isPrivateNetworkHostname, jobsVisibleToLogin, ledgerAmountToDisplayCurrency, linkIdentityToAccountInState, makeEvent, markRecurringOrderRunInState, maybeGrantWelcomeCreditsForSignupInState, maybeGrantWelcomeCreditsForVerifiedAgentInState, mergeAccountsInState, mergeProtectedPromptSourceIntoInput, normalizeAgentTags, normalizeTaskTypes, nowIso, optimizeOrderPromptForBroker, promptInjectionGuardForPrompt, providerMonthlyBillingLedgerForLogin, providerPayoutLedgerForLogin, publicEventView, recordProviderMonthlyChargeInAccount, recurringOrderToJobPayload, recurringOrdersVisibleToLogin, recordStripeTopupInAccount, recoverMissingAccountsInState, releaseBillingReservationInState, requesterContextFromUser, reserveBillingEstimateInState, sanitizeAccountSettingsForClient, sanitizeFeedbackReportForClient, settleBillingForJobInState, touchOrderApiKeyUsageInState, updateChatTranscriptReviewInState, updateFeedbackReportInState, updateRecurringOrderInState, upsertAccountSettingsForIdentityInState, upsertAccountSettingsInState, workflowTagHintsForTask, workflowTaskCandidateTokens, workflowTaskSoftMatchTokens } from './lib/shared.js';
+import { API_COST_CATALOG_VERSION, BILLING_DISPLAY_CURRENCY, EXTERNAL_API_COST_CATALOG_USD, LLM_HIGH_WATERMARK_PRICE_PER_MTOK_USD, WELCOME_CREDITS_GRANT_AMOUNT, accountIdForLogin, accountIdentityForProvider, accountSettingsForIdentity, accountSettingsForLogin, agentLinksFromRecord, agentTagsFromRecord, aliasLoginsForAccount, authenticateOrderApiKey, billingAuditsForJobIds, billingModeFromJob, billingPeriodId, billingProfileForAccount, buildAdminDashboard, buildAgentId, buildFollowupConversationContext, buildIntakeClarification, buildMonthlyAccountSummary, chatSessionIdForJob, chatTrainingExamplesForClient, chatTranscriptsForClient, computeScore, connectorActionLabel, connectorOAuthActionInstruction, createChatTranscript, createFeedbackReport, createRecurringOrderInState, defaultLoginForAuthUser, deleteRecurringOrderInState, displayCurrencyToLedgerAmount, dueRecurringOrders, estimateBilling, estimateRunWindow, feedbackReportsForClient, hideChatMemoryTranscriptForLoginInState, inferAgentTagsFromSignals, inferTaskSequence, inferTaskType, isAgentOwnedByLogin, isBillableJob, isJobVisibleToLogin, isPrivateNetworkHostname, jobsVisibleToLogin, ledgerAmountToDisplayCurrency, linkIdentityToAccountInState, makeEvent, markRecurringOrderRunInState, maybeGrantWelcomeCreditsForSignupInState, maybeGrantWelcomeCreditsForVerifiedAgentInState, mergeAccountsInState, mergeProtectedPromptSourceIntoInput, normalizeAgentTags, normalizeTaskTypes, nowIso, optimizeOrderPromptForBroker, promptInjectionGuardForPrompt, publicEventView, recurringOrderToJobPayload, recurringOrdersVisibleToLogin, recoverMissingAccountsInState, releaseBillingReservationInState, requesterContextFromUser, reserveBillingEstimateInState, sanitizeAccountSettingsForClient, sanitizeFeedbackReportForClient, settleBillingForJobInState, touchOrderApiKeyUsageInState, updateChatTranscriptReviewInState, updateFeedbackReportInState, updateRecurringOrderInState, upsertAccountSettingsForIdentityInState, upsertAccountSettingsInState, workflowTagHintsForTask, workflowTaskCandidateTokens, workflowTaskSoftMatchTokens } from './lib/shared.js';
 import { agentRoutingConfirmationAccepted, applyConfirmedAgentRoutingToAgent, buildAgentRoutingConfirmation } from './lib/shared.js';
 import { agentPatternFitScore, buildAgentTeamDeliveryOutput, ensureLeaderWorkflowActionTasksFromDefinition, isLargeAgentTeamIntent, leaderExternalActionRequestedFromDefinition, leaderPlannerAllowsCandidateAgentTasksFromDefinition, leaderSequentialUserActionPriorityFromDefinition, leaderSpecialistTaskForFollowupFromDefinition, leaderTaskTypeForInitialWork, leaderWorkflowReplanDecisionFromDefinition, normalizeLeaderWorkflowPlannedTasksFromDefinition, orderPreflightForAgent, ownChatMemoryForClient } from './lib/shared.js';
 import { listCreatorUsageEstimateForOrder } from './lib/shared.js';
 import { orderBodyWithCommonQualityRules } from './lib/shared.js';
-import { amountFromMinorUnits, createConnectedAccount, createConnectedAccountTransfer, createConnectOnboardingLink, createOffSessionMonthlyInvoicePaymentIntent, createOffSessionProviderMonthlyPaymentIntent, createSetupCheckoutSession, createSubscriptionCheckoutSession, ensureStripeCustomer, resolveSubscriptionPlanFromPriceId, retrieveConnectedAccount, retrievePaymentIntent, retrieveSetupIntent, retrieveSubscription, stripeConfigFromEnv, stripeConfigured, stripePublicConfig, updateCustomerDefaultPaymentMethod, verifyStripeWebhookSignature } from './lib/stripe.js';
 import { buildXAuthorizeUrl, buildXPkcePair, exchangeXOAuthCode, fetchXProfile, postXTweet, publicXConnectorStatus, validateXPostExecutionApproval, validateXPostText, xConnectorFromOAuthToken, xOAuthConfigured, xTokenEncryptionConfigured } from './lib/x-connector.js';
 import { createWordPressDraft, normalizeWordPressSiteUrl, publicWordPressConnectorStatus, testWordPressApplicationPassword, wordpressConnectorFromApplicationPassword } from './lib/wordpress-connector.js';
 import { connectorTokenEncryptionConfigured, decryptConnectorSecret, encryptConnectorSecret, githubConnectorFromOAuthToken, googleConnectorFromOAuthToken } from './lib/connector-secrets.js';
@@ -181,6 +177,19 @@ const performSingleJobCreate = (...args) => orderCreateHandlers().performSingleJ
 let workflowParentReconcileRuntime = null;
 const reconcileWorkflowParent = (...args) => workflowParentReconcileRuntime.reconcileWorkflowParent(...args);
 const refreshWorkflowLeaderHandoffForJobId = (...args) => workflowParentReconcileRuntime.refreshWorkflowLeaderHandoffForJobId(...args);
+const workflowJobProfileHelpers = createWorkflowJobProfileHelpers({
+  leaderUsesSaasPublishHandoff
+});
+const {
+  isWorkflowLeaderTask,
+  workflowBrokerForJob,
+  workflowBrokerWorkflowForJob,
+  workflowBrokerWorkflowForJobOrEmpty,
+  workflowPrimaryTaskFromJobOrProfile,
+  workflowSequencePhaseForJob,
+  workflowTaskName,
+  workflowUsesSaasPublishHandoff
+} = workflowJobProfileHelpers;
 const agentEndpointHelpers = createAgentEndpointHelpers({
   baseUrlFromEnv,
   isAgentReviewApproved
@@ -398,7 +407,7 @@ const {
 
 const workflowPlanAssemblyHelpers = createWorkflowPlanAssemblyHelpers({
   agentWorkflowLayer,
-  clientOrderIdFromCreateBody,
+  clientOrderIdFromCreateBody: (...args) => clientOrderIdFromCreateBody(...args),
   ensureLeaderWorkflowActionTasks,
   estimateRunWindow,
   filterLeaderWorkflowPlannedTasks,
@@ -456,8 +465,6 @@ const {
   requestedFollowupJobIdFromCreateBody,
   resolveOrderStrategy
 } = orderStrategyHelpers;
-
-const stripeConnectedAccountPatch = (connectedAccountId, remoteAccount = null) => baseStripeConnectedAccountPatch(connectedAccountId, remoteAccount, { nowIso });
 
 const requestIdentityHelpers = createRequestIdentityHelpers({
   aliasLoginsForAccount,
@@ -520,64 +527,6 @@ const {
   visibleJobsForRequest,
   visibleJobsForRequestFast
 } = requestVisibilityHelpers;
-
-function workflowBrokerForJob(job = {}) {
-  return job?.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
-}
-
-function workflowBrokerWorkflowForJobOrEmpty(job = {}) {
-  const broker = workflowBrokerForJob(job);
-  return broker.workflow && typeof broker.workflow === 'object' ? broker.workflow : {};
-}
-
-function workflowPrimaryTaskFromJobOrProfile(job = {}, parent = null) {
-  const workflow = workflowBrokerWorkflowForJobOrEmpty(job);
-  const plannedTasks = Array.isArray(job?.workflow?.plannedTasks) ? job.workflow.plannedTasks : [];
-  const parentPlannedTasks = Array.isArray(parent?.workflow?.plannedTasks) ? parent.workflow.plannedTasks : [];
-  return String(
-    workflow.primaryTask
-      || workflow.primary_task
-      || parentPlannedTasks[0]
-      || plannedTasks[0]
-      || job.workflowTask
-      || job.taskType
-      || parent?.taskType
-      || ''
-  ).trim().toLowerCase();
-}
-
-function workflowUsesSaasPublishHandoff(job = {}, parent = null) {
-  const workflow = workflowBrokerWorkflowForJobOrEmpty(job);
-  const parentWorkflow = parent?.workflow && typeof parent.workflow === 'object' ? parent.workflow : {};
-  const profileMode = String(
-    workflow.externalActionMode
-      || workflow.external_action_mode
-      || parentWorkflow.externalActionMode
-      || parentWorkflow.external_action_mode
-      || ''
-  ).trim().toLowerCase();
-  const publishSurface = String(
-    workflow.publishSurface
-      || workflow.publish_surface
-      || parentWorkflow.publishSurface
-      || parentWorkflow.publish_surface
-      || ''
-  ).trim().toLowerCase();
-  const publishApprovalSurface = String(
-    workflow.publishApprovalSurface
-      || workflow.publish_approval_surface
-      || parentWorkflow.publishApprovalSurface
-      || parentWorkflow.publish_approval_surface
-      || ''
-  ).trim().toLowerCase();
-  const primary = workflowPrimaryTaskFromJobOrProfile(job, parent);
-  return Boolean(
-    profileMode === 'saas_handoff_only'
-    || publishSurface === 'saas'
-    || publishApprovalSurface === 'saas'
-    || leaderUsesSaasPublishHandoff(primary)
-  );
-}
 
 function authorityRequestHandledBySaasHandoff(job = {}, request = null, parent = null) {
   return Boolean(
@@ -890,6 +839,24 @@ const {
   trustedOrigins
 } = authContextHelpers;
 
+const orderCreateRequestHelpers = createOrderCreateRequestHelpers({
+  accountIdForLogin,
+  accountSettingsForLogin,
+  accountUserFromSettings
+});
+const {
+  createJobResponseFromPersistedJob,
+  currentFromRecurringOrder,
+  jobPromptMatchesCreateBody,
+  jobRequesterMatchesCurrent,
+  jobSessionMatchesCreateBody,
+  orderCreateBodyIsSameContentNewOrderRetry,
+  orderCreateSkipIntake,
+  orderCreateSkipPrePersistencePlanning,
+  persistedJobForClientOrderId,
+  promptPolicyBlockPayload
+} = orderCreateRequestHelpers;
+
 const marketplaceRegistrationHelpers = createMarketplaceRegistrationHelpers({
   agentReviewRouteBlockReason,
   boolFlag,
@@ -1164,119 +1131,23 @@ const connectorRoutes = createConnectorRouteHandlers({
   xTokenEncryptionConfigured
 });
 
-const billingHelpers = createBillingHelpers({
-  baseUrl,
-  billingPeriodId,
-  billingProfileForAccount,
-  providerIdentityStatus,
-  providerMonthlyBillingAutoConfig,
-  runtimePolicy,
-  sessionAuthProvider,
-  stripeConfigFromEnv,
-  stripePublicConfig,
-  validateEmailAddress
-});
-const {
-  betaBillingPausedResult,
-  billingPausedForBeta,
-  cleanRegistrationIdentityField,
-  currentStripeConfig,
-  providerMoneyReadinessForCurrent,
-  providerRegistrationBillingStatus,
-  stripeActionErrorPayload,
-  stripeStateForClient
-} = billingHelpers;
-
-const billingRoutes = createBillingRouteHandlers({
-  accountSettingsForLogin,
-  baseUrl,
-  betaBillingPausedResult,
-  BILLING_DISPLAY_CURRENCY,
-  billingPeriodId,
-  billingPausedForBeta,
-  createConnectedAccount,
-  createConnectedAccountTransfer,
-  createConnectOnboardingLink,
-  createOffSessionMonthlyInvoicePaymentIntent,
-  createOffSessionProviderMonthlyPaymentIntent,
-  createSetupCheckoutSession,
-  createSubscriptionCheckoutSession,
-  currentStripeConfig,
-  currentUserContext,
-  displayCurrencyToLedgerAmount,
-  ensureStripeCustomer,
-  ledgerAmountToDisplayCurrency,
-  nowIso,
-  parseBody,
-  runtimePolicy,
-  sanitizeAccountSettingsForClient,
-  providerIdentityStatus,
-  providerMonthlyBillingLedgerForLogin,
-  providerPayoutLedgerForLogin,
-  recordProviderMonthlyChargeInAccount,
-  retrieveConnectedAccount,
-  stripeConfigured,
-  stripeConnectedAccountIdentityStatus,
-  stripeConnectedAccountPatch,
-  stripeStateForClient,
-  touchEvent,
-  upsertAccountSettingsInState
-});
-const {
-  createStripeConnectOnboardingForCurrent,
-  createStripeProviderPayoutForCurrent,
-  createStripeSetupSessionForCurrent,
-  createStripeSubscriptionSessionForCurrent,
-  getStripeStatus,
-  triggerStripeMonthlyInvoiceChargeForCurrent,
-  triggerStripeProviderMonthlyChargeForCurrent
-} = billingRoutes;
-
-const billingSweeps = createBillingSweepHandlers({
-  accountSettingsForLogin,
-  billingPausedForBeta,
-  billingPeriodId,
-  BILLING_DISPLAY_CURRENCY,
-  createFeedbackReport,
-  createOffSessionProviderMonthlyPaymentIntent,
-  forwardFeedbackReportEmail,
-  ledgerAmountToDisplayCurrency,
-  nowIso,
-  platformAdminLogins,
-  providerMonthlyBillingLedgerForLogin,
-  recordProviderMonthlyChargeInAccount,
-  stripeConfigFromEnv,
-  stripeConfigured,
-  touchEvent,
-  upsertAccountSettingsInState
-});
-const {
-  runProviderMonthlyBillingSweep
-} = billingSweeps;
-
-const stripeWebhooks = createStripeWebhookHandlers({
-  accountSettingsForLogin,
-  amountFromMinorUnits,
-  applyStripeRefundToAccount,
-  applySubscriptionRefillToAccount,
-  BILLING_DISPLAY_CURRENCY,
-  currentStripeConfig,
-  nowIso,
-  recordStripeTopupInAccount,
-  resolveSubscriptionPlanFromPriceId,
-  retrievePaymentIntent,
-  retrieveSetupIntent,
-  retrieveSubscription,
-  stripeConfigured,
-  stripeConnectedAccountPatch,
-  touchEvent,
-  updateCustomerDefaultPaymentMethod,
-  upsertAccountSettingsInState,
-  verifyStripeWebhookSignature
-});
-const {
-  handleStripeWebhook
-} = stripeWebhooks;
+async function providerMoneyReadinessForCurrent(storage, current = {}) {
+  if (!current?.user && current?.apiKeyStatus !== 'valid') return null;
+  let account = current?.account || null;
+  if (current?.apiKeyStatus !== 'valid' && current?.login && typeof storage?.getAccountByLogin === 'function') {
+    account = await storage.getAccountByLogin(current.login);
+  }
+  return {
+    ready: false,
+    money_actions_blocked: true,
+    payment_processing_removed: true,
+    missing_billing_fields: [],
+    payment_method_ready: false,
+    provider_identity_approved: providerIdentityStatus(account) === 'approved',
+    manual_provider_settlement: false,
+    next_step: 'Payment, billing, payout, and provider settlement flows have been removed from CAIt. Agent registration can continue without money actions.'
+  };
+}
 
 const providerIdentityRoutes = createProviderIdentityRouteHandlers({
   accountSettingsForLogin,
@@ -2789,15 +2660,6 @@ function canAutoScheduleAsyncDispatch(job, agent) {
   return true;
 }
 
-function workflowTaskName(job = {}) {
-  return String(job.workflowTask || job.taskType || '').trim().toLowerCase();
-}
-
-function isWorkflowLeaderTask(taskType = '') {
-  const task = String(taskType || '').trim().toLowerCase();
-  return Boolean(task && task.endsWith('_leader'));
-}
-
 function workflowChildPlanIndex(parent = {}, child = {}) {
   const task = workflowTaskName(child);
   const sequencePhase = workflowSequencePhaseForJob(child);
@@ -2847,10 +2709,6 @@ function sortWorkflowChildren(parent = {}, children = []) {
 
 function workflowChildIsTerminal(child = {}) {
   return ['completed', 'failed', 'timed_out', 'blocked'].includes(String(child.status || '').toLowerCase());
-}
-
-function workflowSequencePhaseForJob(job = {}) {
-  return String(job?.input?._broker?.workflow?.sequencePhase || '').trim().toLowerCase();
 }
 
 function workflowChildIsAdaptivePending(child = {}) {
@@ -3891,23 +3749,6 @@ function workflowHandoffPromptDataFromRun(run = {}, index = 0, options = {}) {
     lines.push(`   User-facing prior Markdown to reuse as source material:\n\`\`\`markdown\n${deliverableMarkdownExcerpt}\n\`\`\``);
   }
   return lines.join('\n');
-}
-
-function workflowBrokerWorkflowForJob(job = {}, options = {}) {
-  if (!job || typeof job !== 'object') return null;
-  if (!job.input || typeof job.input !== 'object' || Array.isArray(job.input)) {
-    if (!options.mutable) return null;
-    job.input = {};
-  }
-  if (!job.input._broker || typeof job.input._broker !== 'object' || Array.isArray(job.input._broker)) {
-    if (!options.mutable) return null;
-    job.input._broker = {};
-  }
-  if (!job.input._broker.workflow || typeof job.input._broker.workflow !== 'object' || Array.isArray(job.input._broker.workflow)) {
-    if (!options.mutable) return null;
-    job.input._broker.workflow = {};
-  }
-  return job.input._broker.workflow;
 }
 
 function workflowHandoffOriginalSignals(priorRuns = []) {
@@ -5908,143 +5749,6 @@ async function failJob(storage, jobId, reason, extraLogs = [], options = {}) {
   return job;
 }
 
-
-
-function jobRequesterMatchesCurrent(job = {}, current = {}) {
-  const requester = job?.input?._broker?.requester && typeof job.input._broker.requester === 'object'
-    ? job.input._broker.requester
-    : {};
-  const currentLogin = String(current?.login || '').trim().toLowerCase();
-  const currentAccountId = String(current?.account?.id || current?.user?.accountId || accountIdForLogin(currentLogin)).trim().toLowerCase();
-  const requesterLogin = String(requester.login || '').trim().toLowerCase();
-  const requesterAccountId = String(requester.accountId || '').trim().toLowerCase();
-  if (currentLogin && requesterLogin) return currentLogin === requesterLogin;
-  if (currentAccountId && requesterAccountId) return currentAccountId === requesterAccountId;
-  return !currentLogin && !requesterLogin;
-}
-
-function jobPromptMatchesCreateBody(job = {}, body = {}) {
-  const requestedPrompt = String(body?.prompt || '').trim();
-  if (!requestedPrompt) return false;
-  const candidates = [
-    job.prompt,
-    job.originalPrompt,
-    job.workflow?.objective
-  ].map((value) => String(value || '').trim()).filter(Boolean);
-  return candidates.some((candidate) => candidate === requestedPrompt);
-}
-
-function jobSessionMatchesCreateBody(job = {}, body = {}) {
-  const requestedSessionId = String(body?.session_id || body?.sessionId || body?.input?.session_id || body?.input?.sessionId || body?.input?._broker?.chatSessionId || body?.input?._broker?.workflow?.chatSessionId || '').trim();
-  if (!requestedSessionId) return true;
-  const broker = job?.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
-  const workflow = broker.workflow && typeof broker.workflow === 'object' ? broker.workflow : {};
-  const jobSessionId = String(job?.input?.session_id || job?.input?.sessionId || broker.chatSessionId || workflow.chatSessionId || '').trim();
-  return jobSessionId === requestedSessionId;
-}
-
-function normalizeClientOrderId(value = '') {
-  const id = String(value || '').trim();
-  if (!id || id.length > 96) return '';
-  return /^[A-Za-z0-9][A-Za-z0-9_-]{7,95}$/.test(id) ? id : '';
-}
-
-function clientOrderIdFromCreateBody(body = {}) {
-  const input = body?.input && typeof body.input === 'object' ? body.input : {};
-  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
-  return normalizeClientOrderId(
-    body?.client_order_id
-    || body?.clientOrderId
-    || input.client_order_id
-    || input.clientOrderId
-    || broker.clientOrderId
-    || broker.client_order_id
-    || ''
-  );
-}
-
-function persistedJobForClientOrderId(state = {}, body = {}) {
-  const clientOrderId = clientOrderIdFromCreateBody(body);
-  if (!clientOrderId) return null;
-  const jobs = Array.isArray(state?.jobs) ? state.jobs : [];
-  return jobs.find((job) => String(job?.id || '').trim() === clientOrderId) || null;
-}
-
-function orderCreateBodyIsSameContentNewOrderRetry(body = {}) {
-  const input = body?.input && typeof body.input === 'object' ? body.input : {};
-  const broker = input._broker && typeof input._broker === 'object' ? input._broker : {};
-  const retry = broker.retry && typeof broker.retry === 'object' ? broker.retry : {};
-  const retryMode = String(body.retryMode || body.retry_mode || broker.retryMode || broker.retry_mode || retry.mode || retry.intent || '').trim();
-  return retryMode === 'same_content_new_order'
-    || retry.continuesOrder === false
-    || body.continuesOrder === false
-    || body.continues_order === false;
-}
-
-function createJobResponseFromPersistedJob(job = {}, options = {}) {
-  const isWorkflow = job.jobKind === 'workflow' || Boolean(job.workflow);
-  return {
-    ok: true,
-    idempotent: options.idempotent === true,
-    recovered: options.recovered === true,
-    code: options.code || (options.recovered ? 'order_create_recovered' : 'order_create_idempotent'),
-    warning: options.warning || undefined,
-    status: job.status || 'queued',
-    mode: isWorkflow ? 'workflow' : (job.status || 'queued'),
-    ...(isWorkflow ? { workflow_job_id: job.id } : { job_id: job.id }),
-    child_runs: isWorkflow && Array.isArray(job.workflow?.childRuns) ? job.workflow.childRuns : undefined,
-    planned_task_types: isWorkflow && Array.isArray(job.workflow?.plannedTasks) ? job.workflow.plannedTasks : undefined,
-    dispatch_status: job.dispatch?.completionStatus || job.status || null,
-    order_strategy_resolved: isWorkflow ? 'multi' : 'single',
-    selection_mode: job.assignmentMode || (isWorkflow ? 'multi' : undefined)
-  };
-}
-
-function orderCreateSkipIntake(body = {}) {
-  const broker = body?.input?._broker && typeof body.input._broker === 'object' ? body.input._broker : {};
-  const intake = broker.intake && typeof broker.intake === 'object' ? broker.intake : {};
-  return body.skip_intake === true
-    || body.skipIntake === true
-    || body.intake_answered === true
-    || body.intakeAnswered === true
-    || intake.answered === true
-    || intake.prepared_in_chat === true
-    || intake.preparedInChat === true;
-}
-
-function orderCreateSkipPrePersistencePlanning(body = {}) {
-  return orderCreateSkipIntake(body);
-}
-
-function currentFromRecurringOrder(state, order = {}) {
-  const login = String(order.ownerLogin || order.owner_login || '').trim();
-  const authProvider = String(order.authProvider || order.auth_provider || 'scheduled').trim() || 'scheduled';
-  const account = login ? accountSettingsForLogin(state, login, order.user || { login }, authProvider) : null;
-  const user = order.user && typeof order.user === 'object'
-    ? { ...order.user, login }
-    : (accountUserFromSettings(account) || { login, name: login });
-  return {
-    session: null,
-    user,
-    login,
-    authProvider,
-    account,
-    apiKeyStatus: 'scheduled',
-    apiKey: null
-  };
-}
-
-function promptPolicyBlockPayload(promptGuard = {}) {
-  const policyBlocked = String(promptGuard.code || '').startsWith('stripe_prohibited_');
-  return {
-    error: policyBlocked ? 'Request blocked by CAIt policy' : 'Prompt injection blocked by CAIt',
-    code: policyBlocked ? 'prohibited_category_blocked' : 'prompt_injection_blocked',
-    reason: promptGuard.reason,
-    reason_code: promptGuard.code
-  };
-}
-
-
 function orderCreateHandlers() {
   if (!orderCreateRuntime) {
     orderCreateRuntime = createOrderCreateHandlers({
@@ -6072,6 +5776,7 @@ function orderCreateHandlers() {
       estimateRunWindow,
       executorStatePatchFromAuthorityRequest,
       inferTaskType,
+      inAppPaymentsRemoved: () => true,
       isManagedSampleAgent,
       isWorkflowLeaderTask,
       jobPromptMatchesCreateBody,
@@ -6858,16 +6563,6 @@ export default {
       if (result.error) return json({ error: result.error, code: result.code }, result.statusCode || 400);
       return json({ ok: true, api_key: result.apiKey, account: result.account });
     }
-    if (url.pathname === '/api/settings/billing' && request.method === 'POST') {
-      const result = await saveSettingsSection(storage, request, env, 'billing');
-      if (result.error) return json({ error: result.error }, result.statusCode || 400);
-      return json({ ok: true, account: result.account, monthly_summary: result.monthlySummary, section: 'billing' });
-    }
-    if (url.pathname === '/api/settings/payout' && request.method === 'POST') {
-      const result = await saveSettingsSection(storage, request, env, 'payout');
-      if (result.error) return json({ error: result.error }, result.statusCode || 400);
-      return json({ ok: true, account: result.account, monthly_summary: result.monthlySummary, section: 'payout' });
-    }
     if (apiRouteMatches(url.pathname, request.method, 'SETTINGS_PROVIDER_IDENTITY', 'POST')) {
       const result = await submitProviderIdentityVerification(storage, request, env);
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
@@ -6877,6 +6572,11 @@ export default {
       const result = await saveSettingsSection(storage, request, env, 'executorPreferences');
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
       return json({ ok: true, account: result.account, monthly_summary: result.monthlySummary, section: 'executorPreferences' });
+    }
+    if (apiRouteMatches(url.pathname, request.method, 'SETTINGS_PROFILE', 'POST')) {
+      const result = await saveSettingsSection(storage, request, env, 'profile');
+      if (result.error) return json({ error: result.error }, result.statusCode || 400);
+      return json({ ok: true, account: result.account, monthly_summary: result.monthlySummary, section: 'profile' });
     }
     if (apiRouteMatches(url.pathname, request.method, 'SETTINGS_EXACT_ACTIONS', 'GET')) {
       const result = await getExactMatchActions(storage, request, env);
@@ -6907,89 +6607,6 @@ export default {
       const result = await deleteAppSetting(storage, request, env, decodeURIComponent(url.pathname.split('/')[4] || ''));
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
       return json(result);
-    }
-    if (url.pathname === '/api/stripe/status' && request.method === 'GET') {
-      const result = await getStripeStatus(storage, request, env);
-      if (result.error) return json({ error: result.error }, result.statusCode || 400);
-      return json(result);
-    }
-    if (url.pathname === '/api/stripe/setup-session' && request.method === 'POST') {
-      try {
-        const result = await createStripeSetupSessionForCurrent(storage, request, env);
-        if (result.error) return json({ error: result.error, code: result.code || null }, result.statusCode || 400);
-        return json(result, 201);
-      } catch (error) {
-        const payload = stripeActionErrorPayload(error);
-        return json(payload, payload.statusCode || 500);
-      }
-    }
-    if (url.pathname === '/api/stripe/subscription-session' && request.method === 'POST') {
-      try {
-        const result = await createStripeSubscriptionSessionForCurrent(storage, request, env);
-        if (result.error) return json({ error: result.error, code: result.code || null }, result.statusCode || 400);
-        return json(result, 201);
-      } catch (error) {
-        const payload = stripeActionErrorPayload(error);
-        return json(payload, payload.statusCode || 500);
-      }
-    }
-    if (url.pathname === '/api/stripe/connect/onboarding' && request.method === 'POST') {
-      try {
-        const result = await createStripeConnectOnboardingForCurrent(storage, request, env);
-        if (result.error) return json({ error: result.error, code: result.code || null }, result.statusCode || 400);
-        return json(result, 201);
-      } catch (error) {
-        const payload = stripeActionErrorPayload(error);
-        return json(payload, payload.statusCode || 500);
-      }
-    }
-    if (url.pathname === '/api/stripe/payout/run' && request.method === 'POST') {
-      try {
-        const result = await createStripeProviderPayoutForCurrent(storage, request, env);
-        if (result.error) {
-          return json({
-            error: result.error,
-            code: result.code || null,
-            pending_balance: result.pending_balance ?? null,
-            minimum_payout_amount: result.minimum_payout_amount ?? null,
-            onboarding_required: result.onboarding_required ?? null,
-            identity_verification: result.identity_verification ?? null
-          }, result.statusCode || 400);
-        }
-        return json(result);
-      } catch (error) {
-        const payload = stripeActionErrorPayload(error);
-        return json(payload, payload.statusCode || 500);
-      }
-    }
-    if (url.pathname === '/api/stripe/provider-monthly-charge/run' && request.method === 'POST') {
-      try {
-        const result = await triggerStripeProviderMonthlyChargeForCurrent(storage, request, env);
-        if (result.error) return json({ error: result.error, code: result.code || null, action: result.action || null }, result.statusCode || 400);
-        return json(result);
-      } catch (error) {
-        const payload = stripeActionErrorPayload(error);
-        return json(payload, payload.statusCode || 500);
-      }
-    }
-    if (url.pathname === '/api/stripe/monthly-charge/run' && request.method === 'POST') {
-      try {
-        const result = await triggerStripeMonthlyInvoiceChargeForCurrent(storage, request, env);
-        if (result.error) return json({ error: result.error, code: result.code || null, action: result.action || null }, result.statusCode || 400);
-        return json(result);
-      } catch (error) {
-        const payload = stripeActionErrorPayload(error);
-        return json(payload, payload.statusCode || 500);
-      }
-    }
-    if (url.pathname === '/api/stripe/webhook' && request.method === 'POST') {
-      try {
-        const result = await handleStripeWebhook(storage, request, env);
-        if (result.error) return json({ error: result.error }, result.statusCode || 400);
-        return json(result);
-      } catch (error) {
-        return json({ error: error.message }, error.statusCode || 500);
-      }
     }
     if (url.pathname === '/api/dev/resolve-job' && request.method === 'POST') {
       return handleResolveJob(storage, request, env);
@@ -7166,11 +6783,6 @@ export default {
         source: 'cron',
         cron,
         limit: Number(env?.RECURRING_SWEEP_LIMIT || 10) || 10
-      }));
-      ctx.waitUntil(runProviderMonthlyBillingSweep(storage, env, {
-        source: 'cron',
-        cron,
-        at: nowIso()
       }));
     }
   }

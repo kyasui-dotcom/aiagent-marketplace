@@ -102,7 +102,7 @@ import {
   openChatIntentMatchText
 } from './client-intent-routing-utils.js?v=20260522a';
 
-const DONATION_ONLY_NOTICE = 'CAIt no longer processes cards, checkout, subscriptions, invoices, or payouts in-app. Optional support is donation-only outside CAIt.';
+const DONATION_ONLY_NOTICE = 'CAIt no longer processes cards, checkout, subscriptions, invoices, donations, or payouts in-app. A Stripe Payment Link for external donation support is only a future option after compliance review.';
 const IN_APP_PAYMENTS_REMOVED = true;
 const PAYMENT_PROVIDER_UI_VISIBLE = false;
 const REMOVED_PAYMENT_CONTROL_KEYS = [
@@ -178,7 +178,7 @@ function attachRemovedPaymentActionHandlers(els = {}, { closePlanModal, flash, s
       safeText(els.stripeCustomerActionResult, DONATION_ONLY_NOTICE);
     }
     if (typeof flash === 'function') {
-      flash('In-app payment setup has been removed. Support is donation-only outside CAIt.', 'warn');
+      flash('In-app payment setup has been removed. External donation support requires review first.', 'warn');
     }
   };
   for (const key of [
@@ -4626,7 +4626,7 @@ async function handleChatActionButton(action = '', detail = {}) {
     register_card: async () => {
       openSettingsSection('payments');
       safeText(els.stripeCustomerActionResult, DONATION_ONLY_NOTICE);
-      flash('In-app payment setup has been removed. Support is donation-only outside CAIt.', 'warn');
+      flash('In-app payment setup has been removed. External donation support requires review first.', 'warn');
     },
     open_payments: async () => { openSettingsSection('payments'); },
     open_provider: async () => { openSettingsSection('provider'); },
@@ -5559,7 +5559,7 @@ function handleOrderFundingPrompt(error, draft = {}, options = {}) {
       body: [
         'In-app payments are removed, so CAIt no longer asks for card registration before sending orders.',
         '',
-        'Send the order again. Support is donation-only outside CAIt while payment-provider review is on hold.',
+        'Send the order again. External donation support is only a future option after compliance review.',
         info.missingUsd > 0 ? `Order estimate: ${formatDisplayCurrency(info.missingUsd)}` : '',
       ].filter(Boolean).join('\n'),
       actions: [
@@ -12211,7 +12211,7 @@ function renderRunCreateStatus(snapshot = state.snapshot || {}) {
 
   if (skillDraft) {
     title = 'Agent Skill detected.';
-    body = `${uiLabels.sendChat} will convert SKILL.md into a ${PRODUCT_NAME} manifest draft, open AGENTS, and let you review before import. Listing can proceed, but CAIt no longer processes payments, billing, or payouts. Support is donation-only outside CAIt.`;
+    body = `${uiLabels.sendChat} will convert SKILL.md into a ${PRODUCT_NAME} manifest draft, open AGENTS, and let you review before import. Listing can proceed, but CAIt no longer processes payments, billing, donations, or payouts. A Stripe Payment Link for external donation support is only a future option after review.`;
     tone = 'ok';
     buttonText = uiLabels.sendChat;
   } else if (llmFallbackCandidate && mustUseLlmFallback) {
@@ -12292,7 +12292,7 @@ function renderRunCreateStatus(snapshot = state.snapshot || {}) {
     tone = 'ok';
   } else if (!billingReady) {
     title = 'Support is donation-only.';
-    body = `CAIt no longer requires card registration before ${uiLabels.sendOrder}. Support is donation-only outside the app while payment-provider review is on hold.`;
+    body = `CAIt no longer requires card registration before ${uiLabels.sendOrder}. External donation support is only a future option after recipient, purpose, compliance, and gift or donation agreement review.`;
     tone = 'warn';
     buttonText = uiLabels.sendOrder;
   } else if (strategy === 'multi' && pinnedAgent) {

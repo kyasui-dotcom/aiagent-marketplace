@@ -673,28 +673,23 @@ export function createClientOpenChatQuickAnswerUtils(options = {}) {
     }
     if (/(api key|apiキー|openai|anthropic|serp|model provider|モデル|プロバイダー|契約)/i.test(matchText)) {
       return ja
-        ? `Built-in agent を使う場合、買い手側で OpenAI、Anthropic、検索APIなどを個別契約する必要はありません。${PRODUCT_NAME} の月締め請求で注文できます。自分の外部システムから注文したい場合は SETTINGS で CAIt API key を発行します。`
-        : `For managed sample agents, buyers do not need separate OpenAI, Anthropic, search, or model-provider API contracts. Use ${PRODUCT_NAME} month-end billing. External CLI/API/MCP access is coming soon.`;
+        ? `Built-in agent を使う場合、買い手側で OpenAI、Anthropic、検索APIなどを個別契約する必要はありません。CAIt内の決済、請求、サブスク、出金は削除されています。自分の外部システムから注文したい場合は SETTINGS で CAIt API key を発行します。`
+        : `For managed sample agents, buyers do not need separate OpenAI, Anthropic, search, or model-provider API contracts. CAIt no longer processes payments, billing, subscriptions, or payouts in-app. External CLI/API/MCP access is coming soon.`;
     }
     if (/(github|git hub|agent.*登録|登録|publish|list|manifest|verify|verification|ベリファイ|検証|マニフェスト|公開)/i.test(matchText)) {
       return ja
         ? 'エージェントを公開する場合は GitHub 連携を使います。AGENTS で LIST YOUR AGENT を押し、repo 選択、manifest 生成、PR 作成、merge、import、verify の順で進めます。ORDER だけなら GitHub は不要です。'
         : 'Publishing an agent uses GitHub. Open AGENTS, choose LIST YOUR AGENT, select a repo, generate the manifest, create/merge the PR, import it, then verify. Ordering work does not require GitHub.';
     }
-    if (/(稼|売上|収益|payout|provider|connect|withdraw|受け取り|出金|入金|stripe connect)/i.test(matchText)) {
-      if (temporaryInvoiceBillingEnabled) {
-        return ja
-          ? 'エージェント提供者の収益はCAIt上で記録されます。現在、自動出金の画面表示は一時的に隠しているため、PROVIDERで状態を確認し、必要な場合はsupport@aiagent-marketplace.netへ手動出金の相談をしてください。'
-          : 'Provider earnings are tracked in CAIt. Automated withdrawals are temporarily hidden, so check PROVIDER for status and contact support@aiagent-marketplace.net for manual payout handling if needed.';
-      }
+    if (/(稼|売上|収益|payout|provider|connect|withdraw|受け取り|出金|入金)/i.test(matchText)) {
       return ja
-        ? 'エージェント提供者の収益受け取りは、SETTINGS の PROVIDER 側でプロフィール保存、Stripe Connect、出金確認を行います。'
-        : 'Provider earnings are managed from SETTINGS -> PROVIDER. Save the provider profile, complete Stripe Connect, then withdraw eligible earnings.';
+        ? 'CAItアプリ内の決済、請求、寄付受付、出金、提供者への支払いは削除されています。Stripe寄付リンクは将来候補ですが、目的・受取人・審査・贈与/寄付契約を確認するまで設置しません。'
+        : 'CAIt no longer processes payments, billing, donation collection, withdrawals, or provider payouts in-app. A Stripe donation link is only a future option after recipient, purpose, compliance, and gift/donation agreement review.';
     }
     if (/(login|sign in|ログイン|google|github|アカウント|連携)/i.test(matchText)) {
       return ja
-        ? 'Google ログインは注文、支払い、通常利用向けです。GitHub ログイン/連携はエージェント登録、repo 連携、提供者収益の受け取りに使います。両方を同じアカウントに連携できます。'
-        : 'Google login is for ordering, payments, and normal use. GitHub login/linking is for publishing agents, repo access, and provider payout flows. You can link both to the same account.';
+        ? 'Google ログインは注文と通常利用向けです。GitHub ログイン/連携はエージェント登録とrepo連携に使います。両方を同じアカウントに連携できます。'
+        : 'Google login is for ordering and normal use. GitHub login/linking is for publishing agents and repo access. You can link both to the same account.';
     }
     if (/(delivery|納品|結果|ファイル|download|ダウンロード|source|sources|ソース)/i.test(matchText)) {
       return ja

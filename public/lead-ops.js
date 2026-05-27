@@ -59,6 +59,7 @@ const els = {
   leadStatusPill: document.getElementById('leadStatusPill'),
   leadContextPreview: document.getElementById('leadContextPreview'),
   sendLeadContextBtn: document.getElementById('sendLeadContextBtn'),
+  leadHeaderActionNote: document.getElementById('leadHeaderActionNote'),
   copyLeadContextBtn: document.getElementById('copyLeadContextBtn'),
   approveLeadBtn: document.getElementById('approveLeadBtn'),
   scheduleLeadBtn: document.getElementById('scheduleLeadBtn'),
@@ -96,7 +97,12 @@ const els = {
   leadSourcingPill: document.getElementById('leadSourcingPill'),
   leadSourcingNote: document.getElementById('leadSourcingNote'),
   requestLeadSourcingBtn: document.getElementById('requestLeadSourcingBtn'),
-  copyLeadSourcingBtn: document.getElementById('copyLeadSourcingBtn')
+  copyLeadSourcingBtn: document.getElementById('copyLeadSourcingBtn'),
+  fillLeadExampleBtn: document.getElementById('fillLeadExampleBtn'),
+  leadBeginnerTitle: document.getElementById('leadBeginnerTitle'),
+  leadBeginnerBody: document.getElementById('leadBeginnerBody'),
+  leadNextPrimaryLink: document.getElementById('leadNextPrimaryLink'),
+  leadNextSecondaryLink: document.getElementById('leadNextSecondaryLink')
 };
 
 function selectedLead() {
@@ -120,6 +126,73 @@ function statusLabel(value = '') {
   if (safe === 'blocked') return 'waiting';
   if (safe === 'triggered') return 'trigger-ready';
   return String(value || 'needs review');
+}
+
+const STATUS_DISPLAY_LABELS = Object.freeze({
+  review: 'Needs review',
+  draft: 'Message ready',
+  approved: 'Approved',
+  scheduled: 'Scheduled',
+  triggered: 'Waiting for trigger',
+  blocked: 'On hold',
+  sent: 'Sent'
+});
+
+const CHANNEL_DISPLAY_LABELS = Object.freeze({
+  email: 'Email',
+  sms: 'SMS',
+  linkedin: 'LinkedIn',
+  crm_task: 'CRM task',
+  manual: 'Manual review'
+});
+
+const SEND_MODE_DISPLAY_LABELS = Object.freeze({
+  manual_approval: 'Manual approval',
+  scheduled: 'Scheduled',
+  event_trigger: 'Waiting for trigger',
+  sequence_step: 'Sequence step'
+});
+
+const CONSENT_DISPLAY_LABELS = Object.freeze({
+  needs_review: 'Needs review',
+  existing_customer: 'Existing customer',
+  inbound_opt_in: 'Inbound opt-in',
+  public_business_contact: 'Public business contact',
+  manual_approval_required: 'Manual approval required'
+});
+
+const TRIGGER_DISPLAY_LABELS = Object.freeze({
+  none: 'No trigger',
+  lead_created: 'Lead was added',
+  score_increased: 'Lead score increased',
+  page_revisited: 'Lead revisited an important page',
+  form_started_not_submitted: 'Form started but not submitted',
+  no_reply_after_wait: 'No reply after waiting'
+});
+
+function displayLabel(map = {}, value = '', fallback = '') {
+  const key = String(value || '').trim();
+  return map[key] || fallback || key.replace(/_/g, ' ') || '-';
+}
+
+function statusDisplayLabel(value = '') {
+  return displayLabel(STATUS_DISPLAY_LABELS, String(value || '').toLowerCase(), 'Not selected');
+}
+
+function channelDisplayLabel(value = '') {
+  return displayLabel(CHANNEL_DISPLAY_LABELS, value, 'Email');
+}
+
+function sendModeDisplayLabel(value = '') {
+  return displayLabel(SEND_MODE_DISPLAY_LABELS, value, 'Manual approval');
+}
+
+function consentDisplayLabel(value = '') {
+  return displayLabel(CONSENT_DISPLAY_LABELS, value, 'Needs review');
+}
+
+function triggerDisplayLabel(value = '') {
+  return displayLabel(TRIGGER_DISPLAY_LABELS, value, 'No trigger');
 }
 
 function firstText(...values) {
@@ -877,7 +950,7 @@ function buildContext() {
       source_app: 'lead_ops_console',
       source_app_label: 'Lead Ops Console',
       title: 'Lead Ops context',
-      summary: 'No lead rows are loaded yet. Open this app from a CAIt context handoff before preparing email, SMS, scheduled, or event-triggered outreach plans.',
+      summary: 'No lead rows loaded. Open this app from a CAIt context handoff before preparing email, SMS, scheduled, or event-triggered outreach plans.',
       facts: ['No lead rows, evidence URLs, contact paths, outreach channels, schedules, triggers, or messages are loaded.'],
       assumptions: ['No built-in demo lead data is used.', 'This app uses CAIt Resend for approved email sends only after explicit user confirmation. SMS remains a CAIt handoff.'],
       recommended_next_actions: ['Load a CAIt app context that contains lead_rows or ask List Creator / CMO Leader to produce public-source rows and consent-safe contact paths.'],
@@ -1017,15 +1090,15 @@ function resendDraftFromLead(lead = null) {
 }
 
 function validateResendLead(lead = null, requireSchedule = false) {
-  if (!lead) return 'Select a lead first.';
-  if (String(lead.channel || 'email') !== 'email') return 'CAIt Resend can send email only. Use CAIt handoff for SMS or other channels.';
-  if (!['approved', 'scheduled'].includes(String(lead.status || '').toLowerCase())) return 'Approve the lead before sending or scheduling through Resend.';
-  if (!validEmail(lead.contact)) return 'Contact path must be a valid recipient email before Resend execution.';
-  if (!validEmail(lead.senderEmail)) return 'Resend from email must be a valid sender email.';
-  if (lead.replyToEmail && !validEmail(lead.replyToEmail)) return 'Reply-to email is invalid.';
-  if (!String(lead.subject || '').trim()) return 'Subject is required before Resend execution.';
-  if (!String(lead.body || '').trim()) return 'Message body is required before Resend execution.';
-  if (requireSchedule && !String(lead.scheduleAt || '').trim()) return 'Schedule at is required before scheduling through Resend.';
+  if (!lead) return 'Pick one lead first.';
+  if (String(lead.channel || 'email') !== 'email') return 'Direct sending is email-only. Send SMS and other channels back to CAIt for review.';
+  if (!['approved', 'scheduled'].includes(String(lead.status || '').toLowerCase())) return 'Approve the lead before sending.';
+  if (!validEmail(lead.contact)) return 'Enter a valid email address in Contact path.';
+  if (!validEmail(lead.senderEmail)) return 'Enter a valid sender email address.';
+  if (lead.replyToEmail && !validEmail(lead.replyToEmail)) return 'Reply-to email format is not valid.';
+  if (!String(lead.subject || '').trim()) return 'Enter a subject.';
+  if (!String(lead.body || '').trim()) return 'Enter the message body.';
+  if (requireSchedule && !String(lead.scheduleAt || '').trim()) return 'Enter the scheduled date and time.';
   return '';
 }
 
@@ -1037,7 +1110,7 @@ async function executeResendSend() {
     window.alert(validation);
     return;
   }
-  const confirmed = window.confirm(`Send this email through CAIt Resend now?\n\nTo: ${lead.contact}\nSubject: ${lead.subject}`);
+  const confirmed = window.confirm(`Send this email now?\n\nTo: ${lead.contact}\nSubject: ${lead.subject}`);
   if (!confirmed) return;
   els.sendResendBtn.textContent = 'Sending';
   try {
@@ -1055,12 +1128,12 @@ async function executeResendSend() {
         source: 'lead_ops_console'
       })
     });
-    resendResult = { checked: true, status: `Resend sent to ${payload?.entity?.to || lead.contact}.`, result: payload };
+    resendResult = { checked: true, status: `Sent to ${payload?.entity?.to || lead.contact}.`, result: payload };
     lead.status = 'sent';
   } catch (error) {
     resendResult = { checked: true, status: String(error?.message || error || 'Resend send failed'), result: error?.payload || null };
   } finally {
-    els.sendResendBtn.textContent = 'Send email via Resend';
+    els.sendResendBtn.textContent = 'Send email now';
     render();
   }
 }
@@ -1073,7 +1146,7 @@ async function scheduleResendSend() {
     window.alert(validation);
     return;
   }
-  const confirmed = window.confirm(`Schedule this email through CAIt Resend?\n\nTo: ${lead.contact}\nWhen: ${lead.scheduleAt}`);
+  const confirmed = window.confirm(`Schedule this email?\n\nTo: ${lead.contact}\nTime: ${lead.scheduleAt}`);
   if (!confirmed) return;
   els.scheduleResendBtn.textContent = 'Scheduling';
   try {
@@ -1095,12 +1168,12 @@ async function scheduleResendSend() {
         source: 'lead_ops_console'
       })
     });
-    resendResult = { checked: true, status: `Resend schedule created for ${payload?.entity?.next_run_at || lead.scheduleAt}.`, result: payload };
+    resendResult = { checked: true, status: `Scheduled for ${payload?.entity?.next_run_at || lead.scheduleAt}.`, result: payload };
     lead.status = 'scheduled';
   } catch (error) {
     resendResult = { checked: true, status: String(error?.message || error || 'Resend schedule failed'), result: error?.payload || null };
   } finally {
-    els.scheduleResendBtn.textContent = 'Schedule via Resend';
+    els.scheduleResendBtn.textContent = 'Schedule email';
     render();
   }
 }
@@ -1125,10 +1198,13 @@ function renderTable() {
   const rows = visibleLeads();
   if (!rows.some((lead) => lead.id === selectedId) && rows[0]) selectedId = rows[0].id;
   els.leadTable.innerHTML = rows.length ? [
-    '<thead><tr><th>Lead</th><th>Channel</th><th>Mode</th><th>Status</th></tr></thead><tbody>',
-    ...rows.map((lead) => `<tr class="${lead.id === selectedId ? 'active-row' : ''}" data-lead="${escapeHtml(lead.id)}"><td><strong>${escapeHtml(lead.company)}</strong><br>${escapeHtml(lead.contact || lead.evidenceUrl || lead.website || 'missing contact path')}</td><td>${escapeHtml(lead.channel || 'email')}<br>${escapeHtml(lead.consent || 'needs_review')}</td><td>${escapeHtml(lead.sendMode || 'manual_approval')}<br>${escapeHtml(lead.scheduleAt || (lead.triggerEvent && lead.triggerEvent !== 'none' ? lead.triggerEvent : 'manual'))}</td><td><span class="status-pill ${statusClass(lead.status)}">${escapeHtml(statusLabel(lead.status))}</span></td></tr>`),
+    '<thead><tr><th>会社 / 連絡先</th><th>方法</th><th>送るタイミング</th><th>状態</th></tr></thead><tbody>',
+    ...rows.map((lead) => {
+      const timing = lead.scheduleAt || (lead.triggerEvent && lead.triggerEvent !== 'none' ? triggerDisplayLabel(lead.triggerEvent) : '手動確認');
+      return `<tr class="${lead.id === selectedId ? 'active-row' : ''}" data-lead="${escapeHtml(lead.id)}"><td><strong>${escapeHtml(lead.company)}</strong><br>${escapeHtml(lead.contact || lead.evidenceUrl || lead.website || '連絡先が未確認')}</td><td>${escapeHtml(channelDisplayLabel(lead.channel || 'email'))}<br>${escapeHtml(consentDisplayLabel(lead.consent || 'needs_review'))}</td><td>${escapeHtml(sendModeDisplayLabel(lead.sendMode || 'manual_approval'))}<br>${escapeHtml(timing)}</td><td><span class="status-pill ${statusClass(lead.status)}">${escapeHtml(statusDisplayLabel(lead.status))}</span></td></tr>`;
+    }),
     '</tbody>'
-  ].join('') : '<tbody><tr><td colspan="4"><div class="empty-state"><strong>No lead rows loaded.</strong><span>Open this app from a CAIt context handoff or ask List Creator / CMO Leader to produce public-source rows.</span></div></td></tr></tbody>';
+  ].join('') : '<tbody><tr><td colspan="4"><div class="empty-state"><strong>まだ営業先がありません。</strong><span>上の「営業先を探す」に条件を入れて、AIにリスト作成を頼んでください。</span></div></td></tr></tbody>';
 }
 
 function renderEditor() {
@@ -1146,39 +1222,150 @@ function renderEditor() {
   els.replyToEmailInput.value = lead?.replyToEmail || '';
   els.emailSubjectInput.value = lead?.subject || '';
   els.emailBodyInput.value = lead?.body || '';
-  els.leadStatusPill.textContent = statusLabel(lead?.status || 'no rows');
+  els.leadStatusPill.textContent = statusDisplayLabel(lead?.status || '');
   els.leadStatusPill.className = `status-pill ${statusClass(lead?.status || '')}`;
+}
+
+function beginnerGuideMessage() {
+  const lead = selectedLead();
+  if (!lead) {
+    return leadSourcingRequestReady()
+      ? {
+        title: '入力はできています。次はAIに営業先探しを頼みます。',
+        body: '下の「AIに営業先を探してもらう」を押すと、CAItチャットへ依頼内容を渡せます。',
+        primaryText: 'AIに営業先探しを頼む場所へ進む',
+        primaryHref: '#leadSourcingPanel',
+        secondaryText: 'メール内容は後で見る',
+        secondaryHref: '#leadOutreachPanel'
+      }
+      : {
+        title: 'まず営業先を探す条件を書きます。',
+        body: '「どんなお客さん」「どこから探すか」「連絡する理由」の3つを入れれば始められます。迷ったら「例を入れる」を押してください。',
+        primaryText: '1. 営業先を探す条件を書く',
+        primaryHref: '#leadSourcingPanel',
+        secondaryText: '例を見て入力する',
+        secondaryHref: '#leadSourcingPanel'
+      };
+  }
+  const missingBasics = [];
+  if (!String(lead.contact || '').trim()) missingBasics.push('連絡先');
+  if (!String(lead.evidenceUrl || '').trim()) missingBasics.push('確認したURL');
+  if (missingBasics.length) {
+    return {
+      title: `${lead.company} の ${missingBasics.join('・')} を確認します。`,
+      body: '相手の公式ページや公開連絡先が分からない時は、保留にしてCAItへ確認を頼むのが安全です。',
+      primaryText: '連絡先とURLを見る',
+      primaryHref: '#leadOutreachPanel',
+      secondaryText: '保留にする場所を見る',
+      secondaryHref: '#leadOutreachPanel'
+    };
+  }
+  if (!String(lead.subject || '').trim() || !String(lead.body || '').trim()) {
+    return {
+      title: `${lead.company} へ送る文章を確認します。`,
+      body: '件名と本文を読み、違和感がなければ「文面あり」を押します。すぐ送る前に必ず送ってよいか確認してください。',
+      primaryText: '件名と本文を見る',
+      primaryHref: '#leadOutreachPanel',
+      secondaryText: '営業先リストへ戻る',
+      secondaryHref: '#leadOutreachPanel'
+    };
+  }
+  const status = String(lead.status || '').toLowerCase();
+  if (['approved', 'scheduled', 'triggered', 'sent'].includes(status)) {
+    return {
+      title: `${lead.company} は ${statusDisplayLabel(status)} です。`,
+      body: '右上の緑ボタンで、確認済みの内容をチャットへ戻せます。',
+      primaryText: '右上の緑ボタンでCAItへ渡す',
+      primaryHref: '#leadOutreachPanel',
+      secondaryText: '内容をもう一度見る',
+      secondaryHref: '#leadOutreachPanel'
+    };
+  }
+  if (status === 'blocked') {
+    return {
+      title: `${lead.company} は保留中です。`,
+      body: '連絡先、確認URL、送ってよい理由のどれかが不安な状態です。無理に送らず、CAItへ確認依頼として渡してください。',
+      primaryText: '保留理由を確認する',
+      primaryHref: '#leadOutreachPanel',
+      secondaryText: 'CAItへ確認依頼として渡す',
+      secondaryHref: '#leadOutreachPanel'
+    };
+  }
+  return {
+    title: `${lead.company} の内容を見て、問題なければ承認します。`,
+    body: '会社名、連絡先、確認URL、送る文章を見てから、「送ってOK」を押してください。',
+    primaryText: '内容を確認する',
+    primaryHref: '#leadOutreachPanel',
+    secondaryText: '営業先を探す条件へ戻る',
+    secondaryHref: '#leadSourcingPanel'
+  };
+}
+
+function renderBeginnerGuide() {
+  if (!els.leadBeginnerTitle || !els.leadBeginnerBody) return;
+  const message = beginnerGuideMessage();
+  els.leadBeginnerTitle.textContent = message.title;
+  els.leadBeginnerBody.textContent = message.body;
+  if (els.leadNextPrimaryLink) {
+    els.leadNextPrimaryLink.textContent = message.primaryText || '次へ進む';
+    els.leadNextPrimaryLink.href = message.primaryHref || '#leadSourcingPanel';
+  }
+  if (els.leadNextSecondaryLink) {
+    els.leadNextSecondaryLink.textContent = message.secondaryText || '内容を見る';
+    els.leadNextSecondaryLink.href = message.secondaryHref || '#leadOutreachPanel';
+  }
+}
+
+function renderLeadActionControls() {
+  const lead = selectedLead();
+  const canSendContext = Boolean(lead || leadSourcingRequestReady());
+  [els.markDraftBtn, els.approveLeadBtn, els.scheduleLeadBtn, els.triggerLeadBtn, els.waitLeadBtn].forEach((button) => {
+    if (button) button.disabled = !lead;
+  });
+  if (els.sendLeadContextBtn) {
+    els.sendLeadContextBtn.disabled = !canSendContext;
+    els.sendLeadContextBtn.textContent = lead
+      ? '確認してチャットへ戻す'
+      : (canSendContext ? '営業先探しをCAItへ頼む' : '入力後にCAItへ渡す');
+  }
+  if (els.leadHeaderActionNote) {
+    els.leadHeaderActionNote.textContent = lead
+      ? '最後に押す'
+      : (canSendContext ? '探す依頼を送る' : '入力後に使えます');
+  }
 }
 
 function render() {
   renderMetrics();
   renderLeadHandoffSessionNotice();
+  renderBeginnerGuide();
   renderTable();
   renderEditor();
   renderWorkflowState();
   renderLeadOpsReadiness();
   renderLeadSourcingState();
   renderResendState();
+  renderLeadActionControls();
   els.leadContextPreview.textContent = JSON.stringify(buildContext(), null, 2);
 }
 
 function renderLeadSourcingState() {
   const request = leadSourcingRequestPayload();
   const required = [
-    ['target customer', request.target_segment],
-    ['sources', request.source_policy],
-    ['offer reason', request.offer_or_contact_reason]
+    ['どんなお客さん', request.target_segment],
+    ['どこから探すか', request.source_policy],
+    ['連絡する理由', request.offer_or_contact_reason]
   ];
   const missing = required.filter(([, value]) => !String(value || '').trim()).map(([label]) => label);
   const ready = missing.length === 0;
   if (els.leadSourcingPill) {
-    els.leadSourcingPill.textContent = ready ? `Ready to request ${request.target_count} leads` : `Missing ${missing.join(', ')}`;
+    els.leadSourcingPill.textContent = ready ? `${request.target_count}件を依頼できます` : `未入力: ${missing.join('・')}`;
     els.leadSourcingPill.className = `status-pill ${ready ? 'approved' : 'pending'}`;
   }
   if (els.leadSourcingNote) {
     els.leadSourcingNote.textContent = ready
-      ? 'Ready to ask List Creator for public-source lead rows that can return directly into Lead Ops.'
-      : 'Fill target customer, sources to use, and offer reason before asking List Creator to source leads.';
+      ? '準備できました。「AIに営業先を探してもらう」を押すと、CAItへ依頼内容を渡せます。'
+      : '上の3つ「どんなお客さん」「どこから探すか」「連絡する理由」を入れると依頼できます。';
   }
 }
 
@@ -1197,8 +1384,8 @@ function renderLeadHandoffSessionNotice() {
   }
   if (!els.leadHandoffSessionNotice) return;
   const fragments = [];
-  if (returnTo) fragments.push('Return path to the same CAIt chat is pinned.');
-  if (hasImportedServerContext) fragments.push('Server-side lead context is loaded.');
+  if (returnTo) fragments.push('元のCAItチャットへ戻れる状態です。');
+  if (hasImportedServerContext) fragments.push('サーバー側の営業先データを読み込みました。');
   if (handoffId) fragments.push(`Handoff ID: ${handoffId}.`);
   if (!fragments.length) {
     els.leadHandoffSessionNotice.hidden = true;
@@ -1210,7 +1397,7 @@ function renderLeadHandoffSessionNotice() {
   els.leadHandoffSessionNotice.hidden = false;
   els.leadHandoffSessionNotice.className = `notice${warning ? ' notice-warning' : ''}`;
   els.leadHandoffSessionNotice.innerHTML = [
-    `<strong>${escapeHtml(warning ? 'Chat handoff is open but no server lead packet is loaded yet.' : 'CAIt lead handoff session is attached.')}</strong>`,
+    `<strong>${escapeHtml(warning ? 'チャットへ戻る準備はありますが、営業先データはまだ読み込まれていません。' : 'CAItチャットとつながっています。')}</strong>`,
     `<span>${escapeHtml(fragments.join(' '))}</span>`
   ].join('');
 }
@@ -1231,33 +1418,33 @@ function renderLeadOpsReadiness() {
   const hasChatReturn = Boolean(leadChatReturnTo() || leadChatHandoffId());
   const readinessItems = [
     {
-      title: 'Lead evidence stays attached',
+      title: '相手の根拠を確認',
       detail: lead
-        ? `${lead.company} keeps ${hasEvidence ? 'a public source URL' : 'a missing source warning'} and ${hasContact ? 'a contact path' : 'a missing contact warning'}.`
-        : 'Load lead rows from CAIt so the next agent can inspect public evidence before outreach.',
+        ? `${lead.company}: ${hasEvidence ? '確認URLあり' : '確認URLが未入力'}、${hasContact ? '連絡先あり' : '連絡先が未入力'}。`
+        : '営業先リストを読み込むか、AIに営業先探しを頼んでください。',
       status: lead && hasEvidence && hasContact ? 'ready' : (lead ? 'pending' : 'blocked')
     },
     {
-      title: 'Consent and approval are explicit',
+      title: '送ってよい理由を確認',
       detail: lead
-        ? `${lead.consent || 'needs_review'} consent basis with ${statusLabel(lead.status)} status.`
-        : 'No consent or approval state is loaded yet.',
+        ? `${consentDisplayLabel(lead.consent || 'needs_review')}。状態は ${statusDisplayLabel(lead.status)} です。`
+        : 'まだ送ってよい理由や承認状態がありません。',
       status: approved ? 'ready' : (String(lead?.status || '') === 'blocked' ? 'blocked' : 'pending')
     },
     {
-      title: 'Execution rule is reusable',
+      title: '送る内容を確認',
       detail: lead
-        ? `${lead.channel || 'email'} uses ${lead.sendMode || 'manual_approval'}${lead.scheduleAt ? ` at ${lead.scheduleAt}` : ''}${lead.triggerEvent && lead.triggerEvent !== 'none' ? ` after ${lead.triggerEvent}` : ''}.`
-        : 'No channel, schedule, trigger, or message is loaded.',
+        ? `${channelDisplayLabel(lead.channel || 'email')}、${sendModeDisplayLabel(lead.sendMode || 'manual_approval')}${lead.scheduleAt ? `、${lead.scheduleAt}` : ''}${lead.triggerEvent && lead.triggerEvent !== 'none' ? `、${triggerDisplayLabel(lead.triggerEvent)}` : ''}。`
+        : '連絡方法、送る文章、送るタイミングがまだありません。',
       status: lead && hasMessage && hasScheduleRule && hasTriggerRule ? 'ready' : (lead ? 'pending' : 'blocked')
     },
     {
-      title: 'CAIt can reopen the same lead packet',
+      title: 'CAItへ戻せる状態',
       detail: hasServerContext
-        ? 'Server-side context return data is preserved for the next CAIt run.'
+        ? '次のCAIt作業でも同じ営業先データを開けます。'
         : (hasChatReturn
-          ? 'The chat return route is pinned; Send to CAIt will create the server-side lead packet reference.'
-          : 'Open this app from a CAIt handoff to preserve chat return routing and server-side context references.'),
+          ? '右上の緑ボタンでチャットへ戻せます。'
+          : 'CAItチャットからこの画面を開くと、確認結果を戻しやすくなります。'),
       status: hasServerContext ? 'ready' : (hasChatReturn ? 'pending' : 'blocked')
     }
   ];
@@ -1266,8 +1453,8 @@ function renderLeadOpsReadiness() {
     const blockedCount = readinessItems.filter((entry) => entry.status === 'blocked').length;
     const pillStatus = readyCount === readinessItems.length ? 'approved' : blockedCount ? 'blocked' : 'pending';
     els.leadOpsReadinessPill.textContent = lead
-      ? `${readyCount}/${readinessItems.length} ops checks ready`
-      : 'Rows not loaded';
+      ? `${readyCount}/${readinessItems.length} 確認済み`
+      : '営業先なし';
     els.leadOpsReadinessPill.className = `status-pill ${lead ? pillStatus : 'pending'}`;
   }
   if (els.leadOpsReadinessList) {
@@ -1289,17 +1476,17 @@ function renderResendState() {
   if (els.scheduleResendBtn) els.scheduleResendBtn.disabled = !canSend;
   if (!els.resendStatusNote) return;
   if (resendResult.checked) {
-    els.resendStatusNote.textContent = resendResult.status || 'Resend action completed.';
+    els.resendStatusNote.textContent = resendResult.status || 'メール送信処理が完了しました。';
     return;
   }
   if (!lead) {
-    els.resendStatusNote.textContent = 'Load and select a lead before using Resend.';
+    els.resendStatusNote.textContent = '営業先を読み込み、1件選んでからメール送信を使えます。';
   } else if (!isEmail) {
-    els.resendStatusNote.textContent = 'Resend is email-only. Keep SMS and other channels as CAIt handoffs.';
+    els.resendStatusNote.textContent = 'この直接送信はメールだけです。SMSなどはCAItへ戻して確認します。';
   } else if (!approved) {
-    els.resendStatusNote.textContent = 'Approve this email lead before sending or scheduling through Resend.';
+    els.resendStatusNote.textContent = '送る前に、上の「送ってOK」を押してください。';
   } else {
-    els.resendStatusNote.textContent = 'Ready for CAIt Resend after recipient, from email, subject, and body are valid.';
+    els.resendStatusNote.textContent = '宛先、送信元、件名、本文が正しければメール送信できます。';
   }
 }
 
@@ -1316,24 +1503,23 @@ function renderWorkflowState() {
   const hasPlan = Boolean(lead?.subject || lead?.body || lead?.sendMode || lead?.channel || status === 'draft' || status === 'approved' || status === 'scheduled' || status === 'triggered');
   const approved = ['approved', 'scheduled', 'triggered', 'sent'].includes(status);
   const executionLabel = status === 'scheduled'
-    ? `Scheduled for ${lead?.scheduleAt || 'a pending time'}.`
-    : (status === 'triggered' ? `Trigger waits for ${lead?.triggerEvent || 'an event'}.` : (status === 'sent' ? 'Email was sent through CAIt Resend.' : 'Selected lead is approved for leader handoff.'));
+    ? `${lead?.scheduleAt || '未設定の日時'} に送る予定です。`
+    : (status === 'triggered' ? `${triggerDisplayLabel(lead?.triggerEvent || '')} を待ちます。` : (status === 'sent' ? 'メールは送信済みです。' : '選んだ営業先はCAItへ渡せます。'));
   setWorkflowStep(
     els.leadStepLoad,
     lead ? 'done' : 'current',
-    lead ? `${leads.length} lead row${leads.length === 1 ? '' : 's'} loaded. Selected: ${lead.company}` : 'No lead rows are loaded.'
+    lead ? `${leads.length}件あります。選択中: ${lead.company}` : 'まだ営業先がありません。'
   );
   setWorkflowStep(
     els.leadStepDraft,
     hasPlan ? 'done' : (lead ? 'current' : ''),
-    hasPlan ? `${lead?.channel || 'email'} plan uses ${lead?.sendMode || 'manual approval'}.` : 'Choose channel, message, schedule, or trigger before approval.'
+    hasPlan ? `${channelDisplayLabel(lead?.channel || 'email')}、${sendModeDisplayLabel(lead?.sendMode || 'manual_approval')}です。` : '連絡方法、送る文章、送るタイミングを確認します。'
   );
   setWorkflowStep(
     els.leadStepApproval,
     approved ? 'done' : (status === 'blocked' ? 'blocked' : (hasPlan ? 'current' : '')),
-    approved ? executionLabel : (status === 'blocked' ? 'Selected lead is waiting on evidence or consent.' : 'Approve only after evidence, consent, and send rule are reviewed.')
+    approved ? executionLabel : (status === 'blocked' ? '確認URLまたは送ってよい理由を確認中です。' : '確認できたら「送ってOK」を押します。')
   );
-  if (els.sendLeadContextBtn) els.sendLeadContextBtn.textContent = approved ? 'Send outreach plan' : 'Send to CAIt';
 }
 
 function setSelectedLeadStatus(status = 'review') {
@@ -1362,6 +1548,7 @@ els.leadTable.addEventListener('click', (event) => {
 [els.leadNameInput, els.leadContactInput, els.leadSourceInput, els.outreachChannelSelect, els.consentSelect, els.sendModeSelect, els.scheduleAtInput, els.triggerEventSelect, els.triggerConditionInput, els.senderEmailInput, els.replyToEmailInput, els.emailSubjectInput, els.emailBodyInput, els.leaderSelect].forEach((input) => {
   input.addEventListener('input', () => {
     saveEditor();
+    renderBeginnerGuide();
     els.leadContextPreview.textContent = JSON.stringify(buildContext(), null, 2);
   });
   input.addEventListener('change', () => {
@@ -1373,10 +1560,14 @@ els.leadTable.addEventListener('click', (event) => {
 [els.leadSourcingIcpInput, els.leadSourcingSourceInput, els.leadSourcingCountInput, els.leadSourcingRegionInput, els.leadSourcingOfferInput, els.leadSourcingExclusionInput].forEach((input) => {
   input?.addEventListener('input', () => {
     renderLeadSourcingState();
+    renderBeginnerGuide();
+    renderLeadActionControls();
     if (!selectedLead()) els.leadContextPreview.textContent = JSON.stringify(buildLeadSourcingContext(), null, 2);
   });
   input?.addEventListener('change', () => {
     renderLeadSourcingState();
+    renderBeginnerGuide();
+    renderLeadActionControls();
     if (!selectedLead()) els.leadContextPreview.textContent = JSON.stringify(buildLeadSourcingContext(), null, 2);
   });
 });
@@ -1411,38 +1602,60 @@ els.scheduleResendBtn?.addEventListener('click', () => {
   void scheduleResendSend();
 });
 
+els.fillLeadExampleBtn?.addEventListener('click', () => {
+  if (!String(els.leadSourcingIcpInput?.value || '').trim()) {
+    els.leadSourcingIcpInput.value = '東京と神奈川の歯科医院。ホームページが古く、Web予約や集客に困っていそうな医院。';
+  }
+  if (!String(els.leadSourcingSourceInput?.value || '').trim()) {
+    els.leadSourcingSourceInput.value = 'Google検索、公式ホームページ、地域の歯科医師会サイト、公開されている問い合わせフォーム。';
+  }
+  if (!String(els.leadSourcingRegionInput?.value || '').trim()) {
+    els.leadSourcingRegionInput.value = '日本語、関東';
+  }
+  if (!String(els.leadSourcingOfferInput?.value || '').trim()) {
+    els.leadSourcingOfferInput.value = 'ホームページ改善と予約導線の見直しで、新規予約を増やす提案をしたい。';
+  }
+  if (!String(els.leadSourcingExclusionInput?.value || '').trim()) {
+    els.leadSourcingExclusionInput.value = '既存顧客、代理店、問い合わせ先が公開されていない医院。';
+  }
+  renderLeadSourcingState();
+  renderBeginnerGuide();
+  renderLeadActionControls();
+  if (!selectedLead()) els.leadContextPreview.textContent = JSON.stringify(buildLeadSourcingContext(), null, 2);
+});
+
 els.requestLeadSourcingBtn?.addEventListener('click', () => {
   const request = leadSourcingRequestPayload();
   if (!leadSourcingRequestReady(request)) {
-    window.alert('Fill target customer, sources to use, and offer reason before asking List Creator.');
+    window.alert('「どんなお客さん」「どこから探すか」「連絡する理由」の3つを入力してください。');
     renderLeadSourcingState();
     return;
   }
   const returnTo = leadChatReturnTo();
   void sendContextToCait(buildLeadSourcingContext(), { returnTo }).catch((error) => {
-    window.alert(`Lead sourcing request failed: ${error.message}`);
+    window.alert(`営業先探しの依頼に失敗しました: ${error.message}`);
   });
 });
 
 els.copyLeadSourcingBtn?.addEventListener('click', async () => {
   await copyContextJson(buildLeadSourcingContext());
-  els.copyLeadSourcingBtn.textContent = 'Copied';
-  window.setTimeout(() => { els.copyLeadSourcingBtn.textContent = 'Copy sourcing request'; }, 1200);
+  els.copyLeadSourcingBtn.textContent = 'コピーしました';
+  window.setTimeout(() => { els.copyLeadSourcingBtn.textContent = '依頼文をコピー'; }, 1200);
 });
 
 els.sendLeadContextBtn.addEventListener('click', () => {
   saveEditor();
   const returnTo = leadChatReturnTo();
   void sendContextToCait(buildContext(), { returnTo }).catch((error) => {
-    window.alert(`CAIt context handoff failed: ${error.message}`);
+    window.alert(`CAItへ渡せませんでした: ${error.message}`);
   });
 });
 
 els.copyLeadContextBtn.addEventListener('click', async () => {
   saveEditor();
   await copyContextJson(buildContext());
-  els.copyLeadContextBtn.textContent = 'Copied';
-  window.setTimeout(() => { els.copyLeadContextBtn.textContent = 'Copy context'; }, 1200);
+  els.copyLeadContextBtn.textContent = 'コピーしました';
+  window.setTimeout(() => { els.copyLeadContextBtn.textContent = 'データをコピー'; }, 1200);
 });
 
 async function bootstrap() {

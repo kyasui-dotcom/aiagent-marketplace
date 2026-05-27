@@ -28,6 +28,38 @@ const els = {
 let importedContext = null;
 let pricingRecord = emptyPricingRecord();
 
+const BUTTON_COPY_LABEL = '控えをコピー';
+const BUTTON_SEND_LABEL = 'この内容をチャットへ渡す';
+
+const FRIENDLY_LABELS = Object.freeze({
+  pricing_decision_packet: '料金判断メモ',
+  cfo_decision_packet: 'お金の判断メモ',
+  pricing_packet: '料金メモ',
+  price_change_packet: '料金変更メモ',
+  pricing_question: '確認したいこと',
+  value_metric: '料金の基準',
+  assumptions: '前提',
+  assumption_table: '前提',
+  source_to_model_ledger: '根拠',
+  formula: '計算式',
+  recommendation: 'おすすめ案',
+  scenario_table: '料金案',
+  sensitivity_table: '影響の確認',
+  approval_owner: '承認する人',
+  price_change_handoff: '料金変更の依頼',
+  execution_proof_tracker: '実行後の確認',
+  execution_status_labels: '進み具合',
+  decision_trigger: '実行してよい条件',
+  rollback_or_continue_rule: '戻す条件',
+  retained: '保存済み',
+  ready: 'OK',
+  approved: 'OK',
+  'true': 'OK',
+  pending: '未確認',
+  missing: '未確認',
+  'false': '未確認'
+});
+
 function escapeHtml(value = '') {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({
     '&': '&amp;',
@@ -53,6 +85,16 @@ function normalizeKey(value = '') {
 
 function camelKey(value = '') {
   return String(value || '').replace(/_([a-z0-9])/g, (_, char) => char.toUpperCase());
+}
+
+function displayLabel(value = '', fallback = '項目') {
+  const safe = text(value, fallback);
+  return FRIENDLY_LABELS[normalizeKey(safe)] || safe;
+}
+
+function displayStatus(value = '') {
+  const safe = text(value, 'retained');
+  return FRIENDLY_LABELS[normalizeKey(safe)] || safe;
 }
 
 const PRICING_CONTRACT_ALIASES = Object.freeze({
@@ -287,8 +329,8 @@ function explicitApprovalRequestsFromContext(context = importedContext) {
 
 function emptyPricingRecord() {
   return {
-    title: 'No Pricing/CFO packet loaded',
-    summary: 'Open from CAIt or send a Pricing/CFO app context to populate this console.',
+    title: 'まだ料金相談のデータがありません',
+    summary: 'チャットの料金相談からこの画面を開くと、確認する材料が入ります。',
     decisionRows: [],
     scenarioRows: [],
     riskRows: [],
@@ -298,8 +340,8 @@ function emptyPricingRecord() {
 
 function collectPricingRecord(context = null) {
   if (!context) return emptyPricingRecord();
-  const title = text(context.title, 'Pricing decision packet');
-  const summary = text(context.summary, 'Pricing/CFO AIAGENT context was restored as a retained app packet.');
+  const title = text(context.title, '料金変更の確認メモ');
+  const summary = text(context.summary, 'チャットから受け取った料金相談の内容を、実行前に確認できる形にしました。');
   const decisionRows = uniqueRows([
     ...rowsFor(context, ['pricing_decision_packet', 'cfo_decision_packet', 'pricing_question', 'value_metric', 'assumptions', 'source_to_model_ledger', 'formula', 'recommendation']),
     ...markdownRowsFor(context, ['pricing_decision_packet', 'cfo_decision_packet', 'pricing_question', 'value_metric', 'assumptions', 'source_to_model_ledger', 'formula', 'recommendation'])
@@ -320,37 +362,37 @@ function auditPricingRecord(record = {}, context = {}) {
   const json = JSON.stringify(context || {}).toLowerCase();
   const hasDecisionPacket = /pricing_decision_packet|cfo_decision_packet|pricing_packet|price_change_packet/.test(json);
   return [
-    { key: 'decision_packet', label: 'Decision packet', ok: hasDecisionPacket, detail: hasDecisionPacket ? 'Pricing/CFO source packet is retained.' : 'Missing pricing_decision_packet or cfo_decision_packet contract.' },
-    { key: 'model_inputs', label: 'Model inputs', ok: record.decisionRows.length >= 3, detail: record.decisionRows.length >= 3 ? `${record.decisionRows.length} decision/model row(s) retained.` : 'Need question, value metric, assumptions, ledger, formula, or recommendation.' },
-    { key: 'scenarios', label: 'Scenarios', ok: record.scenarioRows.length > 0, detail: record.scenarioRows.length ? `${record.scenarioRows.length} scenario/sensitivity row(s) retained.` : 'Missing scenario_table or sensitivity_table.' },
-    { key: 'approval_owner', label: 'Approval owner', ok: /approval_owner|approvalowner|decision_owner/.test(json), detail: /approval_owner|approvalowner|decision_owner/.test(json) ? 'Decision owner is attached.' : 'Missing approval owner before price change.' },
-    { key: 'decision_trigger', label: 'Decision trigger', ok: /decision_trigger|decisiontrigger/.test(json), detail: /decision_trigger|decisiontrigger/.test(json) ? 'Decision trigger is attached.' : 'Missing trigger for when the price change can proceed.' },
-    { key: 'proof_tracker', label: 'Proof tracker', ok: /execution_proof_tracker|executionprooftracker|proof_tracker/.test(json), detail: /execution_proof_tracker|executionprooftracker|proof_tracker/.test(json) ? 'Execution proof tracker is retained.' : 'Missing proof tracker for follow-up operations.' },
-    { key: 'rollback_rule', label: 'Rollback rule', ok: /rollback_or_continue_rule|rollbackorcontinuerule|rollback_rule/.test(json), detail: /rollback_or_continue_rule|rollbackorcontinuerule|rollback_rule/.test(json) ? 'Rollback/continue rule is retained.' : 'Missing rollback_or_continue_rule.' }
+    { key: 'decision_packet', label: '料金相談の元データ', ok: hasDecisionPacket, detail: hasDecisionPacket ? '料金相談の元データがあります。' : '料金相談の元データがまだありません。' },
+    { key: 'model_inputs', label: '判断材料', ok: record.decisionRows.length >= 3, detail: record.decisionRows.length >= 3 ? `${record.decisionRows.length}件の判断材料があります。` : '理由、料金の基準、前提、根拠、計算式、おすすめ案のどれかが足りません。' },
+    { key: 'scenarios', label: '料金案の比較', ok: record.scenarioRows.length > 0, detail: record.scenarioRows.length ? `${record.scenarioRows.length}件の料金案や比較があります。` : '料金案や比較表がまだありません。' },
+    { key: 'approval_owner', label: '承認する人', ok: /approval_owner|approvalowner|decision_owner/.test(json), detail: /approval_owner|approvalowner|decision_owner/.test(json) ? '誰がOKするか分かります。' : '誰がOKするか未確認です。' },
+    { key: 'decision_trigger', label: '実行してよい条件', ok: /decision_trigger|decisiontrigger/.test(json), detail: /decision_trigger|decisiontrigger/.test(json) ? 'いつ料金を変えるか分かります。' : 'いつ料金を変えてよいか未確認です。' },
+    { key: 'proof_tracker', label: '実行後の確認', ok: /execution_proof_tracker|executionprooftracker|proof_tracker/.test(json), detail: /execution_proof_tracker|executionprooftracker|proof_tracker/.test(json) ? '実行後に見る数字があります。' : '実行後に何を見るか未確認です。' },
+    { key: 'rollback_rule', label: '戻す条件', ok: /rollback_or_continue_rule|rollbackorcontinuerule|rollback_rule/.test(json), detail: /rollback_or_continue_rule|rollbackorcontinuerule|rollback_rule/.test(json) ? '悪かった時に戻す条件があります。' : '悪かった時に戻す条件がまだありません。' }
   ];
 }
 
 function renderTable(el, headers = [], rows = []) {
   if (!el) return;
   if (!rows.length) {
-    el.innerHTML = '<tbody><tr><td class="empty">No rows loaded yet.</td></tr></tbody>';
+    el.innerHTML = `<tbody><tr><td class="empty" colspan="${Math.max(headers.length, 1)}">まだ情報がありません。チャットから料金相談の結果を開くと、ここに確認内容が入ります。</td></tr></tbody>`;
     return;
   }
   el.innerHTML = [
     `<thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead>`,
-    `<tbody>${rows.map((item) => `<tr><td>${escapeHtml(item.label)}</td><td>${escapeHtml(item.detail)}</td><td>${escapeHtml(item.status || 'retained')}</td></tr>`).join('')}</tbody>`
+    `<tbody>${rows.map((item) => `<tr><td>${escapeHtml(displayLabel(item.label))}</td><td>${escapeHtml(item.detail)}</td><td>${escapeHtml(displayStatus(item.status || 'retained'))}</td></tr>`).join('')}</tbody>`
   ].join('');
 }
 
 function readinessRows(record = pricingRecord) {
   const ok = (flag) => flag ? 'ready' : 'pending';
   return [
-    { label: 'Server context', ready: Boolean(importedContext), detail: importedContext ? 'Server-side pricing packet is loaded.' : 'Send to CAIt will create the server-side pricing packet reference.' },
-    { label: 'Model inputs', ready: record.decisionRows.length >= 3, detail: record.decisionRows.length >= 3 ? `${record.decisionRows.length} model row(s) retained.` : 'Add pricing question, value metric, assumptions, ledger, formula, or recommendation.' },
-    { label: 'Scenario review', ready: record.scenarioRows.length > 0, detail: record.scenarioRows.length ? `${record.scenarioRows.length} scenario/sensitivity row(s) retained.` : 'Add scenario_table or sensitivity_table.' },
-    { label: 'Approval boundary', ready: record.riskRows.some((item) => /approval|owner/i.test(`${item.label} ${item.detail}`)), detail: record.riskRows.some((item) => /approval|owner/i.test(`${item.label} ${item.detail}`)) ? 'Approval owner or boundary is visible.' : 'Add approval_owner before changing price.' },
-    { label: 'Decision trigger', ready: record.riskRows.some((item) => /trigger/i.test(`${item.label} ${item.detail}`)), detail: record.riskRows.some((item) => /trigger/i.test(`${item.label} ${item.detail}`)) ? 'Decision trigger is retained.' : 'Add decision_trigger.' },
-    { label: 'Proof and rollback', ready: record.riskRows.some((item) => /proof|rollback|continue/i.test(`${item.label} ${item.detail}`)), detail: record.riskRows.some((item) => /proof|rollback|continue/i.test(`${item.label} ${item.detail}`)) ? 'Proof or rollback/continue state is retained.' : 'Add execution_proof_tracker and rollback_or_continue_rule.' }
+    { label: '元データ', ready: Boolean(importedContext), detail: importedContext ? 'チャットから受け取った料金相談データがあります。' : 'チャットへ渡す時に、この確認内容を保存します。' },
+    { label: '判断材料', ready: record.decisionRows.length >= 3, detail: record.decisionRows.length >= 3 ? `${record.decisionRows.length}件の判断材料があります。` : '理由、根拠、前提、おすすめ案が足りません。' },
+    { label: '料金案', ready: record.scenarioRows.length > 0, detail: record.scenarioRows.length ? `${record.scenarioRows.length}件の料金案や比較があります。` : '料金案や比較表がまだありません。' },
+    { label: '承認者', ready: record.riskRows.some((item) => /approval|owner|承認|責任者|owner/i.test(`${item.label} ${item.detail}`)), detail: record.riskRows.some((item) => /approval|owner|承認|責任者|owner/i.test(`${item.label} ${item.detail}`)) ? '誰がOKするか見えています。' : '誰がOKするか未確認です。' },
+    { label: '実行条件', ready: record.riskRows.some((item) => /trigger|条件|実行/i.test(`${item.label} ${item.detail}`)), detail: record.riskRows.some((item) => /trigger|条件|実行/i.test(`${item.label} ${item.detail}`)) ? 'いつ料金を変えるか見えています。' : 'いつ料金を変えてよいか未確認です。' },
+    { label: '戻し方', ready: record.riskRows.some((item) => /proof|rollback|continue|戻|止め|確認/i.test(`${item.label} ${item.detail}`)), detail: record.riskRows.some((item) => /proof|rollback|continue|戻|止め|確認/i.test(`${item.label} ${item.detail}`)) ? '実行後に見る数字や戻す条件があります。' : '実行後に見る数字と戻す条件が未確認です。' }
   ].map((item) => ({ ...item, state: ok(item.ready) }));
 }
 
@@ -358,20 +400,20 @@ function contextPacket() {
   const ready = pricingRecord.audit.filter((item) => item.ok);
   return buildCaitAppContext({
     source_app: 'pricing_decision_console',
-    source_app_label: 'Pricing Decision Console',
+    source_app_label: '料金変更かんたん確認',
     title: pricingRecord.title,
     summary: pricingRecord.summary,
     facts: [
-      `${ready.length}/${pricingRecord.audit.length || 7} pricing anchors retained`,
-      importedContext ? 'Server-side app context loaded before returning to CAIt.' : 'No imported server-side context loaded yet.'
+      `${ready.length}/${pricingRecord.audit.length || 7} 件の料金変更チェックがOKです。`,
+      importedContext ? 'チャットから受け取った料金相談データを確認済みです。' : 'この画面で作った料金変更チェックをチャットへ戻します。'
     ],
     artifacts: [
       { type: 'pricing_decision_packet', title: pricingRecord.title, rows: pricingRecord.decisionRows },
-      { type: 'scenario_table', title: 'Scenario table', rows: pricingRecord.scenarioRows },
-      { type: 'sensitivity_table', title: 'Sensitivity and risk table', rows: pricingRecord.scenarioRows },
-      { type: 'price_change_handoff', title: 'Approval and price-change handoff', rows: pricingRecord.riskRows },
-      { type: 'execution_proof_tracker', title: 'Execution proof tracker', rows: pricingRecord.riskRows },
-      { type: 'handoff_audit', title: 'Pricing handoff audit', rows: pricingRecord.audit }
+      { type: 'scenario_table', title: '料金案の比較', rows: pricingRecord.scenarioRows },
+      { type: 'sensitivity_table', title: '影響の確認', rows: pricingRecord.scenarioRows },
+      { type: 'price_change_handoff', title: '承認と料金変更の依頼', rows: pricingRecord.riskRows },
+      { type: 'execution_proof_tracker', title: '実行後の確認', rows: pricingRecord.riskRows },
+      { type: 'handoff_audit', title: '料金変更前の確認結果', rows: pricingRecord.audit }
     ],
     metrics: [
       { label: 'decision_rows', value: pricingRecord.decisionRows.length },
@@ -381,8 +423,8 @@ function contextPacket() {
     ],
     approval_requests: explicitApprovalRequestsFromContext(),
     recommended_next_actions: [
-      'Review retained assumptions, scenarios, approval owner, trigger, proof tracker, and rollback rule before asking CAIt to continue.',
-      'Do not change pricing or billing externally until the approval owner confirms the retained price-change handoff.'
+      '承認者、実行条件、実行後に見る数字、戻す条件がそろってから次の作業へ進めてください。',
+      '承認する人が確認するまで、外部の料金や請求設定は変更しないでください。'
     ],
     handoff_targets: ['pricing-decision-console', 'cfo_leader', 'pricing'],
     raw_context: {
@@ -431,10 +473,10 @@ function renderNotice() {
   const handoff = chatHandoffId();
   if (importedContext) {
     els.pricingHandoffNotice.hidden = false;
-    els.pricingHandoffNotice.textContent = `CAIt pricing handoff session is attached${handoff ? ` (${handoff})` : ''}. This console is using a server-side app context packet.`;
+    els.pricingHandoffNotice.textContent = `チャットから料金相談のデータを受け取りました${handoff ? `（${handoff}）` : ''}。確認してからチャットへ戻せます。`;
   } else if (returnTo || handoff) {
     els.pricingHandoffNotice.hidden = false;
-    els.pricingHandoffNotice.textContent = 'CAIt pricing handoff session is attached, but no server packet is loaded yet. Send to CAIt will create the retained pricing decision packet.';
+    els.pricingHandoffNotice.textContent = 'チャットへ戻る準備はできています。料金相談のデータがない場合は、この画面の確認内容をチャットへ渡します。';
   } else {
     els.pricingHandoffNotice.hidden = true;
   }
@@ -443,19 +485,19 @@ function renderNotice() {
 function renderAudit() {
   const ready = pricingRecord.audit.filter((item) => item.ok).length;
   if (els.pricingHandoffAuditPill) {
-    els.pricingHandoffAuditPill.textContent = pricingRecord.audit.length ? `${ready} / ${pricingRecord.audit.length} anchors` : 'No packet audited';
+    els.pricingHandoffAuditPill.textContent = pricingRecord.audit.length ? `${ready}/${pricingRecord.audit.length} OK` : 'まだ確認していません';
     els.pricingHandoffAuditPill.className = `status-pill ${ready === pricingRecord.audit.length ? 'ready' : 'pending'}`;
   }
   if (els.pricingHandoffAuditSummary) {
     els.pricingHandoffAuditSummary.textContent = pricingRecord.audit.length
-      ? (ready === pricingRecord.audit.length ? 'All pricing decision anchors are present for stable CAIt follow-up.' : `${pricingRecord.audit.length - ready} pricing anchor(s) need attention before this can become stable pricing operations.`)
-      : 'Open this app from a Pricing or CFO handoff to audit assumptions, scenarios, approval, proof, and rollback continuity.';
+      ? (ready === pricingRecord.audit.length ? '必要な確認がそろっています。最後に承認者へ確認してから進めてください。' : `${pricingRecord.audit.length - ready}件が未確認です。未確認が残っている間は料金を変えないでください。`)
+      : 'チャットから料金相談の結果を開くと、材料、候補、承認者、戻し方をここで確認できます。';
   }
   if (els.pricingHandoffAuditList) {
     els.pricingHandoffAuditList.innerHTML = pricingRecord.audit.map((item) => [
-      `<article class="handoff-audit-item ${item.ok ? 'ready' : 'missing'}">`,
+      `<article class="handoff-audit-item ${item.ok ? 'ready' : 'pending'}">`,
       `<strong>${escapeHtml(item.label)}</strong>`,
-      `<span>${escapeHtml(item.ok ? 'ready' : 'missing')}</span>`,
+      `<span>${escapeHtml(item.ok ? 'OK' : '未確認')}</span>`,
       `<p>${escapeHtml(item.detail)}</p>`,
       '</article>'
     ].join('')).join('');
@@ -466,14 +508,14 @@ function renderReadiness() {
   const items = readinessRows();
   const ready = items.filter((item) => item.ready).length;
   if (els.pricingReadinessPill) {
-    els.pricingReadinessPill.textContent = `${ready}/${items.length} ops checks ready`;
+    els.pricingReadinessPill.textContent = `${ready}/${items.length} OK`;
     els.pricingReadinessPill.className = `status-pill ${ready === items.length ? 'ready' : 'pending'}`;
   }
   if (els.pricingReadinessList) {
     els.pricingReadinessList.innerHTML = items.map((item) => [
       `<div class="ops-readiness-item ${item.ready ? 'ready' : 'pending'}">`,
       `<span>${escapeHtml(item.label)}</span>`,
-      `<strong>${escapeHtml(item.ready ? 'Ready' : 'Needed')}</strong>`,
+      `<strong>${escapeHtml(item.ready ? 'OK' : '未確認')}</strong>`,
       `<p>${escapeHtml(item.detail)}</p>`,
       '</div>'
     ].join('')).join('');
@@ -490,9 +532,9 @@ function render() {
   if (els.pricingScenarioMetric) els.pricingScenarioMetric.textContent = String(pricingRecord.scenarioRows.length);
   if (els.pricingApprovalMetric) els.pricingApprovalMetric.textContent = String(pricingRecord.riskRows.filter((item) => /approval|owner|trigger/i.test(`${item.label} ${item.detail}`)).length);
   if (els.pricingProofMetric) els.pricingProofMetric.textContent = String(pricingRecord.riskRows.filter((item) => /proof|rollback|continue/i.test(`${item.label} ${item.detail}`)).length);
-  renderTable(els.pricingDecisionTable, ['Anchor', 'Detail', 'Status'], pricingRecord.decisionRows);
-  renderTable(els.pricingScenarioTable, ['Scenario', 'Detail', 'Status'], pricingRecord.scenarioRows);
-  renderTable(els.pricingRiskTable, ['Gate', 'Detail', 'Status'], pricingRecord.riskRows);
+  renderTable(els.pricingDecisionTable, ['見るところ', '内容', '状態'], pricingRecord.decisionRows);
+  renderTable(els.pricingScenarioTable, ['料金案', '内容', '状態'], pricingRecord.scenarioRows);
+  renderTable(els.pricingRiskTable, ['確認項目', '内容', '状態'], pricingRecord.riskRows);
   renderNotice();
   renderAudit();
   renderReadiness();
@@ -508,24 +550,24 @@ async function init() {
 if (els.copyPricingContextBtn) {
   els.copyPricingContextBtn.onclick = async () => {
     await copyContextJson(contextPacket());
-    els.copyPricingContextBtn.textContent = 'Copied';
-    window.setTimeout(() => { els.copyPricingContextBtn.textContent = 'Copy packet'; }, 1200);
+    els.copyPricingContextBtn.textContent = 'コピーしました';
+    window.setTimeout(() => { els.copyPricingContextBtn.textContent = BUTTON_COPY_LABEL; }, 1200);
   };
 }
 
 if (els.sendPricingContextBtn) {
   els.sendPricingContextBtn.onclick = async () => {
     els.sendPricingContextBtn.disabled = true;
-    els.sendPricingContextBtn.textContent = 'Sending...';
+    els.sendPricingContextBtn.textContent = '送っています...';
     try {
       await sendContextToCait(contextPacket(), { returnTo: chatReturnTo() || '/chat' });
-      els.sendPricingContextBtn.textContent = 'Sent';
+      els.sendPricingContextBtn.textContent = 'チャットへ渡しました';
     } catch (error) {
       els.sendPricingContextBtn.disabled = false;
-      els.sendPricingContextBtn.textContent = 'Send to CAIt';
+      els.sendPricingContextBtn.textContent = BUTTON_SEND_LABEL;
       if (els.pricingHandoffNotice) {
         els.pricingHandoffNotice.hidden = false;
-        els.pricingHandoffNotice.textContent = `Could not send pricing context: ${text(error?.message, 'unknown error')}`;
+        els.pricingHandoffNotice.textContent = `チャットへ渡せませんでした: ${text(error?.message, '原因不明')}`;
       }
     }
   };

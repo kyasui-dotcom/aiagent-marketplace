@@ -31,12 +31,12 @@ Do not publish these by accident:
 
 - any real env values, session secrets, API keys, or private keys
 - Cloudflare credentials and deployment tokens
-- Stripe live operational data and payout history
+- live operational data and customer support history
 - GitHub App private key and OAuth client secret
 - local browser artifacts, screenshots, and debugging traces
 - D1 state dumps, broker state, or run history exports
 - operator-only reports, reviewer queues, and internal moderation data
-- customer/support exports that contain email addresses or billing details
+- customer/support exports that contain email addresses or private account details
 
 ## Recommended repo split
 
@@ -50,7 +50,7 @@ Use two repos:
   - non-sensitive QA
 - `aiagent2-private` private
   - production deployment config
-  - billing and payout operations
+  - private operator operations
   - live environment management
   - operator tooling
   - incident handling and internal reports
@@ -77,7 +77,7 @@ The initial public mirror is driven by [`open-core-whitelist.json`](./open-core-
 
 - it is intentionally conservative
 - it favors docs, manifest/verification logic, hosted adapter generation, and public UI
-- it excludes production deployment config, billing operations, payout operations, and internal moderation data
+- it excludes production deployment config, private operator operations, and internal moderation data
 
 Use this command to export the current public-safe mirror:
 

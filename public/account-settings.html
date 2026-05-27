@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Account Settings - CAIt</title>
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/account-settings.css?v=20260520a" />
+  <link rel="stylesheet" href="/account-settings.css?v=20260527a" />
 </head>
 <body>
   <header class="topbar">
@@ -34,6 +34,21 @@
           <dt>Signed in as</dt>
           <dd id="accountLogin">-</dd>
         </div>
+        <div>
+          <dt>Language</dt>
+          <dd>
+            <label class="settings-field" for="uiLanguageSelect">
+              <span>Interface language</span>
+              <select id="uiLanguageSelect">
+                <option value="en">English</option>
+                <option value="ja">Japanese</option>
+              </select>
+            </label>
+            <p class="field-note">CAIt uses English by default. Change this only when you want the app interface and chat guidance in another language.</p>
+            <button class="secondary-btn" id="saveLanguageBtn" type="button">Save language</button>
+            <p id="languageStatus" class="status-line" role="status" aria-live="polite"></p>
+          </dd>
+        </div>
       </dl>
     </section>
 
@@ -54,6 +69,6 @@
     </section>
   </main>
 
-  <script src="/account-settings.js?v=20260520a"></script>
+  <script src="/account-settings.js?v=20260527a"></script>
 </body>
 </html>

@@ -166,11 +166,13 @@ h2 {
 }
 
 input,
+select,
 button {
   font: inherit;
 }
 
-input {
+input,
+select {
   width: 100%;
   min-height: 44px;
   border: 1px solid var(--line);
@@ -180,10 +182,45 @@ input {
   color: var(--text);
 }
 
-input:focus {
+input:focus,
+select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 4px var(--focus);
   outline: none;
+}
+
+.settings-field {
+  display: grid;
+  gap: 6px;
+  max-width: 320px;
+  font-weight: 700;
+}
+
+.settings-field span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.field-note {
+  margin: 8px 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.secondary-btn {
+  min-height: 40px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 0 16px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.secondary-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .danger-btn {

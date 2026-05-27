@@ -1,5 +1,6 @@
 const state = {
-  auth: null
+  auth: null,
+  account: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -7,14 +8,39 @@ const $ = (id) => document.getElementById(id);
 const els = {
   accountStatus: $('accountStatus'),
   accountLogin: $('accountLogin'),
+  uiLanguageSelect: $('uiLanguageSelect'),
+  saveLanguageBtn: $('saveLanguageBtn'),
+  languageStatus: $('languageStatus'),
   deleteConfirmInput: $('deleteConfirmInput'),
   deleteAccountBtn: $('deleteAccountBtn'),
   deleteStatus: $('deleteStatus')
 };
 
+const UI_LANGUAGE_STORAGE_KEY = 'cait.uiLanguage.v1';
+
 function setStatus(message = '', tone = '') {
   els.deleteStatus.textContent = message;
   els.deleteStatus.classList.toggle('error', tone === 'error');
+}
+
+function normalizeUiLanguage(value = '') {
+  const text = String(value || '').trim().toLowerCase();
+  if (text.startsWith('ja')) return 'ja';
+  return 'en';
+}
+
+function setLanguageStatus(message = '', tone = '') {
+  if (!els.languageStatus) return;
+  els.languageStatus.textContent = message;
+  els.languageStatus.classList.toggle('error', tone === 'error');
+}
+
+function rememberLocalUiLanguage(value = '') {
+  try {
+    window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, normalizeUiLanguage(value));
+  } catch {
+    // Storage can be disabled by the browser.
+  }
 }
 
 function unsafeMethod(method = '') {
@@ -56,6 +82,13 @@ function updateDeleteEnabled() {
   els.deleteAccountBtn.disabled = !loggedIn || els.deleteConfirmInput.value.trim() !== 'DELETE';
 }
 
+function updateLanguageControls() {
+  const loggedIn = Boolean(state.auth?.loggedIn || state.auth?.login || state.auth?.user?.login || state.auth?.user?.email);
+  const language = normalizeUiLanguage(state.account?.profile?.uiLanguage || 'en');
+  if (els.uiLanguageSelect) els.uiLanguageSelect.value = language;
+  if (els.saveLanguageBtn) els.saveLanguageBtn.disabled = !loggedIn;
+}
+
 function clearAccountLocalState() {
   for (const store of [window.localStorage, window.sessionStorage]) {
     try {
@@ -77,11 +110,39 @@ async function loadAuth() {
     els.accountStatus.innerHTML = `You are not signed in. <a href="${loginPath()}">Sign in</a> to manage your account.`;
     els.accountLogin.textContent = '-';
     updateDeleteEnabled();
+    updateLanguageControls();
     return;
   }
   els.accountStatus.textContent = 'Manage your CAIt account profile and deletion request.';
   els.accountLogin.textContent = login || 'Signed in';
+  try {
+    const settings = await api('/api/settings', { method: 'GET' });
+    state.account = settings?.account || null;
+    rememberLocalUiLanguage(state.account?.profile?.uiLanguage || 'en');
+  } catch (error) {
+    setLanguageStatus(error.message || 'Could not load language setting.', 'error');
+  }
   updateDeleteEnabled();
+  updateLanguageControls();
+}
+
+async function saveLanguage() {
+  const uiLanguage = normalizeUiLanguage(els.uiLanguageSelect?.value || 'en');
+  els.saveLanguageBtn.disabled = true;
+  setLanguageStatus('Saving language...');
+  try {
+    const result = await api('/api/settings/profile', {
+      method: 'POST',
+      body: { uiLanguage }
+    });
+    state.account = result?.account || state.account;
+    rememberLocalUiLanguage(state.account?.profile?.uiLanguage || uiLanguage);
+    updateLanguageControls();
+    setLanguageStatus('Language saved.');
+  } catch (error) {
+    setLanguageStatus(error.message || 'Could not save language.', 'error');
+    updateLanguageControls();
+  }
 }
 
 async function deleteAccount() {
@@ -109,6 +170,8 @@ async function deleteAccount() {
 
 els.deleteConfirmInput.addEventListener('input', updateDeleteEnabled);
 els.deleteAccountBtn.addEventListener('click', deleteAccount);
+els.saveLanguageBtn?.addEventListener('click', saveLanguage);
+els.uiLanguageSelect?.addEventListener('change', () => setLanguageStatus('Press Save language to apply this account setting.'));
 
 void loadAuth().catch((error) => {
   els.accountStatus.textContent = 'Could not load account status.';

@@ -238,7 +238,7 @@ const AGENT_SEO_DETAILS = {
 const HOWTO_STEPS_BY_SLUG = {
   'no-api-key-ai-agents': [
     'Sign in to CAIt with Google or GitHub.',
-    'Register a card or activate a plan so orders use CAIt month-end billing.',
+    'Create the work order without registering a card, opening checkout, or activating a plan.',
     'Write the work order in natural language or choose a built-in work template.',
     'Let CAIt infer the task, route to a built-in or verified provider agent, and dispatch the work.',
     'Review the delivery, files, sources, cost context, confidence notes, and follow-up options.'
@@ -255,14 +255,14 @@ const HOWTO_STEPS_BY_SLUG = {
     'Infer or select the task type and route the order to a ready agent.',
     'Run readiness checks before dispatching work.',
     'Store the delivery, files, confidence notes, cost context, and follow-up state.',
-    'Settle CAIt customer billing when billing is active and keep delivery context connected to completed work.'
+    'Keep cost context connected to completed work without processing payments in-app.'
   ],
   'ai-agent-monetization': [
     'Define the CAIt AI agent service outcome, buyer promise, and delivery acceptance criteria.',
     'Use verification so buyers can trust readiness before routing work.',
-    'Route the order through CAIt as the seller of record while billing is activated through Stripe.',
+    'Route the order through CAIt while in-app payment processing stays removed.',
     'Return reviewable delivery with files, assumptions, and follow-up context.',
-    'Keep any provider settlement manual until automatic payout movement is explicitly approved.'
+    'Keep donation support outside CAIt unless an external donation link is reviewed and approved.'
   ],
   'order-ai-agents': [
     'Write the desired outcome as one natural-language work order.',
@@ -274,7 +274,7 @@ const HOWTO_STEPS_BY_SLUG = {
   'ai-agent-api': [
     'Use browser Chat, Apps, Deliveries, and Publisher for current work.',
     'Keep API-key, CLI, and MCP access disabled by default.',
-    'Stabilize app handoff, delivery, auth, approval, and billing contracts.',
+    'Stabilize app handoff, delivery, auth, approval, and cost-context contracts.',
     'Republish API, CLI, and MCP examples together after validation.',
     'Re-enable only with explicit runtime flags when ready.'
   ],
@@ -298,13 +298,6 @@ const HOWTO_STEPS_BY_SLUG = {
     'Generate an adapter pull request with manifest and endpoint changes.',
     'Review, merge, and deploy the adapter in the provider repository.',
     'Return to CAIt to import the manifest and run verification.'
-  ],
-  'ai-agent-payouts': [
-    'Open MENU -> SETTINGS -> PROVIDER and create or update the provider profile.',
-    'Complete CAIt provider identity review if a temporary settlement review is needed.',
-    'Keep automatic provider withdrawal disabled during the direct-sales phase.',
-    'Track any reviewed settlement context separately from customer billing.',
-    'Use manual follow-up until automatic payout movement is explicitly approved.'
   ],
   'verifiable-ai-agent-delivery': [
     'Define the expected result, files, sources, assumptions, and acceptance criteria before dispatch.',
@@ -616,7 +609,7 @@ function seoLandingPageHtml(landingPage) {
       <div class="doc-meta">CAIt guide / unified developer access</div>
       <h1>AI Agent API, CLI, and MCP access share one contract.</h1>
       <p><strong>Current status:</strong> API-key access, CLI execution, and MCP are temporarily disabled by default while the external developer contract is stabilized. Use browser Chat, Apps, Deliveries, and Publisher now.</p>
-      <p>This single page replaces separate API, CLI, and MCP tabs because all three surfaces must obey the same leader-guided ordering, delivery history, app context, approval, auth, and billing rules.</p>
+      <p>This single page replaces separate API, CLI, and MCP tabs because all three surfaces must obey the same leader-guided ordering, delivery history, app context, approval, auth, and cost-context rules.</p>
       <h2>One external surface</h2>
       <ul class="flow-list compact-list">
         <li><strong>API:</strong> future backend and workflow automation access for reviewable orders and delivery reads.</li>
@@ -626,7 +619,7 @@ function seoLandingPageHtml(landingPage) {
       <h2>Shared pause policy</h2>
       <p>External API-key, CLI, and MCP access stay paused until the contract matches the current browser-owned quality model. The browser product remains available, and app context handoffs continue through server-side context records instead of browser storage.</p>
       <h2>Planned API shape</h2>
-      <p>The future API should support order creation, delivery reads, app-context reuse, app and agent manifest import, verification, and follow-up workflows. API-created work must still be visible in CAIt with status, delivery files, billing context, and approval state.</p>
+      <p>The future API should support order creation, delivery reads, app-context reuse, app and agent manifest import, verification, and follow-up workflows. API-created work must still be visible in CAIt with status, delivery files, cost context, and approval state.</p>
       <pre class="detail-box code-box"># Planned only: disabled by default today
 curl.exe -X POST https://aiagent-marketplace.net/api/jobs ^
   -H "content-type: application/json" ^
@@ -1230,7 +1223,7 @@ function agentPageHtml(agent, relatedAgents) {
         ${taskTypes}
       </div>
       <h2>What this agent does</h2>
-      <p>${escapeHtml(agent.description)} CAIt wraps it in a browser order workflow with routing, delivery review, billing context, and a future unified API / CLI / MCP surface.</p>
+      <p>${escapeHtml(agent.description)} CAIt wraps it in a browser order workflow with routing, delivery review, cost context, and a future unified API / CLI / MCP surface.</p>
       ${manifestSummaryPanelHtml(agent)}
       <h2>Best use cases</h2>
       <ul class="flow-list compact-list">
@@ -1434,7 +1427,7 @@ function siteMapHtml(agents, terms) {
     { href: '/help.html', label: 'Help Center', description: 'first-time paths and support entry points' },
     { href: '/guide.html', label: 'First Run Guide', description: 'developer setup guide' },
     { href: '/ai-agent-api.html', label: 'API / CLI / MCP', description: 'one disabled-by-default developer surface' },
-    { href: '/qa.html', label: 'Q&A', description: 'billing, GitHub, and product answers' },
+    { href: '/qa.html', label: 'Q&A', description: 'GitHub, product, and cost-transparency answers' },
     { href: '/contribute.html', label: 'Contribute', description: 'field-note and issue contribution path' },
     { href: '/terms.html', label: 'Terms', description: 'terms of service' },
     { href: '/privacy.html', label: 'Privacy', description: 'privacy policy' },

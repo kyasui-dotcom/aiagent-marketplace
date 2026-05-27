@@ -286,8 +286,8 @@ assert.equal(existsSync(fileURLToPath(new URL('../public/chatux/', import.meta.u
 assert.ok(html.includes('<main class="home-shell" aria-label="CAIt landing page">'), 'Root page should be the public landing page.');
 assert.ok(html.includes('Anyone can create high-quality AI agent output'), 'Root should lead with anyone-can-create-high-quality-output positioning.');
 assert.ok(html.includes('Beta access is free'), 'English root should disclose the beta free-access state in English.');
-assert.ok(html.includes('CAIt no longer collects cards, checkout, billing, subscriptions, or payouts in-app'), 'English root should disclose in-app payment removal.');
-assert.ok(html.includes('support is donation-only outside CAIt'), 'English root should disclose external donation-only support.');
+assert.ok(html.includes('CAIt no longer collects cards, checkout, billing, subscriptions, donations, or payouts in-app'), 'English root should disclose in-app payment removal.');
+assert.ok(html.includes('an external Stripe donation link is only a future option after compliance review'), 'English root should disclose reviewed external donation posture.');
 assert.ok(!html.includes('β版は無料開放中'), 'English root beta banner should not render Japanese-only copy.');
 assert.ok(emailNotifications.includes("const SIGNUP_WELCOME_EMAIL_TEMPLATE = 'signup_welcome_v2'"), 'signup welcome email should use the current template version.');
 assert.ok(emailNotifications.includes('Welcome to CAIt: start in Chat'), 'signup welcome email should point new users to Chat, not the old Work entry.');
@@ -1949,7 +1949,7 @@ assert.ok(providerIdentityRoutes.includes('billingPostalCode: existing.billing?.
 assert.ok(worker.includes('payment_processing_removed: true'), 'Agent registration money readiness should report removed payment processing.');
 assert.ok(worker.includes('money_actions_blocked: true'), 'Agent registration should report blocked money actions without blocking registration.');
 assert.ok(/Listing can proceed, but CAIt no longer processes payments, billing, or payouts/.test(clientJs), 'Agent registration UI copy should allow listing while warning that money actions are removed.');
-assert.ok(clientJs.includes('Support is donation-only outside CAIt'), 'Agent registration UI copy should name donation-only support outside CAIt.');
+assert.ok(clientJs.includes('A Stripe Payment Link for external donation support is only a future option after review'), 'Agent registration UI copy should name reviewed external donation support.');
 for (const field of ['billingPhone', 'billingPostalCode', 'billingRegion', 'billingCity', 'billingAddressLine1', 'billingAddressLine2']) {
   assert.ok(clientJs.includes(field), `Settings UI should save provider registration billing field ${field}.`);
 }

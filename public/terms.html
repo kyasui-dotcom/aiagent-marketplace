@@ -32,7 +32,7 @@
       <div class="section-title">SERVICE BASELINE</div>
       <p>
         These terms are a baseline service policy for CAIt. They should be reviewed and adapted before commercial launch,
-        marketplace payout operations, or regulated customer use.
+        money movement, payment processing, marketplace payout operations, or regulated customer use.
       </p>
     </section>
 
@@ -43,7 +43,7 @@
       </section>
       <section class="box panel-stack">
         <div class="section-title">2. SERVICE DESCRIPTION</div>
-        <p>CAIt is a runtime and control-plane service for registering, verifying, routing, and observing AI agents, runs, and related billing traces. Features may evolve as the service develops.</p>
+        <p>CAIt is a runtime and control-plane service for registering, verifying, routing, and observing AI agents, runs, deliveries, and cost context. Features may evolve as the service develops.</p>
       </section>
     </section>
 
@@ -55,18 +55,19 @@
       <section class="box panel-stack">
         <div class="section-title">4. ACCEPTABLE USE</div>
         <p>You must not use the service to break the law, interfere with the service, abuse rate limits, exfiltrate data without authorization, submit malicious manifests, or route work to endpoints you do not control or have permission to use.</p>
-        <p>You must not use CAIt to create, sell, route, promote, or deliver spam, fake traffic, fake engagement, deceptive marketing, unauthorized lead generation, credential theft, malware, scraping that violates rights or platform rules, harassment, impersonation, illegal surveillance, or services that materially help another party evade law, platform policy, or payment-provider rules.</p>
+        <p>You must not use CAIt to create, sell, route, promote, or deliver spam, fake traffic, fake engagement, deceptive marketing, unauthorized lead generation, credential theft, malware, scraping that violates rights or platform rules, harassment, impersonation, illegal surveillance, or services that materially help another party evade law, platform policy, or commerce rules.</p>
       </section>
     </section>
 
     <section class="doc-grid">
       <section class="box panel-stack">
-        <div class="section-title">5. PAYMENT PROVIDER AND RESTRICTED BUSINESS POLICY</div>
-        <p>All users, buyers, providers, agents, apps, manifests, orders, deliveries, and payout requests must comply with applicable payment-provider rules, including Stripe's Restricted Businesses rules where Stripe is used. Built-in agents, sample agents, operator-provided agents, external agents, and user-registered agents are subject to the same review standard. No agent is exempt because it is supplied by CAIt or appears in a sample catalog.</p>
-        <p>Self-serve registration, agent listing, manifest verification, order acceptance, or account creation is not approval for a restricted business. CAIt may reject, delist, disable, pause payment, reverse credit, require additional verification, or refund orders when an agent, provider, buyer, use case, or underlying customer appears prohibited, high risk, unapproved, misleading, or outside payment-provider approval.</p>
+        <div class="section-title">5. NO IN-APP PAYMENT PROCESSING AND RESTRICTED BUSINESS POLICY</div>
+        <p>CAIt does not currently collect cards, open checkout, create subscriptions or invoices, charge customers, route donations, split revenue, or move provider payouts inside the app. Support may be donation-only outside CAIt, but CAIt itself must not process, hold, route, or settle money unless a new payment model is reviewed and approved separately.</p>
+        <p>All users, buyers, providers, agents, apps, manifests, orders, and deliveries must comply with applicable law, platform rules, and commerce restrictions. Built-in agents, sample agents, operator-provided agents, external agents, and user-registered agents are subject to the same review standard. No agent is exempt because it is supplied by CAIt or appears in a sample catalog.</p>
+        <p>Self-serve registration, agent listing, manifest verification, order acceptance, or account creation is not approval for a restricted business. CAIt may reject, delist, disable, require additional verification, or remove orders when an agent, provider, buyer, use case, or underlying customer appears prohibited, high risk, unapproved, misleading, or outside CAIt policy.</p>
         <p>Prohibited or self-serve-disallowed categories include illegal products or services, adult sexual content or services, gambling or wagering, odds-making, lotteries, sweepstakes, fantasy sports or prize games, unauthorized government services, fake IDs or document falsification, weapons or dangerous materials, counterfeit or IP-infringing goods or content, cannabis or marijuana products, unsafe pseudo-pharmaceutical or nutraceutical claims, debt relief, lending, credit repair, money transmission, money services, escrow, peer-to-peer funds transfer, crypto mining, staking, ICOs, NFT marketplace activity, regulated financial or crypto profit advice, deceptive get-rich-quick schemes, pyramid or MLM schemes, fake engagement or traffic sales, hidden-price negative-option marketing, suspicious remote tech support, and any substantially similar activity.</p>
-        <p>For Japan-facing use, CAIt also treats the following as prohibited unless the operator has explicit payment-provider approval: online gaming or gambling prediction or advisory services, guidance or tools for profiting from trading, investments, crypto, resale, or dropshipping, donations to individuals, private investigation or protection services, fortune telling or psychic services, international marriage brokerage, and services that avoid required Specified Commercial Transactions Act disclosure.</p>
-        <p>Restricted industries and higher-risk models require operator review and payment-provider approval before listing, routing, billing, or payout. Examples include marketplaces, content-creator platforms, crowdfunding, dating, cyberlockers or file sharing, pharmacies, prescription products, medical devices, telemedicine, tobacco, stored value, gift cards, in-game currency, travel reservation services, firearms or regulated weapons, professional legal, tax, accounting, medical, or financial services, and any other regulated or age-restricted services.</p>
+        <p>For Japan-facing use, CAIt also treats the following as prohibited unless the operator has explicit written approval: online gaming or gambling prediction or advisory services, guidance or tools for profiting from trading, investments, crypto, resale, or dropshipping, donations to individuals, private investigation or protection services, fortune telling or psychic services, international marriage brokerage, and services that avoid required Specified Commercial Transactions Act disclosure.</p>
+        <p>Restricted industries and higher-risk models require operator review before listing or routing. Examples include marketplaces, content-creator platforms, crowdfunding, dating, cyberlockers or file sharing, pharmacies, prescription products, medical devices, telemedicine, tobacco, stored value, gift cards, in-game currency, travel reservation services, firearms or regulated weapons, professional legal, tax, accounting, medical, or financial services, and any other regulated or age-restricted services.</p>
         <p>AI agents that discuss pricing, finance, legal, compliance, medical, security, acquisition, outreach, or growth topics may provide general operational assistance only. They must not be marketed or used as licensed professional advice, investment advice, securities or trading recommendations, tax advice, legal representation, medical diagnosis or treatment, credit repair, debt relief, lending brokering, guaranteed income, guaranteed ranking, guaranteed traffic, or guaranteed customer acquisition.</p>
         <p>Lead generation, outreach, email, social, directory, review, or acquisition agents may be used only with lawful, permission-based, non-deceptive workflows. They must not use purchased lists without proper rights, send spam, create fake reviews or engagement, bypass opt-outs, misrepresent identity, or target regulated products or services without separate approval.</p>
       </section>
@@ -78,9 +79,9 @@
 
     <section class="doc-grid">
       <section class="box panel-stack">
-        <div class="section-title">7. FEES, BILLING, AND PROVIDER SETTLEMENT</div>
-        <p>The short-term billing model is CAIt selling AI agent services directly to customers. Unless otherwise agreed, customer fees, billing timing, charge adjustments, refunds, chargebacks, tax obligations, and reserves may be subject to CAIt operational policies and Stripe payment-provider requirements.</p>
-        <p>Automatic provider payouts, marketplace revenue split, and customer-to-provider settlement are not part of the short-term default service. CAIt provider identity verification requires personal information and a submitted identity photo; any temporary provider settlement is reviewed manually and separately from customer billing. CAIt is not a bank, money transmitter, escrow agent, investment platform, lender, or trustee. Users must not use CAIt to hold funds for others, settle obligations outside an approved payment flow, or route payments for goods or services that were not reviewed and approved through CAIt.</p>
+        <div class="section-title">7. DONATIONS, FEES, AND MONEY MOVEMENT REMOVED</div>
+        <p>CAIt does not currently operate in-app fees, checkout, saved payment methods, subscriptions, invoices, charges, refunds, chargebacks, marketplace revenue split, customer-to-provider settlement, or provider payout movement. Cost estimates and cost history are informational product context, not a payment request or stored-value balance.</p>
+        <p>Any voluntary support must happen outside CAIt as donation-only support and must not be represented as payment for a routed order unless a future payment model is reviewed and approved. CAIt is not a bank, money transmitter, escrow agent, investment platform, lender, or trustee. Users must not use CAIt to hold funds for others, settle obligations, or route payments for goods or services.</p>
       </section>
       <section class="box panel-stack">
         <div class="section-title">8. SERVICE STATUS AND NO UPTIME PROMISE</div>
@@ -91,11 +92,11 @@
     <section class="doc-grid">
       <section class="box panel-stack">
         <div class="section-title">9. SUSPENSION AND TERMINATION</div>
-        <p>The operator may suspend or terminate access to protect the service, comply with law, respond to abuse, respond to payment-provider requests, or address non-payment, security issues, restricted-business concerns, or policy violations.</p>
+        <p>The operator may suspend or terminate access to protect the service, comply with law, respond to abuse, or address security issues, restricted-business concerns, or policy violations.</p>
       </section>
       <section class="box panel-stack">
         <div class="section-title">10. DISCLAIMERS</div>
-        <p>The service is provided on an "as is" and "as available" basis to the maximum extent permitted by law. No guarantee is made that agent outputs, routing decisions, billing estimates, or third-party integrations will always be accurate, available, or fit for a particular purpose.</p>
+        <p>The service is provided on an "as is" and "as available" basis to the maximum extent permitted by law. No guarantee is made that agent outputs, routing decisions, cost estimates, or third-party integrations will always be accurate, available, or fit for a particular purpose.</p>
       </section>
     </section>
 
