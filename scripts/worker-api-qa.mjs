@@ -4,7 +4,8 @@ import worker from '../worker.js';
 import { createD1LikeStorage } from '../lib/storage.js';
 import { createBrokerAgentAssignmentHelpers } from '../lib/broker-agent-assignment.js';
 import { publisherRecordsFromContext } from '../lib/publisher-items.js';
-import { WELCOME_CREDITS_GRANT_AMOUNT, buildAgentTeamDeliveryOutput, nowIso, orderPreflightForAgent } from '../lib/shared.js';
+import { WELCOME_CREDITS_GRANT_AMOUNT, buildAgentTeamDeliveryOutput, estimateRunWindow, nowIso, orderPreflightForAgent, reserveBillingEstimateInState, upsertAccountSettingsInState } from '../lib/shared.js';
+import { createWorkflowPlanAssemblyHelpers } from '../lib/workflow-plan-assembly.js';
 import { E2E_DEFAULT_ORDER_PROMPT, assertOrderScenarioQuality, buildOrderScenarioPayload } from './e2e-order-scenario.mjs';
 
 const workerSource = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
@@ -174,8 +175,47 @@ assert.ok(workflowPlanAssemblySource.includes('function planWorkflowAssignments'
 assert.ok(workflowPlanAssemblySource.includes('async function maybeRefineWorkflowPlanWithLeaderLlm'), 'leader LLM plan refinement should be owned by lib/workflow-plan-assembly.js');
 assert.ok(workflowPlanAssemblySource.includes('function workflowPlannedTasksFromOrderBody'), 'retry planned-task extraction should be owned by lib/workflow-plan-assembly.js');
 assert.ok(workflowPlanAssemblySource.includes('function buildWorkflowEstimate'), 'workflow estimate assembly should be owned by lib/workflow-plan-assembly.js');
+assert.ok(orderCreateRoutesSource.includes('openAiCostEstimate: workflowEstimate.openAiCostMax'), 'workflow preflight should guard against the OpenAI/API cost estimate, not the marked-up customer total.');
 assert.ok(workflowPlanAssemblySource.includes('function buildWorkflowParentJob'), 'workflow parent job assembly should be owned by lib/workflow-plan-assembly.js');
 assert.ok(workflowPlanAssemblySource.includes('function compactRetryReuseArtifactsForJobStorage'), 'retry reuse artifact storage compaction should be owned by lib/workflow-plan-assembly.js');
+const qaWorkflowPlanHelpers = createWorkflowPlanAssemblyHelpers({ estimateRunWindow });
+const qaWorkflowEstimate = qaWorkflowPlanHelpers.buildWorkflowEstimate([
+  { taskType: 'ops', agent: { avgLatencySec: 30, verificationStatus: 'verified', online: true } },
+  { taskType: 'ops', agent: { avgLatencySec: 30, verificationStatus: 'verified', online: true } }
+]);
+assert.equal(qaWorkflowEstimate.openAiCostMax, 28, 'workflow estimate should sum max OpenAI/API cost across child runs.');
+assert.equal(qaWorkflowEstimate.totalMax, 34.2, 'workflow estimate should preserve the customer-facing marked-up total.');
+const qaWorkflowBillingState = { accounts: [] };
+upsertAccountSettingsInState(qaWorkflowBillingState, 'workflow-limit-user', { login: 'workflow-limit-user', name: 'Workflow Limit User' }, 'github-app', {
+  billing: { openAiMonthlyCostLimit: 30 }
+});
+const qaOpenAiGuardPass = reserveBillingEstimateInState(
+  qaWorkflowBillingState,
+  'workflow-limit-user',
+  { login: 'workflow-limit-user', name: 'Workflow Limit User' },
+  'github-app',
+  qaWorkflowEstimate.totalMax,
+  {
+    openAiCostEstimate: qaWorkflowEstimate.openAiCostMax,
+    paymentProcessingRemoved: true,
+    period: '2026-05'
+  }
+);
+assert.equal(qaOpenAiGuardPass.ok, true, 'workflow OpenAI/API guard should allow a plan when the raw API cost stays within the monthly limit.');
+const qaOpenAiGuardFail = reserveBillingEstimateInState(
+  qaWorkflowBillingState,
+  'workflow-limit-user',
+  { login: 'workflow-limit-user', name: 'Workflow Limit User' },
+  'github-app',
+  qaWorkflowEstimate.totalMax,
+  {
+    openAiCostEstimate: qaWorkflowEstimate.totalMax,
+    paymentProcessingRemoved: true,
+    period: '2026-05'
+  }
+);
+assert.equal(qaOpenAiGuardFail.ok, false, 'marked-up workflow totals should not be reused as the OpenAI/API guard input.');
+assert.equal(qaOpenAiGuardFail.code, 'openai_cost_limit_reached');
 assert.ok(orderStrategySource.includes('function normalizeOrderStrategy'), 'order strategy normalization should be owned by lib/order-strategy.js');
 assert.ok(orderStrategySource.includes('function resolveOrderStrategy'), 'single/multi/auto routing policy should be owned by lib/order-strategy.js');
 assert.ok(orderStrategySource.includes('function orderStrategyWithFollowupContext'), 'follow-up order strategy context should be owned by lib/order-strategy.js');
