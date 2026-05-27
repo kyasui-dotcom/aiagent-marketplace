@@ -5056,7 +5056,7 @@ export default {
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
       return json({ ok: true, account: result.account, monthly_summary: result.monthlySummary, section: 'executorPreferences' });
     }
-    if (url.pathname === '/api/settings/cost-limits' && request.method === 'POST') {
+    if (apiRouteMatches(url.pathname, request.method, 'SETTINGS_COST_LIMITS', 'POST')) {
       const result = await saveSettingsSection(storage, request, env, 'costLimits');
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
       return json({ ok: true, account: result.account, monthly_summary: result.monthlySummary, section: 'costLimits' });
