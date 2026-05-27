@@ -22,6 +22,7 @@ function assertNotIncludes(source, needles, label) {
 }
 
 const workerSource = read('worker.js');
+const workerAssetsSource = read('lib/worker-assets.js');
 const orchestrationSource = read('lib/orchestration.js');
 const sharedSource = read('lib/shared.js');
 const chatSource = read('public/chat.js');
@@ -1026,6 +1027,20 @@ assertNotIncludes(orchestrationSource, [
 assert.ok(
   workerSource.includes('resolveDispatchEndpointUrl(endpoint, env)'),
   'worker dispatch must use provider endpoint URLs instead of local built-in execution'
+);
+assert.ok(
+  workerSource.includes("from './lib/worker-assets.js'") && workerSource.includes('fetchWorkerAsset(request, env, { responseWithCookies })'),
+  'worker static asset fallback must be delegated to the worker asset module'
+);
+assertNotIncludes(workerSource, [
+  'const noCacheAssetPaths = new Set',
+  'const NO_CACHE_ASSET_PATHS = new Set',
+  'env.ASSETS.fetch(request)'
+], 'worker.js static asset delegation');
+assert.ok(
+  workerAssetsSource.includes('const NO_CACHE_ASSET_PATHS = new Set')
+    && workerAssetsSource.includes('export async function fetchWorkerAsset'),
+  'worker asset module must own static asset cache policy and asset fetch behavior'
 );
 assert.ok(
   workerSource.includes('leaderTaskLayer(primary, task)'),

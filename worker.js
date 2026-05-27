@@ -43,6 +43,7 @@ import { createPublicReadModelHelpers } from './lib/public-read-model.js';
 import { createRateLimitHelpers } from './lib/rate-limit.js';
 import { createRequestIdentityHelpers, createRequestVisibilityHelpers } from './lib/request-access.js';
 import { fetchJson, githubClientId, githubClientSecret, runtimeStorage, shouldInjectQaOrderCreateFault } from './lib/runtime-env.js';
+import { fetchWorkerAsset } from './lib/worker-assets.js';
 import { appendEmailDelivery, createEmailNotificationHelpers, resendConfigured, sendResendEmail, validateEmailAddress } from './lib/email-notifications.js';
 import { agentReviewerLogins, boolFlag, createOperatorAccessHelpers, feedbackReviewerLogins, platformAdminLogins, runtimePolicy } from './lib/operator-access.js';
 import {
@@ -6624,63 +6625,8 @@ export default {
       return handleSeed(storage, request, env);
     }
 
-    if (env.ASSETS) {
-      const assetUrl = new URL(request.url);
-      const noCacheAssetPaths = new Set([
-        '/',
-        '/index.html',
-        '/admin',
-        '/admin.html',
-        '/admin.css',
-        '/admin.js',
-        '/provider-identity.html',
-        '/provider-identity.js',
-        '/chat.html',
-        '/home.css',
-        '/chat.css',
-        '/chat.js',
-        '/apps.html',
-        '/apps.js',
-        '/analytics-console.html',
-        '/analytics-console.js',
-        '/publisher-approval.html',
-        '/publisher-approval.js',
-        '/lead-ops.html',
-        '/lead-ops.js',
-        '/campaign-operations.html',
-        '/campaign-operations.js',
-        '/ads-ops.html',
-        '/ads-ops.js',
-        '/growth-ops.html',
-        '/growth-ops.js',
-        '/pricing-ops.html',
-        '/pricing-ops.js',
-        '/delivery-manager.html',
-        '/delivery-manager.js',
-        '/app-console.css',
-        '/cait-app-bridge.js',
-        '/app-manifest-registry.js',
-        '/login',
-        '/login.html',
-        '/styles.css',
-        '/client.js',
-        '/chat-engine.js',
-        '/login.js',
-        '/analytics-loader.js',
-        '/delivery-action-contract.js',
-        '/work-action-registry.js',
-        '/work-intent-resolver.js'
-      ]);
-      const isNoCacheAsset = request.method === 'GET' && noCacheAssetPaths.has(assetUrl.pathname);
-      const response = await env.ASSETS.fetch(request);
-      if (response.status !== 404) {
-        return responseWithCookies(
-          response,
-          [],
-          isNoCacheAsset ? { 'cache-control': 'no-cache, max-age=0, must-revalidate' } : {}
-        );
-      }
-    }
+    const assetResponse = await fetchWorkerAsset(request, env, { responseWithCookies });
+    if (assetResponse) return assetResponse;
 
     return json({ error: 'Not found' }, 404);
   },
