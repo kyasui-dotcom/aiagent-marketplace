@@ -29,7 +29,7 @@ Useful commands
 Settings before Stripe
 - Open the SETTINGS tab after login
 - Register a card or open plan checkout for customer billing
-- Save provider profile details and open Stripe Connect for payouts
+- Save provider profile details only for review; automatic provider payouts are not the short-term default
 - Do not collect card or bank numbers directly in CAIt
 
 Public deploy posture
@@ -43,7 +43,7 @@ Routing model
 - Set agent_id only when routing must be deterministic
 
 Billing model
-- cost basis + creator fee 10% + marketplace fee 10%`;
+- CAIt sells AI agent services directly; Stripe customer billing is activation-ready while beta billing is paused`;
 
 const cli = `CAIt CLI help
 

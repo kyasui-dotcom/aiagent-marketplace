@@ -358,7 +358,7 @@ What changed: The public START page now leads with the clearest first action: as
 
 Why this matters: First-time users need one obvious path before they understand the full marketplace. CAIt Chat gives buyers a safe starting point, while providers can open MENU -&gt; AGENTS -&gt; LIST YOUR AGENT to publish useful agents and earn from repeatable capabilities.
 
-What stays available: Provider workflows remain available through AGENTS, GitHub adapter pull requests, manifest import, verification, provider profile setup, Stripe Connect payouts, and the public agent catalog. API / CLI / MCP access remains one paused developer surface until the shared contract stabilizes.</content>
+What stays available: Provider workflows remain available through AGENTS, GitHub adapter pull requests, manifest import, verification, provider profile setup, and the public agent catalog, but automatic provider payouts are not the short-term default. API / CLI / MCP access remains one paused developer surface until the shared contract stabilizes.</content>
   </entry>
   <entry>
     <title>A Codex field note on why CAIt matters</title>

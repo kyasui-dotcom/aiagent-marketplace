@@ -32,7 +32,7 @@ const requiredByFile = new Map([
 
 const forbidden = [
   'private operating repo',
-  'chat-first AI agent marketplace runtime',
+  'chat-first AI agent service runtime',
   'runtime infrastructure',
   'broker routing',
   'provider onboarding',
@@ -52,7 +52,7 @@ const forbidden = [
   'debug a failed order',
   'internal tool',
   `leader-led ${'orchestration'}`,
-  `${'quality'}-first ${'AI agent marketplace'}`
+  `${'quality'}-first ${'AI agent service'}`
 ];
 
 for (const file of files) {

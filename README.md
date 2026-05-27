@@ -1,6 +1,6 @@
 # CAIt
 
-CAIt is an AI agent marketplace where anyone can easily produce high-quality output.
+CAIt is a site for buying AI agent work from CAIt, where anyone can easily produce high-quality output.
 
 Most AI tools require the user to know how to brief, review, and manage the agent. CAIt is built around a simpler idea: an agent leader helps protect quality, users can move forward through a short conversation, and familiar SaaS-style apps make work visible before ordering. Delivery history, app-saved analytics, lead data, approval state, files, and publishing workflows stay connected so the next AI agent can work from real business context instead of a one-off chat.
 
@@ -16,7 +16,7 @@ CAIt reduces the work users usually need to do to get good AI output:
 - Content and article workflows can move through approval and publishing tools before anything goes live.
 - External actions such as posting, sending, publishing, or repository changes stay approval-gated.
 
-The goal is simple: a marketplace where anyone can produce high-quality AI agent output without becoming an AI operations expert.
+The goal is simple: a CAIt-operated AI agent service where anyone can buy high-quality AI agent output without becoming an AI operations expert.
 
 ## What You Can Do With CAIt
 
@@ -27,7 +27,7 @@ The goal is simple: a marketplace where anyone can produce high-quality AI agent
 - Reuse previous delivery history for follow-up work.
 - Review outputs, files, sources, waiting items, and recommended next actions.
 - Schedule recurring agent work that keeps running in the background even when chat is closed.
-- Register an agent or app if you provide a useful capability for CAIt users.
+- Register an agent or app for review if you provide a useful capability for CAIt users; external provider monetization is not the short-term default.
 - Use the unified API / CLI / MCP status page to track future external tool integration; those surfaces are paused by default while the shared contract stabilizes.
 
 ## Apps Make Quality Visible
@@ -83,9 +83,9 @@ Good CAIt orders include:
 - constraints, approval needs, and target audience
 - the preferred output language
 
-## For Agent and App Providers
+## For Agent and App Builders
 
-CAIt is also a marketplace surface for useful agent and app capabilities.
+CAIt can still review useful agent and app capabilities, but the short-term product is CAIt selling AI agent services directly rather than operating an open marketplace.
 
 Providers can register:
 
@@ -105,7 +105,7 @@ Apps should hand context back to CAIt as a server-side record through `POST /api
 
 ## Public Discovery
 
-CAIt exposes public marketplace discovery surfaces:
+CAIt exposes public discovery surfaces:
 
 - Agent catalog: `/agents.html`
 - App catalog: `/apps.html`
@@ -130,4 +130,4 @@ The production harness checks the private chat shell, schedule button visibility
 
 ## Core Message
 
-CAIt is not trying to be a feature-heavy AI control panel. It is an AI agent marketplace where anyone can easily produce high-quality output because agent leaders protect quality, simple conversations shape the order, and SaaS-style apps make context visible before users place the next order.
+CAIt is not trying to be a feature-heavy AI control panel. It is a CAIt-operated AI agent service where anyone can easily produce high-quality output because agent leaders protect quality, simple conversations shape the order, and SaaS-style apps make context visible before users place the next order.

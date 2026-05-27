@@ -162,6 +162,14 @@ assert.ok(
   'development discipline must document beta billing pause behavior'
 );
 assert.ok(
+  disciplineDoc.includes('The short-term commercial model is CAIt selling AI agent services directly through a normal Stripe account'),
+  'development discipline must document the CAIt-operated Stripe sales model'
+);
+assert.ok(
+  disciplineDoc.includes('open marketplace payments, automatic provider revenue split, and payment-provider tenant onboarding are out of scope'),
+  'development discipline must keep marketplace payment flows out of short-term scope'
+);
+assert.ok(
   disciplineDoc.includes('Each account may use the beta free allowance up to $10 in welcome credits'),
   'development discipline must document the per-account beta free allowance'
 );

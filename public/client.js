@@ -12474,7 +12474,7 @@ function renderRunCreateStatus(snapshot = state.snapshot || {}) {
 
   if (skillDraft) {
     title = 'Agent Skill detected.';
-    body = `${uiLabels.sendChat} will convert SKILL.md into a ${PRODUCT_NAME} manifest draft, open AGENTS, and let you review before import. Listing can proceed, but provider money actions stay locked until identity, billing, and PAY.JP tenant review are ready.`;
+    body = `${uiLabels.sendChat} will convert SKILL.md into a ${PRODUCT_NAME} manifest draft, open AGENTS, and let you review before import. Listing can proceed, but provider money actions stay locked until identity, Stripe billing, and CAIt manual settlement review are ready.`;
     tone = 'ok';
     buttonText = uiLabels.sendChat;
   } else if (llmFallbackCandidate && mustUseLlmFallback) {
@@ -12580,7 +12580,7 @@ function renderRunCreateStatus(snapshot = state.snapshot || {}) {
     buttonText = uiLabels.sendOrder;
   } else if (!pinnedAgent && !readyMatches.length) {
     title = 'No ready agent for this task.';
-    body = 'Open AGENTS to register a ready agent. Provider money actions stay locked until SETTINGS > PAYMENTS, PROVIDER IDENTITY, and PAY.JP tenant review are complete.';
+    body = 'Open AGENTS to register a ready agent. Provider money actions stay locked until SETTINGS > PAYMENTS, PROVIDER IDENTITY, and CAIt manual settlement review are complete.';
     tone = 'warn';
     buttonText = uiLabels.sendOrder;
   } else {
@@ -13537,7 +13537,7 @@ function renderStripeTools(account = null, auth = null) {
       `Withdrawable ledger balance: ${yen(providerPending)}`,
       'Provider identity/admin approval can be prepared now; payout movement stays locked until billing activation.'
     ].join('\n'));
-    safeText(els.stripeCustomerActionResult, 'Beta mode is active. Each account can use up to $10 in credits. Hosted checkout, card setup, monthly charges, PAY.JP charges, and subscription checkout are disabled, but the billing contracts remain ready for activation.');
+    safeText(els.stripeCustomerActionResult, 'Beta mode is active. Each account can use up to $10 in credits. Hosted checkout, card setup, monthly charges, and subscription checkout are disabled, but the Stripe billing contracts remain ready for activation.');
     safeText(els.stripeProviderActionResult, connectReady
       ? 'Provider setup is ready. Payout movement remains paused during beta.'
       : 'Provider setup can be prepared, but payouts and provider monthly charges remain paused during beta.');
@@ -13641,7 +13641,7 @@ function renderStripeTools(account = null, auth = null) {
       els.runStripeProviderPayoutBtn.title = providerPending < providerMinimum
         ? `Minimum manual payout request is ${yen(providerMinimum)}.`
         : (!identityVerified
-          ? 'Complete Stripe Connect identity verification before requesting payout handling.'
+          ? 'Complete payout-provider identity verification before requesting manual settlement handling.'
           : 'Enable the provider profile and link GitHub before requesting manual payout.');
     }
     return;
@@ -13686,7 +13686,7 @@ function renderStripeTools(account = null, auth = null) {
   if (!canManagePayouts) withdrawDisabledReason = 'Connect GitHub first to manage provider withdrawals.';
   else if (!stripeReady) withdrawDisabledReason = 'Payout provider is not ready on the platform.';
   else if (!providerEnabled) withdrawDisabledReason = 'Enable and save the provider profile before withdrawing.';
-  else if (!identityVerified) withdrawDisabledReason = `${connectActionLabel} first to complete Stripe Connect identity verification.`;
+  else if (!identityVerified) withdrawDisabledReason = `${connectActionLabel} first to complete payout-provider identity verification.`;
   else if (!(providerPending > 0)) withdrawDisabledReason = 'No provider earnings are available to withdraw yet.';
   else if (providerPending < providerMinimum) withdrawDisabledReason = `Minimum withdrawal is ${yen(providerMinimum)}.`;
   const withdrawReady = !withdrawDisabledReason;
@@ -13742,9 +13742,9 @@ function renderStripeTools(account = null, auth = null) {
   ].join('\n'));
   safeText(els.stripeProviderActionResult, [
     connectReady
-      ? 'External payouts are enabled after Stripe Connect identity verification.'
+      ? 'External payouts are enabled after payout-provider identity verification.'
       : canManagePayouts
-        ? `${connectActionLabel} ${connectStarted ? 'continues' : 'starts'} Stripe Connect identity verification and payout setup before earnings can be withdrawn.`
+        ? `${connectActionLabel} ${connectStarted ? 'continues' : 'starts'} payout-provider identity verification and payout setup before earnings can be withdrawn.`
       : 'Connect GitHub first. Provider setup and withdrawals are restricted to GitHub-linked accounts.',
     providerMonthlyChargeReady
       ? `RUN PROVIDER MONTHLY BILLING will charge ${yen(providerMonthlyDue)} for ${state.settingsPeriod || currentMonthPeriod()} using the saved card on this account.`
@@ -13753,7 +13753,7 @@ function renderStripeTools(account = null, auth = null) {
       ? `Latest provider monthly failure: ${providerMonthlyLastFailureMessage}${providerMonthlyRetryPeriod ? ` · retry ${providerMonthlyRetryCount}/${providerMonthlyMaxAttempts} for ${providerMonthlyRetryPeriod}` : ''}`
       : `Auto-run policy: ${providerMonthlyAutoEnabled ? `enabled with up to ${providerMonthlyMaxAttempts} attempts per period.` : 'disabled.'}`,
     withdrawReady
-      ? `Provider withdrawal moves earnings from ${PRODUCT_NAME} only after Stripe Connect identity verification is complete.`
+      ? `Provider withdrawal moves earnings from ${PRODUCT_NAME} only after payout-provider identity verification is complete.`
       : `Provider withdrawal is locked: ${withdrawDisabledReason}`,
     'Leave the amount blank to withdraw the full available balance.',
     'Use these only if this account receives revenue share.'

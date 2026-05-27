@@ -421,19 +421,14 @@ assert.ok(!workActionRegistry.includes("post_current_to_x: { kind: 'executor' }"
 assert.ok(chatJs.includes('growthLeaderNeedsDataHint'), 'Growth leader intake should point users toward connectors or source URLs instead of asking repeated data questions.');
 assert.ok(chatJs.includes('Connected Google analytics can be attached'), 'Growth order checks should surface connected Google analytics instead of silently skipping it.');
 assert.ok(chatJs.includes('Analytics was skipped for this prepared order'), 'Growth order checks should allow an explicit analytics skip only when the user chooses it.');
-assert.ok(clientJs.includes('Identity verified for payout'), 'Provider payout UI should show Stripe Connect identity verification state.');
-assert.ok(clientJs.includes('complete Stripe Connect identity verification'), 'Provider payout UI should block withdrawals until identity verification is complete.');
+assert.ok(clientJs.includes('Identity verified for payout'), 'Provider payout UI should show payout-provider identity verification state.');
+assert.ok(clientJs.includes('complete payout-provider identity verification'), 'Provider payout UI should block withdrawals until identity verification is complete.');
 assert.ok(clientJs.includes('const betaBillingPaused = Boolean(stripe?.billingPaused || auth?.billingPaused);'), 'Settings UI should detect beta billing pause from server policy.');
 assert.ok(clientJs.includes('Live billing: paused'), 'Settings UI should show that live billing is paused in beta.');
 assert.ok(clientJs.includes('BILLING_ACTIVATION_ENABLED=1'), 'Settings UI should document the billing activation switch.');
-assert.ok(clientJs.includes('Billing is paused during beta'), 'Stripe/PAY.JP action errors should present beta pause clearly.');
-assert.ok(billingHelpers.includes('payjpLocaleFromRequest'), 'PAY.JP API responses should derive locale from request headers, query, or body.');
-assert.ok(billingHelpers.includes('payjpLocalizedCopy'), 'PAY.JP status should expose CAIt-localized guidance for Japanese and English UI.');
-assert.ok(billingHelpers.includes('localized_error'), 'PAY.JP action errors should include localized user-facing error text.');
-assert.ok(billingHelpers.includes('payjpJsLocale'), 'PAY.JP public config should expose the locale to use with payjp.js.');
-assert.ok(billingHelpers.includes('payjpApplicationUrlWithReturnTo'), 'PAY.JP tenant application URLs should be returned with an explicit return_to redirect.');
-assert.ok(billingHelpers.includes("url.searchParams.set('return_to'"), 'PAY.JP tenant onboarding should append return_to to application URLs.');
-assert.ok(billingHelpers.includes('/chat?payjp=tenant-return&section=provider'), 'PAY.JP tenant review should return to an existing CAIt route after hosted review.');
+assert.ok(clientJs.includes('Billing is paused during beta'), 'Stripe action errors should present beta pause clearly.');
+assert.equal(new RegExp('pay' + 'jp', 'i').test(billingHelpers), false, 'Billing helpers should not retain removed payment-provider implementation paths.');
+assert.equal(clientJs.includes('PAY' + '.JP'), false, 'Client UI should not mention the removed payment provider.');
 assert.ok(clientJs.includes("if (requested.length) url.searchParams.set('capabilities', requested.join(','))"), 'Chat Google connector should pass exact required Google capabilities into OAuth without adding broad defaults.');
 assert.ok(clientJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
 assert.ok(chatJs.includes("from './connector-gate.js"), 'Chat connector approvals should be delegated to the connector gate module.');
@@ -1947,13 +1942,12 @@ assert.ok(worker.includes('reviewAdminProviderIdentityVerification'), 'Worker sh
 assert.ok(providerIdentityRoutes.includes('billingPostalCode: existing.billing?.billingPostalCode || identityVerification.fields.postalCode'), 'Provider identity submission should sync address data into billing identity.');
 assert.ok(billingHelpers.includes('providerRegistrationBillingStatus'), 'Billing helper should compute provider money readiness from billing identity and provider identity.');
 assert.ok(billingHelpers.includes("providerIdentityStatus(account) === 'approved'"), 'Provider money readiness should require CAIt admin-approved provider identity.');
-assert.ok(billingHelpers.includes('PAYJP_TENANT_READY_STATUSES'), 'Provider money readiness should define explicit PAY.JP tenant ready statuses.');
-assert.ok(billingHelpers.includes("missing.push('payjpTenantReady')"), 'Provider money readiness should keep money actions locked until PAY.JP tenant review is ready.');
-assert.ok(billingHelpers.includes('payjp_tenant_review_started'), 'Agent registration money readiness should report whether PAY.JP tenant review has started.');
-assert.ok(billingHelpers.includes('payjp_tenant_application_url'), 'Agent registration money readiness should return the PAY.JP tenant onboarding URL when available.');
+assert.equal(billingHelpers.includes('PAY' + 'JP_TENANT_READY_STATUSES'), false, 'Provider money readiness should not depend on removed provider tenant statuses.');
+assert.equal(billingHelpers.includes("missing.push('" + 'pay' + "jpTenantReady')"), false, 'Provider money readiness should not require the removed provider gate.');
+assert.ok(billingHelpers.includes('manual_provider_settlement'), 'Agent registration money readiness should report CAIt manual settlement mode.');
 assert.ok(billingHelpers.includes('money_actions_blocked'), 'Agent registration should report locked provider money actions without blocking registration.');
 assert.ok(/Listing can proceed, but (provider )?money actions stay locked/.test(clientJs), 'Agent registration UI copy should allow listing while warning that money actions are locked.');
-assert.ok(clientJs.includes('PAY.JP tenant review'), 'Agent registration UI copy should include PAY.JP tenant review as a money-action readiness condition.');
+assert.ok(clientJs.includes('CAIt manual settlement review'), 'Agent registration UI copy should name CAIt manual settlement review as the temporary money-action condition.');
 for (const field of ['billingPhone', 'billingPostalCode', 'billingRegion', 'billingCity', 'billingAddressLine1', 'billingAddressLine2']) {
   assert.ok(clientJs.includes(field), `Settings UI should save provider registration billing field ${field}.`);
 }

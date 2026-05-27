@@ -70,6 +70,7 @@ const operatorAccessSource = readFileSync(new URL('../lib/operator-access.js', i
 const orderStrategySource = readFileSync(new URL('../lib/order-strategy.js', import.meta.url), 'utf8');
 const dispatchPolicySource = readFileSync(new URL('../lib/dispatch-policy.js', import.meta.url), 'utf8');
 const endpointDispatchContractSource = readFileSync(new URL('../lib/endpoint-dispatch-contract.js', import.meta.url), 'utf8');
+const dispatchResponseNormalizerSource = readFileSync(new URL('../lib/dispatch-response-normalizer.js', import.meta.url), 'utf8');
 const deliveryActionContractSource = readFileSync(new URL('../public/delivery-action-contract.js', import.meta.url), 'utf8');
 const sampleAgentDefinitionsSource = readFileSync(new URL('../lib/builtin-agents/agents/index.js', import.meta.url), 'utf8');
 const orchestrationSource = readFileSync(new URL('../lib/orchestration.js', import.meta.url), 'utf8');
@@ -89,6 +90,7 @@ const workflowReconcileActionsSource = readFileSync(new URL('../lib/workflow-rec
 const workflowReconcileStateSource = readFileSync(new URL('../lib/workflow-reconcile-state.js', import.meta.url), 'utf8');
 const workflowWatchdogSource = readFileSync(new URL('../lib/workflow-watchdog.js', import.meta.url), 'utf8');
 const workflowRetrySweepSource = readFileSync(new URL('../lib/workflow-retry-sweep.js', import.meta.url), 'utf8');
+const workflowDispatchQueueSource = readFileSync(new URL('../lib/workflow-dispatch-queue.js', import.meta.url), 'utf8');
 const workflowTimeoutsSource = readFileSync(new URL('../lib/workflow-timeouts.js', import.meta.url), 'utf8');
 const deliveryCompletionGateSource = readFileSync(new URL('../lib/delivery-completion-gate.js', import.meta.url), 'utf8');
 assert.ok(!workerSource.includes("from './lib/local-agent-endpoints.js'"), 'sample agents must use the normal external provider endpoint path.');
@@ -601,13 +603,7 @@ assert.ok(!workerSource.includes('function feedbackEmailAddress'), 'worker.js mu
 assert.ok(!workerSource.includes('async function forwardFeedbackReportEmail'), 'worker.js must not keep feedback report email delivery implementation');
 assert.ok(!workerSource.includes("import('cloudflare:email')"), 'worker.js must not import Cloudflare email directly for feedback delivery');
 assert.ok(billingRoutesSource.includes('async function getStripeStatus'), 'Stripe status route should be owned by lib/routes/billing.js');
-assert.ok(billingRoutesSource.includes('async function getPayjpStatus'), 'PAY.JP status route should be owned by lib/routes/billing.js');
-assert.ok(billingRoutesSource.includes('async function createPayjpTenantOnboardingForCurrent'), 'PAY.JP tenant onboarding route should be owned by lib/routes/billing.js');
-assert.ok(billingRoutesSource.includes('tenantApplicationStatus'), 'PAY.JP tenant onboarding should persist tenant application status in billing routes.');
-assert.ok(billingRoutesSource.includes('async function createPayjpPlatformChargeForCurrent'), 'PAY.JP platform charge route should be owned by lib/routes/billing.js');
-assert.ok(billingRoutesSource.includes('async function finishPayjpPlatformCharge3DSForCurrent'), 'PAY.JP 3DS finish route should be owned by lib/routes/billing.js');
-assert.ok(billingRoutesSource.includes('cait_payment_flow'), 'PAY.JP platform charge should preserve marketplace payment metadata.');
-assert.ok(billingRoutesSource.includes('lastPlatformChargeStatus'), 'PAY.JP platform charge routes should persist last platform charge status.');
+assert.equal(new RegExp('pay' + 'jp', 'i').test(billingRoutesSource), false, 'billing routes should not retain removed payment-provider implementation paths.');
 assert.ok(billingRoutesSource.includes('async function ensureStripeCustomerForCurrent'), 'Stripe customer ensure helper should be owned by billing routes.');
 assert.ok(billingRoutesSource.includes('async function createStripeSetupSessionForCurrent'), 'Stripe setup checkout route should be owned by lib/routes/billing.js');
 assert.ok(billingRoutesSource.includes('async function createStripeSubscriptionSessionForCurrent'), 'Stripe subscription checkout route should be owned by lib/routes/billing.js');
@@ -621,10 +617,7 @@ assert.ok(billingRoutesSource.includes('async function triggerStripeProviderMont
 assert.ok(billingRoutesSource.includes('monthly_billing_not_selected'), 'Stripe monthly invoice charge should preserve monthly billing selection guard.');
 assert.ok(billingRoutesSource.includes('provider_monthly_not_captured'), 'Stripe provider monthly charge should preserve capture failure handling.');
 assert.ok(!workerSource.includes('async function getStripeStatus'), 'worker.js must not keep Stripe status route implementation');
-assert.ok(!workerSource.includes('async function getPayjpStatus'), 'worker.js must not keep PAY.JP status route implementation');
-assert.ok(!workerSource.includes('async function createPayjpTenantOnboardingForCurrent'), 'worker.js must not keep PAY.JP tenant onboarding route implementation');
-assert.ok(!workerSource.includes('async function createPayjpPlatformChargeForCurrent'), 'worker.js must not keep PAY.JP platform charge route implementation');
-assert.ok(!workerSource.includes('async function finishPayjpPlatformCharge3DSForCurrent'), 'worker.js must not keep PAY.JP 3DS finish route implementation');
+assert.equal(new RegExp('pay' + 'jp', 'i').test(workerSource), false, 'worker.js should not retain removed payment-provider route wiring.');
 assert.ok(!workerSource.includes('async function ensureStripeCustomerForCurrent'), 'worker.js must not keep Stripe customer ensure helper implementation');
 assert.ok(!workerSource.includes('async function createStripeSetupSessionForCurrent'), 'worker.js must not keep Stripe setup checkout route implementation');
 assert.ok(!workerSource.includes('async function createStripeSubscriptionSessionForCurrent'), 'worker.js must not keep Stripe subscription checkout route implementation');
@@ -633,9 +626,8 @@ assert.ok(!workerSource.includes('async function createStripeProviderPayoutForCu
 assert.ok(!workerSource.includes('async function triggerStripeMonthlyInvoiceChargeForCurrent'), 'worker.js must not keep Stripe monthly invoice charge route implementation');
 assert.ok(!workerSource.includes('async function triggerStripeProviderMonthlyChargeForCurrent'), 'worker.js must not keep Stripe provider monthly charge route implementation');
 assert.ok(billingHelpersSource.includes('function stripeStateForClient'), 'billing client state helpers should be owned outside worker.js');
-assert.ok(billingHelpersSource.includes('function payjpActionErrorPayload'), 'PAY.JP billing error helpers should be owned outside worker.js');
+assert.equal(new RegExp('pay' + 'jp', 'i').test(billingHelpersSource), false, 'billing helpers should not retain removed payment-provider error helpers.');
 assert.ok(!workerSource.includes('function stripeStateForClient'), 'worker.js must not keep billing client state helper implementation');
-assert.ok(!workerSource.includes('function payjpActionErrorPayload'), 'worker.js must not keep PAY.JP billing error helper implementation');
 assert.ok(billingSweepsSource.includes('async function runProviderMonthlyBillingSweep'), 'provider monthly billing sweep should be owned by lib/billing-sweeps.js');
 assert.ok(billingSweepsSource.includes('function providerMonthlyBillingAutoConfig'), 'provider monthly billing auto config should be owned by lib/billing-sweeps.js');
 assert.ok(billingSweepsSource.includes('provider_monthly_billing_auto_retry'), 'provider monthly billing sweep should preserve failure notification source.');
@@ -779,7 +771,7 @@ assert.ok(!/async function dispatchJobToAssignedAgent[\s\S]{0,1500}runBuiltInAge
 assert.ok(dataAnalysisSource.includes('return what the data layer implies for downstream research, planning, preparation, and app reflection'), 'data analysis agent should instruct downstream agents to use upstream data.');
 assert.ok(!workerSource.includes('function workflowShouldCompleteDataUnavailable'), 'worker must not keep a data-unavailable shortcut completion path.');
 assert.ok(/dispatchExistingJobToAssignedAgent\(storage,\s*env,\s*jobId,\s*agentId/.test(workerSource), 'endpoint queue consumer should use the normal endpoint dispatcher.');
-assert.ok(workerSource.includes("kind: 'endpoint_dispatch'"), 'workflow progress should queue normal endpoint dispatch work instead of draining every layer in one Worker request.');
+assert.ok(workflowDispatchQueueSource.includes("kind: 'endpoint_dispatch'"), 'workflow progress should queue normal endpoint dispatch work instead of draining every layer in one Worker request.');
 assert.ok(workerSource.includes("if (kind === 'endpoint_dispatch')"), 'queue consumer should process provider endpoint dispatch messages one job at a time.');
 assert.ok(workerSource.includes('isTerminalJobStatus(job.status) && !workflowChildIsAdaptivePending(job)'), 'endpoint dispatch should not treat adaptive-pending blocked children as terminal because queue reads can race with leader release.');
 assert.ok(workerSource.includes('isTerminalJobStatus(draftJob.status) && !workflowChildIsAdaptivePending(draftJob)'), 'endpoint dispatch lock should re-check adaptive-pending blocked children against fresh storage before skipping.');
@@ -855,7 +847,7 @@ assert.ok(workerSource.includes('function workflowConcreteDeliverableContractFor
 assert.ok(!/function workflowTaskRequiresConcreteSpecialistArtifact[\s\S]*'seo_specialist'/.test(workerSource), 'worker must not hardcode specialist deliverable requirements by task name.');
 assert.ok(!workerSource.includes('function workflowPriorHandoffCompletionPayload'), 'worker must not keep a prior-handoff fallback completion path.');
 assert.ok(!workerSource.includes('completionBlocking: false'), 'incomplete specialist artifacts must block completion and retry/fail instead of surfacing as non-blocking warnings.');
-assert.ok(workerSource.includes('function agentCompletionFailureReason'), 'worker must reject completed agent responses that do not include returned delivery artifacts.');
+assert.ok(dispatchResponseNormalizerSource.includes('function agentCompletionFailureReason') && workerSource.includes('agentCompletionFailureReason'), 'worker must reject completed agent responses that do not include returned delivery artifacts.');
 assert.ok(workerSource.includes('markAgentCompletionFailedFreeInState'), 'missing-deliverable completions must fail without billing instead of becoming warnings.');
 assert.ok(workerSource.includes('billing released: agent did not complete a user-facing delivery'), 'agent-side missing-deliverable failures must release billing.');
 assert.ok(workflowRetrySweepSource.includes('listRetryableDispatchJobs'), 'cron retry sweep must include retryable non-workflow agent jobs, not only workflow children.');
@@ -6268,11 +6260,10 @@ assert.equal(registeredWithMoneyLocked.status, 201, 'agent registration should b
 assert.equal(registeredWithMoneyLocked.body.provider_money_readiness.money_actions_blocked, true);
 assert.ok(registeredWithMoneyLocked.body.provider_money_readiness.missing_billing_fields.includes('billingPaymentMethod'));
 assert.ok(registeredWithMoneyLocked.body.provider_money_readiness.missing_billing_fields.includes('providerIdentityApproved'));
-assert.ok(registeredWithMoneyLocked.body.provider_money_readiness.missing_billing_fields.includes('payjpTenantReady'));
-assert.equal(registeredWithMoneyLocked.body.provider_money_readiness.payjp_tenant_review_started, false);
-assert.equal(registeredWithMoneyLocked.body.provider_money_readiness.payjp_tenant_ready, false);
-assert.equal(registeredWithMoneyLocked.body.provider_money_readiness.payjp_tenant_status, 'not_started');
-assert.equal(registeredWithMoneyLocked.body.provider_money_readiness.payjp_tenant_application_url, null);
+assert.equal(registeredWithMoneyLocked.body.provider_money_readiness.missing_billing_fields.includes('pay' + 'jpTenantReady'), false);
+assert.equal(registeredWithMoneyLocked.body.provider_money_readiness.manual_provider_settlement, true);
+assert.equal(('pay' + 'jp_tenant_review_started') in registeredWithMoneyLocked.body.provider_money_readiness, false);
+assert.equal(('pay' + 'jp_tenant_ready') in registeredWithMoneyLocked.body.provider_money_readiness, false);
 
 const deletedRegistered = await request(`/api/agents/${registered.body.agent.id}`, {
   method: 'DELETE'

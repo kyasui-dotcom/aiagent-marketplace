@@ -117,6 +117,7 @@ import { createWorkflowAdaptiveActivation } from './lib/workflow-adaptive-activa
 import { createDispatchPolicyHelpers } from './lib/dispatch-policy.js';
 import { createEndpointDispatchContractHelpers } from './lib/endpoint-dispatch-contract.js';
 import { WORKFLOW_HANDOFF_CONTEXT_START, createWorkflowHandoffContext } from './lib/workflow-handoff-context.js';
+import { createWorkflowDispatchQueueHelpers } from './lib/workflow-dispatch-queue.js';
 import { createWorkflowLeaderHandoff } from './lib/workflow-leader-handoff.js';
 import { createWorkflowLeaderSequenceRepair } from './lib/workflow-leader-sequence-repair.js';
 import { createWorkflowParentReconcile } from './lib/workflow-parent-reconcile.js';
@@ -126,6 +127,7 @@ import { createWorkflowReconcileState } from './lib/workflow-reconcile-state.js'
 import { createWorkflowRetrySweep } from './lib/workflow-retry-sweep.js';
 import { createWorkflowTimeouts } from './lib/workflow-timeouts.js';
 import { ORCHESTRATION_WATCHDOG_POLICY, createWorkflowWatchdog } from './lib/workflow-watchdog.js';
+import { createDispatchResponseNormalizer } from './lib/dispatch-response-normalizer.js';
 import { sanitizeExactMatchActionsForClient } from './lib/exact-actions.js';
 import { hasAdapterPrConfirmation, hasPostConfirmation, hasRepoWriteConfirmation, hasSendConfirmation } from './lib/external-write-confirmation.js';
 import { csrfExemptPath, isUnsafeMethod, rateLimitSpecForPath } from './lib/http-policy.js';
@@ -137,14 +139,17 @@ import { agentReviewRouteBlockReason, applyAgentReviewToAgentRecord, isAgentRevi
 import { runAgentOnboardingCheck } from './lib/onboarding.js';
 import { isManagedSampleAgent, sampleKindFromAgent, verifyAgentByHealthcheck } from './lib/verify.js';
 import { accountHash } from './lib/account-identity.js';
+import { createAgentEndpointHelpers } from './lib/agent-endpoints.js';
+import { createAgentResultPayloadHelpers } from './lib/agent-result-payload.js';
 import { buildConversionAnalytics, createConversionEventPayload } from './lib/conversion-analytics.js';
+import { parseBody } from './lib/http-body.js';
+import { normalizeUsageForBilling, usageWithObservedJobTokens } from './lib/usage-accounting.js';
 import { API_COST_CATALOG_VERSION, BILLING_DISPLAY_CURRENCY, EXTERNAL_API_COST_CATALOG_USD, LLM_HIGH_WATERMARK_PRICE_PER_MTOK_USD, WELCOME_CREDITS_GRANT_AMOUNT, accountIdForLogin, accountIdentityForProvider, accountSettingsForIdentity, accountSettingsForLogin, agentLinksFromRecord, agentTagsFromRecord, aliasLoginsForAccount, applyStripeRefundToAccount, applySubscriptionRefillToAccount, authenticateOrderApiKey, billingAuditsForJobIds, billingModeFromJob, billingPeriodId, billingProfileForAccount, buildAdminDashboard, buildAgentId, buildFollowupConversationContext, buildIntakeClarification, buildMonthlyAccountSummary, chatSessionIdForJob, chatTrainingExamplesForClient, chatTranscriptsForClient, computeScore, connectorActionLabel, connectorOAuthActionInstruction, createChatTranscript, createFeedbackReport, createRecurringOrderInState, defaultLoginForAuthUser, deleteRecurringOrderInState, displayCurrencyToLedgerAmount, dueRecurringOrders, estimateBilling, estimateRunWindow, feedbackReportsForClient, hideChatMemoryTranscriptForLoginInState, inferAgentTagsFromSignals, inferTaskSequence, inferTaskType, isAgentOwnedByLogin, isBillableJob, isJobVisibleToLogin, isPrivateNetworkHostname, jobsVisibleToLogin, ledgerAmountToDisplayCurrency, linkIdentityToAccountInState, makeEvent, markRecurringOrderRunInState, maybeGrantWelcomeCreditsForSignupInState, maybeGrantWelcomeCreditsForVerifiedAgentInState, mergeAccountsInState, mergeProtectedPromptSourceIntoInput, normalizeAgentTags, normalizeTaskTypes, nowIso, optimizeOrderPromptForBroker, promptInjectionGuardForPrompt, providerMonthlyBillingLedgerForLogin, providerPayoutLedgerForLogin, publicEventView, recordProviderMonthlyChargeInAccount, recurringOrderToJobPayload, recurringOrdersVisibleToLogin, recordStripeTopupInAccount, recoverMissingAccountsInState, releaseBillingReservationInState, requesterContextFromUser, reserveBillingEstimateInState, sanitizeAccountSettingsForClient, sanitizeFeedbackReportForClient, settleBillingForJobInState, touchOrderApiKeyUsageInState, updateChatTranscriptReviewInState, updateFeedbackReportInState, updateRecurringOrderInState, upsertAccountSettingsForIdentityInState, upsertAccountSettingsInState, workflowTagHintsForTask, workflowTaskCandidateTokens, workflowTaskSoftMatchTokens } from './lib/shared.js';
 import { agentRoutingConfirmationAccepted, applyConfirmedAgentRoutingToAgent, buildAgentRoutingConfirmation } from './lib/shared.js';
 import { agentPatternFitScore, buildAgentTeamDeliveryOutput, ensureLeaderWorkflowActionTasksFromDefinition, isLargeAgentTeamIntent, leaderExternalActionRequestedFromDefinition, leaderPlannerAllowsCandidateAgentTasksFromDefinition, leaderSequentialUserActionPriorityFromDefinition, leaderSpecialistTaskForFollowupFromDefinition, leaderTaskTypeForInitialWork, leaderWorkflowReplanDecisionFromDefinition, normalizeLeaderWorkflowPlannedTasksFromDefinition, orderPreflightForAgent, ownChatMemoryForClient } from './lib/shared.js';
 import { listCreatorUsageEstimateForOrder } from './lib/shared.js';
 import { orderBodyWithCommonQualityRules } from './lib/shared.js';
 import { amountFromMinorUnits, createConnectedAccount, createConnectedAccountTransfer, createConnectOnboardingLink, createOffSessionMonthlyInvoicePaymentIntent, createOffSessionProviderMonthlyPaymentIntent, createSetupCheckoutSession, createSubscriptionCheckoutSession, ensureStripeCustomer, resolveSubscriptionPlanFromPriceId, retrieveConnectedAccount, retrievePaymentIntent, retrieveSetupIntent, retrieveSubscription, stripeConfigFromEnv, stripeConfigured, stripePublicConfig, updateCustomerDefaultPaymentMethod, verifyStripeWebhookSignature } from './lib/stripe.js';
-import { createPayjpMarketplaceTenant, createPayjpPlatformChargeWith3DS, createPayjpTenantApplicationUrl, finishPayjpThreeDSecureCharge, normalizePayjpLocale, payjpConfigFromEnv, payjpConfigured, payjpPublicConfig } from './lib/payjp.js';
 import { buildXAuthorizeUrl, buildXPkcePair, exchangeXOAuthCode, fetchXProfile, postXTweet, publicXConnectorStatus, validateXPostExecutionApproval, validateXPostText, xConnectorFromOAuthToken, xOAuthConfigured, xTokenEncryptionConfigured } from './lib/x-connector.js';
 import { createWordPressDraft, normalizeWordPressSiteUrl, publicWordPressConnectorStatus, testWordPressApplicationPassword, wordpressConnectorFromApplicationPassword } from './lib/wordpress-connector.js';
 import { connectorTokenEncryptionConfigured, decryptConnectorSecret, encryptConnectorSecret, githubConnectorFromOAuthToken, googleConnectorFromOAuthToken } from './lib/connector-secrets.js';
@@ -176,6 +181,33 @@ const performSingleJobCreate = (...args) => orderCreateHandlers().performSingleJ
 let workflowParentReconcileRuntime = null;
 const reconcileWorkflowParent = (...args) => workflowParentReconcileRuntime.reconcileWorkflowParent(...args);
 const refreshWorkflowLeaderHandoffForJobId = (...args) => workflowParentReconcileRuntime.refreshWorkflowLeaderHandoffForJobId(...args);
+const agentEndpointHelpers = createAgentEndpointHelpers({
+  baseUrlFromEnv,
+  isAgentReviewApproved
+});
+const {
+  callbackTokenForJob,
+  extractCallbackToken,
+  isAgentVerified,
+  resolveAgentJobEndpoint,
+  resolveDispatchEndpointUrl
+} = agentEndpointHelpers;
+const workflowDispatchQueueHelpers = createWorkflowDispatchQueueHelpers({ nowIso });
+const {
+  enqueueEndpointDispatch,
+  workflowDispatchQueue,
+  workflowQueueGenerationTimeoutMs,
+  workflowQueueSourceCollectionTimeoutMs
+} = workflowDispatchQueueHelpers;
+const agentResultPayloadHelpers = createAgentResultPayloadHelpers({
+  isBlockedAgentResultStatus: (...args) => isBlockedAgentResultStatus(...args),
+  providerAuthorityRequestFromPayload
+});
+const {
+  normalizeAgentReportPayload,
+  normalizeCallbackPayload,
+  topLevelAgentReportCandidate
+} = agentResultPayloadHelpers;
 
 const dispatchPolicyHelpers = createDispatchPolicyHelpers({
   DEFAULT_GENERATION_PROVIDER_TIMEOUT_MS,
@@ -224,6 +256,23 @@ const {
   workflowRestartRequiredReason,
   workflowSourceCollectionMaxRetries
 } = dispatchPolicyHelpers;
+const dispatchResponseNormalizer = createDispatchResponseNormalizer({
+  computeNextRetryAt,
+  isBlockedAgentResultStatus,
+  maxDispatchRetriesForJob,
+  normalizeAgentReportPayload,
+  topLevelAgentReportCandidate,
+  workflowConcreteArtifactFailureReason,
+  workflowTaskName
+});
+const {
+  agentCompletionFailureReason,
+  buildDispatchFailureMeta,
+  deliveryPayloadValueToText,
+  normalizeDeliveryPayloadFiles,
+  normalizeDispatchResponse,
+  workflowClipText
+} = dispatchResponseNormalizer;
 
 const endpointDispatchContractHelpers = createEndpointDispatchContractHelpers({
   downstreamHandoffSummaryContractForTask,
@@ -472,96 +521,6 @@ const {
   visibleJobsForRequestFast
 } = requestVisibilityHelpers;
 
-function normalizeUsageForBilling(rawUsage, fallbackApiCost = 100) {
-  if (rawUsage && typeof rawUsage === 'object') {
-    return {
-      ...rawUsage,
-      api_cost: rawUsage.api_cost ?? rawUsage.apiCost,
-      total_cost_basis: rawUsage.total_cost_basis ?? rawUsage.totalCostBasis,
-      cost_basis: rawUsage.cost_basis ?? rawUsage.costBasis
-    };
-  }
-  return { api_cost: Number(fallbackApiCost || 100) };
-}
-
-function approxTokenCount(value) {
-  const text = typeof value === 'string' ? value : JSON.stringify(value || '');
-  return Math.max(0, Math.ceil(String(text || '').length / 4));
-}
-
-function usageWithObservedJobTokens(job, usage = {}, report = null) {
-  const normalized = normalizeUsageForBilling(usage, 100);
-  const observedInputTokens = approxTokenCount({ prompt: job?.prompt || '', input: job?.input || {} });
-  const observedOutputTokens = approxTokenCount(report || {});
-  const inputTokens = Number(normalized.input_tokens ?? normalized.inputTokens ?? 0) || observedInputTokens;
-  const outputTokens = Number(normalized.output_tokens ?? normalized.outputTokens ?? 0) || observedOutputTokens;
-  return {
-    ...normalized,
-    input_tokens: inputTokens,
-    output_tokens: outputTokens,
-    total_tokens: Number(normalized.total_tokens ?? normalized.totalTokens ?? 0) || (inputTokens + outputTokens),
-    observed_input_tokens: observedInputTokens,
-    observed_output_tokens: observedOutputTokens
-  };
-}
-
-function isAgentVerified(agent) {
-  return agent?.verificationStatus === 'verified' && isAgentReviewApproved(agent);
-}
-
-function resolveAgentJobEndpoint(agent) {
-  const manifest = agent?.metadata?.manifest || {};
-  const rootMetadata = agent?.metadata && typeof agent.metadata === 'object' ? agent.metadata : {};
-  const manifestMetadata = manifest.metadata && typeof manifest.metadata === 'object' ? manifest.metadata : {};
-  const endpoints = manifest.endpoints && typeof manifest.endpoints === 'object' ? manifest.endpoints : {};
-  const metadataEndpoints = rootMetadata.endpoints && typeof rootMetadata.endpoints === 'object' ? rootMetadata.endpoints : {};
-  const candidates = [
-    manifest.jobEndpoint,
-    manifest.job_endpoint,
-    manifest.jobsUrl,
-    manifest.jobs_url,
-    manifestMetadata.job_endpoint,
-    manifestMetadata.jobEndpoint,
-    endpoints.jobs,
-    endpoints.job,
-    endpoints.dispatch,
-    endpoints.submit,
-    rootMetadata.job_endpoint,
-    rootMetadata.jobEndpoint,
-    metadataEndpoints.jobs,
-    metadataEndpoints.job,
-    metadataEndpoints.dispatch,
-    metadataEndpoints.submit
-  ];
-  for (const candidate of candidates) {
-    const value = String(candidate || '').trim();
-    if (value) return value;
-  }
-  return '';
-}
-
-function resolveDispatchEndpointUrl(endpoint = '', env = {}) {
-  const value = String(endpoint || '').trim();
-  if (!value) return '';
-  try {
-    return new URL(value).toString();
-  } catch {}
-  if (value.startsWith('/')) return `${baseUrlFromEnv(env)}${value}`;
-  return value;
-}
-
-function callbackTokenForJob() {
-  return crypto.randomUUID().replace(/-/g, '');
-}
-
-function extractCallbackToken(request, body = {}) {
-  const auth = String(request.headers.get('authorization') || '').trim();
-  if (auth.toLowerCase().startsWith('bearer ')) return auth.slice(7).trim();
-  const headerToken = String(request.headers.get('x-callback-token') || '').trim();
-  if (headerToken) return headerToken;
-  return String(body.callback_token || '').trim();
-}
-
 function workflowBrokerForJob(job = {}) {
   return job?.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
 }
@@ -780,123 +739,6 @@ function syncJobAuthorityRequest(job = {}, agent = null) {
     updatedAt: nowIso()
   };
   return request;
-}
-
-function normalizeAgentReportPayload(payload = {}, reportCandidate = null) {
-  const report = reportCandidate && typeof reportCandidate === 'object'
-    ? { ...reportCandidate }
-    : { summary: String(reportCandidate || payload?.summary || 'No report provided.') };
-  const authorityRequest = providerAuthorityRequestFromPayload(payload);
-  if (
-    authorityRequest
-    && !report.authority_request
-    && !report.authorityRequest
-    && !report.action_required
-    && !report.actionRequired
-    && !report.executor_request
-    && !report.executorRequest
-  ) {
-    report.authority_request = authorityRequest;
-  }
-  return report;
-}
-
-function topLevelAgentReportCandidate(body = {}) {
-  if (!body || typeof body !== 'object') return { summary: 'No report provided.' };
-  if (body.report && typeof body.report === 'object') return body.report;
-  if (body.output && typeof body.output === 'object') return body.output;
-  const hasReportLikeTopLevel = [
-    body.summary,
-    body.report_summary,
-    body.reportSummary,
-    body.answer,
-    body.recommendation,
-    body.file_markdown,
-    body.markdown,
-    body.deliverableMarkdown,
-    body.deliverable_markdown,
-    Array.isArray(body.artifacts) && body.artifacts.length,
-    Array.isArray(body.approval_requests) && body.approval_requests.length,
-    Array.isArray(body.approvalRequests) && body.approvalRequests.length,
-    Array.isArray(body.bullets) && body.bullets.length
-  ].some(Boolean);
-  return hasReportLikeTopLevel ? body : { summary: body.summary || 'No report provided.' };
-}
-
-function normalizeCallbackPayload(body = {}) {
-  const payload = body && typeof body === 'object' ? body : {};
-  const status = String(payload.status || (payload.failure_reason || payload.error ? 'failed' : 'completed')).trim().toLowerCase();
-  const normalizedStatus = status === 'failed' ? 'failed' : (isBlockedAgentResultStatus(status) ? 'blocked' : 'completed');
-  const reportCandidate = payload.report || payload.output || topLevelAgentReportCandidate({
-    ...payload,
-    summary: payload.summary || (
-      normalizedStatus === 'failed'
-        ? 'Agent reported failure'
-        : (normalizedStatus === 'blocked' ? 'Agent is blocked pending approval or connector setup' : payload.summary)
-    )
-  });
-  const report = normalizeAgentReportPayload(payload, reportCandidate);
-  const providerDetail = String(payload.detail || payload.details || '').trim();
-  const providerError = String(payload.error || '').trim();
-  const failureReason = payload.failure_reason
-    || payload.failureReason
-    || (providerError && providerDetail ? `${providerError}: ${providerDetail}` : providerError)
-    || (normalizedStatus === 'failed' ? (report.summary || payload.summary || 'Agent reported failure without a detailed reason.') : null);
-  return {
-    status: normalizedStatus,
-    report,
-    files: Array.isArray(payload.files) ? payload.files : [],
-    usage: normalizeUsageForBilling(payload.usage, 100),
-    returnTargets: payload.return_targets || payload.returnTargets || ['chat', 'api', 'webhook'],
-    externalJobId: payload.external_job_id || payload.remote_job_id || null,
-    failureReason
-  };
-}
-
-function workflowDispatchQueue(env = {}) {
-  const queue = env?.WORKFLOW_DISPATCH_QUEUE;
-  return queue && typeof queue.send === 'function' ? queue : null;
-}
-
-async function enqueueEndpointDispatch(env = {}, job = {}, agent = {}, options = {}) {
-  const queue = workflowDispatchQueue(env);
-  const jobId = String(job?.id || options.jobId || '').trim();
-  const agentId = String(agent?.id || options.agentId || '').trim();
-  if (!queue) return { ok: false, reason: 'queue_not_configured' };
-  if (!jobId || !agentId) return { ok: false, reason: 'job_or_agent_missing' };
-  await queue.send({
-    kind: 'endpoint_dispatch',
-    jobId,
-    agentId,
-    workflowParentId: job?.workflowParentId || options.workflowParentId || null,
-    source: options.source || 'endpoint-dispatch-queue',
-    queuedAt: nowIso()
-  }, { contentType: 'json' });
-  return { ok: true, jobId, agentId };
-}
-
-function workflowQueueSourceCollectionTimeoutMs(env = {}) {
-  const configured = Number(env?.WORKFLOW_QUEUE_SOURCE_COLLECTION_TIMEOUT_MS || env?.WORKFLOW_SOURCE_COLLECTION_QUEUE_TIMEOUT_MS || 0);
-  return Number.isFinite(configured) && configured > 0
-    ? Math.max(5000, Math.min(25000, configured))
-    : 20000;
-}
-
-function workflowQueueGenerationTimeoutMs(env = {}, sourceTimeoutMs = 30000) {
-  const configured = Number(env?.WORKFLOW_QUEUE_GENERATION_TIMEOUT_MS || env?.WORKFLOW_DISPATCH_QUEUE_GENERATION_TIMEOUT_MS || 0);
-  if (Number.isFinite(configured) && configured > 0) return Math.max(8000, Math.min(28000, configured));
-  const sourceBudget = Number(sourceTimeoutMs) || 30000;
-  return Math.max(10000, Math.min(28000, sourceBudget + 4000));
-}
-
-async function parseBody(request) {
-  const text = await request.text();
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error('Invalid JSON');
-  }
 }
 
 const accountEventHelpers = createAccountEventHelpers({
@@ -1326,9 +1168,6 @@ const billingHelpers = createBillingHelpers({
   baseUrl,
   billingPeriodId,
   billingProfileForAccount,
-  normalizePayjpLocale,
-  payjpConfigFromEnv,
-  payjpPublicConfig,
   providerIdentityStatus,
   providerMonthlyBillingAutoConfig,
   runtimePolicy,
@@ -1341,19 +1180,7 @@ const {
   betaBillingPausedResult,
   billingPausedForBeta,
   cleanRegistrationIdentityField,
-  currentPayjpConfig,
   currentStripeConfig,
-  payjpActionErrorPayload,
-  payjpApplicationUrlWithReturnTo,
-  payjpLocaleFromRequest,
-  payjpLocalizedActionText,
-  payjpLocalizedCopy,
-  payjpReturnToUrl,
-  payjpStateForClient,
-  payjpTenantApplicationStatusForAccount,
-  payjpTenantReady,
-  payjpTenantReviewStarted,
-  payjpTenantStatusForAccount,
   providerMoneyReadinessForCurrent,
   providerRegistrationBillingStatus,
   stripeActionErrorPayload,
@@ -1372,26 +1199,15 @@ const billingRoutes = createBillingRouteHandlers({
   createConnectOnboardingLink,
   createOffSessionMonthlyInvoicePaymentIntent,
   createOffSessionProviderMonthlyPaymentIntent,
-  createPayjpMarketplaceTenant,
-  createPayjpPlatformChargeWith3DS,
-  createPayjpTenantApplicationUrl,
   createSetupCheckoutSession,
   createSubscriptionCheckoutSession,
   currentStripeConfig,
-  currentPayjpConfig,
   currentUserContext,
   displayCurrencyToLedgerAmount,
   ensureStripeCustomer,
-  finishPayjpThreeDSecureCharge,
   ledgerAmountToDisplayCurrency,
   nowIso,
   parseBody,
-  payjpApplicationUrlWithReturnTo,
-  payjpConfigured,
-  payjpLocaleFromRequest,
-  payjpLocalizedCopy,
-  payjpReturnToUrl,
-  payjpStateForClient,
   runtimePolicy,
   sanitizeAccountSettingsForClient,
   providerIdentityStatus,
@@ -1407,14 +1223,10 @@ const billingRoutes = createBillingRouteHandlers({
   upsertAccountSettingsInState
 });
 const {
-  createPayjpPlatformChargeForCurrent,
-  createPayjpTenantOnboardingForCurrent,
   createStripeConnectOnboardingForCurrent,
   createStripeProviderPayoutForCurrent,
   createStripeSetupSessionForCurrent,
   createStripeSubscriptionSessionForCurrent,
-  finishPayjpPlatformCharge3DSForCurrent,
-  getPayjpStatus,
   getStripeStatus,
   triggerStripeMonthlyInvoiceChargeForCurrent,
   triggerStripeProviderMonthlyChargeForCurrent
@@ -2410,210 +2222,6 @@ const {
   handleSeed,
   handleTimeoutSweep
 } = devJobRoutes;
-
-function workflowClipText(value = '', max = 12000) {
-  const text = String(value || '').trim();
-  if (!text || text.length <= max) return text;
-  return `${text.slice(0, Math.max(0, max - 1)).trim()}...`;
-}
-
-function deliveryPayloadValueToText(value, depth = 0) {
-  if (value == null || depth > 5) return '';
-  if (typeof value === 'string') return value.trim();
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => deliveryPayloadValueToText(item, depth + 1))
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .join('\n\n');
-  }
-  if (typeof value !== 'object') return String(value || '').trim();
-  const preferredText = [
-    value.markdown,
-    value.content,
-    value.body,
-    value.text,
-    value.file_markdown,
-    value.fileMarkdown,
-    value.deliverable_markdown,
-    value.deliverableMarkdown,
-    value.summary,
-    value.nextAction,
-    value.next_action
-  ]
-    .map((item) => deliveryPayloadValueToText(item, depth + 1))
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .join('\n\n');
-  if (preferredText) return preferredText;
-  return Object.entries(value)
-    .filter(([key]) => !/^(id|name|type|mime|content_?type|source|created|updated|metadata)$/i.test(key))
-    .map(([key, item]) => {
-      const text = deliveryPayloadValueToText(item, depth + 1).trim();
-      return text ? `## ${key}\n${text}` : '';
-    })
-    .filter(Boolean)
-    .join('\n\n');
-}
-
-function normalizeDeliveryPayloadFiles(files = [], fallbackTask = 'delivery') {
-  return (Array.isArray(files) ? files : [])
-    .map((file, index) => {
-      if (typeof file === 'string') {
-        const content = file.trim();
-        return content ? { name: `${String(fallbackTask || 'delivery').slice(0, 80)}-${index + 1}.md`, content } : null;
-      }
-      if (!file || typeof file !== 'object') return null;
-      const content = deliveryPayloadValueToText(
-        file.content
-        ?? file.markdown
-        ?? file.body
-        ?? file.text
-        ?? file.file_markdown
-        ?? file.fileMarkdown
-        ?? file.deliverable_markdown
-        ?? file.deliverableMarkdown
-      ).trim();
-      const safeContent = content === '[object Object]' ? '' : content;
-      const name = String(file.name || file.filename || `${String(fallbackTask || 'delivery').slice(0, 80)}-${index + 1}.md`).trim();
-      if (!safeContent) return null;
-      return {
-        ...file,
-        name: name || `${String(fallbackTask || 'delivery').slice(0, 80)}-${index + 1}.md`,
-        content: safeContent
-      };
-    })
-    .filter((file) => file && (String(file.name || '').trim() || String(file.content || '').trim()));
-}
-
-function normalizeDispatchResponse(responseBody = {}) {
-  const body = responseBody && typeof responseBody === 'object' ? responseBody : {};
-  const status = String(body.status || '').trim().toLowerCase();
-  const report = normalizeAgentReportPayload(body, topLevelAgentReportCandidate(body));
-  const synthesizedFileMarkdown = deliveryPayloadValueToText(
-    body.file_markdown
-    || body.markdown
-    || body.deliverableMarkdown
-    || body.deliverable_markdown
-    || report.file_markdown
-    || report.markdown
-    || report.deliverableMarkdown
-    || report.deliverable_markdown
-    || ''
-  ).trim();
-  const fallbackTask = String(body.task_type || body.taskType || 'delivery').slice(0, 80);
-  const files = Array.isArray(body.files)
-    ? normalizeDeliveryPayloadFiles(body.files, fallbackTask)
-    : (synthesizedFileMarkdown ? [{ name: `${String(body.task_type || body.taskType || 'delivery').slice(0, 80)}.md`, content: synthesizedFileMarkdown }] : []);
-  const blocked = isBlockedAgentResultStatus(status);
-  const failed = status === 'failed' || Boolean(body.error || body.failure_reason || body.failureReason);
-  const providerDetail = String(body.detail || body.details || '').trim();
-  const providerError = String(body.error || '').trim();
-  const failureReason = body.failure_reason
-    || body.failureReason
-    || (providerError && providerDetail ? `${providerError}: ${providerDetail}` : providerError)
-    || (failed ? (report.summary || body.summary || 'Agent failed without a detailed reason.') : null);
-  const hasArtifacts = Boolean(body.report || body.output || synthesizedFileMarkdown || files.length);
-  const accepted = !failed && (body.accepted === true || blocked || status === 'accepted' || status === 'queued' || status === 'running' || status === 'dispatched');
-  const completed = !failed && !blocked && (status === 'completed' || ((!status || status === 'ok' || status === 'success') && hasArtifacts));
-  return {
-    accepted,
-    failed,
-    blocked,
-    completed,
-    status: failed ? 'failed' : (blocked ? 'blocked' : (completed ? 'completed' : (status || (accepted ? 'accepted' : 'unknown')))),
-    report,
-    files,
-    returnTargets: body.return_targets || body.returnTargets || ['api'],
-    usage: normalizeUsageForBilling(body.usage, 100),
-    failureReason,
-    externalJobId: body.external_job_id || body.remote_job_id || body.job_id || null,
-    raw: body
-  };
-}
-
-function classifyDispatchFailure(statusCode, errorMessage = '') {
-  const msg = String(errorMessage || '').toLowerCase();
-  if (msg.includes('missing_required_deliverable') || msg.includes('missing required deliverable')) {
-    return { category: 'missing_required_deliverable', retryable: true };
-  }
-  if (msg.includes('quality gate') || msg.includes('originality/source quality') || msg.includes('generic_template_left')) {
-    return { category: 'agent_quality_gate_failed', retryable: true };
-  }
-  if (msg.includes('source-required') || msg.includes('source required') || msg.includes('source urls were available before generation') || msg.includes('missing_required_search_sources')) {
-    return { category: 'missing_required_sources', retryable: true };
-  }
-  if (msg.includes('malformed') || msg.includes('json')) return { category: 'dispatch_malformed_response', retryable: true };
-  if (msg.includes('endpoint')) return { category: 'dispatch_misconfigured_endpoint', retryable: false };
-  if (statusCode === 408) return { category: 'dispatch_http_timeout', retryable: true };
-  if ([502, 504, 520, 522, 524].includes(Number(statusCode))) return { category: 'dispatch_http_gateway_timeout', retryable: true };
-  if (statusCode >= 500) return { category: 'dispatch_http_5xx', retryable: true };
-  if (statusCode >= 400) return { category: 'dispatch_http_4xx', retryable: false };
-  if (/dispatch timed out after|provider timed out|agent timed out/.test(msg)) return { category: 'dispatch_provider_timeout', retryable: true };
-  if (/deadline|timeout window|exceeded timeout/.test(msg)) return { category: 'dispatch_deadline_timeout', retryable: true };
-  if (/network.*timeout|aborterror|econnreset|etimedout|fetch failed/.test(msg)) return { category: 'dispatch_network_timeout', retryable: true };
-  if (msg.includes('timed out') || msg.includes('timeout')) return { category: 'dispatch_timeout', retryable: true };
-  return { category: 'dispatch_error', retryable: true };
-}
-
-function buildDispatchFailureMeta(job, statusCode, errorMessage = '') {
-  const classified = classifyDispatchFailure(statusCode, errorMessage);
-  const attempts = Number(job?.dispatch?.attempts || 0) + 1;
-  const retryable = classified.retryable && attempts < maxDispatchRetriesForJob(job);
-  return {
-    category: classified.category,
-    retryable,
-    attempts,
-    nextRetryAt: retryable ? computeNextRetryAt(attempts) : null
-  };
-}
-
-function agentReturnedDeliveryArtifactText(output = {}) {
-  if (!output || typeof output !== 'object') return '';
-  const report = output.report && typeof output.report === 'object' ? output.report : {};
-  const artifactCandidates = [
-    ...(Array.isArray(output.artifacts) ? output.artifacts : []),
-    ...(Array.isArray(report.artifacts) ? report.artifacts : []),
-    ...(Array.isArray(report.approval_requests) ? report.approval_requests : []),
-    ...(Array.isArray(report.approvalRequests) ? report.approvalRequests : [])
-  ];
-  const executionCandidate = report.execution_candidate || report.executionCandidate || null;
-  const markdownText = [
-    output.file_markdown,
-    output.markdown,
-    output.deliverableMarkdown,
-    output.deliverable_markdown,
-    report.file_markdown,
-    report.markdown,
-    report.deliverableMarkdown,
-    report.deliverable_markdown
-  ].map((item) => String(item || '').trim()).filter(Boolean);
-  const fileText = (Array.isArray(output.files) ? output.files : [])
-    .map((file) => String(file?.content || file?.body || '').trim())
-    .filter(Boolean);
-  const artifactText = artifactCandidates
-    .map((item) => String(item?.body || item?.content || item?.text || item?.markdown || '').trim())
-    .filter(Boolean);
-  const executionText = executionCandidate && typeof executionCandidate === 'object'
-    ? String(executionCandidate.body || executionCandidate.content || executionCandidate.markdown || executionCandidate.text || '').trim()
-    : '';
-  return [...fileText, ...artifactText, executionText, ...markdownText].filter(Boolean).join('\n\n');
-}
-
-function agentResultHasReturnedDeliveryArtifact(output = {}) {
-  return agentReturnedDeliveryArtifactText(output).trim().length > 0;
-}
-
-function agentCompletionFailureReason(job = {}) {
-  const concreteFailure = workflowConcreteArtifactFailureReason(job);
-  if (concreteFailure) return concreteFailure;
-  if (!agentResultHasReturnedDeliveryArtifact(job?.output || {})) {
-    const task = workflowTaskName(job) || job?.taskType || 'agent';
-    return `${task} did not return a user-facing delivery artifact.`;
-  }
-  return '';
-}
 
 function agentCompletionFailureRetryMeta(env = {}, job = {}) {
   const attempts = Math.max(providerRunAttempts(job), Number(job?.dispatch?.attempts || 0) || 0, 1);
@@ -7299,50 +6907,6 @@ export default {
       const result = await deleteAppSetting(storage, request, env, decodeURIComponent(url.pathname.split('/')[4] || ''));
       if (result.error) return json({ error: result.error }, result.statusCode || 400);
       return json(result);
-    }
-    if (apiRouteMatches(url.pathname, request.method, 'PAYJP_STATUS', 'GET')) {
-      const result = await getPayjpStatus(storage, request, env);
-      if (result.error) return json({ error: result.error }, result.statusCode || 400);
-      return json(result);
-    }
-    if (apiRouteMatches(url.pathname, request.method, 'PAYJP_TENANT_ONBOARDING', 'POST')) {
-      try {
-        const result = await createPayjpTenantOnboardingForCurrent(storage, request, env);
-        if (result.error) {
-          const payload = payjpActionErrorPayload({ message: result.error, code: result.code, statusCode: result.statusCode }, result.error, payjpLocaleFromRequest(request, env));
-          return json(payload, payload.statusCode || 400);
-        }
-        return json(result, 201);
-      } catch (error) {
-        const payload = payjpActionErrorPayload(error, 'PAY.JP action failed.', payjpLocaleFromRequest(request, env));
-        return json(payload, payload.statusCode || 500);
-      }
-    }
-    if (apiRouteMatches(url.pathname, request.method, 'PAYJP_PLATFORM_CHARGE', 'POST')) {
-      try {
-        const result = await createPayjpPlatformChargeForCurrent(storage, request, env);
-        if (result.error) {
-          const payload = payjpActionErrorPayload({ message: result.error, code: result.code, statusCode: result.statusCode }, result.error, payjpLocaleFromRequest(request, env));
-          return json(payload, payload.statusCode || 400);
-        }
-        return json(result, 201);
-      } catch (error) {
-        const payload = payjpActionErrorPayload(error, 'PAY.JP action failed.', payjpLocaleFromRequest(request, env));
-        return json(payload, payload.statusCode || 500);
-      }
-    }
-    if (apiRouteMatches(url.pathname, request.method, 'PAYJP_PLATFORM_CHARGE_FINISH_3DS', 'POST')) {
-      try {
-        const result = await finishPayjpPlatformCharge3DSForCurrent(storage, request, env);
-        if (result.error) {
-          const payload = payjpActionErrorPayload({ message: result.error, code: result.code, statusCode: result.statusCode }, result.error, payjpLocaleFromRequest(request, env));
-          return json(payload, payload.statusCode || 400);
-        }
-        return json(result);
-      } catch (error) {
-        const payload = payjpActionErrorPayload(error, 'PAY.JP action failed.', payjpLocaleFromRequest(request, env));
-        return json(payload, payload.statusCode || 500);
-      }
     }
     if (url.pathname === '/api/stripe/status' && request.method === 'GET') {
       const result = await getStripeStatus(storage, request, env);

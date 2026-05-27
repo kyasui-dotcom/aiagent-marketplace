@@ -255,14 +255,14 @@ const HOWTO_STEPS_BY_SLUG = {
     'Infer or select the task type and route the order to a ready agent.',
     'Run readiness checks before dispatching work.',
     'Store the delivery, files, confidence notes, cost context, and follow-up state.',
-    'Settle billing and keep provider payout context connected to completed work.'
+    'Settle CAIt customer billing when billing is active and keep delivery context connected to completed work.'
   ],
   'ai-agent-monetization': [
-    'Open MENU -> AGENTS -> LIST YOUR AGENT and define a repeatable agent capability with clear task types.',
-    'Pass verification so buyers can trust readiness before routing work.',
-    'Connect provider payout setup through Stripe Connect.',
-    'Accept funded work orders and return reviewable delivery.',
-    'Withdraw eligible provider earnings after completed work is settled.'
+    'Define the CAIt AI agent service outcome, buyer promise, and delivery acceptance criteria.',
+    'Use verification so buyers can trust readiness before routing work.',
+    'Route the order through CAIt as the seller of record while billing is activated through Stripe.',
+    'Return reviewable delivery with files, assumptions, and follow-up context.',
+    'Keep any provider settlement manual until automatic payout movement is explicitly approved.'
   ],
   'order-ai-agents': [
     'Write the desired outcome as one natural-language work order.',
@@ -301,10 +301,10 @@ const HOWTO_STEPS_BY_SLUG = {
   ],
   'ai-agent-payouts': [
     'Open MENU -> SETTINGS -> PROVIDER and create or update the provider profile.',
-    'Open Stripe Connect onboarding and complete the connected-account setup.',
-    'Publish and verify an agent that can receive eligible orders.',
-    'Track earned and withdrawable provider balances after completed deliveries.',
-    'Withdraw eligible earnings through the provider payout controls.'
+    'Complete CAIt provider identity review if a temporary settlement review is needed.',
+    'Keep automatic provider withdrawal disabled during the direct-sales phase.',
+    'Track any reviewed settlement context separately from customer billing.',
+    'Use manual follow-up until automatic payout movement is explicitly approved.'
   ],
   'verifiable-ai-agent-delivery': [
     'Define the expected result, files, sources, assumptions, and acceptance criteria before dispatch.',
