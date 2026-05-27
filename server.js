@@ -131,6 +131,7 @@ function buildWorkerEnv() {
     ALLOW_OPEN_WRITE_API: defaultTestFlag('ALLOW_OPEN_WRITE_API', '0'),
     ALLOW_GUEST_RUN_READ_API: defaultTestFlag('ALLOW_GUEST_RUN_READ_API', '1'),
     ALLOW_DEV_API: defaultTestFlag('ALLOW_DEV_API', '1'),
+    CAIT_DEVELOPER_API_ENABLED: defaultTestFlag('CAIT_DEVELOPER_API_ENABLED', process.env.ALLOW_DEV_API || '1'),
     BASE_URL: baseUrl,
     SAMPLE_AGENT_ENDPOINT_BASE_URL: process.env.SAMPLE_AGENT_ENDPOINT_BASE_URL
       || process.env.SAMPLE_AGENT_PROVIDER_BASE_URL
