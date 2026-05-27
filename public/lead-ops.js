@@ -1604,19 +1604,19 @@ els.scheduleResendBtn?.addEventListener('click', () => {
 
 els.fillLeadExampleBtn?.addEventListener('click', () => {
   if (!String(els.leadSourcingIcpInput?.value || '').trim()) {
-    els.leadSourcingIcpInput.value = '東京と神奈川の歯科医院。ホームページが古く、Web予約や集客に困っていそうな医院。';
+    els.leadSourcingIcpInput.value = 'Dental clinics in Tokyo and Kanagawa with old websites and weak online booking flow.';
   }
   if (!String(els.leadSourcingSourceInput?.value || '').trim()) {
-    els.leadSourcingSourceInput.value = 'Google検索、公式ホームページ、地域の歯科医師会サイト、公開されている問い合わせフォーム。';
+    els.leadSourcingSourceInput.value = 'Google search, official websites, local dental association pages, and public contact forms.';
   }
   if (!String(els.leadSourcingRegionInput?.value || '').trim()) {
-    els.leadSourcingRegionInput.value = '日本語、関東';
+    els.leadSourcingRegionInput.value = 'Japanese pages, Kanto region';
   }
   if (!String(els.leadSourcingOfferInput?.value || '').trim()) {
-    els.leadSourcingOfferInput.value = 'ホームページ改善と予約導線の見直しで、新規予約を増やす提案をしたい。';
+    els.leadSourcingOfferInput.value = 'Offer website improvements and booking-flow changes to increase new appointments.';
   }
   if (!String(els.leadSourcingExclusionInput?.value || '').trim()) {
-    els.leadSourcingExclusionInput.value = '既存顧客、代理店、問い合わせ先が公開されていない医院。';
+    els.leadSourcingExclusionInput.value = 'Current customers, agencies, or clinics with no public contact path.';
   }
   renderLeadSourcingState();
   renderBeginnerGuide();
@@ -1627,35 +1627,35 @@ els.fillLeadExampleBtn?.addEventListener('click', () => {
 els.requestLeadSourcingBtn?.addEventListener('click', () => {
   const request = leadSourcingRequestPayload();
   if (!leadSourcingRequestReady(request)) {
-    window.alert('「どんなお客さん」「どこから探すか」「連絡する理由」の3つを入力してください。');
+    window.alert('Fill in who to find, where to look, and why to contact them.');
     renderLeadSourcingState();
     return;
   }
   const returnTo = leadChatReturnTo();
   void sendContextToCait(buildLeadSourcingContext(), { returnTo }).catch((error) => {
-    window.alert(`営業先探しの依頼に失敗しました: ${error.message}`);
+    window.alert(`Lead search request failed: ${error.message}`);
   });
 });
 
 els.copyLeadSourcingBtn?.addEventListener('click', async () => {
   await copyContextJson(buildLeadSourcingContext());
-  els.copyLeadSourcingBtn.textContent = 'コピーしました';
-  window.setTimeout(() => { els.copyLeadSourcingBtn.textContent = '依頼文をコピー'; }, 1200);
+  els.copyLeadSourcingBtn.textContent = 'Copied';
+  window.setTimeout(() => { els.copyLeadSourcingBtn.textContent = 'Copy request'; }, 1200);
 });
 
 els.sendLeadContextBtn.addEventListener('click', () => {
   saveEditor();
   const returnTo = leadChatReturnTo();
   void sendContextToCait(buildContext(), { returnTo }).catch((error) => {
-    window.alert(`CAItへ渡せませんでした: ${error.message}`);
+    window.alert(`Could not send to CAIt: ${error.message}`);
   });
 });
 
 els.copyLeadContextBtn.addEventListener('click', async () => {
   saveEditor();
   await copyContextJson(buildContext());
-  els.copyLeadContextBtn.textContent = 'コピーしました';
-  window.setTimeout(() => { els.copyLeadContextBtn.textContent = 'データをコピー'; }, 1200);
+  els.copyLeadContextBtn.textContent = 'Copied';
+  window.setTimeout(() => { els.copyLeadContextBtn.textContent = 'Copy data'; }, 1200);
 });
 
 async function bootstrap() {
