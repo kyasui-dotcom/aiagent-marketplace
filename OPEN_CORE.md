@@ -1,100 +1,42 @@
-# Open Core Release Posture
+# Open Source Release Posture
 
-This repo currently acts as the private operating repo for AIagent2. Before making any GitHub repository public, use this document to separate public core code from private operating concerns.
+This repository is public and licensed under the GNU Affero General Public License v3 or later. The intent is to make CAIt's agent orchestration work inspectable and reusable while keeping real credentials, customer data, and operator-only records out of Git.
 
-## Public-safe areas
+## Public Repository Boundary
 
-These are the parts that are generally safe to publish after running the open-core QA checks:
+The repository may include:
 
-- `MANIFEST.md`
-- `README.md`
-- `ROADMAP.md`
-- `public/help.html`
-- `public/guide.html`
-- `public/cli-help.html`
-- `public/qa.html`
-- `public/terms.html`
-- `public/privacy.html`
-- `public/tokushoho.html`
-- `lib/manifest.js`
-- `lib/verify.js`
-- `lib/github-adapter.js`
-- `lib/builtin-agents/agents/`
-- `lib/agent-catalog-index.js`
-- `lib/delivery-completion-gate.js`
-- selected UI code that documents public product behavior
-- non-production QA scripts
+- agent manifests, verification logic, orchestration logic, and adapter generation
+- public UI, public docs, and generated public SEO pages
+- non-production QA scripts and fixtures
+- deployment configuration that contains only non-secret resource identifiers or public URLs
 
-## Private operating concerns
+The repository must not include:
 
-Do not publish these by accident:
+- real environment values, API keys, session secrets, OAuth client secrets, webhook secrets, or private keys
+- Cloudflare API tokens, GitHub App private keys, Google OAuth secrets, OpenAI keys, or provider credentials
+- `.env`, `.dev.vars`, `.wrangler/`, `.data/`, D1 dumps, local run history, browser artifacts, screenshots, or test output
+- customer/support exports, private account records, or operator-only review queues
 
-- any real env values, session secrets, API keys, or private keys
-- Cloudflare credentials and deployment tokens
-- live operational data and customer support history
-- GitHub App private key and OAuth client secret
-- local browser artifacts, screenshots, and debugging traces
-- D1 state dumps, broker state, or run history exports
-- operator-only reports, reviewer queues, and internal moderation data
-- customer/support exports that contain email addresses or private account details
+## Required Checks Before Pushing Public Changes
 
-## Recommended repo split
-
-Use two repos:
-
-- `aiagent2-core` public
-  - manifest spec
-  - hosted adapter generator
-  - public docs
-  - client examples
-  - non-sensitive QA
-- `aiagent2-private` private
-  - production deployment config
-  - private operator operations
-  - live environment management
-  - operator tooling
-  - incident handling and internal reports
-
-If you keep a single private operating repo, publish from an exported mirror instead of making this repo public directly.
-
-## Minimum publish checklist
-
-1. Run `npm run qa:open-core`.
-2. Export the public mirror with `npm run open-core:export -- <destination-folder>`.
-3. Confirm no tracked file contains a real secret or private key.
-4. Confirm local artifacts are ignored:
-   - `.playwright-cli/`
-   - `.wrangler/`
-   - `output/`
-   - `test-results/`
-   - `.env`
-5. Confirm docs do not reference local machine paths.
-6. Choose and add a real `LICENSE` file before public release.
-
-## Public mirror whitelist
-
-The initial public mirror is driven by [`open-core-whitelist.json`](./open-core-whitelist.json).
-
-- it is intentionally conservative
-- it favors docs, manifest/verification logic, hosted adapter generation, and public UI
-- it excludes production deployment config, private operator operations, and internal moderation data
-
-Use this command to export the current public-safe mirror:
+Run these checks before pushing changes that affect deployment, auth, connectors, agent execution, or public docs:
 
 ```bash
-npm run open-core:export -- ../aiagent2-core
+npm run qa:open-core
+git grep -nI -E "(sk-proj-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{32,}|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA|OPENSSH|EC|DSA|PRIVATE) PRIVATE KEY-----)" -- .
 ```
 
-That writes the whitelisted files into the destination folder and adds `OPEN_CORE_EXPORT.txt` as a reminder that a real license still needs to be added before publication.
+Also check ignored local env files manually when they exist:
 
-## Important business decision still required
+```bash
+git check-ignore -v .env .env.e2e.local .dev.vars
+```
 
-Open core is not complete until the public repo has an explicit license.
+## Current Publication Audit
 
-Typical options:
+The latest local audit is recorded in [`SECURITY_PUBLICATION_AUDIT.md`](./SECURITY_PUBLICATION_AUDIT.md). Update that file whenever the repository visibility, credential handling, or publish boundary changes.
 
-- `AGPL-3.0-only` or `AGPL-3.0-or-later` if you want strong copyleft on hosted modifications
-- `Apache-2.0` if you want broad reuse
-- keep the operating repo private and publish only a separate public mirror if you do not want to grant source reuse rights yet
+## Notes
 
-This repo intentionally does not choose a license automatically because that is a business decision, not a code hygiene task.
+`package.json` keeps `"private": true` to prevent accidental npm publication. That does not make the GitHub repository private and does not conflict with the AGPL source license.

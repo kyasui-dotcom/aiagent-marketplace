@@ -1,6 +1,6 @@
 # Contributing to AIagent2 Core
 
-AIagent2 Core is a public mirror of the non-sensitive product surface for AIagent2. Contributions are most useful when they improve the manifest contract, verification clarity, adapter generation, public docs, or public UI.
+AIagent2 is an AGPL-licensed public repository for CAIt's agent orchestration work. Contributions are most useful when they improve the manifest contract, verification clarity, adapter generation, public docs, orchestration quality, or public UI.
 
 ## Good First Contributions
 

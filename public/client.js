@@ -78,6 +78,17 @@ import {
   yen
 } from './client-billing-utils.js?v=20260521a';
 import {
+  DONATION_ONLY_NOTICE,
+  IN_APP_PAYMENTS_REMOVED,
+  attachRemovedPaymentActionHandlers,
+  disableRemovedPaymentSettingsControls,
+  renderRemovedProviderBillingLanesCard
+} from './client-payment-removal-ui.js?v=20260527a';
+import {
+  TEMPORARY_INVOICE_BILLING_ENABLED,
+  temporaryInvoiceNoticeLines
+} from './client-temporary-invoice-controller.js?v=20260527a';
+import {
   LONG_PROMPT_GUARD_CHARS,
   LONG_PROMPT_SOURCE_CHUNK_CHARS,
   ORDER_INPUT_MAX_FILES,
@@ -101,98 +112,25 @@ import {
   normalizeOpenChatIntentText,
   openChatIntentMatchText
 } from './client-intent-routing-utils.js?v=20260522a';
-
-const DONATION_ONLY_NOTICE = 'CAIt no longer processes cards, checkout, subscriptions, invoices, donations, or payouts in-app. A Stripe Payment Link for external donation support is only a future option after compliance review.';
-const IN_APP_PAYMENTS_REMOVED = true;
-const PAYMENT_PROVIDER_UI_VISIBLE = false;
-const REMOVED_PAYMENT_CONTROL_KEYS = [
-  'openStripeCheckoutBtn',
-  'openStripeSubscriptionBtn',
-  'runStripeMonthlyInvoiceBtn',
-  'runStripeProviderMonthlyBtn',
-  'runStripeProviderPayoutBtn',
-  'stripeConnectLinkBtn',
-  'saveBillingBtn',
-  'saveProviderPayoutBtn',
-  'saveProviderSupportBtn',
-  'saveProviderPricingBtn',
-  'saveProviderIdentityBtn',
-  'saveProviderProfileBtn',
-  'billingName',
-  'billingEmail',
-  'billingCompany',
-  'billingTaxId',
-  'billingAddressLine1',
-  'billingAddressLine2',
-  'billingCity',
-  'billingRegion',
-  'billingPostalCode',
-  'billingCountry',
-  'payoutDisplayName',
-  'payoutCountry',
-  'payoutCurrency',
-  'payoutSupportEmail',
-  'payoutMinimumAmount',
-  'payoutWebsite',
-  'payoutStatementDescriptor',
-  'payoutNotes'
-];
-
-function disableRemovedPaymentSettingsControls(els = {}) {
-  for (const key of REMOVED_PAYMENT_CONTROL_KEYS) {
-    const control = els[key];
-    if (!control || typeof control !== 'object') continue;
-    if ('disabled' in control) control.disabled = true;
-    if ('title' in control && !control.title) {
-      control.title = 'In-app payment setup has been removed from CAIt.';
-    }
-  }
-}
-
-function renderRemovedProviderBillingLanesCard(els = {}, { safeText } = {}) {
-  if (!els?.providerBillingLanesCard || typeof safeText !== 'function') return;
-  safeText(
-    els.providerBillingLanesCard,
-    [
-      'Parallel billing lanes',
-      '',
-      'CAIt no longer runs checkout, subscriptions, invoices, or payouts in-app.',
-      'Orders and scheduled work can continue without payment setup.',
-      'Optional support must stay outside CAIt as donation-only.'
-    ].join('\n')
-  );
-}
-
-function renderRemovedPaymentProviderTools(els = {}, { safeText } = {}) {
-  if (typeof safeText !== 'function') return;
-  if (els?.stripeCustomerStatus) safeText(els.stripeCustomerStatus, 'In-app billing disabled');
-  if (els?.stripeProviderStatus) safeText(els.stripeProviderStatus, 'In-app payouts disabled');
-  if (els?.stripeCustomerActionResult) safeText(els.stripeCustomerActionResult, DONATION_ONLY_NOTICE);
-  if (els?.stripeProviderActionResult) safeText(els.stripeProviderActionResult, 'No provider payout action is available inside CAIt.');
-}
-
-function attachRemovedPaymentActionHandlers(els = {}, { closePlanModal, flash, safeText } = {}) {
-  const warn = () => {
-    if (typeof closePlanModal === 'function') closePlanModal();
-    if (typeof safeText === 'function' && els?.stripeCustomerActionResult) {
-      safeText(els.stripeCustomerActionResult, DONATION_ONLY_NOTICE);
-    }
-    if (typeof flash === 'function') {
-      flash('In-app payment setup has been removed. External donation support requires review first.', 'warn');
-    }
-  };
-  for (const key of [
-    'openStripeCheckoutBtn',
-    'openStripeSubscriptionBtn',
-    'runStripeMonthlyInvoiceBtn',
-    'runStripeProviderMonthlyBtn',
-    'runStripeProviderPayoutBtn',
-    'stripeConnectLinkBtn'
-  ]) {
-    const control = els[key];
-    if (control && typeof control === 'object' && 'onclick' in control) control.onclick = warn;
-  }
-}
+import {
+  activeApiKeys,
+  canManageAgentsFromBrowser,
+  canManagePaymentsFromBrowser,
+  canManagePayoutsFromBrowser,
+  canOrderFromBrowser,
+  canUseDevApi,
+  canUseGithubAgentFlow,
+  githubAuthActionUrl,
+  googleAuthActionUrl,
+  googleOAuthBrowserWarning,
+  isGithubAuthorized,
+  isGithubLinked,
+  isGoogleAuthorized,
+  isGoogleLinked,
+  isLikelyRestrictedGoogleOAuthBrowser,
+  linkedProvidersLabel,
+  primarySignInUrl
+} from './client-auth-access-utils.js?v=20260527a';
 import {
   buildWorkflowChildDeliveryCard,
   deliveryFileNames,
@@ -261,14 +199,15 @@ import {
   runOpenChatChoiceButtonAction,
   updateOrderSettingsDrawerControls,
   updateParallelToolsControls,
-  updateScheduledWorkControls,
   updateOpenChatModeControls
 } from './client-composer-ui.js?v=20260522a';
 import { renderOpenChatSessionControlsElement } from './client-session-controls-ui.js?v=20260522a';
 import { renderWorkChatEntryCardElement } from './client-work-chat-entry-ui.js?v=20260522a';
-import { renderScheduledWorkListElement } from './client-scheduled-work-ui.js?v=20260522a';
 import { renderOrderStrategyControlsElement } from './client-order-strategy-ui.js?v=20260522a';
 import { createClientFlexibleToolUtils } from './client-flexible-tool-utils.js?v=20260527a';
+import { createClientScheduledWorkController } from './client-scheduled-work-controller.js?v=20260527a';
+import { createClientMarketingTimelineUtils } from './client-marketing-timeline-utils.js?v=20260527a';
+import { createClientOperatorDashboardUtils } from './client-operator-dashboard-utils.js?v=20260527a';
 
 const $ = (id) => document.getElementById(id);
 const PRODUCT_NAME = 'CAIt';
@@ -276,8 +215,6 @@ const PRODUCT_SHORT_NAME = 'CAIt';
 const DEVELOPER_SURFACES_STATUS = 'Coming soon';
 const DEVELOPER_SURFACES_NOTICE = 'CLI, external API-key access, and MCP are temporarily paused while the contract is stabilized. Browser-owned CAIt chat, app, delivery, and Publisher flows remain available.';
 const WORK_CHAT_INTERNAL_STATUS_VISIBLE = false;
-const TEMPORARY_INVOICE_BILLING_ENABLED = false;
-const TEMPORARY_INVOICE_SUPPORT_EMAIL = 'support@aiagent-marketplace.net';
 const ORDER_HISTORY_PAGE_SIZE = 50;
 
 function appSettingValue(key = '', fallback = '') {
@@ -1293,6 +1230,54 @@ const {
   openChatLlmFallbackReason,
   openChatLooksPreorderIntentLlmCandidate
 } = clientOpenChatPreLlmGuardUtils;
+
+const clientMarketingTimelineUtils = createClientMarketingTimelineUtils({
+  state,
+  els,
+  articleCandidateFromDelivery: (job, report, files) => articleCandidateFromDelivery(job, report, files),
+  compactChatText: (value, max) => compactChatText(value, max),
+  copyTextToClipboard: (text, label) => copyTextToClipboard(text, label),
+  deliverySummaryText: (report) => deliverySummaryText(report),
+  escapeHtml: (value) => escapeHtml(value),
+  flash: (message, kind) => flash(message, kind),
+  formatTime: (value) => formatTime(value),
+  getRenderFlexibleToolPanel: () => renderFlexibleToolPanel,
+  jobById: (id) => jobById(id),
+  loadOrderDraftIntoComposer: (order) => loadOrderDraftIntoComposer(order),
+  looksJapanese: (value) => looksJapanese(value),
+  openChatPreviousUserMessageBody: () => openChatPreviousUserMessageBody(),
+  openJobDetail: (jobId) => openJobDetail(jobId),
+  orderProgressStatusLabel: (status) => orderProgressStatusLabel(status),
+  prepareFollowupOrderFromDelivery: () => prepareFollowupOrderFromDelivery(),
+  prepareGenericDeliverableOrderFromDelivery: (job, deliverable) => prepareGenericDeliverableOrderFromDelivery(job, deliverable),
+  preparePublishOrderFromDelivery: (job, article) => preparePublishOrderFromDelivery(job, article),
+  recurringOrderMatchesRequesterScope: (order, scope) => recurringOrderMatchesRequesterScope(order, scope),
+  requesterLoginOf: (job) => requesterLoginOf(job),
+  requesterScopeForClient: () => requesterScopeForClient(),
+  runMatchesRequesterScope: (job, scope) => runMatchesRequesterScope(job, scope),
+  runNextAction: (job) => runNextAction(job),
+  safeCssToken: (value, fallback) => safeCssToken(value, fallback),
+  scheduledWorkById: (id) => scheduledWorkById(id),
+  scheduledWorkScheduleLabel: (schedule) => scheduledWorkScheduleLabel(schedule),
+  scheduledWorkTimeLabel: (value) => scheduledWorkTimeLabel(value),
+  selectedJob: () => selectedJob(),
+  setDetail: (job) => setDetail(job),
+  setElementVisible: (el, visible) => setElementVisible(el, visible),
+  switchTab: (tab) => switchTab(tab),
+  renderOrderComposer: () => renderOrderComposer(),
+  visibleDeliveryFiles: (files) => visibleDeliveryFiles(files),
+  workflowChildRunsFromDelivery: (run, report) => workflowChildRunsFromDelivery(run, report)
+});
+const {
+  buildOpenChatTimelineIntentChoiceAnswer,
+  buildOpenChatTimelinePlanClarifyAnswer,
+  hideMarketingTimelineModal,
+  isMarketingTimelineTask,
+  marketingTimelineIntentText,
+  marketingTimelineSnapshot,
+  openMarketingTimelineModal,
+  renderMarketingTimelineModal
+} = clientMarketingTimelineUtils;
 
 let clientOpenChatQuickAnswerUtils = null;
 
@@ -2334,108 +2319,6 @@ function currentMonthPeriod() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function hasLinkedProvider(auth, providerPrefix) {
-  const providers = Array.isArray(auth?.linkedProviders) ? auth.linkedProviders : [];
-  return providers.some((value) => String(value || '').toLowerCase().startsWith(String(providerPrefix || '').toLowerCase()));
-}
-
-function canOrderFromBrowser(auth) {
-  return Boolean(auth?.openWriteApiEnabled || auth?.canOrder || auth?.loggedIn);
-}
-
-function canManagePaymentsFromBrowser(auth) {
-  return Boolean(auth?.openWriteApiEnabled || auth?.canManagePayments || auth?.loggedIn);
-}
-
-function canManageAgentsFromBrowser(auth) {
-  return Boolean(auth?.openWriteApiEnabled || auth?.canRegisterAgents);
-}
-
-function canUseGithubAgentFlow(auth) {
-  return Boolean(auth?.openWriteApiEnabled || auth?.canUseGithubAgentFlow || auth?.githubLinked || hasLinkedProvider(auth, 'github'));
-}
-
-function canManagePayoutsFromBrowser(auth) {
-  return Boolean(auth?.openWriteApiEnabled || auth?.canManagePayouts);
-}
-
-function isGithubLinked(auth) {
-  return Boolean(auth?.githubLinked || hasLinkedProvider(auth, 'github'));
-}
-
-function isGoogleLinked(auth) {
-  return Boolean(auth?.googleLinked || hasLinkedProvider(auth, 'google'));
-}
-
-function isGithubAuthorized(auth) {
-  return Boolean(auth?.githubAuthorized || auth?.canUseGithubAgentFlow || auth?.authProvider === 'github-app' || auth?.authProvider === 'github-oauth');
-}
-
-function isGoogleAuthorized(auth) {
-  return Boolean(auth?.googleAuthorized || auth?.authProvider === 'google-oauth');
-}
-
-function primarySignInUrl(auth = state.snapshot?.auth || {}) {
-  if (auth?.googleConfigured) return '/auth/google';
-  if (auth?.githubConfigured || auth?.githubAppConfigured) return '/auth/github';
-  return '/auth/github';
-}
-
-function googleAuthActionUrl(auth = state.snapshot?.auth || {}, options = {}) {
-  if (!auth?.loggedIn) return '/auth/google';
-  const capabilities = Array.isArray(options.capabilities)
-    ? options.capabilities
-    : String(options.capabilities || '').split(/[,\s]+/).filter(Boolean);
-  const url = new URL('/auth/google', window.location.origin);
-  url.searchParams.set('action', 'analytics_connect');
-  url.searchParams.set('return_to', '/chat');
-  url.searchParams.set('login_source', 'connect_google');
-  const requested = capabilities.length ? capabilities : [];
-  if (requested.length) url.searchParams.set('capabilities', requested.join(','));
-  return `${url.pathname}${url.search}`;
-}
-
-function githubAuthActionUrl(auth = state.snapshot?.auth || {}) {
-  return auth?.loggedIn ? '/auth/github?mode=link' : '/auth/github';
-}
-
-function linkedProvidersLabel(auth = {}) {
-  const providers = [];
-  if (hasLinkedProvider(auth, 'google')) providers.push('google');
-  if (hasLinkedProvider(auth, 'github-app')) providers.push('github-app');
-  else if (hasLinkedProvider(auth, 'github')) providers.push('github');
-  return providers.length ? providers.join(', ') : '-';
-}
-
-function isLikelyRestrictedGoogleOAuthBrowser() {
-  const ua = String(window.navigator.userAgent || '').toLowerCase();
-  if (!ua) return false;
-  return [
-    ' fban/',
-    ' fbav/',
-    'instagram',
-    'line/',
-    'micromessenger',
-    '; wv',
-    'electron',
-    'producthunt',
-    'twitter',
-    'x-webview'
-  ].some((token) => ua.includes(token.trim()));
-}
-
-function googleOAuthBrowserWarning() {
-  return 'Google sign-in may be blocked in this in-app browser. If Google shows a security warning, open aiagent-marketplace.net in Chrome, Edge, or Safari and sign in there.';
-}
-
-function canUseDevApi(auth) {
-  return Boolean(auth?.devApiEnabled);
-}
-
-function activeApiKeys(list = []) {
-  return (Array.isArray(list) ? list : []).filter((item) => !item?.revokedAt);
-}
-
 function setButtonAccess(el, enabled) {
   if (!el) return;
   el.disabled = !enabled;
@@ -2444,105 +2327,6 @@ function setButtonAccess(el, enabled) {
 function setElementVisible(el, visible) {
   if (!el) return;
   el.hidden = !visible;
-}
-
-function temporaryInvoiceNoticeLines(kind = 'payment') {
-  const target = String(kind || 'payment').trim().toLowerCase();
-  const label = target === 'plan' ? 'plan invoice' : (target === 'payout' ? 'manual payout' : 'billing invoice');
-  return [
-    `Temporary ${label} notice: hosted payment checkout is paused.`,
-    `For now, request ${label === 'manual payout' ? 'manual payout handling' : 'an invoice/manual payment'}.`,
-    label === 'manual payout'
-      ? `Support will confirm provider payout details at ${TEMPORARY_INVOICE_SUPPORT_EMAIL}.`
-      : `CAIt will confirm billing manually after payment confirmation.`,
-    `Support: ${TEMPORARY_INVOICE_SUPPORT_EMAIL}`
-  ];
-}
-
-function temporaryInvoiceRequestEmail() {
-  return String(
-    els.billingEmail?.value
-    || state.snapshot?.auth?.user?.email
-    || state.snapshot?.accountSettings?.billing?.billingEmail
-    || ''
-  ).trim();
-}
-
-function temporaryInvoiceAccountLabel() {
-  const auth = state.snapshot?.auth || {};
-  return String(
-    auth.accountLogin
-    || auth.user?.login
-    || auth.user?.email
-    || 'unknown account'
-  ).trim();
-}
-
-async function submitTemporaryInvoiceRequest(options = {}) {
-  const kind = String(options.kind || 'payment').trim().toLowerCase();
-  const plan = String(options.plan || '').trim().toLowerCase();
-  const context = String(options.context || state.currentTab || 'settings').trim().toLowerCase();
-  const amount = Number(options.amount || 0);
-  const amountLine = amount > 0 ? formatDisplayCurrency(amount) : '-';
-  const email = temporaryInvoiceRequestEmail();
-  const title = `${PRODUCT_NAME} temporary ${kind === 'payout' ? 'manual payout' : (kind === 'plan' ? 'plan invoice' : 'invoice')} request`;
-  const message = [
-    title,
-    '',
-    `Account: ${temporaryInvoiceAccountLabel()}`,
-    email ? `Billing email: ${email}` : 'Billing email: not provided',
-    `Kind: ${kind || 'payment'}`,
-    plan ? `Plan: ${plan}` : '',
-    `Amount: ${amountLine}`,
-    `Context: ${context || '-'}`,
-    `Page: ${window.location.pathname || '/'}`,
-    '',
-    kind === 'payout'
-      ? 'Automated provider payouts are temporarily paused. Please review provider earnings and arrange manual payout follow-up.'
-      : 'Hosted checkout is temporarily paused. Please issue/manual-confirm the invoice and add credits after payment confirmation.'
-  ].filter(Boolean).join('\n');
-  const result = await api('/api/feedback', {
-    method: 'POST',
-    body: JSON.stringify({
-      type: 'question',
-      email,
-      title,
-      message,
-      page_path: window.location.pathname || '/',
-      current_tab: state.currentTab || '',
-      source: 'temporary_invoice_billing',
-      context: {
-        extra: {
-          kind,
-          plan,
-          amount_usd: amount > 0 ? amount : 0,
-          billing_context: context
-        }
-      }
-    })
-  });
-  const lines = [
-    kind === 'payout' ? 'Manual payout request saved.' : 'Invoice request saved.',
-    `Kind: ${kind || 'payment'}`,
-    plan ? `Plan: ${plan}` : '',
-    amount > 0 ? `Amount: ${amountLine}` : '',
-    `Email: ${result.email_forwarded ? `forwarded to ${TEMPORARY_INVOICE_SUPPORT_EMAIL}` : `not forwarded (${result.email_status || 'not_configured'})`}`,
-    kind === 'payout'
-      ? 'This is a temporary manual payout flow while automated payouts are paused.'
-      : 'This is a temporary manual billing flow while hosted checkout is paused.',
-    kind === 'payout'
-      ? 'Support will follow up about payout handling.'
-      : 'Billing is confirmed manually after payment confirmation.'
-  ].filter(Boolean);
-  safeText(kind === 'payout' ? els.stripeProviderActionResult : els.stripeCustomerActionResult, lines.join('\n'));
-  flash(kind === 'payout' ? 'Manual payout request saved. Support will follow up.' : 'Invoice request saved. Support will follow up manually.', 'ok');
-  void trackConversionEvent('invoice_request_submitted', {
-    source: context || 'settings',
-    status: result.report?.status || 'open',
-    mode: kind || 'payment',
-    promptChars: message.length
-  });
-  return result;
 }
 
 function openPlanModal() {
@@ -2778,128 +2562,34 @@ const {
   toggleOpenChatHistory
 } = clientOpenChatHistoryUtils;
 
-function scheduledWorkTimeLabel(value = '') {
-  if (!Number.isFinite(Date.parse(value))) return 'not scheduled';
-  return new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-function scheduledWorkScheduleLabel(schedule = {}) {
-  const interval = String(schedule?.interval || 'daily').toLowerCase();
-  if (interval === 'hourly') {
-    const every = Math.max(1, Number(schedule?.every || 1));
-    return every === 1 ? 'Hourly' : `Every ${every} hours`;
-  }
-  if (interval === 'weekly') {
-    const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][Number(schedule?.weekday || 1)] || 'Mon';
-    return `Weekly ${weekday} ${schedule?.time || '09:00'}`;
-  }
-  return `Daily ${schedule?.time || '09:00'}`;
-}
-
-function selectedScheduledWorkOptions() {
-  const interval = String(els.scheduledWorkInterval?.value || 'daily').trim() || 'daily';
-  return {
-    interval,
-    time: String(els.scheduledWorkTime?.value || '09:00').trim() || '09:00',
-    weekday: Number(els.scheduledWorkWeekday?.value || 1),
-    every: Math.max(1, Math.min(168, Number(els.scheduledWorkEvery?.value || 1) || 1)),
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Tokyo'
-  };
-}
-
-function renderScheduledWorkControls() {
-  updateScheduledWorkControls(els, els.scheduledWorkInterval?.value || 'daily');
-}
-
-function renderScheduledWorkList(recurringOrders = []) {
-  renderScheduledWorkControls();
-  const auth = state.snapshot?.auth || {};
-  renderScheduledWorkListElement(els, recurringOrders, {
-    canOrder: canOrderFromBrowser(auth),
-    scheduleLabel: (schedule) => scheduledWorkScheduleLabel(schedule),
-    timeLabel: (value) => scheduledWorkTimeLabel(value),
-    onToggle: (button, id) => runAction(button, async () => {
-      await toggleScheduledWork(id);
-    }),
-    onDelete: (button, id) => runAction(button, async () => {
-      await deleteScheduledWork(id);
-    })
-  });
-}
-
-function scheduledWorkById(id = '') {
-  return (state.snapshot?.recurringOrders || []).find((order) => String(order.id || '') === String(id || '')) || null;
-}
-
-async function scheduleCurrentOrderDraft() {
-  const draft = currentOrderDraft();
-  const inputCounts = orderInputCounts(draft.input || null);
-  if (shouldPrepareOrderBeforeDispatch(draft)) {
-    const prepPrompt = draft.prompt || fallbackPromptFromOrderInput(draft.input || null);
-    const prepAnswer = buildOpenChatImplicitOrderPrepAnswer(prepPrompt, inputCounts, {
-      sourceOnly: !String(draft.prompt || '').trim()
-    });
-    appendOrderChatExchange(prepPrompt, {
-      ...prepAnswer,
-      status: 'Draft prepared for scheduling.\n\nReview the brief, then press SCHEDULE DRAFT. No order was created and no billing occurred.'
-    });
-    flash('Draft prepared. Review it, then schedule it from the left panel.', 'info');
-    return;
-  }
-  try {
-    validateOrderDraft(draft, { checkAccess: true, checkFunding: false, allowGuestTrial: false });
-  } catch (error) {
-    if (handleOrderPreflightPrompt(error, draft, { analytics: summarizeOrderDraftForAnalytics(draft, 'scheduled_work_validation') })) return;
-    throw error;
-  }
-  const maxRuns = Math.max(0, Number(els.scheduledWorkMaxRuns?.value || 0) || 0);
-  const payload = {
-    ...apiPayloadFromOrderDraft(draft),
-    agent_id: draft.agent_id || undefined,
-    prompt: draft.prompt || fallbackPromptFromOrderInput(draft.input),
-    schedule: selectedScheduledWorkOptions(),
-    max_runs: maxRuns
-  };
-  let result;
-  try {
-    result = await api('/api/recurring-orders', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-  } catch (error) {
-    if (handleOrderPreflightPrompt(error, draft, { analytics: summarizeOrderDraftForAnalytics(draft, 'scheduled_work_api') })) return;
-    throw error;
-  }
-  void trackConversionEvent('recurring_order_created', {
-    ...summarizeOrderDraftForAnalytics(draft, 'scheduled_work'),
-    status: result.recurring_order?.status || 'active'
-  });
-  flash(`Scheduled work created. Next run: ${scheduledWorkTimeLabel(result.recurring_order?.nextRunAt)}`, 'ok');
-  await refresh();
-}
-
-async function toggleScheduledWork(id = '') {
-  const order = scheduledWorkById(id);
-  if (!order) throw new Error('Scheduled work not found.');
-  const status = String(order.status || '').toLowerCase();
-  const paused = status === 'paused' || status === 'needs_action';
-  const body = paused
-    ? { status: 'active', schedule: order.schedule || {} }
-    : { status: 'paused' };
-  await api(`/api/recurring-orders/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    body: JSON.stringify(body)
-  });
-  flash(paused ? 'Scheduled work resumed. It will retry on the next scheduled run.' : 'Scheduled work paused.', 'ok');
-  await refresh();
-}
-
-async function deleteScheduledWork(id = '') {
-  if (!id) throw new Error('Scheduled work not found.');
-  await api(`/api/recurring-orders/${encodeURIComponent(id)}`, { method: 'DELETE' });
-  flash('Scheduled work deleted.', 'ok');
-  await refresh();
-}
+const clientScheduledWorkController = createClientScheduledWorkController({
+  els,
+  state,
+  api: (path, init) => api(path, init),
+  apiPayloadFromOrderDraft: (draft) => apiPayloadFromOrderDraft(draft),
+  appendOrderChatExchange: (prompt, answer, options) => appendOrderChatExchange(prompt, answer, options),
+  buildOpenChatImplicitOrderPrepAnswer: (prompt, inputCounts, options) => buildOpenChatImplicitOrderPrepAnswer(prompt, inputCounts, options),
+  canOrderFromBrowser: (auth) => canOrderFromBrowser(auth),
+  currentOrderDraft: () => currentOrderDraft(),
+  fallbackPromptFromOrderInput: (input) => fallbackPromptFromOrderInput(input),
+  flash: (message, tone) => flash(message, tone),
+  handleOrderPreflightPrompt: (error, draft, options) => handleOrderPreflightPrompt(error, draft, options),
+  orderInputCounts: (input) => orderInputCounts(input),
+  refresh: () => refresh(),
+  runAction: (button, fn) => runAction(button, fn),
+  shouldPrepareOrderBeforeDispatch: (draft) => shouldPrepareOrderBeforeDispatch(draft),
+  summarizeOrderDraftForAnalytics: (draft, source) => summarizeOrderDraftForAnalytics(draft, source),
+  trackConversionEvent: (eventName, payload) => trackConversionEvent(eventName, payload),
+  validateOrderDraft: (draft, options) => validateOrderDraft(draft, options)
+});
+const {
+  renderScheduledWorkControls,
+  renderScheduledWorkList,
+  scheduleCurrentOrderDraft,
+  scheduledWorkById,
+  scheduledWorkScheduleLabel,
+  scheduledWorkTimeLabel
+} = clientScheduledWorkController;
 
 function closeOrderSettings() {
   state.orderSettingsExpanded = false;
@@ -7484,626 +7174,41 @@ function safeCssToken(value, fallback = 'info') {
   return token || fallback;
 }
 
-function selectedFeedbackReport() {
-  return state.snapshot?.feedbackReports?.find((report) => report.id === state.selectedFeedbackId) || null;
-}
-
-function selectedChatTranscript() {
-  return state.snapshot?.chatTranscripts?.find((item) => item.id === state.selectedChatTranscriptId) || null;
-}
-
-function setChatTranscriptDetail(transcript) {
-  if (!els.chatTranscriptDetail) return;
-  if (!transcript) {
-    safeText(els.chatTranscriptDetail, 'Select a chat transcript.');
-    if (els.chatTranscriptExpectedHandling) els.chatTranscriptExpectedHandling.value = '';
-    if (els.chatTranscriptImprovementNote) els.chatTranscriptImprovementNote.value = '';
-    return;
-  }
-  safeText(els.chatTranscriptDetail, [
-    `Status: ${String(transcript.reviewStatus || 'new').toUpperCase()}`,
-    `Created: ${formatTime(transcript.createdAt)}`,
-    `Task: ${transcript.taskType || '-'}`,
-    `Answer kind: ${transcript.answerKind || '-'}`,
-    `Visitor: ${transcript.visitorId || transcript.accountHash || '-'}`,
-    `Login: ${transcript.loggedIn ? 'yes' : 'no'} (${transcript.authProvider || 'guest'})`,
-    `Redacted: ${transcript.redacted ? 'yes' : 'no'}`,
-    `Reviewed by: ${transcript.reviewedBy || '-'}`,
-    `Reviewed at: ${formatTime(transcript.reviewedAt)}`,
-    '',
-    'User input:',
-    transcript.prompt || '-',
-    '',
-    'Current CAIt answer:',
-    transcript.answer || '-',
-    '',
-    'Expected next handling:',
-    transcript.expectedHandling || '-',
-    '',
-    'Improvement note:',
-    transcript.improvementNote || '-'
-  ].join('\n'));
-  if (els.chatTranscriptExpectedHandling) els.chatTranscriptExpectedHandling.value = transcript.expectedHandling || '';
-  if (els.chatTranscriptImprovementNote) els.chatTranscriptImprovementNote.value = transcript.improvementNote || '';
-}
-
-function setFeedbackDetail(report) {
-  if (!els.feedbackDetail) return;
-  if (!report) {
-    safeText(els.feedbackDetail, 'Select a feedback report.');
-    return;
-  }
-  safeText(els.feedbackDetail, [
-    `Title: ${report.title || '-'}`,
-    `Type: ${String(report.type || '-').toUpperCase()}`,
-    `Status: ${String(report.status || '-').toUpperCase()}`,
-    `Created: ${formatTime(report.createdAt)}`,
-    `Reporter: ${report.reporterLogin || report.email || 'anonymous'}`,
-    `Page: ${report.context?.pagePath || '-'}`,
-    `Tab: ${report.context?.currentTab || '-'}`,
-    `Source: ${report.context?.source || '-'}`,
-    `Reviewed by: ${report.reviewedBy || '-'}`,
-    `Reviewed at: ${formatTime(report.reviewedAt)}`,
-    `Resolution note: ${report.resolutionNote || '-'}`,
-    '',
-    'Message:',
-    report.message || '-'
-  ].join('\n'));
-}
-
-function renderFeedbackForm(auth = state.snapshot?.auth || {}) {
-  if (!els.submitFeedbackBtn) return;
-  setButtonAccess(els.submitFeedbackBtn, true);
-  if (auth?.user?.email && !String(els.feedbackEmail?.value || '').trim()) {
-    setInputValue(els.feedbackEmail, auth.user.email);
-  }
-  if (!String(els.feedbackSubmitResult?.textContent || '').trim()) {
-    safeText(els.feedbackSubmitResult, 'Send a bug report or product request here. It will be stored in DB and forwarded to support@aiagent-marketplace.net.');
-  }
-}
-
-function renderFeedbackReports(reports = [], auth = state.snapshot?.auth || {}) {
-  const canReview = Boolean(auth?.loggedIn && auth?.user?.login && auth?.canReviewFeedbackReports);
-  if (!els.feedbackSummaryCard || !els.feedbackTable || !els.feedbackDetail) return;
-  if (!canReview) {
-    state.selectedFeedbackId = null;
-    safeText(els.feedbackSummaryCard, auth?.loggedIn ? 'Reports are only visible to operators.' : 'Login required to review feedback reports.');
-    els.feedbackSummaryCard.className = 'detail-box action-card warn compact-card';
-    els.feedbackTable.innerHTML = `<div class="empty">${auth?.loggedIn ? 'Reports are only visible to operators.' : 'Login to review reports.'}</div>`;
-    safeText(els.feedbackDetail, auth?.loggedIn ? 'Reports are only visible to operators.' : 'Select a feedback report.');
-    setButtonAccess(els.feedbackReviewingBtn, false);
-    setButtonAccess(els.feedbackResolvedBtn, false);
-    setButtonAccess(els.feedbackReopenBtn, false);
-    return;
-  }
-  const safeReports = Array.isArray(reports) ? [...reports] : [];
-  const openCount = safeReports.filter((report) => report.status === 'open').length;
-  const reviewingCount = safeReports.filter((report) => report.status === 'reviewing').length;
-  const resolvedCount = safeReports.filter((report) => report.status === 'resolved').length;
-  const latest = safeReports[0] || null;
-  safeText(els.feedbackSummaryCard, [
-    `Open: ${openCount}`,
-    `Reviewing: ${reviewingCount}`,
-    `Resolved: ${resolvedCount}`,
-    `Latest: ${latest ? `${latest.title} (${sinceLabel(latest.createdAt)})` : 'none'}`
-  ].join('\n'));
-  els.feedbackSummaryCard.className = openCount ? 'detail-box action-card warn compact-card' : 'detail-box action-card ok compact-card';
-  if (!safeReports.length) {
-    state.selectedFeedbackId = null;
-    els.feedbackTable.innerHTML = '<div class="empty">No feedback reports yet.</div>';
-    safeText(els.feedbackDetail, 'No feedback reports yet.');
-    setButtonAccess(els.feedbackReviewingBtn, false);
-    setButtonAccess(els.feedbackResolvedBtn, false);
-    setButtonAccess(els.feedbackReopenBtn, false);
-    return;
-  }
-  if (!safeReports.some((report) => report.id === state.selectedFeedbackId)) {
-    state.selectedFeedbackId = safeReports[0]?.id || null;
-  }
-  els.feedbackTable.innerHTML = `<div class="table-header feedback-grid"><div>TITLE</div><div>REPORTER</div><div>STATUS</div><div>TIME</div></div>${safeReports.map((report) => `
-    <div class="table-row feedback-grid ${state.selectedFeedbackId === report.id ? 'selected-row' : ''}" data-feedback-id="${report.id}">
-      <div>${escapeHtml(report.title || '-')}<div class="row-muted">${String(report.type || 'bug').toUpperCase()} · ${escapeHtml((report.context?.pagePath || '/').slice(0, 48))}</div></div>
-      <div>${escapeHtml(report.reporterLogin || report.email || 'anonymous')}<div class="row-muted">${escapeHtml(report.context?.currentTab || report.context?.source || '-')}</div></div>
-      <div><span class="status-pill ${report.status === 'resolved' ? 'ok' : report.status === 'reviewing' ? 'info' : 'warn'}">${String(report.status || 'open').toUpperCase()}</span><div class="row-muted">${escapeHtml((report.message || '').slice(0, 64) || '-')}</div></div>
-      <div>${sinceLabel(report.createdAt)}<div class="row-muted">${formatTime(report.createdAt)}</div></div>
-    </div>
-  `).join('')}`;
-  [...els.feedbackTable.querySelectorAll('[data-feedback-id]')].forEach((row) => {
-    row.onclick = () => {
-      state.selectedFeedbackId = row.dataset.feedbackId || null;
-      renderFeedbackReports(state.snapshot?.feedbackReports || [], auth);
-    };
-  });
-  const selected = selectedFeedbackReport();
-  setFeedbackDetail(selected);
-  const canAct = Boolean(selected);
-  setButtonAccess(els.feedbackReviewingBtn, canAct);
-  setButtonAccess(els.feedbackResolvedBtn, canAct);
-  setButtonAccess(els.feedbackReopenBtn, canAct);
-}
-
-function renderConversionAnalytics(analytics = null, auth = state.snapshot?.auth || {}) {
-  const canReview = Boolean(auth?.loggedIn && auth?.user?.login && auth?.canReviewFeedbackReports);
-  if (!els.conversionSummaryCard || !els.conversionFunnelTable || !els.conversionRecentEvents) return;
-  if (!canReview) {
-    safeText(els.conversionSummaryCard, auth?.loggedIn ? 'Funnel analytics are only visible to operators.' : 'Login required to review funnel analytics.');
-    els.conversionSummaryCard.className = 'detail-box action-card warn compact-card';
-    els.conversionFunnelTable.innerHTML = `<div class="empty">${auth?.loggedIn ? 'Operator access required.' : 'Login to review conversion analytics.'}</div>`;
-    safeText(els.conversionRecentEvents, 'No conversion analytics visible.');
-    return;
-  }
-  const actuals = analytics?.actuals || {};
-  const pageViews = (analytics?.funnel || []).find((row) => row.event === 'page_view') || {};
-  const chatMessages = (analytics?.funnel || []).find((row) => row.event === 'chat_message_sent') || {};
-  const orders = (analytics?.funnel || []).find((row) => row.event === 'order_created') || {};
-  const agentStarts = (analytics?.funnel || []).find((row) => row.event === 'agent_publish_started') || {};
-  renderSummaryRows(els.conversionSummaryCard, [
-    { label: 'Tracked visitors', value: `${pageViews.uniqueVisitors || 0}` },
-    { label: 'Chat messages 24h / 7d', value: `${chatMessages.last24h || 0} / ${chatMessages.last7d || 0}` },
-    { label: 'Orders 24h / 7d', value: `${orders.last24h || 0} / ${orders.last7d || 0}` },
-    { label: 'Agent publish starts 24h / 7d', value: `${agentStarts.last24h || 0} / ${agentStarts.last7d || 0}` },
-    { label: 'Actual accounts 24h / 7d / total', value: `${actuals.accounts?.last24h || 0} / ${actuals.accounts?.last7d || 0} / ${actuals.accounts?.total || 0}` },
-    { label: 'Actual orders 24h / 7d / total', value: `${actuals.orders?.last24h || 0} / ${actuals.orders?.last7d || 0} / ${actuals.orders?.total || 0}` },
-    { label: 'User agents current', value: `${actuals.userAgents?.total || 0}` }
-  ]);
-  els.conversionSummaryCard.className = 'detail-box action-card info compact-card';
-  const rows = Array.isArray(analytics?.funnel) ? analytics.funnel : [];
-  els.conversionFunnelTable.innerHTML = `<div class="table-header conversion-grid"><div>EVENT</div><div>24H</div><div>7D</div><div>TOTAL</div><div>VISITORS</div><div>LAST SEEN</div></div>${rows.map((row) => `
-    <div class="table-row conversion-grid">
-      <div>${escapeHtml(row.label || row.event || '-')}<div class="row-muted">${escapeHtml(row.event || '-')}</div></div>
-      <div>${Number(row.last24h || 0)}</div>
-      <div>${Number(row.last7d || 0)}</div>
-      <div>${Number(row.total || 0)}</div>
-      <div>${Number(row.uniqueVisitors || 0)}</div>
-      <div>${row.lastSeenAt ? sinceLabel(row.lastSeenAt) : '-'}<div class="row-muted">${escapeHtml(formatTime(row.lastSeenAt))}</div></div>
-    </div>
-  `).join('')}`;
-  const recent = Array.isArray(analytics?.recent) ? analytics.recent : [];
-  safeText(els.conversionRecentEvents, recent.length
-    ? recent.map((event) => [
-        `${formatTime(event.ts)} · ${event.label || event.event}`,
-        `visitor=${event.visitor || '-'} login=${event.loggedIn ? 'yes' : 'no'} auth=${event.authProvider || 'guest'} tab=${event.tab || '-'}`,
-        `source=${event.source || '-'} page=${event.pagePath || '/'}${event.promptChars ? ` promptChars=${event.promptChars}` : ''}${event.status ? ` status=${event.status}` : ''}`
-      ].join('\n')).join('\n\n')
-    : 'No conversion events recorded yet.');
-}
-
-function renderChatTranscripts(transcripts = [], auth = state.snapshot?.auth || {}) {
-  const canReview = Boolean(auth?.loggedIn && auth?.user?.login && auth?.canReviewFeedbackReports);
-  if (!els.chatTranscriptSummaryCard || !els.chatTranscriptRecent || !els.chatTranscriptTable || !els.chatTranscriptDetail) return;
-  if (!canReview) {
-    state.selectedChatTranscriptId = null;
-    safeText(els.chatTranscriptSummaryCard, auth?.loggedIn ? 'Chat transcripts are only visible to operators.' : 'Login required to review chat transcripts.');
-    els.chatTranscriptSummaryCard.className = 'detail-box action-card warn compact-card';
-    els.chatTranscriptTable.innerHTML = `<div class="empty">${auth?.loggedIn ? 'Operator access required.' : 'Login to review chat transcripts.'}</div>`;
-    setChatTranscriptDetail(null);
-    safeText(els.chatTranscriptRecent, 'No chat transcripts visible.');
-    setButtonAccess(els.chatTranscriptReviewingBtn, false);
-    setButtonAccess(els.chatTranscriptFixedBtn, false);
-    setButtonAccess(els.chatTranscriptIgnoreBtn, false);
-    setButtonAccess(els.chatTrainingExportBtn, false);
-    safeText(els.chatTrainingExportResult, 'Operator access required to export reviewed training data.');
-    return;
-  }
-  const safeTranscripts = Array.isArray(transcripts) ? transcripts : [];
-  const last24h = safeTranscripts.filter((item) => {
-    const ms = Date.parse(item.createdAt || '');
-    return Number.isFinite(ms) && Date.now() - ms <= 24 * 60 * 60 * 1000;
-  }).length;
-  const redactedCount = safeTranscripts.filter((item) => item.redacted).length;
-  const newCount = safeTranscripts.filter((item) => (item.reviewStatus || 'new') === 'new').length;
-  const reviewingCount = safeTranscripts.filter((item) => item.reviewStatus === 'reviewing').length;
-  const fixedCount = safeTranscripts.filter((item) => item.reviewStatus === 'fixed').length;
-  const latest = safeTranscripts[0] || null;
-  renderSummaryRows(els.chatTranscriptSummaryCard, [
-    { label: 'Saved chats 24h / total', value: `${last24h} / ${safeTranscripts.length}` },
-    { label: 'New / reviewing / fixed', value: `${newCount} / ${reviewingCount} / ${fixedCount}` },
-    { label: 'Redacted or truncated', value: `${redactedCount}` },
-    { label: 'Latest', value: latest ? `${sinceLabel(latest.createdAt)} · ${latest.answerKind || latest.status || 'chat'}` : 'none' }
-  ]);
-  els.chatTranscriptSummaryCard.className = 'detail-box action-card info compact-card';
-  if (!safeTranscripts.length) {
-    state.selectedChatTranscriptId = null;
-    els.chatTranscriptTable.innerHTML = '<div class="empty">No chat transcripts recorded yet.</div>';
-    setChatTranscriptDetail(null);
-    safeText(els.chatTranscriptRecent, 'No chat transcripts recorded yet.');
-    setButtonAccess(els.chatTranscriptReviewingBtn, false);
-    setButtonAccess(els.chatTranscriptFixedBtn, false);
-    setButtonAccess(els.chatTranscriptIgnoreBtn, false);
-    setButtonAccess(els.chatTrainingExportBtn, true);
-    return;
-  }
-  if (!safeTranscripts.some((item) => item.id === state.selectedChatTranscriptId)) {
-    state.selectedChatTranscriptId = safeTranscripts.find((item) => (item.reviewStatus || 'new') === 'new')?.id || safeTranscripts[0]?.id || null;
-  }
-  els.chatTranscriptTable.innerHTML = `<div class="table-header chat-transcript-grid"><div>STATUS</div><div>TASK</div><div>USER INPUT</div><div>TIME</div></div>${safeTranscripts.slice(0, 80).map((item) => {
-    const status = String(item.reviewStatus || 'new');
-    const tone = status === 'fixed' ? 'ok' : status === 'reviewing' ? 'info' : status === 'ignored' ? 'muted' : 'warn';
-    return `
-      <div class="table-row chat-transcript-grid ${state.selectedChatTranscriptId === item.id ? 'selected-row' : ''}" data-chat-transcript-id="${escapeHtml(item.id)}">
-        <div><span class="status-pill ${tone}">${status.toUpperCase()}</span><div class="row-muted">${escapeHtml(item.answerKind || item.status || 'chat')}</div></div>
-        <div>${escapeHtml(item.taskType || '-')}<div class="row-muted">${escapeHtml(item.source || 'work_chat')}</div></div>
-        <div>${escapeHtml((item.prompt || '-').slice(0, 110))}<div class="row-muted">${escapeHtml((item.improvementNote || item.expectedHandling || '').slice(0, 90) || 'No improvement note yet')}</div></div>
-        <div>${sinceLabel(item.createdAt)}<div class="row-muted">${escapeHtml(formatTime(item.createdAt))}</div></div>
-      </div>
-    `;
-  }).join('')}`;
-  [...els.chatTranscriptTable.querySelectorAll('[data-chat-transcript-id]')].forEach((row) => {
-    row.onclick = () => {
-      state.selectedChatTranscriptId = row.dataset.chatTranscriptId || null;
-      renderChatTranscripts(state.snapshot?.chatTranscripts || [], auth);
-    };
-  });
-  const selected = selectedChatTranscript();
-  setChatTranscriptDetail(selected);
-  const canAct = Boolean(selected);
-  setButtonAccess(els.chatTranscriptReviewingBtn, canAct);
-  setButtonAccess(els.chatTranscriptFixedBtn, canAct);
-  setButtonAccess(els.chatTranscriptIgnoreBtn, canAct);
-  setButtonAccess(els.chatTrainingExportBtn, true);
-  safeText(els.chatTranscriptRecent, safeTranscripts.length
-    ? safeTranscripts.slice(0, 12).map((item) => [
-        `${formatTime(item.createdAt)} · ${String(item.reviewStatus || 'new').toUpperCase()} · ${item.answerKind || item.status || 'chat'} · visitor=${item.visitorId || item.accountHash || '-'}`,
-        `login=${item.loggedIn ? 'yes' : 'no'} auth=${item.authProvider || 'guest'} tab=${item.tab || '-'} task=${item.taskType || '-'}`,
-        `chars prompt=${item.promptChars || 0} answer=${item.answerChars || 0}${item.redacted ? ' redacted=yes' : ''}`,
-        `expected=${item.expectedHandling || '-'}`,
-        `note=${item.improvementNote || '-'}`,
-        'USER:',
-        item.prompt || '-',
-        'CAIt:',
-        item.answer || '-'
-      ].join('\n')).join('\n\n---\n\n')
-    : 'No chat transcripts recorded yet.');
-}
-
-function setAdminDetail(title, value) {
-  if (!els.adminDetail) return;
-  safeText(els.adminDetail, `${title}\n\n${JSON.stringify(value || {}, null, 2)}`);
-}
-
-function adminChatSessionDetailText(chat = {}) {
-  const turns = Array.isArray(chat.turns) && chat.turns.length ? chat.turns : [chat];
-  const lines = [
-    'CHAT SESSION DETAIL',
-    '',
-    `Session: ${chat.sessionId || chat.id || '-'}`,
-    `Segment: ${chat.adminSegmentLabel || chat.adminSegment || chat.authProvider || '-'}`,
-    `Handling: ${chat.handlingLabel || chat.handlingStatus || '-'}`,
-    `Started: ${formatTime(chat.startedAt || chat.createdAt)}`,
-    `Updated: ${formatTime(chat.updatedAt || chat.createdAt)}`,
-    `Turns: ${chat.turnCount || turns.length}`,
-    `Active order: ${chat.linkedOrderId || (Array.isArray(chat.activeJobIds) && chat.activeJobIds.length ? chat.activeJobIds.join(', ') : '-')}`,
-    ''
-  ];
-  turns.forEach((turn, index) => {
-    lines.push(
-      `#${index + 1} ${formatTime(turn.createdAt || chat.createdAt)} · ${String(turn.answerKind || turn.status || 'chat').toUpperCase()} · task=${turn.taskType || chat.latestTaskType || '-'}`,
-      `Review: ${turn.reviewStatus || chat.latestReviewStatus || 'new'}${turn.redacted ? ' · redacted' : ''}`,
-      'USER:',
-      turn.prompt || '-',
-      'CAIt:',
-      turn.answer || '-'
-    );
-    if (turn.expectedHandling) lines.push('Expected handling:', turn.expectedHandling);
-    if (turn.improvementNote) lines.push('Improvement note:', turn.improvementNote);
-    lines.push('');
-  });
-  return lines.join('\n').trim();
-}
-
-function setAdminChatSessionDetail(chat = {}) {
-  const detailText = adminChatSessionDetailText(chat);
-  safeText(els.adminDetail, detailText);
-  safeText(els.adminChatSessionDetail, detailText);
-}
-
-function renderAdminRows(container, gridClass, headers = [], rows = [], emptyText = 'No records yet.') {
-  if (!container) return;
-  if (!rows.length) {
-    container.innerHTML = `<div class="empty">${escapeHtml(emptyText)}</div>`;
-    return;
-  }
-  container.innerHTML = [
-    `<div class="table-header ${gridClass}">${headers.map((header) => `<div>${escapeHtml(header)}</div>`).join('')}</div>`,
-    ...rows.map((row) => `<div class="table-row ${gridClass}" data-admin-kind="${escapeHtml(row.kind)}" data-admin-index="${row.index}" data-admin-key="${escapeHtml(row.key || '')}">${row.cells.map((cell) => `<div>${cell}</div>`).join('')}</div>`)
-  ].join('');
-  [...container.querySelectorAll('[data-admin-kind]')].forEach((node) => {
-    node.onclick = () => {
-      const kind = node.dataset.adminKind || '';
-      const index = Number(node.dataset.adminIndex || 0);
-      const key = String(node.dataset.adminKey || '').trim();
-      const source = state.snapshot?.adminDashboard?.[kind] || [];
-      const item = key
-        ? (source.find((entry) => [entry?.id, entry?.sessionId].map((value) => String(value || '')).includes(key)) || source[index] || {})
-        : (source[index] || {});
-      [...container.querySelectorAll('.selected-row')].forEach((row) => row.classList.remove('selected-row'));
-      node.classList.add('selected-row');
-      if (kind === 'chats') {
-        setAdminChatSessionDetail(item);
-        return;
-      }
-      setAdminDetail(`${kind.toUpperCase()} DETAIL`, item);
-    };
-  });
-}
-
-const ADMIN_PAGE_SIZES = {
-  accounts: 80,
-  orders: 80,
-  chats: 80,
-  agents: 80,
-  reports: 80,
-  events: 100
-};
-
-function adminPageSize(kind = '') {
-  return Number(ADMIN_PAGE_SIZES[kind] || 80);
-}
-
-function adminPageIndex(kind = '') {
-  const raw = Number(state.adminPages?.[kind] || 0);
-  return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 0;
-}
-
-function paginateAdminItems(kind = '', items = []) {
-  const source = Array.isArray(items) ? items : [];
-  const pageSize = adminPageSize(kind);
-  const totalItems = source.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  const currentPage = Math.min(adminPageIndex(kind), Math.max(0, totalPages - 1));
-  if (!state.adminPages || typeof state.adminPages !== 'object') state.adminPages = {};
-  state.adminPages[kind] = currentPage;
-  const start = currentPage * pageSize;
-  const visibleItems = source.slice(start, start + pageSize);
-  return {
-    items: visibleItems,
-    start,
-    end: start + visibleItems.length,
-    pageSize,
-    currentPage,
-    totalItems,
-    totalPages
-  };
-}
-
-function renderAdminPager(container, kind = '', page = null) {
-  if (!container) return;
-  const data = page && typeof page === 'object' ? page : paginateAdminItems(kind, []);
-  if (!data.totalItems) {
-    container.hidden = true;
-    container.innerHTML = '';
-    return;
-  }
-  container.hidden = false;
-  container.innerHTML = [
-    `<span class="admin-pager-summary">${escapeHtml(`${data.start + 1}-${data.end} of ${data.totalItems} · page ${data.currentPage + 1}/${data.totalPages}`)}</span>`,
-    '<div class="helper-row">',
-    `<button type="button" class="mini-btn" data-admin-page-kind="${escapeHtml(kind)}" data-admin-page-direction="prev"${data.currentPage <= 0 ? ' disabled' : ''}>PREV</button>`,
-    `<button type="button" class="mini-btn" data-admin-page-kind="${escapeHtml(kind)}" data-admin-page-direction="next"${data.currentPage >= data.totalPages - 1 ? ' disabled' : ''}>NEXT</button>`,
-    '</div>'
-  ].join('');
-  [...container.querySelectorAll('[data-admin-page-kind]')].forEach((button) => {
-    button.onclick = () => {
-      const direction = button.dataset.adminPageDirection || 'next';
-      const delta = direction === 'prev' ? -1 : 1;
-      state.adminPages[kind] = Math.max(0, adminPageIndex(kind) + delta);
-      renderAdminDashboard(state.snapshot?.adminDashboard || null, state.snapshot?.auth || {});
-    };
-  });
-}
-
-const ADMIN_CHAT_FILTERS = {
-  needsReview: (chat) => chat?.adminSegment !== 'mine' && chat?.handlingStatus === 'needs_review',
-  handled: (chat) => chat?.adminSegment !== 'mine' && chat?.handlingStatus !== 'needs_review',
-  nonMine: (chat) => chat?.adminSegment !== 'mine',
-  guest: (chat) => chat?.adminSegment === 'guest_unknown',
-  other: (chat) => chat?.adminSegment === 'other_account',
-  mine: (chat) => chat?.adminSegment === 'mine',
-  all: () => true
-};
-
-function activeAdminChatFilter() {
-  return ADMIN_CHAT_FILTERS[state.adminChatFilter] ? state.adminChatFilter : 'all';
-}
-
-function adminChatFilterCounts(dashboard = state.snapshot?.adminDashboard || null) {
-  const summary = dashboard?.summary?.chats || {};
-  return {
-    needsReview: Number(summary.needsReviewNonMine || 0),
-    handled: Number(summary.handledNonMine || 0),
-    nonMine: Number(summary.nonMine || 0),
-    guest: Number(summary.guestUnknown || 0),
-    other: Number(summary.otherLoggedIn || 0),
-    mine: Number(summary.mine || 0),
-    all: Number(summary.total || 0)
-  };
-}
-
-function renderAdminChatFilterButtons(dashboard = state.snapshot?.adminDashboard || null) {
-  const active = activeAdminChatFilter();
-  const counts = adminChatFilterCounts(dashboard);
-  [
-    [els.adminChatFilterNeedsReviewBtn, 'needsReview', 'NEEDS REVIEW'],
-    [els.adminChatFilterHandledBtn, 'handled', 'HANDLED'],
-    [els.adminChatFilterNonMineBtn, 'nonMine', 'NON-ME'],
-    [els.adminChatFilterGuestBtn, 'guest', 'GUEST / UNKNOWN'],
-    [els.adminChatFilterOtherBtn, 'other', 'OTHER LOGIN'],
-    [els.adminChatFilterMineBtn, 'mine', 'MY LOGIN'],
-    [els.adminChatFilterAllBtn, 'all', 'ALL']
-  ].forEach(([button, filter, label]) => {
-    if (!button) return;
-    button.classList.toggle('active', active === filter);
-    button.textContent = `${label} ${counts[filter] ?? 0}`;
-  });
-}
-
-function adminChatHandlingClass(chat = {}) {
-  if (chat.handlingNeedsReview || chat.handlingStatus === 'needs_review') return 'error';
-  if (chat.handlingStatus === 'clarified') return 'warn';
-  if (chat.handlingStatus === 'order_brief_prepared') return 'ok';
-  return 'info';
-}
-
-function setAdminChatFilter(filter = 'all') {
-  state.adminChatFilter = ADMIN_CHAT_FILTERS[filter] ? filter : 'all';
-  state.adminPages.chats = 0;
-  renderAdminDashboard(state.snapshot?.adminDashboard || null, state.snapshot?.auth || {});
-}
-
-function renderAdminDashboard(dashboard = null, auth = state.snapshot?.auth || {}) {
-  const isAdmin = Boolean(auth?.isPlatformAdmin && dashboard);
-  if (!els.adminAccessCard) return;
-  if (!isAdmin) {
-    safeText(els.adminAccessCard, auth?.loggedIn ? 'Admin dashboard is only visible to the platform admin login.' : 'Login as platform admin to view this dashboard.');
-    els.adminAccessCard.className = 'detail-box action-card warn compact-card';
-    safeText(els.adminChatSegmentationCard, 'Admin access required.');
-    [els.adminAccountsTable, els.adminOrdersTable, els.adminChatTable, els.adminAgentsTable, els.adminFeedbackTable, els.adminEventsTable].forEach((node) => {
-      if (node) node.innerHTML = '<div class="empty">Admin access required.</div>';
-    });
-    [els.adminAccountsPager, els.adminOrdersPager, els.adminChatPager, els.adminAgentsPager, els.adminFeedbackPager, els.adminEventsPager].forEach((node) => {
-      if (!node) return;
-      node.hidden = true;
-      node.innerHTML = '';
-    });
-    safeText(els.adminAccountsMetric, '-');
-    safeText(els.adminChatsMetric, '-');
-    safeText(els.adminOrdersMetric, '-');
-    safeText(els.adminAgentsMetric, '-');
-    safeText(els.adminIssuesMetric, '-');
-    safeText(els.adminActiveMetric, '-');
-    safeText(els.adminDetail, 'Admin access required.');
-    safeText(els.adminChatSessionDetail, 'Admin access required.');
-    renderAdminChatFilterButtons();
-    return;
-  }
-  const summary = dashboard.summary || {};
-  safeText(els.adminAccountsMetric, summary.accounts?.total || 0);
-  safeText(els.adminChatsMetric, summary.chats?.total || 0);
-  safeText(els.adminOrdersMetric, summary.orders?.total || 0);
-  safeText(els.adminAgentsMetric, summary.agents?.total ?? 0);
-  safeText(els.adminIssuesMetric, summary.reports?.open || 0);
-  safeText(els.adminActiveMetric, summary.orders?.active || 0);
-  renderSummaryRows(els.adminAccessCard, [
-    { label: 'Generated', value: formatTime(dashboard.generatedAt) },
-    { label: 'Operator', value: dashboard.operator || auth.login || '-' },
-    { label: 'Accounts 24h / 7d / total', value: `${summary.accounts?.last24h || 0} / ${summary.accounts?.last7d || 0} / ${summary.accounts?.total || 0}` },
-    { label: 'Chat sessions 24h / 7d / total', value: `${summary.chats?.last24h || 0} / ${summary.chats?.last7d || 0} / ${summary.chats?.total || 0}` },
-    { label: 'Chat turns total', value: `${summary.chats?.turnsTotal || 0}` },
-    { label: 'Agents total / user / ready', value: `${summary.agents?.total || 0} / ${summary.agents?.userAgents || 0} / ${summary.agents?.ready || 0}` },
-    { label: 'Orders active / completed / failed', value: `${summary.orders?.active || 0} / ${summary.orders?.completed || 0} / ${summary.orders?.failed || 0}` },
-    { label: 'Issues open / reviewing / resolved', value: `${summary.reports?.open || 0} / ${summary.reports?.reviewing || 0} / ${summary.reports?.resolved || 0}` },
-    { label: 'Provider billing accounts / retrying / notified', value: `${summary.providerBilling?.accounts || 0} / ${summary.providerBilling?.retrying || 0} / ${summary.providerBilling?.notified || 0}` }
-  ]);
-  els.adminAccessCard.className = 'detail-box action-card info compact-card';
-
-  const chatHandling = dashboard.chatHandling || {};
-  const chatStatusCounts = chatHandling.byStatus || {};
-  renderSummaryRows(els.adminChatSegmentationCard, [
-    { label: 'My logged-in sessions', value: summary.chats?.mine || 0 },
-    { label: 'Other logged-in sessions', value: summary.chats?.otherLoggedIn || 0 },
-    { label: 'Guest / unknown sessions', value: summary.chats?.guestUnknown || 0 },
-    { label: 'Non-me handled / total', value: `${summary.chats?.handledNonMine || 0} / ${summary.chats?.nonMine || 0}` },
-    { label: 'Needs review sessions', value: summary.chats?.needsReviewNonMine || 0 },
-    { label: 'Handling breakdown', value: Object.entries(chatStatusCounts).map(([key, value]) => `${key}:${value}`).join(' · ') || '-' }
-  ]);
-  els.adminChatSegmentationCard.className = `detail-box action-card ${summary.chats?.needsReviewNonMine ? 'warn' : 'info'} compact-card`;
-  renderAdminChatFilterButtons(dashboard);
-
-  const accounts = dashboard.accounts || [];
-  const pagedAccounts = paginateAdminItems('accounts', accounts.map((account, index) => ({ account, index })));
-  renderAdminRows(els.adminAccountsTable, 'admin-accounts-grid', ['LOGIN', 'AUTH', 'BILLING', 'UPDATED'], pagedAccounts.items.map(({ account, index }) => ({
-    kind: 'accounts',
-    index,
-    cells: [
-      `${escapeHtml(account.login || '-')}<div class="row-muted">${escapeHtml(account.email || account.displayName || '-')}</div>`,
-      `${escapeHtml((account.linkedProviders || []).join(', ') || account.authProvider || '-')}<div class="row-muted">keys ${account.apiKeys?.active || 0}/${account.apiKeys?.total || 0} · repos ${account.githubRepos || 0}</div>`,
-      `${yen(account.arrearsTotal || 0)} due<div class="row-muted">welcome ${yen(account.welcomeCreditsBalance || 0)}</div>`,
-      `${sinceLabel(account.updatedAt || account.createdAt)}<div class="row-muted">${escapeHtml(formatTime(account.createdAt))} · provider retry ${escapeHtml(String(account.providerMonthlyRetryCount || 0))}${account.providerMonthlyLastNotificationPeriod ? ` · notified ${escapeHtml(account.providerMonthlyLastNotificationPeriod)}` : ''}</div>`
-    ]
-  })), 'No member registrations yet.');
-  renderAdminPager(els.adminAccountsPager, 'accounts', pagedAccounts);
-
-  const orders = dashboard.orders || [];
-  const pagedOrders = paginateAdminItems('orders', orders.map((job, index) => ({ job, index })));
-  renderAdminRows(els.adminOrdersTable, 'admin-orders-grid', ['ORDER', 'REQUESTER', 'STATUS', 'COST'], pagedOrders.items.map(({ job, index }) => ({
-    kind: 'orders',
-    index,
-    cells: [
-      `${escapeHtml(job.taskType || '-')}<div class="row-muted">${escapeHtml((job.prompt || '-').slice(0, 70))}</div>`,
-      `${escapeHtml(job.requesterLogin || '-')}<div class="row-muted">${escapeHtml(job.assignedAgentId || job.parentAgentId || '-')}</div>`,
-      `<span class="status-pill ${job.status === 'completed' ? 'ok' : ['failed', 'timed_out'].includes(job.status) ? 'error' : 'info'}">${escapeHtml(orderProgressStatusLabel(job.status).toUpperCase())}</span><div class="row-muted">${sinceLabel(job.createdAt)}</div>`,
-      `${job.actualBilling ? yen(job.actualBilling.total || 0) : '-'}<div class="row-muted">platform ${job.actualBilling ? yen(job.actualBilling.platformRevenue || 0) : '-'}</div>`
-    ]
-  })), 'No orders yet.');
-  renderAdminPager(els.adminOrdersPager, 'orders', pagedOrders);
-
-  const chats = dashboard.chats || [];
-  const chatFilter = activeAdminChatFilter();
-  const allChatRows = chats
-    .map((chat, index) => ({ chat, index }))
-    .filter(({ chat }) => ADMIN_CHAT_FILTERS[chatFilter](chat));
-  const pagedChats = paginateAdminItems('chats', allChatRows);
-  renderAdminRows(els.adminChatTable, 'admin-chat-grid', ['TIME', 'USER INPUT', 'ANSWER', 'HANDLING'], pagedChats.items.map(({ chat, index }) => ({
-    kind: 'chats',
-    index,
-    key: chat.id || chat.sessionId || '',
-    cells: [
-      `${sinceLabel(chat.createdAt)}<div class="row-muted">${escapeHtml(chat.adminSegmentLabel || chat.authProvider || 'guest')} · ${escapeHtml(chat.sessionId || chat.id || '-')}</div>`,
-      `${escapeHtml((chat.prompt || '-').slice(0, 90))}<div class="row-muted">${escapeHtml(`${chat.turnCount || 1} turns`)} · task ${escapeHtml(chat.latestTaskType || chat.taskType || '-')}</div>`,
-      `${escapeHtml((chat.answer || '-').slice(0, 90))}<div class="row-muted">started ${escapeHtml(formatTime(chat.startedAt || chat.createdAt))}${chat.recentPromptPreview ? ` · ${escapeHtml(chat.recentPromptPreview.slice(0, 110))}` : ''}</div>`,
-      `<span class="status-pill ${adminChatHandlingClass(chat)}">${escapeHtml(String(chat.handlingLabel || chat.handlingStatus || 'needs_review').toUpperCase())}</span><div class="row-muted">review ${escapeHtml(chat.latestReviewStatus || chat.reviewStatus || 'new')} · ${chat.redacted ? 'redacted' : 'plain'}</div>`
-    ]
-  })), chatFilter === 'needsReview' ? 'No chats currently need review.' : `No chat history for ${chatFilter}.`);
-  renderAdminPager(els.adminChatPager, 'chats', pagedChats);
-
-  const agents = dashboard.agents || [];
-  const pagedAgents = paginateAdminItems('agents', agents.map((agent, index) => ({ agent, index })));
-  renderAdminRows(els.adminAgentsTable, 'admin-agents-grid', ['AGENT', 'OWNER', 'STATUS', 'PRICING'], pagedAgents.items.map(({ agent, index }) => ({
-    kind: 'agents',
-    index,
-    cells: [
-      `${escapeHtml(agent.name || '-')}<div class="row-muted">${escapeHtml((agent.taskTypes || []).join(', ') || '-')}</div>`,
-      `${escapeHtml(agent.owner || '-')}<div class="row-muted">${escapeHtml(agent.productKind || 'agent')}</div>`,
-      `<span class="status-pill ${agent.ready ? 'ok' : agent.online ? 'info' : 'warn'}">${agent.ready ? 'READY' : agent.online ? 'ONLINE' : 'OFFLINE'}</span><div class="row-muted">${escapeHtml(agent.verificationStatus || '-')} · ${escapeHtml(agent.agentReviewStatus || '-')}</div>`,
-      `${formatPercent(agent.providerMarkupRate || 0)}<div class="row-muted">margin ${formatPercent(agent.platformMarginRate || 0)}</div>`
-    ]
-  })), 'No agents yet.');
-  renderAdminPager(els.adminAgentsPager, 'agents', pagedAgents);
-
-  const reports = dashboard.reports || [];
-  const pagedReports = paginateAdminItems('reports', reports.map((report, index) => ({ report, index })));
-  renderAdminRows(els.adminFeedbackTable, 'admin-feedback-grid', ['REPORT', 'REPORTER', 'STATUS', 'TIME'], pagedReports.items.map(({ report, index }) => ({
-    kind: 'reports',
-    index,
-    cells: [
-      `${escapeHtml(report.title || '-')}<div class="row-muted">${escapeHtml((report.message || '-').slice(0, 70))}</div>`,
-      `${escapeHtml(report.reporterLogin || report.email || 'anonymous')}<div class="row-muted">${escapeHtml(report.context?.pagePath || '-')}</div>`,
-      `<span class="status-pill ${report.status === 'resolved' ? 'ok' : report.status === 'reviewing' ? 'info' : 'warn'}">${escapeHtml(String(report.status || 'open').toUpperCase())}</span><div class="row-muted">${escapeHtml(report.type || 'bug')}</div>`,
-      `${sinceLabel(report.createdAt)}<div class="row-muted">${escapeHtml(formatTime(report.createdAt))}</div>`
-    ]
-  })), 'No report issues yet.');
-  renderAdminPager(els.adminFeedbackPager, 'reports', pagedReports);
-
-  const events = dashboard.events || [];
-  const pagedEvents = paginateAdminItems('events', events.map((event, index) => ({ event, index })));
-  renderAdminRows(els.adminEventsTable, 'admin-events-grid', ['TIME', 'TYPE', 'MESSAGE'], pagedEvents.items.map(({ event, index }) => ({
-    kind: 'events',
-    index,
-    cells: [
-      `${sinceLabel(event.createdAt)}<div class="row-muted">${escapeHtml(formatTime(event.createdAt))}</div>`,
-      `<span class="status-pill info">${escapeHtml(event.type || '-')}</span>`,
-      `${escapeHtml(event.message || '-')}<div class="row-muted">${escapeHtml(JSON.stringify(event.meta || {}).slice(0, 90))}</div>`
-    ]
-  })), 'No system events yet.');
-  renderAdminPager(els.adminEventsPager, 'events', pagedEvents);
-
-  if (!String(els.adminDetail?.textContent || '').trim() || els.adminDetail.textContent === 'Admin access required.') {
-    setAdminDetail('ADMIN SUMMARY', {
-      summary: dashboard.summary,
-      generatedAt: dashboard.generatedAt
-    });
-  }
-}
+const clientOperatorDashboardUtils = createClientOperatorDashboardUtils({
+  state,
+  els,
+  api,
+  document,
+  Blob,
+  URL,
+  escapeHtml,
+  flash,
+  formatPercent,
+  formatTime,
+  orderProgressStatusLabel,
+  refresh: () => refresh(),
+  renderSummaryRows,
+  safeText,
+  setButtonAccess,
+  setInputValue,
+  sinceLabel,
+  trackConversionEvent: (event, details) => trackConversionEvent(event, details),
+  yen
+});
+const {
+  exportChatTrainingData,
+  renderAdminDashboard,
+  renderChatTranscripts,
+  renderConversionAnalytics,
+  renderFeedbackForm,
+  renderFeedbackReports,
+  selectedChatTranscript,
+  selectedFeedbackReport,
+  setAdminChatFilter,
+  submitFeedback,
+  updateSelectedChatTranscriptReview,
+  updateSelectedFeedbackStatus
+} = clientOperatorDashboardUtils;
 
 function deliveryStateFromValue(value) {
   const run = value && typeof value === 'object' && !Array.isArray(value) && ('taskType' in value || 'assignedAgentId' in value || 'jobKind' in value || 'createdAt' in value)
@@ -8146,442 +7251,6 @@ function workflowChildRunsFromDelivery(run = null, report = {}) {
   return workflowChildren;
 }
 
-const MARKETING_EMAIL_TASKS = new Set([
-  'email_ops',
-  'cold_email'
-]);
-
-const MARKETING_SOCIAL_TASKS = new Set([
-  'x_post',
-  'reddit',
-  'indie_hackers',
-  'instagram'
-]);
-
-function requesterIdentityKeys(auth = {}) {
-  return [...new Set([
-    auth?.user?.login,
-    auth?.user?.email,
-    auth?.user?.name,
-    auth?.login,
-    ...(Array.isArray(auth?.account?.aliases) ? auth.account.aliases : []),
-    ...((Array.isArray(auth?.account?.linkedIdentities) ? auth.account.linkedIdentities : []).flatMap((identity) => [identity?.login, identity?.email]))
-  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean))];
-}
-
-function requesterLoginOf(job = {}) {
-  return String(job?.input?._broker?.requester?.login || '').trim().toLowerCase();
-}
-
-function requesterAccountIdOf(job = {}) {
-  return String(job?.input?._broker?.requester?.accountId || '').trim().toLowerCase();
-}
-
-function requesterScopeForClient(auth = state.snapshot?.auth || {}) {
-  const identityKeys = requesterIdentityKeys(auth);
-  const mineAccountIds = [...new Set([
-    auth?.account?.id,
-    ...identityKeys.map((login) => `acct:${login}`)
-  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean))];
-  return {
-    auth,
-    identityKeys,
-    mineAccountIds,
-    filter: String(state.runRequesterFilter || (auth?.isPlatformAdmin ? 'all' : 'mine')).trim().toLowerCase() || (auth?.isPlatformAdmin ? 'all' : 'mine')
-  };
-}
-
-function requesterMatchesScope(login = '', accountId = '', scope = requesterScopeForClient()) {
-  const filter = String(scope?.filter || 'all').trim().toLowerCase();
-  const safeLogin = String(login || '').trim().toLowerCase();
-  const safeAccountId = String(accountId || '').trim().toLowerCase();
-  if (filter === 'all') return true;
-  if (filter === 'mine') {
-    return Boolean(
-      (safeLogin && Array.isArray(scope?.identityKeys) && scope.identityKeys.includes(safeLogin))
-      || (safeAccountId && Array.isArray(scope?.mineAccountIds) && scope.mineAccountIds.includes(safeAccountId))
-    );
-  }
-  return safeLogin === filter;
-}
-
-function runMatchesRequesterScope(job = {}, scope = requesterScopeForClient()) {
-  return requesterMatchesScope(requesterLoginOf(job), requesterAccountIdOf(job), scope);
-}
-
-function recurringOrderMatchesRequesterScope(order = {}, scope = requesterScopeForClient()) {
-  return requesterMatchesScope(String(order?.ownerLogin || '').trim().toLowerCase(), '', scope);
-}
-
-function isMarketingTimelineTask(taskType = '') {
-  const task = String(taskType || '').trim().toLowerCase();
-  return Boolean(task);
-}
-
-function marketingTimelineIntentText(value = '') {
-  return /(?:timeline|history|scheduled|schedule|future action|future actions|what will|what is going to|delivery history|run history|show.*(?:run|history|schedule)|履歴|実行履歴|予約|今後|次に何が|何が送られる|何が投稿|何が実行|配信予定|投稿予定|実行予定|timeline|agent work)/i.test(String(value || ''));
-}
-
-function openChatLooksExplicitTimelineView(value = '') {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!text) return false;
-  if (/^(?:work timeline|timeline|run history|history|schedule|実行履歴|履歴|予約|今後|配信予定|投稿予定|実行予定)$/.test(text.toLowerCase())) return true;
-  return /(?:(?:show|open|view|see|display|look at|見せ|見たい|見る|開い|表示|呼び出|確認).{0,16}(?:work timeline|timeline|history|schedule|実行履歴|履歴|予約|今後|配信予定|投稿予定|実行予定)|(?:work timeline|timeline|history|schedule|実行履歴|履歴|予約|今後|配信予定|投稿予定|実行予定).{0,16}(?:show|open|view|see|display|見せ|見たい|見る|開い|表示|呼び出|確認))/i.test(text);
-}
-
-function openChatLooksExplicitTimelinePlan(value = '') {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!text) return false;
-  return /(?:(?:plan|create|make|build|draft|prepare|organize|roadmap|day-by-day|week-by-week|作っ|作成|計画|設計|立て|組ん|引い|策定).{0,18}(?:timeline|schedule|roadmap|タイムライン|日程|計画)|(?:timeline|schedule|roadmap|タイムライン|日程|計画).{0,18}(?:plan|create|make|build|draft|prepare|organize|day-by-day|week-by-week|作っ|作成|計画|設計|立て|組ん|引い|策定))/i.test(text);
-}
-
-function openChatLooksTimelineReference(value = '') {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!text) return false;
-  return /(?:work timeline|timeline|roadmap|schedule|execution plan|launch plan|go to market plan|タイムライン|ロードマップ|スケジュール|予定|実行計画|今後の計画|今後の予定|配信予定|投稿予定|実行予定)/i.test(text);
-}
-
-function openChatLooksConcreteTimelinePlanContext(value = '') {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!text) return false;
-  if (openChatLooksExplicitTimelinePlan(text)) return true;
-  const hasTarget = /(?:for|to|toward|until|before|after|launch|release|campaign|project|feature|migration|rollout|plan for|向け|までの|について|対象|案件|仕事|プロジェクト|機能|施策|キャンペーン|ローンチ|リリース|移行)/i.test(text);
-  const hasTimeFrame = /(?:today|tomorrow|this week|next week|this month|next month|next quarter|q[1-4]|by [a-z0-9]|due|deadline|yyyy|day-by-day|week-by-week|日次|週次|月次|四半期|今日|明日|今週|来週|今月|来月|期限|締切|まで|日ごと|週ごと)/i.test(text)
-    || /\b20\d{2}\b/.test(text)
-    || /\b\d{1,2}\/\d{1,2}\b/.test(text);
-  return hasTarget && hasTimeFrame;
-}
-
-function openChatLooksAmbiguousTimelineIntent(value = '') {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!text) return false;
-  if (!openChatLooksTimelineReference(text)) return false;
-  if (/^(?:work timeline|timeline|run history|history|schedule|実行履歴|履歴|予約|今後|配信予定|投稿予定|実行予定)$/.test(text.toLowerCase())) return false;
-  if (openChatLooksExplicitTimelineView(text) || openChatLooksExplicitTimelinePlan(text)) return false;
-  if (openChatLooksConcreteTimelinePlanContext(text)) return false;
-  return text.length <= 72;
-}
-
-function buildOpenChatTimelineIntentChoiceAnswer(prompt = '') {
-  if (!openChatLooksAmbiguousTimelineIntent(prompt)) return null;
-  const ja = looksJapanese(prompt);
-  return {
-    kind: 'clarify',
-    tone: 'info',
-    patternId: 'pattern_timeline_intent_choice',
-    skipOpenAiPolish: true,
-    clearClarifyOptions: false,
-    options: [
-      {
-        command: 'open_marketing_timeline',
-        labelJa: '保存済みのスケジュール履歴を見る',
-        labelEn: 'Open saved schedule timeline',
-        terms: ['1', 'timelineを見る', 'work timeline', 'timeline', '履歴', '実行履歴', '予約', '今後', 'open timeline', 'show timeline', 'history', 'schedule']
-      },
-      {
-        command: 'clarify_timeline_plan',
-        labelJa: '新しいタイムラインを計画する',
-        labelEn: 'Plan a new timeline',
-        terms: ['2', '計画', 'タイムラインを作る', 'タイムライン作成', 'timeline plan', 'plan timeline', 'create timeline', 'roadmap', 'day-by-day', 'week-by-week']
-      }
-    ],
-    body: ja
-      ? [
-          '「timeline」は2通りに受け取れます。どちらですか？',
-          '',
-          '1. 保存済みのスケジュール履歴を見る',
-          '2. 新しいタイムラインを計画する',
-          '',
-          '番号で返してください。まだ注文も課金も発生しません。'
-        ].join('\n')
-      : [
-          '"Timeline" could mean two different things here. Which one do you want?',
-          '',
-          '1. Open the saved schedule timeline',
-          '2. Plan a new timeline',
-          '',
-          'Reply with a number. No order or billing happens yet.'
-        ].join('\n'),
-    status: 'Timeline intent needs one choice.\n\nNo order was created and no billing occurred.'
-  };
-}
-
-function buildOpenChatTimelinePlanClarifyAnswer(prompt = '') {
-  const ja = looksJapanese(`${prompt}\n${openChatPreviousUserMessageBody()}`);
-  return {
-    kind: 'clarify',
-    tone: 'info',
-    patternId: 'pattern_timeline_plan_details',
-    skipOpenAiPolish: true,
-    clearClarifyOptions: true,
-    pendingQuestionPrompt: String(prompt || openChatPreviousUserMessageBody() || 'timeline').trim(),
-    pendingQuestionTask: 'research',
-    body: ja
-      ? [
-          '新しいタイムラインを計画したい理解です。次の3点をください。',
-          '',
-          '1. 対象の仕事 / プロジェクト',
-          '2. 目標の期限',
-          '3. 粒度: week-by-week か day-by-day',
-          '',
-          'これがあれば、計画用の発注ブリーフに整理できます。まだ注文も課金も発生しません。'
-        ].join('\n')
-      : [
-          'Understood as planning a new timeline. Send these three details:',
-          '',
-          '1. The work item or project',
-          '2. The target deadline',
-          '3. Granularity: week-by-week or day-by-day',
-          '',
-          'Then I can turn it into a timeline-planning brief. No order or billing happens yet.'
-        ].join('\n'),
-    status: 'Timeline planning details needed.\n\nNo order was created and no billing occurred.'
-  };
-}
-
-function humanTaskLabel(taskType = '') {
-  const safe = String(taskType || '').trim().toLowerCase();
-  if (!safe) return 'Work';
-  return safe
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function marketingTaskFamily(taskType = '', deliverable = null) {
-  const task = String(taskType || '').trim().toLowerCase();
-  const deliverableType = String(deliverable?.type || '').trim().toLowerCase();
-  if (deliverableType === 'email_pack' || MARKETING_EMAIL_TASKS.has(task) || /email/.test(task)) return 'email';
-  if (deliverableType === 'social_post_pack' || MARKETING_SOCIAL_TASKS.has(task) || /x_post|social|reddit|indie|instagram/.test(task)) return 'social';
-  if (task.endsWith('_leader')) return 'leader';
-  if (task === 'landing') return 'landing';
-  if (task === 'seo_specialist' || task === 'seo_specialist') return 'seo';
-  if (task === 'pricing') return 'pricing';
-  if (task === 'teardown') return 'teardown';
-  if (task === 'validation') return 'validation';
-  if (task === 'data_analysis') return 'analysis';
-  if (task === 'acquisition_automation') return 'automation';
-  return 'generic';
-}
-
-function marketingTaskLabel(taskType = '', deliverable = null) {
-  const family = marketingTaskFamily(taskType, deliverable);
-  if (family === 'email') return 'Email';
-  if (family === 'social') return 'Social';
-  if (family === 'leader') return 'Team leader';
-  if (family === 'landing') return 'Landing';
-  if (family === 'seo') return 'SEO';
-  if (family === 'pricing') return 'Pricing';
-  if (family === 'teardown') return 'Teardown';
-  if (family === 'validation') return 'Validation';
-  if (family === 'analysis') return 'Analytics';
-  if (family === 'automation') return 'Automation';
-  return humanTaskLabel(taskType);
-}
-
-function marketingRunTimeValue(job = {}) {
-  return Date.parse(job?.completedAt || job?.lastCallbackAt || job?.startedAt || job?.createdAt || '') || 0;
-}
-
-function marketingRunTimeLabel(job = {}) {
-  return formatTime(job?.completedAt || job?.lastCallbackAt || job?.startedAt || job?.createdAt || '');
-}
-
-function marketingFocusJobIds(contextJob = null) {
-  const jobs = Array.isArray(state.snapshot?.jobs) ? state.snapshot.jobs : [];
-  const current = contextJob?.id ? contextJob : selectedJob();
-  const parent = current?.workflowParentId ? jobById(current.workflowParentId) : null;
-  const focusRoot = current?.jobKind === 'workflow' && isMarketingTimelineTask(current.taskType)
-    ? current
-    : (parent?.jobKind === 'workflow' && isMarketingTimelineTask(parent.taskType)
-        ? parent
-        : (current && isMarketingTimelineTask(current.taskType) ? current : null));
-  const ids = new Set();
-  if (!focusRoot?.id) return ids;
-  ids.add(String(focusRoot.id));
-  if (focusRoot.jobKind === 'workflow') {
-    workflowChildRunsFromDelivery(focusRoot, focusRoot.output?.report || {}).forEach((child) => {
-      const childId = String(child?.id || '').trim();
-      if (childId) ids.add(childId);
-    });
-    jobs.filter((job) => String(job?.workflowParentId || '') === String(focusRoot.id)).forEach((job) => ids.add(String(job.id)));
-  } else if (focusRoot.workflowParentId) {
-    ids.add(String(focusRoot.workflowParentId));
-    jobs.filter((job) => String(job?.workflowParentId || '') === String(focusRoot.workflowParentId)).forEach((job) => ids.add(String(job.id)));
-  }
-  return ids;
-}
-
-function marketingDeliverableForJob(job = null) {
-  if (!job?.id) return { genericDeliverable: null, article: null, summaryText: '', previewText: '', previewLabel: '', report: null, files: [] };
-  const report = job.output?.report || null;
-  const files = visibleDeliveryFiles(job.output?.files);
-  const genericDeliverable = null;
-  const article = articleCandidateFromDelivery(job, report || {}, files);
-  const summaryText = deliverySummaryText(report || {});
-  const previewText = String(genericDeliverable?.content || article?.content || summaryText || files[0]?.content || '').trim();
-  const previewLabel = genericDeliverable?.title || article?.title || files[0]?.name || '';
-  return {
-    genericDeliverable,
-    article,
-    summaryText,
-    previewText,
-    previewLabel,
-    report,
-    files
-  };
-}
-
-function marketingTimelineSnapshot(contextJob = null, options = {}) {
-  const jobs = Array.isArray(state.snapshot?.jobs) ? state.snapshot.jobs : [];
-  const recurringOrders = Array.isArray(state.snapshot?.recurringOrders) ? state.snapshot.recurringOrders : [];
-  const scope = requesterScopeForClient();
-  const focusedIds = marketingFocusJobIds(contextJob);
-  const focusedRootId = [...focusedIds][0] || '';
-  const marketingRuns = jobs
-    .filter((job) => isMarketingTimelineTask(job?.taskType) && runMatchesRequesterScope(job, scope))
-    .sort((a, b) => marketingRunTimeValue(b) - marketingRunTimeValue(a));
-  const focusedRuns = marketingRuns
-    .filter((job) => focusedIds.has(String(job.id || '')))
-    .sort((a, b) => {
-      if (String(a.id || '') === focusedRootId) return -1;
-      if (String(b.id || '') === focusedRootId) return 1;
-      return marketingRunTimeValue(b) - marketingRunTimeValue(a);
-    });
-  const remainingRuns = marketingRuns.filter((job) => !focusedIds.has(String(job.id || '')));
-  const maxRecentRuns = Math.max(0, Number(options.maxRecentRuns ?? 6));
-  const marketingSchedules = recurringOrders
-    .filter((order) => isMarketingTimelineTask(order?.taskType) && recurringOrderMatchesRequesterScope(order, scope))
-    .sort((a, b) => {
-      const left = Date.parse(a?.nextRunAt || '') || Number.MAX_SAFE_INTEGER;
-      const right = Date.parse(b?.nextRunAt || '') || Number.MAX_SAFE_INTEGER;
-      return left - right;
-    })
-    .slice(0, Math.max(0, Number(options.maxScheduleItems ?? 4)));
-
-  const runItems = [...focusedRuns, ...remainingRuns.slice(0, maxRecentRuns)].map((job) => {
-    const deliverable = marketingDeliverableForJob(job);
-    const report = deliverable.report || {};
-    const nextAction = String(report?.nextAction || report?.next_action || runNextAction(job).title.replace(/^ACTION:\s*/, '')).trim();
-    const requester = requesterLoginOf(job) || '-';
-    const executor = String(job?.assignedAgentId || job?.workflowAgentName || '').trim() || 'auto-routing';
-    const parentAgentId = String(job?.parentAgentId || '').trim() || 'cloudcode-main';
-    const previewText = compactChatText(deliverable.previewText || job.prompt || '', 320);
-    const summary = compactChatText(deliverable.summaryText || report?.summary || runNextAction(job).body || job.prompt || '', 220);
-    const taskLabel = marketingTaskLabel(job.taskType, deliverable.genericDeliverable || deliverable.article);
-    return {
-      kind: 'run',
-      id: String(job.id || ''),
-      focused: focusedIds.has(String(job.id || '')),
-      status: orderProgressStatusLabel(job.status || 'unknown'),
-      tone: safeCssToken(String(job.status || 'info').toLowerCase(), 'info'),
-      taskType: String(job.taskType || ''),
-      taskLabel,
-      title: compactChatText(deliverable.previewLabel || report?.headline || report?.title || `${taskLabel} ${orderProgressStatusLabel(job.status || 'run')}`, 90),
-      summary,
-      previewText,
-      previewLabel: deliverable.previewLabel || '',
-      nextAction,
-      requester,
-      parentAgentId,
-      executor,
-      createdAt: job.createdAt || '',
-      timeLabel: marketingRunTimeLabel(job),
-      job,
-      genericDeliverable: deliverable.genericDeliverable || null,
-      article: deliverable.article || null
-    };
-  });
-  const scheduleItems = marketingSchedules.map((order) => {
-    const lastRunId = String(order?.lastWorkflowJobId || order?.lastJobId || '').trim();
-    return {
-      kind: 'schedule',
-      id: String(order.id || ''),
-      focused: false,
-      status: String(order.status || 'active').toLowerCase(),
-      tone: String(order.status || '').toLowerCase() === 'paused' ? 'warn' : (String(order.status || '').toLowerCase() === 'needs_action' ? 'warn' : 'info'),
-      taskType: String(order.taskType || ''),
-      taskLabel: marketingTaskLabel(order.taskType),
-      title: compactChatText(order.inputSummary?.label || order.prompt || 'Scheduled work', 90),
-      summary: compactChatText(order.prompt || order.inputSummary?.label || '', 220),
-      previewText: compactChatText(order.prompt || '', 320),
-      previewLabel: order.inputSummary?.label || '',
-      nextAction: `${scheduledWorkScheduleLabel(order.schedule || {})} · next ${scheduledWorkTimeLabel(order.nextRunAt)}`,
-      requester: String(order.ownerLogin || '-').trim() || '-',
-      parentAgentId: String(order.parentAgentId || 'cloudcode-main').trim() || 'cloudcode-main',
-      executor: String(order.agentId || '').trim() || 'auto-routing',
-      createdAt: order.createdAt || '',
-      timeLabel: scheduledWorkTimeLabel(order.nextRunAt),
-      recurringOrder: order,
-      lastRunId
-    };
-  });
-
-  const items = focusedRuns.length
-    ? [...runItems.slice(0, focusedRuns.length), ...scheduleItems, ...runItems.slice(focusedRuns.length)]
-    : [...scheduleItems, ...runItems];
-  const requesterLabel = scope.filter === 'all' ? 'all visible requesters' : (scope.filter === 'mine' ? 'your requester scope' : scope.filter);
-  const recentRunSummary = runItems
-    .slice(0, 3)
-    .map((item) => `${item.taskLabel} ${String(item.status || '').toLowerCase()} · ${item.timeLabel || '-'} · ${item.summary || item.title}`)
-    .join('\n');
-  const upcomingSummary = scheduleItems
-    .slice(0, 3)
-    .map((item) => `${item.taskLabel} · ${item.timeLabel || '-'} · ${item.summary || item.title}`)
-    .join('\n');
-  const summary = [
-    `Stored source: jobs + recurring orders in DB.`,
-    `Scope: ${requesterLabel}. ${marketingRuns.length} stored run(s), ${marketingSchedules.length} scheduled action(s).`,
-    focusedRuns.length ? `Focused flow: ${focusedRuns[0]?.taskLabel || 'work'} ${focusedRuns[0]?.id?.slice(0, 8) || ''}.` : 'No flow pinned. Open any run if you want one family pinned at the top.',
-    recentRunSummary ? `Latest runs:\n${recentRunSummary}` : 'Latest runs:\nNo completed or visible runs yet.',
-    upcomingSummary ? `Next scheduled:\n${upcomingSummary}` : 'Next scheduled:\nNo scheduled actions are stored right now.'
-  ].join('\n\n');
-  return {
-    items,
-    marketingRuns,
-    marketingSchedules,
-    summary
-  };
-}
-
-function hideMarketingTimelineModal() {
-  state.marketingTimelineItems = [];
-  if (els.marketingTimelineList) {
-    els.marketingTimelineList.innerHTML = '';
-  }
-  if (els.marketingTimelineSummary) els.marketingTimelineSummary.textContent = '';
-  setElementVisible(els.marketingTimelineList, false);
-  setElementVisible(els.marketingTimelineModal, false);
-}
-
-function openMarketingTimelineModal(contextJob = null) {
-  renderMarketingTimelineModal(contextJob, { reveal: true });
-  if (!state.marketingTimelineItems.length) {
-    flash('No stored work timeline is available yet.', 'info');
-    return;
-  }
-  setElementVisible(els.marketingTimelineModal, true);
-  window.requestAnimationFrame(() => els.closeMarketingTimelineModalBtn?.focus());
-}
-
-function loadScheduledWorkIntoComposer(recurringOrderId = '') {
-  const order = scheduledWorkById(recurringOrderId);
-  if (!order) throw new Error('Scheduled work record not found.');
-  loadOrderDraftIntoComposer({
-    followupToJobId: '',
-    taskType: String(order.taskType || 'research'),
-    agentId: String(order.agentId || ''),
-    prompt: String(order.prompt || ''),
-    budgetCap: Number(order.budgetCap ?? 300),
-    deadlineSec: Number(order.deadlineSec ?? 120),
-    orderStrategy: String(order.orderStrategy || 'auto')
-  });
-  if (els.jobUrls) els.jobUrls.value = '';
-  state.orderInputFiles = [];
-  state.orderInputFileWarnings = [];
-  if (els.jobFiles) els.jobFiles.value = '';
-  flash('Scheduled brief loaded into CAIt Chat. Review and re-save if you want to change future runs.', 'info');
-}
-
 function loadOrderDraftIntoComposer(order = {}) {
   state.followupToJobId = '';
   state.followupSourceTaskType = '';
@@ -8604,125 +7273,6 @@ function loadOrderDraftIntoComposer(order = {}) {
   switchTab('work');
   renderOrderComposer();
   window.requestAnimationFrame(() => els.jobPrompt?.focus());
-}
-
-function renderMarketingTimelineModal(contextJob = null, options = {}) {
-  if (!els.marketingTimelineModal || !els.marketingTimelineSummary || !els.marketingTimelineList) return;
-  const reveal = options.reveal === true || !els.marketingTimelineModal.hidden;
-  const snapshot = marketingTimelineSnapshot(contextJob);
-  state.marketingTimelineItems = snapshot.items;
-  if (!snapshot.items.length) {
-    hideMarketingTimelineModal();
-    renderFlexibleToolPanel();
-    return;
-  }
-  els.marketingTimelineSummary.textContent = snapshot.summary;
-  els.marketingTimelineList.innerHTML = snapshot.items.map((item, index) => {
-    const safeTone = safeCssToken(item.tone, 'info');
-    const title = item.kind === 'schedule' ? `${item.taskLabel} scheduled` : item.title;
-    const factRows = [
-      ['USER', item.requester],
-      ['PARENT', item.parentAgentId],
-      ['EXEC', item.executor],
-      ['TASK', item.taskType || '-'],
-      ['TIME', item.timeLabel || '-'],
-      ['NEXT', item.nextAction || '-']
-    ];
-    const buttons = [];
-    if (item.kind === 'run') {
-      buttons.push(`<button class="mini-btn" type="button" data-marketing-open-run="${escapeHtml(item.id)}">OPEN DELIVERY</button>`);
-      if (item.status === 'completed') buttons.push(`<button class="mini-btn" type="button" data-marketing-revise-run="${escapeHtml(item.id)}">REVISE IN CAIT CHAT</button>`);
-      if (item.previewText) buttons.push(`<button class="mini-btn" type="button" data-marketing-copy-index="${index}">COPY DRAFT</button>`);
-      if (item.genericDeliverable) buttons.push(`<button class="mini-btn" type="button" data-marketing-prepare-generic="${index}">PREPARE ORDER</button>`);
-      if (item.article) buttons.push(`<button class="mini-btn" type="button" data-marketing-prepare-publish="${index}">PREPARE PUBLISH</button>`);
-    } else {
-      buttons.push(`<button class="mini-btn" type="button" data-marketing-open-schedule="${escapeHtml(item.id)}">OPEN SCHEDULE</button>`);
-      buttons.push(`<button class="mini-btn" type="button" data-marketing-load-schedule="${escapeHtml(item.id)}">LOAD BRIEF TO CHAT</button>`);
-      if (item.previewText) buttons.push(`<button class="mini-btn" type="button" data-marketing-copy-index="${index}">COPY BRIEF</button>`);
-      if (item.lastRunId) buttons.push(`<button class="mini-btn" type="button" data-marketing-open-run="${escapeHtml(item.lastRunId)}">OPEN LAST RUN</button>`);
-    }
-    return `
-      <div class="marketing-timeline-card ${item.focused ? 'focus' : ''} ${item.kind === 'schedule' ? 'schedule' : 'run'}">
-        <div class="marketing-timeline-head">
-          <div>
-            <div class="marketing-timeline-title">${escapeHtml(title)}</div>
-            <div class="marketing-timeline-meta">${escapeHtml(item.taskLabel)} · ${escapeHtml(item.kind === 'schedule' ? 'scheduled action' : `run ${item.id.slice(0, 8)}`)}</div>
-          </div>
-          <span class="status-pill ${safeTone}">${escapeHtml(String(item.status || 'unknown').toUpperCase())}</span>
-        </div>
-        <div class="marketing-timeline-summary-box">${escapeHtml(item.summary || item.previewLabel || '-')}</div>
-        <div class="marketing-timeline-facts">
-          ${factRows.map(([label, value]) => `
-            <div class="marketing-timeline-fact">
-              <strong>${escapeHtml(label)}</strong>
-              <span>${escapeHtml(value || '-')}</span>
-            </div>
-          `).join('')}
-        </div>
-        ${item.previewText ? `<div class="marketing-timeline-preview">${escapeHtml(item.previewText)}</div>` : ''}
-        <div class="helper-row">${buttons.join('')}</div>
-      </div>
-    `;
-  }).join('');
-  setElementVisible(els.marketingTimelineList, true);
-  if (reveal) setElementVisible(els.marketingTimelineModal, true);
-  els.marketingTimelineList.querySelectorAll('[data-marketing-open-run]').forEach((button) => {
-    button.onclick = () => {
-      hideMarketingTimelineModal();
-      openJobDetail(button.dataset.marketingOpenRun || '');
-    };
-  });
-  els.marketingTimelineList.querySelectorAll('[data-marketing-revise-run]').forEach((button) => {
-    button.onclick = () => {
-      const job = jobById(button.dataset.marketingReviseRun || '');
-      if (!job?.id) return;
-      hideMarketingTimelineModal();
-      state.selectedJobId = job.id;
-      setDetail(job);
-      void prepareFollowupOrderFromDelivery();
-    };
-  });
-  els.marketingTimelineList.querySelectorAll('[data-marketing-copy-index]').forEach((button) => {
-    button.onclick = () => {
-      const item = state.marketingTimelineItems[Number(button.dataset.marketingCopyIndex)];
-      if (!item?.previewText) return;
-      void copyTextToClipboard(String(item.previewText || ''), item.kind === 'schedule' ? 'Scheduled brief copied.' : 'Draft copied.');
-    };
-  });
-  els.marketingTimelineList.querySelectorAll('[data-marketing-prepare-generic]').forEach((button) => {
-    button.onclick = () => {
-      const item = state.marketingTimelineItems[Number(button.dataset.marketingPrepareGeneric)];
-      const job = jobById(item?.id || '');
-      if (!job || !item?.genericDeliverable) return;
-      hideMarketingTimelineModal();
-      void prepareGenericDeliverableOrderFromDelivery(job, item.genericDeliverable);
-    };
-  });
-  els.marketingTimelineList.querySelectorAll('[data-marketing-prepare-publish]').forEach((button) => {
-    button.onclick = () => {
-      const item = state.marketingTimelineItems[Number(button.dataset.marketingPreparePublish)];
-      const job = jobById(item?.id || '');
-      if (!job || !item?.article) return;
-      hideMarketingTimelineModal();
-      preparePublishOrderFromDelivery(job, item.article);
-    };
-  });
-  els.marketingTimelineList.querySelectorAll('[data-marketing-open-schedule]').forEach((button) => {
-    button.onclick = () => {
-      hideMarketingTimelineModal();
-      state.openChatHistoryOpen = true;
-      switchTab('work');
-      renderOrderComposer();
-      window.requestAnimationFrame(() => els.scheduledWorkStatus?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }));
-    };
-  });
-  els.marketingTimelineList.querySelectorAll('[data-marketing-load-schedule]').forEach((button) => {
-    button.onclick = () => {
-      hideMarketingTimelineModal();
-      loadScheduledWorkIntoComposer(button.dataset.marketingLoadSchedule || '');
-    };
-  });
-  renderFlexibleToolPanel();
 }
 
 function clarifyingQuestionsFromReport(report = {}) {
@@ -14535,89 +13085,6 @@ function clearParallelOrders() {
   state.parallelOrderDrafts = [];
   renderParallelOrderQueue();
   flash('Parallel order queue cleared.', 'ok');
-}
-
-async function submitFeedback() {
-  const title = String(els.feedbackTitle?.value || '').trim();
-  const message = String(els.feedbackMessage?.value || '').trim();
-  if (!title && !message) throw new Error('Write a title or message first.');
-  const payload = {
-    type: els.feedbackType?.value || 'bug',
-    email: els.feedbackEmail?.value || '',
-    title,
-    message,
-    page_path: window.location.pathname,
-    current_tab: state.currentTab,
-    source: 'footer_form'
-  };
-  const result = await api('/api/feedback', { method: 'POST', body: JSON.stringify(payload) });
-  safeText(els.feedbackSubmitResult, [
-    `Saved: ${result.report?.title || 'feedback report'}`,
-    `Email: ${result.email_forwarded ? 'forwarded to support@aiagent-marketplace.net' : `not forwarded (${result.email_status || 'not_configured'})`}`,
-    `Type: ${String(result.report?.type || 'bug').toUpperCase()}`,
-    `Status: ${String(result.report?.status || 'open').toUpperCase()}`,
-    `Created: ${formatTime(result.report?.createdAt)}`
-  ].join('\n'));
-  if (els.feedbackTitle) els.feedbackTitle.value = '';
-  if (els.feedbackMessage) els.feedbackMessage.value = '';
-  if (els.feedbackType) els.feedbackType.value = 'bug';
-  flash('Feedback report saved.', 'ok');
-  void trackConversionEvent('feedback_submitted', { source: 'footer_form', status: result.report?.status || 'open' });
-  if (state.snapshot?.auth?.loggedIn) await refresh();
-}
-
-async function updateSelectedFeedbackStatus(status) {
-  const report = selectedFeedbackReport();
-  if (!report) throw new Error('Select a feedback report first.');
-  const result = await api(`/api/settings/feedback-reports/${encodeURIComponent(report.id)}`, {
-    method: 'POST',
-    body: JSON.stringify({ status })
-  });
-  flash(`Feedback ${String(result.report?.title || report.title || '').slice(0, 48)} marked ${String(status).toUpperCase()}.`, 'ok');
-  await refresh();
-}
-
-async function updateSelectedChatTranscriptReview(reviewStatus) {
-  const transcript = selectedChatTranscript();
-  if (!transcript) throw new Error('Select a chat transcript first.');
-  const expectedHandling = String(els.chatTranscriptExpectedHandling?.value || '').trim();
-  const improvementNote = String(els.chatTranscriptImprovementNote?.value || '').trim();
-  const result = await api(`/api/settings/chat-transcripts/${encodeURIComponent(transcript.id)}`, {
-    method: 'POST',
-    body: JSON.stringify({
-      reviewStatus,
-      expectedHandling,
-      improvementNote
-    })
-  });
-  flash(`Chat transcript marked ${String(result.transcript?.reviewStatus || reviewStatus).toUpperCase()}.`, 'ok');
-  await refresh();
-}
-
-async function exportChatTrainingData() {
-  const result = await api('/api/settings/chat-training-data');
-  const examples = Array.isArray(result.examples) ? result.examples : [];
-  const exportedAt = new Date().toISOString();
-  const exportPayload = {
-    ...result,
-    exportedAt
-  };
-  const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json;charset=utf-8' });
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = objectUrl;
-  link.download = `cait-chat-training-${exportedAt.slice(0, 10)}.json`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(objectUrl);
-  safeText(els.chatTrainingExportResult, [
-    `Exported ${examples.length} reviewed training examples.`,
-    `Schema: ${result.schema || 'cait-chat-training-export/v1'}`,
-    `Policy: ${result.policy?.source || 'Reviewed CAIt Chat transcripts only.'}`,
-    'Download started as JSON.'
-  ].join('\n'));
-  flash(`Exported ${examples.length} reviewed chat examples.`, 'ok');
 }
 
 async function runAction(action, fn) {

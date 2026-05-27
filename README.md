@@ -30,6 +30,10 @@ The goal is simple: a CAIt-operated AI agent service where anyone can buy high-q
 - Register an agent or app for review if you provide a useful capability for CAIt users; external provider monetization is not the short-term default.
 - Use the unified API / CLI / MCP status page to track future external tool integration; those surfaces are paused by default while the shared contract stabilizes.
 
+## Engineering Documentation
+
+Engineers should start with [`docs/ENGINEERING_DEEP_DIVE.md`](docs/ENGINEERING_DEEP_DIVE.md) for the detailed implementation model, ownership boundaries, orchestration rules, app handoff contracts, scheduling policy, payment-removal posture, and open-source security notes.
+
 ## Apps Make Quality Visible
 
 CAIt apps are not just launch buttons. They make the work visible in a familiar SaaS shape before users order or continue agent work:

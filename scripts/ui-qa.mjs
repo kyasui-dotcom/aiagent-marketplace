@@ -26,6 +26,8 @@ const appConsoleCssPath = new URL('../public/app-console.css', import.meta.url);
 const adminCssPath = new URL('../public/admin.css', import.meta.url);
 const adminJsPath = new URL('../public/admin.js', import.meta.url);
 const clientJsPath = new URL('../public/client.js', import.meta.url);
+const clientAuthAccessUtilsPath = new URL('../public/client-auth-access-utils.js', import.meta.url);
+const clientPaymentRemovalUiPath = new URL('../public/client-payment-removal-ui.js', import.meta.url);
 const clientFlexibleToolUtilsPath = new URL('../public/client-flexible-tool-utils.js', import.meta.url);
 const clientOpenChatHistoryUtilsPath = new URL('../public/client-open-chat-history-utils.js', import.meta.url);
 const clientOpenChatOrderProgressUtilsPath = new URL('../public/client-open-chat-order-progress-utils.js', import.meta.url);
@@ -164,6 +166,8 @@ const appConsoleCss = readFileSync(appConsoleCssPath, 'utf8');
 const adminCss = readFileSync(adminCssPath, 'utf8');
 const adminJs = readFileSync(adminJsPath, 'utf8');
 const clientJs = readFileSync(clientJsPath, 'utf8');
+const clientAuthAccessUtilsJs = readFileSync(clientAuthAccessUtilsPath, 'utf8');
+const clientPaymentRemovalUiJs = readFileSync(clientPaymentRemovalUiPath, 'utf8');
 const clientFlexibleToolUtilsJs = readFileSync(clientFlexibleToolUtilsPath, 'utf8');
 const clientOpenChatPreorderIntentJs = readFileSync(new URL('../public/client-open-chat-preorder-intent-utils.js', import.meta.url), 'utf8');
 const clientOpenChatQuickAnswerJs = readFileSync(new URL('../public/client-open-chat-quick-answer-utils.js', import.meta.url), 'utf8');
@@ -388,7 +392,9 @@ assert.ok(chatJs.indexOf("['goal', 3]") < chatJs.indexOf("['audience', 4]"), 'Gr
 assert.ok(chatJs.indexOf("['constraints', 5]") < chatJs.indexOf("['deliverable', 7]"), 'Growth intake should ask constraints/channels before output format.');
 assert.ok(chatJs.includes('conversationLanguage'), 'Chat should remember the language of the first user input for the conversation.');
 assert.ok(chatJs.includes('rememberConversationLanguage(prompt)'), 'Chat should set the conversation language from the first submitted prompt.');
-assert.ok(chatJs.includes('PROMPT_PLACEHOLDERS'), 'Chat composer placeholders should be able to follow the selected conversation language.');
+assert.ok(chatJs.includes('PROMPT_PLACEHOLDERS'), 'Chat composer placeholders should be able to follow the selected UI language.');
+assert.ok(chatJs.includes('CHATUX_UI_LANGUAGE_STORAGE_KEY'), 'Chat should persist the explicit UI language setting.');
+assert.ok(chatJs.includes("api('/api/settings/profile'"), 'Chat language setting should save to the account profile API.');
 assert.ok(chatJs.includes('will ask one item at a time before dispatch'), 'Leader intake should ask one item at a time instead of dumping all questions at once.');
 const clientOpenChatTaskLabelSource = [
   clientJs,
@@ -426,14 +432,14 @@ assert.ok(chatJs.includes('Analytics was skipped for this prepared order'), 'Gro
 assert.equal(existsSync(new URL('../lib/billing-helpers.js', import.meta.url)), false, 'Billing helpers should be removed with in-app payment processing.');
 assert.equal(existsSync(new URL('../lib/routes/billing.js', import.meta.url)), false, 'Billing routes should be removed with in-app payment processing.');
 assert.equal(existsSync(new URL('../public/in-app-payments-policy.js', import.meta.url)), false, 'Client payment policy shim should be removed with in-app payment processing.');
-assert.ok(clientJs.includes('const IN_APP_PAYMENTS_REMOVED = true;'), 'Client payment handling should keep a hard payment-removal flag.');
-assert.ok(clientJs.includes('const PAYMENT_PROVIDER_UI_VISIBLE = false;'), 'Client payment handling should hide payment-provider controls.');
+assert.ok(clientPaymentRemovalUiJs.includes('IN_APP_PAYMENTS_REMOVED = true'), 'Client payment handling should keep a hard payment-removal flag.');
+assert.ok(clientPaymentRemovalUiJs.includes('PAYMENT_PROVIDER_UI_VISIBLE = false'), 'Client payment handling should hide payment-provider controls.');
 assert.ok(clientJs.includes('DONATION_ONLY_NOTICE'), 'Settings UI should explain donation-only support outside CAIt.');
 assert.equal(clientJs.includes('/api/stripe/'), false, 'Client UI must not call removed Stripe routes.');
 assert.equal(clientJs.includes('/api/settings/billing'), false, 'Client UI must not call removed billing settings route.');
 assert.equal(clientJs.includes('/api/settings/payout'), false, 'Client UI must not call removed payout settings route.');
 assert.equal(clientJs.includes('PAY' + '.JP'), false, 'Client UI should not mention the removed payment provider.');
-assert.ok(clientJs.includes("if (requested.length) url.searchParams.set('capabilities', requested.join(','))"), 'Chat Google connector should pass exact required Google capabilities into OAuth without adding broad defaults.');
+assert.ok(clientAuthAccessUtilsJs.includes("if (requested.length) url.searchParams.set('capabilities', requested.join(','))"), 'Chat Google connector should pass exact required Google capabilities into OAuth without adding broad defaults.');
 assert.ok(clientJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
 assert.ok(chatJs.includes("from './connector-gate.js"), 'Chat connector approvals should be delegated to the connector gate module.');
 assert.ok(connectorGateJs.includes('connectorGateGoogleAuthorityConnectGroups'), 'Chat Google approval should connect every requested Google source in one OAuth popup.');
@@ -796,8 +802,8 @@ assert.ok(leadOpsHtml.includes('id="scheduleResendBtn"'), 'Lead Ops should sched
 assert.ok(leadOpsHtml.includes('id="requestLeadSourcingBtn"'), 'Lead Ops should let users request first lead sourcing from List Creator.');
 assert.ok(leadOpsHtml.includes('id="leadSourcingIcpInput"'), 'Lead Ops should capture target customer input for lead sourcing.');
 assert.ok(leadOpsHtml.includes('id="leadAllNavCount"'), 'Lead Ops side navigation counts should come from runtime data.');
-assert.ok(leadOpsHtml.includes('入力後にCAItへ渡す') && leadOpsJs.includes('確認してチャットへ戻す'), 'Lead Ops should use plain Japanese CAIt handoff labels for low-literacy users.');
-assert.ok(leadOpsHtml.includes('この画面を見ているだけでは、メールは勝手に送られません。'), 'Lead Ops should reassure cautious users before outreach actions.');
+assert.ok(leadOpsHtml.includes('Send to CAIt') && leadOpsJs.includes('Return checked lead to chat'), 'Lead Ops should use plain English CAIt handoff labels by default.');
+assert.ok(leadOpsHtml.includes('Viewing this screen will not send email by itself.'), 'Lead Ops should reassure cautious users before outreach actions in English.');
 assert.ok(campaignOperationsHtml.includes('Campaign Operations'), 'Campaign Operations should be a first-class app page.');
 assert.ok(campaignOperationsHtml.includes('href="/apps.html"'), 'Campaign Operations should link back to the apps hub.');
 assert.ok(campaignOperationsHtml.includes('id="sendCampaignContextBtn"'), 'Campaign Operations should send context to CAIt.');
@@ -1056,7 +1062,7 @@ assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
 assert.ok(chatHtml.includes('/chat.css?v=20260526f'), 'Chat page should load the current compact chat header and composer styles.');
-assert.ok(chatHtml.includes('/chat.js?v=20260526p'), 'Chat page should load the current compact chat header and composer controller.');
+assert.ok(chatHtml.includes('/chat.js?v=20260527a'), 'Chat page should load the current compact chat header and composer controller.');
 assert.ok(chatHtml.includes('id="chatHeaderMenu"') && chatHtml.includes('☰ Menu'), 'Chat header should collapse secondary actions into a menu.');
 assert.ok(chatHtml.includes('Chat history') && chatHtml.includes('Schedules') && chatHtml.includes('Agents and workers'), 'Chat menu should use specific workspace action labels.');
 assert.ok(chatHtml.includes('App tools') && chatHtml.includes('Apps hub'), 'Chat menu should distinguish app tools from the Apps hub page.');
@@ -1065,6 +1071,8 @@ assert.ok(chatHtml.includes('id="composerControlsHint"') && chatHtml.includes('O
 assert.ok(chatHtml.includes('Preferred output format') && !chatHtml.includes('Delivery shape'), 'Chat output selector should not look like a delivery destination control.');
 assert.ok(chatHtml.includes('data-label-en="Summary"') && chatHtml.includes('data-label-ja="要約"'), 'Chat output selector should keep compact language-aware option labels.');
 assert.ok(chatJs.includes('function chatUiText') && chatJs.includes('function chatUiLanguage'), 'Fixed chat controls should use UI language, not the inferred conversation language.');
+assert.ok(chatJs.includes('data-chat-ui-language'), 'Info panel should expose the UI language selector.');
+assert.ok(chatJs.includes('return chatUiLanguage();'), 'Chat response language should follow the explicit UI language setting by default.');
 assert.ok(chatJs.includes("chatUiText('Send answer', '回答を送信'"), 'Chat intake mode should rename the submit button from generic chat sending to answer sending.');
 assert.ok(chatJs.includes("chatUiText('Send chat', 'チャット送信'"), 'Chat submit label should follow the UI language setting.');
 assert.ok(!chatJs.includes("chatText('Send chat', 'チャット送信'"), 'Chat submit label must not switch based on Japanese conversation text.');
@@ -1403,7 +1411,10 @@ assert.ok(
 );
 assert.ok(chatJs.includes('href="/admin">Admin</a>'), 'Info panel should include an admin shortcut for platform admins.');
 assert.ok(chatHtml.includes('href="/account-settings.html"'), 'Chat header should link to account settings.');
-assert.ok(chatJs.includes('href="/account-settings.html">Account settings</a>'), 'Info panel should link to account settings.');
+assert.ok(chatJs.includes('Account settings'), 'Info panel should link to account settings.');
+assert.ok(accountSettingsHtml.includes('uiLanguageSelect'), 'Account settings should render the language selector.');
+assert.ok(accountSettingsJs.includes("api('/api/settings/profile'"), 'Account settings should save the UI language through the profile settings API.');
+assert.ok(accountSettingsJs.includes('cait.uiLanguage.v1'), 'Account settings should mirror the UI language locally for immediate chat use.');
 assert.ok(accountSettingsHtml.includes('deleteConfirmInput'), 'Account settings page should render delete confirmation input.');
 assert.ok(accountSettingsHtml.includes('deleteAccountBtn'), 'Account settings page should render delete account button.');
 assert.ok(accountSettingsJs.includes("api('/api/settings/account'"), 'Account settings should call the account deletion API.');
@@ -1948,7 +1959,7 @@ assert.ok(worker.includes('reviewAdminProviderIdentityVerification'), 'Worker sh
 assert.ok(providerIdentityRoutes.includes('billingPostalCode: existing.billing?.billingPostalCode || identityVerification.fields.postalCode'), 'Provider identity submission should preserve address data for account records.');
 assert.ok(worker.includes('payment_processing_removed: true'), 'Agent registration money readiness should report removed payment processing.');
 assert.ok(worker.includes('money_actions_blocked: true'), 'Agent registration should report blocked money actions without blocking registration.');
-assert.ok(/Listing can proceed, but CAIt no longer processes payments, billing, or payouts/.test(clientJs), 'Agent registration UI copy should allow listing while warning that money actions are removed.');
+assert.ok(/Listing can proceed, but CAIt no longer processes payments, billing, donations, or payouts/.test(clientJs), 'Agent registration UI copy should allow listing while warning that money actions are removed.');
 assert.ok(clientJs.includes('A Stripe Payment Link for external donation support is only a future option after review'), 'Agent registration UI copy should name reviewed external donation support.');
 for (const field of ['billingPhone', 'billingPostalCode', 'billingRegion', 'billingCity', 'billingAddressLine1', 'billingAddressLine2']) {
   assert.ok(clientJs.includes(field), `Settings UI should save provider registration billing field ${field}.`);
