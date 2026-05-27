@@ -28,6 +28,7 @@ const adminJsPath = new URL('../public/admin.js', import.meta.url);
 const clientJsPath = new URL('../public/client.js', import.meta.url);
 const clientOpenChatHistoryUtilsPath = new URL('../public/client-open-chat-history-utils.js', import.meta.url);
 const clientOpenChatOrderProgressUtilsPath = new URL('../public/client-open-chat-order-progress-utils.js', import.meta.url);
+const clientOpenChatPatternGuardUtilsPath = new URL('../public/open-chat-pattern-guard-utils.js', import.meta.url);
 const analyticsLoaderPath = new URL('../public/analytics-loader.js', import.meta.url);
 const chatJsPath = new URL('../public/chat.js', import.meta.url);
 const accountSettingsJsPath = new URL('../public/account-settings.js', import.meta.url);
@@ -114,6 +115,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(fastAuthJsPath)], { std
 execFileSync(process.execPath, ['--check', fileURLToPath(adminJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatHistoryUtilsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatPatternGuardUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(analyticsLoaderPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(analyticsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(publisherJsPath)], { stdio: 'pipe' });
@@ -164,6 +166,7 @@ const clientJs = readFileSync(clientJsPath, 'utf8');
 const clientOpenChatPreorderIntentJs = readFileSync(new URL('../public/client-open-chat-preorder-intent-utils.js', import.meta.url), 'utf8');
 const clientOpenChatQuickAnswerJs = readFileSync(new URL('../public/client-open-chat-quick-answer-utils.js', import.meta.url), 'utf8');
 const clientOpenChatOrderProgressUtilsJs = readFileSync(clientOpenChatOrderProgressUtilsPath, 'utf8');
+const clientOpenChatPatternGuardUtilsJs = readFileSync(clientOpenChatPatternGuardUtilsPath, 'utf8');
 const clientAnalyticsUtilsJs = readFileSync(clientAnalyticsUtilsPath, 'utf8');
 const analyticsLoaderJs = readFileSync(analyticsLoaderPath, 'utf8');
 const chatJs = readFileSync(chatJsPath, 'utf8');
@@ -385,7 +388,11 @@ assert.ok(chatJs.includes('conversationLanguage'), 'Chat should remember the lan
 assert.ok(chatJs.includes('rememberConversationLanguage(prompt)'), 'Chat should set the conversation language from the first submitted prompt.');
 assert.ok(chatJs.includes('PROMPT_PLACEHOLDERS'), 'Chat composer placeholders should be able to follow the selected conversation language.');
 assert.ok(chatJs.includes('will ask one item at a time before dispatch'), 'Leader intake should ask one item at a time instead of dumping all questions at once.');
-assert.equal((clientJs.match(/seo_specialist:\s*'SEO Specialist'/g) || []).length, 1, 'Open chat task labels should not keep duplicate seo_specialist entries.');
+const clientOpenChatTaskLabelSource = [
+  clientJs,
+  clientOpenChatPatternGuardUtilsJs
+].join('\n');
+assert.equal((clientOpenChatTaskLabelSource.match(/seo_specialist:\s*'SEO Specialist'/g) || []).length, 1, 'Open chat task labels should not keep duplicate seo_specialist entries.');
 const clientMarketingAgentListAnswer = [
   clientJs.slice(
     clientJs.indexOf('function buildOpenChatMarketingAgentListAnswer'),
