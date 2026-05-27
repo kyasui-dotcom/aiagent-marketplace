@@ -26,6 +26,7 @@ const appConsoleCssPath = new URL('../public/app-console.css', import.meta.url);
 const adminCssPath = new URL('../public/admin.css', import.meta.url);
 const adminJsPath = new URL('../public/admin.js', import.meta.url);
 const clientJsPath = new URL('../public/client.js', import.meta.url);
+const clientDeliveryActionControllerPath = new URL('../public/client-delivery-action-controller.js', import.meta.url);
 const clientAuthAccessUtilsPath = new URL('../public/client-auth-access-utils.js', import.meta.url);
 const clientPaymentRemovalUiPath = new URL('../public/client-payment-removal-ui.js', import.meta.url);
 const clientFlexibleToolUtilsPath = new URL('../public/client-flexible-tool-utils.js', import.meta.url);
@@ -82,6 +83,7 @@ const integrationRoutesPath = new URL('../lib/routes/integrations.js', import.me
 const appRoutesPath = new URL('../lib/routes/apps.js', import.meta.url);
 const mcpRoutesPath = new URL('../lib/routes/mcp.js', import.meta.url);
 const providerIdentityRoutesPath = new URL('../lib/routes/provider-identity.js', import.meta.url);
+const providerMoneyReadinessPath = new URL('../lib/provider-money-readiness.js', import.meta.url);
 const feedbackChatRoutesPath = new URL('../lib/routes/feedback-chat.js', import.meta.url);
 const chatMemoryRoutesPath = new URL('../lib/routes/chat-memory.js', import.meta.url);
 const catalogRoutesPath = new URL('../lib/routes/catalog.js', import.meta.url);
@@ -117,6 +119,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(loginJsPath)], { stdio:
 execFileSync(process.execPath, ['--check', fileURLToPath(fastAuthJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(adminJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientJsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryActionControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientFlexibleToolUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatHistoryUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatPatternGuardUtilsPath)], { stdio: 'pipe' });
@@ -142,6 +145,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(httpPolicyPath)], { std
 execFileSync(process.execPath, ['--check', fileURLToPath(httpCorePath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(publisherContextPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(appRoutesPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(providerMoneyReadinessPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(accountSettingsJsPath)], { stdio: 'pipe' });
 
 const html = readFileSync(htmlPath, 'utf8');
@@ -167,6 +171,7 @@ const appConsoleCss = readFileSync(appConsoleCssPath, 'utf8');
 const adminCss = readFileSync(adminCssPath, 'utf8');
 const adminJs = readFileSync(adminJsPath, 'utf8');
 const clientJs = readFileSync(clientJsPath, 'utf8');
+const clientDeliveryActionControllerJs = readFileSync(clientDeliveryActionControllerPath, 'utf8');
 const clientAuthAccessUtilsJs = readFileSync(clientAuthAccessUtilsPath, 'utf8');
 const clientPaymentRemovalUiJs = readFileSync(clientPaymentRemovalUiPath, 'utf8');
 const clientFlexibleToolUtilsJs = readFileSync(clientFlexibleToolUtilsPath, 'utf8');
@@ -223,6 +228,7 @@ const integrationRoutes = readFileSync(integrationRoutesPath, 'utf8');
 const mcpRoutes = readFileSync(mcpRoutesPath, 'utf8');
 const appRoutes = readFileSync(appRoutesPath, 'utf8');
 const providerIdentityRoutes = readFileSync(providerIdentityRoutesPath, 'utf8');
+const providerMoneyReadiness = readFileSync(providerMoneyReadinessPath, 'utf8');
 const feedbackChatRoutes = readFileSync(feedbackChatRoutesPath, 'utf8');
 const chatMemoryRoutes = readFileSync(chatMemoryRoutesPath, 'utf8');
 const catalogRoutes = readFileSync(catalogRoutesPath, 'utf8');
@@ -442,7 +448,7 @@ assert.equal(clientJs.includes('/api/settings/billing'), false, 'Client UI must 
 assert.equal(clientJs.includes('/api/settings/payout'), false, 'Client UI must not call removed payout settings route.');
 assert.equal(clientJs.includes('PAY' + '.JP'), false, 'Client UI should not mention the removed payment provider.');
 assert.ok(clientAuthAccessUtilsJs.includes("if (requested.length) url.searchParams.set('capabilities', requested.join(','))"), 'Chat Google connector should pass exact required Google capabilities into OAuth without adding broad defaults.');
-assert.ok(clientJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
+assert.ok(clientDeliveryActionControllerJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
 assert.ok(chatJs.includes("from './connector-gate.js"), 'Chat connector approvals should be delegated to the connector gate module.');
 assert.ok(connectorGateJs.includes('connectorGateGoogleAuthorityConnectGroups'), 'Chat Google approval should connect every requested Google source in one OAuth popup.');
 assert.ok(connectorGateJs.includes('Connect GA4 + Search Console'), 'Chat Google approval should label combined GA4/Search Console requests clearly.');
@@ -1959,8 +1965,8 @@ assert.ok(workerAssets.includes("'/provider-identity.js'"));
 assert.ok(worker.includes('submitProviderIdentityVerification'), 'Worker should accept provider identity submissions.');
 assert.ok(worker.includes('reviewAdminProviderIdentityVerification'), 'Worker should let admins approve or reject provider identity submissions.');
 assert.ok(providerIdentityRoutes.includes('billingPostalCode: existing.billing?.billingPostalCode || identityVerification.fields.postalCode'), 'Provider identity submission should preserve address data for account records.');
-assert.ok(worker.includes('payment_processing_removed: true'), 'Agent registration money readiness should report removed payment processing.');
-assert.ok(worker.includes('money_actions_blocked: true'), 'Agent registration should report blocked money actions without blocking registration.');
+assert.ok(providerMoneyReadiness.includes('payment_processing_removed: true'), 'Agent registration money readiness should report removed payment processing.');
+assert.ok(providerMoneyReadiness.includes('money_actions_blocked: true'), 'Agent registration should report blocked money actions without blocking registration.');
 assert.ok(/Listing can proceed, but CAIt no longer processes payments, billing, donations, or payouts/.test(clientJs), 'Agent registration UI copy should allow listing while warning that money actions are removed.');
 assert.ok(clientJs.includes('A Stripe Payment Link for external donation support is only a future option after review'), 'Agent registration UI copy should name reviewed external donation support.');
 for (const field of ['billingPhone', 'billingPostalCode', 'billingRegion', 'billingCity', 'billingAddressLine1', 'billingAddressLine2']) {

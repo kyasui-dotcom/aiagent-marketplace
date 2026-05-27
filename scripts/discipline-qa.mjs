@@ -46,6 +46,7 @@ const adsOpsSource = read('public/ads-ops.js');
 const growthOpsSource = read('public/growth-ops.js');
 const pricingOpsSource = read('public/pricing-ops.js');
 const clientSource = read('public/client.js');
+const clientDeliveryActionControllerSource = read('public/client-delivery-action-controller.js');
 const clientOpenChatPreorderIntentSource = read('public/client-open-chat-preorder-intent-utils.js');
 const clientOpenChatPreLlmGuardSource = read('public/client-open-chat-pre-llm-guard-utils.js');
 const clientOpenChatQuickAnswerSource = read('public/client-open-chat-quick-answer-utils.js');
@@ -874,8 +875,9 @@ assert.ok(
   'client leader intake must render server/agent-owned intake contracts'
 );
 assert.ok(
-  clientSource.includes('/api/deliveries/prepare-followup-order'),
-  'client delivery follow-up order drafts must be prepared by the server route'
+  clientDeliveryActionControllerSource.includes('/api/deliveries/prepare-followup-order')
+    && clientSource.includes('createClientDeliveryActionController'),
+  'client delivery follow-up order drafts must be prepared by the server route from the delivery action controller'
 );
 assert.ok(
   chatSource.includes('/api/deliveries/prepare-followup-order'),
