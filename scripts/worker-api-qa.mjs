@@ -88,7 +88,10 @@ const workflowWatchdogSource = readFileSync(new URL('../lib/workflow-watchdog.js
 const workflowRetrySweepSource = readFileSync(new URL('../lib/workflow-retry-sweep.js', import.meta.url), 'utf8');
 const workflowDispatchQueueSource = readFileSync(new URL('../lib/workflow-dispatch-queue.js', import.meta.url), 'utf8');
 const workflowTimeoutsSource = readFileSync(new URL('../lib/workflow-timeouts.js', import.meta.url), 'utf8');
+const workflowFailureRetrySource = readFileSync(new URL('../lib/workflow-failure-retry.js', import.meta.url), 'utf8');
+const workflowLayeringSource = readFileSync(new URL('../lib/workflow-layering.js', import.meta.url), 'utf8');
 const workflowQualitySource = readFileSync(new URL('../lib/workflow-quality.js', import.meta.url), 'utf8');
+const jsonPostSource = readFileSync(new URL('../lib/json-post.js', import.meta.url), 'utf8');
 const deliveryCompletionGateSource = readFileSync(new URL('../lib/delivery-completion-gate.js', import.meta.url), 'utf8');
 assert.ok(!workerSource.includes("from './lib/local-agent-endpoints.js'"), 'sample agents must use the normal external provider endpoint path.');
 assert.ok(!workerSource.includes('function invokeSameWorkerAgentEndpoint'), 'worker dispatch must not reroute sample agents into local same-worker execution.');
@@ -699,7 +702,7 @@ assert.ok(!workerSource.includes('async function appsCatalogPayload'), 'worker.j
 assert.ok(workflowPlanAssemblySource.includes('agent_manifest_catalog'), 'leader planner should receive the combined internal/external manifest candidate catalog');
 assert.ok(sampleAgentManifestRoutesSource.includes('sample-agents'), 'sample provider endpoint path should be outside internal API route handling');
 assert.ok(workerSource.includes("from './lib/orchestration.js'"), 'workflow routing should use the shared orchestration module');
-assert.ok(workerSource.includes('leaderTaskLayer(primary, task)'), 'leader layer routing should not be hardcoded inside worker.js');
+assert.ok(workflowLayeringSource.includes('leaderTaskLayer(primary, task)'), 'leader layer routing should not be hardcoded inside worker.js');
 assert.ok(workflowHandoffContextSource.includes('WORKFLOW HANDOFF CONTEXT'), 'workflow handoff must remain available as prompt context');
 assert.ok(workflowHandoffContextSource.includes('WORKFLOW ADDITIONAL PROMPT'), 'workflow handoff should be separated into additional_prompt context');
 assert.ok(workerSource.includes('validateXPostExecutionApproval'), 'X posting must validate OAuth account and exact text approval server-side');
@@ -781,13 +784,13 @@ assert.ok(workflowWatchdogSource.includes('workflow_orchestration_stalled'), 'wa
 assert.ok(!workerSource.includes("skipped: 'openai_workflow_enabled'"), 'scheduled completion sweep must recover OpenAI-backed workflow jobs instead of skipping them.');
 assert.ok(requestAccessSource.includes('clearJobAuthorityRequest(cloned)'), 'public job views must suppress stale authority requests on failed or timed-out jobs.');
 assert.ok(dispatchPolicySource.includes('const COMPLETION_SWEEP_STALE_MS = 15 * 60 * 1000'), 'workflow completion sweep should not time out research/data generation after only a few minutes.');
-assert.ok(workerSource.includes('function workflowBuiltInFailureRetryMeta'), 'workflow failures should preserve retry metadata for quality-critical research/data layers.');
+assert.ok(workflowFailureRetrySource.includes('function workflowBuiltInFailureRetryMeta'), 'workflow failures should preserve retry metadata for quality-critical research/data layers.');
 assert.ok(dispatchPolicySource.includes('function workflowLeaderControlTask'), 'leader checkpoint/final-summary control jobs should have explicit retry handling.');
 assert.ok(dispatchPolicySource.includes('function workflowCompletionRecoveryMinAgeMs'), 'leader control jobs should not be recovered as stale before their generation budget expires.');
 assert.ok(dispatchPolicySource.includes('function workflowGenerationProviderTimeoutMs'), 'workflow generation should use a long provider wait budget instead of a short OpenAI timeout.');
 assert.ok(workerSource.includes('const ONE_DAY_MS = 24 * 60 * 60 * 1000'), 'workflow generation/provider response waits should default to roughly one day.');
 assert.ok(workerSource.includes('const DEFAULT_GENERATION_PROVIDER_TIMEOUT_MS = ONE_DAY_MS'), 'default provider wait budget should be one day.');
-assert.ok(workerSource.includes('const useAbort = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0'), 'endpoint dispatch should only abort through the explicit long-term provider wait budget.');
+assert.ok(jsonPostSource.includes('const useAbort = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0'), 'endpoint dispatch should only abort through the explicit long-term provider wait budget.');
 assert.ok(workerSource.includes('dispatchTimeoutMs'), 'endpoint dispatch locks should persist the provider wait budget so recovery does not double-dispatch active generation.');
 assert.ok(!/async function dispatchJobToAssignedAgent[\s\S]{0,1500}runBuiltInAgent/.test(workerSource), 'generic dispatch must not call the local sample runner directly.');
 assert.ok(dataAnalysisSource.includes('return what the data layer implies for downstream research, planning, preparation, and app reflection'), 'data analysis agent should instruct downstream agents to use upstream data.');
@@ -871,7 +874,7 @@ assert.ok(!workerSource.includes('function workflowPriorHandoffCompletionPayload
 assert.ok(!workerSource.includes('completionBlocking: false'), 'incomplete specialist artifacts must block completion and retry/fail instead of surfacing as non-blocking warnings.');
 assert.ok(dispatchResponseNormalizerSource.includes('function agentCompletionFailureReason') && workerSource.includes('agentCompletionFailureReason'), 'worker must reject completed agent responses that do not include returned delivery artifacts.');
 assert.ok(workerSource.includes('markAgentCompletionFailedFreeInState'), 'missing-deliverable completions must fail without billing instead of becoming warnings.');
-assert.ok(workerSource.includes('billing released: agent did not complete a user-facing delivery'), 'agent-side missing-deliverable failures must release billing.');
+assert.ok(workflowFailureRetrySource.includes('billing released: agent did not complete a user-facing delivery'), 'agent-side missing-deliverable failures must release billing.');
 assert.ok(workflowRetrySweepSource.includes('listRetryableDispatchJobs'), 'cron retry sweep must include retryable non-workflow agent jobs, not only workflow children.');
 assert.equal(existsSync(new URL('../lib/in-app-payments-removed.js', import.meta.url)), false, 'payment removal must delete the retired 410 compatibility route module.');
 assert.ok(sampleAgentDefinitionsSource.includes('SAMPLE_AGENT_MANIFESTS'), 'agent index should derive manifests from individual agent files.');

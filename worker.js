@@ -127,10 +127,13 @@ import { createWorkflowReconcileState } from './lib/workflow-reconcile-state.js'
 import { createWorkflowRetrySweep } from './lib/workflow-retry-sweep.js';
 import { createWorkflowTimeouts } from './lib/workflow-timeouts.js';
 import { ORCHESTRATION_WATCHDOG_POLICY, createWorkflowWatchdog } from './lib/workflow-watchdog.js';
+import { createWorkflowFailureRetryHelpers, workflowQualitySourceTask } from './lib/workflow-failure-retry.js';
+import { createWorkflowLayeringHelpers } from './lib/workflow-layering.js';
 import { createDispatchResponseNormalizer } from './lib/dispatch-response-normalizer.js';
 import { createWorkflowAuthorityGate } from './lib/workflow-authority-gate.js';
 import { createWorkflowJobResultHandlers } from './lib/workflow-job-results.js';
 import { createWorkflowQualityHelpers } from './lib/workflow-quality.js';
+import { postJsonWithTimeout } from './lib/json-post.js';
 import { sanitizeExactMatchActionsForClient } from './lib/exact-actions.js';
 import { hasAdapterPrConfirmation, hasPostConfirmation, hasRepoWriteConfirmation, hasSendConfirmation } from './lib/external-write-confirmation.js';
 import { csrfExemptPath, isUnsafeMethod, rateLimitSpecForPath } from './lib/http-policy.js';
@@ -197,6 +200,20 @@ const {
   workflowTaskName,
   workflowUsesSaasPublishHandoff
 } = workflowJobProfileHelpers;
+const workflowLayeringHelpers = createWorkflowLayeringHelpers({
+  isWorkflowLeaderTask,
+  leaderOrchestrationProfile,
+  leaderTaskLayer,
+  leaderTaskPhase,
+  workflowTaskName
+});
+const {
+  workflowDispatchLayer,
+  workflowLayerLabel,
+  workflowLayerRequiresUserApprovalBeforeRelease,
+  workflowPrimaryTask,
+  workflowSequencePhaseForTask
+} = workflowLayeringHelpers;
 
 const {
   workflowSearchSourcesFromReport,
@@ -334,10 +351,33 @@ const {
   workflowDispatchMaxAgeMs,
   workflowGenerationProviderTimeoutMs,
   workflowLeaderControlMaxRetries,
+  workflowLeaderControlTask,
   workflowProviderRunMaxAttempts,
   workflowRestartRequiredReason,
   workflowSourceCollectionMaxRetries
 } = dispatchPolicyHelpers;
+const workflowFailureRetryHelpers = createWorkflowFailureRetryHelpers({
+  clearDeliveryCompletionGate,
+  computeNextRetryAt,
+  maxDispatchRetriesForJob,
+  nowIso,
+  providerRunAttempts,
+  releaseBillingReservationInState,
+  workflowChildDispatchFailureRequiresRestart,
+  workflowCompletionRetryLimitForJob,
+  workflowLeaderControlMaxRetries,
+  workflowLeaderControlTask,
+  workflowProviderRunMaxAttempts,
+  workflowRestartRequiredReason,
+  workflowSourceCollectionMaxRetries,
+  workflowTaskRequiresConcreteSpecialistArtifact
+});
+const {
+  agentCompletionFailureRetryMeta,
+  markAgentCompletionFailedFreeInState,
+  sourceCollectionFailureRetryMeta,
+  workflowBuiltInFailureRetryMeta
+} = workflowFailureRetryHelpers;
 const dispatchResponseNormalizer = createDispatchResponseNormalizer({
   computeNextRetryAt,
   isBlockedAgentResultStatus,
@@ -2078,142 +2118,6 @@ const {
   handleTimeoutSweep
 } = devJobRoutes;
 
-function agentCompletionFailureRetryMeta(env = {}, job = {}) {
-  const attempts = Math.max(providerRunAttempts(job), Number(job?.dispatch?.attempts || 0) || 0, 1);
-  const maxRetries = workflowCompletionRetryLimitForJob(env, job);
-  const retryable = attempts < maxRetries;
-  return {
-    category: 'missing_required_deliverable',
-    attempts,
-    maxRetries,
-    retryable,
-    nextRetryAt: retryable ? computeNextRetryAt(attempts) : null
-  };
-}
-
-function markAgentCompletionFailedFreeInState(state, job, reason, env = {}, options = {}) {
-  if (!job) return null;
-  const failedAt = options.failedAt || nowIso();
-  const retryMeta = agentCompletionFailureRetryMeta(env, job);
-  job.status = 'failed';
-  job.completedAt = null;
-  job.failedAt = failedAt;
-  job.timedOutAt = null;
-  job.failureReason = reason || 'Agent did not return a required delivery artifact.';
-  job.failureCategory = 'missing_required_deliverable';
-  job.actualBilling = null;
-  clearDeliveryCompletionGate(job);
-  if (job.billingReservation && !job.billingSettlement?.settledAt && !job.billingReservation?.releasedAt) {
-    releaseBillingReservationInState(state, job);
-  }
-  job.dispatch = {
-    ...(job.dispatch || {}),
-    completionStatus: 'failed',
-    retryable: retryMeta.retryable,
-    attempts: retryMeta.attempts,
-    nextRetryAt: retryMeta.nextRetryAt,
-    maxRetries: retryMeta.maxRetries,
-    restartRequired: false
-  };
-  job.logs = [
-    ...(job.logs || []),
-    job.failureReason,
-    retryMeta.retryable
-      ? `failed before completion: missing agent delivery artifact; retry ${retryMeta.attempts + 1}/${retryMeta.maxRetries} scheduled`
-      : `failed before completion: missing agent delivery artifact; retries exhausted at ${retryMeta.attempts}/${retryMeta.maxRetries}`,
-    'billing released: agent did not complete a user-facing delivery'
-  ];
-  return retryMeta;
-}
-
-function sourceCollectionFailureRetryMeta(env = {}, job = {}, options = {}) {
-  const attempts = Number(job?.dispatch?.attempts || 0) + (options.alreadyAttempted ? 0 : 1);
-  const maxRetries = workflowSourceCollectionMaxRetries(env);
-  const retryable = attempts < maxRetries;
-  return {
-    attempts,
-    maxRetries,
-    retryable,
-    nextRetryAt: retryable ? computeNextRetryAt(attempts) : null
-  };
-}
-
-function workflowQualitySourceTask(job = {}) {
-  const task = String(job?.workflowTask || job?.taskType || '').trim().toLowerCase();
-  return Boolean(job?.workflowParentId) && ['research', 'teardown', 'data_analysis', 'validation', 'diligence'].includes(task);
-}
-
-function workflowBuiltInFailureRetryMeta(env = {}, job = {}, failureMeta = {}) {
-  const category = String(failureMeta.category || '').trim().toLowerCase();
-  const attempts = Number.isFinite(Number(failureMeta.attempts))
-    ? Number(failureMeta.attempts)
-    : Number(job?.dispatch?.attempts || 0) + 1;
-  const qualityRetryCategory = [
-    'missing_required_sources',
-    'missing_required_deliverable',
-    'dispatch_timeout',
-    'dispatch_provider_timeout',
-    'dispatch_deadline_timeout',
-    'dispatch_http_timeout',
-    'dispatch_http_gateway_timeout',
-    'dispatch_network_timeout',
-    'dispatch_queue_timeout',
-    'dispatch_http_5xx',
-    'dispatch_error',
-    'dispatch_malformed_response',
-    'agent_quality_gate_failed',
-    'leader_quality_gate_failed'
-  ].includes(category);
-  const qualitySourceRetry = workflowQualitySourceTask(job) && qualityRetryCategory;
-  const concreteArtifactRetry = Boolean(job?.workflowParentId)
-    && workflowTaskRequiresConcreteSpecialistArtifact(job)
-    && category === 'missing_required_deliverable';
-  const leaderControlRetry = workflowLeaderControlTask(job) && qualityRetryCategory;
-  const maxRetries = qualitySourceRetry
-    ? Math.max(maxDispatchRetriesForJob(job), workflowSourceCollectionMaxRetries(env))
-    : concreteArtifactRetry
-      ? Math.max(maxDispatchRetriesForJob(job), 3)
-    : leaderControlRetry
-      ? workflowLeaderControlMaxRetries(env, job)
-    : (Number.isFinite(Number(failureMeta.maxRetries)) ? Number(failureMeta.maxRetries) : maxDispatchRetriesForJob(job));
-  const retryable = Boolean((qualitySourceRetry || concreteArtifactRetry || leaderControlRetry || failureMeta.retryable) && attempts < maxRetries);
-  return {
-    attempts,
-    maxRetries,
-    retryable,
-    nextRetryAt: retryable ? computeNextRetryAt(attempts) : null
-  };
-}
-
-async function postJsonWithTimeout(url, payload, timeoutMs = 0, extraHeaders = {}) {
-  const useAbort = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0;
-  const controller = useAbort ? new AbortController() : null;
-  const timer = useAbort ? setTimeout(() => controller.abort(), Number(timeoutMs)) : null;
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json', ...extraHeaders },
-      body: JSON.stringify(payload),
-      ...(controller ? { signal: controller.signal } : {})
-    });
-    const text = await response.text();
-    let body = {};
-    if (text) {
-      try {
-        body = JSON.parse(text);
-      } catch {
-        throw new Error(`Dispatch response was not valid JSON (${response.status})`);
-      }
-    }
-    return { response, body };
-  } catch (error) {
-    if (error?.name === 'AbortError') throw new Error(`Dispatch timed out after ${timeoutMs}ms`);
-    throw error;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
 function braveSearchConfiguredForWorkflow(env = {}) {
   return Boolean(String(env?.BRAVE_SEARCH_API_KEY || env?.BRAVE_API_KEY || '').trim());
 }
@@ -3134,62 +3038,6 @@ function workflowLeaderPriorLayerOptionalOnly(parent = {}, leaderJob = {}) {
     .map((child) => workflowOptionalUnavailablePriorRun(parent, child, checkpointLayer + 1))
     .filter(Boolean);
   return optionalUnavailablePrior.length > 0 && optionalUnavailablePrior.length === priorLayerRuns.length;
-}
-
-function workflowPrimaryTask(parent = {}) {
-  const plannedTasks = Array.isArray(parent.workflow?.plannedTasks) ? parent.workflow.plannedTasks : [];
-  return String(plannedTasks[0] || parent.taskType || '').trim().toLowerCase();
-}
-
-function workflowDispatchLayer(parent = {}, child = {}) {
-  const task = workflowTaskName(child);
-  if (isWorkflowLeaderTask(task)) return 0;
-  const brokerWorkflow = child?.input?._broker?.workflow && typeof child.input._broker.workflow === 'object'
-    ? child.input._broker.workflow
-    : {};
-  const explicitLayer = Number(
-    brokerWorkflow.dispatchLayer
-    || brokerWorkflow.dispatch_layer
-    || child?.dispatchLayer
-    || child?.dispatch_layer
-    || child?.layer
-    || child?.layerNumber
-    || child?.layer_number
-    || 0
-  ) || 0;
-  if (explicitLayer > 0) return explicitLayer;
-  const primary = workflowPrimaryTask(parent);
-  return leaderTaskLayer(primary, task) || 1;
-}
-
-function workflowSequencePhaseForTask(primaryTask = '', taskType = '', layer = null) {
-  const task = String(taskType || '').trim().toLowerCase();
-  if (isWorkflowLeaderTask(task)) return 'initial';
-  const phase = leaderTaskPhase(primaryTask, task);
-  if (phase) return phase;
-  const resolvedLayer = Number(layer || leaderTaskLayer(primaryTask, task) || 1);
-  if (resolvedLayer <= 1) return 'research';
-  if (resolvedLayer === 2) return 'planning';
-  if (resolvedLayer === 3) return 'preparation';
-  return 'action';
-}
-
-function workflowLayerLabel(primaryTask = '', layer = 1) {
-  const primary = String(primaryTask || '').trim().toLowerCase();
-  const layerNumber = Number(layer || 1) || 1;
-  const profile = leaderOrchestrationProfile(primary);
-  const layerProfile = (profile?.layers || []).find((item) => Number(item?.number || 0) === layerNumber);
-  if (layerProfile) {
-    return String(layerProfile.phase || layerProfile.name || `layer_${layerNumber}`).trim() || `layer_${layerNumber}`;
-  }
-  const profilePhase = ['research', 'planning', 'preparation', 'action', 'summary'][Math.max(1, layerNumber) - 1] || `layer_${layerNumber}`;
-  if (layerNumber <= 1) return 'research';
-  if (layerNumber === 2) return 'execution';
-  return profilePhase;
-}
-
-function workflowLayerRequiresUserApprovalBeforeRelease(primaryTask = '', beforeLayer = 1, assignments = []) {
-  return false;
 }
 
 function workflowLeaderSequence(parent = {}) {

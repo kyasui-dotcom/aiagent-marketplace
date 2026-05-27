@@ -23,6 +23,7 @@ function assertNotIncludes(source, needles, label) {
 
 const workerSource = read('worker.js');
 const workerAssetsSource = read('lib/worker-assets.js');
+const workflowLayeringSource = read('lib/workflow-layering.js');
 const orchestrationSource = read('lib/orchestration.js');
 const sharedSource = read('lib/shared.js');
 const chatSource = read('public/chat.js');
@@ -1060,8 +1061,9 @@ for (const fileName of importedClientModules) {
   );
 }
 assert.ok(
-  workerSource.includes('leaderTaskLayer(primary, task)'),
-  'worker must ask orchestration/leader contracts for layers instead of hardcoding role logic'
+  workflowLayeringSource.includes('leaderTaskLayer(primary, task)')
+    && workerSource.includes("from './lib/workflow-layering.js'"),
+  'workflow layering must ask orchestration/leader contracts for layers instead of hardcoding role logic'
 );
 assert.ok(
   orchestrationSource.includes('DOWNSTREAM_HANDOFF_SUMMARY_CONTRACT_VERSION'),
