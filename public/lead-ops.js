@@ -1418,33 +1418,33 @@ function renderLeadOpsReadiness() {
   const hasChatReturn = Boolean(leadChatReturnTo() || leadChatHandoffId());
   const readinessItems = [
     {
-      title: '相手の根拠を確認',
+      title: 'Check evidence and contact path',
       detail: lead
-        ? `${lead.company}: ${hasEvidence ? '確認URLあり' : '確認URLが未入力'}、${hasContact ? '連絡先あり' : '連絡先が未入力'}。`
-        : '営業先リストを読み込むか、AIに営業先探しを頼んでください。',
+        ? `${lead.company}: ${hasEvidence ? 'evidence URL is set' : 'evidence URL is missing'}, ${hasContact ? 'contact path is set' : 'contact path is missing'}.`
+        : 'Load a lead list or ask CAIt to find leads.',
       status: lead && hasEvidence && hasContact ? 'ready' : (lead ? 'pending' : 'blocked')
     },
     {
-      title: '送ってよい理由を確認',
+      title: 'Check the contact reason',
       detail: lead
-        ? `${consentDisplayLabel(lead.consent || 'needs_review')}。状態は ${statusDisplayLabel(lead.status)} です。`
-        : 'まだ送ってよい理由や承認状態がありません。',
+        ? `${consentDisplayLabel(lead.consent || 'needs_review')}. Status is ${statusDisplayLabel(lead.status)}.`
+        : 'No contact reason or approval state is ready yet.',
       status: approved ? 'ready' : (String(lead?.status || '') === 'blocked' ? 'blocked' : 'pending')
     },
     {
-      title: '送る内容を確認',
+      title: 'Check the message and timing',
       detail: lead
-        ? `${channelDisplayLabel(lead.channel || 'email')}、${sendModeDisplayLabel(lead.sendMode || 'manual_approval')}${lead.scheduleAt ? `、${lead.scheduleAt}` : ''}${lead.triggerEvent && lead.triggerEvent !== 'none' ? `、${triggerDisplayLabel(lead.triggerEvent)}` : ''}。`
-        : '連絡方法、送る文章、送るタイミングがまだありません。',
+        ? `${channelDisplayLabel(lead.channel || 'email')}, ${sendModeDisplayLabel(lead.sendMode || 'manual_approval')}${lead.scheduleAt ? `, ${lead.scheduleAt}` : ''}${lead.triggerEvent && lead.triggerEvent !== 'none' ? `, ${triggerDisplayLabel(lead.triggerEvent)}` : ''}.`
+        : 'Channel, message, and send timing are not ready yet.',
       status: lead && hasMessage && hasScheduleRule && hasTriggerRule ? 'ready' : (lead ? 'pending' : 'blocked')
     },
     {
-      title: 'CAItへ戻せる状態',
+      title: 'Ready to return to CAIt',
       detail: hasServerContext
-        ? '次のCAIt作業でも同じ営業先データを開けます。'
+        ? 'The same lead data can be opened in the next CAIt task.'
         : (hasChatReturn
-          ? '右上の緑ボタンでチャットへ戻せます。'
-          : 'CAItチャットからこの画面を開くと、確認結果を戻しやすくなります。'),
+          ? 'Use the green button at the top to return to chat.'
+          : 'Open this screen from CAIt chat when you want review results to return cleanly.'),
       status: hasServerContext ? 'ready' : (hasChatReturn ? 'pending' : 'blocked')
     }
   ];
@@ -1453,8 +1453,8 @@ function renderLeadOpsReadiness() {
     const blockedCount = readinessItems.filter((entry) => entry.status === 'blocked').length;
     const pillStatus = readyCount === readinessItems.length ? 'approved' : blockedCount ? 'blocked' : 'pending';
     els.leadOpsReadinessPill.textContent = lead
-      ? `${readyCount}/${readinessItems.length} 確認済み`
-      : '営業先なし';
+      ? `${readyCount}/${readinessItems.length} checked`
+      : 'No lead yet';
     els.leadOpsReadinessPill.className = `status-pill ${lead ? pillStatus : 'pending'}`;
   }
   if (els.leadOpsReadinessList) {
@@ -1476,17 +1476,17 @@ function renderResendState() {
   if (els.scheduleResendBtn) els.scheduleResendBtn.disabled = !canSend;
   if (!els.resendStatusNote) return;
   if (resendResult.checked) {
-    els.resendStatusNote.textContent = resendResult.status || 'メール送信処理が完了しました。';
+    els.resendStatusNote.textContent = resendResult.status || 'Email action finished.';
     return;
   }
   if (!lead) {
-    els.resendStatusNote.textContent = '営業先を読み込み、1件選んでからメール送信を使えます。';
+    els.resendStatusNote.textContent = 'Load leads and pick one before using email sending.';
   } else if (!isEmail) {
-    els.resendStatusNote.textContent = 'この直接送信はメールだけです。SMSなどはCAItへ戻して確認します。';
+    els.resendStatusNote.textContent = 'Direct sending is email-only. Return SMS and other channels to CAIt for review.';
   } else if (!approved) {
-    els.resendStatusNote.textContent = '送る前に、上の「送ってOK」を押してください。';
+    els.resendStatusNote.textContent = 'Approve the lead before sending.';
   } else {
-    els.resendStatusNote.textContent = '宛先、送信元、件名、本文が正しければメール送信できます。';
+    els.resendStatusNote.textContent = 'You can send email after checking recipient, sender, subject, and body.';
   }
 }
 
@@ -1503,22 +1503,22 @@ function renderWorkflowState() {
   const hasPlan = Boolean(lead?.subject || lead?.body || lead?.sendMode || lead?.channel || status === 'draft' || status === 'approved' || status === 'scheduled' || status === 'triggered');
   const approved = ['approved', 'scheduled', 'triggered', 'sent'].includes(status);
   const executionLabel = status === 'scheduled'
-    ? `${lead?.scheduleAt || '未設定の日時'} に送る予定です。`
-    : (status === 'triggered' ? `${triggerDisplayLabel(lead?.triggerEvent || '')} を待ちます。` : (status === 'sent' ? 'メールは送信済みです。' : '選んだ営業先はCAItへ渡せます。'));
+    ? `Scheduled for ${lead?.scheduleAt || 'an unset time'}.`
+    : (status === 'triggered' ? `Waiting for ${triggerDisplayLabel(lead?.triggerEvent || '')}.` : (status === 'sent' ? 'Email has been sent.' : 'The selected lead can be sent to CAIt.'));
   setWorkflowStep(
     els.leadStepLoad,
     lead ? 'done' : 'current',
-    lead ? `${leads.length}件あります。選択中: ${lead.company}` : 'まだ営業先がありません。'
+    lead ? `${leads.length} lead${leads.length === 1 ? '' : 's'} loaded. Selected: ${lead.company}` : 'No leads yet.'
   );
   setWorkflowStep(
     els.leadStepDraft,
     hasPlan ? 'done' : (lead ? 'current' : ''),
-    hasPlan ? `${channelDisplayLabel(lead?.channel || 'email')}、${sendModeDisplayLabel(lead?.sendMode || 'manual_approval')}です。` : '連絡方法、送る文章、送るタイミングを確認します。'
+    hasPlan ? `${channelDisplayLabel(lead?.channel || 'email')}, ${sendModeDisplayLabel(lead?.sendMode || 'manual_approval')}.` : 'Check channel, message, and timing.'
   );
   setWorkflowStep(
     els.leadStepApproval,
     approved ? 'done' : (status === 'blocked' ? 'blocked' : (hasPlan ? 'current' : '')),
-    approved ? executionLabel : (status === 'blocked' ? '確認URLまたは送ってよい理由を確認中です。' : '確認できたら「送ってOK」を押します。')
+    approved ? executionLabel : (status === 'blocked' ? 'Evidence URL or contact reason needs review.' : 'Press Approve after checking the details.')
   );
 }
 
