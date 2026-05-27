@@ -40,6 +40,7 @@ export function createOpenChatIntakeUtils(options = {}) {
     'secretary_leader',
     'cto_leader',
     'cpo_leader',
+    'cmo_leader',
     'cfo_leader',
     'legal_leader'
   ]);
@@ -51,6 +52,7 @@ export function createOpenChatIntakeUtils(options = {}) {
     'secretary_leader',
     'cto_leader',
     'cpo_leader',
+    'cmo_leader',
     'media_planner',
     'citation_ops',
     'cfo_leader',
@@ -145,6 +147,7 @@ export function createOpenChatIntakeUtils(options = {}) {
     if (task === 'build_team_leader' || task === 'cto_leader') return 'build';
     if (task === 'secretary_leader') return 'operations';
     if (task === 'cpo_leader') return 'product';
+    if (task === 'cmo_leader') return 'general';
     if (task === 'cfo_leader') return 'finance';
     if (task === 'legal_leader') return 'legal';
     if (openChatIsLeaderIntakeTask(task)) return 'general';
@@ -424,6 +427,183 @@ export function createOpenChatIntakeUtils(options = {}) {
     ].join('\n').trim();
   }
 
+  function openChatLeaderChoiceSourcePrompt(prompt = '') {
+    const answer = String(prompt || '').trim();
+    const pending = String(getState()?.openChatPendingQuestionPrompt || '').trim();
+    if (pending && answer && !isStructuredOrderBrief(answer)) return combinedLeaderIntakePrompt(pending, answer);
+    return answer;
+  }
+
+  function openChatLeaderChoiceCandidatesForIntent(prompt = '', inputCounts = {}) {
+    const source = openChatLeaderChoiceSourcePrompt(prompt);
+    const raw = String(source || '').trim();
+    const text = openChatIntentMatchText(raw);
+    if (!raw) return [];
+    const hasSource = Number(inputCounts.urlCount || 0) || Number(inputCounts.fileCount || 0) || /https?:\/\/|\.net|\.com|サイト|ホームページ|ページ|トップ|LP|landing page/i.test(raw);
+    const conversionReviewIntent = Boolean(
+      hasSource
+      && /(uiux|ui\s*ux|ux|ユーザー体験|導線|トップページ|ファーストビュー|landing page|lp|cvr|cv|コンバージョン|会員登録|signup|登録|conversion)/i.test(text)
+      && /(読み込|読んで|見て|レビュー|診断|改善|提案|変えたほう|recommend|review|audit|diagnose|improve|proposal)/i.test(text)
+    );
+    if (!conversionReviewIntent) return [];
+    return [
+      {
+        taskType: 'cpo_leader',
+        labelJa: 'CPOリーダー',
+        labelEn: 'CPO Leader',
+        descriptionJa: '登録CVのために、トップページの体験・情報設計・導線を決める',
+        descriptionEn: 'Decide the homepage UX, information architecture, and signup path'
+      },
+      {
+        taskType: 'cmo_leader',
+        labelJa: 'CMO/Growthリーダー',
+        labelEn: 'CMO/Growth Leader',
+        descriptionJa: '会員登録CVR、訴求、ファネル、計測観点を優先する',
+        descriptionEn: 'Prioritize signup CVR, messaging, funnel, and measurement'
+      },
+      {
+        taskType: 'research_team_leader',
+        labelJa: 'Researchリーダー',
+        labelEn: 'Research Leader',
+        descriptionJa: '競合・ユーザー仮説・根拠を調べてから改善案を出す',
+        descriptionEn: 'Research competitors, user assumptions, and evidence first'
+      }
+    ];
+  }
+
+  function openChatLeaderChoiceTargetLabel(prompt = '') {
+    const source = String(prompt || '');
+    return (
+      source.match(/https?:\/\/[^\s)\]）]+/i)?.[0]
+      || source.match(/[a-z0-9][a-z0-9.-]+\.(?:com|net|jp|dev|app|io|co|org)(?:\/[^\s)\]）]*)?/i)?.[0]
+      || ''
+    ).trim();
+  }
+
+  function buildOpenChatLeaderChoiceAnswer(prompt = '', inputCounts = {}) {
+    const state = getState();
+    if (String(state.openChatLeaderChoicePrompt || '').trim()) return null;
+    const source = openChatLeaderChoiceSourcePrompt(prompt);
+    const candidates = openChatLeaderChoiceCandidatesForIntent(source, inputCounts);
+    if (!candidates.length) return null;
+    const ja = looksJapanese(source);
+    const target = openChatLeaderChoiceTargetLabel(source) || (ja ? '対象サイト' : 'the target site');
+    return {
+      kind: 'clarify',
+      tone: 'info',
+      patternId: 'pattern_leader_choice_required',
+      suppressTrio: true,
+      leaderChoicePrompt: source,
+      leaderChoiceCandidates: candidates,
+      clearPendingQuestion: true,
+      options: candidates.map((candidate, index) => ({
+        command: `select_leader:${candidate.taskType}`,
+        label: ja ? `${index + 1}. ${candidate.labelJa}` : `${index + 1}. ${candidate.labelEn}`,
+        description: ja ? candidate.descriptionJa : candidate.descriptionEn
+      })),
+      body: ja
+        ? [
+            'インテントは確認できました。',
+            '',
+            `確認した内容: ${target} のトップページを読み込み、会員登録CVを増やすためのUI/UX改善提案を作る。`,
+            '',
+            '次に、どのリーダーと会話するか選んでください。番号だけでも大丈夫です。',
+            ...candidates.map((candidate, index) => `${index + 1}. ${candidate.labelJa}: ${candidate.descriptionJa}`),
+            '',
+            '選んだリーダーに移ったあと、そのリーダーが足りない前提だけを確認します。まだ実行も課金もしていません。'
+          ].join('\n')
+        : [
+            'Intent confirmed.',
+            '',
+            `Confirmed request: read ${target}'s homepage and propose UI/UX improvements to increase member signup conversion.`,
+            '',
+            'Next, choose which leader should own the conversation. A number is enough.',
+            ...candidates.map((candidate, index) => `${index + 1}. ${candidate.labelEn}: ${candidate.descriptionEn}`),
+            '',
+            'After you choose, CAIt will move into that leader conversation and ask only the missing leader-specific context. Nothing has run or been billed yet.'
+          ].join('\n'),
+      status: 'Leader choice required.\n\nChoose the leader before continuing.'
+    };
+  }
+
+  function openChatLeaderChoiceSelection(prompt = '') {
+    const state = getState();
+    const candidates = Array.isArray(state.openChatLeaderChoiceCandidates) ? state.openChatLeaderChoiceCandidates : [];
+    const text = String(prompt || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
+    if (!text || !candidates.length) return null;
+    const commandTask = (text.match(/^select_leader:([a-z0-9_ -]+)$/i)?.[1] || '').trim().toLowerCase();
+    if (commandTask) return candidates.find((candidate) => String(candidate.taskType || '').toLowerCase() === commandTask) || null;
+    const choice = text.replace(/^[#\s]+/, '').replace(/[.．。、):：\s]+$/g, '');
+    const numeric = Number(choice);
+    if (Number.isInteger(numeric) && numeric >= 1 && numeric <= candidates.length) return candidates[numeric - 1];
+    const lower = openChatIntentMatchText(text);
+    if (/(cpo|product|プロダクト|体験|情報設計|ux|uiux)/i.test(lower)) return candidates.find((candidate) => candidate.taskType === 'cpo_leader') || null;
+    if (/(cmo|growth|グロース|cvr|cv|ファネル|登録率|会員登録|signup|conversion|マーケ|マーケティング)/i.test(lower)) return candidates.find((candidate) => candidate.taskType === 'cmo_leader') || null;
+    if (/(research|リサーチ|調査|競合|根拠|evidence)/i.test(lower)) return candidates.find((candidate) => candidate.taskType === 'research_team_leader') || null;
+    return null;
+  }
+
+  function buildOpenChatLeaderChoiceFollowupAnswer(prompt = '', inputCounts = {}) {
+    const state = getState();
+    const original = String(state.openChatLeaderChoicePrompt || '').trim();
+    if (!original) return null;
+    const selected = openChatLeaderChoiceSelection(prompt);
+    const ja = looksJapanese(prompt) || looksJapanese(original);
+    if (!selected) {
+      return {
+        kind: 'clarify',
+        tone: 'warn',
+        patternId: 'pattern_leader_choice_required',
+        suppressTrio: true,
+        leaderChoicePrompt: original,
+        leaderChoiceCandidates: Array.isArray(state.openChatLeaderChoiceCandidates) ? state.openChatLeaderChoiceCandidates : [],
+        body: ja
+          ? 'どのリーダーに移るかだけ選んでください。例: 1 / CPO、2 / CMO/Growth、3 / Research。まだ実行も課金もしていません。'
+          : 'Choose which leader should own this conversation: 1 / CPO, 2 / CMO/Growth, or 3 / Research. Nothing has run or been billed yet.',
+        status: 'Leader choice still required.'
+      };
+    }
+    const sourcePrompt = original;
+    const target = openChatLeaderChoiceTargetLabel(sourcePrompt) || (ja ? '対象サイト' : 'the target site');
+    const questions = openChatClarifyingQuestions(selected.taskType, sourcePrompt).slice(0, 4);
+    void inputCounts;
+    return {
+      kind: 'clarify',
+      tone: 'info',
+      patternId: 'pattern_leader_choice_selected',
+      suppressTrio: true,
+      clearLeaderChoice: true,
+      clearPendingQuestion: true,
+      clearClarifyOptions: true,
+      leaderIntakePrompt: sourcePrompt,
+      leaderIntakeTask: selected.taskType,
+      body: ja
+        ? [
+            `${selected.labelJa}との会話に移ります。`,
+            '',
+            '確認済みインテント:',
+            `${target} のトップページを読み込み、会員登録CVを増やすためのUI/UX改善提案を作る。`,
+            '',
+            'このリーダーに渡す前提として、分かる範囲だけ答えてください。空欄や「不明」でも進められます。',
+            ...questions.map((question, index) => `${index + 1}. ${question}`),
+            '',
+            '回答後は同じ確認を繰り返さず、リーダー用の注文内容に整理します。まだ実行も課金もしていません。'
+          ].join('\n')
+        : [
+            `Moving into the ${selected.labelEn} conversation.`,
+            '',
+            'Confirmed intent:',
+            `Read ${target}'s homepage and propose UI/UX improvements to increase member signup conversion.`,
+            '',
+            'Answer what you can before handing this to the leader. Unknown is fine.',
+            ...questions.map((question, index) => `${index + 1}. ${question}`),
+            '',
+            'After you answer, CAIt will not repeat the same check; it will prepare the leader order summary. Nothing has run or been billed yet.'
+          ].join('\n'),
+      status: 'Leader conversation selected.\n\nAnswer the leader-specific context questions.'
+    };
+  }
+
   function buildOpenChatRecoveredLeaderIntakeAnswer(prompt = '', inputCounts = {}) {
     const state = getState();
     const answer = String(prompt || '').trim();
@@ -525,6 +705,8 @@ export function createOpenChatIntakeUtils(options = {}) {
     buildOpenChatLeaderIntakeClarifyAnswer,
     openChatPendingLeaderIntakeContext,
     combinedLeaderIntakePrompt,
+    buildOpenChatLeaderChoiceAnswer,
+    buildOpenChatLeaderChoiceFollowupAnswer,
     buildOpenChatRecoveredLeaderIntakeAnswer,
     openChatNormalizeDispatchTask,
     openChatLooksOrderIntentOnly,

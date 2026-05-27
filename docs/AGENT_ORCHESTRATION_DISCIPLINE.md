@@ -4,6 +4,13 @@ This discipline applies to all languages, locales, UI copy, and operator workflo
 
 AIagent2 must treat built-in agents, sample agents, and externally registered agents through the same provider endpoint contract.
 
+## Product Value Principle
+
+- CAIt exists to turn a user's rough intent, question, idea bundle, or work request into a safe, reviewable work order, route it to the appropriate specialist or leader agent, and return usable delivery artifacts that can continue into review, approval, or app handoff.
+- Development should optimize for reducing the user's burden to write perfect prompts, choose the right agent, understand execution boundaries, and move from delivery to the next practical business action.
+- Chat may guide, clarify, draft, guard, and explain before dispatch, but it must preserve the user's control: no paid order, external posting, sending, publishing, repository write, or payout movement should happen without the explicit confirmation path and the responsible surface returning proof.
+- Features that do not improve trustworthy work ordering, safe execution, reviewable delivery, or practical handoff should be treated as lower priority than changes that strengthen those paths.
+
 ## Core Rules
 
 - Do not put leader-specific or agent-specific work definitions in `worker`, `orchestration`, or `client` code.
@@ -39,10 +46,10 @@ AIagent2 must treat built-in agents, sample agents, and externally registered ag
 - App handoff transfer code may preserve delivery file content as content, but must not parse Markdown/body text to recover app-specific metadata such as page title, SEO fields, CTA, channel, or destination. Those fields must come from explicit artifact/file metadata or be completed inside the target app review surface.
 - When a leader can determine at dispatch time that a selected specialist should produce an app-review artifact, the leader-owned dispatch packet must say so upfront and include the expected app metadata contract. Do not wait for chat or delivery views to infer that the output belongs in Publisher, Lead Ops, Analytics, or another app.
 - The UI must distinguish "prepared for app review" from "ingested into the app" and from "externally executed". Only the app ingest/list route or connector proof may justify saying the item was handed to, queued by, published by, or executed by an app.
-- When multiple apps match, prefer the app with the narrower and more specialized `inputContract.accepts`. A generic app such as Publisher may be a fallback, but a specialized matching app should be shown first.
+- When multiple apps match, rank them by user-facing fit: exact artifact compatibility, connector readiness, execution proof, expected cost, and the shortest review path to the user's intended next action. A generic app such as Publisher may be a fallback, but it should not hide a better specialized path.
 - External user self-service app registration is out of short-term scope. Still, keep manifest, handoff, auth, and billing contracts ready for external apps.
-- If user-added apps are opened later, CAIt should present candidates for managing or publishing the final delivery and let the user choose by price, free CAIt-managed option, specialization, fees, or revenue share. `chat` and `orchestration` must not automatically select a CAIt-managed app unconditionally.
-- CAIt-managed apps are free default candidates, but may use a quiet discovery path so they do not erase specialist app revenue opportunities. Specialist app revenue may support revenue share.
+- If user-added apps are opened later, CAIt should present candidates for managing or publishing the final delivery and let the user choose by outcome fit, price, trust, connector readiness, specialization, and review effort. `chat` and `orchestration` must not automatically select a CAIt-managed app unconditionally.
+- CAIt-managed apps may be free default candidates when they are the clearest user path, but candidate ranking must not prefer platform revenue, provider revenue share, or internal ownership over the user's safest and most useful next action.
 - External apps using CAIt account auth must not receive the CAIt session cookie directly. Use a short-lived signed handoff token, server-side app context id, or future CAIt OAuth/OIDC delegation.
 - Posting, publishing, sending, billing, and execution approval are app responsibilities. Chat passes prepared data and handoff context, and may claim execution completion only when the app or connector returns proof.
 

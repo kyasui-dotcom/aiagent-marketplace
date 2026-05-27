@@ -28,6 +28,8 @@ export function createClientOpenChatPreLlmGuardUtils(options = {}) {
   const isOpenChatRunConfirmation = typeof options.isOpenChatRunConfirmation === 'function' ? options.isOpenChatRunConfirmation : () => false;
   const openChatFollowupMode = typeof options.openChatFollowupMode === 'function' ? options.openChatFollowupMode : () => '';
   const isOpenChatGenericProceed = typeof options.isOpenChatGenericProceed === 'function' ? options.isOpenChatGenericProceed : () => false;
+  const buildOpenChatLeaderChoiceAnswer = typeof options.buildOpenChatLeaderChoiceAnswer === 'function' ? options.buildOpenChatLeaderChoiceAnswer : () => null;
+  const buildOpenChatLeaderChoiceFollowupAnswer = typeof options.buildOpenChatLeaderChoiceFollowupAnswer === 'function' ? options.buildOpenChatLeaderChoiceFollowupAnswer : () => null;
   const buildOpenChatPromptInjectionAnswer = typeof options.buildOpenChatPromptInjectionAnswer === 'function' ? options.buildOpenChatPromptInjectionAnswer : () => null;
   const buildOpenChatLongPromptGuardAnswer = typeof options.buildOpenChatLongPromptGuardAnswer === 'function' ? options.buildOpenChatLongPromptGuardAnswer : () => null;
   const buildOpenChatRecoveredLeaderIntakeAnswer = typeof options.buildOpenChatRecoveredLeaderIntakeAnswer === 'function' ? options.buildOpenChatRecoveredLeaderIntakeAnswer : () => null;
@@ -233,7 +235,7 @@ export function createClientOpenChatPreLlmGuardUtils(options = {}) {
     const state = getState();
     const text = String(prompt || '').replace(/\s+/g, ' ').trim();
     if (!text) return false;
-    if (openChatPendingLeaderIntakeContext() || state.openChatPendingQuestionPrompt || state.openChatIntentShiftPrompt || state.openChatIdeaBacklogPrompt) return true;
+    if (openChatPendingLeaderIntakeContext() || state.openChatLeaderChoicePrompt || state.openChatPendingQuestionPrompt || state.openChatIntentShiftPrompt || state.openChatIdeaBacklogPrompt) return true;
     if (state.openChatVagueChoicePrompt || state.openChatNaturalChoiceIntent) return true;
     if (/^[0-9A-Da-d]$/.test(openChatChoiceReplyToken(text)) && Array.isArray(state.openChatClarifyOptions) && state.openChatClarifyOptions.length) return true;
     if (lastOpenChatPreparedBrief() && (isOpenChatRunConfirmation(text) || openChatFollowupMode(text) || isOpenChatGenericProceed(text))) return true;
@@ -257,6 +259,10 @@ export function createClientOpenChatPreLlmGuardUtils(options = {}) {
     if (recoveredLeaderIntakeAnswer) return recoveredLeaderIntakeAnswer;
     const leaderIntakeFollowupAnswer = buildOpenChatLeaderIntakeFollowupAnswer(compact, inputCounts);
     if (leaderIntakeFollowupAnswer) return leaderIntakeFollowupAnswer;
+    const leaderChoiceFollowupAnswer = buildOpenChatLeaderChoiceFollowupAnswer(compact, inputCounts);
+    if (leaderChoiceFollowupAnswer) return leaderChoiceFollowupAnswer;
+    const leaderChoiceAnswer = buildOpenChatLeaderChoiceAnswer(compact, inputCounts);
+    if (leaderChoiceAnswer) return leaderChoiceAnswer;
     const pendingQuestionFollowupAnswer = resolveOpenChatPendingQuestionFollowup(compact, inputCounts);
     if (pendingQuestionFollowupAnswer) return pendingQuestionFollowupAnswer;
     const precommandPatternAnswer = buildOpenChatPatternGuardAnswer(compact, inputCounts, { phase: 'precommand' });
@@ -302,6 +308,10 @@ export function createClientOpenChatPreLlmGuardUtils(options = {}) {
     if (recoveredLeaderIntakeAnswer) return recoveredLeaderIntakeAnswer;
     const leaderIntakeFollowupAnswer = buildOpenChatLeaderIntakeFollowupAnswer(compact, inputCounts);
     if (leaderIntakeFollowupAnswer) return leaderIntakeFollowupAnswer;
+    const leaderChoiceFollowupAnswer = buildOpenChatLeaderChoiceFollowupAnswer(compact, inputCounts);
+    if (leaderChoiceFollowupAnswer) return leaderChoiceFollowupAnswer;
+    const leaderChoiceAnswer = buildOpenChatLeaderChoiceAnswer(compact, inputCounts);
+    if (leaderChoiceAnswer) return leaderChoiceAnswer;
     const pendingQuestionFollowupAnswer = resolveOpenChatPendingQuestionFollowup(compact, inputCounts);
     if (pendingQuestionFollowupAnswer) return pendingQuestionFollowupAnswer;
     const precommandPatternAnswer = buildOpenChatPatternGuardAnswer(compact, inputCounts, { phase: 'precommand' });

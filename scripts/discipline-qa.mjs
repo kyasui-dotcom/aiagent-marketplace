@@ -102,6 +102,14 @@ assert.ok(
   'development discipline must be documented as language-agnostic'
 );
 assert.ok(
+  disciplineDoc.includes("CAIt exists to turn a user's rough intent, question, idea bundle, or work request into a safe, reviewable work order"),
+  'development discipline must document the core user value'
+);
+assert.ok(
+  disciplineDoc.includes("Development should optimize for reducing the user's burden to write perfect prompts, choose the right agent, understand execution boundaries, and move from delivery to the next practical business action."),
+  'development discipline must prioritize user burden reduction and practical handoff'
+);
+assert.ok(
   disciplineDoc.includes('Do not put leader-specific or agent-specific work definitions in `worker`, `orchestration`, or `client` code.'),
   'development discipline must document file responsibility boundaries'
 );
@@ -220,6 +228,19 @@ assert.ok(
   disciplineDoc.includes('The UI must distinguish "prepared for app review" from "ingested into the app" and from "externally executed".'),
   'development discipline must distinguish prepared, ingested, and executed app states'
 );
+assert.ok(
+  disciplineDoc.includes('rank them by user-facing fit: exact artifact compatibility, connector readiness, execution proof, expected cost, and the shortest review path'),
+  'development discipline must rank app handoff candidates by user-facing fit'
+);
+assert.ok(
+  disciplineDoc.includes('candidate ranking must not prefer platform revenue, provider revenue share, or internal ownership over the user'),
+  'development discipline must not prioritize platform/provider revenue over user value'
+);
+assertNotIncludes(disciplineDoc, [
+  'erase specialist app revenue opportunities',
+  'Specialist app revenue may support revenue share',
+  'let the user choose by price, free CAIt-managed option, specialization, fees, or revenue share'
+], 'development discipline user-value alignment');
 assert.ok(
   disciplineDoc.includes('Agent-specific boundaries must be documented in the relevant agent definition file'),
   'development discipline must keep agent-specific boundary details in agent files'

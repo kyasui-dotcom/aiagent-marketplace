@@ -738,6 +738,8 @@ const state = {
   openChatNaturalChoiceIntent: '',
   openChatIntentShiftPrompt: '',
   openChatIdeaBacklogPrompt: '',
+  openChatLeaderChoicePrompt: '',
+  openChatLeaderChoiceCandidates: [],
   openChatLeaderIntakePrompt: '',
   openChatLeaderIntakeTask: '',
   openChatPendingQuestionPrompt: '',
@@ -1160,6 +1162,8 @@ const clientOpenChatPreLlmGuardUtils = createClientOpenChatPreLlmGuardUtils({
   isOpenChatRunConfirmation: (prompt) => isOpenChatRunConfirmation(prompt),
   openChatFollowupMode: (prompt) => openChatFollowupMode(prompt),
   isOpenChatGenericProceed: (prompt) => isOpenChatGenericProceed(prompt),
+  buildOpenChatLeaderChoiceAnswer: (prompt, inputCounts) => buildOpenChatLeaderChoiceAnswer(prompt, inputCounts),
+  buildOpenChatLeaderChoiceFollowupAnswer: (prompt, inputCounts) => buildOpenChatLeaderChoiceFollowupAnswer(prompt, inputCounts),
   buildOpenChatPromptInjectionAnswer: (prompt) => buildOpenChatPromptInjectionAnswer(prompt),
   buildOpenChatLongPromptGuardAnswer: (prompt, inputCounts) => buildOpenChatLongPromptGuardAnswer(prompt, inputCounts),
   buildOpenChatRecoveredLeaderIntakeAnswer: (prompt, inputCounts) => buildOpenChatRecoveredLeaderIntakeAnswer(prompt, inputCounts),
@@ -1292,6 +1296,8 @@ const {
   buildOpenChatLeaderIntakeClarifyAnswer,
   openChatPendingLeaderIntakeContext,
   combinedLeaderIntakePrompt,
+  buildOpenChatLeaderChoiceAnswer,
+  buildOpenChatLeaderChoiceFollowupAnswer,
   buildOpenChatRecoveredLeaderIntakeAnswer,
   openChatNormalizeDispatchTask,
   openChatLooksOrderIntentOnly,
@@ -4163,6 +4169,13 @@ function appendOrderChatExchange(prompt, answer, options = {}) {
   } else if (answer?.clearIdeaBacklog || answerCommand === 'reset_chat' || answerKind !== 'clarify') {
     state.openChatIdeaBacklogPrompt = '';
   }
+  if (answer?.leaderChoicePrompt) {
+    state.openChatLeaderChoicePrompt = String(answer.leaderChoicePrompt || prompt || '').trim();
+    state.openChatLeaderChoiceCandidates = Array.isArray(answer.leaderChoiceCandidates) ? answer.leaderChoiceCandidates : [];
+  } else if (answer?.clearLeaderChoice || answer?.leaderIntakePrompt || answerCommand === 'reset_chat' || answerKind !== 'clarify') {
+    state.openChatLeaderChoicePrompt = '';
+    state.openChatLeaderChoiceCandidates = [];
+  }
   if (answer?.leaderIntakePrompt || answer?.leaderIntakeTask) {
     state.openChatLeaderIntakePrompt = String(answer.leaderIntakePrompt || prompt || '').trim();
     state.openChatLeaderIntakeTask = String(answer.leaderIntakeTask || '').trim();
@@ -4184,6 +4197,7 @@ function appendOrderChatExchange(prompt, answer, options = {}) {
     || answer?.naturalChoiceIntent
     || answer?.intentShiftPrompt
     || answer?.ideaBacklogPrompt
+    || answer?.leaderChoicePrompt
     || (Array.isArray(answer?.options) && answer.options.length)
     || answerKind !== 'clarify'
   ) {
@@ -4407,6 +4421,21 @@ async function handleOpenChatChoiceCommand(command = '') {
     state.openChatClarifyOptions = [];
     renderOpenChatChoiceBar();
     appendOrderChatExchange(looksJapanese(prompt) ? 'タイムラインを計画したい' : 'plan a new timeline', buildOpenChatTimelinePlanClarifyAnswer(prompt));
+    return;
+  }
+  if (/^select_leader:/i.test(normalized)) {
+    const answer = buildOpenChatLeaderChoiceFollowupAnswer(normalized, orderInputCounts(orderInputFromComposer()));
+    if (!answer) {
+      flash('Leader choice is no longer active.', 'warn');
+      state.openChatClarifyOptions = [];
+      renderOpenChatChoiceBar();
+      return;
+    }
+    const taskType = String(normalized.split(':')[1] || '').trim();
+    const label = taskType === 'cpo_leader'
+      ? 'CPOリーダー'
+      : (taskType === 'cmo_leader' ? 'CMO/Growthリーダー' : (taskType === 'research_team_leader' ? 'Researchリーダー' : taskType || 'leader'));
+    appendOrderChatExchange(label, answer);
     return;
   }
   if (normalized === 'confirm_preorder_order') {
@@ -5341,6 +5370,8 @@ function clearOrderComposerPrompt() {
   state.openChatNaturalChoiceIntent = '';
   state.openChatIntentShiftPrompt = '';
   state.openChatIdeaBacklogPrompt = '';
+  state.openChatLeaderChoicePrompt = '';
+  state.openChatLeaderChoiceCandidates = [];
   state.openChatLeaderIntakePrompt = '';
   state.openChatLeaderIntakeTask = '';
   state.openChatPendingQuestionPrompt = '';
@@ -11775,6 +11806,8 @@ function pauseWorkChatOnTabLeave() {
   state.openChatNaturalChoiceIntent = '';
   state.openChatIntentShiftPrompt = '';
   state.openChatIdeaBacklogPrompt = '';
+  state.openChatLeaderChoicePrompt = '';
+  state.openChatLeaderChoiceCandidates = [];
   state.openChatLeaderIntakePrompt = '';
   state.openChatLeaderIntakeTask = '';
   state.openChatPendingQuestionPrompt = '';
