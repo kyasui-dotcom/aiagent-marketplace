@@ -48,6 +48,7 @@ const clientSource = read('public/client.js');
 const clientOpenChatPreorderIntentSource = read('public/client-open-chat-preorder-intent-utils.js');
 const clientOpenChatPreLlmGuardSource = read('public/client-open-chat-pre-llm-guard-utils.js');
 const clientOpenChatQuickAnswerSource = read('public/client-open-chat-quick-answer-utils.js');
+const clientOpenChatCommandSource = read('public/client-open-chat-command-utils.js');
 const clientDeliveryFilesSource = read('public/client-delivery-files.js');
 const workActionRegistrySource = read('public/work-action-registry.js');
 const workIntentResolverSource = read('public/work-intent-resolver.js');
@@ -956,6 +957,23 @@ assertNotIncludes(clientSource, [
   "'/api/connectors/x/post'",
   'Posted to X after explicit confirmation.'
 ], 'public/client.js');
+assert.ok(
+  clientSource.includes('createClientOpenChatCommandUtils'),
+  'client must delegate Open Chat command handling to the dedicated command module'
+);
+assert.ok(
+  clientOpenChatCommandSource.includes('buildOpenChatCommandAnswer')
+    && clientOpenChatCommandSource.includes('applyOpenChatCommand')
+    && clientOpenChatCommandSource.includes('resolveOpenChatClarifyReply'),
+  'client Open Chat command module must own command answers, command side effects, and clarify-command resolution'
+);
+assertNotIncludes(clientSource, [
+  'function buildOpenChatCommandAnswer',
+  'function applyOpenChatCommand',
+  'function shouldDeferOpenChatCommandForAnswer',
+  'function openChatCommandMode',
+  'function resolveOpenChatClarifyReply'
+], 'public/client.js Open Chat command boundary');
 assertNotIncludes(workActionRegistrySource, [
   "post_current_to_x: { kind: 'executor' }"
 ], 'public/work-action-registry.js');

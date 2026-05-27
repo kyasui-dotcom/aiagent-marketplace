@@ -161,11 +161,14 @@ export function visibleDeliveryFiles(files = []) {
   });
 }
 
-function flattenText(value, depth = 0) {
+function flattenText(value, depth = 0, key = '') {
   if (depth > 5 || value == null) return [];
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return [String(value)];
-  if (Array.isArray(value)) return value.flatMap((item) => flattenText(item, depth + 1));
-  if (typeof value === 'object') return Object.values(value).flatMap((item) => flattenText(item, depth + 1));
+  const normalizedKey = String(key || '').trim();
+  if (/^(childRuns|child_runs|specialist_output_ledger|specialistOutputLedger|delivery_provenance_map|deliveryProvenanceMap|execution_candidate|executionCandidate)$/i.test(normalizedKey)) return [];
+  if (/^(agentName|agentId|source_agent_name|sourceAgentName|source_agent_id|sourceAgentId|source_task_type|sourceTaskType|source_run_id|sourceRunId|taskType|dispatchTaskType)$/i.test(normalizedKey)) return [];
+  if (Array.isArray(value)) return value.flatMap((item) => flattenText(item, depth + 1, normalizedKey));
+  if (typeof value === 'object') return Object.entries(value).flatMap(([childKey, item]) => flattenText(item, depth + 1, childKey));
   return [];
 }
 
@@ -351,7 +354,7 @@ export function assertOrderScenarioQuality(job = {}, options = {}) {
   );
   if (rawAgentFiles.length > 1) {
     const digest = String(output.report?.final_delivery_digest || output.report?.finalDeliveryDigest || '');
-    assert.ok(/Agent:\s+/i.test(digest) && /Task:\s+/i.test(digest), 'leader digest must identify the agent and task behind each delivered file');
+    assert.ok(!/Agent:\s+|Task:\s+/i.test(digest), 'leader digest must stay user-facing and keep agent/task provenance out of markdown');
   }
   if (promptHas(prompt, /Output language:\s*Japanese|日本語|集客|問い合わせ|登録|トライアル/iu)) {
     assert.ok(/[\u3040-\u30ff\u3400-\u9fff]/u.test(deliveryText), 'Japanese scenario must produce Japanese-visible delivery');

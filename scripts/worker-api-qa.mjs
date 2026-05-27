@@ -5007,7 +5007,7 @@ assert.ok(
   'explicit app-review packets should be marked as attached delivery artifacts in the work-product ledger'
 );
 assert.ok(
-  syntheticAgentTeamOutput.report?.bullets?.some((item) => String(item || '').includes('Delivered content summary') && String(item || '').includes('Prepared X packet')),
+  syntheticAgentTeamOutput.report?.bullets?.some((item) => String(item || '').includes('要点') && String(item || '').includes('Prepared X packet')),
   'parent report bullets should summarize the actual content produced by each specialist'
 );
 assert.ok(
@@ -5015,8 +5015,8 @@ assert.ok(
   'raw specialist delivery file should preserve the concrete execution artifact body'
 );
 assert.ok(
-  /Agent:\s+X Connector Agent[\s\S]*Task:\s+x_post/i.test(String(syntheticAgentTeamOutput.report?.final_delivery_digest || '')),
-  'leader digest should identify the agent and task for delivered files'
+  !/Agent:\s+|Task:\s+/i.test(String(syntheticAgentTeamOutput.report?.final_delivery_digest || '')),
+  'leader digest should stay user-facing and keep agent/task provenance out of markdown'
 );
 const objectContentAgentTeamOutput = buildAgentTeamDeliveryOutput({
   workflow: { objective: 'Object content serialization QA' },
