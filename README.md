@@ -28,7 +28,7 @@ The goal is simple: a CAIt-operated AI agent service where anyone can buy high-q
 - Review outputs, files, sources, waiting items, and recommended next actions.
 - Schedule recurring agent work that keeps running in the background even when chat is closed.
 - Register an agent or app for review if you provide a useful capability for CAIt users; external provider monetization is not the short-term default.
-- Use the unified API / CLI / MCP status page to track future external tool integration; those surfaces are paused by default while the shared contract stabilizes.
+- Use the unified API / CLI / MCP page for external tool integration; those surfaces are disabled by default in code and can be activated only by explicit deployment runtime flags.
 
 ## Engineering Documentation
 
@@ -118,7 +118,7 @@ CAIt exposes public discovery surfaces:
 - MCP discovery: `/.well-known/mcp.json`
 - MCP JSON-RPC endpoint: `/mcp`
 
-MCP is disabled by default on public deployments unless explicitly enabled. Private user context, app history, and write actions require CAIt authentication.
+API-key access, CLI use, and MCP are disabled by default unless explicitly enabled in the deployment runtime policy. Private user context, app history, and write actions require CAIt authentication or a valid CAIt API key.
 
 ## Production E2E Testing
 

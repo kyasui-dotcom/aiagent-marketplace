@@ -273,7 +273,7 @@ const HOWTO_STEPS_BY_SLUG = {
   ],
   'ai-agent-api': [
     'Use browser Chat, Apps, Deliveries, and Publisher for current work.',
-    'Keep API-key, CLI, and MCP access disabled by default.',
+    'Keep API-key, CLI, and MCP access disabled by default unless explicit runtime flags activate them.',
     'Stabilize app handoff, delivery, auth, approval, and cost-context contracts.',
     'Republish API, CLI, and MCP examples together after validation.',
     'Re-enable only with explicit runtime flags when ready.'
@@ -608,24 +608,24 @@ function seoLandingPageHtml(landingPage) {
       children: `    <article class="box panel-stack news-article-page seo-landing-page" style="margin-bottom:16px">
       <div class="doc-meta">CAIt guide / unified developer access</div>
       <h1>AI Agent API, CLI, and MCP access share one contract.</h1>
-      <p><strong>Current status:</strong> API-key access, CLI execution, and MCP are temporarily disabled by default while the external developer contract is stabilized. Use browser Chat, Apps, Deliveries, and Publisher now.</p>
+      <p><strong>Current status:</strong> API-key access, CLI execution, and MCP are disabled by default in code, and deployments can activate them with explicit runtime flags. Browser Chat, Apps, Deliveries, and Publisher remain available.</p>
       <p>This single page replaces separate API, CLI, and MCP tabs because all three surfaces must obey the same leader-guided ordering, delivery history, app context, approval, auth, and cost-context rules.</p>
       <h2>One external surface</h2>
       <ul class="flow-list compact-list">
         <li><strong>API:</strong> future backend and workflow automation access for reviewable orders and delivery reads.</li>
         <li><strong>CLI:</strong> future terminal access for repeatable orders, follow-ups, delivery inspection, and manifest workflows.</li>
-        <li><strong>MCP:</strong> future tool and resource discovery for clients that need catalog, app, and delivery context.</li>
+        <li><strong>MCP:</strong> tool and resource discovery for clients that need catalog, app, and delivery context when MCP is enabled.</li>
       </ul>
-      <h2>Shared pause policy</h2>
-      <p>External API-key, CLI, and MCP access stay paused until the contract matches the current browser-owned quality model. The browser product remains available, and app context handoffs continue through server-side context records instead of browser storage.</p>
-      <h2>Planned API shape</h2>
-      <p>The future API should support order creation, delivery reads, app-context reuse, app and agent manifest import, verification, and follow-up workflows. API-created work must still be visible in CAIt with status, delivery files, cost context, and approval state.</p>
-      <pre class="detail-box code-box"># Planned only: disabled by default today
+      <h2>Runtime activation policy</h2>
+      <p>External API-key, CLI, and MCP access stay disabled by default unless the deployment sets explicit runtime flags. API-created work remains visible in CAIt with status, delivery files, cost context, and approval state.</p>
+      <h2>API shape</h2>
+      <p>The API supports order creation, delivery reads, app-context reuse, app and agent manifest import, verification, and follow-up workflows when API-key access is enabled.</p>
+      <pre class="detail-box code-box"># Requires a live CAIt API key
 curl.exe -X POST https://aiagent-marketplace.net/api/jobs ^
   -H "content-type: application/json" ^
   -H "authorization: Bearer &lt;CAIT_API_KEY&gt;" ^
   -d "{&quot;task_type&quot;:&quot;research&quot;,&quot;prompt&quot;:&quot;Compare support options for used iPhone repairs in Japan&quot;}"</pre>
-      <pre class="detail-box code-box"># Planned app context and manifest routes: disabled by default today
+      <pre class="detail-box code-box"># App context and manifest routes use the same CAIt API key
 curl.exe -X POST https://aiagent-marketplace.net/api/apps/import-manifest ^
   -H "content-type: application/json" ^
   -H "authorization: Bearer &lt;CAIT_API_KEY&gt;" ^
@@ -635,15 +635,19 @@ curl.exe -X POST https://aiagent-marketplace.net/api/app-contexts ^
   -H "content-type: application/json" ^
   -H "authorization: Bearer &lt;CAIT_API_KEY&gt;" ^
   -d "{&quot;app_id&quot;:&quot;analytics-console&quot;,&quot;context&quot;:{&quot;title&quot;:&quot;GSC query gap&quot;,&quot;summary&quot;:&quot;Search evidence is ready.&quot;}}"</pre>
-      <h2>Planned CLI shape</h2>
-      <p>The future CLI should wrap the same API without creating a second policy surface. Terminal orders must retain delivery history, app context, clarification state, and follow-up links.</p>
-      <pre class="detail-box code-box"># Planned only: disabled by default today
+      <h2>CLI shape</h2>
+      <p>The CLI wraps the same API without creating a second policy surface. Terminal usage must retain delivery history, app context, clarification state, and follow-up links.</p>
+      <pre class="detail-box code-box"># Issue or manage CAIt API keys
+npm run cait:key -- create --label codex-desktop --export
+npm run cait:key -- list
+
+# Order-oriented CLI commands share the same API policy
 npm run cait -- send --watch "Compare support options for used iPhone repairs in Japan"
 npm run cait -- get &lt;job_id&gt;
 npm run cait -- follow-up &lt;job_id&gt; "Revise for Japan and add sources"</pre>
-      <h2>Planned MCP shape</h2>
-      <p>MCP discovery and JSON-RPC routes remain gated by runtime flags. When enabled, MCP must expose only allowed tools and resources, preserve structured content, and require auth for private app context or write actions.</p>
-      <pre class="detail-box code-box"># Discovery shape is present, but public MCP is disabled by default
+      <h2>MCP shape</h2>
+      <p>MCP discovery and JSON-RPC routes are gated by runtime flags. When enabled, MCP exposes allowed tools and resources, preserves structured content, and requires auth for private app context or write actions.</p>
+      <pre class="detail-box code-box"># MCP is disabled by default unless CAIT_MCP_ENABLED is active
 curl.exe https://aiagent-marketplace.net/.well-known/mcp.json
 
 curl.exe -X POST https://aiagent-marketplace.net/mcp ^
@@ -662,7 +666,7 @@ curl.exe -X POST https://aiagent-marketplace.net/mcp ^
       </ol>
       <h2>Common questions</h2>
       <h3>Are API, CLI, and MCP available today?</h3>
-      <p>No. External developer access is temporarily disabled by default while the shared contract is stabilized.</p>
+      <p>They are disabled by default in code and active only on deployments where explicit runtime flags enable them.</p>
       <h3>Why are API, CLI, and MCP on one page?</h3>
       <p>They are the same external access surface with different clients. Splitting them into separate tabs made the policy look separate even though the rules are shared.</p>
       <h3>What should I use instead?</h3>

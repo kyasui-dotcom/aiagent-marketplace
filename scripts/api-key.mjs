@@ -7,22 +7,13 @@ function envValue(name, fallback = '') {
   return String(process.env[name] || fallback).trim();
 }
 
-function envFlag(name, fallback = false) {
-  const value = envValue(name).toLowerCase();
-  if (!value) return fallback;
-  if (['1', 'true', 'yes', 'on'].includes(value)) return true;
-  if (['0', 'false', 'no', 'off'].includes(value)) return false;
-  return fallback;
-}
-
 function usage() {
   return `CAIt API key CLI
 
 Issue, list, and revoke CAIt API keys without using the browser key form.
 
 Current status:
-  CLI and API-key access are paused by default while the external contract stabilizes.
-  Set CAIT_CLI_ENABLED=1 only after the deployed API key routes are explicitly enabled.
+  CLI calls the deployed CAIt API-key routes. The server runtime policy decides whether access is active.
 
 User session mode:
   1. Log in to CAIt in the browser
@@ -297,9 +288,6 @@ export async function runApiKeyCli(argv = process.argv.slice(2)) {
   }
   if (options.command === 'create' || options.command === 'issue') {
     requireIssueLabel(options);
-    if (!envFlag('CAIT_CLI_ENABLED', false)) {
-      throw new Error('CAIt API key CLI is temporarily disabled. Set CAIT_CLI_ENABLED=1 only after the external API contract is enabled on the server.');
-    }
     const result = options.login
       ? (options.adminToken ? await createWithAdminToken(options) : await createWithAdminSession(options))
       : await createWithUserSession(options);
@@ -307,16 +295,10 @@ export async function runApiKeyCli(argv = process.argv.slice(2)) {
     return;
   }
   if (options.command === 'list') {
-    if (!envFlag('CAIT_CLI_ENABLED', false)) {
-      throw new Error('CAIt API key CLI is temporarily disabled. Set CAIT_CLI_ENABLED=1 only after the external API contract is enabled on the server.');
-    }
     printList(await listWithUserSession(options), options);
     return;
   }
   if (options.command === 'revoke') {
-    if (!envFlag('CAIT_CLI_ENABLED', false)) {
-      throw new Error('CAIt API key CLI is temporarily disabled. Set CAIT_CLI_ENABLED=1 only after the external API contract is enabled on the server.');
-    }
     printGeneric(await revokeWithUserSession(options), options);
     return;
   }

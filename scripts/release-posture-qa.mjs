@@ -24,6 +24,10 @@ assert.equal(auth.body.releaseStage, 'public');
 assert.equal(auth.body.openWriteApiEnabled, false);
 assert.equal(auth.body.guestRunReadEnabled, false);
 assert.equal(auth.body.devApiEnabled, false);
+assert.equal(auth.body.developerApiEnabled, false);
+assert.equal(auth.body.cliEnabled, false);
+assert.equal(auth.body.mcpEnabled, false);
+assert.equal(auth.body.developerSurfacesPaused, true);
 assert.equal(auth.body.exposeJobSecrets, false);
 
 const snapshot = await request('/api/snapshot');

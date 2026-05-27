@@ -46,7 +46,7 @@ Current posture:
 - In-app payment processing has been removed.
 - Cards, checkout, subscriptions, invoices, provider payout, and automated revenue split must not be reintroduced without a new explicit payment design.
 - Donations are not processed inside CAIt.
-- API, CLI, and MCP surfaces remain future-facing and are disabled by default until the shared developer contract is stable.
+- API, CLI, and MCP surfaces are disabled by default in code and become active only through explicit deployment runtime flags.
 
 The shared discipline document is `docs/AGENT_ORCHESTRATION_DISCIPLINE.md`. Treat it as the rulebook. Treat this document as the implementation guide that explains how the rulebook maps to the repository.
 
@@ -1043,7 +1043,7 @@ Contributors should know:
 - `worker.js` and some client files are still large
 - file splitting should be based on real ownership boundaries, not superficial relocation
 - QA emphasizes discipline violations
-- API, CLI, and MCP are future external developer surfaces and are disabled by default
+- API, CLI, and MCP are external developer surfaces that stay disabled by default unless runtime flags activate them
 
 ## 24. Engineering Priority Order
 

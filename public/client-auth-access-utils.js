@@ -93,7 +93,7 @@ export function googleOAuthBrowserWarning() {
 }
 
 export function canUseDevApi(auth) {
-  return Boolean(auth?.devApiEnabled);
+  return Boolean(auth?.developerApiEnabled || auth?.devApiEnabled);
 }
 
 export function activeApiKeys(list = []) {

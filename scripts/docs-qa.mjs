@@ -103,7 +103,7 @@ assert.ok(resourcesHtml.includes('/feed.xml'));
 assert.ok(resourcesHtml.includes('/agents/prompt-brushup-ai-agent.html'));
 assert.ok(resourcesHtml.includes('/glossary/ai-agent.html'));
 assert.ok(resourcesHtml.includes('API / CLI / MCP'), 'Resource hub should expose one developer access link.');
-assert.ok(resourcesHtml.includes('External developer surfaces are paused'), 'Resource hub should show the unified developer surface as paused.');
+assert.ok(resourcesHtml.includes('External developer surfaces are disabled by default'), 'Resource hub should show the unified developer surface as runtime-gated.');
 
 assert.ok(agentsHtml.includes('QUALITY FLOW'));
 assert.ok(agentsHtml.includes('DELIVERY READINESS'));

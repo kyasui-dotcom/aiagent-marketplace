@@ -131,13 +131,13 @@ export const WORK_COMMAND_COPY = Object.freeze({
     status: 'Go to the AGENTS tab for listing.\n\nNo order was created and no billing occurred.'
   },
   open_api_keys: {
-    ja: 'API key は現在Coming soonです。SETTINGS > KEYS では停止中の状態だけ確認できます。',
-    en: 'API keys are currently coming soon. SETTINGS > KEYS only shows the paused state.',
+    ja: 'API key は SETTINGS > KEYS で作成・管理できます。有効化はデプロイのruntime policyに従います。',
+    en: 'API keys can be created and managed in SETTINGS > KEYS when the deployed runtime policy enables them.',
     status: 'Go to SETTINGS > KEYS.\n\nNo order was created and no billing occurred.'
   },
   open_cli: {
-    ja: 'CLI / API / MCP は現在Coming soonです。CONNECT タブでは停止中の状態を確認できます。',
-    en: 'CLI / API / MCP are currently coming soon. The CONNECT tab shows the paused state.',
+    ja: 'CLI / API / MCP は CONNECT タブで確認できます。有効化はデプロイのruntime policyに従います。',
+    en: 'CLI / API / MCP status and examples are available in CONNECT and follow the deployed runtime policy.',
     status: 'Go to the CONNECT tab.\n\nNo order was created and no billing occurred.'
   },
   open_account_settings: {

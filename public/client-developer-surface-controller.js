@@ -46,9 +46,35 @@ export function createClientDeveloperSurfaceController(deps = {}) {
     flash = () => {},
     formatTime = (value) => String(value || '-'),
     renderConnectFlow = () => {},
+    requestJson = async () => ({}),
     safeText = () => {},
     setElementVisible = () => {}
   } = deps;
+
+  function developerApiEnabled(auth = state.snapshot?.auth || {}) {
+    return Boolean(auth?.developerApiEnabled);
+  }
+
+  function cliEnabled(auth = state.snapshot?.auth || {}) {
+    return Boolean(auth?.cliEnabled);
+  }
+
+  function mcpEnabled(auth = state.snapshot?.auth || {}) {
+    return Boolean(auth?.mcpEnabled);
+  }
+
+  function developerSurfaceStatus(auth = state.snapshot?.auth || {}) {
+    return developerApiEnabled(auth) ? 'Active' : developerSurfacesStatus;
+  }
+
+  function developerSurfaceNotice(auth = state.snapshot?.auth || {}) {
+    if (!developerApiEnabled(auth)) return developerSurfacesNotice;
+    return [
+      'CAIt API-key access is active on this deployment.',
+      cliEnabled(auth) ? 'CLI clients can use the same API-key routes.' : 'CLI clients remain gated by the deployed runtime policy.',
+      mcpEnabled(auth) ? 'MCP discovery and JSON-RPC catalog access are active.' : 'MCP remains gated by the deployed runtime policy.'
+    ].join('\n');
+  }
 
   function openPlanModal() {
     if (!els.planModal) return;
@@ -113,6 +139,12 @@ export function createClientDeveloperSurfaceController(deps = {}) {
     renderConnectFlow();
   }
 
+  function applyAccountSettings(account = null) {
+    if (!account) return;
+    if (!state.snapshot || typeof state.snapshot !== 'object') state.snapshot = {};
+    state.snapshot.accountSettings = account;
+  }
+
   async function copyApiKeyRevealValue(kind = 'token') {
     const token = currentApiKeyRevealToken();
     if (!token) {
@@ -162,47 +194,113 @@ export function createClientDeveloperSurfaceController(deps = {}) {
 
   function renderOrderApiKeys(account = null) {
     if (!els.apiKeyCreateResult || !els.apiKeyTable) return;
+    const auth = state.snapshot?.auth || {};
+    const enabled = developerApiEnabled(auth);
+    const loggedIn = Boolean(auth?.loggedIn && auth?.user?.login);
     const apiKeys = account?.apiAccess?.orderKeys || [];
-    if (els.apiKeyLabel) els.apiKeyLabel.disabled = true;
-    if (els.apiKeyMode) els.apiKeyMode.disabled = true;
-    if (els.createApiKeyBtn) els.createApiKeyBtn.disabled = true;
+    if (els.apiKeyLabel) els.apiKeyLabel.disabled = !enabled || !loggedIn;
+    if (els.apiKeyMode) els.apiKeyMode.disabled = !enabled || !loggedIn;
+    if (els.createApiKeyBtn) els.createApiKeyBtn.disabled = !enabled || !loggedIn;
     state.lastIssuedOrderApiKey = null;
-    safeText(els.apiKeyCreateResult, [
-      `${developerSurfacesStatus}: CAIt API keys`,
-      '',
-      developerSurfacesNotice,
-      '',
-      'API key creation, listing for new use, revoke actions, CLI ordering, and MCP are disabled by default.',
-      'Use browser-owned CAIt Chat, Apps, Deliveries, and Publisher flows until the external contract is re-enabled.'
-    ].join('\n'));
+    if (enabled && loggedIn) {
+      safeText(els.apiKeyCreateResult, [
+        `${developerSurfaceStatus(auth)}: CAIt API keys`,
+        '',
+        developerSurfaceNotice(auth),
+        '',
+        'Create a live key for API or CLI use. The raw token is shown once.'
+      ].join('\n'));
+    } else {
+      safeText(els.apiKeyCreateResult, [
+        `${developerSurfaceStatus(auth)}: CAIt API keys`,
+        '',
+        developerSurfaceNotice(auth),
+        '',
+        loggedIn
+          ? 'API key creation, listing for new use, revoke actions, CLI ordering, and MCP are disabled by the current runtime policy.'
+          : 'Sign in to create and manage CAIt API keys after the runtime policy enables developer access.'
+      ].join('\n'));
+    }
     if (!apiKeys.length) {
-      els.apiKeyTable.innerHTML = '<div class="empty">CAIt API keys are coming soon.</div>';
+      els.apiKeyTable.innerHTML = `<div class="empty">${enabled && loggedIn ? 'No CAIt API keys yet.' : 'No active CAIt API keys are available.'}</div>`;
       return;
     }
     els.apiKeyTable.innerHTML = `<div class="table-header runs-grid"><div>KEY</div><div>LAST USED</div><div>STATUS</div></div>${apiKeys.map((key) => `
     <div class="table-row runs-grid">
       <div>${escapeHtml(key.label)}<div class="row-muted">${escapeHtml(`${String(key.mode || 'live').toUpperCase()} · ${key.prefix}… · ${key.scopes.join(', ')}`)}</div></div>
       <div>${escapeHtml(key.lastUsedAt ? formatTime(key.lastUsedAt) : 'never')}<div class="row-muted">${escapeHtml(`${key.lastUsedMethod || '-'} ${key.lastUsedPath || ''}`.trim())}</div></div>
-      <div><span class="status-pill warn">${key.active ? 'PAUSED' : 'REVOKED'}</span><div class="row-muted">${key.active ? 'External API disabled' : escapeHtml(formatTime(key.revokedAt))}</div></div>
+      <div><span class="status-pill ${key.active ? 'ok' : 'warn'}">${key.active ? 'ACTIVE' : 'REVOKED'}</span><div class="row-muted">${key.active && enabled ? `<button type="button" class="mini-btn" data-api-key-id="${escapeHtml(key.id)}">REVOKE</button>` : escapeHtml(key.revokedAt ? formatTime(key.revokedAt) : (enabled ? 'Inactive' : 'Runtime disabled'))}</div></div>
     </div>`).join('')}`;
   }
 
-  function showDeveloperSurfacePausedResult() {
-    safeText(els.apiKeyCreateResult, [
-      `${developerSurfacesStatus}: CAIt API keys`,
-      '',
-      developerSurfacesNotice
-    ].join('\n'));
-    flash('CAIt API keys are coming soon.', 'warn');
+  async function createOrderApiKeyFromSettings() {
+    const auth = state.snapshot?.auth || {};
+    if (!developerApiEnabled(auth)) {
+      safeText(els.apiKeyCreateResult, [
+        `${developerSurfaceStatus(auth)}: CAIt API keys`,
+        '',
+        developerSurfaceNotice(auth)
+      ].join('\n'));
+      flash('CAIt API-key access is disabled by the current runtime policy.', 'warn');
+      return;
+    }
+    const label = String(els.apiKeyLabel?.value || '').trim();
+    const mode = String(els.apiKeyMode?.value || 'live').trim().toLowerCase() || 'live';
+    if (!label) {
+      flash('API key label is required.', 'error');
+      if (els.apiKeyLabel) els.apiKeyLabel.focus();
+      return;
+    }
+    if (els.createApiKeyBtn) els.createApiKeyBtn.disabled = true;
+    safeText(els.apiKeyCreateResult, 'Creating CAIt API key...');
+    try {
+      const result = await requestJson('/api/settings/api-keys', {
+        method: 'POST',
+        body: JSON.stringify({ label, mode })
+      });
+      applyAccountSettings(result.account || null);
+      state.lastIssuedOrderApiKey = result.api_key || result.apiKey || null;
+      renderOrderApiKeys(state.snapshot?.accountSettings, auth);
+      openApiKeyRevealModal(state.lastIssuedOrderApiKey);
+      if (els.apiKeyLabel) els.apiKeyLabel.value = '';
+      flash('CAIt API key created. Copy the one-time token now.', 'ok');
+    } catch (error) {
+      safeText(els.apiKeyCreateResult, error.message || 'API key creation failed.');
+      flash(error.message || 'API key creation failed.', 'error');
+    } finally {
+      if (els.createApiKeyBtn) els.createApiKeyBtn.disabled = !developerApiEnabled(auth);
+    }
+  }
+
+  async function revokeOrderApiKeyFromSettings(keyId = '') {
+    const auth = state.snapshot?.auth || {};
+    const safeKeyId = String(keyId || '').trim();
+    if (!safeKeyId) return;
+    if (!developerApiEnabled(auth)) {
+      flash('CAIt API-key access is disabled by the current runtime policy.', 'warn');
+      return;
+    }
+    safeText(els.apiKeyCreateResult, 'Revoking CAIt API key...');
+    try {
+      const result = await requestJson(`/api/settings/api-keys/${encodeURIComponent(safeKeyId)}`, {
+        method: 'DELETE'
+      });
+      applyAccountSettings(result.account || null);
+      renderOrderApiKeys(state.snapshot?.accountSettings, auth);
+      flash('CAIt API key revoked.', 'ok');
+    } catch (error) {
+      safeText(els.apiKeyCreateResult, error.message || 'API key revoke failed.');
+      flash(error.message || 'API key revoke failed.', 'error');
+    }
   }
 
   function bindDeveloperSurfaceInteractions() {
     if (els.apiKeyMode) els.apiKeyMode.onchange = () => renderOrderApiKeys(state.snapshot?.accountSettings, state.snapshot?.auth);
-    if (els.createApiKeyBtn) els.createApiKeyBtn.onclick = showDeveloperSurfacePausedResult;
+    if (els.createApiKeyBtn) els.createApiKeyBtn.onclick = () => { void createOrderApiKeyFromSettings(); };
     if (els.apiKeyTable) els.apiKeyTable.onclick = (event) => {
       const button = event.target?.closest?.('[data-api-key-id]');
       if (!button) return;
-      showDeveloperSurfacePausedResult();
+      void revokeOrderApiKeyFromSettings(button.dataset.apiKeyId);
     };
     if (els.cancelPlanModalBtn) els.cancelPlanModalBtn.onclick = () => closePlanModal();
     if (els.planModal) {

@@ -218,8 +218,8 @@ import { createClientDomElements } from './client-dom-elements.js?v=20260528a';
 const $ = (id) => document.getElementById(id);
 const PRODUCT_NAME = 'CAIt';
 const PRODUCT_SHORT_NAME = 'CAIt';
-const DEVELOPER_SURFACES_STATUS = 'Coming soon';
-const DEVELOPER_SURFACES_NOTICE = 'CLI, external API-key access, and MCP are temporarily paused while the contract is stabilized. Browser-owned CAIt chat, app, delivery, and Publisher flows remain available.';
+const DEVELOPER_SURFACES_STATUS = 'Runtime gated';
+const DEVELOPER_SURFACES_NOTICE = 'API-key access, CLI, and MCP are controlled by deployment runtime flags. Browser-owned CAIt chat, app, delivery, and Publisher flows remain available.';
 const WORK_CHAT_INTERNAL_STATUS_VISIBLE = false;
 const ORDER_HISTORY_PAGE_SIZE = 50;
 const els = createClientDomElements($);
@@ -378,6 +378,7 @@ const clientDeveloperSurfaceController = createClientDeveloperSurfaceController(
   flash: (message, kind) => flash(message, kind),
   formatTime: (value) => formatTime(value),
   renderConnectFlow: () => renderConnectFlow(),
+  requestJson: (url, options) => api(url, options),
   safeText: (el, value) => safeText(el, value),
   setElementVisible: (element, visible) => setElementVisible(element, visible)
 });
@@ -6884,7 +6885,7 @@ function renderSettings(account, monthlySummary, auth) {
       els.settingsAccessCard.textContent = [
         'Sign in to manage account actions.',
         '',
-        'Google login: order work and account settings. External API keys are coming soon.',
+        'Google login: order work, account settings, and API keys when developer access is active.',
         'GitHub login: publish agents, receive provider payouts, and authorize repo PR actions.',
         '',
         'Use the tabs below to see each setup area. Sign in before changing settings.'
@@ -6892,7 +6893,7 @@ function renderSettings(account, monthlySummary, auth) {
     }
     renderSummaryRows(els.settingsStatus, [
       { label: 'Status', value: 'Login required' },
-      { label: 'What this page does', value: 'Support/donation policy, provider info, and coming-soon developer surfaces' }
+      { label: 'What this page does', value: 'Support/donation policy, provider info, and runtime-gated developer surfaces' }
     ]);
     renderSummaryRows(els.monthlySummaryCard, [
       { label: 'Monthly summary', value: 'Unavailable while logged out' }
@@ -6971,8 +6972,8 @@ function renderSettings(account, monthlySummary, auth) {
     { label: 'Account', value: account?.login || auth.user.login },
     { label: 'Orders pay from', value: 'No in-app payment setup' },
     { label: 'Provider profile', value: Boolean(payout.providerEnabled) ? 'enabled' : 'disabled' },
-    { label: 'CAIt API keys', value: DEVELOPER_SURFACES_STATUS },
-    { label: 'Live/test keys', value: 'Paused until external contract stabilizes' }
+    { label: 'CAIt API keys', value: auth?.developerApiEnabled ? 'Active' : DEVELOPER_SURFACES_STATUS },
+    { label: 'Live/test keys', value: auth?.developerApiEnabled ? 'Live keys available; public test keys are blocked' : 'Disabled by current runtime policy' }
   ]);
   renderSummaryRows(els.monthlySummaryCard, [
     { label: 'Period', value: monthlySummary?.period || state.settingsPeriod },
@@ -7940,7 +7941,7 @@ if (els.connectHubLoadReposBtn) els.connectHubLoadReposBtn.onclick = () => runAc
 if (els.connectHubOpenAgentsBtn) els.connectHubOpenAgentsBtn.onclick = () => openAgentsGithubFlow();
 if (els.connectHubOpenSettingsOrderBtn) els.connectHubOpenSettingsOrderBtn.onclick = () => {
   openSettingsSection('keys');
-  flash('CAIt API keys are coming soon in SETTINGS.', 'info');
+  flash(state.snapshot?.auth?.developerApiEnabled ? 'Create or manage CAIt API keys in SETTINGS.' : 'CAIt API keys are disabled by the current runtime policy.', 'info');
 };
 if (els.connectHubCopyOrderBtn) els.connectHubCopyOrderBtn.onclick = () => {
   const token = state.lastIssuedOrderApiKey?.token || '<CAIT_API_KEY>';
@@ -7949,7 +7950,7 @@ if (els.connectHubCopyOrderBtn) els.connectHubCopyOrderBtn.onclick = () => {
 if (els.connectHubOpenAgentsPublishBtn) els.connectHubOpenAgentsPublishBtn.onclick = () => openAgentsGithubFlow();
 if (els.connectHubOpenSettingsAgentBtn) els.connectHubOpenSettingsAgentBtn.onclick = () => {
   openSettingsSection('keys');
-  flash('CAIt API keys are coming soon in SETTINGS.', 'info');
+  flash(state.snapshot?.auth?.developerApiEnabled ? 'Create or manage CAIt API keys in SETTINGS.' : 'CAIt API keys are disabled by the current runtime policy.', 'info');
 };
 if (els.settingsPaymentsTabBtn) els.settingsPaymentsTabBtn.onclick = () => openSettingsSection('payments');
 if (els.settingsProviderTabBtn) els.settingsProviderTabBtn.onclick = () => openSettingsSection('provider');
