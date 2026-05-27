@@ -1043,6 +1043,21 @@ assert.ok(
   'worker asset module must own static asset cache policy and asset fetch behavior'
 );
 assert.ok(
+  workerAssetsSource.includes("const CLIENT_MODULE_PATH_PATTERN = /^\\/client-[^/]+\\.js$/;")
+    && workerAssetsSource.includes("NO_CACHE_ASSET_PATHS.has(assetUrl.pathname) || CLIENT_MODULE_PATH_PATTERN.test(assetUrl.pathname)"),
+  'worker asset module must no-cache every client-* split module to avoid mixed-version browser caches after deploy'
+);
+const importedClientModules = [...clientSource.matchAll(/from '\.\/(client-[^']+\.js)(?:\?[^']*)?'/g)]
+  .map((match) => match[1])
+  .sort();
+assert.ok(importedClientModules.length > 0, 'client.js must import split client-* modules for cache-policy coverage checks');
+for (const fileName of importedClientModules) {
+  assert.ok(
+    /^client-[^/]+\.js$/.test(fileName),
+    `client split module import must stay under the client-* no-cache pattern: ${fileName}`
+  );
+}
+assert.ok(
   workerSource.includes('leaderTaskLayer(primary, task)'),
   'worker must ask orchestration/leader contracts for layers instead of hardcoding role logic'
 );
