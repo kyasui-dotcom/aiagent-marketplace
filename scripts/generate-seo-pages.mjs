@@ -1431,7 +1431,7 @@ function siteMapHtml(agents, terms) {
     { href: '/contribute.html', label: 'Contribute', description: 'field-note and issue contribution path' },
     { href: '/terms.html', label: 'Terms', description: 'terms of service' },
     { href: '/privacy.html', label: 'Privacy', description: 'privacy policy' },
-    { href: '/legal-notice.html', label: 'Legal Notice (SCTA)', description: 'Japanese and English commercial disclosure' }
+    { href: '/creator.html', label: 'Creator', description: 'creator profile and public X account' }
   ];
   const guidePages = seoLandingPages.map((landingPage) => ({
     href: `/${landingPage.slug}.html`,
@@ -1893,6 +1893,7 @@ function sitemapXml(allTerms, agents) {
     '/',
     '/resources.html',
     '/site-map.html',
+    '/creator.html',
     ...seoLandingPages.map((landingPage) => `/${landingPage.slug}.html`),
     '/agents.html',
     ...agents.map((agent) => `/agents/${agentPageSlug(agent)}.html`),
@@ -1911,6 +1912,7 @@ function sitemapXml(allTerms, agents) {
   const lastmodFor = (url) => {
     if (newsPostByUrl.has(url)) return newsPostByUrl.get(url);
     if (url === '/news.html') return latestNewsDate;
+    if (url === '/creator.html') return '2026-05-28';
     if (['/', '/site-map.html', '/resources.html', '/demo.html'].includes(url)) return '2026-05-01';
     return '2026-04-14';
   };

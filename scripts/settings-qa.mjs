@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { accountIdForLogin, buildAdminDashboard, buildConversionAnalytics, buildMonthlyAccountSummary, chatTrainingExamplesForClient, chatTranscriptsForClient, createChatTranscript, createConversionEventPayload, hideChatMemoryTranscriptForLoginInState, orderPreflightForAgent, ownChatMemoryForClient, promptInjectionGuardForPrompt, requesterContextFromUser, updateChatTranscriptReviewInState, upsertAccountSettingsInState } from '../lib/shared.js';
+import { buildAdminDashboard } from '../lib/admin-dashboard-model.js';
+import { accountIdForLogin, buildConversionAnalytics, buildMonthlyAccountSummary, chatTrainingExamplesForClient, chatTranscriptsForClient, createChatTranscript, createConversionEventPayload, hideChatMemoryTranscriptForLoginInState, orderPreflightForAgent, ownChatMemoryForClient, promptInjectionGuardForPrompt, requesterContextFromUser, updateChatTranscriptReviewInState, upsertAccountSettingsInState } from '../lib/shared.js';
 
 const requester = requesterContextFromUser({ login: 'alice', name: 'Alice Example' }, 'github-app');
 const analyticsContext = {
