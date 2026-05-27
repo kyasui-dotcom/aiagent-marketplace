@@ -101,6 +101,98 @@ import {
   normalizeOpenChatIntentText,
   openChatIntentMatchText
 } from './client-intent-routing-utils.js?v=20260522a';
+
+const DONATION_ONLY_NOTICE = 'CAIt no longer processes cards, checkout, subscriptions, invoices, or payouts in-app. Optional support is donation-only outside CAIt.';
+const IN_APP_PAYMENTS_REMOVED = true;
+const PAYMENT_PROVIDER_UI_VISIBLE = false;
+const REMOVED_PAYMENT_CONTROL_KEYS = [
+  'openStripeCheckoutBtn',
+  'openStripeSubscriptionBtn',
+  'runStripeMonthlyInvoiceBtn',
+  'runStripeProviderMonthlyBtn',
+  'runStripeProviderPayoutBtn',
+  'stripeConnectLinkBtn',
+  'saveBillingBtn',
+  'saveProviderPayoutBtn',
+  'saveProviderSupportBtn',
+  'saveProviderPricingBtn',
+  'saveProviderIdentityBtn',
+  'saveProviderProfileBtn',
+  'billingName',
+  'billingEmail',
+  'billingCompany',
+  'billingTaxId',
+  'billingAddressLine1',
+  'billingAddressLine2',
+  'billingCity',
+  'billingRegion',
+  'billingPostalCode',
+  'billingCountry',
+  'payoutDisplayName',
+  'payoutCountry',
+  'payoutCurrency',
+  'payoutSupportEmail',
+  'payoutMinimumAmount',
+  'payoutWebsite',
+  'payoutStatementDescriptor',
+  'payoutNotes'
+];
+
+function disableRemovedPaymentSettingsControls(els = {}) {
+  for (const key of REMOVED_PAYMENT_CONTROL_KEYS) {
+    const control = els[key];
+    if (!control || typeof control !== 'object') continue;
+    if ('disabled' in control) control.disabled = true;
+    if ('title' in control && !control.title) {
+      control.title = 'In-app payment setup has been removed from CAIt.';
+    }
+  }
+}
+
+function renderRemovedProviderBillingLanesCard(els = {}, { safeText } = {}) {
+  if (!els?.providerBillingLanesCard || typeof safeText !== 'function') return;
+  safeText(
+    els.providerBillingLanesCard,
+    [
+      'Parallel billing lanes',
+      '',
+      'CAIt no longer runs checkout, subscriptions, invoices, or payouts in-app.',
+      'Orders and scheduled work can continue without payment setup.',
+      'Optional support must stay outside CAIt as donation-only.'
+    ].join('\n')
+  );
+}
+
+function renderRemovedPaymentProviderTools(els = {}, { safeText } = {}) {
+  if (typeof safeText !== 'function') return;
+  if (els?.stripeCustomerStatus) safeText(els.stripeCustomerStatus, 'In-app billing disabled');
+  if (els?.stripeProviderStatus) safeText(els.stripeProviderStatus, 'In-app payouts disabled');
+  if (els?.stripeCustomerActionResult) safeText(els.stripeCustomerActionResult, DONATION_ONLY_NOTICE);
+  if (els?.stripeProviderActionResult) safeText(els.stripeProviderActionResult, 'No provider payout action is available inside CAIt.');
+}
+
+function attachRemovedPaymentActionHandlers(els = {}, { closePlanModal, flash, safeText } = {}) {
+  const warn = () => {
+    if (typeof closePlanModal === 'function') closePlanModal();
+    if (typeof safeText === 'function' && els?.stripeCustomerActionResult) {
+      safeText(els.stripeCustomerActionResult, DONATION_ONLY_NOTICE);
+    }
+    if (typeof flash === 'function') {
+      flash('In-app payment setup has been removed. Support is donation-only outside CAIt.', 'warn');
+    }
+  };
+  for (const key of [
+    'openStripeCheckoutBtn',
+    'openStripeSubscriptionBtn',
+    'runStripeMonthlyInvoiceBtn',
+    'runStripeProviderMonthlyBtn',
+    'runStripeProviderPayoutBtn',
+    'stripeConnectLinkBtn'
+  ]) {
+    const control = els[key];
+    if (control && typeof control === 'object' && 'onclick' in control) control.onclick = warn;
+  }
+}
 import {
   buildWorkflowChildDeliveryCard,
   deliveryFileNames,
@@ -176,16 +268,15 @@ import { renderOpenChatSessionControlsElement } from './client-session-controls-
 import { renderWorkChatEntryCardElement } from './client-work-chat-entry-ui.js?v=20260522a';
 import { renderScheduledWorkListElement } from './client-scheduled-work-ui.js?v=20260522a';
 import { renderOrderStrategyControlsElement } from './client-order-strategy-ui.js?v=20260522a';
+import { createClientFlexibleToolUtils } from './client-flexible-tool-utils.js?v=20260527a';
 
 const $ = (id) => document.getElementById(id);
 const PRODUCT_NAME = 'CAIt';
 const PRODUCT_SHORT_NAME = 'CAIt';
 const DEVELOPER_SURFACES_STATUS = 'Coming soon';
 const DEVELOPER_SURFACES_NOTICE = 'CLI, external API-key access, and MCP are temporarily paused while the contract is stabilized. Browser-owned CAIt chat, app, delivery, and Publisher flows remain available.';
-const PAYMENT_PROVIDER_UI_VISIBLE = true;
 const WORK_CHAT_INTERNAL_STATUS_VISIBLE = false;
 const TEMPORARY_INVOICE_BILLING_ENABLED = false;
-const STRIPE_CARD_SETUP_DURING_TEMPORARY_BILLING_ENABLED = true;
 const TEMPORARY_INVOICE_SUPPORT_EMAIL = 'support@aiagent-marketplace.net';
 const ORDER_HISTORY_PAGE_SIZE = 50;
 
@@ -1412,6 +1503,43 @@ const {
   visitorId
 } = clientAnalyticsUtils;
 
+const clientFlexibleToolUtils = createClientFlexibleToolUtils({
+  state,
+  els,
+  workActionIds: WORK_ACTION_IDS,
+  productShortName: PRODUCT_SHORT_NAME,
+  workChatInternalStatusVisible: WORK_CHAT_INTERNAL_STATUS_VISIBLE,
+  orderInputFromComposer: () => orderInputFromComposer(),
+  orderInputCounts: (input) => orderInputCounts(input),
+  openChatLooksGreetingPrompt: (prompt) => openChatLooksGreetingPrompt(prompt),
+  openChatLooksLowInfoTestPrompt: (prompt) => openChatLooksLowInfoTestPrompt(prompt),
+  connectorActionLabel: (action) => connectorActionLabel(action),
+  isExplicitClientLeaderTask: (task, text) => isExplicitClientLeaderTask(task, text),
+  currentRoutingTask: () => currentRoutingTask(),
+  marketingTimelineSnapshot: (selected, options) => marketingTimelineSnapshot(selected, options),
+  marketingTimelineIntentText: (text) => marketingTimelineIntentText(text),
+  isOpenChatClarifyMode: () => isOpenChatClarifyMode(),
+  trackConversionEvent: (event, meta) => trackConversionEvent(event, meta),
+  setElementVisible: (el, visible) => setElementVisible(el, visible),
+  safeText: (el, value) => safeText(el, value),
+  escapeHtml: (value) => escapeHtml(value),
+  renderOrderComposer: () => renderOrderComposer(),
+  openMarketingTimelineModal: () => openMarketingTimelineModal(),
+  openSettingsSection: (section) => openSettingsSection(section),
+  switchTab: (tab) => switchTab(tab),
+  openGithubSignIn: () => openGithubSignIn(),
+  connectXAccount: () => connectXAccount(),
+  openAgentListingFlow: () => openAgentListingFlow(),
+  openAgentCatalog: () => openAgentCatalog()
+});
+const {
+  flexibleToolCandidates,
+  activeFlexibleTool,
+  trackFlexibleToolEvent,
+  renderFlexibleToolPanel,
+  addFlexibleToolInstruction
+} = clientFlexibleToolUtils;
+
 let openChatTypingTimer = null;
 let liveSnapshotRefreshTimer = null;
 let openChatMessageSequence = 0;
@@ -2521,9 +2649,9 @@ function renderPlanModalSummary() {
   }
   safeText(els.planModalSummary, [
     `Selected plan: ${label}`,
-    'Stripe Checkout opens in a new tab.',
-    'When payment is confirmed, the recurring plan becomes active for each billing cycle.',
-    'The plan can cover managed sample agent work without separate buyer-side model API contracts.'
+    DONATION_ONLY_NOTICE,
+    'Plan activation is not available while in-app payment processing is removed.',
+    'Orders can still show cost context without a saved card or subscription.'
   ].join('\n'));
 }
 
@@ -4497,20 +4625,8 @@ async function handleChatActionButton(action = '', detail = {}) {
     },
     register_card: async () => {
       openSettingsSection('payments');
-      if (!ensureSettingsLogin()) return;
-      if (TEMPORARY_INVOICE_BILLING_ENABLED && !STRIPE_CARD_SETUP_DURING_TEMPORARY_BILLING_ENABLED) {
-        flash('Saved payment-method setup is paused during temporary invoice billing.', 'warn');
-        return;
-      }
-      await launchStripeHostedAction('/api/stripe/setup-session', {}, {
-        title: TEMPORARY_INVOICE_BILLING_ENABLED
-          ? 'Payment method registration is ready.'
-          : 'Payment method setup is ready.',
-        successMessage: TEMPORARY_INVOICE_BILLING_ENABLED
-          ? 'Opened payment method registration. Orders still use monthly invoice/manual confirmation until automated charging is enabled.'
-          : 'Opened payment method setup.',
-        output: 'customer'
-      });
+      safeText(els.stripeCustomerActionResult, DONATION_ONLY_NOTICE);
+      flash('In-app payment setup has been removed. Support is donation-only outside CAIt.', 'warn');
     },
     open_payments: async () => { openSettingsSection('payments'); },
     open_provider: async () => { openSettingsSection('provider'); },
@@ -5386,6 +5502,7 @@ function clearOrderComposerPrompt() {
 }
 
 function ensureOrderFunding() {
+  if (IN_APP_PAYMENTS_REMOVED) return;
   if (state.snapshot?.auth?.isPlatformAdmin) return;
   const billingProfile = state.stripeStatus?.billingProfile || state.snapshot?.monthlySummary?.customer || {};
   const accountStripe = state.stripeStatus?.stripe?.accountStripe || state.snapshot?.accountSettings?.stripe || {};
@@ -5440,21 +5557,18 @@ function handleOrderFundingPrompt(error, draft = {}, options = {}) {
       kind: 'clarify',
       tone: 'warn',
       body: [
-        'Card registration is required before I can send this order.',
+        'In-app payments are removed, so CAIt no longer asks for card registration before sending orders.',
         '',
-        'The correct next step is REGISTER CARD for month-end billing.',
+        'Send the order again. Support is donation-only outside CAIt while payment-provider review is on hold.',
         info.missingUsd > 0 ? `Order estimate: ${formatDisplayCurrency(info.missingUsd)}` : '',
-        '',
-        'Register a card in SETTINGS > PAYMENTS, then return to CAIt Chat and press SEND ORDER again.'
       ].filter(Boolean).join('\n'),
       actions: [
-        { action: 'register_card', label: 'REGISTER CARD' },
-        { action: 'open_payments', label: 'OPEN PAYMENTS' }
+        { action: 'open_payments', label: 'SUPPORT / DONATION' }
       ],
-      status: 'Card registration required before dispatch.'
+      status: 'In-app payment requirement removed.'
     }, { tone: 'warn', nextPrompt: prompt });
     openSettingsSection('payments');
-    flash('Register a card before dispatch.', 'warn');
+    flash('In-app payments are removed. Send the order again without card setup.', 'warn');
     void trackConversionEvent('payment_required_shown', {
       ...(options.analytics || summarizeOrderDraftForAnalytics(draft, options.source || 'work_chat')),
       status: 'register_card_required',
@@ -5503,7 +5617,7 @@ function connectorActionForChat(connector = '') {
   if (normalized === 'github') return { action: 'connect_github', label: connectorActionLabel('connect_github'), connector: normalized };
   if (normalized === 'google') return { action: 'connect_google', label: connectorActionLabel('connect_google'), connector: normalized };
   if (normalized === 'x') return { action: 'connect_x', label: connectorActionLabel('connect_x'), connector: normalized };
-  if (normalized === 'stripe') return { action: 'open_payments', label: 'OPEN PAYMENTS', connector: normalized };
+  if (normalized === 'stripe') return { action: 'open_payments', label: 'SUPPORT / DONATION', connector: normalized };
   return { action: 'open_settings', label: 'OPEN SETTINGS', connector: normalized };
 }
 
@@ -12017,383 +12131,6 @@ function renderAgentOps(agents = []) {
   ].join('\n');
 }
 
-function flexibleToolPromptText(prompt = '', input = orderInputFromComposer()) {
-  const urls = Array.isArray(input?.urls) ? input.urls.join('\n') : '';
-  const fileNames = Array.isArray(input?.files) ? input.files.map((file) => file?.name || '').join('\n') : '';
-  return [prompt, urls, fileNames].filter(Boolean).join('\n');
-}
-
-function flexibleToolCandidates(prompt = String(els.jobPrompt?.value || ''), input = orderInputFromComposer()) {
-  const rawPrompt = String(prompt || '').trim();
-  const text = flexibleToolPromptText(rawPrompt, input);
-  const compact = text.replace(/\s+/g, ' ').trim();
-  const counts = orderInputCounts(input);
-  if (!compact && !counts.urlCount && !counts.fileCount) return [];
-  if (openChatLooksGreetingPrompt(rawPrompt) || openChatLooksLowInfoTestPrompt(rawPrompt)) return [];
-
-  const candidates = [];
-  const add = (tool) => {
-    if (!tool?.id || candidates.some((item) => item.id === tool.id)) return;
-    candidates.push({
-      tone: 'info',
-      priority: 10,
-      requirements: '',
-      actions: [],
-      ...tool
-    });
-  };
-
-  if (/(?:ignore previous|system prompt|developer message|hidden instruction|prompt injection|jailbreak|leak|exfiltrate|dump).{0,90}(?:secret|api key|token|prompt|instruction|tool)|(?:api key|apiキー|apikey|secret|client secret|token|oauth|credential|シークレット|トークン|認証情報|資格情報|プロンプトインジェクション)/i.test(compact)) {
-    add({
-      id: 'secure_access',
-      title: 'Secure access handoff',
-      tone: 'warn',
-      priority: 95,
-      body: 'This looks like it may need credentials, OAuth, or secret-handling rules. Do not paste production secrets into chat. CAIt should turn access into a prerequisite before any agent runs.',
-      requirements: 'Preferred: OAuth connector or provider-owned secret. If a raw API key is unavoidable, keep it out of delivery text and store it as setup data.',
-      actions: [
-        { action: 'open_api_keys', label: 'OPEN API KEYS' },
-        { action: 'open_connect', label: 'CLI / API' },
-        { action: 'add_secure_requirement', label: 'ADD SAFE REQUIREMENT' }
-      ]
-    });
-  }
-
-  if (/(?:\b(?:github|git hub|repo|repository|pull request|pr|branch|commit|diff|sandbox|code review)\b|コードレビュー|リポジトリ|プルリク|ブランチ|コミット|差分|サンドボックス)/i.test(compact)) {
-    add({
-      id: 'github_work',
-      title: 'GitHub work mode',
-      tone: 'ok',
-      priority: 80,
-      body: 'Repo-changing work should be handled through GitHub connection, a sandbox branch, and a pull request handoff instead of free-form chat.',
-      requirements: 'Need: GitHub login/link, target repo, intended branch, allowed change scope, and tests or acceptance criteria.',
-      actions: [
-        { action: 'connect_github', label: connectorActionLabel('connect_github') },
-        { action: 'open_agents_github', label: 'LIST AGENT FLOW' },
-        { action: 'add_pr_handoff', label: 'ADD PR HANDOFF' }
-      ]
-    });
-  }
-
-  if (/(?:x\.com|\btwitter\b|\btweet(?:s|ing)?\b|\bx post\b|\bx thread\b|social post|ツイート|X投稿|ポスト|スレッド|返信投稿|sns投稿|ＳＮＳ投稿)/i.test(compact)
-    || /(?:^|[\s　])x(?:[\s　]|で|に|へ|投稿|返信|dm|DM)/i.test(compact)) {
-    add({
-      id: 'x_social',
-      title: 'Social publishing handoff',
-      tone: 'info',
-      priority: 76,
-      body: 'This looks like social publishing work. CAIt should collect the goal and source material, then route the order to an agent/provider contract that can return a SaaS-ready handoff packet.',
-      requirements: 'Need: target channel, audience, tone, source material, approval owner, and whether the final delivery should be a draft, schedule packet, or app handoff.',
-      actions: [
-        { action: 'use_agent_team', label: 'AGENT TEAM' },
-        { action: 'browse_agents', label: 'BROWSE AGENTS' },
-        { action: 'add_social_handoff_rule', label: 'ADD HANDOFF RULE' }
-      ]
-    });
-  }
-
-  if (isExplicitClientLeaderTask(currentRoutingTask(), compact)
-    || /(agent team|leader agent|team leader|複数エージェント|チームリーダー|まとめて.*(?:告知|投稿|分析)|一括.*(?:告知|投稿|分析)|責任者|部長|リーダー)/i.test(compact)) {
-    add({
-      id: 'agent_team',
-      title: 'Agent Team planner',
-      tone: 'ok',
-      priority: 74,
-      body: 'This may be better as one input coordinated by a Team Leader, then split across specialist agents.',
-      requirements: 'Need: final outcome, departments or channels, priority order, budget sensitivity, and whether outputs should be merged into one delivery.',
-      actions: [
-        { action: 'use_agent_team', label: 'USE AGENT TEAM' },
-        { action: 'browse_agents', label: 'BROWSE LEADERS' },
-        { action: WORK_ACTION_IDS.OPEN_ORDER_SETTINGS, label: 'ORDER SETTINGS' }
-      ]
-    });
-  }
-
-  const marketingTimeline = marketingTimelineSnapshot(null, { maxRecentRuns: 4, maxScheduleItems: 2 });
-  if (marketingTimeline.items.length && (marketingTimelineIntentText(compact) || marketingTimeline.items.some((item) => item.focused))) {
-    add({
-      id: 'marketing_timeline',
-      title: 'Saved schedule timeline',
-      tone: 'info',
-      priority: 73,
-      body: 'Stored agent history is available. You can inspect completed deliveries, see upcoming scheduled actions, and continue them from Chat history, Deliveries, or Campaign Operations.',
-      requirements: `${marketingTimeline.marketingRuns.length} stored run(s) · ${marketingTimeline.marketingSchedules.length} scheduled action(s) from jobs and recurring orders in DB.`,
-      actions: [
-        { action: WORK_ACTION_IDS.OPEN_MARKETING_TIMELINE, label: 'OPEN TIMELINE' },
-        ...(marketingTimeline.marketingSchedules.length ? [{ action: 'open_scheduled_work', label: 'OPEN SCHEDULE' }] : []),
-        { action: WORK_ACTION_IDS.OPEN_ORDER_SETTINGS, label: 'ORDER SETTINGS' }
-      ]
-    });
-  }
-
-  if (/(?:schedule|scheduled|recurring|cron|daily|weekly|hourly|monitor|watch|定期|毎日|毎週|毎時|監視|巡回|くろん|クロン)/i.test(compact)) {
-    add({
-      id: 'scheduled_work',
-      title: 'Scheduled Work',
-      tone: 'info',
-      priority: 70,
-      body: 'This looks like work that may need to run repeatedly. Keep the chat brief as the task definition, then manage timing from Scheduled Work.',
-      requirements: 'Need: repeat interval, time zone, stop condition, failure notification rule, and what should change between runs.',
-      actions: [
-        { action: 'open_scheduled_work', label: 'OPEN SCHEDULE' },
-        { action: 'add_schedule_rule', label: 'ADD SCHEDULE RULE' }
-      ]
-    });
-  }
-
-  if (counts.urlCount || counts.fileCount || /(?:https?:\/\/|source url|source file|attach|attachment|csv|pdf|markdown|添付|ファイル|URL|ソース|資料|データ)/i.test(compact)) {
-    add({
-      id: 'sources',
-      title: 'Source material',
-      tone: 'info',
-      priority: 62,
-      body: 'This work depends on source material. Keep large files and URLs in Order Settings so the chat stays readable and the order records the input cleanly.',
-      requirements: `Current sources: ${counts.urlCount} URL(s), ${counts.fileCount} file(s). Add only source material that the agent should rely on.`,
-      actions: [
-        { action: 'open_sources', label: 'ADD SOURCES' },
-        { action: 'add_source_rule', label: 'ADD SOURCE RULE' }
-      ]
-    });
-  }
-
-  if (/(?:payment|billing|deposit|balance|stripe|checkout|plan|refund|payout|withdraw|課金|支払い|決済|デポジット|残高|返金|出金|受け取り|請求)/i.test(compact)) {
-    add({
-      id: 'payments',
-      title: 'Payment / payout setup',
-      tone: 'warn',
-      priority: 58,
-      body: TEMPORARY_INVOICE_BILLING_ENABLED
-        ? 'This looks related to buyer balance, billing, provider payouts, or payment setup. CAIt should route you to the right settings section. Hosted checkout is temporarily hidden, so invoices/manual handling are used for now.'
-        : 'This looks related to buyer balance, billing, provider payouts, or payment setup. CAIt should route you to the right settings section instead of burying payment state in chat.',
-      requirements: TEMPORARY_INVOICE_BILLING_ENABLED
-        ? 'Buyer side: request invoice/manual payment. Provider side: earnings stay tracked; manual payout follow-up is temporary.'
-        : 'Buyer side: month-end billing and card registration. Provider side: provider profile before withdrawal handling.',
-      actions: [
-        { action: 'open_payments', label: 'PAYMENTS' },
-        { action: 'open_provider', label: 'PROVIDER' },
-        { action: 'register_card', label: 'REGISTER CARD' }
-      ]
-    });
-  }
-
-  if (/(?:list my agent|publish agent|register agent|agent manifest|skill\.md|verify agent|adapter pr|エージェント登録|agent登録|マニフェスト|ベリファイ|公開したい|稼ぎたい)/i.test(compact)) {
-    add({
-      id: 'agent_listing',
-      title: 'Agent listing flow',
-      tone: 'ok',
-      priority: 84,
-      body: 'This is provider-side work. CAIt should move this into the guided agent listing flow instead of treating it as a buyer order.',
-      requirements: 'Need: capability summary, manifest or repo, endpoint/adapter path, pricing markup, and verification readiness.',
-      actions: [
-        { action: 'list_agent', label: 'LIST YOUR AGENT' },
-        { action: 'connect_github', label: connectorActionLabel('connect_github') },
-        { action: 'add_agent_listing_rule', label: 'ADD LISTING RULE' }
-      ]
-    });
-  }
-
-  if (/(?:bug|broken|issue|feedback|report|改善要望|不具合|バグ|問い合わせ|報告|動かない|壊れて)/i.test(compact)) {
-    add({
-      id: 'feedback',
-      title: 'Feedback / bug report',
-      tone: 'info',
-      priority: 50,
-      body: 'This looks like a product issue or feedback item. Use the report form when you want it saved for review; keep chat for quick clarification.',
-      requirements: 'Best report: what happened, expected behavior, page name, account state, and reproduction steps.',
-      actions: [
-        { action: WORK_ACTION_IDS.OPEN_FEEDBACK, label: 'REPORT ISSUE' },
-        { action: 'add_bug_report_rule', label: 'ADD BUG TEMPLATE' }
-      ]
-    });
-  }
-
-  return candidates.sort((a, b) => Number(b.priority || 0) - Number(a.priority || 0));
-}
-
-function activeFlexibleTool(prompt = String(els.jobPrompt?.value || ''), input = orderInputFromComposer()) {
-  return flexibleToolCandidates(prompt, input)[0] || null;
-}
-
-function flexibleToolPromptBucket(prompt = String(els.jobPrompt?.value || ''), input = orderInputFromComposer()) {
-  const counts = orderInputCounts(input);
-  const promptChars = String(prompt || '').trim().length;
-  return [
-    currentRoutingTask() || 'unknown',
-    Math.floor(promptChars / 120),
-    counts.urlCount,
-    counts.fileCount
-  ].join(':');
-}
-
-function flexibleToolAnalyticsMeta(tool = {}, extra = {}) {
-  const input = orderInputFromComposer();
-  const counts = orderInputCounts(input);
-  return {
-    source: 'work_chat_flexible_ui',
-    toolId: tool.id || '',
-    toolTitle: tool.title || '',
-    trigger: extra.trigger || 'rule',
-    taskType: currentRoutingTask() || '',
-    mode: isOpenChatClarifyMode() ? 'plan' : 'order',
-    status: extra.status || tool.tone || '',
-    action: extra.action || '',
-    actionLabel: extra.actionLabel || '',
-    promptChars: String(els.jobPrompt?.value || '').trim().length,
-    urlCount: counts.urlCount,
-    fileCount: counts.fileCount,
-    fileChars: counts.fileChars,
-    candidateCount: Number(extra.candidateCount || 0),
-    priority: Number(tool.priority || 0),
-    helpful: extra.helpful,
-    userDismissed: extra.userDismissed
-  };
-}
-
-function trackFlexibleToolEvent(event = '', tool = {}, extra = {}) {
-  void trackConversionEvent(event, flexibleToolAnalyticsMeta(tool, extra));
-}
-
-function renderFlexibleToolPanel() {
-  if (!els.flexToolPanel || !els.flexToolCard) return;
-  const candidates = flexibleToolCandidates();
-  const tool = candidates[0] || null;
-  if (!WORK_CHAT_INTERNAL_STATUS_VISIBLE && tool?.id !== 'marketing_timeline') {
-    setElementVisible(els.flexToolPanel, false);
-    return;
-  }
-  if (!tool) {
-    state.flexToolDismissedKey = '';
-    state.flexToolLastActiveId = '';
-    state.flexToolLastShownKey = '';
-    setElementVisible(els.flexToolPanel, false);
-    return;
-  }
-  if (state.flexToolDismissedKey && state.flexToolDismissedKey !== tool.id) {
-    state.flexToolDismissedKey = '';
-  }
-  if (state.flexToolDismissedKey === tool.id) {
-    setElementVisible(els.flexToolPanel, false);
-    return;
-  }
-  state.flexToolLastActiveId = tool.id;
-  const tone = ['ok', 'warn', 'error', 'info'].includes(tool.tone) ? tool.tone : 'info';
-  els.flexToolCard.className = `modal-panel box panel-stack flex-tool-panel ${tone}`;
-  safeText(els.flexToolTitle, tool.title || 'Relevant tool');
-  safeText(els.flexToolBody, tool.body || `${PRODUCT_SHORT_NAME} found a relevant tool for this message.`);
-  safeText(els.flexToolRequirements, tool.requirements || 'No extra setup detected.');
-  if (els.flexToolActions) {
-    els.flexToolActions.innerHTML = (Array.isArray(tool.actions) ? tool.actions : [])
-      .filter((action) => action?.action && action?.label)
-      .slice(0, 4)
-      .map((action) => `<button class="mini-btn" type="button" data-flex-tool-action="${escapeHtml(action.action)}">${escapeHtml(action.label)}</button>`)
-      .join('');
-    els.flexToolActions.querySelectorAll('[data-flex-tool-action]').forEach((button) => {
-      button.onclick = () => handleFlexibleToolAction(button.dataset.flexToolAction || '', button.textContent || '');
-    });
-  }
-  setElementVisible(els.flexToolPanel, true);
-  const shownKey = `${tool.id}:${flexibleToolPromptBucket()}`;
-  if (state.flexToolLastShownKey !== shownKey) {
-    state.flexToolLastShownKey = shownKey;
-    trackFlexibleToolEvent('flex_tool_shown', tool, { candidateCount: candidates.length, trigger: 'rule' });
-  }
-}
-
-function addFlexibleToolInstruction(instruction = '') {
-  const line = String(instruction || '').trim();
-  if (!line || !els.jobPrompt) return;
-  const current = String(els.jobPrompt.value || '').trim();
-  if (current.includes(line)) return;
-  els.jobPrompt.value = current ? `${current}\n\n${line}` : line;
-  state.orderComposerDirtySinceSend = true;
-  renderOrderComposer();
-  window.requestAnimationFrame(() => els.jobPrompt?.focus());
-}
-
-function handleFlexibleToolAction(action = '', actionLabel = '') {
-  const kind = String(action || '').trim();
-  const toolForLog = activeFlexibleTool() || { id: state.flexToolLastActiveId || '', title: '' };
-  trackFlexibleToolEvent('flex_tool_action_clicked', toolForLog, { action: kind, actionLabel: actionLabel || kind });
-  setElementVisible(els.flexToolPanel, false);
-  if (kind === WORK_ACTION_IDS.OPEN_ORDER_SETTINGS) {
-    state.orderSettingsExpanded = true;
-    renderOrderComposer();
-    return;
-  }
-  if (kind === WORK_ACTION_IDS.OPEN_MARKETING_TIMELINE) {
-    openMarketingTimelineModal();
-    return;
-  }
-  if (kind === 'open_sources') {
-    state.orderSettingsExpanded = true;
-    renderOrderComposer();
-    window.requestAnimationFrame(() => els.jobUrls?.focus());
-    return;
-  }
-  if (kind === 'open_payments') {
-    openSettingsSection('payments');
-    return;
-  }
-  if (kind === 'open_provider') {
-    openSettingsSection('provider');
-    return;
-  }
-  if (kind === 'open_api_keys') {
-    openSettingsSection('keys');
-    return;
-  }
-  if (kind === 'register_card') {
-    openSettingsSection('payments');
-    window.requestAnimationFrame(() => els.createStripeSetupSessionBtn?.focus());
-    return;
-  }
-  if (kind === 'open_connect') {
-    switchTab('connect');
-    return;
-  }
-  if (kind === 'connect_github') {
-    openGithubSignIn();
-    return;
-  }
-  if (kind === 'connect_x') {
-    connectXAccount();
-    return;
-  }
-  if (kind === 'open_agents_github' || kind === 'list_agent') {
-    openAgentListingFlow();
-    return;
-  }
-  if (kind === 'browse_agents') {
-    openAgentCatalog();
-    return;
-  }
-  if (kind === 'open_scheduled_work') {
-    state.openChatHistoryOpen = true;
-    renderOrderComposer();
-    window.requestAnimationFrame(() => els.scheduledWorkStatus?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }));
-    return;
-  }
-  if (kind === WORK_ACTION_IDS.OPEN_FEEDBACK) {
-    switchTab('start');
-    window.requestAnimationFrame(() => els.feedbackType?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }));
-    return;
-  }
-  const instructionMap = {
-    add_secure_requirement: 'Access rule: do not include production secrets in chat or delivery. Use OAuth/connector setup or provider-owned secret storage before execution.',
-    add_pr_handoff: 'Delivery rule: if code changes are needed, use a sandbox branch and return a pull request URL, diff summary, and test results.',
-    add_social_handoff_rule: 'Social publishing rule: prepare a draft or SaaS handoff packet through the assigned agent/provider contract; do not publish directly from pre-dispatch chat.',
-    use_agent_team: 'Routing preference: use an Agent Team with a Team Leader if multiple specialties or channels improve quality/cost.',
-    add_schedule_rule: 'Schedule rule: ask me to confirm interval, timezone, stop condition, and failure notification before creating scheduled work.',
-    add_source_rule: 'Source rule: rely only on the attached URLs/files and clearly separate source-backed facts from inference.',
-    add_agent_listing_rule: 'Agent listing rule: treat this as provider setup, not buyer work. Prepare manifest, pricing markup, endpoint/adapter, and verification checklist.',
-    add_bug_report_rule: 'Bug report template: include page, action taken, expected result, actual result, account state, and reproduction steps.'
-  };
-  if (instructionMap[kind]) {
-    addFlexibleToolInstruction(instructionMap[kind]);
-    trackFlexibleToolEvent('flex_tool_instruction_added', toolForLog, { action: kind, actionLabel: actionLabel || kind });
-  }
-}
-
 function updateWorkChatStatusCard(title = 'Write the request first.', body = '', tone = 'info') {
   if (!els.workChatStatusCard || !els.workChatStatusText) return;
   if (!WORK_CHAT_INTERNAL_STATUS_VISIBLE) {
@@ -12460,7 +12197,7 @@ function renderRunCreateStatus(snapshot = state.snapshot || {}) {
   const monthlyBillingReady = monthlyBillingSelected && savedCard;
   const nonCardCreditsReady = Number(billingProfile.welcomeCreditsAvailable || 0) > 0 || Number(billingProfile.subscriptionCreditsAvailable || 0) > 0;
   const adminBillingBypass = Boolean(auth?.isPlatformAdmin);
-  const billingReady = adminBillingBypass || monthlyBillingReady || nonCardCreditsReady;
+  const billingReady = IN_APP_PAYMENTS_REMOVED || adminBillingBypass || monthlyBillingReady || nonCardCreditsReady;
   const dispatchReady = isOpenChatDispatchReadyPrompt(prompt);
   const skillDraft = looksLikeAgentSkillMarkdown(prompt);
   const quickAnswer = skillDraft || dispatchReady ? null : quickOrderChatAnswer(prompt, sourceCounts);
@@ -12474,7 +12211,7 @@ function renderRunCreateStatus(snapshot = state.snapshot || {}) {
 
   if (skillDraft) {
     title = 'Agent Skill detected.';
-    body = `${uiLabels.sendChat} will convert SKILL.md into a ${PRODUCT_NAME} manifest draft, open AGENTS, and let you review before import. Listing can proceed, but provider money actions stay locked until identity, Stripe billing, and CAIt manual settlement review are ready.`;
+    body = `${uiLabels.sendChat} will convert SKILL.md into a ${PRODUCT_NAME} manifest draft, open AGENTS, and let you review before import. Listing can proceed, but CAIt no longer processes payments, billing, or payouts. Support is donation-only outside CAIt.`;
     tone = 'ok';
     buttonText = uiLabels.sendChat;
   } else if (llmFallbackCandidate && mustUseLlmFallback) {
@@ -12541,7 +12278,7 @@ function renderRunCreateStatus(snapshot = state.snapshot || {}) {
     buttonText = uiLabels.prepareOrder;
   } else if (!canOrderFromBrowser(auth)) {
     title = 'Login required to send order.';
-    body = `The CAIt Chat brief is ready. First-time sign-in grants $10 in credits, which can be used toward this order. Sign in when you want to dispatch paid work, then press ${uiLabels.sendOrder}.`;
+    body = `The CAIt Chat brief is ready. Sign in when you want to dispatch agent work, then press ${uiLabels.sendOrder}. CAIt no longer requires in-app payment setup.`;
     tone = 'warn';
     buttonText = uiLabels.sendOrder;
   } else if (state.pendingIntake && state.intakeConfirmed) {
@@ -12554,8 +12291,8 @@ function renderRunCreateStatus(snapshot = state.snapshot || {}) {
     body = `Using ${sourceCounts.urlCount} URL(s) and ${sourceCounts.fileCount} file(s). Add a prompt if you want explicit instructions.`;
     tone = 'ok';
   } else if (!billingReady) {
-    title = 'Register card before sending.';
-    body = `Open PAYMENTS and use REGISTER CARD before pressing ${uiLabels.sendOrder}. Paid orders use month-end billing; managed sample agents do not require separate buyer-side model API contracts.`;
+    title = 'Support is donation-only.';
+    body = `CAIt no longer requires card registration before ${uiLabels.sendOrder}. Support is donation-only outside the app while payment-provider review is on hold.`;
     tone = 'warn';
     buttonText = uiLabels.sendOrder;
   } else if (strategy === 'multi' && pinnedAgent) {
@@ -13390,6 +13127,10 @@ function renderMonthlyProviderRuns(runs = []) {
 
 function renderProviderBillingLanesCard(providerSummary = {}) {
   if (!els.providerBillingLanesCard) return;
+  if (IN_APP_PAYMENTS_REMOVED) {
+    renderRemovedProviderBillingLanesCard(els, { safeText });
+    return;
+  }
   const subscriptionCount = Number(providerSummary.providerSubscriptionAgentCount || 0);
   const lines = [
     'Parallel billing lanes',
@@ -13436,479 +13177,28 @@ function renderOrderApiKeys(account = null, auth = null) {
 
 function renderStripeTools(account = null, auth = null) {
   if (!els.stripeCustomerStatus || !els.stripeProviderStatus || !els.stripeCustomerActionResult || !els.stripeProviderActionResult) return;
-  if (!PAYMENT_PROVIDER_UI_VISIBLE) {
-    [
-      els.createStripeSetupSessionBtn,
-      els.createStripeSubscriptionSessionBtn,
-      els.createStripeConnectOnboardingBtn,
-      els.runStripeProviderMonthlyChargeBtn,
-      els.runStripeProviderPayoutBtn,
-      els.payoutWithdrawAmount,
-      els.stripeCustomerStatus,
-      els.stripeCustomerActionResult,
-      els.stripeProviderStatus,
-      els.stripeProviderActionResult
-    ].forEach((el) => setElementVisible(el, false));
-    safeText(els.stripeCustomerStatus, 'Hosted payment-provider actions are temporarily hidden.');
-    safeText(els.stripeCustomerActionResult, 'Hosted payment-provider actions are temporarily hidden.');
-    safeText(els.stripeProviderStatus, 'External payout-provider actions are temporarily hidden.');
-    safeText(els.stripeProviderActionResult, 'External payout-provider actions are temporarily hidden.');
-    return;
-  }
-  const loggedIn = Boolean(auth?.loggedIn && auth?.user?.login);
-  const canManagePayments = canManagePaymentsFromBrowser(auth);
-  const canManagePayouts = canManagePayoutsFromBrowser(auth);
-  const stripe = state.stripeStatus?.stripe || null;
-  const accountStripe = stripe?.accountStripe || account?.stripe || {};
-  const billingProfile = stripe?.billingProfile || null;
-  const providerSummary = state.snapshot?.monthlySummary?.provider || {};
-  if (!loggedIn) {
-    safeText(els.stripeCustomerStatus, 'Login required.\n\nCustomer payment actions are private account actions.');
-    safeText(els.stripeProviderStatus, 'Login required.\n\nProvider withdrawal actions are private account actions.');
-    safeText(els.stripeCustomerActionResult, TEMPORARY_INVOICE_BILLING_ENABLED
-      ? 'Login first, then request an invoice. Hosted checkout is temporarily hidden.'
-      : 'Login first, then confirm payment setup.');
-    safeText(els.stripeProviderActionResult, TEMPORARY_INVOICE_BILLING_ENABLED
-      ? 'Login first. Provider earnings remain tracked, but external payout setup is temporarily hidden.'
-      : 'Login first, then open provider setup if this account receives revenue share.');
-    return;
-  }
-  const availablePlans = stripe?.availableSubscriptionPlans || [];
-  const savedCard = Boolean(accountStripe.defaultPaymentMethodId) || String(accountStripe.defaultPaymentMethodStatus || '') === 'ready';
-  const activePlan = accountStripe.subscriptionPlan || billingProfile?.subscriptionPlan || 'none';
-  const selectedPlan = String(els.billingSubscriptionPlan?.value || billingProfile?.subscriptionPlan || activePlan || 'none').trim().toLowerCase();
-  const payoutStatus = String(accountStripe.connectedAccountStatus || 'not_started');
-  const connectOnboardingStatus = String(accountStripe.connectOnboardingStatus || 'not_started');
-  const chargesEnabled = accountStripe.chargesEnabled === true || String(accountStripe.chargesEnabled || '').toLowerCase() === 'true';
-  const payoutsEnabled = accountStripe.payoutsEnabled === true || String(accountStripe.payoutsEnabled || '').toLowerCase() === 'true';
-  const identityVerified = accountStripe.identityVerified === true || String(accountStripe.identityVerified || '').toLowerCase() === 'true';
-  const identityVerificationStatus = String(accountStripe.identityVerificationStatus || (identityVerified ? 'verified' : 'not_started'));
-  const transferCapabilityStatus = String(accountStripe.transferCapabilityStatus || 'missing');
-  const requirementsCurrentDue = Array.isArray(accountStripe.requirementsCurrentDue) ? accountStripe.requirementsCurrentDue : [];
-  const requirementsPastDue = Array.isArray(accountStripe.requirementsPastDue) ? accountStripe.requirementsPastDue : [];
-  const requirementsDisabledReason = String(accountStripe.requirementsDisabledReason || '').trim();
-  const stripeRequirementsClear = requirementsCurrentDue.length === 0 && requirementsPastDue.length === 0 && !requirementsDisabledReason;
-  const connectDetailsSubmitted = payoutStatus === 'ready' || connectOnboardingStatus === 'completed';
-  const connectReady = identityVerified && payoutsEnabled;
-  const connectStarted = Boolean(accountStripe.connectedAccountId) || connectDetailsSubmitted || ['pending', 'started'].includes(payoutStatus) || ['pending', 'started'].includes(connectOnboardingStatus);
-  const connectActionLabel = connectReady ? 'CONNECT READY' : (connectStarted ? 'RESUME CONNECT' : 'OPEN CONNECT');
-  const configuredMode = account?.billing?.mode || billingProfile?.mode || 'monthly_invoice';
-  const mode = billingProfile?.mode || configuredMode || 'monthly_invoice';
-  const monthlyBillingSelected = configuredMode === 'monthly_invoice';
-  const monthlyBillingReady = monthlyBillingSelected && mode === 'monthly_invoice' && savedCard;
-  const displayMode = monthlyBillingSelected
-    ? (monthlyBillingReady ? 'month-end card billing' : 'month-end card billing (card required)')
-    : mode;
-  const displayPayoutStatus = payoutStatus === 'not_started' ? 'not started' : payoutStatus;
-  const providerEnabled = Boolean(account?.payout?.providerEnabled);
-  const providerPending = Number(providerSummary.pendingBalance || account?.payout?.pendingBalance || 0);
-  const providerPaid = Number(providerSummary.paidOutTotal || account?.payout?.paidOutTotal || 0);
-  const providerMinimum = Number(providerSummary.minimumPayoutAmount || account?.payout?.minimumPayoutAmount || DEFAULT_MINIMUM_PAYOUT_AMOUNT);
-  const providerMonthlyDeclared = Number(providerSummary.providerSubscriptionMonthlyPrice || 0);
-  const providerMonthlyCharged = Number(providerSummary.providerSubscriptionChargedAmount || 0);
-  const providerMonthlyPending = Number(providerSummary.providerSubscriptionPendingAmount || 0);
-  const providerMonthlyDue = Number(providerSummary.providerSubscriptionDueAmount || 0);
-  const providerMonthlyAgentCount = Number(providerSummary.providerSubscriptionAgentCount || 0);
-  const providerMonthlyLastRun = Array.isArray(providerSummary.providerSubscriptionChargeRuns) ? providerSummary.providerSubscriptionChargeRuns[0] || null : null;
-  const providerMonthlyAutoEnabled = stripe?.providerMonthlyAutoEnabled !== false;
-  const providerMonthlyMaxAttempts = Number(stripe?.providerMonthlyMaxAttempts || 3);
-  const providerMonthlyRetryPeriod = String(providerSummary.providerSubscriptionRetryPeriod || accountStripe.providerMonthlyRetryPeriod || '').trim();
-  const providerMonthlyRetryCount = Number(providerSummary.providerSubscriptionRetryCount || accountStripe.providerMonthlyRetryCount || 0);
-  const providerMonthlyLastFailureAt = String(providerSummary.providerSubscriptionLastFailureAt || accountStripe.providerMonthlyLastFailureAt || '').trim();
-  const providerMonthlyLastFailureMessage = String(providerSummary.providerSubscriptionLastFailureMessage || accountStripe.providerMonthlyLastFailureMessage || '').trim();
-  const providerMonthlyLastNotificationAt = String(providerSummary.providerSubscriptionLastNotificationAt || accountStripe.providerMonthlyLastNotificationAt || '').trim();
-  const providerMonthlyLastNotificationPeriod = String(providerSummary.providerSubscriptionLastNotificationPeriod || accountStripe.providerMonthlyLastNotificationPeriod || '').trim();
-  const stripeReady = Boolean(stripe?.configured);
-  const betaBillingPaused = Boolean(stripe?.billingPaused || auth?.billingPaused);
-  if (betaBillingPaused) {
-    safeText(els.stripeCustomerStatus, [
-      'Platform: beta mode',
-      'Live billing: paused',
-      `Charge model shown for activation readiness: ${displayMode}`,
-      `Saved payment method: ${savedCard ? 'yes' : 'no'}`,
-      'Orders and account registration remain available within the $10 per-account beta credit allowance.',
-      'Activation: set BILLING_ACTIVATION_ENABLED=1 or BETA_BILLING_PAUSED=0 on the platform.'
-    ].join('\n'));
-    safeText(els.stripeProviderStatus, [
-      'Platform: beta mode',
-      'Provider earnings and payout movement: paused',
-      `Provider enabled: ${providerEnabled ? 'yes' : 'no'}`,
-      `Identity verification: ${identityVerificationStatus}`,
-      `Withdrawable ledger balance: ${yen(providerPending)}`,
-      'Provider identity/admin approval can be prepared now; payout movement stays locked until billing activation.'
-    ].join('\n'));
-    safeText(els.stripeCustomerActionResult, 'Beta mode is active. Each account can use up to $10 in credits. Hosted checkout, card setup, monthly charges, and subscription checkout are disabled, but the Stripe billing contracts remain ready for activation.');
-    safeText(els.stripeProviderActionResult, connectReady
-      ? 'Provider setup is ready. Payout movement remains paused during beta.'
-      : 'Provider setup can be prepared, but payouts and provider monthly charges remain paused during beta.');
-    if (els.createStripeSetupSessionBtn) {
-      els.createStripeSetupSessionBtn.textContent = 'BILLING PAUSED';
-      els.createStripeSetupSessionBtn.title = 'Live customer billing is disabled during beta.';
-    }
-    if (els.createStripeSubscriptionSessionBtn) {
-      els.createStripeSubscriptionSessionBtn.textContent = 'CHECKOUT PAUSED';
-      els.createStripeSubscriptionSessionBtn.title = 'Subscription checkout is disabled during beta.';
-    }
-    if (els.createStripeConnectOnboardingBtn) {
-      els.createStripeConnectOnboardingBtn.textContent = connectActionLabel;
-      els.createStripeConnectOnboardingBtn.title = canManagePayouts && stripeReady && !connectReady
-        ? 'Prepare provider payout identity now; payout movement stays paused until activation.'
-        : (connectReady ? 'Provider setup is ready; payout movement is paused during beta.' : 'Connect GitHub first to manage provider onboarding.');
-    }
-    if (els.runStripeProviderMonthlyChargeBtn) {
-      els.runStripeProviderMonthlyChargeBtn.textContent = 'MONTHLY BILLING PAUSED';
-      els.runStripeProviderMonthlyChargeBtn.title = 'Provider monthly charging is disabled during beta.';
-    }
-    if (els.runStripeProviderPayoutBtn) {
-      els.runStripeProviderPayoutBtn.textContent = 'PAYOUT PAUSED';
-      els.runStripeProviderPayoutBtn.title = 'Provider payout movement is disabled during beta.';
-    }
-    setButtonAccess(els.createStripeSetupSessionBtn, false);
-    setButtonAccess(els.createStripeSubscriptionSessionBtn, false);
-    setButtonAccess(els.createStripeConnectOnboardingBtn, canManagePayouts && stripeReady && !connectReady);
-    setButtonAccess(els.runStripeProviderMonthlyChargeBtn, false);
-    setButtonAccess(els.runStripeProviderPayoutBtn, false);
-    return;
-  }
-  if (TEMPORARY_INVOICE_BILLING_ENABLED) {
-    const cardSetupReady = STRIPE_CARD_SETUP_DURING_TEMPORARY_BILLING_ENABLED && canManagePayments && stripeReady;
-    const customerLines = [
-      'Platform: temporary invoice/manual billing',
-      `Charge model: ${displayMode}`,
-      `Saved payment method: ${savedCard ? 'yes' : 'no'}${STRIPE_CARD_SETUP_DURING_TEMPORARY_BILLING_ENABLED ? ' (payment-method setup is available for future month-end billing)' : ''}`,
-      `Plan: ${subscriptionPlanLabel(activePlan)} (${accountStripe.subscriptionStatus || 'manual_or_not_started'})`,
-      `Payment-method setup: ${cardSetupReady ? 'available' : (stripeReady ? 'sign in required' : 'platform incomplete')}`,
-      'Order billing: invoice/manual confirmation for now',
-      `Next step: ${savedCard ? 'card is registered; continue using monthly invoice/manual billing until automated charging is re-enabled.' : 'register a card if available, or request an invoice for manual credits.'}`
-    ];
-    const providerLines = [
-      'Platform: temporary manual payout handling',
-      `Provider enabled: ${providerEnabled ? 'yes' : 'no'}`,
-      `GitHub linked: ${canManagePayouts ? 'yes' : 'no'}`,
-      `Provider monthly due now: ${yen(providerMonthlyDue)}`,
-      `Withdrawable now: ${yen(providerPending)}`,
-      `Paid out total: ${yen(providerPaid)}`,
-      `Minimum withdrawal: ${yen(providerMinimum)}`,
-      'External payout setup: paused',
-      `Next step: contact ${TEMPORARY_INVOICE_SUPPORT_EMAIL} for manual payout follow-up during this temporary period.`
-    ];
-    safeText(els.stripeCustomerStatus, customerLines.join('\n'));
-    safeText(els.stripeProviderStatus, providerLines.join('\n'));
-    safeText(els.stripeCustomerActionResult, [
-      ...temporaryInvoiceNoticeLines('payment'),
-      '',
-      'REQUEST INVOICE saves a support request and forwards it by email.',
-      'REQUEST PLAN INVOICE does the same for STARTER or PRO.',
-      STRIPE_CARD_SETUP_DURING_TEMPORARY_BILLING_ENABLED
-        ? 'Payment-method setup opens a hosted setup page only. Orders still use monthly invoice/manual confirmation until automated billing is explicitly re-enabled.'
-        : 'Card setup is paused in this temporary mode.'
-    ].join('\n'));
-    safeText(els.stripeProviderActionResult, [
-      ...temporaryInvoiceNoticeLines('payout'),
-      '',
-      'Provider earnings remain tracked in the ledger.',
-      'CONNECT and automated withdrawals are disabled until the payment processor path is restored or replaced.'
-    ].join('\n'));
-    if (els.createStripeSubscriptionSessionBtn) {
-      els.createStripeSubscriptionSessionBtn.textContent = 'REQUEST PLAN INVOICE';
-      els.createStripeSubscriptionSessionBtn.title = canManagePayments ? '' : 'Sign in first to request a plan invoice.';
-    }
-    if (els.createStripeSetupSessionBtn) {
-      els.createStripeSetupSessionBtn.textContent = savedCard ? 'CARD REGISTERED' : 'REGISTER CARD';
-      els.createStripeSetupSessionBtn.title = cardSetupReady
-        ? 'Open hosted payment-method setup for future month-end billing.'
-        : (stripeReady ? 'Sign in first to register a payment method.' : 'Payment provider is not ready on the platform.');
-    }
-    if (els.createStripeConnectOnboardingBtn) {
-      els.createStripeConnectOnboardingBtn.textContent = 'CONNECT PAUSED';
-      els.createStripeConnectOnboardingBtn.title = 'External payout onboarding is paused during temporary manual payout handling.';
-    }
-    if (els.runStripeProviderMonthlyChargeBtn) {
-      els.runStripeProviderMonthlyChargeBtn.textContent = 'MONTHLY BILLING PAUSED';
-      els.runStripeProviderMonthlyChargeBtn.title = 'Provider monthly SaaS charging is paused during temporary billing mode.';
-    }
-    if (els.runStripeProviderPayoutBtn) {
-      els.runStripeProviderPayoutBtn.textContent = 'REQUEST MANUAL PAYOUT';
-      els.runStripeProviderPayoutBtn.title = 'Automated provider withdrawal is paused. Contact support for manual payout handling.';
-    }
-    const manualPayoutReady = canManagePayouts && providerEnabled && identityVerified && providerPending >= providerMinimum && providerPending > 0;
-    setButtonAccess(els.createStripeSubscriptionSessionBtn, canManagePayments);
-    setButtonAccess(els.createStripeSetupSessionBtn, cardSetupReady && !savedCard);
-    setButtonAccess(els.createStripeConnectOnboardingBtn, false);
-    setButtonAccess(els.runStripeProviderMonthlyChargeBtn, false);
-    setButtonAccess(els.runStripeProviderPayoutBtn, manualPayoutReady);
-    if (els.runStripeProviderPayoutBtn && !manualPayoutReady) {
-      els.runStripeProviderPayoutBtn.title = providerPending < providerMinimum
-        ? `Minimum manual payout request is ${yen(providerMinimum)}.`
-        : (!identityVerified
-          ? 'Complete payout-provider identity verification before requesting manual settlement handling.'
-          : 'Enable the provider profile and link GitHub before requesting manual payout.');
-    }
-    return;
-  }
-  const subscriptionCheckoutReady = canManagePayments && stripeReady;
-  const cardSetupReady = canManagePayments && stripeReady && !savedCard;
-  if (els.payoutWithdrawAmount) {
-    const nextSuggestedWithdrawal = providerPending > 0 ? moneyInputValueFromLedger(providerPending) : '';
-    if (document.activeElement !== els.payoutWithdrawAmount && !String(els.payoutWithdrawAmount.value || '').trim()) {
-      els.payoutWithdrawAmount.value = nextSuggestedWithdrawal;
-    }
-  }
-  let nextStep = 'Payments look ready.';
-  if (!stripe?.configured) nextStep = 'Platform payment-provider setup is incomplete. Hosted pages may not open.';
-  else if (monthlyBillingSelected && !savedCard) nextStep = 'Use REGISTER CARD to enable month-end billing. No order is charged until it is dispatched and settled.';
-  else if (monthlyBillingSelected && !monthlyBillingReady) nextStep = 'Card registration is needed before month-end billing can dispatch paid work.';
-  else if (monthlyBillingReady) nextStep = 'Month-end billing is ready. Orders accrue through the month and are charged after closing.';
-  else if (activePlan !== 'none' && String(accountStripe.subscriptionStatus || 'not_started') === 'not_started') nextStep = `Use OPEN PLAN CHECKOUT to activate ${activePlan}.`;
-  else if (providerEnabled && !connectReady) nextStep = `Use ${connectActionLabel} to finish provider onboarding.`;
-  let providerNextStep = 'Enable provider profile only if this account receives revenue share.';
-  if (!canManagePayouts) {
-    providerNextStep = 'Connect GitHub first. Provider onboarding and withdrawals require a GitHub-linked account.';
-  } else if (!stripeReady) {
-    providerNextStep = 'Platform payout-provider setup is incomplete.';
-  } else if (providerEnabled && !identityVerified) {
-    providerNextStep = `Use ${connectActionLabel} to complete identity verification before withdrawals.`;
-  } else if (providerEnabled && !(providerPending > 0)) {
-    providerNextStep = 'No provider earnings are available to withdraw yet.';
-  } else if (providerEnabled && providerPending < providerMinimum) {
-    providerNextStep = `Accrue at least ${yen(providerMinimum)} before withdrawal.`;
-  } else if (providerEnabled) {
-    providerNextStep = 'Provider withdrawal is available.';
-  }
-  let providerMonthlyChargeDisabledReason = '';
-  if (!canManagePayments) providerMonthlyChargeDisabledReason = 'Sign in first to manage payment methods for provider monthly billing.';
-  else if (!stripeReady) providerMonthlyChargeDisabledReason = 'Payment provider is not ready on the platform.';
-  else if (!(providerMonthlyAgentCount > 0)) providerMonthlyChargeDisabledReason = 'No provider monthly SaaS agents are declared for this account.';
-  else if (!savedCard) providerMonthlyChargeDisabledReason = 'Register a card first so provider monthly SaaS fees can be charged off-session.';
-  else if (!(providerMonthlyDue > 0)) providerMonthlyChargeDisabledReason = 'No provider monthly SaaS amount is due for this period.';
-  const providerMonthlyChargeReady = !providerMonthlyChargeDisabledReason;
-  let withdrawDisabledReason = '';
-  if (!canManagePayouts) withdrawDisabledReason = 'Connect GitHub first to manage provider withdrawals.';
-  else if (!stripeReady) withdrawDisabledReason = 'Payout provider is not ready on the platform.';
-  else if (!providerEnabled) withdrawDisabledReason = 'Enable and save the provider profile before withdrawing.';
-  else if (!identityVerified) withdrawDisabledReason = `${connectActionLabel} first to complete payout-provider identity verification.`;
-  else if (!(providerPending > 0)) withdrawDisabledReason = 'No provider earnings are available to withdraw yet.';
-  else if (providerPending < providerMinimum) withdrawDisabledReason = `Minimum withdrawal is ${yen(providerMinimum)}.`;
-  const withdrawReady = !withdrawDisabledReason;
-  const customerLines = [
-    `Platform: ${stripe?.configured ? 'ready' : 'incomplete'}`,
-    `Charge model: ${displayMode}`,
-    `Active settlement mode: ${mode}`,
-    `Month-end amount due: ${yen(billingProfile?.arrearsTotal || 0)}`,
-    `Saved payment method: ${savedCard ? 'yes' : 'no'} (payment-method setup enables month-end billing)`,
-    `Plan: ${subscriptionPlanLabel(activePlan)} (${accountStripe.subscriptionStatus || 'not_started'})`,
-    `Next renewal: ${accountStripe.subscriptionCurrentPeriodEnd ? formatTime(accountStripe.subscriptionCurrentPeriodEnd) : '-'}`,
-    `Next step: ${nextStep}`
-  ];
-  const providerLines = [
-    `Platform: ${stripe?.configured ? 'ready' : 'incomplete'}`,
-    `Provider enabled: ${providerEnabled ? 'yes' : 'no'}`,
-    `GitHub linked: ${canManagePayouts ? 'yes' : 'no'}`,
-    `Connect status: ${displayPayoutStatus}`,
-    `Connect details submitted: ${connectDetailsSubmitted ? 'yes' : 'no'}`,
-    `Identity verified for payout: ${identityVerified ? 'yes' : 'no'} (${identityVerificationStatus})`,
-    `Transfers capability: ${transferCapabilityStatus}`,
-    `Stripe requirements clear: ${stripeRequirementsClear ? 'yes' : 'no'}`,
-    requirementsCurrentDue.length ? `Requirements currently due: ${requirementsCurrentDue.join(', ')}` : null,
-    requirementsPastDue.length ? `Requirements past due: ${requirementsPastDue.join(', ')}` : null,
-    requirementsDisabledReason ? `Requirements disabled reason: ${requirementsDisabledReason}` : null,
-    `Charges enabled: ${chargesEnabled ? 'yes' : 'no'}`,
-    `Payouts enabled: ${payoutsEnabled ? 'yes' : 'no'}`,
-    `Connected account: ${accountStripe.connectedAccountId || 'not created'}`,
-    `Order payout lane withdrawable now: ${yen(providerPending)}`,
-    `Provider monthly SaaS lane declared: ${yen(providerMonthlyDeclared)}`,
-    `Provider monthly SaaS lane charged this period: ${yen(providerMonthlyCharged)}`,
-    `Provider monthly SaaS lane pending/non-final: ${yen(providerMonthlyPending)}`,
-    `Provider monthly SaaS lane due now: ${yen(providerMonthlyDue)}`,
-    `Provider monthly auto-run: ${providerMonthlyAutoEnabled ? 'enabled every 15 minutes when due' : 'disabled'}`,
-    `Provider monthly max attempts: ${providerMonthlyMaxAttempts}`,
-    `Provider monthly retry state: ${providerMonthlyRetryPeriod ? `${providerMonthlyRetryPeriod} · ${providerMonthlyRetryCount}/${providerMonthlyMaxAttempts}` : 'clear'}`,
-    `Provider monthly latest failure: ${providerMonthlyLastFailureAt ? `${formatTime(providerMonthlyLastFailureAt)} · ${providerMonthlyLastFailureMessage || '-'}` : 'none'}`,
-    `Provider monthly failure notice: ${providerMonthlyLastNotificationPeriod ? `${providerMonthlyLastNotificationPeriod} (${formatTime(providerMonthlyLastNotificationAt)})` : 'not sent'}`,
-    `CAIt take from provider monthly SaaS lane: ${yen(providerSummary.providerSubscriptionMarketplaceFee || 0)}`,
-    `Provider monthly SaaS net after CAIt fee: ${yen(providerSummary.providerSubscriptionProviderNet || 0)}`,
-    `Last provider monthly charge: ${providerMonthlyLastRun?.createdAt ? `${formatTime(providerMonthlyLastRun.createdAt)} (${yen(providerMonthlyLastRun.amount || 0)} · ${providerMonthlyLastRun.status || 'unknown'})` : '-'}`,
-    `Paid out total: ${yen(providerPaid)}`,
-    `Minimum withdrawal: ${yen(providerMinimum)}`,
-    `Last withdrawal: ${account?.payout?.lastPayoutAt ? `${formatTime(account.payout.lastPayoutAt)} (${yen(account?.payout?.lastPayoutAmount || 0)})` : '-'}`,
-    `Next step: ${providerNextStep}`
-  ];
-  safeText(els.stripeCustomerStatus, customerLines.join('\n'));
-  safeText(els.stripeProviderStatus, providerLines.filter(Boolean).join('\n'));
-  safeText(els.stripeCustomerActionResult, [
-    'Payment-method setup opens a hosted setup page and enables month-end billing after confirmation.',
-    'Month-end billing accrues settled order costs through the month, then charges the saved card after closing.',
-    'OPEN PLAN CHECKOUT opens a popup where you choose STARTER or PRO first.'
-  ].join('\n'));
-  safeText(els.stripeProviderActionResult, [
-    connectReady
-      ? 'External payouts are enabled after payout-provider identity verification.'
-      : canManagePayouts
-        ? `${connectActionLabel} ${connectStarted ? 'continues' : 'starts'} payout-provider identity verification and payout setup before earnings can be withdrawn.`
-      : 'Connect GitHub first. Provider setup and withdrawals are restricted to GitHub-linked accounts.',
-    providerMonthlyChargeReady
-      ? `RUN PROVIDER MONTHLY BILLING will charge ${yen(providerMonthlyDue)} for ${state.settingsPeriod || currentMonthPeriod()} using the saved card on this account.`
-      : `Provider monthly SaaS billing is locked: ${providerMonthlyChargeDisabledReason}`,
-    providerMonthlyLastFailureMessage
-      ? `Latest provider monthly failure: ${providerMonthlyLastFailureMessage}${providerMonthlyRetryPeriod ? ` · retry ${providerMonthlyRetryCount}/${providerMonthlyMaxAttempts} for ${providerMonthlyRetryPeriod}` : ''}`
-      : `Auto-run policy: ${providerMonthlyAutoEnabled ? `enabled with up to ${providerMonthlyMaxAttempts} attempts per period.` : 'disabled.'}`,
-    withdrawReady
-      ? `Provider withdrawal moves earnings from ${PRODUCT_NAME} only after payout-provider identity verification is complete.`
-      : `Provider withdrawal is locked: ${withdrawDisabledReason}`,
-    'Leave the amount blank to withdraw the full available balance.',
-    'Use these only if this account receives revenue share.'
-  ].join('\n'));
-  setButtonAccess(els.createStripeSetupSessionBtn, cardSetupReady);
-  setButtonAccess(els.createStripeSubscriptionSessionBtn, subscriptionCheckoutReady);
-  setButtonAccess(els.createStripeConnectOnboardingBtn, canManagePayouts && stripeReady && !connectReady);
-  setButtonAccess(els.runStripeProviderMonthlyChargeBtn, providerMonthlyChargeReady);
-  setButtonAccess(els.runStripeProviderPayoutBtn, withdrawReady);
-  if (els.createStripeSetupSessionBtn) {
-    els.createStripeSetupSessionBtn.textContent = savedCard ? 'CARD REGISTERED' : 'REGISTER CARD';
-    els.createStripeSetupSessionBtn.title = cardSetupReady
-      ? 'Open hosted payment-method setup for month-end billing.'
-      : (savedCard ? 'A saved card is already on file.' : 'Sign in first to manage payments.');
-  }
-  if (els.createStripeSubscriptionSessionBtn) {
-    els.createStripeSubscriptionSessionBtn.textContent = 'OPEN PLAN CHECKOUT';
-    els.createStripeSubscriptionSessionBtn.title = subscriptionCheckoutReady ? '' : (canManagePayments ? 'Payment provider is not ready on the platform.' : 'Sign in first to manage payments.');
-  }
-  if (els.createStripeConnectOnboardingBtn) {
-    els.createStripeConnectOnboardingBtn.textContent = connectActionLabel;
-    els.createStripeConnectOnboardingBtn.title = connectReady
-      ? 'External payouts are enabled.'
-      : canManagePayouts && stripeReady
-        ? ''
-        : 'Connect GitHub first to manage provider onboarding.';
-  }
-  if (els.runStripeProviderMonthlyChargeBtn) {
-    els.runStripeProviderMonthlyChargeBtn.textContent = 'RUN PROVIDER MONTHLY BILLING';
-    els.runStripeProviderMonthlyChargeBtn.title = providerMonthlyChargeReady ? '' : providerMonthlyChargeDisabledReason;
-  }
-  if (els.runStripeProviderPayoutBtn) {
-    els.runStripeProviderPayoutBtn.title = withdrawReady ? '' : withdrawDisabledReason;
-  }
-}
-
-function stripeActionOutputElement(target = 'customer') {
-  return target === 'provider' ? els.stripeProviderActionResult : els.stripeCustomerActionResult;
-}
-
-function stripeFriendlyErrorInfo(error = {}) {
-  const data = error?.data && typeof error.data === 'object' ? error.data : {};
-  const rawMessage = String(data.error || error?.message || error || 'Hosted payment action failed.').trim();
-  const code = String(data.code || data.stripe_code || '').trim();
-  const status = Number(error?.status || data.statusCode || data.stripe_status || 0);
-  const lower = `${rawMessage} ${code}`.toLowerCase();
-  let title = 'Hosted payment action failed';
-  let action = String(data.action || '').trim();
-  if (/beta_billing_paused|billing.*paused|checkout.*paused|charges?.*paused|payout.*paused/.test(lower)) {
-    title = 'Billing is paused during beta';
-    action = action || 'Account and agent workflows remain available. Platform billing can be reactivated later by enabling BILLING_ACTIVATION_ENABLED.';
-  } else if (/not configured|stripe_not_configured/.test(lower)) {
-    title = 'Payment provider is not configured';
-    action = action || 'Check payment-provider settings on the platform, then retry.';
-  } else if (/invalid email|email address/.test(lower)) {
-    title = 'Payment provider rejected the email address';
-    action = action || 'Open SETTINGS, update the billing/provider email, save, then retry.';
-  } else if (/connect.*not enabled|signed up for connect|connect_not_enabled/.test(lower)) {
-    title = 'External payout onboarding is not enabled';
-    action = action || 'Complete payment-provider platform activation, then retry payout onboarding.';
-  } else if (/restricted|prohibited|not allowed|unsupported business|risk/.test(lower)) {
-    title = 'Payment provider blocked this business or account state';
-    action = action || 'Remove prohibited categories, confirm the platform account status, then retry.';
-  } else if (/authentication|api key|invalid api key/.test(lower)) {
-    title = 'Payment provider API authentication failed';
-    action = action || 'Check the payment provider secret key and make sure test/live mode matches the account.';
-  } else if (/popup|blocked/.test(lower)) {
-    title = 'Payment popup was blocked';
-    action = action || 'Allow popups for this site or use the hosted URL shown in SETTINGS.';
-  }
-  return {
-    title,
-    message: rawMessage,
-    action,
-    code,
-    status
-  };
-}
-
-async function launchStripeHostedAction(path, payload = {}, options = {}) {
-  let popup = null;
-  const outputEl = stripeActionOutputElement(options.output);
-  try {
-    popup = window.open('', '_blank');
-    if (popup && !popup.closed) {
-      try {
-        popup.document.title = 'Opening payment page...';
-        popup.document.body.innerHTML = '<pre style="font:16px monospace;padding:24px;background:#0a1020;color:#dff7ff">Opening payment page...</pre>';
-      } catch {}
-    }
-  } catch {
-    popup = null;
-  }
-  try {
-    const response = await api(path, {
-      method: 'POST',
-      body: JSON.stringify(payload || {})
-    });
-    const hostedUrl = response.checkout_url || response.onboarding_url || '';
-    if (String(path || '').includes('/subscription-session')) {
-      void trackConversionEvent('begin_checkout', {
-        source: 'stripe',
-        status: 'checkout_opened',
-        plan: response.plan || payload?.plan || '',
-        sessionId: response.session_id || ''
-      });
-    }
-    const lines = [];
-    if (options.title) lines.push(options.title);
-    if (response.plan) lines.push(`Plan: ${response.plan}`);
-    if (Number.isFinite(Number(response.amount))) lines.push(`Amount: ${yen(response.amount)}`);
-    if (response.session_id) lines.push(`Session: ${response.session_id}`);
-    if (response.payment_intent_id) lines.push(`Payment intent: ${response.payment_intent_id}`);
-    if (response.account_id) lines.push(`Connected account: ${response.account_id}`);
-    if (hostedUrl) lines.push(hostedUrl);
-    safeText(outputEl, lines.length ? lines.join('\n') : JSON.stringify(response, null, 2));
-    if (hostedUrl) {
-      if (popup && !popup.closed) {
-        try { popup.opener = null; } catch {}
-        popup.location.replace(hostedUrl);
-        flash(options.successMessage || 'Opened hosted payment page in a new tab.', 'ok');
-      } else {
-        const opened = window.open(hostedUrl, '_blank', 'noopener');
-        flash(
-          opened
-            ? (options.successMessage || 'Opened hosted payment page in a new tab.')
-            : 'Hosted payment URL is ready. Popup was blocked, so open the URL shown in SETTINGS.',
-          'ok'
-        );
-      }
-    } else {
-      if (popup && !popup.closed) popup.close();
-      flash(options.successMessage || 'Hosted payment action completed.', 'ok');
-    }
-    await refresh();
-    return response;
-  } catch (error) {
-    const friendly = stripeFriendlyErrorInfo(error);
-    const message = [
-      friendly.title,
-      '',
-      friendly.message,
-      friendly.action ? `Next step: ${friendly.action}` : '',
-      friendly.code ? `Code: ${friendly.code}` : '',
-      friendly.status ? `HTTP: ${friendly.status}` : ''
-    ].filter(Boolean).join('\n');
-    if (popup && !popup.closed) {
-      try {
-        popup.document.title = friendly.title;
-        popup.document.body.innerHTML = `<pre style="font:16px monospace;padding:24px;background:#0a1020;color:#ffd7d7;white-space:pre-wrap">${escapeHtml(message)}\n\nReturn to ${escapeHtml(PRODUCT_NAME)} and retry.</pre>`;
-      } catch {}
-    }
-    safeText(outputEl, message);
-    throw error;
-  }
+  [
+    els.createStripeSetupSessionBtn,
+    els.createStripeSubscriptionSessionBtn,
+    els.createStripeConnectOnboardingBtn,
+    els.runStripeProviderMonthlyChargeBtn,
+    els.runStripeProviderPayoutBtn,
+    els.payoutWithdrawAmount
+  ].forEach((el) => setElementVisible(el, false));
+  safeText(els.stripeCustomerStatus, [
+    'Payment mode: no in-app payments',
+    '',
+    'CAIt no longer collects cards, opens checkout, runs subscriptions, invoices customers, or stores payment methods.',
+    'Agent orders and scheduled work can run without payment setup. Optional support, if offered, must happen outside CAIt.'
+  ].join('\\n'));
+  safeText(els.stripeCustomerActionResult, DONATION_ONLY_NOTICE);
+  safeText(els.stripeProviderStatus, [
+    'Provider money movement: removed',
+    '',
+    'CAIt does not collect bank accounts, onboard payout providers, run withdrawals, or split revenue in-app.',
+    'Provider identity can still be used for trust and agent review, not for payout movement.'
+  ].join('\\n'));
+  safeText(els.stripeProviderActionResult, 'No payment or payout action is available in CAIt.');
 }
 
 function renderSettings(account, monthlySummary, auth) {
@@ -13932,14 +13222,14 @@ function renderSettings(account, monthlySummary, auth) {
     }
     renderSummaryRows(els.settingsStatus, [
       { label: 'Status', value: 'Login required' },
-      { label: 'What this page does', value: 'Payments, provider setup, and coming-soon developer surfaces' }
+      { label: 'What this page does', value: 'Support/donation policy, provider info, and coming-soon developer surfaces' }
     ]);
     renderSummaryRows(els.monthlySummaryCard, [
       { label: 'Monthly summary', value: 'Unavailable while logged out' }
     ]);
     renderSummaryRows(els.billingSnapshotCard, []);
     renderSummaryRows(els.billingSummaryCard, []);
-    safeText(els.providerBillingLanesCard, 'Login required.\n\nProvider monthly SaaS billing and payout lanes are visible after login.');
+    safeText(els.providerBillingLanesCard, 'Login required.\n\nIn-app payments and payouts are removed.');
     renderOrderApiKeys(null, auth);
     renderStripeTools(null, auth);
     renderMonthlyCustomerRuns([]);
@@ -13982,50 +13272,44 @@ function renderSettings(account, monthlySummary, auth) {
   setInputValue(els.payoutWebsite, payout.website);
   setInputValue(els.payoutStatementDescriptor, payout.statementDescriptor);
   setInputValue(els.payoutNotes, payout.notes);
+  if (IN_APP_PAYMENTS_REMOVED) {
+    disableRemovedPaymentSettingsControls(els);
+  }
 
   if (els.settingsAccessCard) {
     const reviewText = canReviewReports ? ', FUNNEL to check conversion, or REPORTS to review feedback.' : '.';
-    els.settingsAccessCard.textContent = `Signed in as ${account?.login || auth.user.login}. Google or GitHub login can register billing in PAYMENTS. GitHub link is required for adapter PRs and PROVIDER actions${reviewText}`;
+    els.settingsAccessCard.textContent = `Signed in as ${account?.login || auth.user.login}. CAIt no longer collects payment or payout setup in-app; PAYMENTS only shows donation/support policy. GitHub link is required for adapter PRs and PROVIDER actions${reviewText}`;
   }
   const orderKeys = account?.apiAccess?.orderKeys || [];
   const activeOrderKeys = orderKeys.filter((key) => key.active);
   const liveOrderKeys = activeOrderKeys.filter((key) => String(key.mode || 'live').toLowerCase() === 'live');
   const testOrderKeys = activeOrderKeys.filter((key) => String(key.mode || 'live').toLowerCase() === 'test');
   renderSummaryRows(els.billingSnapshotCard, [
-    { label: 'Welcome credits', value: pointsLabel(customerSummary.welcomeCreditsAvailable ?? billing.welcomeCreditsBalance ?? 0) },
-    { label: 'Saved card billing', value: account?.stripe?.defaultPaymentMethodId || account?.stripe?.defaultPaymentMethodStatus === 'ready' ? 'ready' : 'card required' },
-    { label: 'Month-end amount due', value: yen(customerSummary.arrearsTotal ?? billing.arrearsTotal ?? 0) },
-    { label: 'Reserved credits', value: yen(customerSummary.welcomeCreditsReserved ?? billing.welcomeCreditsReserved ?? 0) },
-    { label: 'Subscription plan', value: subscriptionPlanLabel(account?.stripe?.subscriptionPlan || customerSummary.subscriptionPlan || billing.subscriptionPlan || 'none') },
-    { label: 'Plan included usage', value: yen(customerSummary.subscriptionIncludedCredits ?? billing.subscriptionIncludedCredits ?? 0) },
-    { label: 'Next renewal', value: account?.stripe?.subscriptionCurrentPeriodEnd ? formatTime(account.stripe.subscriptionCurrentPeriodEnd) : '-' },
-    { label: 'Arrears', value: yen(customerSummary.arrearsTotal ?? billing.arrearsTotal ?? 0) }
+    { label: 'Payment mode', value: 'Donation-only outside CAIt' },
+    { label: 'Checkout', value: 'removed' },
+    { label: 'Saved cards', value: 'not collected' },
+    { label: 'Subscriptions', value: 'removed' },
+    { label: 'In-app charges', value: 'removed' }
   ]);
   renderSummaryRows(els.billingSummaryCard, [
-    { label: 'Welcome credits', value: pointsLabel(customerSummary.welcomeCreditsAvailable ?? billing.welcomeCreditsBalance ?? 0) },
-    { label: 'Saved card', value: account?.stripe?.defaultPaymentMethodId || account?.stripe?.defaultPaymentMethodStatus === 'ready' ? 'ready' : 'not registered' },
-    { label: 'Month-end amount due', value: yen(customerSummary.arrearsTotal ?? billing.arrearsTotal ?? 0) },
-    { label: 'Reserved credits', value: yen(customerSummary.welcomeCreditsReserved ?? billing.welcomeCreditsReserved ?? 0) },
-    { label: 'Plan included usage remaining', value: yen(customerSummary.subscriptionCreditsAvailable ?? 0) }
+    { label: 'Support model', value: 'Optional external donation' },
+    { label: 'CAIt payment forms', value: 'none' },
+    { label: 'Customer billing', value: 'removed' },
+    { label: 'Provider payout movement', value: 'removed' }
   ]);
   renderSummaryRows(els.settingsStatus, [
     { label: 'Account', value: account?.login || auth.user.login },
-    { label: 'Orders pay from', value: billing.mode || 'monthly_invoice' },
+    { label: 'Orders pay from', value: 'No in-app payment setup' },
     { label: 'Provider profile', value: Boolean(payout.providerEnabled) ? 'enabled' : 'disabled' },
     { label: 'CAIt API keys', value: DEVELOPER_SURFACES_STATUS },
     { label: 'Live/test keys', value: 'Paused until external contract stabilizes' }
   ]);
   renderSummaryRows(els.monthlySummaryCard, [
     { label: 'Period', value: monthlySummary?.period || state.settingsPeriod },
-    { label: 'End-user spend this month', value: yen(customerSummary.totalSpent || customerSummary.totalDue || 0) },
-    { label: 'Welcome credits', value: pointsLabel(customerSummary.welcomeCreditsAvailable || 0) },
-    { label: 'Month-end amount due', value: yen(customerSummary.arrearsTotal || 0) },
-    { label: 'Plan included usage', value: yen(customerSummary.subscriptionIncludedCredits || 0) },
-    { label: 'Provider order payouts', value: yen(providerSummary.grossPayout || 0) },
-    { label: 'Provider monthly SaaS fees', value: yen(providerSummary.providerSubscriptionMonthlyPrice || 0) },
-    { label: 'CAIt take from provider monthly SaaS fees', value: yen(providerSummary.providerSubscriptionMarketplaceFee || 0) },
-    { label: 'Billing ready', value: Boolean(readiness.billingReady) ? 'yes' : 'no' },
-    { label: 'Payout ready', value: Boolean(readiness.payoutReady) ? 'yes' : 'no' }
+    { label: 'In-app payment status', value: 'removed' },
+    { label: 'Donation status', value: 'external optional support only' },
+    { label: 'Customer billing', value: 'not collected in CAIt' },
+    { label: 'Provider payouts', value: 'not moved in CAIt' }
   ]);
   renderProviderBillingLanesCard(providerSummary);
   renderOrderApiKeys(account, auth);
@@ -14309,17 +13593,6 @@ async function refresh() {
   render(snapshot);
   syncOpenChatTrackedJobsFromSnapshot(snapshot);
   scheduleLiveSnapshotRefresh(snapshot);
-  if (snapshot?.auth?.loggedIn) {
-    void api('/api/stripe/status', { preserveAuthOn401: true })
-      .then((stripeStatus) => {
-        if (state.snapshot !== snapshot) return;
-        state.stripeStatus = stripeStatus;
-        render(state.snapshot);
-      })
-      .catch(() => {
-        if (state.snapshot === snapshot) state.stripeStatus = null;
-      });
-  }
   void backfillTrackedJobsIntoSnapshot(snapshot).catch(() => {});
   void maybeAutoLoadRepos(snapshot.auth).catch(() => {});
 }
@@ -15727,64 +15000,9 @@ if (els.apiKeyTable) els.apiKeyTable.onclick = (event) => {
   ].join('\n'));
   flash('CAIt API keys are coming soon.', 'warn');
 };
-if (els.createStripeSetupSessionBtn) els.createStripeSetupSessionBtn.onclick = () => {
-  if (!ensureSettingsLogin()) return;
-  runAction(els.createStripeSetupSessionBtn, async () => {
-    if (TEMPORARY_INVOICE_BILLING_ENABLED && !STRIPE_CARD_SETUP_DURING_TEMPORARY_BILLING_ENABLED) {
-      safeText(els.stripeCustomerActionResult, [
-        ...temporaryInvoiceNoticeLines('payment'),
-        '',
-        'Saved payment-method setup is unavailable in temporary invoice/manual billing mode.'
-      ].join('\n'));
-      flash('Saved payment-method setup is paused during temporary invoice billing.', 'warn');
-      return;
-    }
-    await launchStripeHostedAction('/api/stripe/setup-session', {}, {
-      title: TEMPORARY_INVOICE_BILLING_ENABLED
-        ? 'Payment method registration is ready.'
-        : 'Payment method setup is ready.',
-      successMessage: TEMPORARY_INVOICE_BILLING_ENABLED
-        ? 'Opened payment method registration. Orders still use monthly invoice/manual confirmation until automated charging is enabled.'
-        : 'Opened payment method setup.',
-      output: 'customer'
-    });
-  });
-};
-if (els.createStripeSubscriptionSessionBtn) els.createStripeSubscriptionSessionBtn.onclick = () => {
-  if (!ensureSettingsLogin()) return;
-  openPlanModal();
-};
-if (els.confirmPlanModalBtn) els.confirmPlanModalBtn.onclick = () => {
-  if (!ensureSettingsLogin()) return;
-  runAction(els.confirmPlanModalBtn, async () => {
-    if (!state.planIntentArmed || !els.planModal || els.planModal.hidden) {
-      throw new Error(TEMPORARY_INVOICE_BILLING_ENABLED ? 'Use REQUEST PLAN INVOICE first.' : 'Use OPEN PLAN CHECKOUT first.');
-    }
-    const plan = String(els.planModalPlan?.value || '').trim().toLowerCase();
-    if (!plan || plan === 'none') {
-      safeText(els.stripeCustomerActionResult, 'Choose STARTER or PRO in the popup first.');
-      throw new Error('Choose a subscription plan first.');
-    }
-    if (els.billingSubscriptionPlan) {
-      els.billingSubscriptionPlan.value = plan;
-    }
-    closePlanModal();
-    if (TEMPORARY_INVOICE_BILLING_ENABLED) {
-      await submitTemporaryInvoiceRequest({
-        kind: 'plan',
-        plan,
-        amount: ledgerAmountToDisplayCurrency(subscriptionBasePriceForPlan(plan)),
-        context: 'settings'
-      });
-      return;
-    }
-    await launchStripeHostedAction('/api/stripe/subscription-session', { plan }, {
-      title: 'Subscription checkout is ready.',
-      successMessage: `Opened subscription checkout for ${plan}.`,
-      output: 'customer'
-    });
-  });
-};
+if (IN_APP_PAYMENTS_REMOVED) {
+  attachRemovedPaymentActionHandlers(els, { closePlanModal, flash, runAction, safeText });
+}
 if (els.cancelPlanModalBtn) els.cancelPlanModalBtn.onclick = () => closePlanModal();
 if (els.planModal) {
   els.planModal.onclick = (event) => {
@@ -15818,83 +15036,6 @@ if (els.planModalPlan) {
     }
   };
 }
-if (els.createStripeConnectOnboardingBtn) els.createStripeConnectOnboardingBtn.onclick = () => {
-  if (!ensureSettingsLogin()) return;
-  if (!ensureGithubLinkedAccess({ section: 'provider', message: 'Connect GitHub before provider onboarding.' })) return;
-  runAction(els.createStripeConnectOnboardingBtn, async () => {
-    if (TEMPORARY_INVOICE_BILLING_ENABLED) {
-      safeText(els.stripeProviderActionResult, [
-        ...temporaryInvoiceNoticeLines('payout'),
-        '',
-        'External payout onboarding is disabled during this temporary period. Earnings remain tracked in CAIt.'
-      ].join('\n'));
-      flash('External payout onboarding is temporarily paused.', 'warn');
-      return;
-    }
-    await launchStripeHostedAction('/api/stripe/connect/onboarding', {}, {
-      title: 'External payout onboarding is ready.',
-      successMessage: 'Opened external payout onboarding.',
-      output: 'provider'
-    });
-  });
-};
-if (els.runStripeProviderMonthlyChargeBtn) els.runStripeProviderMonthlyChargeBtn.onclick = () => {
-  if (!ensureSettingsLogin()) return;
-  runAction(els.runStripeProviderMonthlyChargeBtn, async () => {
-    const period = (els.settingsPeriod?.value || state.settingsPeriod || currentMonthPeriod()).trim() || currentMonthPeriod();
-    const result = await api('/api/stripe/provider-monthly-charge/run', {
-      method: 'POST',
-      body: JSON.stringify({ period })
-    });
-    const providerMonthly = result.provider_monthly || {};
-    safeText(els.stripeProviderActionResult, [
-      'Provider monthly SaaS billing attempted.',
-      `Period: ${result.period || period}`,
-      `Amount charged: ${yen(result.amount || 0)}`,
-      result.payment_intent_id ? `Payment intent: ${result.payment_intent_id}` : 'Payment intent: -',
-      `Remaining due: ${yen(providerMonthly.dueAmount || 0)}`,
-      `Charged this period: ${yen(providerMonthly.chargedAmount || 0)}`
-    ].join('\n'));
-    flash(result.skipped ? 'No provider monthly SaaS amount was due.' : 'Provider monthly SaaS billing completed.', 'ok');
-    await refresh();
-  });
-};
-if (els.runStripeProviderPayoutBtn) els.runStripeProviderPayoutBtn.onclick = () => {
-  if (!ensureSettingsLogin()) return;
-  if (!ensureGithubLinkedAccess({ section: 'provider', message: 'Connect GitHub before withdrawing provider earnings.' })) return;
-  runAction(els.runStripeProviderPayoutBtn, async () => {
-    const rawAmount = String(els.payoutWithdrawAmount?.value || '').trim();
-    const amount = rawAmount ? Number(rawAmount) : 0;
-    if (TEMPORARY_INVOICE_BILLING_ENABLED) {
-      if (rawAmount && !(amount > 0)) throw new Error('Enter a positive withdrawal amount, or leave it blank to request the full available balance.');
-      const providerSummary = state.snapshot?.monthlySummary?.provider || {};
-      const providerPending = Number(providerSummary.pendingBalance || state.snapshot?.accountSettings?.payout?.pendingBalance || 0);
-      const requestAmount = amount > 0 ? amount : ledgerAmountToDisplayCurrency(providerPending);
-      await submitTemporaryInvoiceRequest({
-        kind: 'payout',
-        amount: requestAmount,
-        context: 'provider'
-      });
-      return;
-    }
-    if (rawAmount && !(amount > 0)) throw new Error('Enter a positive withdrawal amount, or leave it blank to withdraw the full available balance.');
-    const result = await api('/api/stripe/payout/run', {
-      method: 'POST',
-      body: JSON.stringify(amount > 0 ? { amount } : {})
-    });
-    safeText(els.stripeProviderActionResult, [
-      'Withdrawal submitted.',
-      `Amount: ${yen(result.amount || 0)}`,
-      `Transfer: ${result.transfer_id || '-'}`,
-      `Pending before: ${yen(result.pending_before || 0)}`,
-      `Pending after: ${yen(result.pending_after || 0)}`,
-      'The payment provider will pay out from the connected account to the configured bank account.'
-    ].join('\n'));
-    flash('Withdrawal submitted.', 'ok');
-    if (els.payoutWithdrawAmount) els.payoutWithdrawAmount.value = '';
-    await refresh();
-  });
-};
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && els.apiKeyRevealModal && !els.apiKeyRevealModal.hidden) {
     showApiKeyRevealResult('Use COPY KEY, then press I SAVED IT when the key is stored. Escape does not close this one-time reveal.');
@@ -15913,69 +15054,6 @@ window.addEventListener('keydown', (event) => {
     renderFlexibleToolPanel();
   }
 });
-if (els.saveBillingSettingsBtn) els.saveBillingSettingsBtn.onclick = () => {
-  if (!ensureSettingsLogin()) return;
-  runAction(els.saveBillingSettingsBtn, async () => {
-  const period = encodeURIComponent((els.settingsPeriod?.value || state.settingsPeriod || currentMonthPeriod()).trim() || currentMonthPeriod());
-  await api(`/api/settings/billing?period=${period}`, {
-    method: 'POST',
-    body: JSON.stringify({
-      mode: els.billingMode?.value || 'monthly_invoice',
-      legalName: els.billingLegalName?.value || '',
-      companyName: els.billingCompanyName?.value || '',
-      billingEmail: els.billingEmail?.value || '',
-      billingPhone: els.billingPhone?.value || '',
-      billingPostalCode: els.billingPostalCode?.value || '',
-      billingRegion: els.billingRegion?.value || '',
-      billingCity: els.billingCity?.value || '',
-      billingAddressLine1: els.billingAddressLine1?.value || '',
-      billingAddressLine2: els.billingAddressLine2?.value || '',
-      country: els.billingCountry?.value || 'JP',
-      currency: els.billingCurrency?.value || 'USD',
-      subscriptionPlan: els.billingSubscriptionPlan?.value || 'none',
-      subscriptionOverageMode: els.billingSubscriptionOverageMode?.value || 'monthly_invoice',
-      taxId: els.billingTaxId?.value || '',
-      purchaseOrderRef: els.billingPurchaseOrderRef?.value || '',
-      invoiceMemo: els.billingInvoiceMemo?.value || '',
-      dueDays: Number(els.billingDueDays?.value || 14),
-      invoiceEnabled: true
-    })
-  });
-  state.settingsPeriod = decodeURIComponent(period);
-  switchTab('settings');
-  flash('Billing settings saved. Month-end billing logic updated.', 'ok');
-  await refresh();
-  });
-};
-if (els.savePayoutSettingsBtn) els.savePayoutSettingsBtn.onclick = () => {
-  if (!ensureSettingsLogin()) return;
-  if (!ensureGithubLinkedAccess({ section: 'provider', message: 'Connect GitHub before saving provider settings.' })) return;
-  runAction(els.savePayoutSettingsBtn, async () => {
-  const period = encodeURIComponent((els.settingsPeriod?.value || state.settingsPeriod || currentMonthPeriod()).trim() || currentMonthPeriod());
-  await api(`/api/settings/payout?period=${period}`, {
-    method: 'POST',
-    body: JSON.stringify({
-      providerEnabled: els.payoutProviderEnabled?.value === 'true',
-      entityType: els.payoutEntityType?.value || 'individual',
-      legalName: els.payoutLegalName?.value || '',
-      displayName: els.payoutDisplayName?.value || '',
-      payoutEmail: els.payoutEmail?.value || '',
-      country: els.payoutCountry?.value || 'JP',
-      currency: els.payoutCurrency?.value || 'USD',
-      supportEmail: els.payoutSupportEmail?.value || '',
-      minimumPayoutAmount: displayCurrencyToLedgerAmount(Number(els.payoutMinimumAmount?.value || 0)),
-      website: els.payoutWebsite?.value || '',
-      statementDescriptor: els.payoutStatementDescriptor?.value || '',
-      notes: els.payoutNotes?.value || ''
-    })
-  });
-  state.settingsPeriod = decodeURIComponent(period);
-  switchTab('settings');
-  flash('Payout settings saved. Bank account collection is deferred to external payout onboarding.', 'ok');
-  await refresh();
-  });
-};
-
 function agentRoutingConfirmationPrompt(payload = {}) {
   const routing = payload.routing_confirmation || {};
   const inferred = routing.inferred || {};

@@ -26,6 +26,7 @@ const appConsoleCssPath = new URL('../public/app-console.css', import.meta.url);
 const adminCssPath = new URL('../public/admin.css', import.meta.url);
 const adminJsPath = new URL('../public/admin.js', import.meta.url);
 const clientJsPath = new URL('../public/client.js', import.meta.url);
+const clientFlexibleToolUtilsPath = new URL('../public/client-flexible-tool-utils.js', import.meta.url);
 const clientOpenChatHistoryUtilsPath = new URL('../public/client-open-chat-history-utils.js', import.meta.url);
 const clientOpenChatOrderProgressUtilsPath = new URL('../public/client-open-chat-order-progress-utils.js', import.meta.url);
 const clientOpenChatPatternGuardUtilsPath = new URL('../public/open-chat-pattern-guard-utils.js', import.meta.url);
@@ -71,7 +72,6 @@ const accountSessionPath = new URL('../lib/account-session.js', import.meta.url)
 const accountEventsPath = new URL('../lib/account-events.js', import.meta.url);
 const googleIntegrationPath = new URL('../lib/google-integration.js', import.meta.url);
 const emailNotificationsPath = new URL('../lib/email-notifications.js', import.meta.url);
-const billingHelpersPath = new URL('../lib/billing-helpers.js', import.meta.url);
 const workflowReconcileStatePath = new URL('../lib/workflow-reconcile-state.js', import.meta.url);
 const workflowPlanAssemblyPath = new URL('../lib/workflow-plan-assembly.js', import.meta.url);
 const connectorRoutesPath = new URL('../lib/routes/connectors.js', import.meta.url);
@@ -114,6 +114,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(loginJsPath)], { stdio:
 execFileSync(process.execPath, ['--check', fileURLToPath(fastAuthJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(adminJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientJsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientFlexibleToolUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatHistoryUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatPatternGuardUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(analyticsLoaderPath)], { stdio: 'pipe' });
@@ -163,6 +164,7 @@ const appConsoleCss = readFileSync(appConsoleCssPath, 'utf8');
 const adminCss = readFileSync(adminCssPath, 'utf8');
 const adminJs = readFileSync(adminJsPath, 'utf8');
 const clientJs = readFileSync(clientJsPath, 'utf8');
+const clientFlexibleToolUtilsJs = readFileSync(clientFlexibleToolUtilsPath, 'utf8');
 const clientOpenChatPreorderIntentJs = readFileSync(new URL('../public/client-open-chat-preorder-intent-utils.js', import.meta.url), 'utf8');
 const clientOpenChatQuickAnswerJs = readFileSync(new URL('../public/client-open-chat-quick-answer-utils.js', import.meta.url), 'utf8');
 const clientOpenChatOrderProgressUtilsJs = readFileSync(clientOpenChatOrderProgressUtilsPath, 'utf8');
@@ -208,7 +210,6 @@ const accountSession = readFileSync(accountSessionPath, 'utf8');
 const accountEvents = readFileSync(accountEventsPath, 'utf8');
 const googleIntegration = readFileSync(googleIntegrationPath, 'utf8');
 const emailNotifications = readFileSync(emailNotificationsPath, 'utf8');
-const billingHelpers = readFileSync(billingHelpersPath, 'utf8');
 const workflowReconcileState = readFileSync(workflowReconcileStatePath, 'utf8');
 const workflowPlanAssembly = readFileSync(workflowPlanAssemblyPath, 'utf8');
 const connectorRoutes = readFileSync(connectorRoutesPath, 'utf8');
@@ -285,7 +286,8 @@ assert.equal(existsSync(fileURLToPath(new URL('../public/chatux/', import.meta.u
 assert.ok(html.includes('<main class="home-shell" aria-label="CAIt landing page">'), 'Root page should be the public landing page.');
 assert.ok(html.includes('Anyone can create high-quality AI agent output'), 'Root should lead with anyone-can-create-high-quality-output positioning.');
 assert.ok(html.includes('Beta access is free'), 'English root should disclose the beta free-access state in English.');
-assert.ok(html.includes('up to $10 in free beta credits'), 'English root should disclose the per-account $10 free allowance in English.');
+assert.ok(html.includes('CAIt no longer collects cards, checkout, billing, subscriptions, or payouts in-app'), 'English root should disclose in-app payment removal.');
+assert.ok(html.includes('support is donation-only outside CAIt'), 'English root should disclose external donation-only support.');
 assert.ok(!html.includes('β版は無料開放中'), 'English root beta banner should not render Japanese-only copy.');
 assert.ok(emailNotifications.includes("const SIGNUP_WELCOME_EMAIL_TEMPLATE = 'signup_welcome_v2'"), 'signup welcome email should use the current template version.');
 assert.ok(emailNotifications.includes('Welcome to CAIt: start in Chat'), 'signup welcome email should point new users to Chat, not the old Work entry.');
@@ -408,9 +410,9 @@ const clientReusableToolsAnswer = clientJs.slice(
   clientJs.indexOf('function openChatLooksShortPromptSource')
 );
 assert.ok(!/action:\s*'connect_x'|CONNECT X|X連携/.test(clientReusableToolsAnswer), 'Reusable chat tools must not expose X OAuth from chat.');
-const clientFlexibleToolCandidates = clientJs.slice(
-  clientJs.indexOf('function flexibleToolCandidates'),
-  clientJs.indexOf('function activeFlexibleTool')
+const clientFlexibleToolCandidates = clientFlexibleToolUtilsJs.slice(
+  clientFlexibleToolUtilsJs.indexOf('function flexibleToolCandidates'),
+  clientFlexibleToolUtilsJs.indexOf('function activeFlexibleTool')
 );
 assert.ok(clientFlexibleToolCandidates.includes('Social publishing handoff'), 'Social publishing hints should point to SaaS/app handoff.');
 assert.ok(!/title:\s*'X Ops Connector'|action:\s*'connect_x'|action:\s*'post_current_to_x'|POST EXACT TEXT|DRAFT ONLY|connected X account|Connect your X account with OAuth first/.test(clientFlexibleToolCandidates), 'Flexible social publishing tools must not expose direct X OAuth or posting actions.');
@@ -421,13 +423,15 @@ assert.ok(!workActionRegistry.includes("post_current_to_x: { kind: 'executor' }"
 assert.ok(chatJs.includes('growthLeaderNeedsDataHint'), 'Growth leader intake should point users toward connectors or source URLs instead of asking repeated data questions.');
 assert.ok(chatJs.includes('Connected Google analytics can be attached'), 'Growth order checks should surface connected Google analytics instead of silently skipping it.');
 assert.ok(chatJs.includes('Analytics was skipped for this prepared order'), 'Growth order checks should allow an explicit analytics skip only when the user chooses it.');
-assert.ok(clientJs.includes('Identity verified for payout'), 'Provider payout UI should show payout-provider identity verification state.');
-assert.ok(clientJs.includes('complete payout-provider identity verification'), 'Provider payout UI should block withdrawals until identity verification is complete.');
-assert.ok(clientJs.includes('const betaBillingPaused = Boolean(stripe?.billingPaused || auth?.billingPaused);'), 'Settings UI should detect beta billing pause from server policy.');
-assert.ok(clientJs.includes('Live billing: paused'), 'Settings UI should show that live billing is paused in beta.');
-assert.ok(clientJs.includes('BILLING_ACTIVATION_ENABLED=1'), 'Settings UI should document the billing activation switch.');
-assert.ok(clientJs.includes('Billing is paused during beta'), 'Stripe action errors should present beta pause clearly.');
-assert.equal(new RegExp('pay' + 'jp', 'i').test(billingHelpers), false, 'Billing helpers should not retain removed payment-provider implementation paths.');
+assert.equal(existsSync(new URL('../lib/billing-helpers.js', import.meta.url)), false, 'Billing helpers should be removed with in-app payment processing.');
+assert.equal(existsSync(new URL('../lib/routes/billing.js', import.meta.url)), false, 'Billing routes should be removed with in-app payment processing.');
+assert.equal(existsSync(new URL('../public/in-app-payments-policy.js', import.meta.url)), false, 'Client payment policy shim should be removed with in-app payment processing.');
+assert.ok(clientJs.includes('const IN_APP_PAYMENTS_REMOVED = true;'), 'Client payment handling should keep a hard payment-removal flag.');
+assert.ok(clientJs.includes('const PAYMENT_PROVIDER_UI_VISIBLE = false;'), 'Client payment handling should hide payment-provider controls.');
+assert.ok(clientJs.includes('DONATION_ONLY_NOTICE'), 'Settings UI should explain donation-only support outside CAIt.');
+assert.equal(clientJs.includes('/api/stripe/'), false, 'Client UI must not call removed Stripe routes.');
+assert.equal(clientJs.includes('/api/settings/billing'), false, 'Client UI must not call removed billing settings route.');
+assert.equal(clientJs.includes('/api/settings/payout'), false, 'Client UI must not call removed payout settings route.');
 assert.equal(clientJs.includes('PAY' + '.JP'), false, 'Client UI should not mention the removed payment provider.');
 assert.ok(clientJs.includes("if (requested.length) url.searchParams.set('capabilities', requested.join(','))"), 'Chat Google connector should pass exact required Google capabilities into OAuth without adding broad defaults.');
 assert.ok(clientJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
@@ -782,7 +786,7 @@ assert.ok(publisherHtml.includes('id="publisherDestinationCount"'), 'Publisher S
 assert.ok(leadOpsHtml.includes('Lead Ops'), 'Lead Ops should be a first-class app page.');
 assert.ok(leadOpsHtml.includes('href="/apps.html"'), 'Lead Ops should link back to the apps hub.');
 assert.ok(leadOpsHtml.includes('id="sendLeadContextBtn"'), 'Lead Ops should send context to CAIt.');
-assert.ok(leadOpsHtml.includes('/lead-ops.js?v=20260525b'), 'Lead Ops should load the app-context receiving controller.');
+assert.ok(/\/lead-ops\.js\?v=202605\d+[a-z]/.test(leadOpsHtml), 'Lead Ops should load the app-context receiving controller.');
 assert.ok(leadOpsHtml.includes('id="approveLeadBtn"'), 'Lead Ops should provide a direct approval action.');
 assert.ok(leadOpsHtml.includes('id="scheduleLeadBtn"'), 'Lead Ops should provide scheduled outreach planning.');
 assert.ok(leadOpsHtml.includes('id="triggerLeadBtn"'), 'Lead Ops should provide event-triggered outreach planning.');
@@ -792,6 +796,8 @@ assert.ok(leadOpsHtml.includes('id="scheduleResendBtn"'), 'Lead Ops should sched
 assert.ok(leadOpsHtml.includes('id="requestLeadSourcingBtn"'), 'Lead Ops should let users request first lead sourcing from List Creator.');
 assert.ok(leadOpsHtml.includes('id="leadSourcingIcpInput"'), 'Lead Ops should capture target customer input for lead sourcing.');
 assert.ok(leadOpsHtml.includes('id="leadAllNavCount"'), 'Lead Ops side navigation counts should come from runtime data.');
+assert.ok(leadOpsHtml.includes('入力後にCAItへ渡す') && leadOpsJs.includes('確認してチャットへ戻す'), 'Lead Ops should use plain Japanese CAIt handoff labels for low-literacy users.');
+assert.ok(leadOpsHtml.includes('この画面を見ているだけでは、メールは勝手に送られません。'), 'Lead Ops should reassure cautious users before outreach actions.');
 assert.ok(campaignOperationsHtml.includes('Campaign Operations'), 'Campaign Operations should be a first-class app page.');
 assert.ok(campaignOperationsHtml.includes('href="/apps.html"'), 'Campaign Operations should link back to the apps hub.');
 assert.ok(campaignOperationsHtml.includes('id="sendCampaignContextBtn"'), 'Campaign Operations should send context to CAIt.');
@@ -995,7 +1001,7 @@ assert.ok(!growthOpsJs.includes("source_app: 'pricing_decision_console'"), 'Grow
 assert.ok(!growthOpsJs.includes("source_app: 'delivery_manager'"), 'Growth Experiment Console JS should not contain Delivery Manager app logic.');
 assert.ok(pricingOpsJs.includes("source_app: 'pricing_decision_console'"), 'Pricing Decision Console app logic should stay in pricing-ops.js.');
 assert.ok(pricingOpsJs.includes("fetchCaitAppContextFromUrl"), 'Pricing Decision Console should receive CAIt app contexts.');
-assert.ok(pricingOpsHtml.includes('/pricing-ops.js?v=20260526b'), 'Pricing Decision Console should bump the script cache key for explicit approval-request passthrough changes.');
+assert.ok(pricingOpsHtml.includes('/pricing-ops.js?v=20260527a'), 'Pricing Decision Console should bump the script cache key for the beginner-friendly pricing review refresh.');
 assert.ok(pricingOpsJs.includes("type: 'pricing_decision_packet'"), 'Pricing Decision Console should return pricing_decision_packet artifacts.');
 assert.ok(pricingOpsJs.includes("type: 'scenario_table'"), 'Pricing Decision Console should return scenario_table artifacts.');
 assert.ok(pricingOpsJs.includes("type: 'sensitivity_table'"), 'Pricing Decision Console should return sensitivity_table artifacts.');
@@ -1065,7 +1071,7 @@ assert.ok(!chatJs.includes("chatText('Send chat', 'チャット送信'"), 'Chat 
 assert.ok(chatJs.includes('Answer the intake item here, then press Send answer'), 'Chat intake mode should explicitly tell users to press Send answer.');
 assert.ok(chatCss.includes('.composer[data-mode="intake"] .composer-mode-hint'), 'Chat intake mode should visually distinguish the composer hint.');
 assert.ok(chatCss.includes('.composer-controls-hint'), 'Chat CSS should style the output-vs-schedule hint near composer controls.');
-assert.ok(appsHtml.includes('/apps.js?v=20260526k'), 'Apps page should load the current workspace-grouped app hub controller.');
+assert.ok(/\/apps\.js\?v=202605\d+[a-z]/.test(appsHtml), 'Apps page should load the current workspace-grouped app hub controller.');
 assert.ok(worker.includes("'/pricing-ops.html'") && worker.includes("'/pricing-ops.js'"), 'Worker should no-cache Pricing Decision Console assets after deploy.');
 assert.ok(appsHtml.includes('data-app-registry-list'), 'Apps page should expose the live app registry list.');
 assert.ok(appsHtml.includes('One API / CLI / MCP developer surface') && appsHtml.includes('Disabled by default'), 'Apps page should describe API/CLI/MCP as one disabled-by-default developer surface.');
@@ -1230,7 +1236,7 @@ assert.ok(leadOpsJs.includes('applyInboundContext'), 'Lead Ops should map inboun
 assert.ok(leadOpsJs.includes('parseLeadRowsFromMarkdown'), 'Lead Ops should parse List Creator Markdown tables into lead rows.');
 assert.ok(leadOpsJs.includes('Reviewable lead rows') || leadOpsJs.includes('company_name'), 'Lead Ops should recognize reviewable lead-row tables from agent deliveries.');
 assert.ok(leadOpsJs.includes('leadAllNavCount'), 'Lead Ops should update side navigation counts from runtime rows.');
-assert.ok(leadOpsJs.includes('No lead rows loaded.'), 'Lead Ops should render an explicit empty state before server context is loaded.');
+assert.ok(leadOpsJs.includes('No lead rows are loaded yet.') || leadOpsJs.includes('まだ営業先がありません。'), 'Lead Ops should render an explicit empty state before server context is loaded.');
 assert.ok(!/Travel Creator|Remote Japan|Airport Arrival|example\.com\/japan-travel/i.test(leadOpsJs), 'Lead Ops should not ship built-in sample lead rows.');
 assert.ok(deliveryManagerJs.includes('source_app: \'delivery_manager\''), 'Deliveries should create reusable delivery context.');
 assert.ok(deliveryManagerJs.includes('delivery_files'), 'Delivery Manager should include delivery files.');
@@ -1939,15 +1945,11 @@ assert.ok(worker.includes("'/provider-identity.html'"));
 assert.ok(worker.includes("'/provider-identity.js'"));
 assert.ok(worker.includes('submitProviderIdentityVerification'), 'Worker should accept provider identity submissions.');
 assert.ok(worker.includes('reviewAdminProviderIdentityVerification'), 'Worker should let admins approve or reject provider identity submissions.');
-assert.ok(providerIdentityRoutes.includes('billingPostalCode: existing.billing?.billingPostalCode || identityVerification.fields.postalCode'), 'Provider identity submission should sync address data into billing identity.');
-assert.ok(billingHelpers.includes('providerRegistrationBillingStatus'), 'Billing helper should compute provider money readiness from billing identity and provider identity.');
-assert.ok(billingHelpers.includes("providerIdentityStatus(account) === 'approved'"), 'Provider money readiness should require CAIt admin-approved provider identity.');
-assert.equal(billingHelpers.includes('PAY' + 'JP_TENANT_READY_STATUSES'), false, 'Provider money readiness should not depend on removed provider tenant statuses.');
-assert.equal(billingHelpers.includes("missing.push('" + 'pay' + "jpTenantReady')"), false, 'Provider money readiness should not require the removed provider gate.');
-assert.ok(billingHelpers.includes('manual_provider_settlement'), 'Agent registration money readiness should report CAIt manual settlement mode.');
-assert.ok(billingHelpers.includes('money_actions_blocked'), 'Agent registration should report locked provider money actions without blocking registration.');
-assert.ok(/Listing can proceed, but (provider )?money actions stay locked/.test(clientJs), 'Agent registration UI copy should allow listing while warning that money actions are locked.');
-assert.ok(clientJs.includes('CAIt manual settlement review'), 'Agent registration UI copy should name CAIt manual settlement review as the temporary money-action condition.');
+assert.ok(providerIdentityRoutes.includes('billingPostalCode: existing.billing?.billingPostalCode || identityVerification.fields.postalCode'), 'Provider identity submission should preserve address data for account records.');
+assert.ok(worker.includes('payment_processing_removed: true'), 'Agent registration money readiness should report removed payment processing.');
+assert.ok(worker.includes('money_actions_blocked: true'), 'Agent registration should report blocked money actions without blocking registration.');
+assert.ok(/Listing can proceed, but CAIt no longer processes payments, billing, or payouts/.test(clientJs), 'Agent registration UI copy should allow listing while warning that money actions are removed.');
+assert.ok(clientJs.includes('Support is donation-only outside CAIt'), 'Agent registration UI copy should name donation-only support outside CAIt.');
 for (const field of ['billingPhone', 'billingPostalCode', 'billingRegion', 'billingCity', 'billingAddressLine1', 'billingAddressLine2']) {
   assert.ok(clientJs.includes(field), `Settings UI should save provider registration billing field ${field}.`);
 }

@@ -15,166 +15,143 @@
   <meta property="og:image" content="https://aiagent-marketplace.net/cait-icon.png" />
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
-  <link rel="stylesheet" href="/app-console.css?v=20260505c" />
+  <link rel="stylesheet" href="/app-console.css?v=20260527a" />
 </head>
-<body>
+<body class="apps-page">
   <main class="app-console-shell" aria-label="CAIt Apps">
     <section class="app-console-panel">
       <header class="app-console-header">
         <a class="app-brand" href="/" aria-label="CAIt"><img src="/cait-icon.svg" alt="" /><span>CAIt Apps</span></a>
         <nav class="app-nav" aria-label="CAIt pages">
-          <a href="/login?next=%2Fchat&amp;source=apps">Chat</a>
-          <a href="/delivery-manager.html">Deliveries</a>
-          <a href="/agents.html">Agents</a>
-          <a href="/publish-ai-agents.html">Publish</a>
-          <a href="/ai-agent-api.html">API / CLI / MCP</a>
-          <a href="/resources.html">Resources</a>
+          <a href="/login?next=%2Fchat&amp;source=apps">相談する</a>
+          <a href="/delivery-manager.html">納品を見る</a>
+          <a href="/apps.html">アプリ一覧</a>
+          <a href="/agents.html">AI担当一覧</a>
+          <a href="/resources.html">ヘルプ</a>
         </nav>
         <div class="app-header-actions">
-          <a class="primary-btn" href="/login?next=%2Fchat&amp;source=apps_start">Start in chat</a>
+          <a class="primary-btn" href="/login?next=%2Fchat&amp;source=apps_start">チャットで相談する</a>
         </div>
       </header>
       <div class="app-layout">
         <aside class="side-nav" aria-label="App categories">
-          <a class="active" href="#catalog">Workspaces <span data-app-count>Total</span></a>
-          <a href="#context">Context workspaces <span data-context-app-count>03</span></a>
-          <a href="#action">Action lanes <span data-action-app-count>01</span></a>
-          <a href="#recent-contexts">Recent contexts <span>API</span></a>
-          <a href="#builders">For builders <span>API / CLI / MCP</span></a>
+          <a class="active" href="#catalog">ホーム <span data-app-count>...</span></a>
+          <a href="/login?next=%2Fchat&amp;source=apps_side">相談する <span>迷った時</span></a>
+          <a href="/delivery-manager.html">納品を見る <span>履歴</span></a>
+          <a href="#recent-contexts">最近使った内容 <span>保存分</span></a>
+          <a href="#builders">詳しい方向け <span>API</span></a>
+          <div class="apps-safe-note" aria-label="Safety note">
+            <strong>安心して使えます</strong>
+            <span>どれを押しても、すぐ外部に送信したり公開したりしません。確認してから進めます。</span>
+          </div>
         </aside>
         <section class="workspace">
-          <div class="workspace-head">
+          <div class="workspace-head apps-hero-head">
             <div>
               <span class="kicker">Apps make quality visible</span>
-              <h1>Use SaaS-style apps to see the work and order the next AI agent task.</h1>
-              <p>Open an app when analytics, approvals, leads, publishing state, or external action context should become reusable. CAIt brings that context back to chat so the next order starts from real business information.</p>
+              <h1>やりたい作業を選ぶだけ</h1>
+              <p>むずかしい設定はあとで大丈夫です。下のボタンから近いものを選ぶと、CAItが次にやることを案内します。</p>
             </div>
             <div class="toolbar hero-actions">
-              <a class="primary-btn" href="/login?next=%2Fchat&amp;source=apps_use">Use apps in chat</a>
-              <a class="ghost-btn" href="/ai-agent-manifest.html">App contract guide</a>
+              <a class="primary-btn" href="/login?next=%2Fchat&amp;source=apps_use">まず相談する</a>
+              <a class="ghost-btn" href="#catalog">アプリを選ぶ</a>
             </div>
           </div>
 
-          <section class="metric-strip app-metrics" aria-label="App registry summary">
-            <article class="metric-card">
-              <span>Workspaces</span>
-              <strong data-app-count>...</strong>
-              <small>Merged from <code>/api/apps</code></small>
-            </article>
-            <article class="metric-card">
-              <span>Context workspaces</span>
-              <strong data-context-app-count>...</strong>
-              <small>Return agent-ready evidence packets</small>
-            </article>
-            <article class="metric-card">
-              <span>Action lanes</span>
-              <strong data-action-app-count>...</strong>
-              <small>Keep actions reviewable</small>
-            </article>
-            <article class="metric-card">
-              <span>Connectors</span>
-              <strong data-connector-count>...</strong>
-              <small>Declared by registered manifests</small>
-            </article>
-            <article class="metric-card">
-              <span>MCP endpoint</span>
-              <strong>Paused</strong>
-              <small>External MCP is disabled until the contract stabilizes</small>
-            </article>
+          <section class="apps-start-panel panel" aria-label="First time guidance">
+            <div class="apps-start-icon" aria-hidden="true">?</div>
+            <div>
+              <span class="kicker">はじめての方はここから</span>
+              <h2>何を選べばよいか迷ったら、チャットにそのまま書いてください。</h2>
+              <p>「アクセスを見たい」「記事を公開していいか見たい」くらいの言い方で大丈夫です。CAItが近いアプリや次の手順を案内します。</p>
+              <p><strong>Operational workspaces</strong> keeps the surface small and merges related app lanes. Deliveries feature, not in the app registry. Self-service app registration is not open yet.</p>
+            </div>
+            <div class="apps-start-actions">
+              <a class="primary-btn" href="/login?next=%2Fchat&amp;source=apps_beginner">チャットで相談する</a>
+              <a class="ghost-btn" href="/delivery-manager.html">納品一覧を見る</a>
+            </div>
+            <p>Deliveries feature, not in the app registry. Self-service app registration is not open yet. Operational workspaces merges related app lanes.</p>
           </section>
 
-          <section class="split-main intent-lanes" aria-label="App user paths">
-            <article class="panel">
-              <span class="kicker">Use apps</span>
-              <h2>See the context, then order from it.</h2>
-              <p>Use analytics, publishing, lead, and social apps when the next agent needs real data, prior work, or approval state before producing output. Reusable deliveries live in CAIt's Deliveries feature, not in the app registry.</p>
-              <div class="inline-actions">
-                <a class="primary-btn" href="#catalog">Browse apps</a>
-                <a class="ghost-btn" href="/delivery-manager.html">Open Deliveries</a>
-                <a class="ghost-btn" href="/login?next=%2Fchat&amp;source=apps_buyer">Open chat</a>
-              </div>
-            </article>
-            <article class="panel">
-              <span class="kicker">Partner apps</span>
-              <h2>External app contracts are designed for future partner SaaS tools.</h2>
-              <p>Self-service app registration is not open yet. CAIt still keeps app handoff, auth, and billing boundaries external-app ready so future paid partner apps can receive scoped context without becoming internal CAIt features.</p>
-              <div class="inline-actions">
-                <a class="primary-btn" href="/ai-agent-manifest.html">Read the contract</a>
-                <a class="ghost-btn" href="/login?next=%2Fchat&amp;source=apps_partner_question">Ask in chat</a>
-              </div>
-            </article>
-          </section>
-
-          <section class="panel" id="catalog" aria-label="Registered CAIt app catalog">
+          <section class="panel apps-choice-panel" id="catalog" aria-label="Registered CAIt app catalog">
             <div class="workspace-head compact-head">
               <div>
-                <span class="kicker">Live registry</span>
-                <h2>Operational workspaces</h2>
-                <p>The app hub reads the same registry used by chat handoffs, then merges related app lanes so users see fewer SaaS-style workspaces before ordering agent work.</p>
+                <span class="kicker">よく使うアプリ</span>
+                <h2>近いものを1つ選んでください</h2>
+                <p>ここで開くだけでは公開・送信・課金は行われません。内容を確認してからCAItに戻せます。</p>
               </div>
-              <a class="ghost-btn" href="/ai-agent-manifest.html">Contract guide</a>
+              <span class="apps-count-pill"><strong data-app-count>...</strong>件あります</span>
             </div>
-            <div class="app-registry-list" data-app-registry-list>
-              <div class="notice">Loading registered apps from CAIt...</div>
-            </div>
-          </section>
-
-          <section class="panel" id="context" aria-label="Featured app workflows">
-            <div class="workspace-head compact-head">
-              <div>
-                <span class="kicker">Featured workflows</span>
-                <h2>Start from the workspace that holds the missing context.</h2>
-              </div>
-            </div>
-            <div class="three-col" data-featured-app-list>
-              <div class="notice">Loading featured workflows from the registry...</div>
+            <div class="app-registry-list apps-choice-list" data-app-registry-list>
+              <div class="notice">アプリ一覧を読み込んでいます...</div>
             </div>
           </section>
 
           <section class="panel" id="recent-contexts" aria-label="Recent server-side app contexts">
             <div class="workspace-head compact-head">
               <div>
-                <span class="kicker">Server-side memory</span>
-                <h2>Recent app contexts</h2>
-                <p>Apps save packets to CAIt so analytics, drafts, approvals, and leads can be reused by future agents without browser-stored payloads or URL-embedded payloads. The list shows retained anchors without exposing the packet body.</p>
+                <span class="kicker">最近使った内容</span>
+                <h2>前に見た内容から続ける</h2>
+                <p>前回の数字、確認待ち、下書きなどがある場合はここに表示されます。表示されなくても、チャットから続けられます。</p>
+                <p><strong>Recent app contexts</strong> are loaded from the server-side context API so apps can hand reusable state back to CAIt without putting packet bodies in the URL. The list shows retained anchors without exposing the packet body.</p>
               </div>
-              <a class="ghost-btn" href="/login?next=%2Fchat&amp;source=app_contexts">Open chat</a>
+              <a class="ghost-btn" href="/login?next=%2Fchat&amp;source=app_contexts">チャットを開く</a>
             </div>
             <div class="context-list" id="recentContextList" data-context-list>
-              <div class="notice">Loading recent app contexts from CAIt...</div>
+              <div class="notice">最近使った内容を確認しています...</div>
             </div>
+          </section>
+
+          <section class="split-main apps-help-grid" id="context" aria-label="Simple app guidance">
+            <article class="panel">
+              <span class="kicker">押す前の目安</span>
+              <h2>こんな時はこのアプリです</h2>
+              <div class="three-col apps-mini-guide" data-featured-app-list>
+                <div class="notice">おすすめを読み込んでいます...</div>
+              </div>
+            </article>
+            <article class="panel">
+              <span class="kicker">安全の考え方</span>
+              <h2>確認してから次に進みます</h2>
+              <ul class="apps-plain-list">
+                <li>アプリを開いても、すぐに公開や送信はしません。</li>
+                <li>必要なログインや連携がある時は、画面で案内します。</li>
+                <li>迷った場合はチャットに戻って相談できます。</li>
+              </ul>
+            </article>
           </section>
 
           <section class="split-main" id="builders">
             <article class="panel">
-              <h2>How apps make quality visible</h2>
-              <p>Each app creates a structured <code>cait-app-context/v1</code> packet and saves it through CAIt's server-side context API. Chat receives only a context id and token, then loads the packet when the next agent needs that information.</p>
+              <h2>詳しい方向けの仕組み</h2>
+              <p>CAItのSaaS-style appsは、作業に必要なcontextを保存して、次のorderに使えるようにします。共有 contract は <code>cait-app-context/v1</code> です。通常の利用では、この仕組みを理解しなくても使えます。</p>
               <table class="data-table" aria-label="App orchestration loop">
-                <thead><tr><th>Step</th><th>What happens</th><th>Returned to CAIt</th></tr></thead>
+                <thead><tr><th>手順</th><th>何が起きるか</th><th>CAItに戻るもの</th></tr></thead>
                 <tbody>
-                  <tr><td>1</td><td>Open a registered app from chat, delivery, or this hub.</td><td>App identity and source context</td></tr>
-                  <tr><td>2</td><td>Review analytics, draft, approval state, lead rows, or files inside the app.</td><td>Facts, metrics, artifacts, waiting items</td></tr>
-                  <tr><td>3</td><td>Press Send to CAIt.</td><td>Server context id and access token</td></tr>
-                  <tr><td>4</td><td>CAIt loads the context into chat.</td><td>Agent-ready next order prompt</td></tr>
+                  <tr><td>1</td><td>チャット、納品、またはこの画面からアプリを開きます。</td><td>どのアプリから来たか</td></tr>
+                  <tr><td>2</td><td>数字、下書き、承認待ち、見込み客などを確認します。</td><td>事実、数字、添付、待ち項目</td></tr>
+                  <tr><td>3</td><td>確認後にCAItへ送ります。</td><td>保存された内容のID</td></tr>
+                  <tr><td>4</td><td>CAItがその内容を使って次の相談を進めます。</td><td>次の依頼文</td></tr>
                 </tbody>
               </table>
             </article>
             <article class="panel">
-              <h2>One API / CLI / MCP developer surface</h2>
-              <p>Provider apps will need a manifest, entry URL, optional handoff endpoint, health check, capabilities, approval requirements, optional MCP server metadata, billing contract, and the context shape they return. API, CLI, and MCP are documented on one page and remain disabled by default until this shared contract is stable.</p>
+              <h2>開発者向け</h2>
+              <p>外部アプリをつなぐ場合は、manifest、entry URL、handoff endpoint、health check、capabilities、approval requirements、MCP server metadataなどを使います。一般ユーザーはこの項目を操作しません。</p>
+              <p><strong>One API / CLI / MCP developer surface</strong>. Disabled by default until the shared contract is stable.</p>
               <table class="data-table" aria-label="Unified developer access">
-                <thead><tr><th>Surface</th><th>Purpose</th><th>Access</th></tr></thead>
+                <thead><tr><th>入口</th><th>目的</th><th>状態</th></tr></thead>
                 <tbody>
-                  <tr><td><code>API</code></td><td>Reviewable orders, app contexts, deliveries, and manifest workflows.</td><td>Disabled by default</td></tr>
-                  <tr><td><code>CLI</code></td><td>Terminal wrapper around the same API and delivery history.</td><td>Disabled by default</td></tr>
-                  <tr><td><code>MCP</code></td><td>Discovery metadata, tools, resources, resource templates, and prompts.</td><td>Disabled by default</td></tr>
+                  <tr><td><code>API</code></td><td>確認できる依頼、アプリcontext、納品、manifest workflows。</td><td>通常は無効</td></tr>
+                  <tr><td><code>CLI</code></td><td>同じAPIと納品履歴をターミナルから扱う入口。</td><td>通常は無効</td></tr>
+                  <tr><td><code>MCP</code></td><td>Discovery metadata、tools、resources、resource templates、prompts。</td><td>通常は無効</td></tr>
                 </tbody>
               </table>
               <div class="inline-actions">
-                <a class="primary-btn" href="/ai-agent-manifest.html">Read the manifest guide</a>
+                <a class="primary-btn" href="/ai-agent-manifest.html">manifest guide</a>
                 <a class="ghost-btn" href="/ai-agent-api.html">API / CLI / MCP</a>
                 <a class="ghost-btn" href="/.well-known/mcp.json">MCP discovery</a>
-                <a class="ghost-btn" href="/login?next=%2Fchat&amp;source=apps_partner_question">Ask in chat</a>
+                <a class="ghost-btn" href="/login?next=%2Fchat&amp;source=apps_partner_question">チャットで聞く</a>
               </div>
             </article>
           </section>
@@ -182,6 +159,6 @@
       </div>
     </section>
   </main>
-  <script type="module" src="/apps.js?v=20260526k"></script>
+  <script type="module" src="/apps.js?v=20260527a"></script>
 </body>
 </html>
