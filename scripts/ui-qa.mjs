@@ -27,6 +27,7 @@ const appConsoleCssPath = new URL('../public/app-console.css', import.meta.url);
 const adminCssPath = new URL('../public/admin.css', import.meta.url);
 const adminJsPath = new URL('../public/admin.js', import.meta.url);
 const clientJsPath = new URL('../public/client.js', import.meta.url);
+const clientRouteAuthControllerPath = new URL('../public/client-route-auth-controller.js', import.meta.url);
 const clientDeliveryActionControllerPath = new URL('../public/client-delivery-action-controller.js', import.meta.url);
 const clientAuthAccessUtilsPath = new URL('../public/client-auth-access-utils.js', import.meta.url);
 const clientPaymentRemovalUiPath = new URL('../public/client-payment-removal-ui.js', import.meta.url);
@@ -173,6 +174,7 @@ const appConsoleCss = readFileSync(appConsoleCssPath, 'utf8');
 const adminCss = readFileSync(adminCssPath, 'utf8');
 const adminJs = readFileSync(adminJsPath, 'utf8');
 const clientJs = readFileSync(clientJsPath, 'utf8');
+const clientRouteAuthControllerJs = readFileSync(clientRouteAuthControllerPath, 'utf8');
 const clientDeliveryActionControllerJs = readFileSync(clientDeliveryActionControllerPath, 'utf8');
 const clientAuthAccessUtilsJs = readFileSync(clientAuthAccessUtilsPath, 'utf8');
 const clientPaymentRemovalUiJs = readFileSync(clientPaymentRemovalUiPath, 'utf8');
@@ -708,7 +710,10 @@ assert.ok(loginJs.includes('recordLoginAttemptStarted'), 'Login should record wh
 assert.ok(!loginJs.includes('controller.abort(), AUTH_STATUS_TIMEOUT_MS'), 'Opening the login page should not start the 60-minute login action countdown.');
 assert.ok(loginJs.includes('AUTH_STATUS_SOFT_REVEAL_MS'), 'Login should reveal provider options while a long auth check continues in the background.');
 assert.ok(fastAuthJs.includes('FAST_AUTH_STATUS_TIMEOUT_MS = 60 * 60 * 1000'), 'Fast auth gate should not redirect logged-in users to login just because auth/status is slow.');
-assert.ok(clientJs.includes('fetchFastAuthStatus(timeoutMs = 60 * 60 * 1000)'), 'Client auth-check tab should use the long auth wait budget.');
+assert.ok(
+  [clientJs, clientRouteAuthControllerJs].some((source) => source.includes('fetchFastAuthStatus(timeoutMs = 60 * 60 * 1000)')),
+  'Client auth-check tab should use the long auth wait budget.'
+);
 assert.ok(loginJs.includes('buildOfficialLoginUrl'), 'Email login from local preview should route to official CAIt sign-in.');
 assert.ok(loginJs.includes('status?.authBaseUrl'), 'Login should use the server-provided canonical auth base URL.');
 assert.ok(loginJs.includes("url.searchParams.set('return_to', postLoginPath(route.next));"), 'Login providers should return to the requested page.');
