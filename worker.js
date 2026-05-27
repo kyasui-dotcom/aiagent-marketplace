@@ -44,6 +44,8 @@ import { createRateLimitHelpers } from './lib/rate-limit.js';
 import { createRequestIdentityHelpers, createRequestVisibilityHelpers } from './lib/request-access.js';
 import { fetchJson, githubClientId, githubClientSecret, runtimeStorage, shouldInjectQaOrderCreateFault } from './lib/runtime-env.js';
 import { fetchWorkerAsset } from './lib/worker-assets.js';
+import { createWorkerLifecycleHandlers } from './lib/worker-lifecycle-events.js';
+import { createRecurringOrderSweep } from './lib/recurring-order-sweep.js';
 import { appendEmailDelivery, createEmailNotificationHelpers, resendConfigured, sendResendEmail, validateEmailAddress } from './lib/email-notifications.js';
 import { agentReviewerLogins, boolFlag, createOperatorAccessHelpers, feedbackReviewerLogins, platformAdminLogins, runtimePolicy } from './lib/operator-access.js';
 import {
@@ -125,6 +127,8 @@ import { createWorkflowRetrySweep } from './lib/workflow-retry-sweep.js';
 import { createWorkflowTimeouts } from './lib/workflow-timeouts.js';
 import { ORCHESTRATION_WATCHDOG_POLICY, createWorkflowWatchdog } from './lib/workflow-watchdog.js';
 import { createDispatchResponseNormalizer } from './lib/dispatch-response-normalizer.js';
+import { createWorkflowAuthorityGate } from './lib/workflow-authority-gate.js';
+import { createWorkflowJobResultHandlers } from './lib/workflow-job-results.js';
 import { sanitizeExactMatchActionsForClient } from './lib/exact-actions.js';
 import { hasAdapterPrConfirmation, hasPostConfirmation, hasRepoWriteConfirmation, hasSendConfirmation } from './lib/external-write-confirmation.js';
 import { csrfExemptPath, isUnsafeMethod, rateLimitSpecForPath } from './lib/http-policy.js';
@@ -529,167 +533,37 @@ const {
   visibleJobsForRequestFast
 } = requestVisibilityHelpers;
 
-function authorityRequestHandledBySaasHandoff(job = {}, request = null, parent = null) {
-  return Boolean(
-    workflowUsesSaasPublishHandoff(job, parent)
-    && authorityRequestIsExternalWriteOrPublish(request)
-  );
-}
-
-function markJobBlockedForAuthority(job = {}, request = null, fallback = 'External execution is blocked waiting for connector approval.') {
-  const reason = authorityBlockReasonFromRequest(request, fallback);
-  const normalizedRequest = normalizeAuthorityRequest(request, {
-    ownerLabel: String(job.workflowAgentName || job.taskType || '').trim() || 'CAIt',
-    source: 'agent_delivery'
-  });
-  const logLine = `blocked waiting for authority approval: ${reason}`;
-  job.status = 'blocked';
-  job.completedAt = null;
-  job.failedAt = null;
-  job.timedOutAt = null;
-  job.failureReason = reason;
-  job.failureCategory = 'blocked_waiting_for_approval';
-  job.actualBilling = null;
-  clearDeliveryCompletionGate(job);
-  job.dispatch = {
-    ...(job.dispatch || {}),
-    completionStatus: 'blocked_waiting_for_approval',
-    retryable: false,
-    nextRetryAt: null,
-    completedAt: null
-  };
-  job.logs = (job.logs || []).includes(logLine)
-    ? (job.logs || [])
-    : [...(job.logs || []), logLine];
-  if (job.output?.report && typeof job.output.report === 'object') {
-    job.output.report.completion_state = 'blocked_waiting_for_approval';
-    if (normalizedRequest && !authorityRequestFromReport(job.output.report)) {
-      job.output.report.authority_request = normalizedRequest;
-    }
-  }
-  return job;
-}
-
-function workflowParentAuthorityRequest(parent = {}) {
-  const request = authorityRequestFromReport(parent?.output?.report);
-  if (!authorityRequestRequiresApproval(request)) return null;
-  if (authorityRequestHandledBySaasHandoff(parent, request, parent)) return null;
-  const source = String(request?.source || request?.reason_code || request?.reasonCode || '').trim().toLowerCase();
-  if (source === 'leader_execution_approval') return null;
-  const missingConnectors = authorityStringList(
-    request?.missing_connectors || request?.missingConnectors || request?.connectors,
-    8,
-    60
-  );
-  const missingCapabilities = authorityStringList(
-    request?.missing_connector_capabilities || request?.missingConnectorCapabilities || request?.capabilities,
-    16,
-    120
-  );
-  const googleSources = authorityStringList(
-    request?.required_google_sources || request?.requiredGoogleSources || request?.google_source_types || request?.googleSourceTypes,
-    8,
-    60
-  );
-  const explicitSelection = authorityBool(
-    request?.required_channel_selection
-      || request?.requiredChannelSelection
-      || request?.required_repository_selection
-      || request?.requiredRepositorySelection
-      || request?.required_account_selection
-      || request?.requiredAccountSelection
-  );
-  const writeCapabilities = missingCapabilities.filter((item) => (
-    /(post|publish|send|write|submit|create|update|delete|calendar|gmail|email|x\.post|github\.write)/i.test(String(item || ''))
-    && !/^google\.read_/i.test(String(item || ''))
-  ));
-  const sourceReadCapabilities = missingCapabilities.filter((item) => (
-    /^(google|github)\.read_/i.test(String(item || ''))
-    || /^read_/i.test(String(item || ''))
-  ));
-  const sourceConnectors = missingConnectors.filter((item) => (
-    /^(google|ga4|gsc|search_console|google_analytics|analytics|drive|search|web_search|brave)$/i.test(String(item || ''))
-  ));
-  return googleSources.length
-    || sourceReadCapabilities.length
-    || (sourceConnectors.length && sourceConnectors.length === missingConnectors.length && !writeCapabilities.length)
-    || (explicitSelection && !writeCapabilities.length)
-    ? request
-    : null;
-}
-
-function shouldBlockCompletedJobForAuthorityRequest(job = {}, request = null) {
-  if (!authorityRequestRequiresApproval(request)) return false;
-  if (authorityRequestHandledBySaasHandoff(job, request)) return false;
-  if (workflowChildIsSaasHandoffOnly(job)) return false;
-  const workflowParentId = String(job?.workflowParentId || '').trim();
-  if (workflowParentId && isWorkflowLeaderTask(workflowTaskName(job))) return false;
-  if (workflowParentId) {
-    const task = workflowTaskName(job);
-    const actionAuthorityTasks = new Set([
-      'x_post',
-      'instagram',
-      'reddit',
-      'indie_hackers',
-      'email_ops',
-      'cold_email',
-      'directory_submission',
-      'citation_ops'
-    ]);
-    if (!actionAuthorityTasks.has(task)) return false;
-  }
-  return true;
-}
-
-function syncJobAuthorityRequest(job = {}, agent = null) {
-  if (['failed', 'timed_out'].includes(normalizeJobStatus(job.status))) {
-    clearJobAuthorityRequest(job);
-    return null;
-  }
-  if (!job?.output || typeof job.output !== 'object') return null;
-  const existingExecutorState = job.executorState && typeof job.executorState === 'object' ? job.executorState : {};
-  const completionStatus = String(job?.dispatch?.completionStatus || '').trim().toLowerCase();
-  if (existingExecutorState.authorityApprovedAt && completionStatus.startsWith('approval_resolved')) {
-    clearJobAuthorityRequest(job);
-    return null;
-  }
-  const report = job.output.report && typeof job.output.report === 'object' ? job.output.report : {};
-  const existingRequest = authorityRequestFromReport(report);
-  const normalizedExistingRequest = normalizeAuthorityRequest(existingRequest, {
-    ownerLabel: String(job.workflowAgentName || agent?.name || '').trim() || 'CAIt',
-    source: 'agent_delivery'
-  });
-  const request = normalizedExistingRequest;
-  if (authorityRequestHandledBySaasHandoff(job, request)) {
-    clearJobAuthorityRequest(job);
-    return null;
-  }
-  if (!request || !authorityRequestRequiresApproval(request)) {
-    if (report.authority_request || report.authorityRequest || report.action_required || report.actionRequired || report.executor_request || report.executorRequest) {
-      const cleanReport = { ...report };
-      delete cleanReport.authority_request;
-      delete cleanReport.authorityRequest;
-      delete cleanReport.action_required;
-      delete cleanReport.actionRequired;
-      delete cleanReport.executor_request;
-      delete cleanReport.executorRequest;
-      job.output.report = cleanReport;
-    }
-    return null;
-  }
-  job.output.report = {
-    ...report,
-    authority_request: request
-  };
-  const patch = executorStatePatchFromAuthorityRequest(request, existingExecutorState);
-  if (!patch) return request;
-  job.executorState = {
-    ...existingExecutorState,
-    ...patch,
-    updatedAt: nowIso()
-  };
-  return request;
-}
+const workflowAuthorityGate = createWorkflowAuthorityGate({
+  authorityBlockReasonFromRequest,
+  authorityBool,
+  authorityRequestFromReport,
+  authorityRequestIsExternalWriteOrPublish,
+  authorityRequestRequiresApproval,
+  authorityStringList,
+  buildAgentTeamDeliveryOutput,
+  clearDeliveryCompletionGate,
+  clearJobAuthorityRequest,
+  cloneJob,
+  executorStatePatchFromAuthorityRequest,
+  isTerminalJobStatus,
+  isWorkflowLeaderTask,
+  normalizeAuthorityRequest,
+  normalizeJobStatus,
+  nowIso,
+  sortWorkflowChildren,
+  workflowChildIsSaasHandoffOnly: (...args) => workflowChildIsSaasHandoffOnly(...args),
+  workflowTaskName,
+  workflowUsesSaasPublishHandoff
+});
+const {
+  authorityRequestHandledBySaasHandoff,
+  markJobBlockedForAuthority,
+  pauseTerminalWorkflowChildRetryForParentAuthority,
+  pauseWorkflowChildDispatchForParentAuthority,
+  shouldBlockCompletedJobForAuthorityRequest,
+  syncJobAuthorityRequest,
+  workflowParentAuthorityRequest
+} = workflowAuthorityGate;
 
 const accountEventHelpers = createAccountEventHelpers({
   accountSettingsForLogin,
@@ -782,6 +656,45 @@ const {
   recordBillingOutcome,
   settleAgentEarnings
 } = billingOutcomeHelpers;
+
+const workflowJobResultHandlers = createWorkflowJobResultHandlers({
+  agentCompletionFailureReason,
+  appendWorkflowOriginalInfoUsage,
+  authorityBlockReasonFromRequest,
+  authorityRequestFromReport,
+  billingLogLine,
+  canTransitionJob,
+  clearDeliveryCompletionGate,
+  cloneJob,
+  deliveryPayloadValueToText,
+  estimateBilling,
+  isAgentVerified,
+  isBlockedAgentResultStatus,
+  isTerminalJobStatus,
+  markAgentCompletionFailedFreeInState,
+  normalizeAgentReportPayload,
+  normalizeDeliveryPayloadFiles,
+  nowIso,
+  providerRunAttempts,
+  reconcileWorkflowParent,
+  releaseBillingReservationInState,
+  setDeliveryCompletionGate,
+  settleAgentEarnings,
+  shouldBlockCompletedJobForAuthorityRequest,
+  sourceCollectionFailureRetryMeta,
+  syncJobAuthorityRequest,
+  topLevelAgentReportCandidate,
+  transitionErrorCode,
+  usageWithObservedJobTokens,
+  workflowChildDispatchFailureRequiresRestart,
+  workflowRestartRequiredReason,
+  workflowSearchCompletionFailureReason,
+  workflowTaskName
+});
+const {
+  completeJobFromAgentResult,
+  failJob
+} = workflowJobResultHandlers;
 
 const authContextHelpers = createAuthContextHelpers({
   accountHasGithubConnector,
@@ -1687,6 +1600,25 @@ const integrationRoutes = createIntegrationRouteHandlers({
   validateXPostText,
   adapterNextStepText
 });
+
+const recurringOrderSweep = createRecurringOrderSweep({
+  currentFromRecurringOrder,
+  dueRecurringOrders,
+  executeScheduledExactConnectorAction: integrationRoutes.executeScheduledExactConnectorAction,
+  handleCreateWorkflowJob,
+  markRecurringOrderRunInState,
+  maybeRefineWorkflowPlanWithLeaderLlm,
+  normalizeBaseUrl,
+  normalizeOrderStrategy,
+  nowIso,
+  performSingleJobCreate,
+  promptInjectionGuardForPrompt,
+  promptPolicyBlockPayload,
+  recurringOrderToJobPayload,
+  resolveOrderStrategy,
+  touchEvent
+});
+const { runRecurringOrderSweep } = recurringOrderSweep;
 
 const deliveryRoutes = createDeliveryRouteHandlers({
   accountSettingsForLogin,
@@ -5463,293 +5395,6 @@ async function runQueuedEndpointDispatchSweep(storage, env, options = {}) {
   return { ok: true, scheduled_count: scheduled.length, job_ids: scheduled };
 }
 
-async function pauseWorkflowChildDispatchForParentAuthority(storage, childJob = {}, options = {}) {
-  const jobId = String(childJob?.id || options.jobId || '').trim();
-  const agentId = String(childJob?.assignedAgentId || options.agentId || '').trim();
-  const parentId = String(childJob?.workflowParentId || options.parentJobId || '').trim();
-  if (!jobId || !parentId) return { paused: false, reason: 'job_or_parent_missing' };
-  let parent = null;
-  if (typeof storage.getJobById === 'function') parent = await storage.getJobById(parentId);
-  if (!parent && typeof storage.getState === 'function') {
-    const state = await storage.getState();
-    parent = (Array.isArray(state?.jobs) ? state.jobs : []).find((item) => item.id === parentId) || null;
-  }
-  const authorityRequest = workflowParentAuthorityRequest(parent);
-  if (!authorityRequest) return { paused: false, reason: 'parent_not_waiting_for_authority' };
-  const pauseReason = authorityBlockReasonFromRequest(authorityRequest, 'Parent workflow is waiting for connector approval.');
-  const pauseDispatch = (draft) => {
-    const draftJob = Array.isArray(draft?.jobs) ? draft.jobs.find((item) => item.id === jobId) : null;
-    if (!draftJob || isTerminalJobStatus(draftJob.status)) return null;
-    if (String(draftJob.workflowParentId || '') !== parentId) return null;
-    const at = nowIso();
-    const logLine = `paused retry while parent waits for authority approval: ${pauseReason}`;
-    draftJob.status = 'queued';
-    draftJob.claimedAt = null;
-    draftJob.dispatchedAt = null;
-    draftJob.startedAt = null;
-    draftJob.completedAt = null;
-    draftJob.failedAt = null;
-    draftJob.timedOutAt = null;
-    draftJob.failureReason = null;
-    draftJob.failureCategory = null;
-    draftJob.dispatch = {
-      ...(draftJob.dispatch || {}),
-      completionStatus: 'approval_waiting_retry_paused',
-      retryable: false,
-      nextRetryAt: null,
-      approvalPausedAt: at,
-      approvalPauseReason: pauseReason
-    };
-    draftJob.logs = (draftJob.logs || []).includes(logLine)
-      ? (draftJob.logs || [])
-      : [...(draftJob.logs || []), logLine];
-    return cloneJob(draftJob);
-  };
-  const paused = typeof storage.mutateJobAndAgent === 'function' && agentId
-    ? await storage.mutateJobAndAgent(jobId, agentId, pauseDispatch)
-    : await storage.mutate(pauseDispatch);
-  if (!paused) return { paused: false, reason: 'pause_rejected', request: authorityRequest };
-  return { paused: true, job: paused, parent, request: authorityRequest };
-}
-
-async function pauseTerminalWorkflowChildRetryForParentAuthority(storage, childJob = {}, options = {}) {
-  const jobId = String(childJob?.id || options.jobId || '').trim();
-  const agentId = String(childJob?.assignedAgentId || options.agentId || '').trim();
-  const parentId = String(childJob?.workflowParentId || options.parentJobId || '').trim();
-  if (!jobId || !parentId) return { paused: false, reason: 'job_or_parent_missing' };
-  let parent = null;
-  if (typeof storage.getJobById === 'function') parent = await storage.getJobById(parentId);
-  if (!parent && typeof storage.getState === 'function') {
-    const state = await storage.getState();
-    parent = (Array.isArray(state?.jobs) ? state.jobs : []).find((item) => item.id === parentId) || null;
-  }
-  const authorityRequest = workflowParentAuthorityRequest(parent);
-  if (!authorityRequest) return { paused: false, reason: 'parent_not_waiting_for_authority' };
-  const pauseReason = authorityBlockReasonFromRequest(authorityRequest, 'Parent workflow is waiting for connector approval.');
-  const pauseRetry = (draft) => {
-    const draftJob = Array.isArray(draft?.jobs) ? draft.jobs.find((item) => item.id === jobId) : null;
-    if (!draftJob) return null;
-    if (String(draftJob.workflowParentId || '') !== parentId) return null;
-    const status = String(draftJob.status || '').trim().toLowerCase();
-    if (!['failed', 'timed_out'].includes(status)) return null;
-    if (draftJob.dispatch?.retryable !== true) return null;
-    const at = nowIso();
-    const logLine = `paused terminal retry while parent waits for authority approval: ${pauseReason}`;
-    draftJob.dispatch = {
-      ...(draftJob.dispatch || {}),
-      completionStatus: 'approval_waiting_retry_paused',
-      retryable: false,
-      nextRetryAt: null,
-      approvalPausedAt: at,
-      approvalPauseReason: pauseReason,
-      retryPausedFromStatus: status
-    };
-    draftJob.logs = (draftJob.logs || []).includes(logLine)
-      ? (draftJob.logs || [])
-      : [...(draftJob.logs || []), logLine];
-    return cloneJob(draftJob);
-  };
-  const paused = typeof storage.mutateJobAndAgent === 'function' && agentId
-    ? await storage.mutateJobAndAgent(jobId, agentId, pauseRetry)
-    : await storage.mutate(pauseRetry);
-  if (!paused) return { paused: false, reason: 'pause_rejected', request: authorityRequest };
-  const mutateParent = typeof storage.mutateWorkflow === 'function'
-    ? (mutator) => storage.mutateWorkflow(parentId, mutator)
-    : (mutator) => storage.mutate(mutator);
-  const blockedParent = await mutateParent(async (draft) => {
-    const draftParent = Array.isArray(draft?.jobs)
-      ? draft.jobs.find((item) => item.id === parentId && item.jobKind === 'workflow')
-      : null;
-    if (!draftParent) return null;
-    const children = Array.isArray(draft?.jobs)
-      ? sortWorkflowChildren(draftParent, draft.jobs.filter((item) => item.workflowParentId === parentId))
-      : [];
-    draftParent.output = draftParent.output || buildAgentTeamDeliveryOutput(draftParent, children);
-    markJobBlockedForAuthority(draftParent, authorityRequest, pauseReason);
-    draftParent.logs = [
-      ...(draftParent.logs || []),
-      `workflow retry paused while waiting for authority approval: ${pauseReason}`
-    ];
-    return cloneJob(draftParent);
-  });
-  return { paused: true, job: paused, parent: blockedParent || parent, request: authorityRequest };
-}
-
-async function completeJobFromAgentResult(storage, jobId, agentId, payload = {}, meta = {}) {
-  const mutateComplete = async (state) => {
-    const job = state.jobs.find((item) => item.id === jobId);
-    if (!job) return { error: 'Job not found', statusCode: 404 };
-    if (isTerminalJobStatus(job.status)) {
-      return { error: `Job is already terminal (${job.status})`, statusCode: 409, code: 'job_already_terminal', job };
-    }
-    if (meta.source === 'callback' && !canTransitionJob(job, 'callback')) {
-      return { error: `Job status ${job.status} cannot be changed by callback`, statusCode: 409, code: transitionErrorCode(job, 'callback'), job };
-    }
-    if (meta.source === 'manual-result' && !canTransitionJob(job, 'manualResult')) {
-      return { error: `Job status ${job.status} cannot be changed by manual result`, statusCode: 409, code: transitionErrorCode(job, 'manualResult'), job };
-    }
-    const agent = state.agents.find((item) => item.id === agentId);
-    if (!agent) return { error: 'Agent not found', statusCode: 404 };
-    if (!isAgentVerified(agent)) return { error: 'Agent is not verified', statusCode: 403 };
-    if (job.assignedAgentId && job.assignedAgentId !== agent.id) return { error: 'Invalid assignment', statusCode: 401 };
-    const completionAt = nowIso();
-    const outputReport = normalizeAgentReportPayload(
-      payload,
-      topLevelAgentReportCandidate(payload)
-    );
-    const explicitAuthorityRequest = authorityRequestFromReport(outputReport);
-    const usage = usageWithObservedJobTokens(job, payload?.usage, outputReport);
-    const payloadFileMarkdown = deliveryPayloadValueToText(
-      payload.file_markdown
-      || payload.markdown
-      || payload.deliverableMarkdown
-      || payload.deliverable_markdown
-      || outputReport.file_markdown
-      || outputReport.markdown
-      || outputReport.deliverableMarkdown
-      || outputReport.deliverable_markdown
-      || ''
-    ).trim();
-    const payloadFiles = Array.isArray(payload.files)
-      ? normalizeDeliveryPayloadFiles(payload.files, workflowTaskName(job) || job.taskType || 'delivery')
-      : (payloadFileMarkdown ? [{ name: `${String(workflowTaskName(job) || job.taskType || 'delivery').slice(0, 80)}.md`, content: payloadFileMarkdown }] : []);
-    let targetStatus = isBlockedAgentResultStatus(meta.targetStatus || payload.status) ? 'blocked' : 'completed';
-    job.assignedAgentId = agent.id;
-    job.startedAt = job.startedAt || completionAt;
-    job.lastCallbackAt = meta.source === 'callback' ? completionAt : (job.lastCallbackAt || null);
-    job.output = {
-      report: outputReport,
-      files: payloadFiles,
-      returnTargets: payload.return_targets || payload.returnTargets || ['chat', 'api', 'webhook']
-    };
-    appendWorkflowOriginalInfoUsage(job);
-    const sourceProofFailure = targetStatus === 'completed' ? workflowSearchCompletionFailureReason(job, outputReport) : '';
-    if (sourceProofFailure) {
-      const sourceRetryMeta = sourceCollectionFailureRetryMeta(meta.env || {}, job, { alreadyAttempted: true });
-      const restartRequired = workflowChildDispatchFailureRequiresRestart(meta.env || {}, job, {
-        category: 'missing_required_sources',
-        ...sourceRetryMeta
-      });
-      targetStatus = 'failed';
-      job.status = 'failed';
-      job.completedAt = null;
-      job.failedAt = completionAt;
-      job.timedOutAt = null;
-      job.failureReason = restartRequired ? workflowRestartRequiredReason(job, sourceProofFailure) : sourceProofFailure;
-      job.failureCategory = restartRequired ? 'workflow_restart_required' : 'missing_required_sources';
-      job.usage = usage;
-      job.actualBilling = null;
-      clearDeliveryCompletionGate(job);
-      if (job.billingReservation && !job.billingSettlement?.settledAt && !job.billingReservation?.releasedAt) {
-        releaseBillingReservationInState(state, job);
-      }
-      job.dispatch = {
-        ...(job.dispatch || {}),
-        externalJobId: meta.externalJobId || job.dispatch?.externalJobId || null,
-        completionSource: meta.source || job.dispatch?.completionSource || null,
-        completionStatus: restartRequired ? 'workflow_restart_required' : 'failed',
-        completedAt: null,
-        lastCallbackAt: meta.source === 'callback' ? completionAt : (job.dispatch?.lastCallbackAt || null),
-        retryable: restartRequired ? false : sourceRetryMeta.retryable,
-        nextRetryAt: restartRequired ? null : sourceRetryMeta.nextRetryAt,
-        attempts: restartRequired ? providerRunAttempts(job) : sourceRetryMeta.attempts,
-        maxRetries: sourceRetryMeta.maxRetries,
-        restartRequired
-      };
-      job.logs = [...(job.logs || []), sourceProofFailure, restartRequired ? 'full order retry required after missing search execution proof' : 'failed before completion: missing search execution proof'];
-      if (meta.source) job.logs.push(`completion source=${meta.source}`);
-      return { ok: true, mode: 'failed', job: cloneJob(job), billing: null, workflowParentId: job.workflowParentId || null };
-    }
-    const completionFailure = targetStatus === 'completed' ? agentCompletionFailureReason(job) : '';
-    if (completionFailure) {
-      markAgentCompletionFailedFreeInState(state, job, completionFailure, meta.env || {}, { failedAt: completionAt });
-      if (meta.source) job.logs.push(`completion source=${meta.source}`);
-      return { ok: true, mode: 'failed', job: cloneJob(job), billing: null, workflowParentId: job.workflowParentId || null };
-    }
-    const authorityRequest = syncJobAuthorityRequest(job, agent);
-    if (targetStatus === 'completed' && shouldBlockCompletedJobForAuthorityRequest(job, authorityRequest || explicitAuthorityRequest)) {
-      targetStatus = 'blocked';
-    }
-    const billing = targetStatus === 'completed' ? estimateBilling(agent, usage) : null;
-    job.status = targetStatus;
-    job.completedAt = targetStatus === 'completed' ? completionAt : null;
-    job.failedAt = null;
-    job.timedOutAt = null;
-    job.failureReason = targetStatus === 'blocked'
-      ? authorityBlockReasonFromRequest(authorityRequest || explicitAuthorityRequest, 'Agent is blocked pending approval or connector setup.')
-      : null;
-    job.failureCategory = targetStatus === 'blocked' ? 'blocked_waiting_for_approval' : null;
-    job.usage = usage;
-    job.actualBilling = billing;
-    if (targetStatus === 'completed') {
-      setDeliveryCompletionGate(job, completionAt);
-    } else {
-      clearDeliveryCompletionGate(job);
-    }
-    job.dispatch = {
-      ...(job.dispatch || {}),
-      externalJobId: meta.externalJobId || job.dispatch?.externalJobId || null,
-      completionSource: meta.source || job.dispatch?.completionSource || null,
-      completionStatus: targetStatus === 'blocked' ? 'blocked_waiting_for_approval' : targetStatus,
-      completedAt: targetStatus === 'completed' ? completionAt : null,
-      lastCallbackAt: meta.source === 'callback' ? completionAt : (job.dispatch?.lastCallbackAt || null),
-      retryable: false,
-      nextRetryAt: null
-    };
-    job.logs = [...(job.logs || []), `${targetStatus} by ${agent.id}`];
-    if (targetStatus === 'blocked') job.logs.push(`blocked waiting for authority approval: ${job.failureReason}`);
-    if (billing) job.logs.push(billingLogLine(job, billing));
-    if (meta.source) job.logs.push(`completion source=${meta.source}`);
-    if (meta.externalJobId) job.logs.push(`external_job_id=${meta.externalJobId}`);
-    if (billing) settleAgentEarnings(job, agent, billing);
-    return { ok: true, mode: targetStatus, job: cloneJob(job), billing, workflowParentId: job.workflowParentId || null };
-  };
-  const result = typeof storage.mutateJobAndAgent === 'function'
-    ? await storage.mutateJobAndAgent(jobId, agentId, mutateComplete)
-    : await storage.mutate(mutateComplete);
-  if (result?.ok && result.workflowParentId) await reconcileWorkflowParent(storage, result.workflowParentId);
-  return result;
-}
-
-async function failJob(storage, jobId, reason, extraLogs = [], options = {}) {
-  const failureReason = String(reason || options.failureReason || 'Job failed without a detailed reason.').trim();
-  const result = await storage.mutate(async (state) => {
-    const job = state.jobs.find((item) => item.id === jobId);
-    if (!job) return null;
-    if (isTerminalJobStatus(job.status) && !options.force) return cloneJob(job);
-    const failedAt = nowIso();
-    const failureStatus = options.failureStatus || (job.status === 'dispatched' ? 'timed_out' : 'failed');
-    job.status = failureStatus;
-    job.failedAt = failedAt;
-    job.failureReason = failureReason;
-    job.failureCategory = options.failureCategory || job.failureCategory || 'agent_failed';
-    if (job.billingReservation && !job.billingSettlement?.settledAt && !job.billingReservation?.releasedAt) {
-      releaseBillingReservationInState(state, job);
-    }
-    if (failureStatus === 'timed_out') job.timedOutAt = failedAt;
-    job.lastCallbackAt = options.source === 'callback' ? failedAt : (job.lastCallbackAt || null);
-    job.dispatch = {
-      ...(job.dispatch || {}),
-      externalJobId: options.externalJobId || job.dispatch?.externalJobId || null,
-      completionSource: options.source || job.dispatch?.completionSource || null,
-      completionStatus: options.completionStatus || (options.restartRequired ? 'workflow_restart_required' : failureStatus),
-      failedAt,
-      lastCallbackAt: options.source === 'callback' ? failedAt : (job.dispatch?.lastCallbackAt || null),
-      retryable: options.retryable ?? job.dispatch?.retryable ?? false,
-      nextRetryAt: options.nextRetryAt ?? job.dispatch?.nextRetryAt ?? null,
-      attempts: options.attempts ?? job.dispatch?.attempts ?? 0,
-      maxRetries: options.maxRetries ?? job.dispatch?.maxRetries,
-      restartRequired: options.restartRequired ?? job.dispatch?.restartRequired ?? false
-    };
-    job.logs = [...(job.logs || []), ...extraLogs, failureReason];
-    return { ...cloneJob(job), workflowParentId: job.workflowParentId || null };
-  });
-  if (result?.workflowParentId) await reconcileWorkflowParent(storage, result.workflowParentId);
-  if (!result) return null;
-  const { workflowParentId, ...job } = result;
-  return job;
-}
-
 function orderCreateHandlers() {
   if (!orderCreateRuntime) {
     orderCreateRuntime = createOrderCreateHandlers({
@@ -5851,68 +5496,20 @@ function orderCreateHandlers() {
 }
 
 
-async function runRecurringOrderSweep(storage, env, options = {}) {
-  const at = options.at || nowIso();
-  const state = await storage.getState();
-  const due = dueRecurringOrders(state, at, options.limit || 10);
-  const results = [];
-  const base = normalizeBaseUrl(env?.PRIMARY_BASE_URL || env?.BASE_URL) || 'https://aiagent-marketplace.net';
-  const request = options.request || new Request(`${base}/api/recurring-orders/sweep`, { method: 'POST' });
-  for (const order of due) {
-    const latestState = await storage.getState();
-    const fresh = (latestState.recurringOrders || []).find((item) => item.id === order.id) || order;
-    const current = currentFromRecurringOrder(latestState, fresh);
-    let result;
-    const exactConnectorResult = await integrationRoutes.executeScheduledExactConnectorAction(storage, env, fresh, current);
-    if (exactConnectorResult) {
-      result = exactConnectorResult;
-    } else {
-      const body = recurringOrderToJobPayload(fresh);
-      const promptInjection = promptInjectionGuardForPrompt(body.prompt || '');
-      if (promptInjection.blocked) {
-        result = {
-          ...promptPolicyBlockPayload(promptInjection),
-          statusCode: 400
-        };
-      } else {
-        const requestedStrategy = normalizeOrderStrategy(body.order_strategy || body.orderStrategy || 'auto');
-        let resolved = resolveOrderStrategy(latestState.agents || [], body, requestedStrategy);
-        resolved = await maybeRefineWorkflowPlanWithLeaderLlm(latestState.agents || [], body, resolved, env, { recurring: true });
-        result = resolved.error
-          ? {
-              error: resolved.error,
-              code: resolved.code || 'leader_planner_unavailable',
-              planner_error: resolved.planner_error || null,
-              statusCode: resolved.statusCode || 503,
-              status: 'failed'
-            }
-          : resolved.strategy === 'multi'
-            ? await handleCreateWorkflowJob(storage, request, env, current, body, { workflowPlan: resolved.plan, initialState: latestState })
-            : await performSingleJobCreate(storage, env, current, body, { request });
-        if (!result.error) {
-          result.order_strategy_requested = requestedStrategy;
-          result.order_strategy_resolved = resolved.strategy;
-          result.routing_reason = resolved.reason;
-        }
-      }
-    }
-    let updated = null;
-    await storage.mutate(async (draft) => {
-      updated = markRecurringOrderRunInState(draft, fresh.id, result, { at: nowIso() });
-    });
-    const summary = {
-      recurring_order_id: fresh.id,
-      job_id: result.job_id || null,
-      workflow_job_id: result.workflow_job_id || null,
-      status: result.status || result.mode || (result.error ? 'failed' : 'created'),
-      error: result.error || null,
-      next_run_at: updated?.nextRunAt || null
-    };
-    results.push(summary);
-    await touchEvent(storage, 'RECURRING', `scheduled work ${fresh.id.slice(0, 12)} run ${summary.status}`, summary);
-  }
-  return { ok: true, checked_at: at, due_count: due.length, results };
-}
+const workerLifecycleHandlers = createWorkerLifecycleHandlers({
+  ORCHESTRATION_WATCHDOG_POLICY,
+  failJob,
+  processWorkflowDispatchQueueMessage,
+  recoverWorkflowEndpointDispatchJobs,
+  runMinuteWorkflowCompletionSweep,
+  runQueuedEndpointDispatchSweep,
+  runRecurringOrderSweep,
+  runWorkflowOrchestrationWatchdog,
+  runWorkflowTimeoutRetrySweep,
+  runtimeStorage,
+  sweepTimedOutJobs,
+  touchEvent
+});
 
 export default {
   async fetch(request, env, ctx) {
@@ -6631,105 +6228,9 @@ export default {
     return json({ error: 'Not found' }, 404);
   },
   async queue(batch, env, ctx) {
-    const storage = runtimeStorage(env);
-    for (const message of batch?.messages || []) {
-      try {
-        const result = await processWorkflowDispatchQueueMessage(storage, env, message?.body || {});
-        if (['already_running_fresh', 'lock_not_persisted'].includes(String(result?.mode || '')) && typeof message?.retry === 'function') {
-          message.retry({ delaySeconds: result.retryDelaySeconds || 180 });
-        } else if (typeof message?.ack === 'function') {
-          message.ack();
-        }
-      } catch (error) {
-        const jobId = String(message?.body?.jobId || message?.body?.job_id || '').trim();
-        await touchEvent(storage, 'FAILED', `workflow dispatch queue message failed${jobId ? ` for ${jobId.slice(0, 6)}` : ''}: ${String(error?.message || error).slice(0, 160)}`);
-        if (jobId) {
-          await failJob(storage, jobId, `Workflow dispatch queue message failed: ${String(error?.message || error).slice(0, 260)}`, ['queue consumer exception before durable completion'], {
-            failureStatus: 'failed',
-            failureCategory: 'dispatch_queue_consumer_failed',
-            retryable: false,
-            source: 'workflow-dispatch-queue'
-          }).catch(() => null);
-        }
-        if (typeof message?.ack === 'function') message.ack();
-      }
-    }
+    return workerLifecycleHandlers.queue(batch, env, ctx);
   },
   async scheduled(controller, env, ctx) {
-    const cron = controller?.cron || '';
-    const storage = runtimeStorage(env);
-    if (cron === '* * * * *') {
-      const scheduledTime = Number(controller?.scheduledTime || Date.now()) || Date.now();
-      ctx.waitUntil((async () => {
-        await runMinuteWorkflowCompletionSweep(storage, env, cron, scheduledTime);
-        await sweepTimedOutJobs(storage, {
-          eventSource: 'cron',
-          env
-        });
-        await runWorkflowTimeoutRetrySweep(storage, env, {
-          source: 'minute-cron',
-          cron,
-          limit: Math.min(5, Number(env?.WORKFLOW_TIMEOUT_RETRY_SWEEP_LIMIT || 5) || 5),
-          waitUntil: (promise) => ctx.waitUntil(promise)
-        });
-        await runWorkflowOrchestrationWatchdog(storage, env, {
-          source: 'minute-cron',
-          cron,
-          limit: Math.min(10, Number(env?.WORKFLOW_ORCHESTRATION_WATCHDOG_LIMIT || 10) || 10),
-          staleAfterMs: Number(env?.WORKFLOW_ORCHESTRATION_STALE_MS || ORCHESTRATION_WATCHDOG_POLICY.staleAfterMs) || ORCHESTRATION_WATCHDOG_POLICY.staleAfterMs,
-          blockedAfterMs: Number(env?.WORKFLOW_ORCHESTRATION_BLOCKED_MS || ORCHESTRATION_WATCHDOG_POLICY.blockedAfterMs) || ORCHESTRATION_WATCHDOG_POLICY.blockedAfterMs,
-          reason: 'minute cron orchestration watchdog dispatch',
-          waitUntil: (promise) => ctx.waitUntil(promise)
-        });
-        await runQueuedEndpointDispatchSweep(storage, env, {
-          source: 'minute-cron',
-          cron,
-          limit: Math.min(8, Number(env?.QUEUED_DISPATCH_SWEEP_LIMIT || 8) || 8),
-          reason: 'minute cron dispatch sweep',
-          waitUntil: (promise) => ctx.waitUntil(promise)
-        });
-      })());
-      return;
-    }
-    ctx.waitUntil((async () => {
-      await recoverWorkflowEndpointDispatchJobs(storage, env, {
-        source: 'cron',
-        cron,
-        limit: Number(env?.SCHEDULED_BUILTIN_COMPLETION_SWEEP_LIMIT || 10) || 10
-      });
-      await sweepTimedOutJobs(storage, {
-        eventSource: 'cron',
-        env
-      });
-      await runWorkflowTimeoutRetrySweep(storage, env, {
-        source: 'cron',
-        cron,
-        limit: Number(env?.WORKFLOW_TIMEOUT_RETRY_SWEEP_LIMIT || 10) || 10,
-        waitUntil: (promise) => ctx.waitUntil(promise)
-      });
-      await runWorkflowOrchestrationWatchdog(storage, env, {
-        source: 'cron',
-        cron,
-        limit: Number(env?.WORKFLOW_ORCHESTRATION_WATCHDOG_LIMIT || ORCHESTRATION_WATCHDOG_POLICY.maxParentsPerSweep) || ORCHESTRATION_WATCHDOG_POLICY.maxParentsPerSweep,
-        staleAfterMs: Number(env?.WORKFLOW_ORCHESTRATION_STALE_MS || ORCHESTRATION_WATCHDOG_POLICY.staleAfterMs) || ORCHESTRATION_WATCHDOG_POLICY.staleAfterMs,
-        blockedAfterMs: Number(env?.WORKFLOW_ORCHESTRATION_BLOCKED_MS || ORCHESTRATION_WATCHDOG_POLICY.blockedAfterMs) || ORCHESTRATION_WATCHDOG_POLICY.blockedAfterMs,
-        reason: 'cron orchestration watchdog dispatch',
-        waitUntil: (promise) => ctx.waitUntil(promise)
-      });
-      await runQueuedEndpointDispatchSweep(storage, env, {
-        source: 'cron',
-        cron,
-        limit: Number(env?.QUEUED_DISPATCH_SWEEP_LIMIT || 12) || 12,
-        reason: 'cron dispatch sweep',
-        waitUntil: (promise) => ctx.waitUntil(promise)
-      });
-    })());
-    if (cron !== '* * * * *') {
-      ctx.waitUntil(runRecurringOrderSweep(storage, env, {
-        source: 'cron',
-        cron,
-        limit: Number(env?.RECURRING_SWEEP_LIMIT || 10) || 10
-      }));
-    }
+    return workerLifecycleHandlers.scheduled(controller, env, ctx);
   }
 };
