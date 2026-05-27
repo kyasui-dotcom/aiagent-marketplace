@@ -1779,6 +1779,7 @@ const {
   saveGoogleExecutorPreferences,
   saveXExecutorPreferences,
   schedulePreparedGenericDeliverable,
+  sendFollowupToAgentFromDelivery,
   setGenericDeliverableAuthorityRequired,
   setGenericDeliverableExecutionStopped,
   suggestedSocialPostText,

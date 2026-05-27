@@ -2612,6 +2612,7 @@ async function prepareFollowupOrderFromDelivery() {
     saveGoogleExecutorPreferences,
     saveXExecutorPreferences,
     schedulePreparedGenericDeliverable,
+    sendFollowupToAgentFromDelivery,
     setGenericDeliverableAuthorityRequired,
     setGenericDeliverableExecutionStopped,
     suggestedSocialPostText,

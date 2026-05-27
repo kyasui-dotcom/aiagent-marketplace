@@ -449,6 +449,8 @@ assert.equal(clientJs.includes('/api/settings/payout'), false, 'Client UI must n
 assert.equal(clientJs.includes('PAY' + '.JP'), false, 'Client UI should not mention the removed payment provider.');
 assert.ok(clientAuthAccessUtilsJs.includes("if (requested.length) url.searchParams.set('capabilities', requested.join(','))"), 'Chat Google connector should pass exact required Google capabilities into OAuth without adding broad defaults.');
 assert.ok(clientDeliveryActionControllerJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
+assert.ok(clientDeliveryActionControllerJs.includes('sendFollowupToAgentFromDelivery'), 'Delivery action controller should keep the direct follow-up sender after refactors.');
+assert.ok(clientJs.includes('sendFollowupToAgentFromDelivery,'), 'Client should destructure the delivery follow-up sender from the delivery action controller.');
 assert.ok(chatJs.includes("from './connector-gate.js"), 'Chat connector approvals should be delegated to the connector gate module.');
 assert.ok(connectorGateJs.includes('connectorGateGoogleAuthorityConnectGroups'), 'Chat Google approval should connect every requested Google source in one OAuth popup.');
 assert.ok(connectorGateJs.includes('Connect GA4 + Search Console'), 'Chat Google approval should label combined GA4/Search Console requests clearly.');
