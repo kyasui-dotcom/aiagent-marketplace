@@ -30,10 +30,19 @@ async function authHeaders(page) {
 }
 
 async function readOrder(page, orderId) {
-  const response = await page.request.get(`/api/jobs/${encodeURIComponent(orderId)}`, { failOnStatusCode: false });
-  const body = await response.json().catch(() => ({}));
-  expect(response.status(), `read order ${orderId}: ${JSON.stringify(body).slice(0, 500)}`).toBe(200);
-  return body.job || body;
+  let lastStatus = 0;
+  let lastBody = {};
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const response = await page.request.get(`/api/jobs/${encodeURIComponent(orderId)}`, { failOnStatusCode: false });
+    const body = await response.json().catch(() => ({}));
+    lastStatus = response.status();
+    lastBody = body;
+    if (lastStatus === 200) return body.job || body;
+    if (![500, 502, 503, 504].includes(lastStatus) || attempt >= 4) break;
+    await page.waitForTimeout(Math.min(5_000, 500 * attempt));
+  }
+  expect(lastStatus, `read order ${orderId}: ${JSON.stringify(lastBody).slice(0, 500)}`).toBe(200);
+  return lastBody.job || lastBody;
 }
 
 function terminalStatus(job = {}) {

@@ -4432,9 +4432,10 @@ async function handleOpenChatChoiceCommand(command = '') {
       return;
     }
     const taskType = String(normalized.split(':')[1] || '').trim();
-    const label = taskType === 'cpo_leader'
-      ? 'CPOリーダー'
-      : (taskType === 'cmo_leader' ? 'CMO/Growthリーダー' : (taskType === 'research_team_leader' ? 'Researchリーダー' : taskType || 'leader'));
+    const candidates = Array.isArray(state.openChatLeaderChoiceCandidates) ? state.openChatLeaderChoiceCandidates : [];
+    const selected = candidates.find((candidate) => String(candidate?.taskType || '').trim() === taskType) || null;
+    const ja = looksJapanese(openChatPreviousUserMessageBody()) || looksJapanese(answer?.body || '');
+    const label = (ja ? selected?.labelJa : selected?.labelEn) || selected?.labelEn || selected?.labelJa || taskType || 'leader';
     appendOrderChatExchange(label, answer);
     return;
   }

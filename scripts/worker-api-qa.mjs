@@ -1783,6 +1783,10 @@ assert.ok(
   'selected CMO leader should show growth intake questions, not CTO/system questions'
 );
 assert.ok(
+  selectedCmoPrepare.body.questions.some((question) => /scheduled automation|one-off|campaign|自動|スケジュール|単発/i.test(question)),
+  'selected CMO leader should ask whether acquisition should be automated or one-off'
+);
+assert.ok(
   !selectedCmoPrepare.body.questions.some((question) => /repository|technical stack|リポジトリ|技術構成/i.test(question)),
   'selected CMO leader must not fall through to CTO/build intake'
 );
@@ -1903,6 +1907,15 @@ assert.equal(broadGrowthPrepare.body.taskType, 'cmo_leader', 'broad Japanese acq
 assert.equal(broadGrowthPrepare.body.ownerType, 'leader');
 assert.equal(broadGrowthPrepare.body.resolvedOrderStrategy, 'multi');
 assert.equal(broadGrowthPrepare.body.status, 'needs_input');
+assert.ok(
+  Array.isArray(broadGrowthPrepare.body.missing_fields)
+    && broadGrowthPrepare.body.missing_fields.includes('automation_or_one_off_preference'),
+  'broad Japanese acquisition intent should require automation-vs-one-off preference before CMO dispatch'
+);
+assert.ok(
+  broadGrowthPrepare.body.questions.some((question) => /自動|スケジュール|単発|回数|止め/i.test(question)),
+  'broad Japanese acquisition intake should ask whether to run scheduled automation'
+);
 
 const englishCustomerAcquisitionPrepare = await request('/api/work/prepare-order', {
   method: 'POST',
