@@ -171,19 +171,32 @@ function normalizeDeliverySection(value = '') {
 function appendUniqueDeliverySection(sections, value) {
   const section = normalizeDeliverySection(value);
   if (!section) return;
-  const duplicate = sections.some((existing) => existing === section || existing.includes(section) || section.includes(existing));
+  const replacementIndex = sections.findIndex((existing) => section.length > existing.length + 80 && section.includes(existing));
+  if (replacementIndex >= 0) {
+    sections.splice(replacementIndex, 1, section);
+    return;
+  }
+  const duplicate = sections.some((existing) => existing === section || existing.includes(section));
   if (!duplicate) sections.push(section);
 }
 
-function userFacingReportText(report = {}) {
-  if (!report || typeof report !== 'object') return '';
+function deliveryNeedsApprovalBoundary(job = {}, text = '') {
+  const source = [
+    job?.prompt,
+    job?.originalPrompt,
+    job?.input?.prompt,
+    text
+  ].map((item) => String(item || '')).join('\n');
+  if (!/(SNS|ソーシャル|広告|ads?|paid|publish|posting|post|send|external|投稿|送信|公開|掲載|配信|外部実行)/i.test(source)) return false;
+  return !/(承認|approval|approve|外部実行)/i.test(text);
+}
+
+function approvalBoundarySection() {
   return [
-    report.final_delivery_digest,
-    report.finalDeliveryDigest,
-    report.summary,
-    report.nextAction,
-    report.next_action
-  ].filter(Boolean).join('\n\n');
+    '## 実行に進む前に',
+    '- 投稿・送信・広告配信・公開・外部サービスへの適用は、対象アカウント、文案、URL、予算、停止条件を確認し、承認してから実行してください。',
+    '- この納品は実行前の計画・改善案です。外部への反映や配信完了を意味しません。'
+  ].join('\n');
 }
 
 export function collectOrderDeliveryText(job = {}) {
@@ -191,12 +204,15 @@ export function collectOrderDeliveryText(job = {}) {
   const report = output.report && typeof output.report === 'object' ? output.report : {};
   const visibleFiles = visibleDeliveryFiles(output.files || []);
   const sections = [];
-  appendUniqueDeliverySection(sections, output.summary);
-  appendUniqueDeliverySection(sections, output.nextAction || output.next_action);
-  appendUniqueDeliverySection(sections, userFacingReportText(report));
   for (const file of visibleFiles) {
-    appendUniqueDeliverySection(sections, [file.name, file.summary, file.content, file.markdown].filter(Boolean).join('\n'));
+    appendUniqueDeliverySection(sections, [file.content, file.markdown, file.summary].filter(Boolean).join('\n\n'));
   }
+  if (!sections.length) {
+    appendUniqueDeliverySection(sections, output.summary);
+    appendUniqueDeliverySection(sections, output.nextAction || output.next_action);
+    appendUniqueDeliverySection(sections, [report.summary, report.nextAction, report.next_action].filter(Boolean).join('\n\n'));
+  }
+  if (deliveryNeedsApprovalBoundary(job, sections.join('\n\n'))) appendUniqueDeliverySection(sections, approvalBoundarySection());
   return sections.join('\n\n').trim();
 }
 
@@ -366,6 +382,10 @@ export function assertOrderScenarioQuality(job = {}, options = {}) {
   assert.ok(
     !/(^|\n)\s*(?:medium|final_summary|cmo_growth_recommendation_plan|source_collection|analytics_console|brave_web_search|brave_search)\s*(?=\n|$)/i.test(deliveryText),
     'delivery must not expose standalone internal enum/provider fields inside markdown'
+  );
+  assert.ok(
+    !/(Task:\s*[a-z_]+|CMO checkpoint|次担当:\s*[a-z_]+|期待成果物:)/i.test(deliveryText),
+    'delivery must not expose orchestration task labels or checkpoint handoff text inside markdown'
   );
   assert.ok(
     rawAgentFiles.every((file) => String(file.source_agent_name || file.sourceAgentName || '').trim() && String(file.source_task_type || file.sourceTaskType || '').trim() && String(file.source_run_id || file.sourceRunId || '').trim()),
