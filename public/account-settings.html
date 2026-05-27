@@ -52,6 +52,25 @@
       </dl>
     </section>
 
+    <section class="settings-panel" aria-labelledby="costTitle">
+      <h2 id="costTitle">Cost limits</h2>
+      <dl class="profile-list">
+        <div>
+          <dt>OpenAI/API limit</dt>
+          <dd>
+            <label class="settings-field" for="openAiMonthlyCostLimitInput">
+              <span>Monthly limit in USD</span>
+              <input id="openAiMonthlyCostLimitInput" type="number" min="0" max="10" step="1" inputmode="decimal" />
+            </label>
+            <p class="field-note">CAIt is free to use because it is open source, but OpenAI/API calls still cost money. Orders stop when the account reaches this monthly limit. The maximum is $10 per account.</p>
+            <p id="costLimitSummary" class="field-note">Loading cost usage...</p>
+            <button class="secondary-btn" id="saveCostLimitBtn" type="button">Save cost limit</button>
+            <p id="costLimitStatus" class="status-line" role="status" aria-live="polite"></p>
+          </dd>
+        </div>
+      </dl>
+    </section>
+
     <section class="settings-panel danger" aria-labelledby="dangerTitle">
       <div class="panel-heading">
         <div>
@@ -69,6 +88,6 @@
     </section>
   </main>
 
-  <script src="/account-settings.js?v=20260527a"></script>
+  <script src="/account-settings.js?v=20260527b"></script>
 </body>
 </html>

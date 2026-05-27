@@ -87,6 +87,7 @@ const workflowWatchdogSource = readFileSync(new URL('../lib/workflow-watchdog.js
 const workflowRetrySweepSource = readFileSync(new URL('../lib/workflow-retry-sweep.js', import.meta.url), 'utf8');
 const workflowDispatchQueueSource = readFileSync(new URL('../lib/workflow-dispatch-queue.js', import.meta.url), 'utf8');
 const workflowTimeoutsSource = readFileSync(new URL('../lib/workflow-timeouts.js', import.meta.url), 'utf8');
+const workflowQualitySource = readFileSync(new URL('../lib/workflow-quality.js', import.meta.url), 'utf8');
 const deliveryCompletionGateSource = readFileSync(new URL('../lib/delivery-completion-gate.js', import.meta.url), 'utf8');
 assert.ok(!workerSource.includes("from './lib/local-agent-endpoints.js'"), 'sample agents must use the normal external provider endpoint path.');
 assert.ok(!workerSource.includes('function invokeSameWorkerAgentEndpoint'), 'worker dispatch must not reroute sample agents into local same-worker execution.');
@@ -688,9 +689,9 @@ assert.ok(
 assert.ok(workflowLeaderHandoffSource.includes('workflow-handoff/v2'), 'workflow handoff should carry an explicit versioned handoff contract');
 assert.ok(workflowLeaderHandoffSource.includes("handoffOwner: 'leader'"), 'workflow handoff should be explicitly owned by the leader, not orchestration.');
 assert.ok(workflowHandoffContextSource.includes('leader remains handoff owner'), 'downstream handoff prompt should state that orchestration only preserves durable state while the leader owns handoff.');
-assert.ok(workerSource.includes('workflow-execution-program/v1') || workflowLeaderHandoffSource.includes('workflow-execution-program/v1'), 'workflow handoff should carry explicit programmatic process state');
+assert.ok(workerSource.includes('workflow-execution-program/v1') || workflowLeaderHandoffSource.includes('workflow-execution-program/v1') || workflowQualitySource.includes('workflow-execution-program/v1'), 'workflow handoff should carry explicit programmatic process state');
 assert.ok(workflowHandoffContextSource.includes('USER-FACING PRIOR DELIVERABLES (primary reference material)'), 'downstream prompts should mark prior user-facing deliverables as the primary reference material');
-assert.ok(workerSource.includes('prior_layer_unavailable'), 'workflow dispatch should block downstream layers when a prior data/research layer fails or times out.');
+assert.ok(workerSource.includes('prior_layer_unavailable') || workflowQualitySource.includes('prior_layer_unavailable'), 'workflow dispatch should block downstream layers when a prior data/research layer fails or times out.');
 assert.ok(workflowHandoffContextSource.includes('Treat this as a blocker for quality'), 'workflow handoff prompt should not tell downstream agents to proceed from unavailable prior work.');
 assert.ok(workflowReconcileActionsSource.includes('function completeWorkflowSaasHandoffOnlyChild'), 'workflow SaaS handoff-only completion actions should be owned outside worker.js');
 assert.ok(workflowReconcileActionsSource.includes('function blockWorkflowPendingChildren'), 'workflow child blocking actions should be owned outside worker.js');
@@ -709,7 +710,7 @@ assert.ok(workflowTimeoutsSource.includes('async function sweepTimedOutJobs'), '
 assert.ok(workflowTimeoutsSource.includes('function effectiveTimeoutDeadlineMs'), 'workflow timeout deadline calculation should be owned outside worker.js');
 assert.ok(!workerSource.includes('async function sweepTimedOutJobs'), 'worker.js must not keep workflow timeout sweep implementation');
 assert.ok(!workerSource.includes('function effectiveTimeoutDeadlineMs'), 'worker.js must not keep workflow timeout deadline implementation');
-assert.ok(workerSource.includes('function workflowAppContextOriginalSignals'), 'leader quality gates should accept attached app context evidence when a data child has no prior run output.');
+assert.ok(workflowQualitySource.includes('function workflowAppContextOriginalSignals'), 'leader quality gates should accept attached app context evidence when a data child has no prior run output.');
 assert.ok(endpointDispatchContractSource.includes('compactWorkflowAppContextsForDispatch'), 'attached app contexts should be passed into endpoint dispatch instead of shortcut-completing data/research.');
 assert.ok(endpointDispatchContractSource.includes('compactWorkflowInputForEndpointDispatch'), 'workflow endpoint dispatch should compact duplicated app/connector context before handing work to an agent endpoint.');
 assert.ok(!workerSource.includes('compactWorkflowInputForBuiltInDispatch'), 'workflow dispatch compaction must be endpoint-contract based, not sample-agent special casing.');
@@ -824,7 +825,7 @@ assert.ok(storageSource.includes("lower(jobs.status) = 'completed'"), 'D1 job up
 assert.ok(storageSource.includes("lower(excluded.status) IN ('queued','claimed','running','dispatched')"), 'D1 job upsert guard must specifically reject stale active-status rewrites over completed rows.');
 assert.ok(storageSource.includes('function jobIsApprovalBlockedForStorage'), 'D1 job serialization must normalize approval-blocked jobs to blocked status.');
 assert.ok(storageSource.includes("jobIsApprovalBlockedForStorage(job) ? 'blocked'"), 'D1 must not persist running rows with blocked_waiting_for_approval metadata.');
-assert.ok(workerSource.includes('function workflowConcreteDeliverableContractForJob'), 'concrete deliverable checks should be contract-driven instead of task-name driven.');
+assert.ok(workflowQualitySource.includes('function workflowConcreteDeliverableContractForJob'), 'concrete deliverable checks should be contract-driven instead of task-name driven.');
 assert.ok(!/function workflowTaskRequiresConcreteSpecialistArtifact[\s\S]*'seo_specialist'/.test(workerSource), 'worker must not hardcode specialist deliverable requirements by task name.');
 assert.ok(!workerSource.includes('function workflowPriorHandoffCompletionPayload'), 'worker must not keep a prior-handoff fallback completion path.');
 assert.ok(!workerSource.includes('completionBlocking: false'), 'incomplete specialist artifacts must block completion and retry/fail instead of surfacing as non-blocking warnings.');
@@ -7364,7 +7365,7 @@ try {
       parent_agent_id: 'qa-runner',
       agent_id: imported.body.agent.id,
       task_type: 'ops',
-      prompt: 'Run the ops task beyond the beta free allowance without funding.',
+      prompt: 'Run the ops task beyond the monthly OpenAI/API cost limit without funding.',
       estimated_total_cost_basis: WELCOME_CREDITS_GRANT_AMOUNT * 2,
       skip_intake: true
     })
@@ -7441,6 +7442,38 @@ try {
     Math.max(0, +(apiKeyOrderTotal - WELCOME_CREDITS_GRANT_AMOUNT).toFixed(2)),
     'CAIt API key usage should first consume the per-account welcome credits, then accrue to month-end billing'
   );
+
+  const lowOpenAiCostLimit = await request('/api/settings/cost-limits', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ openAiMonthlyCostLimit: 1 })
+  }, { sessionCookie: daveSession });
+  assert.equal(lowOpenAiCostLimit.status, 200);
+  assert.equal(lowOpenAiCostLimit.body.account.billing.openAiMonthlyCostLimit, 1);
+  const apiKeyOverLimitOrder = await request('/api/jobs', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${issuedOrderKey.body.api_key.token}`
+    },
+    body: JSON.stringify({
+      parent_agent_id: 'qa-api-runner',
+      agent_id: imported.body.agent.id,
+      task_type: 'ops',
+      prompt: 'Run the funded ops task beyond the monthly OpenAI/API cost limit.',
+      estimated_total_cost_basis: WELCOME_CREDITS_GRANT_AMOUNT * 2
+    })
+  }, { env: publicExternalEnabledEnv });
+  assert.equal(apiKeyOverLimitOrder.status, 402);
+  assert.equal(apiKeyOverLimitOrder.body.code, 'openai_cost_limit_reached');
+  assert.ok(!apiKeyOverLimitOrder.body.job_id);
+  const resetOpenAiCostLimit = await request('/api/settings/cost-limits', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ openAiMonthlyCostLimit: WELCOME_CREDITS_GRANT_AMOUNT })
+  }, { sessionCookie: daveSession });
+  assert.equal(resetOpenAiCostLimit.status, 200);
+  assert.equal(resetOpenAiCostLimit.body.account.billing.openAiMonthlyCostLimit, WELCOME_CREDITS_GRANT_AMOUNT);
 
   const fundedOrder = await request('/api/jobs', {
     method: 'POST',

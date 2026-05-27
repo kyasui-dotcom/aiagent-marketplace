@@ -2007,12 +2007,12 @@ function guestTrialPromoTextForDraft(draft = currentOrderDraft(), prompt = draft
   if (looksJapanese(prompt || draft?.prompt || '')) {
     return [
       '実行はログイン後のみです。',
-      '初回ログインで10ドル分の無料枠が付与されるので、その範囲で最初のトライアル実行ができます。'
+      'CAItはオープンソースなので利用はフリーです。ただしOpenAI/APIコストがかかるため、1アカウント月10ドルまでで止まります。'
     ].join('\n');
   }
   return [
     'Dispatch requires sign-in.',
-    'First-time sign-in grants $10 in credits, so you can use those credits for the first trial run.'
+    'CAIt is free to use because it is open source. OpenAI/API calls still cost money, so each account stops at $10 per month.'
   ].join('\n');
 }
 

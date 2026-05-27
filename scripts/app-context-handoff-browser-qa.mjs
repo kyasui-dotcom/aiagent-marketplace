@@ -1493,10 +1493,10 @@ try {
       { label: 'Source ledger', detail: 'Publisher SaaS model and CAIt usage billing context from retained app packet.', status: 'retained' }
     ],
     scenarioTable: [
-      { label: 'Base scenario', detail: 'Publisher login free; CAIt usage billed per run after free credits.', status: 'review' }
+      { label: 'Base scenario', detail: 'Publisher login free; CAIt is open-source/free with OpenAI/API cost capped at $10 per account monthly.', status: 'review' }
     ],
     sensitivityTable: [
-      { label: 'Usage sensitivity', detail: 'If retained packets per customer drop below target, keep beta billing paused.', status: 'watch' }
+      { label: 'Usage sensitivity', detail: 'If retained packets per customer drop below target, keep OpenAI/API cost limits conservative.', status: 'watch' }
     ],
     recommendedPrice: [
       { label: 'Recommendation', detail: 'Keep Publisher as the SaaS entry and price CAIt usage separately.', status: 'recommended' }
@@ -1538,10 +1538,10 @@ try {
           '- Source ledger: Publisher SaaS model and CAIt usage billing context from retained app packet.',
           '',
           '## Scenario table',
-          '- Base scenario: Publisher login free; CAIt usage billed per run after free credits.',
+          '- Base scenario: Publisher login free; CAIt is open-source/free with OpenAI/API cost capped at $10 per account monthly.',
           '',
           '## Sensitivity table',
-          '- Usage sensitivity: If retained packets per customer drop below target, keep beta billing paused.',
+          '- Usage sensitivity: If retained packets per customer drop below target, keep OpenAI/API cost limits conservative.',
           '',
           '## Recommendation',
           '- Recommendation: Keep Publisher as the SaaS entry and price CAIt usage separately.',

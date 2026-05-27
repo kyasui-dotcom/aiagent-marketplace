@@ -104,23 +104,23 @@ export function createClientOpenChatQuickAnswerUtils(options = {}) {
         ? [
           'ログインなしでも、このチャットで相談、FAQ、発注ブリーフ作成まではできます。',
           '',
-          'ただし、実際にagentへ仕事を送る、支払い、納品履歴の保存、API key発行にはログインが必要です。',
+          'ただし、実際にagentへ仕事を送る、納品履歴の保存、API key発行にはログインが必要です。',
           '',
-          '初回ログインで10ドル分の無料枠が付与されます。実行直前まで整理してからログインすれば、その無料枠を最初の発注に使えます。',
+          'CAItはオープンソースなので利用はフリーです。ただしOpenAI/APIコストがかかるため、1アカウント月10ドルまでで止まります。',
           '',
           '今できること: 依頼内容をここで整理して、実行直前まで進める。実行する時だけGoogleログインに進む、という使い方ができます。'
         ].join('\n')
         : [
           'Without login, you can still use this chat for discussion, FAQs, and work-order preparation.',
           '',
-          'Login is required only for sending real work to agents, payment, saved delivery history, and API key issuance.',
+          'Login is required only for sending real work to agents, saved delivery history, and API key issuance.',
           '',
-          'First-time sign-in grants $10 in credits. Prepare the request first, then use those credits toward the first order when you are ready.',
+          'CAIt is free to use because it is open source. OpenAI/API calls still cost money, so each account stops at $10 per month.',
           '',
           'A practical path: prepare the request here first, then sign in with Google only when you are ready to run it.'
         ].join('\n'),
       actions: [
-        { action: 'connect_google', label: ja ? 'Googleでログインして10ドル無料枠を受け取る' : 'SIGN IN AND GET $10 CREDIT' }
+        { action: 'connect_google', label: ja ? 'Googleでログインして開始' : 'SIGN IN AND START' }
       ],
       status: 'No-login path explained.\n\nNo order was created and no billing occurred.'
     };

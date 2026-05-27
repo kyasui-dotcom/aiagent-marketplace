@@ -291,16 +291,16 @@ assert.equal(existsSync(fileURLToPath(new URL('../public/chatux/', import.meta.u
 
 assert.ok(html.includes('<main class="home-shell" aria-label="CAIt landing page">'), 'Root page should be the public landing page.');
 assert.ok(html.includes('Anyone can create high-quality AI agent output'), 'Root should lead with anyone-can-create-high-quality-output positioning.');
-assert.ok(html.includes('Beta access is free'), 'English root should disclose the beta free-access state in English.');
+assert.ok(html.includes('Open-source access is free'), 'English root should disclose the open-source free-access state in English.');
 assert.ok(html.includes('CAIt no longer collects cards, checkout, billing, subscriptions, donations, or payouts in-app'), 'English root should disclose in-app payment removal.');
-assert.ok(html.includes('an external Stripe donation link is only a future option after compliance review'), 'English root should disclose reviewed external donation posture.');
-assert.ok(!html.includes('β版は無料開放中'), 'English root beta banner should not render Japanese-only copy.');
+assert.ok(html.includes('each account is capped at $10 per month'), 'English root should disclose the per-account OpenAI/API cost cap.');
+assert.ok(!html.includes('β版は無料開放中'), 'English root open-source free banner should not render Japanese-only copy.');
 assert.ok(emailNotifications.includes("const SIGNUP_WELCOME_EMAIL_TEMPLATE = 'signup_welcome_v2'"), 'signup welcome email should use the current template version.');
 assert.ok(emailNotifications.includes('Welcome to CAIt: start in Chat'), 'signup welcome email should point new users to Chat, not the old Work entry.');
 assert.ok(emailNotifications.includes('https://aiagent-marketplace.net/chat'), 'signup welcome email should link to Chat.');
 assert.ok(emailNotifications.includes('Publisher & Approval Studio'), 'signup welcome email should mention Publisher for approval-gated publishing.');
 assert.ok(emailNotifications.includes('Campaign Operations'), 'signup welcome email should mention the current campaign operations surface.');
-assert.ok(emailNotifications.includes('Live checkout, charges, and payout movement are paused during beta'), 'signup welcome email should disclose beta billing pause.');
+assert.ok(emailNotifications.includes('OpenAI/API calls still cost money, so each account is capped at $10 per month'), 'signup welcome email should disclose the per-account OpenAI/API cost cap.');
 assert.ok(!emailNotifications.includes('Open <strong>WORK</strong>'), 'signup welcome email should not reference the old WORK-first flow.');
 assert.ok(!emailNotifications.includes('https://aiagent-marketplace.net/work'), 'signup welcome email should not link to the old work route.');
 assert.ok(workActionRegistry.includes('Use Chat history and Deliveries for order history and delivery review.'), 'work command copy should point order history to Chat history and Deliveries.');
@@ -700,7 +700,7 @@ assert.ok(loginJs.includes("parsed.pathname === '/chat.html'"), 'Login should no
 assert.ok(loginJs.includes("parsed.pathname === '/admin.html'"), 'Login should normalize /admin.html to /admin.');
 assert.ok(adminHtml.includes('<main class="admin-shell" aria-label="CAIt admin dashboard">'), 'Admin should render a dedicated dashboard shell.');
 assert.ok(adminHtml.includes('CAIt Admin'), 'Admin page should be branded as CAIt Admin.');
-assert.ok(adminHtml.includes('/admin.css?v=20260515a'), 'Admin should load the current dashboard stylesheet.');
+assert.ok(adminHtml.includes('/admin.css?v=20260527a'), 'Admin should load the current dashboard stylesheet.');
 assert.ok(adminHtml.includes('type="module" src="/admin.js?v=20260515a"'), 'Admin should load the dashboard controller.');
 assert.ok(adminHtml.includes('id="adminRegistrationsMetric"'), 'Admin should show member registration counts.');
 assert.ok(adminHtml.includes('id="accountsTable"'), 'Admin should include a user/account table.');

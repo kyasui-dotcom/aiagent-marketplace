@@ -1,6 +1,7 @@
 const state = {
   auth: null,
-  account: null
+  account: null,
+  monthlySummary: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -11,12 +12,17 @@ const els = {
   uiLanguageSelect: $('uiLanguageSelect'),
   saveLanguageBtn: $('saveLanguageBtn'),
   languageStatus: $('languageStatus'),
+  openAiMonthlyCostLimitInput: $('openAiMonthlyCostLimitInput'),
+  saveCostLimitBtn: $('saveCostLimitBtn'),
+  costLimitSummary: $('costLimitSummary'),
+  costLimitStatus: $('costLimitStatus'),
   deleteConfirmInput: $('deleteConfirmInput'),
   deleteAccountBtn: $('deleteAccountBtn'),
   deleteStatus: $('deleteStatus')
 };
 
 const UI_LANGUAGE_STORAGE_KEY = 'cait.uiLanguage.v1';
+const LEDGER_UNITS_PER_USD = 150;
 
 function setStatus(message = '', tone = '') {
   els.deleteStatus.textContent = message;
@@ -33,6 +39,26 @@ function setLanguageStatus(message = '', tone = '') {
   if (!els.languageStatus) return;
   els.languageStatus.textContent = message;
   els.languageStatus.classList.toggle('error', tone === 'error');
+}
+
+function setCostLimitStatus(message = '', tone = '') {
+  if (!els.costLimitStatus) return;
+  els.costLimitStatus.textContent = message;
+  els.costLimitStatus.classList.toggle('error', tone === 'error');
+}
+
+function ledgerToUsd(value = 0) {
+  return +(Number(value || 0) / LEDGER_UNITS_PER_USD).toFixed(2);
+}
+
+function usdToLedger(value = 0) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return 0;
+  return +(Math.max(0, Math.min(10, amount)) * LEDGER_UNITS_PER_USD).toFixed(2);
+}
+
+function moneyLabel(value = 0) {
+  return `$${ledgerToUsd(value).toFixed(2)}`;
 }
 
 function rememberLocalUiLanguage(value = '') {
@@ -89,6 +115,22 @@ function updateLanguageControls() {
   if (els.saveLanguageBtn) els.saveLanguageBtn.disabled = !loggedIn;
 }
 
+function updateCostLimitControls() {
+  const loggedIn = Boolean(state.auth?.loggedIn || state.auth?.login || state.auth?.user?.login || state.auth?.user?.email);
+  const billing = state.account?.billing || {};
+  const customer = state.monthlySummary?.customer || {};
+  const rawLimit = Number(billing.openAiMonthlyCostLimit ?? customer.openAiMonthlyCostLimit ?? 1500);
+  const limit = Number.isFinite(rawLimit) ? Math.max(0, Math.min(1500, rawLimit)) : 1500;
+  if (els.openAiMonthlyCostLimitInput) els.openAiMonthlyCostLimitInput.value = ledgerToUsd(limit).toFixed(2);
+  if (els.saveCostLimitBtn) els.saveCostLimitBtn.disabled = !loggedIn;
+  if (els.costLimitSummary) {
+    const used = Number(customer.openAiCostUsed ?? billing.openAiCostUsed ?? 0) || 0;
+    const reserved = Number(customer.openAiCostReserved ?? billing.openAiCostReserved ?? 0) || 0;
+    const available = Math.max(0, limit - used - reserved);
+    els.costLimitSummary.textContent = `This period: ${moneyLabel(used)} used, ${moneyLabel(reserved)} reserved, ${moneyLabel(available)} available.`;
+  }
+}
+
 function clearAccountLocalState() {
   for (const store of [window.localStorage, window.sessionStorage]) {
     try {
@@ -118,12 +160,15 @@ async function loadAuth() {
   try {
     const settings = await api('/api/settings', { method: 'GET' });
     state.account = settings?.account || null;
+    state.monthlySummary = settings?.monthly_summary || null;
     rememberLocalUiLanguage(state.account?.profile?.uiLanguage || 'en');
   } catch (error) {
     setLanguageStatus(error.message || 'Could not load language setting.', 'error');
+    setCostLimitStatus(error.message || 'Could not load cost limit.', 'error');
   }
   updateDeleteEnabled();
   updateLanguageControls();
+  updateCostLimitControls();
 }
 
 async function saveLanguage() {
@@ -142,6 +187,29 @@ async function saveLanguage() {
   } catch (error) {
     setLanguageStatus(error.message || 'Could not save language.', 'error');
     updateLanguageControls();
+  }
+}
+
+async function saveCostLimit() {
+  const usd = Number(els.openAiMonthlyCostLimitInput?.value || 0);
+  if (!Number.isFinite(usd) || usd < 0 || usd > 10) {
+    setCostLimitStatus('Enter a monthly limit from 0 to 10 USD.', 'error');
+    return;
+  }
+  els.saveCostLimitBtn.disabled = true;
+  setCostLimitStatus('Saving cost limit...');
+  try {
+    const result = await api('/api/settings/cost-limits', {
+      method: 'POST',
+      body: { openAiMonthlyCostLimit: usdToLedger(usd) }
+    });
+    state.account = result?.account || state.account;
+    state.monthlySummary = result?.monthly_summary || state.monthlySummary;
+    updateCostLimitControls();
+    setCostLimitStatus('Cost limit saved.');
+  } catch (error) {
+    setCostLimitStatus(error.message || 'Could not save cost limit.', 'error');
+    updateCostLimitControls();
   }
 }
 
@@ -172,6 +240,8 @@ els.deleteConfirmInput.addEventListener('input', updateDeleteEnabled);
 els.deleteAccountBtn.addEventListener('click', deleteAccount);
 els.saveLanguageBtn?.addEventListener('click', saveLanguage);
 els.uiLanguageSelect?.addEventListener('change', () => setLanguageStatus('Press Save language to apply this account setting.'));
+els.saveCostLimitBtn?.addEventListener('click', saveCostLimit);
+els.openAiMonthlyCostLimitInput?.addEventListener('input', () => setCostLimitStatus('Press Save cost limit to apply this account setting.'));
 
 void loadAuth().catch((error) => {
   els.accountStatus.textContent = 'Could not load account status.';

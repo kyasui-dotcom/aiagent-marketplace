@@ -15,6 +15,39 @@
   box-shadow: var(--shadow);
 }
 
+.admin-panel .chatux-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.admin-panel .chatux-nav {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-panel .chatux-nav a {
+  width: auto;
+  min-width: 0;
+  min-height: 34px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.admin-panel .chatux-header-tools {
+  flex-wrap: wrap;
+  max-width: 440px;
+}
+
+.admin-panel .chatux-status {
+  max-width: 220px;
+}
+
 .admin-hero {
   display: flex;
   align-items: flex-end;
@@ -427,6 +460,22 @@
 }
 
 @media (max-width: 1180px) {
+  .admin-panel .chatux-header {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .admin-panel .chatux-brand,
+  .admin-panel .chatux-nav,
+  .admin-panel .chatux-header-tools {
+    justify-content: flex-start;
+  }
+
+  .admin-panel .chatux-header-tools,
+  .admin-panel .chatux-status {
+    max-width: none;
+  }
+
   .metric-grid,
   .split-section {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -453,6 +502,29 @@
 @media (max-width: 760px) {
   .admin-shell {
     padding: 12px;
+  }
+
+  .admin-panel .chatux-header {
+    padding: 14px;
+  }
+
+  .admin-panel .chatux-nav {
+    justify-content: flex-start;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 2px;
+  }
+
+  .admin-panel .chatux-header-tools {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .admin-panel .chatux-status {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    text-align: left;
   }
 
   .admin-panel {
