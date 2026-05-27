@@ -32,14 +32,16 @@ async function authHeaders(page) {
 async function readOrder(page, orderId) {
   let lastStatus = 0;
   let lastBody = {};
-  for (let attempt = 1; attempt <= 4; attempt += 1) {
+  const attempts = liveMode ? 5 : 2;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const response = await page.request.get(`/api/jobs/${encodeURIComponent(orderId)}`, { failOnStatusCode: false });
     const body = await response.json().catch(() => ({}));
     lastStatus = response.status();
     lastBody = body;
     if (lastStatus === 200) return body.job || body;
-    if (![500, 502, 503, 504].includes(lastStatus) || attempt >= 4) break;
-    await page.waitForTimeout(Math.min(5_000, 500 * attempt));
+    if (![500, 502, 503, 504].includes(lastStatus) || attempt >= attempts) break;
+    console.log(`[order-scenario] read retry ${attempt}/${attempts} status=${lastStatus}`);
+    await page.waitForTimeout(Math.min(5_000, 1_000 * attempt));
   }
   expect(lastStatus, `read order ${orderId}: ${JSON.stringify(lastBody).slice(0, 500)}`).toBe(200);
   return lastBody.job || lastBody;

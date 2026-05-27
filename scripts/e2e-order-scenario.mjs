@@ -161,28 +161,43 @@ export function visibleDeliveryFiles(files = []) {
   });
 }
 
-function flattenText(value, depth = 0, key = '') {
-  if (depth > 5 || value == null) return [];
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return [String(value)];
-  const normalizedKey = String(key || '').trim();
-  if (/^(childRuns|child_runs|specialist_output_ledger|specialistOutputLedger|delivery_provenance_map|deliveryProvenanceMap|execution_candidate|executionCandidate)$/i.test(normalizedKey)) return [];
-  if (/^(agentName|agentId|source_agent_name|sourceAgentName|source_agent_id|sourceAgentId|source_task_type|sourceTaskType|source_run_id|sourceRunId|taskType|dispatchTaskType)$/i.test(normalizedKey)) return [];
-  if (Array.isArray(value)) return value.flatMap((item) => flattenText(item, depth + 1, normalizedKey));
-  if (typeof value === 'object') return Object.entries(value).flatMap(([childKey, item]) => flattenText(item, depth + 1, childKey));
-  return [];
+function normalizeDeliverySection(value = '') {
+  return String(value || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function appendUniqueDeliverySection(sections, value) {
+  const section = normalizeDeliverySection(value);
+  if (!section) return;
+  const duplicate = sections.some((existing) => existing === section || existing.includes(section) || section.includes(existing));
+  if (!duplicate) sections.push(section);
+}
+
+function userFacingReportText(report = {}) {
+  if (!report || typeof report !== 'object') return '';
+  return [
+    report.final_delivery_digest,
+    report.finalDeliveryDigest,
+    report.summary,
+    report.nextAction,
+    report.next_action
+  ].filter(Boolean).join('\n\n');
 }
 
 export function collectOrderDeliveryText(job = {}) {
   const output = job?.output && typeof job.output === 'object' ? job.output : {};
   const report = output.report && typeof output.report === 'object' ? output.report : {};
   const visibleFiles = visibleDeliveryFiles(output.files || []);
-  return [
-    output.summary,
-    output.nextAction,
-    output.next_action,
-    flattenText(report).join('\n'),
-    ...visibleFiles.map((file) => [file.name, file.summary, file.content, file.markdown].filter(Boolean).join('\n'))
-  ].filter(Boolean).join('\n\n').trim();
+  const sections = [];
+  appendUniqueDeliverySection(sections, output.summary);
+  appendUniqueDeliverySection(sections, output.nextAction || output.next_action);
+  appendUniqueDeliverySection(sections, userFacingReportText(report));
+  for (const file of visibleFiles) {
+    appendUniqueDeliverySection(sections, [file.name, file.summary, file.content, file.markdown].filter(Boolean).join('\n'));
+  }
+  return sections.join('\n\n').trim();
 }
 
 export function summarizeOrderStatus(job = {}) {
@@ -347,6 +362,10 @@ export function assertOrderScenarioQuality(job = {}, options = {}) {
   assert.ok(
     !/(^|\n)\s*(?:[-*]\s*)?(source_task_type|source_agent_name|source_run_id|artifact_for_next_agent|recommended_next_owner)\s*[:：]/i.test(deliveryText),
     'delivery must not expose internal source or handoff metadata inside markdown'
+  );
+  assert.ok(
+    !/(^|\n)\s*(?:medium|final_summary|cmo_growth_recommendation_plan|source_collection|analytics_console|brave_web_search|brave_search)\s*(?=\n|$)/i.test(deliveryText),
+    'delivery must not expose standalone internal enum/provider fields inside markdown'
   );
   assert.ok(
     rawAgentFiles.every((file) => String(file.source_agent_name || file.sourceAgentName || '').trim() && String(file.source_task_type || file.sourceTaskType || '').trim() && String(file.source_run_id || file.sourceRunId || '').trim()),
