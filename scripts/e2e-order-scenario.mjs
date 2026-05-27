@@ -155,8 +155,10 @@ export function visibleDeliveryFiles(files = []) {
   return (Array.isArray(files) ? files : []).filter((file) => {
     if (!file || typeof file !== 'object') return false;
     const name = String(file.name || file.filename || '').trim().toLowerCase();
+    const visibility = String(file.visibility || file.delivery_visibility || file.deliveryVisibility || '').trim().toLowerCase();
     if (INTERNAL_DELIVERY_FILE_NAMES.has(name)) return false;
-    if (file.delivery_visible === false || file.visible === false || file.internal === true || file.internal_only === true) return false;
+    if (file.delivery_visible === false || file.deliveryVisible === false || file.user_visible === false || file.userVisible === false || file.visible === false || file.internal === true || file.internal_only === true) return false;
+    if (['internal', 'hidden', 'system'].includes(visibility)) return false;
     return true;
   });
 }

@@ -36,6 +36,7 @@ const specSource = [
   ...specs.map((name) => readFileSync(join(e2eDir, name), 'utf8')),
   ...helperSources
 ].join('\n');
+const orderScenarioSource = readFileSync(join(root, 'scripts', 'e2e-order-scenario.mjs'), 'utf8');
 
 assert.ok(specSource.includes('/api/health'), 'E2E must cover health');
 assert.ok(specSource.includes('/api/ready'), 'E2E must cover readiness');
@@ -44,6 +45,7 @@ assert.ok(specSource.includes('/api/jobs'), 'E2E must cover order creation/readb
 assert.ok(!/local write flow|local-only by default/i.test(specSource), 'E2E must not keep local-only write flows in the default suite');
 assert.ok(specSource.includes('E2E_ORDER_ID'), 'E2E must be able to observe a user-created production order instead of duplicating manual tests');
 assert.ok(specSource.includes('assertOrderScenarioQuality'), 'E2E must validate order delivery quality, not only create/read status');
+assert.ok(orderScenarioSource.includes('file.user_visible === false') && orderScenarioSource.includes('deliveryVisibility'), 'order scenario delivery visibility helper must match UI hidden-file flags');
 assert.ok(specSource.includes('#chatThread'), 'E2E must cover Chat rendering');
 assert.ok(specSource.includes('#promptInput'), 'E2E must cover Chat input');
 assert.ok(/Send order|SEND ORDER/.test(specSource), 'E2E must assert the chat-to-order phase boundary');
