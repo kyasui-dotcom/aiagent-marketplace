@@ -109,7 +109,7 @@ curl https://<worker-host>/api/jobs
 
 Canonical schema files:
 - [`migrations/0001_init.sql`](./migrations/0001_init.sql)
-- [`lib/storage.js`](./lib/storage.js)
+- [`lib/storage-schema.js`](./lib/storage-schema.js)
 
 `GET /api/schema` exposes the runtime schema string for verification.
 
