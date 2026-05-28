@@ -27,6 +27,7 @@ const workflowLayeringSource = read('lib/workflow-layering.js');
 const orchestrationSource = read('lib/orchestration.js');
 const sharedSource = read('lib/shared.js');
 const chatSource = read('public/chat.js');
+const chatUsageLibraryControllerSource = read('public/chat-usage-library-controller.js');
 const connectorGateSource = read('public/connector-gate.js');
 const chatSessionStateSource = read('public/chat-session-state.js');
 const orderRuntimeSource = read('public/order-runtime.js');
@@ -404,8 +405,8 @@ assert.ok(
   'chat app context surface routing must consume manifest matching through app-context-gate'
 );
 assert.ok(
-  chatSource.includes('contextContract: app.contextContract || app.context_contract || manifest.contextContract || manifest.context_contract || null')
-    && chatSource.includes('contextContract: { ...(existing.contextContract || {}), ...(normalized.contextContract || {}) }'),
+  chatUsageLibraryControllerSource.includes('contextContract: app.contextContract || app.context_contract || manifest.contextContract || manifest.context_contract || null')
+    && chatUsageLibraryControllerSource.includes('contextContract: { ...(existing.contextContract || {}), ...(normalized.contextContract || {}) }'),
   'chat app manifest normalization must preserve app context contracts instead of silently downgrading to token matching'
 );
 assert.ok(
