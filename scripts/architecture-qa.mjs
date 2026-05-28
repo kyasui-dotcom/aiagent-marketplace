@@ -21,6 +21,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => readFileSync(path.join(root, file), 'utf8');
 
 const workerSource = read('worker.js');
+const workerHandlersSource = read('lib/worker-handlers.js');
+const workerRoutingSource = `${workerSource}\n${workerHandlersSource}`;
 const serverSource = read('server.js');
 const storageSource = read('lib/storage.js');
 const sharedSource = read('lib/shared.js');
@@ -289,7 +291,7 @@ assert.equal(
   'Delivery publish order body should centralize publish path normalization'
 );
 
-const workerRoutes = apiRoutesFromSource(workerSource);
+const workerRoutes = apiRoutesFromSource(workerRoutingSource);
 const serverRoutes = apiRoutesFromSource(serverSource);
 const workerManifestRoutes = new Set(apiRouteManifestForRuntime('worker').map((route) => route.path));
 const serverDelegatesToWorker = serverSource.includes("import worker from './worker.js'")
@@ -340,7 +342,7 @@ const methodAwareRouteKeys = [
 for (const routeKey of methodAwareRouteKeys) {
   for (const method of API_ROUTE_METHODS[routeKey] || []) {
     assert.ok(
-      hasMethodAwareRouteMatcher(workerSource, routeKey, method),
+      hasMethodAwareRouteMatcher(workerRoutingSource, routeKey, method),
       `Worker should route ${routeKey} ${method} through apiRouteMatches`
     );
   }
@@ -362,7 +364,7 @@ for (const routeKey of [
 }
 
 for (const [name, source] of [
-  ['worker', `${workerSource}\n${deliveryRoutesSource}`]
+  ['worker', `${workerRoutingSource}\n${deliveryRoutesSource}`]
 ]) {
   const connectorRouteSource = `${source}\n${connectorRoutesSource}\n${integrationRoutesSource}`;
   assert.ok(source.includes("from './lib/http-policy.js'"), `${name} runtime should use shared HTTP policy helpers`);

@@ -6,6 +6,8 @@ import { createWorkflowPlanAssemblyHelpers } from '../lib/workflow-plan-assembly
 
 export function runWorkerApiSourceOwnershipQa() {
   const workerSource = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
+  const workerHandlersSource = readFileSync(new URL('../lib/worker-handlers.js', import.meta.url), 'utf8');
+  const workerRoutingSource = `${workerSource}\n${workerHandlersSource}`;
   const apiRoutesSource = readFileSync(new URL('../lib/api-routes.js', import.meta.url), 'utf8');
   const httpCoreSource = readFileSync(new URL('../lib/http-core.js', import.meta.url), 'utf8');
   const guestTrialSource = readFileSync(new URL('../lib/guest-trial.js', import.meta.url), 'utf8');
@@ -103,6 +105,9 @@ export function runWorkerApiSourceOwnershipQa() {
   const workflowLeaderSequenceSource = readFileSync(new URL('../lib/workflow-leader-sequence.js', import.meta.url), 'utf8');
   const jsonPostSource = readFileSync(new URL('../lib/json-post.js', import.meta.url), 'utf8');
   const deliveryCompletionGateSource = readFileSync(new URL('../lib/delivery-completion-gate.js', import.meta.url), 'utf8');
+  assert.ok(!workerSource.includes('async fetch(request, env, ctx)'), 'worker.js should delegate request handling to lib/worker-handlers.js');
+  assert.ok(workerHandlersSource.includes('export function createWorkerHandlers'), 'worker default runtime methods should be owned by lib/worker-handlers.js');
+  assert.ok(workerHandlersSource.includes('async function handleAuthRoutes'), 'worker request routing should be split into route-group methods');
   assert.ok(!workerSource.includes("from './lib/local-agent-endpoints.js'"), 'sample agents must use the normal external provider endpoint path.');
   assert.ok(!workerSource.includes('function invokeSameWorkerAgentEndpoint'), 'worker dispatch must not reroute sample agents into local same-worker execution.');
   assert.ok(!workerSource.includes('BUILT_IN_DISPATCH_SCHEDULE_STALE_MS'), 'dispatch_scheduled freshness must be endpoint-contract based, not built-in specific.');
@@ -720,7 +725,7 @@ export function runWorkerApiSourceOwnershipQa() {
   assert.ok(jobAuthorityRoutesSource.includes('async function updateJobExecutorState'), 'executor-state patch route should be owned by lib/routes/job-authority.js.');
   assert.ok(!workerSource.includes('async function handleApproveJobAuthority'), 'worker.js must not keep approval resume route implementation');
   assert.ok(!workerSource.includes('async function updateJobExecutorState'), 'worker.js must not keep executor-state patch route implementation');
-  assert.ok(workerSource.includes("action === 'approve'"), 'job approval resume endpoint must be routed separately from status checks.');
+  assert.ok(workerRoutingSource.includes("action === 'approve'"), 'job approval resume endpoint must be routed separately from status checks.');
   assert.ok(jobAuthorityRoutesSource.includes("code: 'leader_quality_gate_failed'"), 'approval endpoint must reject leader quality-gate blockers instead of pretending approval can resume them.');
   assert.ok(!workerSource.includes('function synthesizeAuthorityRequestFromDelivery'), 'worker must not infer approval requests from agent delivery text.');
   assert.ok(!workerSource.includes('delivery_text_inference'), 'worker must not create authority_request records from text inference.');

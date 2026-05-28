@@ -22,6 +22,8 @@ function assertNotIncludes(source, needles, label) {
 }
 
 const workerSource = read('worker.js');
+const workerHandlersSource = read('lib/worker-handlers.js');
+const workerRoutingSource = `${workerSource}\n${workerHandlersSource}`;
 const workerAssetsSource = read('lib/worker-assets.js');
 const workflowEndpointDispatchSource = read('lib/workflow-endpoint-dispatch.js');
 const workflowLayeringSource = read('lib/workflow-layering.js');
@@ -1038,7 +1040,7 @@ assert.ok(
   'worker dispatch must use provider endpoint URLs instead of local built-in execution'
 );
 assert.ok(
-  workerSource.includes("from './lib/worker-assets.js'") && workerSource.includes('fetchWorkerAsset(request, env, { responseWithCookies })'),
+  workerSource.includes("from './lib/worker-assets.js'") && workerRoutingSource.includes('fetchWorkerAsset(request, env, { responseWithCookies })'),
   'worker static asset fallback must be delegated to the worker asset module'
 );
 assertNotIncludes(workerSource, [
