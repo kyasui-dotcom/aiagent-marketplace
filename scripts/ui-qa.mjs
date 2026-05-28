@@ -32,6 +32,8 @@ const clientRunComposerControllerPath = new URL('../public/client-run-composer-c
 const clientDeveloperSurfaceControllerPath = new URL('../public/client-developer-surface-controller.js', import.meta.url);
 const clientSettingsBillingControllerPath = new URL('../public/client-settings-billing-controller.js', import.meta.url);
 const clientRouteAuthControllerPath = new URL('../public/client-route-auth-controller.js', import.meta.url);
+const clientAgentSetupFlowControllerPath = new URL('../public/client-agent-setup-flow-controller.js', import.meta.url);
+const clientConnectHubControllerPath = new URL('../public/client-connect-hub-controller.js', import.meta.url);
 const clientDeliveryActionControllerPath = new URL('../public/client-delivery-action-controller.js', import.meta.url);
 const clientAuthAccessUtilsPath = new URL('../public/client-auth-access-utils.js', import.meta.url);
 const clientPaymentRemovalUiPath = new URL('../public/client-payment-removal-ui.js', import.meta.url);
@@ -146,6 +148,8 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientRunComposerContro
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeveloperSurfaceControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientSettingsBillingControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryActionControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientAgentSetupFlowControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientConnectHubControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientFlexibleToolUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatHistoryUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatPatternGuardUtilsPath)], { stdio: 'pipe' });
