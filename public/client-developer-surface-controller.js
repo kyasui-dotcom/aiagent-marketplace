@@ -201,7 +201,6 @@ export function createClientDeveloperSurfaceController(deps = {}) {
     if (els.apiKeyLabel) els.apiKeyLabel.disabled = !enabled || !loggedIn;
     if (els.apiKeyMode) els.apiKeyMode.disabled = !enabled || !loggedIn;
     if (els.createApiKeyBtn) els.createApiKeyBtn.disabled = !enabled || !loggedIn;
-    state.lastIssuedOrderApiKey = null;
     if (enabled && loggedIn) {
       safeText(els.apiKeyCreateResult, [
         `${developerSurfaceStatus(auth)}: CAIt API keys`,

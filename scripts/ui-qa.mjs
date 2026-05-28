@@ -1124,6 +1124,8 @@ assert.ok(appsJs.includes('MCP ready') && appsJs.includes('mcp.enabled === false
 assert.ok(chatJs.includes('APP_WORKSPACE_GROUPS') && chatJs.includes('groupedAppPanelEntries'), 'Chat Apps panel should show merged app workspaces from the shared app registry instead of every internal lane.');
 assert.ok(clientJs.includes('DEVELOPER_SURFACES_NOTICE'), 'Legacy CONNECT and SETTINGS tab content should share the external developer surface runtime-policy notice.');
 assert.ok(clientDeveloperSurfaceControllerJs.includes('Create a live key for API or CLI use'), 'Settings API-key actions should expose live key creation when runtime policy enables it.');
+assert.ok(!clientDeveloperSurfaceControllerJs.includes('state.lastIssuedOrderApiKey = null;\n    if (enabled && loggedIn)'), 'API-key table rendering must not clear the one-time reveal token before the modal opens.');
+assert.ok(clientDeveloperSurfaceControllerJs.includes('state.lastIssuedOrderApiKey = result.api_key || result.apiKey || null;') && clientDeveloperSurfaceControllerJs.includes('openApiKeyRevealModal(state.lastIssuedOrderApiKey);'), 'API-key creation should preserve the issued token until the one-time reveal modal opens.');
 assert.ok(workActionRegistry.includes('deployed runtime policy enables them'), 'Work action copy should route users to runtime-gated API key management.');
 assert.ok(appsJs.includes('/api/app-contexts?limit=10'), 'Apps JS should load recent contexts from CAIt, not local browser storage.');
 assert.ok(appsJs.includes('operational_summary'), 'Apps JS should render safe retained context summary counts.');
