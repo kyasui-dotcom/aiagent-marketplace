@@ -76,6 +76,7 @@ const appContextDomainPath = new URL('../lib/app-context.js', import.meta.url);
 const workActionRegistryPath = new URL('../public/work-action-registry.js', import.meta.url);
 const workIntentResolverPath = new URL('../public/work-intent-resolver.js', import.meta.url);
 const workerPath = new URL('../worker.js', import.meta.url);
+const workerHandlersPath = new URL('../lib/worker-handlers.js', import.meta.url);
 const workerAssetsPath = new URL('../lib/worker-assets.js', import.meta.url);
 const workflowDispatchRuntimePath = new URL('../lib/workflow-dispatch-runtime.js', import.meta.url);
 const httpCorePath = new URL('../lib/http-core.js', import.meta.url);
@@ -99,6 +100,7 @@ const chatMemoryRoutesPath = new URL('../lib/routes/chat-memory.js', import.meta
 const catalogRoutesPath = new URL('../lib/routes/catalog.js', import.meta.url);
 const workOrderRoutesPath = new URL('../lib/routes/work-order.js', import.meta.url);
 const orderCreateRoutesPath = new URL('../lib/routes/order-create.js', import.meta.url);
+const orderCreateWorkflowChildDraftsPath = new URL('../lib/routes/order-create-workflow-child-drafts.js', import.meta.url);
 const deliveryRoutesPath = new URL('../lib/routes/deliveries.js', import.meta.url);
 const cmoLeaderPath = new URL('../lib/builtin-agents/agents/cmo-leader.js', import.meta.url);
 const serverPath = new URL('../server.js', import.meta.url);
@@ -110,6 +112,7 @@ const publicHeadersPath = new URL('../public/_headers', import.meta.url);
 const agentOrchestrationDisciplinePath = new URL('../docs/AGENT_ORCHESTRATION_DISCIPLINE.md', import.meta.url);
 const onboardingPath = new URL('../lib/onboarding.js', import.meta.url);
 const seoPagesPath = new URL('../lib/seo-pages.js', import.meta.url);
+const seoNewsPostsPath = new URL('../lib/seo-news-posts.js', import.meta.url);
 const naturalLanguageNewsPath = new URL('../public/news/order-natural-language-request.html', import.meta.url);
 const feedXmlPath = new URL('../public/feed.xml', import.meta.url);
 
@@ -156,6 +159,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(workActionRegistryPath)
 execFileSync(process.execPath, ['--check', fileURLToPath(workIntentResolverPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(onboardingPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(seoPagesPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(seoNewsPostsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(mcpPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(httpPolicyPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(httpCorePath)], { stdio: 'pipe' });
@@ -237,6 +241,7 @@ const workIntentResolver = readFileSync(workIntentResolverPath, 'utf8');
 const chatCss = readFileSync(chatCssPath, 'utf8');
 const stylesCss = readFileSync(stylesCssPath, 'utf8');
 const worker = readFileSync(workerPath, 'utf8');
+const workerHandlers = readFileSync(workerHandlersPath, 'utf8');
 const workerAssets = readFileSync(workerAssetsPath, 'utf8');
 const workflowDispatchRuntimeJs = readFileSync(workflowDispatchRuntimePath, 'utf8');
 const httpCore = readFileSync(httpCorePath, 'utf8');
@@ -260,6 +265,7 @@ const chatMemoryRoutes = readFileSync(chatMemoryRoutesPath, 'utf8');
 const catalogRoutes = readFileSync(catalogRoutesPath, 'utf8');
 const workOrderRoutes = readFileSync(workOrderRoutesPath, 'utf8');
 const orderCreateRoutes = readFileSync(orderCreateRoutesPath, 'utf8');
+const orderCreateWorkflowChildDrafts = readFileSync(orderCreateWorkflowChildDraftsPath, 'utf8');
 const deliveryRoutes = readFileSync(deliveryRoutesPath, 'utf8');
 const workerAndIntegrationRoutes = `${worker}\n${integrationRoutes}`;
 const workerIntegrationDeliveryRoutes = `${worker}\n${integrationRoutes}\n${deliveryRoutes}`;
@@ -274,6 +280,7 @@ const publicHeaders = readFileSync(publicHeadersPath, 'utf8');
 const agentOrchestrationDiscipline = readFileSync(agentOrchestrationDisciplinePath, 'utf8');
 const onboardingJs = readFileSync(onboardingPath, 'utf8');
 const seoPages = readFileSync(seoPagesPath, 'utf8');
+const seoNewsPosts = readFileSync(seoNewsPostsPath, 'utf8');
 const naturalLanguageNewsHtml = readFileSync(naturalLanguageNewsPath, 'utf8');
 const feedXml = readFileSync(feedXmlPath, 'utf8');
 const {
@@ -340,7 +347,8 @@ assert.ok(workActionRegistry.includes('Opening saved schedules and campaign oper
 assert.ok(!workActionRegistry.includes('Go to the WORK tab for order history and delivery.'), 'work command copy should not send users to the old WORK tab.');
 assert.ok(onboardingJs.includes('Open Chat and describe the first outcome'), 'agent onboarding next action should point first runs to Chat.');
 assert.ok(!onboardingJs.includes('Open WORK and create a run'), 'agent onboarding should not reference the old WORK run flow.');
-assert.ok(seoPages.includes('Open Chat, write the desired outcome'), 'generated news source should use the current Chat-first ordering copy.');
+assert.ok(seoPages.includes("export { newsPosts } from './seo-news-posts.js';"), 'generated news source should delegate news posts to the news post module.');
+assert.ok(seoNewsPosts.includes('Open Chat, write the desired outcome'), 'generated news source should use the current Chat-first ordering copy.');
 assert.ok(naturalLanguageNewsHtml.includes('Open Chat, write the desired outcome'), 'published news article should use the current Chat-first ordering copy.');
 assert.ok(feedXml.includes('Open Chat, write the desired outcome'), 'public feed should use the current Chat-first ordering copy.');
 assert.ok(clientJs.includes('Saved schedule timeline'), 'client timeline copy should use the current saved schedule wording.');
@@ -725,7 +733,10 @@ assert.ok(
   worker.includes('firstDispatchRequestedAt') || workflowDispatchRuntimeJs.includes('firstDispatchRequestedAt'),
   'Dispatch scheduling should preserve the first requested timestamp for stalled-run diagnosis.'
 );
-assert.ok(worker.includes('scheduleAttempts'), 'Dispatch scheduling should count scheduling retries separately from agent dispatch attempts.');
+assert.ok(
+  worker.includes('scheduleAttempts') || workflowDispatchRuntimeJs.includes('scheduleAttempts'),
+  'Dispatch scheduling should count scheduling retries separately from agent dispatch attempts.'
+);
 assert.ok(loginHtml.includes('CAIt | Sign in or sign up'), 'Login page should be an explicit sign-in/sign-up screen.');
 assert.ok(loginHtml.includes('id="loginGoogleBtn"'), 'Login page should offer Google.');
 assert.ok(loginHtml.includes('id="loginGithubBtn"'), 'Login page should offer GitHub.');
@@ -1445,8 +1456,15 @@ assert.ok(workOrderRoutes.includes('function applyActiveLeaderLockToOrderBody'),
 assert.ok(workflowPlanAssembly.includes('function workflowPlannedTasksFromOrderBody'), 'Workflow plan assembly should read preserved workflow plans from retry order payloads.');
 assert.ok(workflowPlanAssembly.includes('preservePlannedTasks'), 'Workflow plan assembly should bypass workflow plan expansion when retrying with a preserved plan.');
 assert.ok(workflowPlanAssembly.includes('function workflowReuseArtifactsFromOrderBody'), 'Workflow plan assembly should read user-selected retry reuse artifacts from the order payload.');
-assert.ok(orderCreateRoutes.includes('reused_completed_artifact'), 'Order create routes should mark selected retry artifacts as completed reused child runs instead of dispatching the agent again.');
-assert.ok(orderCreateRoutes.includes('The assigned agent was not dispatched for this step in the new order.'), 'Reused child outputs should clearly state that the agent step was skipped.');
+assert.ok(
+  orderCreateRoutes.includes('reused_completed_artifact') || orderCreateWorkflowChildDrafts.includes('reused_completed_artifact'),
+  'Order create routes should mark selected retry artifacts as completed reused child runs instead of dispatching the agent again.'
+);
+assert.ok(
+  orderCreateRoutes.includes('The assigned agent was not dispatched for this step in the new order.')
+  || orderCreateWorkflowChildDrafts.includes('The assigned agent was not dispatched for this step in the new order.'),
+  'Reused child outputs should clearly state that the agent step was skipped.'
+);
 assert.ok(chatJs.includes('function showAppListPanel'), 'Chat should expose app list modal.');
 assert.ok(chatJs.includes('registeredApps: []'), 'Chat should keep registered marketplace apps in state.');
 assert.ok(chatJs.includes('const CHATUX_CATALOG_PAGE_SIZE = 10'), 'Workers and apps should initially load only ten catalog rows.');
@@ -2013,7 +2031,7 @@ assert.ok(!server.includes("'/chatux'"));
 assert.ok(!server.includes('/chatux/index.html'));
 assert.ok(!server.includes('/chatux/chatux.css'));
 assert.ok(workerAssets.includes("'/chat.css'"));
-assert.ok(worker.includes('/api/chat-memory'), 'Worker should expose a lightweight chat memory endpoint.');
+assert.ok(worker.includes('/api/chat-memory') || workerHandlers.includes('/api/chat-memory'), 'Worker should expose a lightweight chat memory endpoint.');
 assert.ok(chatMemoryRoutes.includes('auth: await chatMemoryAuthStatus'), 'Chat memory route should return lightweight auth for faster chat first paint.');
 assert.ok(authHelpers.includes('async function handleChatPageRequest'), 'Auth helper module should gate chat HTML behind login.');
 assert.ok(authHelpers.includes('async function handleAdminPageRequest'), 'Auth helper module should serve the admin shell.');
@@ -2021,7 +2039,12 @@ assert.ok(httpCore.includes('function legacyLegalNoticeRedirect') && httpCore.in
 assert.ok(authHelpers.includes("return fetchStaticAssetPath(request, env, '/admin'"), 'Auth helper admin route should request the extensionless asset and let the API enforce admin data access.');
 assert.ok(!authHelpers.includes('return redirect(adminLoginRedirectPath(request, env)'), 'Auth helper admin route should not create a server-side login redirect loop.');
 assert.ok(authHelpers.includes("loginUrl.searchParams.set('source', 'gate_chat')"), 'Auth helper chat gate should send users to the login screen with a gate source.');
-assert.ok(worker.includes('authBaseUrl: baseUrl(request, env)'), 'Worker auth status should expose the canonical auth base URL.');
+assert.ok(
+  worker.includes('authBaseUrl: baseUrl(request, env)')
+  || workerHandlers.includes('authBaseUrl: baseUrl(request, env)')
+  || authStatusRoutes.includes('authBaseUrl: baseUrl(request, env)'),
+  'Worker auth status should expose the canonical auth base URL.'
+);
 assert.ok(googleIntegration.includes('GOOGLE_OAUTH_SCOPE_GROUPS'), 'Google integration should use explicit scope groups.');
 assert.ok(googleIntegration.includes('googleOAuthScopeGroupsFromUrl'), 'Google OAuth should derive scopes from requested capabilities.');
 assert.ok(googleIntegration.includes('googleScopedOAuthScope'), 'Google connector links should build the smallest requested scope set.');
@@ -2074,16 +2097,24 @@ assert.ok(workerAssets.includes("'/cait-app-bridge.js'"));
 assert.ok(workerAssets.includes("'/app-manifest-registry.js'"));
 assert.ok(catalogRoutes.includes('async function agentsCatalogPayload'), 'Catalog route should serve paged agent catalog payloads without building the full snapshot.');
 assert.ok(catalogRoutes.includes('async function appsCatalogPayload'), 'Catalog route should serve paged app catalog payloads without building the full snapshot.');
-assert.ok(worker.includes('return json(await agentsCatalogPayload(storage, request));'), 'Worker /api/agents should use the paged catalog endpoint.');
-assert.ok(worker.includes('return json(await appsCatalogPayload(storage, request));'), 'Worker /api/apps should use the paged catalog endpoint.');
-assert.ok(worker.includes('/.well-known/mcp.json') && mcpRoutes.includes('mcpDisabledPayload'), 'Worker should keep MCP discovery behind a disabled-by-default route gate.');
-assert.ok(worker.includes("url.pathname === '/mcp'") && mcpRoutes.includes('async function handleMcpRequest'), 'Worker should route MCP JSON-RPC through the gated MCP route module.');
+assert.ok(
+  worker.includes('return json(await agentsCatalogPayload(storage, request));')
+  || workerHandlers.includes('return json(await agentsCatalogPayload(storage, request));'),
+  'Worker /api/agents should use the paged catalog endpoint.'
+);
+assert.ok(
+  worker.includes('return json(await appsCatalogPayload(storage, request));')
+  || workerHandlers.includes('return json(await appsCatalogPayload(storage, request));'),
+  'Worker /api/apps should use the paged catalog endpoint.'
+);
+assert.ok((worker.includes('/.well-known/mcp.json') || workerHandlers.includes('/.well-known/mcp.json')) && mcpRoutes.includes('mcpDisabledPayload'), 'Worker should keep MCP discovery behind a disabled-by-default route gate.');
+assert.ok((worker.includes("url.pathname === '/mcp'") || workerHandlers.includes("url.pathname === '/mcp'")) && mcpRoutes.includes('async function handleMcpRequest'), 'Worker should route MCP JSON-RPC through the gated MCP route module.');
 assert.ok(mcpRoutes.includes('runtimePolicy(env).mcpEnabled'), 'MCP should require an explicit runtime flag before returning protocol payloads.');
 assert.ok(appRoutes.includes('async function handleAppHandoff'), 'App routes should proxy generic app handoff requests.');
-assert.ok(worker.includes('/api\\/apps\\/[^/]+\\/handoff'), 'Worker should expose /api/apps/:id/handoff.');
+assert.ok(worker.includes('/api\\/apps\\/[^/]+\\/handoff') || workerHandlers.includes('/api\\/apps\\/[^/]+\\/handoff'), 'Worker should expose /api/apps/:id/handoff.');
 assert.ok(appRoutes.includes('async function handleCreateAppContext'), 'App routes should accept generic app context payloads.');
 assert.ok(appRoutes.includes('async function handlePublisherContextIngest'), 'App routes should expose a Publisher-owned context ingest handler.');
-assert.ok(worker.includes('PUBLISHER_CONTEXT_INGEST'), 'Worker should route Publisher context ingest separately from generic app contexts.');
+assert.ok(worker.includes('PUBLISHER_CONTEXT_INGEST') || workerHandlers.includes('PUBLISHER_CONTEXT_INGEST'), 'Worker should route Publisher context ingest separately from generic app contexts.');
 assert.ok(appManifestRegistryJs.includes('/api/publisher/context-ingest'), 'Publisher handoffs should declare the Publisher ingest endpoint in the app manifest.');
 assert.ok(!chatJs.includes("id !== 'x-client-ops'"), 'Same-origin built-in app URL handling should not need an app-id exception.');
 assert.ok(!chatJs.includes("createAppAgentContextOpenUrl(appId, payload, { contextPath: '/api/app-contexts' })"), 'Chat handoff fallback must preserve app-specific context ingest routes instead of forcing the generic app-context endpoint.');
@@ -2091,10 +2122,18 @@ assert.ok(publisherContext.includes('shapePublisherContextWithOpenAi'), 'Publish
 assert.ok(publisherContext.includes('cait_publisher_context_shaper'), 'Publisher context shaping should use a dedicated structured-output schema.');
 assert.ok(publisherContext.includes('publisher_context_shape_status'), 'Publisher context shaping should persist a status marker for QA and debugging.');
 assert.ok(
-  worker.includes('/api/app-contexts') || worker.includes('API_ROUTES.APP_CONTEXTS') || worker.includes("apiRouteMatches(url.pathname, request.method, 'APP_CONTEXTS'"),
+  worker.includes('/api/app-contexts')
+  || worker.includes('API_ROUTES.APP_CONTEXTS')
+  || worker.includes("apiRouteMatches(url.pathname, request.method, 'APP_CONTEXTS'")
+  || workerHandlers.includes('/api/app-contexts')
+  || workerHandlers.includes('API_ROUTES.APP_CONTEXTS')
+  || workerHandlers.includes("apiRouteMatches(url.pathname, request.method, 'APP_CONTEXTS'"),
   'Worker should expose /api/app-contexts.'
 );
-assert.ok(worker.includes('/api/connectors/google/analytics-report'), 'Worker should expose the Google analytics report endpoint.');
+assert.ok(
+  worker.includes('/api/connectors/google/analytics-report') || workerHandlers.includes('/api/connectors/google/analytics-report'),
+  'Worker should expose the Google analytics report endpoint.'
+);
 assert.ok(workerAndIntegrationRoutes.includes('analyticsdata.googleapis.com/v1beta'), 'Worker should call the GA4 Data API for report rows.');
 assert.ok(workerAndIntegrationRoutes.includes('analyticsadmin.googleapis.com/v1beta/accountSummaries'), 'Worker should call the current GA4 Admin account summaries endpoint.');
 assert.ok(!workerAndIntegrationRoutes.includes('analyticsadmin.googleapis.com/v1alpha/accountSummaries'), 'Worker should not use the old GA4 Admin account summaries endpoint.');
