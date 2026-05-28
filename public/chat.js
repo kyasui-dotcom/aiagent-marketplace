@@ -114,6 +114,8 @@ import {
 import { createChatDeliveryFileUtils } from './chat-delivery-file-utils.js?v=20260528a';
 import { createChatWorkflowProgressUtils } from './chat-workflow-progress-utils.js?v=20260528b';
 import { createChatUsageLibraryController } from './chat-usage-library-controller.js?v=20260528e';
+import { createChatCatalogRuntime } from './chat-catalog-runtime.js?v=20260529a';
+import { createChatSchedulePanelController } from './chat-schedule-panel-controller.js?v=20260529a';
 
 const CHATUX_RETURN_PATH = '/chat';
 const CHATUX_BACKFILL_INTERVAL_MS = 10000;
@@ -337,6 +339,57 @@ const {
   rememberAppAgentUsage,
   usageLibraryHtml
 } = chatUsageLibraryController;
+
+const chatCatalogRuntime = createChatCatalogRuntime({
+  state,
+  api,
+  normalizeUsageId,
+  isCoreFeatureAppId,
+  orderRuntimeRecentJobsApiPath,
+  visibleJobApiPath,
+  orderRuntimeCachedJob,
+  orderRuntimeUpsertRecentJob,
+  rememberAiAgentsFromJob,
+  getVisitorId: () => state.visitorId,
+  catalogCacheTtlMs: CHATUX_CATALOG_CACHE_TTL_MS,
+  catalogPageSize: CHATUX_CATALOG_PAGE_SIZE,
+  window
+});
+const {
+  fetchAppContext,
+  fetchVisibleJob,
+  recentJobsApiPath,
+  refreshAppContexts,
+  refreshRecentJobs,
+  refreshRecurringOrders,
+  refreshRegisteredApps,
+  refreshWorkerAgents,
+  warmUtilityCatalogs
+} = chatCatalogRuntime;
+
+const chatSchedulePanelController = createChatSchedulePanelController({
+  state,
+  api,
+  escapeHtml,
+  compact,
+  taskLabel,
+  shortDateTime,
+  utilityEmptyHtml,
+  orderErrorMessage,
+  appendTextMessage,
+  openUtilityModal,
+  utilityModalIsOpen,
+  refreshRecentJobs,
+  refreshRecurringOrders,
+  getVisitorId: () => state.visitorId
+});
+const {
+  cancelRecurringOrder,
+  createScheduleFromForm,
+  schedulePanelHtml,
+  showSchedulePanel,
+  updateRecurringOrderStatus
+} = chatSchedulePanelController;
 
 const $ = (id) => document.getElementById(id);
 
@@ -3181,129 +3234,6 @@ function renderAppHandoffTools(job = {}) {
   ].join('\n');
 }
 
-function catalogCacheFresh(fetchedAt = 0) {
-  const timestamp = Number(fetchedAt || 0);
-  return timestamp > 0 && Date.now() - timestamp < CHATUX_CATALOG_CACHE_TTL_MS;
-}
-
-function catalogApiPath(path = '', options = {}) {
-  const url = new URL(path, window.location.origin);
-  const requestedLimit = Number(options.limit || CHATUX_CATALOG_PAGE_SIZE);
-  const requestedOffset = Number(options.offset || 0);
-  const limit = Number.isFinite(requestedLimit) ? Math.max(1, requestedLimit) : CHATUX_CATALOG_PAGE_SIZE;
-  const offset = Number.isFinite(requestedOffset) ? Math.max(0, requestedOffset) : 0;
-  url.searchParams.set('limit', String(limit));
-  url.searchParams.set('offset', String(offset));
-  return `${url.pathname}${url.search}`;
-}
-
-function mergeCatalogById(existing = [], incoming = []) {
-  const byId = new Map();
-  for (const item of [...(Array.isArray(existing) ? existing : []), ...(Array.isArray(incoming) ? incoming : [])]) {
-    const id = normalizeUsageId(item?.id || item?.name);
-    if (!id) continue;
-    byId.set(id, { ...(byId.get(id) || {}), ...item });
-  }
-  return [...byId.values()];
-}
-
-async function refreshRegisteredApps(options = {}) {
-  const force = options.force === true;
-  const offset = Math.max(0, Number(options.offset || 0));
-  const append = options.append === true || offset > 0;
-  if (!force && !append && catalogCacheFresh(state.registeredAppsFetchedAt)) return state.registeredApps;
-  if (state.registeredAppsRequest) return state.registeredAppsRequest;
-  state.registeredAppsRequest = api(catalogApiPath('/api/apps', options), { method: 'GET' })
-    .then((result) => {
-      const apps = (Array.isArray(result?.apps) ? result.apps : []).filter((app) => !isCoreFeatureAppId(app?.id));
-      state.registeredApps = append ? mergeCatalogById(state.registeredApps, apps) : apps;
-      state.registeredAppsTotal = Math.max(state.registeredApps.length, Number(result?.total || 0));
-      const nextOffset = Number(result?.offset ?? offset) + apps.length;
-      state.registeredAppsHasMore = Boolean(result?.hasMore ?? (state.registeredAppsTotal > nextOffset));
-      state.registeredAppsFetchedAt = Date.now();
-      return state.registeredApps;
-    })
-    .finally(() => {
-      state.registeredAppsRequest = null;
-    });
-  return state.registeredAppsRequest;
-}
-
-async function refreshAppContexts(options = {}) {
-  const force = options.force === true;
-  const limit = Math.max(1, Math.min(50, Number(options.limit || 10) || 10));
-  if (!force && catalogCacheFresh(state.appContextsFetchedAt)) return state.appContexts;
-  if (state.appContextsRequest) return state.appContextsRequest;
-  const url = new URL('/api/app-contexts', window.location.origin);
-  url.searchParams.set('limit', String(limit));
-  state.appContextsRequest = api(`${url.pathname}${url.search}`, { method: 'GET' })
-    .then((result) => {
-      const contexts = Array.isArray(result?.app_contexts) ? result.app_contexts : [];
-      state.appContexts = contexts;
-      state.appContextsFetchedAt = Date.now();
-      return state.appContexts;
-    })
-    .finally(() => {
-      state.appContextsRequest = null;
-    });
-  return state.appContextsRequest;
-}
-
-async function fetchAppContext(contextId = '') {
-  const id = String(contextId || '').trim();
-  if (!id) throw new Error('App context id is required.');
-  const result = await api(`/api/app-contexts/${encodeURIComponent(id)}`, { method: 'GET' });
-  const context = result?.app_context?.context;
-  if (!context || typeof context !== 'object') throw new Error('App context response did not include a context payload.');
-  return context;
-}
-
-function recentJobsApiPath(options = {}) {
-  return orderRuntimeRecentJobsApiPath({
-    ...options,
-    origin: window.location.origin,
-    visitorId: state.visitorId
-  });
-}
-
-async function refreshRecentJobs(options = {}) {
-  const force = options.force === true;
-  if (!force && catalogCacheFresh(state.recentJobsFetchedAt)) return state.recentJobs;
-  if (state.recentJobsRequest) return state.recentJobsRequest;
-  state.recentJobsRequest = api(recentJobsApiPath(options), { method: 'GET' })
-    .then((result) => {
-      const jobs = Array.isArray(result?.jobs) ? result.jobs : [];
-      state.recentJobs = jobs;
-      state.recentJobsFetchedAt = Date.now();
-      for (const job of jobs) rememberAiAgentsFromJob(job);
-      return state.recentJobs;
-    })
-    .finally(() => {
-      state.recentJobsRequest = null;
-    });
-  return state.recentJobsRequest;
-}
-
-async function fetchVisibleJob(jobId = '', options = {}) {
-  const safeId = String(jobId || '').trim();
-  if (!safeId) return null;
-  if (options.force !== true) {
-    const cached = orderRuntimeCachedJob(state.recentJobs, safeId);
-    if (cached) return cached;
-  }
-  const result = await api(visibleJobApiPath(safeId, {
-    ...options,
-    visitorId: state.visitorId
-  }), { method: 'GET' });
-  const job = result?.job && typeof result.job === 'object' ? { ...result.job, id: result.job.id || safeId } : null;
-  if (job?.id) {
-    state.recentJobs = orderRuntimeUpsertRecentJob(state.recentJobs, job, 50);
-    state.recentJobsFetchedAt = Date.now();
-    rememberAiAgentsFromJob(job);
-  }
-  return job;
-}
-
 function appendOrderStatusCheck(job = {}) {
   const safeId = String(job?.id || state.orderId || '').trim();
   if (!safeId) return;
@@ -3351,52 +3281,6 @@ async function approveAndResumeOrder(orderId = '') {
   } finally {
     setBusy(false);
   }
-}
-
-async function refreshRecurringOrders(options = {}) {
-  const force = options.force === true;
-  if (!force && catalogCacheFresh(state.recurringOrdersFetchedAt)) return state.recurringOrders;
-  if (state.recurringOrdersRequest) return state.recurringOrdersRequest;
-  state.recurringOrdersRequest = api('/api/recurring-orders', { method: 'GET' })
-    .then((result) => {
-      state.recurringOrders = Array.isArray(result?.recurring_orders) ? result.recurring_orders : [];
-      state.recurringOrdersFetchedAt = Date.now();
-      return state.recurringOrders;
-    })
-    .finally(() => {
-      state.recurringOrdersRequest = null;
-    });
-  return state.recurringOrdersRequest;
-}
-
-async function refreshWorkerAgents(options = {}) {
-  const force = options.force === true;
-  const offset = Math.max(0, Number(options.offset || 0));
-  const append = options.append === true || offset > 0;
-  if (!force && !append && catalogCacheFresh(state.workerAgentsFetchedAt)) return state.workerAgents;
-  if (state.workerAgentsRequest) return state.workerAgentsRequest;
-  state.workerAgentsRequest = api(catalogApiPath('/api/agents', options), { method: 'GET' })
-    .then((result) => {
-      const agents = Array.isArray(result?.agents) ? result.agents : [];
-      state.workerAgents = append ? mergeCatalogById(state.workerAgents, agents) : agents;
-      state.workerAgentsTotal = Math.max(state.workerAgents.length, Number(result?.total || 0));
-      const nextOffset = Number(result?.offset ?? offset) + agents.length;
-      state.workerAgentsHasMore = Boolean(result?.hasMore ?? (state.workerAgentsTotal > nextOffset));
-      state.workerAgentsFetchedAt = Date.now();
-      return state.workerAgents;
-    })
-    .finally(() => {
-      state.workerAgentsRequest = null;
-    });
-  return state.workerAgentsRequest;
-}
-
-function warmUtilityCatalogs() {
-  void refreshWorkerAgents().catch(() => {});
-  void refreshRegisteredApps().catch(() => {});
-  void refreshAppContexts().catch(() => {});
-  void refreshRecentJobs().catch(() => {});
-  void refreshRecurringOrders().catch(() => {});
 }
 
 async function appendUsageLibrary(scope = 'all') {
@@ -3715,246 +3599,6 @@ async function showDeliveryHistoryForPrompt(prompt = '') {
     appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Delivery history' });
     return true;
   }
-}
-
-function localTimezone() {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Tokyo';
-  } catch {
-    return 'Asia/Tokyo';
-  }
-}
-
-function scheduleableCompletedOrders() {
-  return (Array.isArray(state.recentJobs) ? state.recentJobs : [])
-    .filter((job) => job?.id && String(job.status || '').trim().toLowerCase() === 'completed' && String(job.prompt || '').trim())
-    .slice(0, 20);
-}
-
-function completedOrderById(id = '') {
-  const safeId = String(id || '').trim();
-  if (!safeId) return null;
-  return scheduleableCompletedOrders().find((job) => String(job.id || '') === safeId) || null;
-}
-
-function scheduleFormHtml() {
-  const completedOrders = scheduleableCompletedOrders();
-  const hasCompletedOrders = completedOrders.length > 0;
-  const orderOptions = completedOrders.map((job) => {
-    const label = [
-      taskLabel(job.taskType || job.workflowTask || 'work'),
-      shortDateTime(job.completedAt || job.updatedAt || job.createdAt),
-      compact(job.prompt || '', 88)
-    ].filter(Boolean).join(' / ');
-    return `<option value="${escapeHtml(job.id)}">${escapeHtml(label)}</option>`;
-  }).join('');
-  return [
-    '<form class="utility-form schedule-form" data-schedule-create>',
-    '<label class="utility-field"><span>Completed order to rerun</span>',
-    hasCompletedOrders
-      ? `<select name="source_job_id">${orderOptions}</select>`
-      : '<select name="source_job_id" disabled><option>Run an order to completion first</option></select>',
-    '</label>',
-    '<div class="utility-grid">',
-    '<label class="utility-field"><span>Repeat</span><select name="interval"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="hourly">Hourly</option></select></label>',
-    '<label class="utility-field"><span>Time</span><input name="time" type="time" value="09:00" /></label>',
-    '<label class="utility-field"><span>Weekday</span><select name="weekday"><option value="1">Mon</option><option value="2">Tue</option><option value="3">Wed</option><option value="4">Thu</option><option value="5">Fri</option><option value="6">Sat</option><option value="0">Sun</option></select></label>',
-    `<label class="utility-field"><span>Timezone</span><input name="timezone" value="${escapeHtml(localTimezone())}" /></label>`,
-    '<label class="utility-field"><span>Max runs</span><input name="max_runs" type="number" min="0" max="365" value="0" /></label>',
-    '</div>',
-    '<div class="utility-actions schedule-submit-row">',
-    `<button class="primary-btn file-action" type="submit"${hasCompletedOrders ? '' : ' disabled'}>Schedule completed order</button>`,
-    '</div>',
-    '<span class="chat-hint">Schedules rerun a completed order. This avoids turning an unclear request into recurring work before CAIt has asked questions, routed it, and delivered it once. The chat does not need to stay open.</span>',
-    '</form>'
-  ].join('\n');
-}
-
-function scheduleIntervalLabel(schedule = {}) {
-  const interval = String(schedule.interval || 'daily');
-  if (interval === 'hourly') return `Every ${Math.max(1, Number(schedule.every || 1))} hour(s)`;
-  if (interval === 'weekly') return `Weekly ${schedule.time || '09:00'} ${weekdayLabel(schedule.weekday)}`;
-  return `Daily ${schedule.time || '09:00'}`;
-}
-
-function weekdayLabel(value = 1) {
-  return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][Math.max(0, Math.min(6, Number(value || 0)))] || 'Mon';
-}
-
-function recurringOrderRows(orders = []) {
-  const rows = (Array.isArray(orders) ? orders : []).filter((order) => order?.id).slice(0, 40).map((order) => {
-    const status = String(order.status || 'active');
-    const schedule = order.schedule || {};
-    const meta = [
-      status,
-      scheduleIntervalLabel(schedule),
-      schedule.timezone || '',
-      order.nextRunAt ? `next ${shortDateTime(order.nextRunAt)}` : '',
-      order.lastStatus ? `last ${order.lastStatus}` : ''
-    ].filter(Boolean).join(' / ');
-    const canPause = status === 'active';
-    const canResume = status === 'paused' || status === 'needs_action';
-    return [
-      '<div class="utility-row">',
-      '<div class="utility-main">',
-      `<strong>${escapeHtml(taskLabel(order.taskType || 'work'))}</strong>`,
-      `<span class="utility-meta">${escapeHtml(meta)}</span>`,
-      `<span>${escapeHtml(compact(order.prompt || order.lastError || '', 190))}</span>`,
-      '</div>',
-      '<div class="utility-actions">',
-      order.lastJobId ? `<button class="ghost-btn file-action" type="button" data-utility-open-job="${escapeHtml(order.lastJobId)}">Last run</button>` : '',
-      canPause ? `<button class="ghost-btn file-action" type="button" data-recurring-status="${escapeHtml(order.id)}" data-status="paused">Pause</button>` : '',
-      canResume ? `<button class="ghost-btn file-action" type="button" data-recurring-status="${escapeHtml(order.id)}" data-status="active">Resume</button>` : '',
-      status !== 'cancelled' && status !== 'completed' ? `<button class="ghost-btn file-action" type="button" data-recurring-cancel="${escapeHtml(order.id)}">Cancel</button>` : '',
-      '</div>',
-      '</div>'
-    ].filter(Boolean).join('\n');
-  });
-  return rows.length ? `<div class="utility-list">${rows.join('\n')}</div>` : utilityEmptyHtml('No scheduled work is active yet.');
-}
-
-function schedulePanelHtml(status = '') {
-  return [
-    status ? `<div class="chat-hint">${escapeHtml(status)}</div>` : '',
-    scheduleFormHtml(),
-    '<h3 class="utility-section-title">Scheduled work</h3>',
-    recurringOrderRows(state.recurringOrders)
-  ].filter(Boolean).join('\n');
-}
-
-async function showSchedulePanel() {
-  openUtilityModal('Schedules', schedulePanelHtml('Loading scheduled work...'));
-  try {
-    await Promise.all([
-      refreshRecurringOrders({ force: true }),
-      refreshRecentJobs({ force: true, limit: 40 })
-    ]);
-    if (utilityModalIsOpen('Schedules')) openUtilityModal('Schedules', schedulePanelHtml());
-  } catch (error) {
-    if (utilityModalIsOpen('Schedules')) openUtilityModal('Schedules', schedulePanelHtml(orderErrorMessage(error)));
-  }
-}
-
-function scheduleFromForm(form) {
-  const data = new FormData(form);
-  const interval = String(data.get('interval') || 'daily').trim();
-  return {
-    schedule: {
-      interval,
-      time: String(data.get('time') || '09:00').trim() || '09:00',
-      weekday: Number(data.get('weekday') || 1),
-      timezone: String(data.get('timezone') || localTimezone()).trim() || 'Asia/Tokyo'
-    },
-    maxRuns: Math.max(0, Math.min(365, Number(data.get('max_runs') || 0) || 0)),
-    sourceJobId: String(data.get('source_job_id') || '').trim()
-  };
-}
-
-function buildScheduledJobPayloadFromCompletedOrder(job = {}) {
-  if (!job?.id || String(job.status || '').trim().toLowerCase() !== 'completed') {
-    throw new Error('Choose a completed order before scheduling recurring work.');
-  }
-  const taskType = String(job.taskType || job.task_type || job.workflowTask || 'research').trim() || 'research';
-  const previousInput = job.input && typeof job.input === 'object' ? job.input : {};
-  const previousBroker = previousInput._broker && typeof previousInput._broker === 'object' ? previousInput._broker : {};
-  const orderStrategy = String(job.orderStrategy || job.order_strategy || (job.workflow ? 'multi' : 'single') || 'single').trim() || 'single';
-  return {
-    parent_agent_id: 'chatux',
-    task_type: taskType,
-    selected_agent_id: String(job.selectedAgentId || job.selected_agent_id || job.assignedAgentId || '').trim(),
-    selected_agent_name: String(job.selectedAgentName || job.selected_agent_name || '').trim(),
-    prompt: String(job.prompt || '').trim(),
-    order_strategy: orderStrategy,
-    async_dispatch: true,
-    skip_intake: true,
-    visitor_id: state.visitorId,
-    budget_cap: Number(job.budgetCap ?? job.budget_cap ?? 500),
-    deadline_sec: Number(job.deadlineSec ?? job.deadline_sec ?? 300),
-    confirmation: {
-      accepted: true,
-      source: 'chat_schedule_completed_order',
-      accepted_at: new Date().toISOString(),
-      source_job_id: String(job.id || '')
-    },
-    input: {
-      ...previousInput,
-      source: 'chatux_completed_order_schedule',
-      original_prompt: previousInput.original_prompt || previousInput.originalPrompt || String(job.prompt || '').trim(),
-      _broker: {
-        ...previousBroker,
-        recurring: {
-          ...(previousBroker.recurring && typeof previousBroker.recurring === 'object' ? previousBroker.recurring : {}),
-          created_from: 'completed_order_schedule_panel',
-          sourceJobId: String(job.id || ''),
-          sourceJobStatus: 'completed',
-          chat_required: false
-        },
-        intake: {
-          ...(previousBroker.intake && typeof previousBroker.intake === 'object' ? previousBroker.intake : {}),
-          reused_completed_order: true,
-          source_job_id: String(job.id || ''),
-          checked_at: new Date().toISOString()
-        }
-      }
-    }
-  };
-}
-
-async function createScheduleFromForm(form) {
-  const config = scheduleFromForm(form);
-  const sourceJob = completedOrderById(config.sourceJobId);
-  if (!sourceJob) throw new Error('Run an order to completion first, then choose it here for scheduling.');
-  const payload = buildScheduledJobPayloadFromCompletedOrder(sourceJob);
-  const body = {
-    ...payload,
-    schedule: config.schedule,
-    max_runs: config.maxRuns,
-    status: 'active',
-    input: {
-      ...(payload.input || {}),
-      _broker: {
-        ...(payload.input?._broker || {}),
-        recurring: {
-          ...(payload.input?._broker?.recurring || {}),
-          schedule: config.schedule,
-          maxRuns: config.maxRuns,
-          sourceJobId: sourceJob.id
-        }
-      }
-    }
-  };
-  const result = await api('/api/recurring-orders', {
-    method: 'POST',
-    body: JSON.stringify(body)
-  });
-  state.recurringOrdersFetchedAt = 0;
-  await refreshRecurringOrders({ force: true });
-  openUtilityModal('Schedules', schedulePanelHtml('Scheduled from a completed order. CAIt will rerun it in the background even if this chat is closed.'));
-  appendTextMessage('system', [
-    'Scheduled completed order.',
-    `Schedule ID: ${result.recurring_order?.id || '-'}`,
-    `Source order: ${sourceJob.id.slice(0, 8)}`,
-    result.recurring_order?.nextRunAt ? `Next run: ${shortDateTime(result.recurring_order.nextRunAt)}` : ''
-  ].filter(Boolean).join('\n'), { label: 'Schedules' });
-}
-
-async function updateRecurringOrderStatus(id = '', status = 'paused') {
-  if (!id) return;
-  await api(`/api/recurring-orders/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status })
-  });
-  state.recurringOrdersFetchedAt = 0;
-  await refreshRecurringOrders({ force: true });
-  if (utilityModalIsOpen('Schedules')) openUtilityModal('Schedules', schedulePanelHtml(status === 'active' ? 'Schedule resumed.' : 'Schedule paused.'));
-}
-
-async function cancelRecurringOrder(id = '') {
-  if (!id) return;
-  await api(`/api/recurring-orders/${encodeURIComponent(id)}`, { method: 'DELETE' });
-  state.recurringOrdersFetchedAt = 0;
-  await refreshRecurringOrders({ force: true });
-  if (utilityModalIsOpen('Schedules')) openUtilityModal('Schedules', schedulePanelHtml('Schedule cancelled.'));
 }
 
 function agentUtilityRows(agents = []) {
