@@ -42,6 +42,8 @@ const openChatIntentSource = readFileSync(new URL('../lib/open-chat-intent.js', 
 const openChatRoutesSource = readFileSync(new URL('../lib/routes/open-chat.js', import.meta.url), 'utf8');
 const orderCreateRequestHelpersSource = readFileSync(new URL('../lib/order-create-request-helpers.js', import.meta.url), 'utf8');
 const orderCreateRoutesSource = readFileSync(new URL('../lib/routes/order-create.js', import.meta.url), 'utf8');
+const orderCreateSingleRoutesSource = readFileSync(new URL('../lib/routes/order-create-single.js', import.meta.url), 'utf8');
+const orderCreateWorkflowRoutesSource = readFileSync(new URL('../lib/routes/order-create-workflow.js', import.meta.url), 'utf8');
 const pricingInputSource = readFileSync(new URL('../lib/pricing-input.js', import.meta.url), 'utf8');
 const publicReadModelSource = readFileSync(new URL('../lib/public-read-model.js', import.meta.url), 'utf8');
 const rateLimitSource = readFileSync(new URL('../lib/rate-limit.js', import.meta.url), 'utf8');
@@ -79,6 +81,7 @@ const leaderWorkerPlanningSource = readFileSync(new URL('../lib/leader-worker-pl
 const workflowAdaptiveActivationSource = readFileSync(new URL('../lib/workflow-adaptive-activation.js', import.meta.url), 'utf8');
 const workflowHandoffContextSource = readFileSync(new URL('../lib/workflow-handoff-context.js', import.meta.url), 'utf8');
 const workflowLeaderHandoffSource = readFileSync(new URL('../lib/workflow-leader-handoff.js', import.meta.url), 'utf8');
+const workflowLeaderHandoffRefreshSource = readFileSync(new URL('../lib/workflow-leader-handoff-refresh.js', import.meta.url), 'utf8');
 const workflowLeaderSequenceRepairSource = readFileSync(new URL('../lib/workflow-leader-sequence-repair.js', import.meta.url), 'utf8');
 const workflowParentReconcileSource = readFileSync(new URL('../lib/workflow-parent-reconcile.js', import.meta.url), 'utf8');
 const workflowPlanAssemblySource = readFileSync(new URL('../lib/workflow-plan-assembly.js', import.meta.url), 'utf8');
@@ -92,6 +95,12 @@ const workflowTimeoutsSource = readFileSync(new URL('../lib/workflow-timeouts.js
 const workflowFailureRetrySource = readFileSync(new URL('../lib/workflow-failure-retry.js', import.meta.url), 'utf8');
 const workflowLayeringSource = readFileSync(new URL('../lib/workflow-layering.js', import.meta.url), 'utf8');
 const workflowQualitySource = readFileSync(new URL('../lib/workflow-quality.js', import.meta.url), 'utf8');
+const workflowQualityHandoffSource = readFileSync(new URL('../lib/workflow-quality-handoff.js', import.meta.url), 'utf8');
+const workflowSourceRequirementsSource = readFileSync(new URL('../lib/workflow-source-requirements.js', import.meta.url), 'utf8');
+const workflowEndpointDispatchSource = readFileSync(new URL('../lib/workflow-endpoint-dispatch.js', import.meta.url), 'utf8');
+const workflowChildProgressSource = readFileSync(new URL('../lib/workflow-child-progress.js', import.meta.url), 'utf8');
+const workflowPriorRunsSource = readFileSync(new URL('../lib/workflow-prior-runs.js', import.meta.url), 'utf8');
+const workflowLeaderSequenceSource = readFileSync(new URL('../lib/workflow-leader-sequence.js', import.meta.url), 'utf8');
 const jsonPostSource = readFileSync(new URL('../lib/json-post.js', import.meta.url), 'utf8');
 const deliveryCompletionGateSource = readFileSync(new URL('../lib/delivery-completion-gate.js', import.meta.url), 'utf8');
 assert.ok(!workerSource.includes("from './lib/local-agent-endpoints.js'"), 'sample agents must use the normal external provider endpoint path.');
@@ -179,7 +188,7 @@ assert.ok(workflowPlanAssemblySource.includes('function planWorkflowAssignments'
 assert.ok(workflowPlanAssemblySource.includes('async function maybeRefineWorkflowPlanWithLeaderLlm'), 'leader LLM plan refinement should be owned by lib/workflow-plan-assembly.js');
 assert.ok(workflowPlanAssemblySource.includes('function workflowPlannedTasksFromOrderBody'), 'retry planned-task extraction should be owned by lib/workflow-plan-assembly.js');
 assert.ok(workflowPlanAssemblySource.includes('function buildWorkflowEstimate'), 'workflow estimate assembly should be owned by lib/workflow-plan-assembly.js');
-assert.ok(orderCreateRoutesSource.includes('openAiCostEstimate: workflowEstimate.openAiCostMax'), 'workflow preflight should guard against the OpenAI/API cost estimate, not the marked-up customer total.');
+assert.ok(orderCreateRoutesSource.includes('openAiCostEstimate: workflowEstimate.openAiCostMax') || orderCreateWorkflowRoutesSource.includes('openAiCostEstimate: workflowEstimate.openAiCostMax'), 'workflow preflight should guard against the OpenAI/API cost estimate, not the marked-up customer total.');
 assert.ok(workflowPlanAssemblySource.includes('function buildWorkflowParentJob'), 'workflow parent job assembly should be owned by lib/workflow-plan-assembly.js');
 assert.ok(workflowPlanAssemblySource.includes('function compactRetryReuseArtifactsForJobStorage'), 'retry reuse artifact storage compaction should be owned by lib/workflow-plan-assembly.js');
 const qaWorkflowPlanHelpers = createWorkflowPlanAssemblyHelpers({ estimateRunWindow });
@@ -674,17 +683,17 @@ assert.ok(emailNotificationsSource.includes('export async function sendResendEma
 assert.ok(!workerSource.includes('async function sendEmailAuthLink'), 'worker.js must not keep email auth link sender implementation');
 assert.ok(!workerSource.includes('async function maybeSendSignupWelcomeEmail'), 'worker.js must not keep signup welcome email sender implementation');
 assert.ok(!workerSource.includes('async function sendResendEmail'), 'worker.js must not keep Resend API helper implementation');
-assert.ok(workerSource.includes('function dispatchJobToAssignedAgent'), 'workflow jobs should dispatch through the generic provider endpoint path');
-assert.ok(workerSource.includes('function braveSearchConfiguredForWorkflow'), 'Brave search configuration should stay available for search-required workflow jobs');
-assert.ok(workerSource.includes('workflowJobRequiresSearch(job)'), 'search-required workflow jobs should preserve source-quality gates');
+assert.ok(workflowEndpointDispatchSource.includes('function dispatchJobToAssignedAgent'), 'workflow jobs should dispatch through the generic provider endpoint path');
+assert.ok(workflowSourceRequirementsSource.includes('function braveSearchConfiguredForWorkflow'), 'Brave search configuration should stay available for search-required workflow jobs');
+assert.ok(workflowSourceRequirementsSource.includes('workflowJobRequiresSearch(job)'), 'search-required workflow jobs should preserve source-quality gates');
 assert.ok(!workerSource.includes('function workflowSourceCollectionSourcesForDispatch'), 'worker must not synthesize research web_sources; source extraction belongs to the assigned agent.');
 assert.ok(!workerSource.includes('sourceCollectionAttachedBy'), 'worker must not mark agent-specific source collection in dispatch payloads.');
 assert.ok(!workerSource.includes('web_sources: sourceCollectionSources'), 'worker must not inject research web_sources into dispatch payloads.');
 assert.ok(!workerSource.includes('raw_context: workflowSourceRawContextForDispatch(context)'), 'worker dispatch compaction must not carry agent-specific raw source extraction helpers.');
 assert.ok(!workerSource.includes('const searchConsoleDomain = text.match'), 'worker must not normalize Search Console sc-domain values into source URLs.');
 assert.ok(!workerSource.includes('|| braveSearchConfiguredForWorkflow(env)'), 'Brave configuration alone must not force every workflow child through search');
-assert.ok(workerSource.includes('workflow.forceWebSearch === true'), 'search-required workflow jobs must not be completed by deterministic templates');
-assert.ok(workerSource.includes('resolveDispatchEndpointUrl(endpoint, env)'), 'relative sample endpoints should be resolved before generic dispatch');
+assert.ok(workflowSourceRequirementsSource.includes('workflow.forceWebSearch === true'), 'search-required workflow jobs must not be completed by deterministic templates');
+assert.ok(workflowEndpointDispatchSource.includes('resolveDispatchEndpointUrl(endpoint, env)'), 'relative sample endpoints should be resolved before generic dispatch');
 assert.ok(runtimeEnvSource.includes('SAMPLE_AGENT_ENDPOINT_BASE_URL'), 'sample agents should become routable through manifest-defined endpoints and the configured endpoint base URL');
 assert.ok(sampleAgentManifestRoutesSource.includes('function sampleAgentManifestRoute'), 'sample agent manifests should expose a normal HTTP endpoint contract');
 assert.ok(sampleAgentManifestRoutesSource.includes('async function handleSampleAgentManifestRequest'), 'sample agent manifest proxy should be owned by lib/routes/sample-agent-manifest.js');
@@ -720,7 +729,7 @@ assert.ok(deliveryActionContractSource.includes('approved_x_username'), 'Deliver
 assert.ok(deliveryActionContractSource.includes('approved_text'), 'Delivery execution requests must carry the exact approved post text');
 assert.ok(endpointDispatchContractSource.includes('additional_prompt: additionalPrompt'), 'dispatch payload should send workflow context as additional_prompt');
 assert.ok(endpointDispatchContractSource.includes('full_prompt: fullPrompt'), 'dispatch payload should include a compatibility full_prompt for agent runners');
-assert.ok(orderCreateRoutesSource.includes('orderBodyWithCommonQualityRules(body)'), 'all order creation paths should attach common quality rules before persistence');
+assert.ok(orderCreateRoutesSource.includes('orderBodyWithCommonQualityRules(body)') || (orderCreateSingleRoutesSource.includes('orderBodyWithCommonQualityRules(body)') && orderCreateWorkflowRoutesSource.includes('orderBodyWithCommonQualityRules(body)')), 'all order creation paths should attach common quality rules before persistence');
 assert.ok(endpointDispatchContractSource.includes('quality_rules:'), 'dispatch payload should expose common quality rules as structured data');
 assert.ok(orchestrationSource.includes('DOWNSTREAM_HANDOFF_SUMMARY_CONTRACT_VERSION'), 'downstream handoff summary contract should be owned by orchestration.js');
 assert.ok(endpointDispatchContractSource.includes('downstream_handoff_summary_contract'), 'external dispatch payload should expose the downstream handoff summary contract');
@@ -733,9 +742,9 @@ assert.ok(
 assert.ok(workflowLeaderHandoffSource.includes('workflow-handoff/v2'), 'workflow handoff should carry an explicit versioned handoff contract');
 assert.ok(workflowLeaderHandoffSource.includes("handoffOwner: 'leader'"), 'workflow handoff should be explicitly owned by the leader, not orchestration.');
 assert.ok(workflowHandoffContextSource.includes('leader remains handoff owner'), 'downstream handoff prompt should state that orchestration only preserves durable state while the leader owns handoff.');
-assert.ok(workerSource.includes('workflow-execution-program/v1') || workflowLeaderHandoffSource.includes('workflow-execution-program/v1') || workflowQualitySource.includes('workflow-execution-program/v1'), 'workflow handoff should carry explicit programmatic process state');
+assert.ok(workerSource.includes('workflow-execution-program/v1') || workflowLeaderHandoffSource.includes('workflow-execution-program/v1') || workflowQualitySource.includes('workflow-execution-program/v1') || workflowQualityHandoffSource.includes('workflow-execution-program/v1'), 'workflow handoff should carry explicit programmatic process state');
 assert.ok(workflowHandoffContextSource.includes('USER-FACING PRIOR DELIVERABLES (primary reference material)'), 'downstream prompts should mark prior user-facing deliverables as the primary reference material');
-assert.ok(workerSource.includes('prior_layer_unavailable') || workflowQualitySource.includes('prior_layer_unavailable'), 'workflow dispatch should block downstream layers when a prior data/research layer fails or times out.');
+assert.ok(workerSource.includes('prior_layer_unavailable') || workflowLeaderSequenceSource.includes('prior_layer_unavailable') || workflowQualitySource.includes('prior_layer_unavailable'), 'workflow dispatch should block downstream layers when a prior data/research layer fails or times out.');
 assert.ok(workflowHandoffContextSource.includes('Treat this as a blocker for quality'), 'workflow handoff prompt should not tell downstream agents to proceed from unavailable prior work.');
 assert.ok(workflowReconcileActionsSource.includes('function completeWorkflowSaasHandoffOnlyChild'), 'workflow SaaS handoff-only completion actions should be owned outside worker.js');
 assert.ok(workflowReconcileActionsSource.includes('function blockWorkflowPendingChildren'), 'workflow child blocking actions should be owned outside worker.js');
@@ -744,7 +753,7 @@ assert.ok(!workerSource.includes('function blockWorkflowPendingChildren'), 'work
 assert.ok(workflowLeaderSequenceRepairSource.includes('function rebuildMissingLeaderSequenceChildJobs'), 'leader sequence repair should be owned outside worker.js');
 assert.ok(!workerSource.includes('function rebuildMissingLeaderSequenceChildJobs'), 'worker.js must not keep leader sequence repair implementation');
 assert.ok(workflowParentReconcileSource.includes('async function reconcileWorkflowParent'), 'workflow parent reconciliation should be owned outside worker.js');
-assert.ok(workflowParentReconcileSource.includes('async function refreshWorkflowLeaderHandoffForJobId'), 'workflow leader handoff refresh should be owned outside worker.js');
+assert.ok(workflowParentReconcileSource.includes('async function refreshWorkflowLeaderHandoffForJobId') || workflowLeaderHandoffRefreshSource.includes('async function refreshWorkflowLeaderHandoffForJobId'), 'workflow leader handoff refresh should be owned outside worker.js');
 assert.ok(workflowParentReconcileSource.includes('completeWorkflowSaasHandoffOnlyChildren'), 'workflow parent reconciliation should preserve SaaS handoff-only child completion.');
 assert.ok(!workerSource.includes('async function reconcileWorkflowParent'), 'worker.js must not keep workflow parent reconciliation implementation');
 assert.ok(!workerSource.includes('async function refreshWorkflowLeaderHandoffForJobId'), 'worker.js must not keep workflow leader handoff refresh implementation');
@@ -754,22 +763,25 @@ assert.ok(workflowTimeoutsSource.includes('async function sweepTimedOutJobs'), '
 assert.ok(workflowTimeoutsSource.includes('function effectiveTimeoutDeadlineMs'), 'workflow timeout deadline calculation should be owned outside worker.js');
 assert.ok(!workerSource.includes('async function sweepTimedOutJobs'), 'worker.js must not keep workflow timeout sweep implementation');
 assert.ok(!workerSource.includes('function effectiveTimeoutDeadlineMs'), 'worker.js must not keep workflow timeout deadline implementation');
-assert.ok(workflowQualitySource.includes('function workflowAppContextOriginalSignals'), 'leader quality gates should accept attached app context evidence when a data child has no prior run output.');
+assert.ok(workflowQualitySource.includes('function workflowAppContextOriginalSignals') || workflowQualityHandoffSource.includes('function workflowAppContextOriginalSignals'), 'leader quality gates should accept attached app context evidence when a data child has no prior run output.');
 assert.ok(endpointDispatchContractSource.includes('compactWorkflowAppContextsForDispatch'), 'attached app contexts should be passed into endpoint dispatch instead of shortcut-completing data/research.');
 assert.ok(endpointDispatchContractSource.includes('compactWorkflowInputForEndpointDispatch'), 'workflow endpoint dispatch should compact duplicated app/connector context before handing work to an agent endpoint.');
 assert.ok(!workerSource.includes('compactWorkflowInputForBuiltInDispatch'), 'workflow dispatch compaction must be endpoint-contract based, not sample-agent special casing.');
 assert.ok(!workerSource.includes('invokeLocalAgentJobEndpoint'), 'same-worker local sample endpoint invocation must not exist in worker dispatch.');
-assert.ok(workerSource.includes("const canUseTargetedDispatchResult = typeof storage.mutateJobAndAgent === 'function'"), 'completed and failed endpoint dispatch results should persist through targeted job/agent mutation instead of loading full production state.');
+assert.ok(workflowEndpointDispatchSource.includes("const canUseTargetedDispatchResult = typeof storage.mutateJobAndAgent === 'function'"), 'completed and failed endpoint dispatch results should persist through targeted job/agent mutation instead of loading full production state.');
 assert.ok(billingOutcomeSource.includes('if (!isBillableJob(job))'), 'test-mode billing outcomes should not force a full-state billing settlement during queue completion.');
 assert.ok(!workerSource.includes('app-context-data-analysis-shortcut'), 'data_analysis must not complete through simulated attached-context shortcut fallback.');
 assert.ok(!workerSource.includes('app-context-research-shortcut'), 'research must not complete through simulated attached-context shortcut fallback.');
 assert.ok(workflowPlanAssemblySource.includes('Leader planner failed before order creation, so CAIt kept the deterministic team plan'), 'leader planner failures should not turn order creation into a 503 when a deterministic team plan exists.');
 assert.ok(workerSource.includes('oauthCallbackCurrentContext'), 'OAuth callbacks should use account-scoped session context instead of full-state reads.');
-assert.ok(workerSource.includes('workflowBlockingQualityGateBeforeLayer'), 'workflow dispatch should not release downstream layers after prior handoff/search quality gates fail');
-assert.ok(workerSource.includes('function workflowFailedPriorLayerShouldWarnNotBlock'), 'leader-released later layers should not get stuck only because one optional prior preparation artifact failed after another artifact completed.');
-assert.ok(workerSource.includes('workflowLayerWasLeaderActivated(parent'), 'non-blocking prior-layer failure handling must be tied to explicit leader activation, not generic auto-progression.');
-assert.ok(workerSource.includes('function workflowLeaderReplanDecisionForLayer'), 'leader checkpoints should reconsider next-layer CMO specialist assignment decision from prior media/planning outputs.');
-assert.ok(workerSource.includes('leader_replan_deferred'), 'leader checkpoint replans should explicitly defer non-chosen adaptive candidates instead of silently releasing every preplanned child.');
+assert.ok(workerSource.includes('workflowBlockingQualityGateBeforeLayer') || workflowLeaderSequenceSource.includes('workflowBlockingQualityGateBeforeLayer'), 'workflow dispatch should not release downstream layers after prior handoff/search quality gates fail');
+assert.ok(workflowLeaderSequenceSource.includes('function workflowFailedPriorLayerShouldWarnNotBlock'), 'leader-released later layers should not get stuck only because one optional prior preparation artifact failed after another artifact completed.');
+assert.ok(workflowLeaderSequenceSource.includes('workflowLayerWasLeaderActivated(parent'), 'non-blocking prior-layer failure handling must be tied to explicit leader activation, not generic auto-progression.');
+assert.ok(workflowLeaderSequenceSource.includes('function workflowLeaderReplanDecisionForLayer'), 'leader checkpoints should reconsider next-layer CMO specialist assignment decision from prior media/planning outputs.');
+assert.ok(
+  workflowChildProgressSource.includes('leader_replan_deferred') || workflowAdaptiveActivationSource.includes('leader_replan_deferred'),
+  'leader checkpoint replans should explicitly defer non-chosen adaptive candidates instead of silently releasing every preplanned child.'
+);
 assert.ok(cmoLeaderSource.includes('cmoWorkflowReplanDecisionText'), 'CMO replanning should read the media/planning lane decision before releasing downstream specialists.');
 assert.ok(cmoLeaderSource.includes('function cmoParallelSameLayerIntentFromText'), 'CMO planning should preserve same-layer fan-out when the prompt asks for depth, quality, or multiple lanes.');
 assert.ok(cmoLeaderSource.includes('normalizeWorkflowPlannedTasks: cmoNormalizeWorkflowPlannedTasks'), 'CMO-specific workflow task normalization must live in the CMO leader agent definition.');
@@ -777,7 +789,7 @@ assert.ok(cmoLeaderSource.includes('plannerAllowsCandidateAgentTasks: false'), '
 assert.ok(leaderWorkerPlanningSource.includes('normalizeLeaderWorkflowPlannedTasksFromDefinition'), 'leader worker planning should call the generic leader task-normalization hook instead of defining CMO task mappings.');
 assert.ok(!workerSource.includes('canonicalizeLeaderWorkflowPlannedTasks'), 'worker must not contain CMO-specific canonicalization logic.');
 assert.ok(!workerSource.includes('CMO-led growth team plan'), 'worker routing reasons must not contain CMO-specific workflow copy.');
-assert.ok(workerSource.includes('function workflowHasActiveSequentialUserActionWait'), 'workflow dispatch should serialize approval/OAuth user-action waits while allowing normal same-layer fan-out.');
+assert.ok(workflowChildProgressSource.includes('function workflowHasActiveSequentialUserActionWait'), 'workflow dispatch should serialize approval/OAuth user-action waits while allowing normal same-layer fan-out.');
 assert.ok(workflowDispatchRuntimeSource.includes('consideredRootJobIds'), 'cron dispatch sweep must dedupe workflow children by parent and avoid direct child execution');
 assert.ok(workflowWatchdogSource.includes('ORCHESTRATION_WATCHDOG_POLICY'), 'workflow orchestration watchdog policy should be owned outside worker.js');
 assert.ok(workflowWatchdogSource.includes('function runWorkflowOrchestrationWatchdog'), 'cron should have a workflow watchdog that reconciles and safely advances stale parents');
@@ -792,15 +804,15 @@ assert.ok(dispatchPolicySource.includes('function workflowGenerationProviderTime
 assert.ok(workerSource.includes('const ONE_DAY_MS = 24 * 60 * 60 * 1000'), 'workflow generation/provider response waits should default to roughly one day.');
 assert.ok(workerSource.includes('const DEFAULT_GENERATION_PROVIDER_TIMEOUT_MS = ONE_DAY_MS'), 'default provider wait budget should be one day.');
 assert.ok(jsonPostSource.includes('const useAbort = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0'), 'endpoint dispatch should only abort through the explicit long-term provider wait budget.');
-assert.ok(workerSource.includes('dispatchTimeoutMs'), 'endpoint dispatch locks should persist the provider wait budget so recovery does not double-dispatch active generation.');
-assert.ok(!/async function dispatchJobToAssignedAgent[\s\S]{0,1500}runBuiltInAgent/.test(workerSource), 'generic dispatch must not call the local sample runner directly.');
+assert.ok(workflowEndpointDispatchSource.includes('dispatchTimeoutMs'), 'endpoint dispatch locks should persist the provider wait budget so recovery does not double-dispatch active generation.');
+assert.ok(!/async function dispatchJobToAssignedAgent[\s\S]{0,1500}runBuiltInAgent/.test(workflowEndpointDispatchSource), 'generic dispatch must not call the local sample runner directly.');
 assert.ok(dataAnalysisSource.includes('return what the data layer implies for downstream research, planning, preparation, and app reflection'), 'data analysis agent should instruct downstream agents to use upstream data.');
 assert.ok(!workerSource.includes('function workflowShouldCompleteDataUnavailable'), 'worker must not keep a data-unavailable shortcut completion path.');
-assert.ok(/dispatchExistingJobToAssignedAgent\(storage,\s*env,\s*jobId,\s*agentId/.test(workerSource), 'endpoint queue consumer should use the normal endpoint dispatcher.');
+assert.ok(/dispatchExistingJobToAssignedAgent\(storage,\s*env,\s*jobId,\s*agentId/.test(workflowDispatchRuntimeSource), 'endpoint queue consumer should use the normal endpoint dispatcher.');
 assert.ok(workflowDispatchQueueSource.includes("kind: 'endpoint_dispatch'"), 'workflow progress should queue normal endpoint dispatch work instead of draining every layer in one Worker request.');
 assert.ok(workflowDispatchRuntimeSource.includes("if (kind === 'endpoint_dispatch')"), 'queue consumer should process provider endpoint dispatch messages one job at a time.');
-assert.ok(workerSource.includes('isTerminalJobStatus(job.status) && !workflowChildIsAdaptivePending(job)'), 'endpoint dispatch should not treat adaptive-pending blocked children as terminal because queue reads can race with leader release.');
-assert.ok(workerSource.includes('isTerminalJobStatus(draftJob.status) && !workflowChildIsAdaptivePending(draftJob)'), 'endpoint dispatch lock should re-check adaptive-pending blocked children against fresh storage before skipping.');
+assert.ok(workflowEndpointDispatchSource.includes('isTerminalJobStatus(job.status) && !workflowChildIsAdaptivePending(job)'), 'endpoint dispatch should not treat adaptive-pending blocked children as terminal because queue reads can race with leader release.');
+assert.ok(workflowEndpointDispatchSource.includes('isTerminalJobStatus(draftJob.status) && !workflowChildIsAdaptivePending(draftJob)'), 'endpoint dispatch lock should re-check adaptive-pending blocked children against fresh storage before skipping.');
 const forbiddenAgentRunKind = ['built', 'in', 'agent', 'run'].join('_');
 assert.ok(!workerSource.includes(`kind: '${forbiddenAgentRunKind}'`), 'sample agents must not use a second internal queue message; they must follow the same endpoint dispatch contract as registered external agents.');
 assert.ok(!workerSource.includes('function acceptBuiltInEndpointDispatchForProviderQueue'), 'Worker dispatch must not branch into a built-in-specific provider queue path.');
@@ -809,8 +821,8 @@ assert.ok(workflowDispatchRuntimeSource.includes('accepted_endpoint_recovered_co
 assert.ok(storageSource.includes("['accepted'].includes(safe)"), 'D1 job merge must preserve accepted endpoint dispatch state.');
 assert.ok(workflowDispatchRuntimeSource.includes("options.dispatchMode !== 'direct' && Boolean(workflowDispatchQueue(env))"), 'production progress dispatch should prefer the queue when a queue binding is configured.');
 assert.ok(orderCreateRoutesSource.includes('async function handleCreateJob'), 'order create route should be owned by lib/routes/order-create.js.');
-assert.ok(orderCreateRoutesSource.includes('async function handleCreateWorkflowJob'), 'workflow order create route should be owned by lib/routes/order-create.js.');
-assert.ok(orderCreateRoutesSource.includes('async function performSingleJobCreate'), 'single-agent order create implementation should be owned by lib/routes/order-create.js.');
+assert.ok(orderCreateRoutesSource.includes('async function handleCreateWorkflowJob') || orderCreateWorkflowRoutesSource.includes('async function handleCreateWorkflowJob'), 'workflow order create route should be owned outside worker.js.');
+assert.ok(orderCreateRoutesSource.includes('async function performSingleJobCreate') || orderCreateSingleRoutesSource.includes('async function performSingleJobCreate'), 'single-agent order create implementation should be owned outside worker.js.');
 assert.ok(!workerSource.includes('async function handleCreateJob'), 'worker.js must not keep the order create route implementation.');
 assert.ok(!workerSource.includes('async function handleCreateWorkflowJob'), 'worker.js must not keep the workflow order create route implementation.');
 assert.ok(!workerSource.includes('async function performSingleJobCreate'), 'worker.js must not keep the single-agent order create implementation.');
@@ -818,10 +830,10 @@ assert.ok(orderCreateRequestHelpersSource.includes('function clientOrderIdFromCr
 assert.ok(orderCreateRequestHelpersSource.includes('order_create_idempotent'), 'order create should return an idempotent response for duplicate client order ids.');
 assert.ok(workerSource.includes('persistedJobForClientOrderId'), 'order create should check for an existing client order before creating a new job.');
 assert.ok(orderCreateRequestHelpersSource.includes('function orderCreateBodyIsSameContentNewOrderRetry'), 'same-content retry orders should be explicitly distinguished from follow-up continuations.');
-assert.ok(orderCreateRoutesSource.includes('sameContentRetryAsNewOrder && !clientOrderMatches'), 'same-content retry recovery must not attach to an older order by prompt or session match.');
-assert.ok(orderCreateRoutesSource.includes('async function loadSingleOrderCreateState'), 'single-agent order creation should have a targeted state loader for production-sized D1 databases.');
+assert.ok(orderCreateRoutesSource.includes('sameContentRetryAsNewOrder && !clientOrderMatches') || orderCreateSingleRoutesSource.includes('sameContentRetryAsNewOrder && !clientOrderMatches'), 'same-content retry recovery must not attach to an older order by prompt or session match.');
+assert.ok(orderCreateRoutesSource.includes('async function loadSingleOrderCreateState') || orderCreateSingleRoutesSource.includes('async function loadSingleOrderCreateState'), 'single-agent order creation should have a targeted state loader for production-sized D1 databases.');
 assert.ok(orderCreateRoutesSource.includes('currentOrderRequesterContext(storage, request, env, { lightweight: true })'), 'order creation should authenticate browser sessions without loading the full production snapshot.');
-assert.ok(orderCreateRoutesSource.includes('options.initialState || await loadSingleOrderCreateState(storage, current, body)'), 'single-agent order creation should avoid full-state reads when targeted list/get methods are available.');
+assert.ok(orderCreateRoutesSource.includes('options.initialState || await loadSingleOrderCreateState(storage, current, body)') || orderCreateSingleRoutesSource.includes('options.initialState || await loadSingleOrderCreateState(storage, current, body)'), 'single-agent order creation should avoid full-state reads when targeted list/get methods are available.');
 assert.ok(/async function handleGetJob[\s\S]{0,250}currentOrderRequesterContext\(storage, request, env, \{ lightweight: true \}\)/.test(jobRoutesSource), 'live progress polling should authenticate without loading the full production snapshot.');
 assert.ok(jobRoutesSource.includes('inspect_only') && jobRoutesSource.includes('const shouldRunProgress = !inspectOnly'), 'job inspection for retry preparation should skip progress side effects.');
 assert.ok(jobRoutesSource.includes("refresh: job.jobKind === 'workflow'"), 'single-job progress polling should not run workflow handoff refresh work.');
@@ -851,10 +863,10 @@ assert.ok(/async function handleGetJob[\s\S]{0,2500}awaitDispatch: false/.test(j
 assert.ok(workflowRetrySweepSource.includes('pauseTerminalWorkflowChildRetryForParentAuthority'), 'retry sweeps must pause terminal child retries while the parent workflow is waiting for approval.');
 assert.ok(workflowDispatchRuntimeSource.includes('legacy accepted endpoint dispatch recovered'), 'accepted endpoint recovery should leave an auditable job log.');
 assert.ok(workflowDispatchRuntimeSource.includes('loadWorkflowDispatchState(jobId)'), 'workflow progress dispatch should load only the parent workflow and assigned agents when available.');
-assert.ok(workflowParentReconcileSource.includes("['queued', 'pending'].includes(String(leaderSequence?.status"), 'completed checkpoint rows must release adaptive children even if leader sequence status stayed pending.');
+assert.ok(workflowParentReconcileSource.includes("['queued', 'pending'].includes(String(leaderSequence?.status") || workflowLeaderHandoffRefreshSource.includes("['queued', 'pending'].includes(String(leaderSequence?.status"), 'completed checkpoint rows must release adaptive children even if leader sequence status stayed pending.');
 assert.ok(dispatchPolicySource.includes('const DISPATCH_IN_PROGRESS_STALE_MS = 3 * 60 * 1000'), 'endpoint dispatch in-progress locks should be recoverable quickly when waitUntil loses the response.');
 assert.ok(workflowDispatchRuntimeSource.includes("previousCompletionStatus === 'dispatch_in_progress'"), 'stale dispatch_in_progress jobs should be eligible for endpoint redispatch.');
-assert.ok(workerSource.includes("'dispatch_scheduled', 'dispatch_in_progress', 'timed_out'"), 'dispatch locks should allow stale dispatch_in_progress jobs to be relocked for endpoint retry.');
+assert.ok(workflowEndpointDispatchSource.includes("'dispatch_scheduled', 'dispatch_in_progress', 'timed_out'"), 'dispatch locks should allow stale dispatch_in_progress jobs to be relocked for endpoint retry.');
 assert.ok(workflowDispatchRuntimeSource.includes('stale endpoint dispatch lock recovered for retry'), 'stale dispatch_in_progress recovery must be marked so D1 merge accepts dispatch_scheduled.');
 assert.ok(!workerSource.includes('stale provider dispatch lock reached the scheduler'), 'stale provider dispatch locks should recover through redispatch instead of failing workflow children.');
 assert.ok(!workerSource.includes('stale provider dispatch failed; full order retry required'), 'direct stale provider redispatch should not force a full workflow retry before retry limits are reached.');
@@ -891,7 +903,8 @@ assert.ok(
   'broker assignment module must re-resolve workflow assignments from the current agent list before child creation'
 );
 assert.ok(
-  orderCreateRoutesSource.includes('assignments: plan.assignments') && orderCreateRoutesSource.includes('resolveWorkflowAssignmentFromAgentList(state.agents, assignment'),
+  (orderCreateRoutesSource.includes('assignments: plan.assignments') && orderCreateRoutesSource.includes('resolveWorkflowAssignmentFromAgentList(state.agents, assignment'))
+    || (orderCreateWorkflowRoutesSource.includes('assignments: plan.assignments') && orderCreateWorkflowRoutesSource.includes('resolveWorkflowAssignmentFromAgentList(state.agents, assignment')),
   'workflow child creation must use list-resolved assignments instead of trusting prior concrete agent ids'
 );
 

@@ -23,6 +23,7 @@ function assertNotIncludes(source, needles, label) {
 
 const workerSource = read('worker.js');
 const workerAssetsSource = read('lib/worker-assets.js');
+const workflowEndpointDispatchSource = read('lib/workflow-endpoint-dispatch.js');
 const workflowLayeringSource = read('lib/workflow-layering.js');
 const orchestrationSource = read('lib/orchestration.js');
 const sharedSource = read('lib/shared.js');
@@ -59,7 +60,11 @@ const workActionRegistrySource = read('public/work-action-registry.js');
 const workIntentResolverSource = read('public/work-intent-resolver.js');
 const campaignOperationsSource = read('lib/builtin-agents/agents/campaign-operations.js');
 const campaignRoutesSource = read('lib/routes/campaigns.js');
-const seoPagesSource = read('lib/seo-pages.js');
+const seoPagesSource = [
+  read('lib/seo-pages.js'),
+  read('lib/seo-landing-pages.js'),
+  read('lib/seo-news-posts.js')
+].join('\n');
 const generateSeoPagesSource = read('scripts/generate-seo-pages.mjs');
 const adsPlannerSource = read('lib/builtin-agents/agents/ads-planner.js');
 const operatorAccessSource = read('lib/operator-access.js');
@@ -1029,7 +1034,7 @@ assertNotIncludes(orchestrationSource, [
 ], 'lib/orchestration.js');
 
 assert.ok(
-  workerSource.includes('resolveDispatchEndpointUrl(endpoint, env)'),
+  workflowEndpointDispatchSource.includes('resolveDispatchEndpointUrl(endpoint, env)'),
   'worker dispatch must use provider endpoint URLs instead of local built-in execution'
 );
 assert.ok(

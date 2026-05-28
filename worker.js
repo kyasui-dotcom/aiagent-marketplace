@@ -134,6 +134,12 @@ import { createDispatchResponseNormalizer } from './lib/dispatch-response-normal
 import { createWorkflowAuthorityGate } from './lib/workflow-authority-gate.js';
 import { createWorkflowJobResultHandlers } from './lib/workflow-job-results.js';
 import { createWorkflowQualityHelpers } from './lib/workflow-quality.js';
+import { createWorkflowSourceRequirementHelpers } from './lib/workflow-source-requirements.js';
+import { createWorkflowChildProgressHelpers } from './lib/workflow-child-progress.js';
+import { createWorkflowPriorRunHelpers } from './lib/workflow-prior-runs.js';
+import { createWorkflowLeaderSequenceHelpers } from './lib/workflow-leader-sequence.js';
+import { createWorkflowParentBlockingHelpers } from './lib/workflow-parent-blocking.js';
+import { createWorkflowEndpointDispatchHelpers } from './lib/workflow-endpoint-dispatch.js';
 import { postJsonWithTimeout } from './lib/json-post.js';
 import { sanitizeExactMatchActionsForClient } from './lib/exact-actions.js';
 import { hasAdapterPrConfirmation, hasPostConfirmation, hasRepoWriteConfirmation, hasSendConfirmation } from './lib/external-write-confirmation.js';
@@ -189,6 +195,12 @@ const handleCreateWorkflowJob = (...args) => orderCreateHandlers().handleCreateW
 const performSingleJobCreate = (...args) => orderCreateHandlers().performSingleJobCreate(...args);
 let workflowDispatchRuntime = null;
 let workflowParentReconcileRuntime = null;
+let workflowSourceRequirementHelpers = null;
+let workflowChildProgressHelpers = null;
+let workflowPriorRunHelpers = null;
+let workflowLeaderSequenceHelpers = null;
+let workflowParentBlockingHelpers = null;
+let workflowEndpointDispatchHelpers = null;
 const reconcileWorkflowParent = (...args) => workflowParentReconcileRuntime.reconcileWorkflowParent(...args);
 const refreshWorkflowLeaderHandoffForJobId = (...args) => workflowParentReconcileRuntime.refreshWorkflowLeaderHandoffForJobId(...args);
 const workflowJobProfileHelpers = createWorkflowJobProfileHelpers({
@@ -218,6 +230,11 @@ const {
   workflowPrimaryTask,
   workflowSequencePhaseForTask
 } = workflowLayeringHelpers;
+
+workflowSourceRequirementHelpers = createWorkflowSourceRequirementHelpers({
+  leaderTaskUsesWebSearch,
+  workflowTaskName
+});
 
 const {
   workflowSearchSourcesFromReport,
@@ -284,6 +301,44 @@ const {
   workflowTaskName,
   workflowUnavailablePriorRunIsOptional
 });
+
+workflowPriorRunHelpers = createWorkflowPriorRunHelpers({
+  WORKFLOW_HANDOFF_CONTEXT_START,
+  isWorkflowLeaderTask,
+  sortWorkflowChildren,
+  workflowChildIsLeaderReplanDeferred,
+  workflowDispatchLayer,
+  workflowFlattenTextParts,
+  workflowHandoffOriginalSignals,
+  workflowOutputText,
+  workflowResearchHandoffFromReport,
+  workflowSearchSourcesFromReport,
+  workflowSequencePhaseForJob,
+  workflowSourceSignalStrings,
+  workflowStoredAdditionalPrompt: (...args) => workflowStoredAdditionalPrompt(...args),
+  workflowStructuredHandoffDigestFromRun,
+  workflowTaskName
+});
+
+workflowLeaderSequenceHelpers = createWorkflowLeaderSequenceHelpers({
+  authorityRequestFromReport,
+  isWorkflowLeaderTask,
+  leaderActionLayerStart,
+  leaderTaskPhase,
+  leaderWorkflowReplanDecisionFromDefinition,
+  sortWorkflowChildren,
+  workflowApplyQualityReviewToChild,
+  workflowChildIsAdaptivePending,
+  workflowChildIsLeaderReplanDeferred,
+  workflowDispatchLayer,
+  workflowOriginalInfoQualityReview,
+  workflowOptionalUnavailablePriorRun,
+  workflowPrimaryTask,
+  workflowSequencePhaseForJob,
+  workflowTaskName,
+  workflowUnavailablePriorRunIsOptional
+});
+
 const agentEndpointHelpers = createAgentEndpointHelpers({
   baseUrlFromEnv,
   isAgentReviewApproved
@@ -676,6 +731,19 @@ const {
   syncJobAuthorityRequest,
   workflowParentAuthorityRequest
 } = workflowAuthorityGate;
+
+workflowChildProgressHelpers = createWorkflowChildProgressHelpers({
+  authorityRequestFromReport,
+  authorityRequestHandledBySaasHandoff,
+  authorityRequestRequiresApproval,
+  authorityStringList,
+  isWorkflowLeaderTask,
+  workflowBrokerWorkflowForJob,
+  workflowChildIsSaasHandoffOnly: (...args) => workflowChildIsSaasHandoffOnly(...args),
+  workflowDispatchLayer,
+  workflowSequencePhaseForJob,
+  workflowTaskName
+});
 
 const accountEventHelpers = createAccountEventHelpers({
   accountSettingsForLogin,
@@ -1639,21 +1707,29 @@ const integrationRoutes = createIntegrationRouteHandlers({
   applyAgentReviewToAgentRecord,
   assessAgentRegistrationSafety,
   buildDraftManifestFromRepoAnalysisWithAi,
+  buildGithubAdapterPlan,
   canUsePlatformResend,
   clearCookie,
   connectorActionLabel,
   connectorScopeSet: googleConnectorScopeSet,
   createAgentFromManifest,
+  createGithubBranch,
+  createGithubPullRequest,
   currentAgentRequesterContext,
   currentAgentRequesterContextWithAccount,
+  fetchGithubBranchSha,
   fetchAllGithubRepos,
   fetchGithubManifestCandidate,
   fetchGithubPublicRepos,
   fetchGithubRepoMeta,
   fetchGithubRepoTree,
+  fetchGithubTextFile,
   fetchGoogleAuthorizedJson,
+  findKnownBrokerPath,
+  GITHUB_ADAPTER_MARKER,
   githubAppRepoTokenForRequester,
   githubAppReposForSession,
+  githubPermissionError,
   githubSessionCanReadPrivateRepos,
   googleAccessTokenForConnector,
   googleAccessTokenForCurrent,
@@ -1664,6 +1740,8 @@ const integrationRoutes = createIntegrationRouteHandlers({
   googleOAuthCapabilitiesFromGroups,
   googleScopeGroupForAssetInclude,
   googleScopeGroupLabel,
+  hasAdapterPrConfirmation,
+  hasRepoWriteConfirmation,
   hasSendConfirmation,
   json,
   jsonWithCookies,
@@ -1689,6 +1767,7 @@ const integrationRoutes = createIntegrationRouteHandlers({
   sessionCookieName: SESSION_COOKIE,
   oauthStateCookieName: OAUTH_STATE_COOKIE,
   touchEvent,
+  upsertGithubTextFile,
   upsertAccountSettingsInState,
   validateEmailAddress,
   validateXPostExecutionApproval,
@@ -1901,6 +1980,75 @@ const {
   workflowChildIsSaasHandoffOnly,
   workflowParentRequestedExternalExecution
 } = workflowReconcileActions;
+
+workflowParentBlockingHelpers = createWorkflowParentBlockingHelpers({
+  buildAgentTeamDeliveryOutput,
+  syncJobAuthorityRequest,
+  sortWorkflowChildren,
+  workflowAgentRunChildren,
+  workflowBlockedParentStatus,
+  workflowChildIsBlockingProgress,
+  workflowChildIsInternalLeaderSequenceRun,
+  workflowChildSnapshot,
+  workflowStatusCounts,
+  workflowVisibleAgentRunChildren
+});
+
+workflowEndpointDispatchHelpers = createWorkflowEndpointDispatchHelpers({
+  WORKFLOW_PROGRESS_DISPATCH_MAX_TARGETS,
+  agentCompletionFailureReason,
+  appendWorkflowOriginalInfoUsage,
+  authorityRequestFromReport,
+  authorityRequestHandledBySaasHandoff,
+  billingLogLine,
+  buildDispatchFailureMeta,
+  buildDispatchHeaders,
+  buildDispatchPayload,
+  clearDeliveryCompletionGate,
+  cloneJob,
+  completeWorkflowSaasHandoffOnlyChild,
+  computeNextRetryAt,
+  dispatchExecutionIsFresh,
+  dispatchScheduleIsFreshForAgent,
+  endpointDispatchTimeoutMs,
+  estimateBilling,
+  failJob,
+  isTerminalJobStatus,
+  markAgentCompletionFailedFreeInState,
+  markJobBlockedForAuthority,
+  markWorkflowParentBlockedIfNeeded,
+  maxDispatchRetriesForJob,
+  normalizeDispatchResponse,
+  nowIso,
+  postJsonWithTimeout,
+  providerRunAttempts,
+  providerRunLimitReached,
+  recordBillingOutcome,
+  reconcileWorkflowParent,
+  refreshWorkflowLeaderHandoffForJobId,
+  releaseBillingReservationInState,
+  resolveAgentJobEndpoint,
+  resolveDispatchEndpointUrl,
+  scheduleProgressDispatchesForJobId,
+  setDeliveryCompletionGate,
+  settleAgentEarnings,
+  shouldBlockCompletedJobForAuthorityRequest,
+  sourceCollectionFailureRetryMeta,
+  syncJobAuthorityRequest,
+  touchEvent,
+  usageWithObservedJobTokens,
+  workflowChildDispatchFailureRequiresRestart,
+  workflowChildIsAdaptivePending,
+  workflowChildIsSaasHandoffOnly,
+  workflowChildShouldRestartFromBeginning,
+  workflowCompletionRetryLimitForJob,
+  workflowDispatchQueue,
+  workflowPrimaryTaskFromJobOrProfile,
+  workflowProviderRunMaxAttempts,
+  workflowRestartRequiredReason,
+  workflowSearchCompletionFailureReason,
+  workflowTaskName
+});
 
 workflowParentReconcileRuntime = createWorkflowParentReconcile({
   activateWorkflowAdaptivePendingChildren: (...args) => activateWorkflowAdaptivePendingChildren(...args),
@@ -2122,1098 +2270,192 @@ const {
   handleTimeoutSweep
 } = devJobRoutes;
 
-function braveSearchConfiguredForWorkflow(env = {}) {
-  return Boolean(String(env?.BRAVE_SEARCH_API_KEY || env?.BRAVE_API_KEY || '').trim());
+function braveSearchConfiguredForWorkflow(...args) {
+  return workflowSourceRequirementHelpers.braveSearchConfiguredForWorkflow(...args);
 }
 
 function workflowJobRequiresSearch(job = {}) {
-  const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
-    ? job.input._broker.workflow
-    : {};
-  const explicit = workflow.forceWebSearch === true || workflow.requiresWebSearch === true || workflow.searchRequired === true;
-  if (!explicit) return false;
-  const task = workflowTaskName(job) || workflowPrimaryTaskForJob(job);
-  const primaryTask = workflowPrimaryTaskForJob(job);
-  const phase = String(workflow.sequencePhase || '').trim().toLowerCase();
-  return workflow.forceWebSearch === true
-    || phase === 'research'
-    || leaderTaskUsesWebSearch(primaryTask, task);
+  return workflowSourceRequirementHelpers.workflowJobRequiresSearch(job);
 }
 
-function workflowSourceCollectionContractForJob(job = {}) {
-  if (!workflowJobRequiresSearch(job)) return null;
-  const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
-    ? job.input._broker.workflow
-    : {};
-  const task = workflowTaskName(job) || job.taskType || 'agent';
-  return {
-    required: true,
-    task_type: task,
-    reason: workflow.webSearchRequiredReason || workflow.sourceCollectionRequiredReason || 'This workflow task requires source-backed research.',
-    required_output_field: 'report.web_sources',
-    instruction: 'Run search/source collection or use supplied source context before completing. Return report.web_sources as an array with url, title/snippet, provider, action, and query where available. If no source can be collected, return failed with category missing_required_search_sources instead of a completed generic delivery.'
-  };
+function workflowSourceCollectionContractForJob(...args) {
+  return workflowSourceRequirementHelpers.workflowSourceCollectionContractForJob(...args);
 }
 
-function workflowSourceCollectionQualityRule(job = {}) {
-  const contract = workflowSourceCollectionContractForJob(job);
-  if (!contract?.required) return null;
-  return {
-    id: 'source_collection_required',
-    instruction: contract.instruction
-  };
+function workflowSourceCollectionQualityRule(...args) {
+  return workflowSourceRequirementHelpers.workflowSourceCollectionQualityRule(...args);
 }
 
-function workflowPrimaryTaskForJob(job = {}) {
-  const workflow = job?.input?._broker?.workflow && typeof job.input._broker.workflow === 'object'
-    ? job.input._broker.workflow
-    : {};
-  return String(workflow.primaryTask || job.taskType || '').trim().toLowerCase();
+function workflowPrimaryTaskForJob(...args) {
+  return workflowSourceRequirementHelpers.workflowPrimaryTaskForJob(...args);
 }
 
-function workflowMetaWithoutGlobalSearchFlags(workflow = {}) {
-  const clean = workflow && typeof workflow === 'object' ? { ...workflow } : {};
-  delete clean.forceWebSearch;
-  delete clean.requiresWebSearch;
-  delete clean.searchRequired;
-  delete clean.webSearchRequiredReason;
-  delete clean.requiresSourceCollection;
-  delete clean.sourceCollectionRequiredReason;
-  return clean;
+function workflowMetaWithoutGlobalSearchFlags(...args) {
+  return workflowSourceRequirementHelpers.workflowMetaWithoutGlobalSearchFlags(...args);
 }
 
-async function dispatchJobToAssignedAgent(job, agent, env) {
-  const endpoint = resolveAgentJobEndpoint(agent);
-  const dispatchEndpoint = resolveDispatchEndpointUrl(endpoint, env);
-  if (!dispatchEndpoint) {
-    return { ok: false, failureReason: 'Assigned verified agent does not expose a job endpoint in manifest metadata' };
-  }
-  const payload = buildDispatchPayload(job, agent);
-  const dispatchHeaders = buildDispatchHeaders(agent);
-  const timeoutMs = endpointDispatchTimeoutMs(env, job, agent);
-  const dispatchResult = await postJsonWithTimeout(dispatchEndpoint, payload, timeoutMs, dispatchHeaders);
-  const { response, body } = dispatchResult;
-  const observedEndpoint = dispatchEndpoint;
-  if (!response.ok) {
-    const reason = body?.error || body?.message || `Dispatch failed with status ${response.status}`;
-    return { ok: false, endpoint: observedEndpoint, failureReason: reason, statusCode: response.status, responseBody: body };
-  }
-  const normalized = normalizeDispatchResponse(body);
-  if (normalized.failed) {
-    return { ok: false, endpoint: observedEndpoint, failureReason: normalized.failureReason || 'Agent reported failure', statusCode: response.status, responseBody: body };
-  }
-  normalized.usage = usageWithObservedJobTokens(job, normalized.usage, normalized.report);
-  if (!normalized.accepted && !normalized.completed && !normalized.blocked) {
-    return { ok: false, endpoint: observedEndpoint, failureReason: 'Dispatch response was malformed or did not acknowledge the job', statusCode: response.status, responseBody: body };
-  }
-  return { ok: true, endpoint: observedEndpoint, normalized, statusCode: response.status, responseBody: body };
+async function dispatchJobToAssignedAgent(...args) {
+  return workflowEndpointDispatchHelpers.dispatchJobToAssignedAgent(...args);
 }
 
-async function loadDispatchJobAndAgent(storage, jobId, agentId) {
-  if (
-    typeof storage?.getJobById === 'function'
-    && typeof storage?.getAgentById === 'function'
-  ) {
-    const [job, agent] = await Promise.all([
-      storage.getJobById(jobId),
-      storage.getAgentById(agentId)
-    ]);
-    return { job, agent };
-  }
-  const state = await storage.getState();
-  return {
-    job: state.jobs.find((item) => item.id === jobId),
-    agent: state.agents.find((item) => item.id === agentId)
-  };
+async function loadDispatchJobAndAgent(...args) {
+  return workflowEndpointDispatchHelpers.loadDispatchJobAndAgent(...args);
 }
 
-async function dispatchExistingJobToAssignedAgent(storage, env, jobId, agentId, options = {}) {
-  const { job, agent } = await loadDispatchJobAndAgent(storage, jobId, agentId);
-  if (!job) return { error: 'Job not found', statusCode: 404 };
-  if (!agent) return { error: 'Agent not found', statusCode: 404 };
-  if (isTerminalJobStatus(job.status) && !workflowChildIsAdaptivePending(job)) {
-    return { ok: true, mode: job.status, job: cloneJob(job) };
-  }
-  if (!resolveAgentJobEndpoint(agent)) {
-    return { ok: true, mode: 'queued', job: cloneJob(job) };
-  }
-  if (dispatchExecutionIsFresh(job, agent)) {
-    return { ok: true, mode: 'running', job: cloneJob(job), skippedInProgress: true };
-  }
-  if (workflowChildShouldRestartFromBeginning(job) && providerRunLimitReached(env, job)) {
-    const reason = workflowRestartRequiredReason(job, `provider run limit reached (${providerRunAttempts(job)}/${workflowProviderRunMaxAttempts(env, job)})`);
-    const failed = await failJob(storage, job.id, reason, ['provider run limit reached; full order retry required'], {
-      failureStatus: 'failed',
-      failureCategory: 'workflow_restart_required',
-      retryable: false,
-      attempts: providerRunAttempts(job),
-      maxRetries: workflowProviderRunMaxAttempts(env, job),
-      restartRequired: true,
-      source: 'provider-run-limit'
-    });
-    await touchEvent(storage, 'FAILED', `${job.taskType}/${job.id.slice(0, 6)} provider run limit reached; retry from beginning`, {
-      kind: 'provider_run_limit_reached',
-      jobId: job.id,
-      parentJobId: job.workflowParentId || null,
-      attempts: providerRunAttempts(job),
-      maxAttempts: workflowProviderRunMaxAttempts(env, job)
-    });
-    return { ok: true, mode: 'failed', job: failed, restartRequired: true, error: reason };
-  }
-  const lockDispatchJob = async (draft) => {
-    const draftJob = draft.jobs.find((item) => item.id === job.id);
-    const draftAgent = draft.agents.find((item) => item.id === agent.id);
-    if (!draftJob) return { error: 'Job disappeared before dispatch lock', statusCode: 500 };
-    if (!draftAgent) return { error: 'Agent disappeared before dispatch lock', statusCode: 500 };
-    if (isTerminalJobStatus(draftJob.status) && !workflowChildIsAdaptivePending(draftJob)) {
-      return { ok: true, mode: draftJob.status, job: cloneJob(draftJob), skippedTerminal: true };
-    }
-    if (dispatchExecutionIsFresh(draftJob, draftAgent)) {
-      return { ok: true, mode: 'running', job: cloneJob(draftJob), skippedInProgress: true };
-    }
-    const completionStatus = String(draftJob.dispatch?.completionStatus || '').trim().toLowerCase();
-    if (workflowChildShouldRestartFromBeginning(draftJob) && providerRunLimitReached(env, draftJob)) {
-      const failedAt = nowIso();
-      draftJob.status = 'failed';
-      draftJob.failedAt = failedAt;
-      draftJob.timedOutAt = null;
-      draftJob.completedAt = null;
-      draftJob.failureCategory = 'workflow_restart_required';
-      draftJob.failureReason = workflowRestartRequiredReason(draftJob, `provider run limit reached (${providerRunAttempts(draftJob)}/${workflowProviderRunMaxAttempts(env, draftJob)})`);
-      if (draftJob.billingReservation && !draftJob.billingSettlement?.settledAt && !draftJob.billingReservation?.releasedAt) {
-        releaseBillingReservationInState(draft, draftJob);
-      }
-      draftJob.dispatch = {
-        ...(draftJob.dispatch || {}),
-        completionStatus: 'workflow_restart_required',
-        failedAt,
-        retryable: false,
-        nextRetryAt: null,
-        restartRequired: true,
-        attempts: providerRunAttempts(draftJob),
-        maxRetries: workflowProviderRunMaxAttempts(env, draftJob)
-      };
-      draftJob.logs = [...(draftJob.logs || []), 'provider run limit reached before dispatch; full order retry required'];
-      return { ok: true, mode: 'failed', job: cloneJob(draftJob), restartRequired: true };
-    }
-    if (completionStatus && !['dispatch_scheduled', 'dispatch_in_progress', 'timed_out', 'failed', 'retry_queued', 'leader_auto_retry_queued', 'leader_checkpoint_queued', 'leader_final_summary_queued', 'leader_adaptive_queued'].includes(completionStatus)) {
-      return { ok: true, mode: draftJob.status || completionStatus, job: cloneJob(draftJob), skippedLocked: true };
-    }
-    const at = nowIso();
-    const providerRunAttempt = providerRunAttempts(draftJob) + 1;
-    const dispatchTimeoutMs = endpointDispatchTimeoutMs(env, draftJob, draftAgent);
-    draftJob.status = 'running';
-    draftJob.startedAt = draftJob.startedAt || at;
-    draftJob.dispatch = {
-      ...(draftJob.dispatch || {}),
-      endpoint: resolveAgentJobEndpoint(draftAgent),
-      dispatchInProgressAt: at,
-      dispatchTimeoutMs,
-      lastAttemptAt: at,
-      completionStatus: 'dispatch_in_progress',
-      retryable: false,
-      nextRetryAt: null,
-      maxRetries: maxDispatchRetriesForJob(draftJob),
-      providerRunAttempts: providerRunAttempt,
-      providerRunMaxAttempts: workflowProviderRunMaxAttempts(env, draftJob)
-    };
-    draftJob.logs = [...(draftJob.logs || []), `dispatch locked for ${draftAgent.id} provider_run_attempt=${providerRunAttempt}/${workflowProviderRunMaxAttempts(env, draftJob)}`];
-    return { ok: true, mode: 'locked', job: cloneJob(draftJob), agent: structuredClone(draftAgent) };
-  };
-  const locked = typeof storage.mutateJobAndAgent === 'function'
-    ? await storage.mutateJobAndAgent(job.id, agent.id, lockDispatchJob)
-    : await storage.mutate(lockDispatchJob);
-  if (locked?.error) return { error: locked.error, statusCode: locked.statusCode || 500 };
-  if (locked?.mode && locked.mode !== 'locked') {
-    if (locked.mode === 'failed' && locked.job?.workflowParentId) await reconcileWorkflowParent(storage, locked.job.workflowParentId);
-    return locked;
-  }
-  const dispatchJob = locked?.job || job;
-  const dispatchAgent = locked?.agent || agent;
-  try {
-    const dispatch = await dispatchJobToAssignedAgent(dispatchJob, dispatchAgent, env);
-    const mutateDispatchResult = async (draft) => {
-      const draftJob = draft.jobs.find((item) => item.id === dispatchJob.id);
-      const draftAgent = draft.agents.find((item) => item.id === dispatchAgent.id);
-      if (!draftJob) return { error: 'Job disappeared during dispatch', statusCode: 500 };
-      if (isTerminalJobStatus(draftJob.status)) {
-        return { ok: true, mode: draftJob.status, job: cloneJob(draftJob), skippedTerminal: true };
-      }
-      if (String(draftJob.status || '').trim().toLowerCase() === 'blocked') {
-        return { ok: true, mode: 'blocked', job: cloneJob(draftJob), skippedBlocked: true };
-      }
-      if (!dispatch.ok) {
-        const failureMeta = buildDispatchFailureMeta(draftJob, dispatch.statusCode, dispatch.failureReason);
-        const sourceRetryMeta = failureMeta.category === 'missing_required_sources'
-          ? sourceCollectionFailureRetryMeta(env, draftJob)
-          : null;
-        const effectiveFailureMeta = sourceRetryMeta
-          ? { ...failureMeta, ...sourceRetryMeta, category: failureMeta.category }
-          : failureMeta;
-        const restartRequired = workflowChildDispatchFailureRequiresRestart(env, draftJob, effectiveFailureMeta);
-        draftJob.status = 'failed';
-        draftJob.failedAt = nowIso();
-        draftJob.failureReason = restartRequired ? workflowRestartRequiredReason(draftJob, dispatch.failureReason) : dispatch.failureReason;
-        draftJob.failureCategory = restartRequired ? 'workflow_restart_required' : failureMeta.category;
-        if (draftJob.billingReservation && !draftJob.billingReservation?.releasedAt) {
-          releaseBillingReservationInState(draft, draftJob);
-        }
-        draftJob.dispatch = {
-          ...(draftJob.dispatch || {}),
-          endpoint: dispatch.endpoint || draftJob.dispatch?.endpoint || null,
-          statusCode: dispatch.statusCode || null,
-          responseStatus: dispatch.responseBody?.status || null,
-          lastAttemptAt: nowIso(),
-          attempts: providerRunAttempts(draftJob) || effectiveFailureMeta.attempts,
-          retryable: restartRequired ? false : (sourceRetryMeta?.retryable ?? failureMeta.retryable),
-          nextRetryAt: restartRequired ? null : (sourceRetryMeta?.nextRetryAt ?? failureMeta.nextRetryAt),
-          maxRetries: sourceRetryMeta?.maxRetries ?? workflowCompletionRetryLimitForJob(env, draftJob),
-          completionStatus: restartRequired ? 'workflow_restart_required' : 'failed',
-          restartRequired
-        };
-        draftJob.logs = [...(draftJob.logs || []), `dispatch failed for ${dispatchAgent.id}`, dispatch.failureReason, restartRequired ? 'full order retry required' : `retryable=${sourceRetryMeta?.retryable ?? failureMeta.retryable}`];
-        return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
-      }
-
-      draftJob.dispatchedAt = nowIso();
-      draftJob.startedAt = draftJob.startedAt || draftJob.dispatchedAt;
-      draftJob.status = 'dispatched';
-      draftJob.dispatch = {
-        ...(draftJob.dispatch || {}),
-        endpoint: dispatch.endpoint,
-        statusCode: dispatch.statusCode,
-        externalJobId: dispatch.normalized.externalJobId,
-        responseStatus: dispatch.normalized.status,
-        lastAttemptAt: nowIso(),
-        attempts: Number(draftJob.dispatch?.attempts || 0) + 1,
-        retryable: false,
-        nextRetryAt: null,
-        completionStatus: dispatch.normalized.blocked ? 'blocked' : (dispatch.normalized.completed ? 'completed' : 'accepted'),
-        ...(dispatch.normalized.accepted && !dispatch.normalized.completed && !dispatch.normalized.blocked ? { providerQueueAcceptedAt: nowIso() } : {})
-      };
-      draftJob.logs = [...(draftJob.logs || []), `dispatched to ${dispatchAgent.id} endpoint=${dispatch.endpoint}`];
-
-      if (dispatch.normalized.completed) {
-        const explicitAuthorityRequest = authorityRequestFromReport(dispatch.normalized.report);
-        draftJob.status = 'completed';
-        draftJob.completedAt = nowIso();
-        draftJob.usage = dispatch.normalized.usage;
-        draftJob.output = {
-          report: dispatch.normalized.report,
-          files: dispatch.normalized.files,
-          returnTargets: dispatch.normalized.returnTargets
-        };
-        appendWorkflowOriginalInfoUsage(draftJob);
-        const sourceProofFailure = workflowSearchCompletionFailureReason(draftJob, dispatch.normalized.report);
-        if (sourceProofFailure) {
-          const sourceRetryMeta = sourceCollectionFailureRetryMeta(env, draftJob, { alreadyAttempted: true });
-          const restartRequired = workflowChildDispatchFailureRequiresRestart(env, draftJob, {
-            category: 'missing_required_sources',
-            ...sourceRetryMeta
-          });
-          draftJob.status = 'failed';
-          draftJob.completedAt = null;
-          draftJob.failedAt = nowIso();
-          draftJob.failureReason = restartRequired ? workflowRestartRequiredReason(draftJob, sourceProofFailure) : sourceProofFailure;
-          draftJob.failureCategory = restartRequired ? 'workflow_restart_required' : 'missing_required_sources';
-          draftJob.actualBilling = null;
-          clearDeliveryCompletionGate(draftJob);
-          if (draftJob.billingReservation && !draftJob.billingReservation?.releasedAt) {
-            releaseBillingReservationInState(draft, draftJob);
-          }
-          draftJob.dispatch = {
-            ...(draftJob.dispatch || {}),
-            completionStatus: restartRequired ? 'workflow_restart_required' : 'failed',
-            retryable: restartRequired ? false : sourceRetryMeta.retryable,
-            attempts: restartRequired ? providerRunAttempts(draftJob) : sourceRetryMeta.attempts,
-            nextRetryAt: restartRequired ? null : sourceRetryMeta.nextRetryAt,
-            maxRetries: sourceRetryMeta.maxRetries,
-            restartRequired
-          };
-          draftJob.logs.push(sourceProofFailure, restartRequired ? 'full order retry required after missing search execution proof' : 'failed before completion: missing search execution proof');
-          return { ok: true, mode: 'failed', job: cloneJob(draftJob) };
-        }
-        const completionFailure = agentCompletionFailureReason(draftJob);
-        if (completionFailure) {
-          markAgentCompletionFailedFreeInState(draft, draftJob, completionFailure, env, { failedAt: nowIso() });
-          return { ok: true, mode: 'failed', job: cloneJob(draftJob), billing: null };
-        }
-        const authorityRequest = syncJobAuthorityRequest(draftJob, draftAgent);
-        if (shouldBlockCompletedJobForAuthorityRequest(draftJob, authorityRequest || explicitAuthorityRequest)) {
-          markJobBlockedForAuthority(draftJob, authorityRequest || explicitAuthorityRequest, 'External execution is blocked waiting for connector approval.');
-          markWorkflowParentBlockedIfNeeded(draft, draftJob);
-          return { ok: true, mode: 'blocked', job: cloneJob(draftJob) };
-        }
-        const billing = estimateBilling(dispatchAgent, dispatch.normalized.usage);
-        draftJob.actualBilling = billing;
-        setDeliveryCompletionGate(draftJob, draftJob.completedAt);
-        draftJob.logs.push(`completed by dispatch response from ${dispatchAgent.id}`, billingLogLine(draftJob, billing), `delivery completion gate score=${draftJob.deliveryCompletionGate.score}`);
-        settleAgentEarnings(draftJob, draftAgent, billing);
-        return { ok: true, mode: 'completed', job: cloneJob(draftJob), billing };
-      }
-
-      if (dispatch.normalized.blocked) {
-        const explicitAuthorityRequest = authorityRequestFromReport(dispatch.normalized.report);
-        draftJob.status = 'blocked';
-        draftJob.completedAt = null;
-        draftJob.failedAt = null;
-        draftJob.timedOutAt = null;
-        draftJob.failureReason = null;
-        draftJob.failureCategory = null;
-        draftJob.usage = dispatch.normalized.usage;
-        draftJob.output = {
-          report: dispatch.normalized.report,
-          files: dispatch.normalized.files,
-          returnTargets: dispatch.normalized.returnTargets
-        };
-        appendWorkflowOriginalInfoUsage(draftJob);
-        draftJob.actualBilling = null;
-        clearDeliveryCompletionGate(draftJob);
-        const authorityRequest = syncJobAuthorityRequest(draftJob, draftAgent);
-        if (authorityRequestHandledBySaasHandoff(draftJob, authorityRequest || explicitAuthorityRequest) || workflowChildIsSaasHandoffOnly(draftJob)) {
-          const primaryTask = workflowPrimaryTaskFromJobOrProfile(draftJob) || workflowTaskName(draftJob);
-          completeWorkflowSaasHandoffOnlyChild({ taskType: primaryTask, workflow: { plannedTasks: [primaryTask] } }, draftJob, 'provider_blocked_saas_handoff');
-          const billing = estimateBilling(dispatchAgent, dispatch.normalized.usage);
-          draftJob.actualBilling = billing;
-          setDeliveryCompletionGate(draftJob, draftJob.completedAt);
-          settleAgentEarnings(draftJob, draftAgent, billing);
-          return { ok: true, mode: 'completed', job: cloneJob(draftJob), billing };
-        }
-        markJobBlockedForAuthority(draftJob, authorityRequest, 'External execution is blocked waiting for connector approval.');
-        draftJob.logs.push(`dispatch blocked by ${dispatchAgent.id} status=${dispatch.normalized.status}`);
-        markWorkflowParentBlockedIfNeeded(draft, draftJob);
-        return { ok: true, mode: 'blocked', job: cloneJob(draftJob) };
-      }
-
-      draftJob.logs.push(`dispatch accepted by ${dispatchAgent.id} status=${dispatch.normalized.status}`);
-      return { ok: true, mode: 'dispatched', job: cloneJob(draftJob) };
-    };
-    const canUseTargetedDispatchResult = typeof storage.mutateJobAndAgent === 'function';
-    const final = canUseTargetedDispatchResult
-      ? await storage.mutateJobAndAgent(dispatchJob.id, dispatchAgent.id, mutateDispatchResult)
-      : await storage.mutate(mutateDispatchResult);
-
-    if (final.error) return { error: final.error, statusCode: final.statusCode || 500 };
-    if (final.mode === 'completed') {
-      if (!final.skippedTerminal) await touchEvent(storage, 'COMPLETED', `${dispatchJob.taskType}/${dispatchJob.id.slice(0, 6)} completed by dispatch`);
-      if (final.billing) await recordBillingOutcome(storage, final.job, final.billing, 'external-dispatch');
-    } else if (final.mode === 'blocked') {
-      await touchEvent(storage, 'RUNNING', `${dispatchJob.taskType}/${dispatchJob.id.slice(0, 6)} blocked waiting for approval or connector setup`);
-    } else if (final.mode === 'dispatched') {
-      await touchEvent(storage, 'RUNNING', `${dispatchAgent.name} accepted ${dispatchJob.taskType}/${dispatchJob.id.slice(0, 6)}`);
-    } else if (!final.skippedTerminal) {
-      await touchEvent(storage, 'FAILED', `${dispatchJob.taskType}/${dispatchJob.id.slice(0, 6)} dispatch failed`);
-    }
-    if (dispatchJob.workflowParentId) {
-      await reconcileWorkflowParent(storage, dispatchJob.workflowParentId);
-      if (final.mode === 'completed') {
-        await refreshWorkflowLeaderHandoffForJobId(storage, dispatchJob.workflowParentId);
-        const queueNextDispatch = Boolean(workflowDispatchQueue(env));
-        await scheduleProgressDispatchesForJobId(storage, env, null, dispatchJob.workflowParentId, 'leader workflow handoff', {
-          maxTargets: WORKFLOW_PROGRESS_DISPATCH_MAX_TARGETS,
-          awaitDispatch: !queueNextDispatch,
-          dispatchMode: queueNextDispatch ? 'queue' : (options.nextDispatchMode || 'direct')
-        });
-        await reconcileWorkflowParent(storage, dispatchJob.workflowParentId);
-      }
-    }
-    return final;
-  } catch (error) {
-    const restartRequired = workflowChildShouldRestartFromBeginning(dispatchJob);
-    const failed = await failJob(storage, dispatchJob.id, restartRequired ? workflowRestartRequiredReason(dispatchJob, error.message) : error.message, [`dispatch exception for ${dispatchAgent.id}`], {
-      failureCategory: restartRequired ? 'workflow_restart_required' : 'dispatch_error',
-      retryable: restartRequired ? false : true,
-      attempts: providerRunAttempts(dispatchJob) || 1,
-      nextRetryAt: restartRequired ? null : computeNextRetryAt(1),
-      restartRequired
-    });
-    await touchEvent(storage, 'FAILED', `${dispatchJob.taskType}/${dispatchJob.id.slice(0, 6)} dispatch exception`);
-    if (dispatchJob.workflowParentId) await reconcileWorkflowParent(storage, dispatchJob.workflowParentId);
-    return { ok: true, mode: failed?.status || 'failed', job: failed, error: error.message };
-  }
+async function dispatchExistingJobToAssignedAgent(...args) {
+  return workflowEndpointDispatchHelpers.dispatchExistingJobToAssignedAgent(...args);
 }
 
-function canAutoScheduleAsyncDispatch(job, agent) {
-  if (!job || !agent) return false;
-  const status = String(job.status || '').toLowerCase();
-  if (status !== 'queued') {
-    const completionStatus = String(job.dispatch?.completionStatus || '').toLowerCase();
-    const staleScheduledDispatch = status === 'running'
-      && completionStatus === 'dispatch_scheduled'
-      && !dispatchScheduleIsFreshForAgent(job, agent);
-    const staleInProgressDispatch = status === 'running'
-      && completionStatus === 'dispatch_in_progress'
-      && !dispatchExecutionIsFresh(job, agent);
-    if ((staleScheduledDispatch || staleInProgressDispatch) && Number(job.dispatch?.scheduleAttempts || 0) >= maxDispatchRetriesForJob(job)) return false;
-    if (!staleScheduledDispatch && !staleInProgressDispatch) return false;
-  }
-  if (!job.assignedAgentId || job.assignedAgentId !== agent.id) return false;
-  if (!resolveAgentJobEndpoint(agent)) return false;
-  return true;
+function canAutoScheduleAsyncDispatch(...args) {
+  return workflowEndpointDispatchHelpers.canAutoScheduleAsyncDispatch(...args);
 }
 
-function workflowChildPlanIndex(parent = {}, child = {}) {
-  const task = workflowTaskName(child);
-  const sequencePhase = workflowSequencePhaseForJob(child);
-  const plannedTasks = Array.isArray(parent.workflow?.plannedTasks)
-    ? parent.workflow.plannedTasks.map((item) => String(item || '').trim().toLowerCase())
-    : [];
-  const taskIndex = plannedTasks.indexOf(task);
-  if (taskIndex >= 0) return taskIndex;
-  const plannedRuns = Array.isArray(parent.workflow?.childRuns) ? parent.workflow.childRuns : [];
-  const runIndex = plannedRuns.findIndex((run) => {
-    const runTask = String(run?.taskType || run?.task_type || '').trim().toLowerCase();
-    const runAgentId = String(run?.agentId || run?.agent_id || '').trim();
-    const runPhase = String(run?.sequencePhase || run?.sequence_phase || '').trim().toLowerCase();
-    return runTask === task
-      && (!runAgentId || runAgentId === child.assignedAgentId)
-      && (!runPhase || runPhase === sequencePhase);
-  });
-  return runIndex >= 0 ? runIndex : Number.MAX_SAFE_INTEGER;
+function workflowChildPlanIndex(...args) {
+  return workflowChildProgressHelpers.workflowChildPlanIndex(...args);
 }
 
-function workflowChildSortKey(parent = {}, child = {}) {
-  const task = workflowTaskName(child);
-  const phase = workflowSequencePhaseForJob(child);
-  const planIndex = workflowChildPlanIndex(parent, child);
-  if (isWorkflowLeaderTask(task)) {
-    if (phase === 'checkpoint') {
-      const beforeLayer = Number(child?.input?._broker?.workflow?.requiredBeforeLayer || 2) || 2;
-      return (Math.max(2, beforeLayer) * 10_000) - 100 + planIndex;
-    }
-    if (phase === 'final_summary') return 90_000 + planIndex;
-    return planIndex;
-  }
-  const layer = workflowDispatchLayer(parent, child);
-  return (Math.max(1, layer) * 10_000) + planIndex;
+function workflowChildSortKey(...args) {
+  return workflowChildProgressHelpers.workflowChildSortKey(...args);
 }
 
-function sortWorkflowChildren(parent = {}, children = []) {
-  return [...children].sort((a, b) => {
-    const leftIndex = workflowChildSortKey(parent, a);
-    const rightIndex = workflowChildSortKey(parent, b);
-    if (leftIndex !== rightIndex) return leftIndex - rightIndex;
-    const created = String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
-    if (created) return created;
-    return String(a.id || '').localeCompare(String(b.id || ''));
-  });
+function sortWorkflowChildren(...args) {
+  return workflowChildProgressHelpers.sortWorkflowChildren(...args);
 }
 
-function workflowChildIsTerminal(child = {}) {
-  return ['completed', 'failed', 'timed_out', 'blocked'].includes(String(child.status || '').toLowerCase());
+function workflowChildIsTerminal(...args) {
+  return workflowChildProgressHelpers.workflowChildIsTerminal(...args);
 }
 
-function workflowChildIsAdaptivePending(child = {}) {
-  const status = String(child?.status || '').trim().toLowerCase();
-  if (['completed', 'failed', 'timed_out'].includes(status)) return false;
-  const workflow = workflowBrokerWorkflowForJob(child) || {};
-  const completionStatus = String(child?.dispatch?.completionStatus || child?.dispatch_completion_status || '').trim().toLowerCase();
-  return Boolean(
-    workflow.adaptivePending === true
-    || child?.adaptivePending === true
-    || child?.adaptive_pending === true
-    || completionStatus === 'leader_adaptive_pending'
-  );
+function workflowChildIsAdaptivePending(...args) {
+  return workflowChildProgressHelpers.workflowChildIsAdaptivePending(...args);
 }
 
-function workflowChildIsSequentialUserActionDeferred(child = {}) {
-  const completionStatus = String(child?.dispatch?.completionStatus || child?.dispatch_completion_status || '').trim().toLowerCase();
-  const workflow = workflowBrokerWorkflowForJob(child) || {};
-  return completionStatus === 'leader_user_action_deferred' || workflow.sequentialUserActionDeferred === true;
+function workflowChildIsSequentialUserActionDeferred(...args) {
+  return workflowChildProgressHelpers.workflowChildIsSequentialUserActionDeferred(...args);
 }
 
-function workflowChildIsLeaderReplanDeferred(child = {}) {
-  const completionStatus = String(child?.dispatch?.completionStatus || child?.dispatch_completion_status || '').trim().toLowerCase();
-  const workflow = workflowBrokerWorkflowForJob(child) || {};
-  return completionStatus === 'leader_replan_deferred' || workflow.leaderReplanDeferred === true;
+function workflowChildIsLeaderReplanDeferred(...args) {
+  return workflowChildProgressHelpers.workflowChildIsLeaderReplanDeferred(...args);
 }
 
-function workflowChildAdaptiveLayer(child = {}) {
-  const workflow = workflowBrokerWorkflowForJob(child) || {};
-  const layer = Number(workflow.adaptivePendingLayer || workflow.dispatchLayer || child?.adaptiveLayer || child?.adaptive_layer || 0) || 0;
-  return layer > 0 ? layer : null;
+function workflowChildAdaptiveLayer(...args) {
+  return workflowChildProgressHelpers.workflowChildAdaptiveLayer(...args);
 }
 
-function workflowChildIsBlockingProgress(child = {}) {
-  const status = String(child?.status || '').trim().toLowerCase();
-  if (status !== 'blocked') return false;
-  if (workflowChildIsAdaptivePending(child)) return false;
-  if (workflowChildIsSaasHandoffOnly(child)) return false;
-  if (isWorkflowLeaderTask(workflowTaskName(child))) return false;
-  return true;
+function workflowChildIsBlockingProgress(...args) {
+  return workflowChildProgressHelpers.workflowChildIsBlockingProgress(...args);
 }
 
-function workflowChildIsApprovalBlockedTerminal(child = {}) {
-  const status = String(child?.status || '').trim().toLowerCase();
-  if (status !== 'blocked') return false;
-  if (isWorkflowLeaderTask(workflowTaskName(child))) return workflowLeaderChildIsApprovalBlockedTerminal(child);
-  const authorityRequest = authorityRequestFromReport(child.output?.report);
-  const authoritySource = String(authorityRequest?.source || '').trim().toLowerCase();
-  if (authoritySource === 'search_connector_required') return false;
-  const missingConnectors = authorityStringList(
-    authorityRequest?.missing_connectors || authorityRequest?.missingConnectors || authorityRequest?.connectors,
-    8,
-    60
-  );
-  const missingCapabilities = authorityStringList(
-    authorityRequest?.missing_connector_capabilities || authorityRequest?.missingConnectorCapabilities || authorityRequest?.capabilities,
-    12,
-    80
-  );
-  if (
-    missingConnectors.length
-    && missingConnectors.every((item) => ['search', 'web_search', 'brave', 'ga4', 'google_analytics', 'search_console', 'gsc', 'analytics'].includes(String(item || '').trim().toLowerCase()))
-    && !missingCapabilities.length
-  ) {
-    return false;
-  }
-  const phase = workflowSequencePhaseForJob(child);
-  const task = workflowTaskName(child);
-  const actionTask = ['x_post', 'instagram', 'reddit', 'indie_hackers', 'directory_submission', 'acquisition_automation', 'email_ops', 'cold_email'].includes(task);
-  const approvalBlocked = child.failureCategory === 'blocked_waiting_for_approval'
-    || child.dispatch?.completionStatus === 'blocked_waiting_for_approval'
-    || authorityRequestRequiresApproval(authorityRequest);
-  return Boolean(approvalBlocked && (phase === 'action' || actionTask));
+function workflowChildIsApprovalBlockedTerminal(...args) {
+  return workflowChildProgressHelpers.workflowChildIsApprovalBlockedTerminal(...args);
 }
 
-function authorityRequestRequiresSequentialUserAction(request = null) {
-  if (!request || typeof request !== 'object') return false;
-  const source = String(request.source || request.reason_code || request.reasonCode || '').trim().toLowerCase();
-  if (source === 'search_connector_required') return false;
-  const missingConnectors = authorityStringList(
-    request.missing_connectors || request.missingConnectors || request.required_connectors || request.requiredConnectors || request.connectors,
-    8,
-    60
-  ).map((item) => String(item || '').trim().toLowerCase());
-  const missingCapabilities = authorityStringList(
-    request.missing_connector_capabilities || request.missingConnectorCapabilities || request.required_connector_capabilities || request.requiredConnectorCapabilities || request.capabilities,
-    12,
-    80
-  );
-  const requiredGoogleSources = authorityStringList(
-    request.required_google_sources || request.requiredGoogleSources || request.google_source_types || request.googleSourceTypes,
-    8,
-    60
-  );
-  const humanConnectors = missingConnectors.filter((item) => !['search', 'web_search', 'brave'].includes(item));
-  return Boolean(
-    humanConnectors.length
-    || missingCapabilities.length
-    || requiredGoogleSources.length
-    || authorityRequestRequiresApproval(request)
-  );
+function authorityRequestRequiresSequentialUserAction(...args) {
+  return workflowChildProgressHelpers.authorityRequestRequiresSequentialUserAction(...args);
 }
 
-function workflowChildRequiresSequentialUserAction(parent = {}, child = {}) {
-  if (!child || typeof child !== 'object') return false;
-  const task = workflowTaskName(child);
-  const phase = workflowSequencePhaseForJob(child);
-  if (isWorkflowLeaderTask(task)) return ['checkpoint', 'final_summary'].includes(phase);
-  if (authorityRequestRequiresSequentialUserAction(authorityRequestFromReport(child.output?.report))) return true;
-  const broker = child?.input?._broker && typeof child.input._broker === 'object' ? child.input._broker : {};
-  const workflow = broker.workflow && typeof broker.workflow === 'object' ? broker.workflow : {};
-  if (workflow.actionHandoffOnly === true || String(workflow.externalActionMode || '').trim().toLowerCase() === 'saas_handoff_only') return false;
-  return false;
+function workflowChildRequiresSequentialUserAction(...args) {
+  return workflowChildProgressHelpers.workflowChildRequiresSequentialUserAction(...args);
 }
 
-function workflowHasActiveSequentialUserActionWait(parent = {}, children = [], options = {}) {
-  const targetLayer = Math.max(0, Number(options.targetLayer || 0) || 0);
-  return (Array.isArray(children) ? children : []).some((child) => {
-    if (workflowChildIsAdaptivePending(child)) return false;
-    if (targetLayer > 0 && workflowDispatchLayer(parent, child) !== targetLayer) return false;
-    if (!workflowChildRequiresSequentialUserAction(parent, child)) return false;
-    const status = String(child?.status || '').trim().toLowerCase();
-    const completionStatus = String(child?.dispatch?.completionStatus || child?.dispatch_completion_status || '').trim().toLowerCase();
-    return ['blocked', 'action_required', 'needs_action', 'approval_required', 'connector_required'].includes(status)
-      || ['blocked_waiting_for_approval', 'approval_waiting_retry_paused'].includes(completionStatus);
-  });
+function workflowHasActiveSequentialUserActionWait(...args) {
+  return workflowChildProgressHelpers.workflowHasActiveSequentialUserActionWait(...args);
 }
 
-function workflowLeaderChildIsApprovalBlockedTerminal(child = {}) {
-  const status = String(child?.status || '').trim().toLowerCase();
-  if (status !== 'blocked') return false;
-  if (!isWorkflowLeaderTask(workflowTaskName(child))) return false;
-  const phase = workflowSequencePhaseForJob(child);
-  if (!['checkpoint', 'final_summary'].includes(phase)) return false;
-  const authorityRequest = authorityRequestFromReport(child.output?.report);
-  if (authorityRequestHandledBySaasHandoff(child, authorityRequest)) return false;
-  return Boolean(
-    child.failureCategory === 'blocked_waiting_for_approval'
-    || child.dispatch?.completionStatus === 'blocked_waiting_for_approval'
-    || authorityRequestRequiresApproval(authorityRequest)
-  );
+function workflowLeaderChildIsApprovalBlockedTerminal(...args) {
+  return workflowChildProgressHelpers.workflowLeaderChildIsApprovalBlockedTerminal(...args);
 }
 
-function workflowChildIsTerminalForProgress(child = {}) {
-  if (workflowChildIsAdaptivePending(child)) return false;
-  if (workflowChildIsApprovalBlockedTerminal(child)) return true;
-  if (workflowChildIsBlockingProgress(child)) return false;
-  return workflowChildIsTerminal(child);
+function workflowChildIsTerminalForProgress(...args) {
+  return workflowChildProgressHelpers.workflowChildIsTerminalForProgress(...args);
 }
 
-function workflowReplanTextValue(value, options = {}) {
-  const maxChars = Math.max(500, Math.min(20000, Number(options.maxChars || 8000) || 8000));
-  const seen = options.seen || new Set();
-  const collect = (item) => {
-    if (item === null || item === undefined) return '';
-    if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') return String(item);
-    if (typeof item !== 'object') return '';
-    if (seen.has(item)) return '';
-    seen.add(item);
-    if (Array.isArray(item)) return item.map(collect).filter(Boolean).join('\n');
-    return Object.entries(item)
-      .filter(([key]) => !/token|secret|callback|billing|usage|cost|id$/i.test(String(key || '')))
-      .map(([key, nested]) => `${key}: ${collect(nested)}`)
-      .filter((line) => line.replace(/^[^:]+:\s*/, '').trim())
-      .join('\n');
-  };
-  return collect(value).replace(/\s+/g, ' ').trim().slice(0, maxChars);
+function markWorkflowParentBlockedIfNeeded(...args) {
+  return workflowParentBlockingHelpers.markWorkflowParentBlockedIfNeeded(...args);
 }
 
-function workflowLeaderReplanDecisionForLayer(parent = {}, children = [], targetLayer = 1, options = {}) {
-  const primary = workflowPrimaryTask(parent);
-  const layer = Math.max(1, Number(targetLayer || 1) || 1);
-  const candidateChildren = (Array.isArray(children) ? children : [])
-    .filter((child) => workflowChildIsAdaptivePending(child))
-    .filter((child) => workflowDispatchLayer(parent, child) === layer);
-  const candidateTasks = [...new Set(candidateChildren.map((child) => workflowTaskName(child)).filter(Boolean))];
-  if (candidateTasks.length <= 1) return null;
-  const sourceLeader = options.sourceLeader || options.checkpointJob || null;
-  const priorCompleted = sortWorkflowChildren(parent, children)
-    .filter((child) => String(child?.status || '').trim().toLowerCase() === 'completed')
-    .filter((child) => workflowDispatchLayer(parent, child) < layer);
-  const planningOutputs = priorCompleted.filter((child) => leaderTaskPhase(primary, workflowTaskName(child)) === 'planning');
-  const sourceText = [
-    workflowReplanTextValue(sourceLeader?.output || {}, { maxChars: 6000 }),
-    ...planningOutputs.map((child) => workflowReplanTextValue(child.output || {}, { maxChars: 5000 })),
-    ...priorCompleted.map((child) => workflowReplanTextValue({
-      task: workflowTaskName(child),
-      summary: child.output?.summary || child.output?.report?.summary || child.failureReason || ''
-    }, { maxChars: 1000 }))
-  ].filter(Boolean).join('\n');
-  const replan = leaderWorkflowReplanDecisionFromDefinition(primary, {
-    candidateTasks,
-    sourceText,
-    layer,
-    actionLayerStart: leaderActionLayerStart(primary)
-  });
-  if (!replan) return null;
-  return {
-    ...replan,
-    selectedTaskSet: new Set(replan.selectedTasks || [])
-  };
+function workflowCompletedRunHandoff(...args) {
+  return workflowPriorRunHelpers.workflowCompletedRunHandoff(...args);
 }
 
-function markWorkflowParentBlockedIfNeeded(state = {}, childJob = {}) {
-  const parentId = String(childJob?.workflowParentId || '').trim();
-  if (!parentId) return false;
-  const parent = Array.isArray(state.jobs)
-    ? state.jobs.find((item) => item.id === parentId && item.jobKind === 'workflow')
-    : null;
-  if (!parent) return false;
-  const children = sortWorkflowChildren(parent, state.jobs.filter((item) => item.workflowParentId === parentId));
-  const blockingChildren = children.filter(workflowChildIsBlockingProgress);
-  const blockedStatus = workflowBlockedParentStatus(parent, children, blockingChildren);
-  if (blockedStatus !== 'blocked') return false;
-  const agentChildren = workflowAgentRunChildren(children);
-  const visibleAgentChildren = workflowVisibleAgentRunChildren(children);
-  const internalChildren = children.filter((child) => workflowChildIsInternalLeaderSequenceRun(child));
-  parent.workflow = {
-    ...(parent.workflow || {}),
-    childJobIds: children.map((item) => item.id),
-    childRuns: workflowChildSnapshot(children),
-    plannedAgentRunCount: visibleAgentChildren.length,
-    plannedCandidateAgentRunCount: agentChildren.length,
-    adaptiveCandidateRunCount: agentChildren.length - visibleAgentChildren.length,
-    internalCheckpointRunCount: internalChildren.length,
-    agentStatusCounts: workflowStatusCounts(visibleAgentChildren),
-    internalStatusCounts: workflowStatusCounts(internalChildren),
-    statusCounts: workflowStatusCounts(children, Array.isArray(parent.workflow?.childRuns) ? parent.workflow.childRuns.length : children.length)
-  };
-  parent.status = blockedStatus;
-  parent.completedAt = null;
-  parent.failedAt = null;
-  parent.failureReason = blockingChildren[0]?.failureReason
-    || blockingChildren[0]?.output?.summary
-    || 'Workflow is blocked by a required specialist run.';
-  parent.failureCategory = 'blocked_waiting_for_approval';
-  parent.dispatch = {
-    ...(parent.dispatch || {}),
-    completionStatus: 'blocked_waiting_for_approval',
-    retryable: false,
-    nextRetryAt: null,
-    completedAt: null
-  };
-  parent.output = buildAgentTeamDeliveryOutput(parent, children);
-  syncJobAuthorityRequest(parent);
-  return true;
+function workflowPriorCompletedRuns(...args) {
+  return workflowPriorRunHelpers.workflowPriorCompletedRuns(...args);
 }
 
-function workflowCompletedRunHandoff(parent = {}, child = {}) {
-  const output = child.output && typeof child.output === 'object' ? child.output : {};
-  const report = output.report && typeof output.report === 'object' ? output.report : {};
-  const files = Array.isArray(output.files)
-    ? output.files
-      .map((item) => ({
-        name: String(item?.name || '').slice(0, 160),
-        content: String(item?.content || '').slice(0, 8000)
-      }))
-      .filter((item) => item.name || item.content)
-      .slice(0, 2)
-    : [];
-  const webSources = workflowSearchSourcesFromReport(report);
-  const structuredResearchHandoff = workflowResearchHandoffFromReport(report);
-  const deliverableMarkdown = files
-    .map((file) => [`# ${file.name || 'delivery.md'}`, file.content].filter(Boolean).join('\n'))
-    .filter(Boolean)
-    .join('\n\n')
-    .slice(0, 18000);
-  const handoffRun = {
-    jobId: child.id || null,
-    taskType: workflowTaskName(child),
-    agentId: child.assignedAgentId || null,
-    agentName: child.workflowAgentName || null,
-    sequencePhase: workflowSequencePhaseForJob(child) || null,
-    layer: workflowDispatchLayer(parent, child),
-    completedAt: child.completedAt || null,
-    summary: String(output.summary || report.summary || '').slice(0, 1600),
-    bullets: Array.isArray(report.bullets)
-      ? report.bullets.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 6)
-      : [],
-    nextAction: String(report.nextAction || report.next_action || '').slice(0, 1000),
-    webSources,
-    sourceBundle: {
-      webSources,
-      sourceSignals: workflowSourceSignalStrings(webSources),
-      sourceCount: webSources.length
-    },
-    structuredResearchHandoff,
-    qualityGate: child.qualityGate || null,
-    files,
-    deliverableMarkdown,
-    requiredUsageSignals: workflowHandoffOriginalSignals([{ summary: output.summary || report.summary || '', bullets: report.bullets || [], webSources, files }]),
-    promptContextAttached: Boolean(
-      workflowStoredAdditionalPrompt(child)
-      || String(child.prompt || '').includes(WORKFLOW_HANDOFF_CONTEXT_START)
-    )
-  };
-  handoffRun.structuredDigest = workflowStructuredHandoffDigestFromRun(handoffRun);
-  return handoffRun;
+function workflowDataUnavailableOutput(...args) {
+  return workflowPriorRunHelpers.workflowDataUnavailableOutput(...args);
 }
 
-function workflowPriorCompletedRuns(parent = {}, children = [], targetLayer = 1) {
-  return sortWorkflowChildren(parent, children)
-    .filter((child) => child.status === 'completed')
-    .filter((child) => !isWorkflowLeaderTask(workflowTaskName(child)))
-    .filter((child) => !workflowChildIsLeaderReplanDeferred(child))
-    .filter((child) => !workflowOptionalUnavailablePriorRun(parent, child, targetLayer))
-    .filter((child) => workflowDispatchLayer(parent, child) < targetLayer)
-    .map((child) => workflowCompletedRunHandoff(parent, child))
-    .slice(0, 10);
+function workflowUnavailablePriorRunIsOptional(...args) {
+  return workflowPriorRunHelpers.workflowUnavailablePriorRunIsOptional(...args);
 }
 
-function workflowDataUnavailableOutput(child = {}) {
-  if (workflowTaskName(child) !== 'data_analysis') return false;
-  const output = child.output && typeof child.output === 'object' ? child.output : {};
-  const runtime = output.runtime && typeof output.runtime === 'object' ? output.runtime : {};
-  const report = output.report && typeof output.report === 'object' ? output.report : {};
-  const text = workflowOutputText(child);
-  return String(runtime.workflow || '').trim().toLowerCase() === 'workflow_data_unavailable_packet'
-    || String(runtime.mode || '').trim().toLowerCase() === 'data_unavailable_packet'
-    || /data layer skipped|no analytics\/data context|no ga4|分析コンテキストが未接続|データ層をスキップ/i.test([
-      output.summary,
-      report.summary,
-      report.nextAction,
-      text
-    ].filter(Boolean).join(' '));
+function workflowJobHasAttachedDataContext(...args) {
+  return workflowPriorRunHelpers.workflowJobHasAttachedDataContext(...args);
 }
 
-function workflowUnavailablePriorRunIsOptional(run = {}) {
-  const reason = String(run.reason || run.unavailableReason || run.status || '').trim().toLowerCase();
-  return run.optional === true
-    || reason === 'no_analytics_context'
-    || reason === 'data_unavailable'
-    || reason === 'data_timeout_no_analytics_context'
-    || reason === 'skipped_no_data_context';
+function workflowOptionalUnavailablePriorRun(...args) {
+  return workflowPriorRunHelpers.workflowOptionalUnavailablePriorRun(...args);
 }
 
-function workflowJobHasAttachedDataContext(job = {}) {
-  const broker = job?.input?._broker && typeof job.input._broker === 'object' ? job.input._broker : {};
-  const contexts = [
-    ...(Array.isArray(broker.appContexts) ? broker.appContexts : []),
-    ...(Array.isArray(broker.connectorContexts) ? broker.connectorContexts : [])
-  ].filter((context) => context && typeof context === 'object');
-  if (!contexts.length) return false;
-  return contexts.some((context) => {
-    if (Array.isArray(context.metrics) && context.metrics.length) return true;
-    const raw = context.raw_context && typeof context.raw_context === 'object'
-      ? context.raw_context
-      : (context.rawContext && typeof context.rawContext === 'object' ? context.rawContext : {});
-    const text = workflowFlattenTextParts([
-      context.source_app,
-      context.sourceApp,
-      context.title,
-      context.summary,
-      raw.connector_provider,
-      raw.provider,
-      raw.connector_type,
-      raw.connectorType,
-      raw.connector_services,
-      raw.connectorServices,
-      raw.googleGa4Property,
-      raw.googleSearchConsoleSite,
-      raw.googleReportSources,
-      raw.googleReportLoaded
-    ]).join(' ').toLowerCase();
-    return /(analytics|google analytics|ga4|search console|\bgsc\b|conversion|funnel|cohort|acquisition|traffic|query|event|billing|orders?|stripe|dataset|spreadsheet|sheet|csv|metric)/i.test(text);
-  });
+function workflowPriorUnavailableRuns(...args) {
+  return workflowPriorRunHelpers.workflowPriorUnavailableRuns(...args);
 }
 
-function workflowOptionalUnavailablePriorRun(parent = {}, child = {}, targetLayer = 1) {
-  if (!child || isWorkflowLeaderTask(workflowTaskName(child))) return null;
-  const taskType = workflowTaskName(child);
-  const status = String(child.status || '').trim().toLowerCase();
-  const layer = workflowDispatchLayer(parent, child);
-  if (layer >= Math.max(1, Number(targetLayer || 1) || 1)) return null;
-  const completedDataUnavailable = status === 'completed' && workflowDataUnavailableOutput(child);
-  const timedOutDataWithoutContext = taskType === 'data_analysis'
-    && ['failed', 'timed_out'].includes(status)
-    && !workflowJobHasAttachedDataContext(child);
-  if (!completedDataUnavailable && !timedOutDataWithoutContext) return null;
-  const output = child.output && typeof child.output === 'object' ? child.output : {};
-  const report = output.report && typeof output.report === 'object' ? output.report : {};
-  const reason = timedOutDataWithoutContext ? 'data_timeout_no_analytics_context' : 'no_analytics_context';
-  return {
-    jobId: child.id || null,
-    taskType,
-    agentId: child.assignedAgentId || null,
-    agentName: child.workflowAgentName || null,
-    sequencePhase: workflowSequencePhaseForJob(child) || null,
-    layer,
-    status: 'skipped',
-    optional: true,
-    reason,
-    summary: String(output.summary || report.summary || child.failureReason || 'Data context was not attached; data layer skipped.').slice(0, 1000),
-    nextAction: String(report.nextAction || report.next_action || '').slice(0, 1000),
-    completedAt: child.completedAt || null,
-    failedAt: child.failedAt || child.timedOutAt || null
-  };
+function workflowLeaderPriorLayerUnavailable(...args) {
+  return workflowPriorRunHelpers.workflowLeaderPriorLayerUnavailable(...args);
 }
 
-function workflowPriorUnavailableRuns(parent = {}, children = [], targetLayer = 1) {
-  return sortWorkflowChildren(parent, children)
-    .map((child) => workflowOptionalUnavailablePriorRun(parent, child, targetLayer))
-    .filter(Boolean)
-    .slice(0, 6);
+function workflowLeaderPriorLayerOptionalOnly(...args) {
+  return workflowPriorRunHelpers.workflowLeaderPriorLayerOptionalOnly(...args);
 }
 
-function workflowLeaderPriorLayerUnavailable(parent = {}, leaderJob = {}) {
-  if (workflowLeaderPriorLayerOptionalOnly(parent, leaderJob)) return false;
-  const phase = workflowSequencePhaseForJob(leaderJob);
-  if (phase !== 'checkpoint') return false;
-  const workflow = leaderJob?.input?._broker?.workflow && typeof leaderJob.input._broker.workflow === 'object'
-    ? leaderJob.input._broker.workflow
-    : {};
-  const checkpointLayer = Math.max(1, Number(workflow.checkpointLayer || workflow.afterLayer || 1) || 1);
-  const childRuns = Array.isArray(parent?.workflow?.childRuns) ? parent.workflow.childRuns : [];
-  const priorLayerRuns = childRuns
-    .filter((child) => !isWorkflowLeaderTask(workflowTaskName(child)))
-    .filter((child) => workflowDispatchLayer(parent, child) <= checkpointLayer);
-  if (!priorLayerRuns.length) return false;
-  const completedPrior = priorLayerRuns.some((child) => String(child.status || '').trim().toLowerCase() === 'completed');
-  if (completedPrior) return false;
-  return true;
+function workflowReplanTextValue(...args) {
+  return workflowLeaderSequenceHelpers.workflowReplanTextValue(...args);
 }
 
-function workflowLeaderPriorLayerOptionalOnly(parent = {}, leaderJob = {}) {
-  const phase = workflowSequencePhaseForJob(leaderJob);
-  if (phase !== 'checkpoint') return false;
-  const workflow = leaderJob?.input?._broker?.workflow && typeof leaderJob.input._broker.workflow === 'object'
-    ? leaderJob.input._broker.workflow
-    : {};
-  const checkpointLayer = Math.max(1, Number(workflow.checkpointLayer || workflow.afterLayer || 1) || 1);
-  const childRuns = Array.isArray(parent?.workflow?.childRuns) ? parent.workflow.childRuns : [];
-  const priorLayerRuns = childRuns
-    .filter((child) => !isWorkflowLeaderTask(workflowTaskName(child)))
-    .filter((child) => workflowDispatchLayer(parent, child) <= checkpointLayer);
-  if (!priorLayerRuns.length) return false;
-  if (priorLayerRuns.some((child) => String(child.status || '').trim().toLowerCase() === 'completed')) return false;
-  const optionalUnavailablePrior = priorLayerRuns
-    .map((child) => workflowOptionalUnavailablePriorRun(parent, child, checkpointLayer + 1))
-    .filter(Boolean);
-  return optionalUnavailablePrior.length > 0 && optionalUnavailablePrior.length === priorLayerRuns.length;
+function workflowLeaderReplanDecisionForLayer(...args) {
+  return workflowLeaderSequenceHelpers.workflowLeaderReplanDecisionForLayer(...args);
 }
 
-function workflowLeaderSequence(parent = {}) {
-  const sequence = parent?.workflow?.leaderSequence;
-  if (!sequence || sequence.enabled !== true) return null;
-  return sequence;
+function workflowLeaderSequence(...args) {
+  return workflowLeaderSequenceHelpers.workflowLeaderSequence(...args);
 }
 
-function workflowLeaderCheckpoints(parent = {}) {
-  const sequence = workflowLeaderSequence(parent);
-  if (!sequence?.enabled) return [];
-  const checkpoints = Array.isArray(sequence.checkpoints)
-    ? sequence.checkpoints
-    : [];
-  const normalized = checkpoints
-    .map((checkpoint) => ({
-      jobId: String(checkpoint?.jobId || checkpoint?.job_id || '').trim(),
-      afterLayer: Math.max(1, Number(checkpoint?.afterLayer || checkpoint?.checkpointLayer || 1) || 1),
-      beforeLayer: Math.max(2, Number(checkpoint?.beforeLayer || checkpoint?.requiredBeforeLayer || 2) || 2),
-      status: String(checkpoint?.status || 'pending').trim().toLowerCase() || 'pending',
-      label: String(checkpoint?.label || '').trim(),
-      requiresUserApprovalBeforeAction: checkpoint?.requiresUserApprovalBeforeAction === true
-    }))
-    .filter((checkpoint) => checkpoint.jobId);
-  if (!normalized.length && sequence.checkpointJobId) {
-    normalized.push({
-      jobId: String(sequence.checkpointJobId || '').trim(),
-      afterLayer: Math.max(1, Number(sequence.checkpointLayer || 1) || 1),
-      beforeLayer: Math.max(2, Number(sequence.requiredBeforeLayer || 2) || 2),
-      status: String(sequence.status || 'pending').trim().toLowerCase() || 'pending',
-      label: 'research_to_execution',
-      requiresUserApprovalBeforeAction: false
-    });
-  }
-  return normalized.sort((left, right) => left.beforeLayer - right.beforeLayer);
+function workflowLeaderCheckpoints(...args) {
+  return workflowLeaderSequenceHelpers.workflowLeaderCheckpoints(...args);
 }
 
-function workflowCheckpointStatus(checkpoint = {}, checkpointJob = null) {
-  const jobStatus = String(checkpointJob?.status || '').trim().toLowerCase();
-  if (jobStatus === 'completed') return 'completed';
-  if (['failed', 'timed_out'].includes(jobStatus)) return 'failed';
-  if (['queued', 'claimed', 'running', 'dispatched'].includes(jobStatus)) return 'queued';
-  return String(checkpoint.status || 'pending').trim().toLowerCase() || 'pending';
+function workflowCheckpointStatus(...args) {
+  return workflowLeaderSequenceHelpers.workflowCheckpointStatus(...args);
 }
 
-function workflowCheckpointBlocksLayer(parent = {}, children = [], layer = 1) {
-  const checkpoints = workflowLeaderCheckpoints(parent);
-  if (!checkpoints.length) return null;
-  for (const checkpoint of checkpoints) {
-    if (checkpoint.beforeLayer > layer) continue;
-    const checkpointJob = children.find((child) => child.id === checkpoint.jobId) || null;
-    if (workflowCheckpointStatus(checkpoint, checkpointJob) !== 'completed') return checkpoint;
-  }
-  return null;
+function workflowCheckpointBlocksLayer(...args) {
+  return workflowLeaderSequenceHelpers.workflowCheckpointBlocksLayer(...args);
 }
 
 function workflowLayerWasLeaderActivated(parent = {}, layer = 1) {
-  const targetLayer = Math.max(1, Number(layer || 1) || 1);
-  const activations = Array.isArray(parent?.workflow?.adaptivePlan?.activations)
-    ? parent.workflow.adaptivePlan.activations
-    : [];
-  return activations.some((activation) => Number(activation?.layer || 0) === targetLayer);
+  return workflowLeaderSequenceHelpers.workflowLayerWasLeaderActivated(parent, layer);
 }
 
-function workflowFailedPriorLayerShouldWarnNotBlock(parent = {}, children = [], child = {}, targetLayer = 1) {
-  const safeTargetLayer = Math.max(1, Number(targetLayer || 1) || 1);
-  if (safeTargetLayer < leaderActionLayerStart(workflowPrimaryTask(parent))) return false;
-  if (!workflowLayerWasLeaderActivated(parent, safeTargetLayer)) return false;
-  const childLayer = workflowDispatchLayer(parent, child);
-  if (childLayer <= 0 || childLayer >= safeTargetLayer) return false;
-  const phase = workflowSequencePhaseForJob(child);
-  if (!['preparation', 'planning', 'action', 'implementation'].includes(phase)) return false;
-  return sortWorkflowChildren(parent, children).some((candidate) => (
-    candidate?.id !== child?.id
-    && !isWorkflowLeaderTask(workflowTaskName(candidate))
-    && workflowDispatchLayer(parent, candidate) === childLayer
-    && String(candidate.status || '').trim().toLowerCase() === 'completed'
-  ));
+function workflowFailedPriorLayerShouldWarnNotBlock(...args) {
+  return workflowLeaderSequenceHelpers.workflowFailedPriorLayerShouldWarnNotBlock(...args);
 }
 
-function workflowBlockingQualityGateBeforeLayer(parent = {}, children = [], layer = 1) {
-  const targetLayer = Math.max(1, Number(layer || 1) || 1);
-  if (targetLayer <= 1) return null;
-  const sorted = sortWorkflowChildren(parent, children);
-  for (const child of sorted) {
-    if (!child || isWorkflowLeaderTask(workflowTaskName(child))) continue;
-    if (workflowDispatchLayer(parent, child) >= targetLayer) continue;
-    const status = String(child.status || '').trim().toLowerCase();
-    if (['failed', 'timed_out'].includes(status)) {
-      const optionalUnavailable = workflowOptionalUnavailablePriorRun(parent, child, targetLayer);
-      if (optionalUnavailable && workflowUnavailablePriorRunIsOptional(optionalUnavailable)) continue;
-      if (workflowFailedPriorLayerShouldWarnNotBlock(parent, children, child, targetLayer)) continue;
-      return {
-        type: 'prior_layer_unavailable',
-        childId: child.id,
-        taskType: workflowTaskName(child),
-        summary: child.failureReason || child.failure_reason || (status === 'timed_out'
-          ? 'prior layer timed out before producing usable output'
-          : 'prior layer failed before producing usable output')
-      };
-    }
-    if (workflowChildIsLeaderReplanDeferred(child)) continue;
-    const currentReview = String(child.status || '').trim().toLowerCase() === 'completed'
-      ? workflowOriginalInfoQualityReview(parent, child)
-      : null;
-    if (currentReview?.applicable) workflowApplyQualityReviewToChild(child, currentReview);
-    const gate = currentReview?.applicable
-      ? child.qualityGate
-      : (child.qualityGate && typeof child.qualityGate === 'object' ? child.qualityGate : null);
-    if (gate && gate.applicable !== false && gate.passed === false) {
-      return {
-        type: 'child_quality_gate',
-        childId: child.id,
-        taskType: workflowTaskName(child),
-        summary: Array.isArray(gate.issues) && gate.issues.length ? gate.issues.join('+') : (gate.summary || 'prior layer quality gate failed')
-      };
-    }
-    const authorityRequest = authorityRequestFromReport(child.output?.report);
-    const authoritySource = String(authorityRequest?.source || '').trim().toLowerCase();
-    if (authoritySource === 'search_connector_required') {
-      return {
-        type: 'search_connector_required',
-        childId: child.id,
-        taskType: workflowTaskName(child),
-        summary: authorityRequest?.reason || 'prior research layer search connector is required'
-      };
-    }
-  }
-  const lastGate = parent?.workflow?.leaderSequence?.lastQualityGate;
-  if (lastGate && typeof lastGate === 'object' && lastGate.passed === false) {
-    return {
-      type: 'leader_quality_gate',
-      summary: lastGate.summary || 'leader quality gate failed before releasing downstream layer'
-    };
-  }
-  return null;
+function workflowBlockingQualityGateBeforeLayer(...args) {
+  return workflowLeaderSequenceHelpers.workflowBlockingQualityGateBeforeLayer(...args);
 }
 
-function workflowLeaderSequenceNeedsProgress(parent = {}) {
-  const sequence = workflowLeaderSequence(parent);
-  if (!sequence?.enabled) return false;
-  const checkpoints = workflowLeaderCheckpoints(parent);
-  if (checkpoints.some((checkpoint) => String(checkpoint.status || '').trim().toLowerCase() !== 'completed')) return true;
-  if (!checkpoints.length && String(sequence.status || '').trim().toLowerCase() !== 'completed') return true;
-  if (sequence.finalSummaryJobId && String(sequence.finalSummaryStatus || '').trim().toLowerCase() !== 'completed') return true;
-  return false;
+function workflowLeaderSequenceNeedsProgress(...args) {
+  return workflowLeaderSequenceHelpers.workflowLeaderSequenceNeedsProgress(...args);
 }
 
-function workflowChildrenForLayer(parent = {}, children = [], layer = 1, options = {}) {
-  return sortWorkflowChildren(parent, children)
-    .filter((child) => (options.includeLeader ? true : !isWorkflowLeaderTask(workflowTaskName(child))))
-    .filter((child) => workflowDispatchLayer(parent, child) === layer);
+function workflowChildrenForLayer(...args) {
+  return workflowLeaderSequenceHelpers.workflowChildrenForLayer(...args);
 }
 
-function workflowShouldEnableLeaderSequence(plan = {}, taskType = '') {
-  const plannedTasks = Array.isArray(plan?.plannedTasks) ? plan.plannedTasks : [];
-  const assignments = Array.isArray(plan?.assignments) ? plan.assignments : [];
-  const primary = String(plannedTasks[0] || taskType || '').trim().toLowerCase();
-  if (!isWorkflowLeaderTask(primary)) return false;
-  const pseudoParent = {
-    taskType: primary,
-    workflow: {
-      plannedTasks: plannedTasks.length ? plannedTasks : [primary]
-    }
-  };
-  const nonLeaderLayers = assignments
-    .map((item) => String(item?.taskType || '').trim().toLowerCase())
-    .filter((task) => task && !isWorkflowLeaderTask(task))
-    .map((task) => workflowDispatchLayer(pseudoParent, { workflowTask: task, taskType: task }));
-  const hasResearchLayer = nonLeaderLayers.some((layer) => layer === 1);
-  const hasActionLayer = nonLeaderLayers.some((layer) => layer >= 2);
-  return hasResearchLayer && hasActionLayer;
+function workflowShouldEnableLeaderSequence(...args) {
+  return workflowLeaderSequenceHelpers.workflowShouldEnableLeaderSequence(...args);
 }
 
 function workflowDispatchHandlers() {
@@ -3368,8 +2610,10 @@ function orderCreateHandlers() {
       leaderTaskRequiresSourceCollection,
       leaderTaskUsesWebSearch,
       listCreatorUsageEstimateForOrder,
+      ledgerAmountToDisplayCurrency,
       maybeRefineWorkflowPlanWithLeaderLlm,
       mergeProtectedPromptSourceIntoInput,
+      normalizeAgentTags,
       normalizeAuthorityRequest,
       normalizeOrderStrategy,
       normalizeTaskTypes,
@@ -3422,7 +2666,8 @@ function orderCreateHandlers() {
       workflowTagHintsForTask,
       workflowShouldEnableLeaderSequence,
       workflowStatusCounts,
-      workflowVisibleAgentRunChildren
+      workflowVisibleAgentRunChildren,
+      WELCOME_CREDITS_GRANT_AMOUNT
     });
   }
   return orderCreateRuntime;
