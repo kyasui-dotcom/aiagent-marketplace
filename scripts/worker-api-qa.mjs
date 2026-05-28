@@ -62,6 +62,7 @@ const authorityRequestsSource = readFileSync(new URL('../lib/authority-requests.
 const githubAppAccessSource = readFileSync(new URL('../lib/github-app-access.js', import.meta.url), 'utf8');
 const githubAppConfigSource = readFileSync(new URL('../lib/github-app-config.js', import.meta.url), 'utf8');
 const githubIntegrationSource = readFileSync(new URL('../lib/github-integration.js', import.meta.url), 'utf8');
+const githubIntegrationRoutesSource = readFileSync(new URL('../lib/routes/integrations-github.js', import.meta.url), 'utf8');
 const googleIntegrationSource = readFileSync(new URL('../lib/google-integration.js', import.meta.url), 'utf8');
 const marketplaceRegistrationSource = readFileSync(new URL('../lib/marketplace-registration.js', import.meta.url), 'utf8');
 const operatorAccessSource = readFileSync(new URL('../lib/operator-access.js', import.meta.url), 'utf8');
@@ -845,6 +846,11 @@ assert.ok(!workerSource.includes('Built-in workflow dispatch queue was requested
 assert.ok(authStatusRoutesSource.includes('googleGrantedCapabilities'), 'auth status should expose granted Google capabilities so chat does not repeat OAuth prompts.');
 assert.ok(integrationRoutesSource.includes('currentAgentRequesterContextWithAccount'), 'Google connector source reads should authenticate with targeted account loading.');
 assert.ok(integrationRoutesSource.includes('const current = await currentAgentRequesterContextWithAccount(storage, request, env);'), 'Google connector source reads should not load the full state snapshot before auth.');
+assert.ok(integrationRoutesSource.includes('createGithubIntegrationRouteHandlers(deps)'), 'GitHub route extraction should keep sharing the parent dependency bag.');
+for (const injectedName of ['agentSafetyErrorResponse', 'agentSafetyOptionsForRequest', 'fetchAllGithubRepos', 'ownerInfoFromRequest', 'providerMoneyReadinessForCurrent']) {
+  assert.ok(integrationRoutesSource.includes(injectedName), `integration route factory must accept ${injectedName}`);
+  assert.ok(githubIntegrationRoutesSource.includes(`${injectedName},`), `GitHub integration extraction must destructure ${injectedName}`);
+}
 assert.ok(jobRoutesSource.includes('const sanitizedJob = sanitizeJobForViewer(job, env);'), 'job reads should build a single sanitized public view before returning it.');
 assert.ok(jobRoutesSource.includes('return json({ ...sanitizedJob, job: sanitizedJob });'), 'job reads should expose sanitized job fields at the top level and nested job for API compatibility.');
 assert.ok(/async function scheduleProgressDispatchesForJobId[\s\S]{0,500}getFreshState/.test(workflowDispatchRuntimeSource), 'workflow progress dispatch target selection should read fresh storage after leader completion.');
