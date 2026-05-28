@@ -62,6 +62,9 @@ async function main() {
     assert.ok(envExample.includes('ADMIN_DASHBOARD_LOGINS=yasuikunihiro@gmail.com,e2e@aiagent-marketplace.net'), 'E2E auth account should stay admin so production order E2E can pass billing gate.');
     const wranglerConfig = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
     assert.ok(wranglerConfig.includes('"ADMIN_DASHBOARD_LOGINS": "yasuikunihiro@gmail.com,e2e@aiagent-marketplace.net"'), 'Cloudflare deploy vars should mark the E2E auth account as admin/test billing.');
+    assert.ok(!wranglerConfig.includes('"CAIT_DEVELOPER_API_ENABLED": "true"'), 'Cloudflare deploy defaults must not enable public developer API access.');
+    assert.ok(!wranglerConfig.includes('"CAIT_CLI_ENABLED": "true"'), 'Cloudflare deploy defaults must not enable CLI access.');
+    assert.ok(!wranglerConfig.includes('"CAIT_MCP_ENABLED": "true"'), 'Cloudflare deploy defaults must not enable MCP access.');
 
     const deploymentDoc = readFileSync(new URL('../DEPLOYMENT.md', import.meta.url), 'utf8');
     assert.ok(deploymentDoc.includes('Cloudflare Workers + D1'));
