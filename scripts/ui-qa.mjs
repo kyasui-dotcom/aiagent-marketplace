@@ -47,6 +47,7 @@ const chatWorkflowProgressUtilsPath = new URL('../public/chat-workflow-progress-
 const chatUsageLibraryControllerPath = new URL('../public/chat-usage-library-controller.js', import.meta.url);
 const chatCatalogRuntimePath = new URL('../public/chat-catalog-runtime.js', import.meta.url);
 const chatSchedulePanelControllerPath = new URL('../public/chat-schedule-panel-controller.js', import.meta.url);
+const chatAppHandoffControllerPath = new URL('../public/chat-app-handoff-controller.js', import.meta.url);
 const accountSettingsJsPath = new URL('../public/account-settings.js', import.meta.url);
 const connectorGateJsPath = new URL('../public/connector-gate.js', import.meta.url);
 const chatSessionStateJsPath = new URL('../public/chat-session-state.js', import.meta.url);
@@ -124,6 +125,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(chatWorkflowProgressUti
 execFileSync(process.execPath, ['--check', fileURLToPath(chatUsageLibraryControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatCatalogRuntimePath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatSchedulePanelControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatAppHandoffControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(connectorGateJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatSessionStateJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(orderRuntimeJsPath)], { stdio: 'pipe' });
@@ -220,6 +222,7 @@ const chatWorkflowProgressUtilsJs = readFileSync(chatWorkflowProgressUtilsPath, 
 const chatUsageLibraryControllerJs = readFileSync(chatUsageLibraryControllerPath, 'utf8');
 const chatCatalogRuntimeJs = readFileSync(chatCatalogRuntimePath, 'utf8');
 const chatSchedulePanelControllerJs = readFileSync(chatSchedulePanelControllerPath, 'utf8');
+const chatAppHandoffControllerJs = readFileSync(chatAppHandoffControllerPath, 'utf8');
 const accountSettingsJs = readFileSync(accountSettingsJsPath, 'utf8');
 const connectorGateJs = readFileSync(connectorGateJsPath, 'utf8');
 const chatSessionStateJs = readFileSync(chatSessionStateJsPath, 'utf8');
@@ -545,7 +548,7 @@ assert.ok(!chatJs.includes('sanitizeDeliveryMarkdownForUser(cleanReadableBundleC
 assert.ok(chatDeliveryFileUtilsJs.includes('USER_DELIVERY_INTERNAL_MARKERS'), 'Chat delivery sanitization should cover workflow handoff and prior specialist markers.');
 assert.ok(chatDeliveryFileUtilsJs.includes('deliveryLineLooksInternal'), 'Chat delivery sanitization should remove provider implementation self-reporting lines.');
 assert.ok(appHandoffTransferJs.includes('export function appHandoffSocialPostDraftFromDeliveryFiles'), 'App handoff transfer should own social post draft extraction for dedicated handoff cards.');
-assert.ok(chatJs.includes('appHandoffSocialPostDraftFromDeliveryFiles(orderedFiles, { maxLength: 1200 })'), 'Chat should route explicit X/social post packs into X Client Ops through the app handoff transfer module.');
+assert.ok(chatAppHandoffControllerJs.includes('appHandoffSocialPostDraftFromDeliveryFiles(orderedFiles, { maxLength: 1200 })'), 'Chat should route explicit X/social post packs into X Client Ops through the app handoff transfer module.');
 assert.ok(appManifestRegistryJs.includes('x_post_packet') && appManifestRegistryJs.includes('reddit_post_packet') && appManifestRegistryJs.includes('indie_hackers_packet') && appManifestRegistryJs.includes('instagram_post_packet'), 'Publisher app handoff should accept media-separated site and social post packets as external-app content.');
 assert.ok(appManifestRegistryJs.includes('publisher_packet') && appManifestRegistryJs.includes('content_package'), 'Publisher app handoff should accept AIAGENT publisher packet aliases.');
 assert.ok(appHandoffGateJs.includes("publisher_packet: ['site_publish_packet'") && appHandoffGateJs.includes("content_package: ['site_publish_packet'"), 'Publisher packet aliases should route into the Publisher handoff candidate.');
@@ -1141,7 +1144,7 @@ assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
 assert.ok(chatHtml.includes('/chat.css?v=20260526f'), 'Chat page should load the current compact chat header and composer styles.');
-assert.ok(chatHtml.includes('/chat.js?v=20260529a'), 'Chat page should load the current compact chat header and composer controller.');
+assert.ok(chatHtml.includes('/chat.js?v=20260529b'), 'Chat page should load the current compact chat header and composer controller.');
 assert.ok(chatHtml.includes('id="chatHeaderMenu"') && chatHtml.includes('☰ Menu'), 'Chat header should collapse secondary actions into a menu.');
 assert.ok(chatHtml.includes('Chat history') && chatHtml.includes('Schedules') && chatHtml.includes('Agents and workers'), 'Chat menu should use specific workspace action labels.');
 assert.ok(chatHtml.includes('App tools') && chatHtml.includes('Apps hub'), 'Chat menu should distinguish app tools from the Apps hub page.');
@@ -1350,7 +1353,7 @@ assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260526i'"), 'Chat JS s
 assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
 assert.ok(chatJs.includes('await consumeCaitAppContextForChat()'), 'Chat should await server-side app context retrieval before filling the composer.');
 assert.ok(chatJs.includes('refreshAppContexts'), 'Chat Apps panel should load reusable app contexts from the server.');
-assert.ok(chatJs.includes('/api/app-contexts'), 'Chat should read app context history through the server API.');
+assert.ok(chatCatalogRuntimeJs.includes('/api/app-contexts'), 'Chat should read app context history through the server API.');
 assert.ok(chatJs.includes('BroadcastChannel'), 'Chat should receive app context handoffs from a separate same-origin app window.');
 assert.ok(chatJs.includes('data-app-context-load'), 'Chat should let users load a server-side app context back into the composer.');
 assert.ok(chatJs.includes('refreshRecentJobs'), 'Chat history should be derived from the server job API.');
@@ -1548,11 +1551,11 @@ assert.ok(!chatJs.includes('approved_x_username'), 'Chat should not collect conn
 assert.ok(!chatJs.includes('approved_text'), 'Chat should not send direct X connector approved_text payloads.');
 assert.ok(!chatJs.includes("xConnectLinkHtml('Connect X', 'primary')"), 'X authority cards must not request X OAuth in chat; publish auth belongs to SaaS.');
 assert.ok(chatJs.includes('function renderDedicatedAppDeliveryTools'), 'Dedicated app delivery cards should render from manifest-declared app contracts.');
-assert.ok(chatJs.includes('Final action: ${escapeHtml(entry.name'), 'Dedicated delivery card headings should use the manifest app name instead of a hardcoded app id.');
-assert.ok(chatJs.includes('CAIt has attached the prepared handoff text and strategy context declared by the app manifest.'), 'Dedicated delivery card explanation should describe manifest-declared handoff context.');
+assert.ok(chatAppHandoffControllerJs.includes('Final action: ${escapeHtml(entry.name'), 'Dedicated delivery card headings should use the manifest app name instead of a hardcoded app id.');
+assert.ok(chatAppHandoffControllerJs.includes('CAIt has attached the prepared handoff text and strategy context declared by the app manifest.'), 'Dedicated delivery card explanation should describe manifest-declared handoff context.');
 assert.ok(appHandoffTransferJs.includes('export function appTransferPayloadWithEditedText'), 'Editable SaaS handoff transfer updates should live in the app handoff transfer module.');
-assert.ok(chatJs.includes('appTransferPayloadWithEditedText(payload, appHandoffButton, { compactTransferText })'), 'Chat should delegate edited SaaS handoff transfer updates to the shared transfer module.');
-assert.ok(chatJs.includes('data-app-transfer-editable="text"'), 'X draft edits should be carried through the generic app handoff path.');
+assert.ok(chatAppHandoffControllerJs.includes('appTransferPayloadWithEditedText(payload, button, { compactTransferText })'), 'Chat should delegate edited SaaS handoff transfer updates to the shared transfer module.');
+assert.ok(chatAppHandoffControllerJs.includes('data-app-transfer-editable="text"'), 'X draft edits should be carried through the generic app handoff path.');
 assert.ok(appHandoffTransferJs.includes("`Current edited handoff text:\\n${text || '[empty]'}`"), 'Editable SaaS handoff cards should preserve an intentionally emptied text field instead of falling back to stale payload text.');
 assert.ok(!chatJs.includes('if (!text) return payload;'), 'Editable SaaS handoff cards must not ignore cleared handoff text.');
 assert.ok(appHandoffTransferJs.includes('export function appHandoffContractTextMinimum'), 'Generic app handoff text minimum validation should live in the transfer module.');
@@ -1575,16 +1578,16 @@ assert.ok(appsDomainJs.includes("contextIngestUrl: DEFAULT_PUBLISHER_CONTEXT_ING
 assert.ok(chatUsageLibraryControllerJs.includes('const manifest = app?.metadata?.manifest'), 'Chat app manifest normalization should read server-persisted manifest metadata.');
 assert.ok(chatUsageLibraryControllerJs.includes('dedicatedDelivery: normalized.dedicatedDelivery || existing.dedicatedDelivery'), 'Chat app catalog merging should not let refreshed registered app rows erase static dedicated handoff contracts.');
 assert.ok(appHandoffGateJs.includes('export function appHandoffSuppressesGenericCard'), 'Generic app handoff suppression should be owned by the app handoff gate.');
-assert.ok(chatJs.includes('function genericSuppressedAppHandoffIds'), 'Chat should suppress generic app rows when a manifest-declared dedicated handoff card opts into suppression.');
-assert.ok(chatJs.includes('appHandoffGateGenericSuppressedAppHandoffIds'), 'Chat should delegate duplicate generic handoff suppression to the app handoff gate.');
+assert.ok(chatAppHandoffControllerJs.includes('function genericSuppressedAppHandoffIds'), 'Chat should suppress generic app rows when a manifest-declared dedicated handoff card opts into suppression.');
+assert.ok(chatAppHandoffControllerJs.includes('appHandoffGateGenericSuppressedAppHandoffIds'), 'Chat should delegate duplicate generic handoff suppression to the app handoff gate.');
 assert.ok(appHandoffGateJs.includes('config.suppressGenericCard !== false && config.suppress_generic_card !== false'), 'Dedicated delivery cards should suppress duplicate generic cards by default while allowing manifest opt-out.');
 assert.ok(appHandoffGateJs.includes('export function appHandoffDedicatedTextSourceKind'), 'App handoff gate should resolve dedicated prepared text source contracts.');
 assert.ok(!chatJs.includes("ids.add('x-client-ops')"), 'Generic app handoff suppression must not hard-code a CAIt-managed app id.');
 assert.ok(!chatJs.includes("appManifestById('x-client-ops')"), 'Dedicated delivery rendering must not look up a CAIt-managed app by hardcoded id.');
 assert.ok(!chatJs.includes("appAgentBaseTransferPacket('x-client-ops'"), 'Dedicated delivery transfer packets must use the manifest app id.');
-assert.ok(chatJs.includes('appHandoffBaseTransferPacket(appId, job, appHandoffTransferOptions('), 'Chat should delegate app transfer packet assembly to the app handoff transfer module.');
-assert.ok(chatJs.includes(".filter((entry) => !suppressedIds.has(normalizeUsageId(entry.id || '')))"), 'Generic app handoff cards should not duplicate a dedicated final-action app card.');
-assert.ok(chatJs.includes('authorityRequestHandledBySaasHandoffInChat(authorityRequestFromJob(job))'), 'Explicit X handoff authority waits should be eligible for SaaS app handoff instead of chat approval dead-ends.');
+assert.ok(chatAppHandoffControllerJs.includes('appHandoffBaseTransferPacket(appId, job, appHandoffTransferOptions('), 'Chat should delegate app transfer packet assembly to the app handoff transfer module.');
+assert.ok(chatAppHandoffControllerJs.includes(".filter((entry) => !suppressedIds.has(normalizeUsageId(entry.id || '')))"), 'Generic app handoff cards should not duplicate a dedicated final-action app card.');
+assert.ok(chatAppHandoffControllerJs.includes('authorityRequestHandledBySaasHandoffInChat(authorityRequestFromJob(job))'), 'Explicit X handoff authority waits should be eligible for SaaS app handoff instead of chat approval dead-ends.');
 assert.ok(appHandoffGateJs.includes('x_post_approval'), 'Explicit X approval artifact metadata should still route to X Client Ops app handoff.');
 assert.equal(
   explicitHandoffArtifactTypesFromAuthorityRequest({
@@ -1603,7 +1606,7 @@ assert.equal(
   'Explicit authority request action metadata should still route X app handoff artifacts.'
 );
 assert.ok(chatJs.includes('function renderAppHandoffTools'), 'Chat deliveries should expose generic app handoff cards.');
-assert.ok(chatJs.includes('function renderAppHandoffTree'), 'Chat deliveries should render the preparation artifact to app routing tree.');
+assert.ok(chatAppHandoffControllerJs.includes('function renderAppHandoffTree'), 'Chat deliveries should render the preparation artifact to app routing tree.');
 assert.ok(chatJs.includes('function renderAppHandoffRoutingPreview'), 'Agent map progress should preview SaaS routing before final delivery.');
 assert.ok(
   chatJs.includes('handoffHtml: renderAppHandoffRoutingPreview(job)')
@@ -1615,28 +1618,28 @@ assert.ok(appHandoffTransferJs.includes('export function appContextFromTransferP
 assert.ok(appHandoffTransferJs.includes('delivery_files: [...transferDeliveryFiles, ...fileArtifacts]'), 'Generic app handoff fallback should promote transfer delivery artifacts to server-side delivery_files.');
 assert.ok(appHandoffTransferJs.includes('contentPreview'), 'Generic app handoff fallback should preserve compact delivery artifact previews as app context content.');
 assert.ok(appHandoffGateJs.includes('Preparation data routing'), 'App handoff cards should label the preparation data routing tree.');
-assert.ok(chatJs.includes('appHandoffEntryMatchesArtifact'), 'App handoff routing tree should use the same contract matching as the app handoff cards.');
+assert.ok(chatAppHandoffControllerJs.includes('appHandoffEntryMatchesArtifact'), 'App handoff routing tree should use the same contract matching as the app handoff cards.');
 assert.ok(appHandoffGateJs.includes('destinationConnectors'), 'App handoff routing tree should show destination connector/capability hints from app manifests.');
 assert.ok(appManifestRegistryJs.includes("owned_site: { connector: 'publisher', capability: 'site_publish_packet', method: 'publisher_review_or_selected_connector' }"), 'Owned-site Publisher handoff should not default to GitHub PR authority.');
-assert.ok(chatJs.includes("['completed', 'failed', 'blocked', 'waiting'].includes(status)"), 'Chat app handoffs should render when preparation data exists for completed or partial deliveries.');
+assert.ok(chatAppHandoffControllerJs.includes("['completed', 'failed', 'blocked', 'waiting'].includes(status)"), 'Chat app handoffs should render when preparation data exists for completed or partial deliveries.');
 assert.ok(appHandoffGateJs.includes('export function appHandoffRelevanceScore'), 'Generic app handoff cards should score relevance in the handoff gate module.');
 assert.ok(appHandoffGateJs.includes('export function appHandoffSpecificityScore'), 'Generic app handoff cards should rank specialized apps in the handoff gate module.');
 assert.ok(appHandoffGateJs.includes('export function appHandoffRankEntries'), 'App handoff candidate ranking should live with the handoff gate contract matching.');
-assert.ok(chatJs.includes('appHandoffGateRankEntries'), 'Chat should delegate app handoff candidate ranking to the handoff gate module.');
+assert.ok(chatAppHandoffControllerJs.includes('appHandoffGateRankEntries'), 'Chat should delegate app handoff candidate ranking to the handoff gate module.');
 assert.ok(!chatJs.includes('function appHandoffRelevanceScore'), 'Chat must not duplicate app handoff relevance scoring.');
 assert.ok(!chatJs.includes('function appHandoffSpecificityScore'), 'Chat must not duplicate app handoff specificity scoring.');
 assert.ok(appHandoffGateJs.includes('handoffSpecificityScore'), 'Generic app handoff candidates should carry a specificity score.');
 assert.ok(appHandoffGateJs.includes('export function appHandoffIsCaitManagedSurface'), 'App handoff ranking should distinguish CAIt-managed surfaces from future external apps in the handoff gate.');
 assert.ok(!chatJs.includes('function appHandoffIsCaitManagedSurface'), 'Chat must not duplicate CAIt-managed app ranking policy.');
 assert.ok(appHandoffGateJs.includes('broadContractPenalty'), 'App handoff ranking should avoid letting broad generic apps outrank specialized apps by accepting everything.');
-assert.ok(chatJs.includes('function deliveryHandoffArtifactTypes'), 'App handoff scoring should derive explicit artifact types from the delivery.');
+assert.ok(chatAppHandoffControllerJs.includes('function deliveryHandoffArtifactTypes'), 'App handoff scoring should derive explicit artifact types from the delivery.');
 assert.ok(appHandoffGateJs.includes('function addExplicitHandoffArtifactType'), 'App handoff gate should own explicit delivery file artifact metadata normalization.');
 assert.ok(appHandoffGateJs.includes('function isGenericNonHandoffType'), 'App handoff gate should drop generic MIME/content types before app routing.');
 assert.ok(appHandoffGateJs.includes('text_markdown|text_md|text_html|application_json'), 'App handoff gate should not treat normalized MIME types as handoff artifacts.');
 assert.ok(appHandoffGateJs.includes('export function explicitHandoffArtifactTypesFromFile'), 'App handoff gate should expose explicit delivery file artifact metadata extraction.');
 assert.ok(appHandoffGateJs.includes('export function explicitHandoffArtifactTypesFromAuthorityRequest'), 'App handoff gate should expose structured authority_request artifact metadata extraction.');
-assert.ok(chatJs.includes('appHandoffGateExplicitArtifactTypesFromFile'), 'Chat app handoff scoring should consume explicit artifact metadata through the handoff gate.');
-assert.ok(chatJs.includes('appHandoffGateExplicitArtifactTypesFromAuthorityRequest'), 'Chat app handoff scoring should consume authority_request metadata through the handoff gate.');
+assert.ok(chatAppHandoffControllerJs.includes('appHandoffGateExplicitArtifactTypesFromFile'), 'Chat app handoff scoring should consume explicit artifact metadata through the handoff gate.');
+assert.ok(chatAppHandoffControllerJs.includes('appHandoffGateExplicitArtifactTypesFromAuthorityRequest'), 'Chat app handoff scoring should consume authority_request metadata through the handoff gate.');
 assert.ok(appHandoffGateJs.includes('DEFAULT_HANDOFF_ARTIFACT_CAPABILITY_ALIASES'), 'App handoff gate should own artifact capability aliases.');
 assert.ok(appHandoffGateJs.includes('DEFAULT_HANDOFF_ARTIFACT_LABELS'), 'App handoff gate should own artifact labels.');
 assert.ok(appHandoffGateJs.includes('DEFAULT_HANDOFF_ARTIFACT_DESTINATION_HINTS'), 'App handoff gate should own destination hints.');
@@ -1654,21 +1657,21 @@ assert.ok(appHandoffGateJs.includes('Number(entry.handoffRelevanceScore || 0) < 
 assert.ok(!chatJs.includes('appTokens') && !chatJs.includes('jobTokens'), 'App handoff matching must not display apps based on loose token overlap.');
 assert.ok(appHandoffGateJs.includes('handoffRelevanceScore'), 'Generic app handoff candidates should carry a relevance score.');
 assert.ok(!chatJs.includes("id === 'delivery-manager'"), 'Generic app handoffs should not score Deliveries as an app handoff candidate.');
-assert.ok(chatJs.includes('Preparation-layer delivery data is already available to matching SaaS apps'), 'App handoff copy should explain SaaS publish/copy-paste action.');
+assert.ok(chatAppHandoffControllerJs.includes('Preparation-layer delivery data is already available to matching SaaS apps'), 'App handoff copy should explain SaaS publish/copy-paste action.');
 assert.ok(!chatJs.includes('return appManifestSources()\\n    .filter((entry) => {\\n      if (!entry?.id || (!entry.entryUrl && !entry.baseUrl && !entry.handoff?.createUrl)) return false;'), 'App handoff should not display the raw app catalog for every delivery.');
-assert.ok(chatJs.includes('data-app-agent-handoff'), 'Generic app handoff cards should be actionable from delivery chat.');
-assert.ok(chatJs.includes('cait-app-agent-transfer/v1'), 'Generic app handoffs should use the CAIt transfer payload contract.');
-assert.ok(chatJs.includes('handoff?.createUrl'), 'Generic app handoffs should call manifest-declared handoff endpoints.');
-assert.ok(chatJs.includes("`/api/apps/${encodeURIComponent(manifest.id || appId)}/handoff`"), 'Generic app handoffs should use the CAIt same-origin handoff proxy.');
-assert.ok(chatJs.includes('const data = await api(createUrl'), 'Generic app handoff proxy calls should use the chat API helper so CSRF/auth headers are attached.');
+assert.ok(chatAppHandoffControllerJs.includes('data-app-agent-handoff'), 'Generic app handoff cards should be actionable from delivery chat.');
+assert.ok(chatAppHandoffControllerJs.includes('cait-app-agent-transfer/v1'), 'Generic app handoffs should use the CAIt transfer payload contract.');
+assert.ok(chatAppHandoffControllerJs.includes('handoff?.createUrl'), 'Generic app handoffs should call manifest-declared handoff endpoints.');
+assert.ok(chatAppHandoffControllerJs.includes("`/api/apps/${encodeURIComponent(manifest.id || appId)}/handoff`"), 'Generic app handoffs should use the CAIt same-origin handoff proxy.');
+assert.ok(chatAppHandoffControllerJs.includes('const data = await api(createUrl'), 'Generic app handoff proxy calls should use the chat API helper so CSRF/auth headers are attached.');
 assert.ok(/function directAppCommandId[\s\S]{0,900}for \(const app of appManifestSources\(\)\)/.test(chatUsageLibraryControllerJs), 'Direct app chat commands should resolve app names from the manifest registry.');
 assert.ok(chatUsageLibraryControllerJs.includes('directCommandAliases'), 'Direct app chat commands should use manifest-declared command aliases.');
 assert.ok(!chatJs.includes('...(Array.isArray(app.tags) ? app.tags : [])'), 'Direct app chat commands must not match broad app tags such as growth or seo.');
 assert.ok(!/function directAppCommandId[\s\S]{0,220}x\\s\*client\\s\*ops/.test(chatUsageLibraryControllerJs), 'Direct app chat commands must not special-case a CAIt-managed app by hardcoded name.');
-assert.ok(chatJs.includes('appContextFromTransferPayload'), 'Generic app handoff fallback should convert transfer packets into server-side app contexts.');
+assert.ok(chatAppHandoffControllerJs.includes('appContextFromTransferPayload'), 'Generic app handoff fallback should convert transfer packets into server-side app contexts.');
 assert.ok(chatJs.includes('createAppAgentContextOpenUrl'), 'Generic app handoff fallback should create a server-side context open URL.');
-assert.ok(chatJs.includes('cait_app_context_id'), 'Generic app handoff fallback should pass only context identifiers in the app URL.');
-assert.ok(chatJs.includes('/api/app-contexts'), 'Generic app handoff fallback should use the server-side app context API.');
+assert.ok(chatAppHandoffControllerJs.includes('cait_app_context_id'), 'Generic app handoff fallback should pass only context identifiers in the app URL.');
+assert.ok(chatAppHandoffControllerJs.includes('/api/app-contexts'), 'Generic app handoff fallback should use the server-side app context API.');
 assert.ok(!chatJs.includes('function appHandoffQueryFallbackUrl'), 'Chat must not keep app-specific URL payload fallbacks for handoff content.');
 assert.ok(!chatJs.includes('cait_x_post'), 'X Client Ops fallback must not place edited draft text in the app URL.');
 assert.ok(!chatJs.includes('generic_app_query_fallback'), 'Generic app handoff fallback should use server-side app contexts, not query payloads.');
@@ -1809,10 +1812,10 @@ assert.ok(appManifestRegistryJs.includes("'lead_acquisition_request', 'lead_ops_
 assert.ok(appContextDomainJs.includes("'lead_acquisition_request'") && appContextDomainJs.includes("'lead_ops_packet'") && appContextDomainJs.includes("'outreach_plan'"), 'Server app context normalization should preserve Lead Ops acquisition, packet, and outreach plan keys.');
 assert.ok(!chatJs.includes("{ contextPath: '/api/app-contexts' }"), 'Publisher handoff fallback should preserve app-specific context ingest routes instead of forcing the generic app-context endpoint.');
 assert.ok(appManifestRegistryJs.includes("contextIngestUrl: '/api/publisher/context-ingest'"), 'Publisher-specific context ingest should be declared in the app manifest.');
-assert.ok(chatJs.includes("manifest.contextIngestUrl || manifest.context_ingest_url || '/api/app-contexts'"), 'Chat should resolve app context ingest endpoints from the app manifest contract.');
+assert.ok(chatAppHandoffControllerJs.includes("manifest.contextIngestUrl || manifest.context_ingest_url || '/api/app-contexts'"), 'Chat should resolve app context ingest endpoints from the app manifest contract.');
 assert.ok(!chatJs.includes("safeAppId === 'publisher-approval-studio'"), 'Chat should not special-case Publisher context ingest by app id.');
 assert.ok(
-  /apiWithRetry\(contextPath[\s\S]{0,500}statuses:\s*\[408,\s*425,\s*429,\s*500,\s*502,\s*503,\s*504\]/.test(chatJs),
+  /apiWithRetry\(contextPath[\s\S]{0,500}statuses:\s*\[408,\s*425,\s*429,\s*500,\s*502,\s*503,\s*504\]/.test(chatAppHandoffControllerJs),
   'Chat app-context handoff should retry transient server failures before falling back to a context-less app open.'
 );
 assert.ok(chatJs.includes("message.role === 'system' ? 'system' : 'ok'"), 'Chat transcript tracking should not send empty status for system handoff messages.');

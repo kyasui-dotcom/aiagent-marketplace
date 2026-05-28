@@ -30,6 +30,7 @@ const workflowLayeringSource = read('lib/workflow-layering.js');
 const orchestrationSource = read('lib/orchestration.js');
 const sharedSource = read('lib/shared.js');
 const chatSource = read('public/chat.js');
+const chatAppHandoffControllerSource = read('public/chat-app-handoff-controller.js');
 const chatUsageLibraryControllerSource = read('public/chat-usage-library-controller.js');
 const connectorGateSource = read('public/connector-gate.js');
 const chatSessionStateSource = read('public/chat-session-state.js');
@@ -454,15 +455,15 @@ assertNotIncludes(measurementEvidenceGateSource, [
   "growth|go[-\\s]?to[-\\s]?market"
 ], 'public/measurement-evidence-gate.js');
 assert.ok(
-  chatSource.includes('appHandoffGateExplicitArtifactTypesFromFile'),
+  chatAppHandoffControllerSource.includes('appHandoffGateExplicitArtifactTypesFromFile'),
   'chat app handoff routing must consume artifact metadata through app-handoff-gate'
 );
 assert.ok(
-  chatSource.includes('appHandoffGateExplicitArtifactTypesFromAuthorityRequest'),
+  chatAppHandoffControllerSource.includes('appHandoffGateExplicitArtifactTypesFromAuthorityRequest'),
   'chat app handoff routing must consume authority_request artifact metadata through app-handoff-gate'
 );
 assert.ok(
-  chatSource.includes('appHandoffGateRankEntries'),
+  chatAppHandoffControllerSource.includes('appHandoffGateRankEntries'),
   'chat app handoff routing must delegate candidate scoring through app-handoff-gate'
 );
 const authorityArtifactExtractionSource = appHandoffGateSource.slice(
@@ -783,8 +784,11 @@ for (const [moduleName, symbol] of [
   ['public/app-handoff-gate.js', 'renderAppHandoffTree'],
   ['public/agent-progress-view.js', 'renderAgentRunDetailHtml']
 ]) {
+  const delegatingSource = moduleName === 'public/app-handoff-gate.js'
+    ? chatAppHandoffControllerSource
+    : chatSource;
   assert.ok(
-    chatSource.includes(`from './${moduleName.replace('public/', '')}`),
+    delegatingSource.includes(`from './${moduleName.replace('public/', '')}`),
     `chat must delegate ${moduleName} responsibilities to the split module`
   );
   const source = {

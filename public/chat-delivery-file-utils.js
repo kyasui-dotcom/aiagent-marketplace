@@ -319,6 +319,7 @@ export function createChatDeliveryFileUtils(options = {}) {
     copyTextToClipboard,
     deliveryFilePriority,
     downloadTextFile,
+    fileMimeType,
     getDeliveryFile,
     registerDeliveryFile,
     sanitizeDeliveryFileForUser,

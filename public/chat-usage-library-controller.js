@@ -468,6 +468,7 @@ export function createChatUsageLibraryController(options = {}) {
     compactUsageText,
     directAppCommandId,
     groupedAppPanelEntries,
+    isoNow,
     isCoreFeatureAppId,
     libraryCommandScope,
     listValues,
@@ -475,6 +476,7 @@ export function createChatUsageLibraryController(options = {}) {
     recentAppAgentEntries,
     rememberAiAgentUsage,
     rememberAppAgentUsage,
+    usageBadge,
     usageLibraryHtml
   };
 }
