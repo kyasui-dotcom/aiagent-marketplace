@@ -28,6 +28,7 @@ const adminCssPath = new URL('../public/admin.css', import.meta.url);
 const adminJsPath = new URL('../public/admin.js', import.meta.url);
 const clientJsPath = new URL('../public/client.js', import.meta.url);
 const clientDeveloperSurfaceControllerPath = new URL('../public/client-developer-surface-controller.js', import.meta.url);
+const clientSettingsBillingControllerPath = new URL('../public/client-settings-billing-controller.js', import.meta.url);
 const clientRouteAuthControllerPath = new URL('../public/client-route-auth-controller.js', import.meta.url);
 const clientDeliveryActionControllerPath = new URL('../public/client-delivery-action-controller.js', import.meta.url);
 const clientAuthAccessUtilsPath = new URL('../public/client-auth-access-utils.js', import.meta.url);
@@ -124,6 +125,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(fastAuthJsPath)], { std
 execFileSync(process.execPath, ['--check', fileURLToPath(adminJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeveloperSurfaceControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientSettingsBillingControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryActionControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientFlexibleToolUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatHistoryUtilsPath)], { stdio: 'pipe' });
@@ -178,6 +180,7 @@ const adminCss = readFileSync(adminCssPath, 'utf8');
 const adminJs = readFileSync(adminJsPath, 'utf8');
 const clientJs = readFileSync(clientJsPath, 'utf8');
 const clientDeveloperSurfaceControllerJs = readFileSync(clientDeveloperSurfaceControllerPath, 'utf8');
+const clientSettingsBillingControllerJs = readFileSync(clientSettingsBillingControllerPath, 'utf8');
 const clientRouteAuthControllerJs = readFileSync(clientRouteAuthControllerPath, 'utf8');
 const clientDeliveryActionControllerJs = readFileSync(clientDeliveryActionControllerPath, 'utf8');
 const clientAuthAccessUtilsJs = readFileSync(clientAuthAccessUtilsPath, 'utf8');
@@ -1991,7 +1994,10 @@ assert.ok(providerMoneyReadiness.includes('money_actions_blocked: true'), 'Agent
 assert.ok(/Listing can proceed, but CAIt no longer processes payments, billing, donations, or payouts/.test(clientJs), 'Agent registration UI copy should allow listing while warning that money actions are removed.');
 assert.ok(clientJs.includes('A Stripe Payment Link for external donation support is only a future option after review'), 'Agent registration UI copy should name reviewed external donation support.');
 for (const field of ['billingPhone', 'billingPostalCode', 'billingRegion', 'billingCity', 'billingAddressLine1', 'billingAddressLine2']) {
-  assert.ok(clientJs.includes(field), `Settings UI should save provider registration billing field ${field}.`);
+  assert.ok(
+    [clientJs, clientSettingsBillingControllerJs].some((source) => source.includes(field)),
+    `Settings UI should save provider registration billing field ${field}.`
+  );
 }
 assert.ok(workerAssets.includes("'/chat.js'"));
 assert.ok(workerAssets.includes("'/chat.html'"));
