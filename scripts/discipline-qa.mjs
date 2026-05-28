@@ -52,6 +52,7 @@ const growthOpsSource = read('public/growth-ops.js');
 const pricingOpsSource = read('public/pricing-ops.js');
 const clientSource = read('public/client.js');
 const clientDeliveryActionControllerSource = read('public/client-delivery-action-controller.js');
+const clientOpenChatServerOrderSource = read('public/client-open-chat-server-order-utils.js');
 const clientOpenChatPreorderIntentSource = read('public/client-open-chat-preorder-intent-utils.js');
 const clientOpenChatPreLlmGuardSource = read('public/client-open-chat-pre-llm-guard-utils.js');
 const clientOpenChatQuickAnswerSource = read('public/client-open-chat-quick-answer-utils.js');
@@ -880,7 +881,8 @@ assert.ok(
   'client pre-dispatch UI answers must remain client-owned, even when split into a dedicated client utility module'
 );
 assert.ok(
-  clientSource.includes('pattern_server_leader_intake_contract'),
+  `${clientSource}\n${clientOpenChatServerOrderSource}`.includes('pattern_server_leader_intake_contract')
+    && clientSource.includes('createClientOpenChatServerOrderUtils'),
   'client leader intake must render server/agent-owned intake contracts'
 );
 assert.ok(

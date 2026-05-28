@@ -165,6 +165,7 @@ import { createClientOpenChatPreorderIntentUtils } from './client-open-chat-preo
 import { createClientOpenChatPreLlmGuardUtils } from './client-open-chat-pre-llm-guard-utils.js?v=20260527a';
 import { createClientOpenChatNaturalFlowUtils } from './client-open-chat-natural-flow-utils.js?v=20260527a';
 import { createClientOpenChatOrderPrepUtils } from './client-open-chat-order-prep-utils.js?v=20260527a';
+import { createClientOpenChatServerOrderUtils } from './client-open-chat-server-order-utils.js?v=20260529a';
 import { createClientOpenChatQuickAnswerUtils } from './client-open-chat-quick-answer-utils.js?v=20260527a';
 import { createClientOpenChatLocalAnswerUtils } from './client-open-chat-local-answer-utils.js?v=20260527a';
 import { createClientOpenChatCommandUtils } from './client-open-chat-command-utils.js?v=20260527a';
@@ -818,6 +819,42 @@ const {
   dispatchOpenChatConfirmedChoice,
   enterOpenChatRevisionChoice
 } = clientOpenChatPreorderUtils;
+
+const clientOpenChatServerOrderUtils = createClientOpenChatServerOrderUtils({
+  getState: () => state,
+  requestJson: (url, options) => api(url, options),
+  isStructuredOrderBrief: (brief) => isStructuredOrderBrief(brief),
+  chatEngineIsNeedsInputResponse: (value) => chatEngineIsNeedsInputResponse(value),
+  looksJapanese: (value) => looksJapanese(value),
+  normalizeLeaderIntakeQuestions: (value) => normalizeOpenChatDynamicLeaderIntakeQuestions(value),
+  normalizeLeaderIntakeTask: (taskType) => openChatNormalizeLeaderIntakeTask(taskType),
+  currentRoutingTask: () => currentRoutingTask(),
+  pendingLeaderIntakeContext: () => openChatPendingLeaderIntakeContext(),
+  implicitLeaderIntakeTask: (prompt) => openChatImplicitLeaderIntakeTask(prompt),
+  combineLeaderIntakePrompt: (previous, next) => combinedLeaderIntakePrompt(previous, next),
+  requestedOrderStrategy: () => requestedOrderStrategy(),
+  conversationContextForLlm: () => openChatConversationContextForLlm(),
+  handleNeedsInputResponse: (response, draft) => handleNeedsInputResponse(response, draft),
+  isLeaderIntakeTask: (taskType) => openChatIsLeaderIntakeTask(taskType),
+  apiPayloadFromOrderDraft: (draft) => apiPayloadFromOrderDraft(draft),
+  userOnlyContextForIntake: (prompt) => openChatUserOnlyContextForIntake(prompt),
+  structuredOrderBriefParts: (brief) => structuredOrderBriefParts(brief),
+  inferClientTaskSequence: (taskType, prompt) => inferClientTaskSequence(taskType, prompt),
+  missingLeaderIntakeFields: (taskType, prompt, inputCounts) => openChatMissingLeaderIntakeFields(taskType, prompt, inputCounts),
+  orderInputCounts: (input) => orderInputCounts(input),
+  orderInputFromComposer: () => orderInputFromComposer()
+});
+const {
+  currentServerResolvedIntentForPrompt,
+  applyServerResolvedIntent,
+  currentServerPreparedOrderForPrompt,
+  applyServerPreparedOrder,
+  resolveWorkIntentViaApi,
+  prepareWorkOrderViaApi,
+  resolveOpenChatServerLeaderIntake,
+  preflightWorkOrderViaApi,
+  openChatServerLeaderIntakeGuardAnswer
+} = clientOpenChatServerOrderUtils;
 
 const clientOpenChatPreorderIntentUtils = createClientOpenChatPreorderIntentUtils({
   looksJapanese: (value) => looksJapanese(value),
@@ -1567,59 +1604,6 @@ const {
   updateGenericDeliverableDraft
 } = clientDeliveryActionController;
 
-function normalizeServerResolvedIntentPrompt(prompt = '') {
-  return String(prompt || '').trim();
-}
-
-function currentServerResolvedIntentForPrompt(prompt = '') {
-  const currentPrompt = normalizeServerResolvedIntentPrompt(prompt);
-  const resolved = state.serverResolvedIntent || null;
-  if (!resolved || !currentPrompt) return null;
-  if (normalizeServerResolvedIntentPrompt(resolved.prompt) !== currentPrompt) return null;
-  return resolved;
-}
-
-function applyServerResolvedIntent(result = null, prompt = '') {
-  const currentPrompt = normalizeServerResolvedIntentPrompt(prompt);
-  if (!result || result.kind !== 'order' || !currentPrompt) {
-    state.serverResolvedIntent = null;
-    return null;
-  }
-  state.serverResolvedIntent = {
-    prompt: currentPrompt,
-    taskType: String(result.taskType || '').trim().toLowerCase(),
-    strategyHint: String(result.strategyHint || '').trim().toLowerCase(),
-    routeHint: String(result.routeHint || '').trim().toLowerCase(),
-    reason: String(result.reason || '').trim()
-  };
-  return state.serverResolvedIntent;
-}
-
-function currentServerPreparedOrderForPrompt(prompt = '') {
-  const currentPrompt = normalizeServerResolvedIntentPrompt(prompt);
-  const prepared = state.serverPreparedOrder || null;
-  if (!prepared || !currentPrompt) return null;
-  if (normalizeServerResolvedIntentPrompt(prepared.prompt) !== currentPrompt) return null;
-  return prepared;
-}
-
-function applyServerPreparedOrder(result = null, prompt = '') {
-  const currentPrompt = normalizeServerResolvedIntentPrompt(prompt);
-  if (!result || !currentPrompt) {
-    state.serverPreparedOrder = null;
-    return null;
-  }
-  state.serverPreparedOrder = {
-    prompt: currentPrompt,
-    taskType: String(result.taskType || '').trim().toLowerCase(),
-    requestedOrderStrategy: String(result.requestedOrderStrategy || '').trim().toLowerCase(),
-    resolvedOrderStrategy: String(result.resolvedOrderStrategy || '').trim().toLowerCase(),
-    routeHint: String(result.routeHint || '').trim().toLowerCase(),
-    reason: String(result.reason || '').trim()
-  };
-  return state.serverPreparedOrder;
-}
-
 function scheduleOrderComposerRender() {
   if (orderComposerInputTimer) window.clearTimeout(orderComposerInputTimer);
   orderComposerInputTimer = window.setTimeout(() => {
@@ -1795,182 +1779,6 @@ function guestTrialPromoTextForDraft(draft = currentOrderDraft(), prompt = draft
 
 async function maybeClaimGuestTrialCredits(auth = state.snapshot?.auth || {}) {
   return null;
-}
-
-async function resolveWorkIntentViaApi(prompt = '') {
-  const text = String(prompt || '').trim();
-  if (!text || isStructuredOrderBrief(text)) return null;
-  try {
-    const result = await api('/api/work/resolve-intent', {
-      method: 'POST',
-      body: JSON.stringify({ prompt: text })
-    });
-    return result?.kind ? result : null;
-  } catch {
-    return null;
-  }
-}
-
-async function prepareWorkOrderViaApi(prompt = '', requestedStrategy = 'auto', options = {}) {
-  const text = String(prompt || '').trim();
-  if (!text || isStructuredOrderBrief(text)) return null;
-  const inputCounts = options.inputCounts || options.input_counts || {};
-  try {
-    const result = await api('/api/work/prepare-order', {
-      method: 'POST',
-      body: JSON.stringify({
-        prompt: text,
-        requestedStrategy: String(requestedStrategy || 'auto').trim().toLowerCase(),
-        ...(options.taskType || options.task_type ? { task_type: String(options.taskType || options.task_type || '').trim() } : {}),
-        ...(options.intakeAnswered === true || options.intake_answered === true ? { intake_answered: true } : {}),
-        input_counts: {
-          url_count: Number(inputCounts.urlCount || inputCounts.url_count || 0),
-          file_count: Number(inputCounts.fileCount || inputCounts.file_count || 0),
-          file_chars: Number(inputCounts.fileChars || inputCounts.file_chars || 0)
-        },
-        ...(Array.isArray(options.conversationContext || options.conversation_context)
-          ? { conversation_context: options.conversationContext || options.conversation_context }
-          : {})
-      })
-    });
-    return result?.taskType ? result : null;
-  } catch (error) {
-    const data = error?.data && typeof error.data === 'object' ? error.data : {};
-    if (/openai_intent|intent/i.test(String(data.code || data.error || error?.message || ''))) {
-      return {
-        ok: false,
-        status: 'intent_failed',
-        code: String(data.code || 'openai_intent_failed'),
-        error: String(data.error || error?.message || 'OpenAI intent classification failed.'),
-        source: String(data.source || 'openai')
-      };
-    }
-    return null;
-  }
-}
-
-function preparedOrderBriefFromServer(result = {}, fallbackPrompt = '') {
-  return String(result?.orderBrief || result?.order_brief || result?.preparedBrief || result?.prepared_brief || fallbackPrompt || '').trim();
-}
-
-function serverIntakeAnswerFromPreparedOrder(result = {}, prompt = '') {
-  const questions = normalizeOpenChatDynamicLeaderIntakeQuestions(result.questions || result.intake?.questions || []);
-  if (!questions.length) return null;
-  const taskType = openChatNormalizeLeaderIntakeTask(result.inferred_task_type || result.taskType || result.task_type || '') || result.taskType || 'research';
-  const ja = looksJapanese(prompt);
-  return {
-    kind: 'clarify',
-    tone: 'warn',
-    patternId: 'pattern_server_leader_intake_contract',
-    responseSource: result.source || 'server_contract',
-    suppressTrio: true,
-    leaderIntakePrompt: String(prompt || result.prompt || '').trim(),
-    leaderIntakeTask: String(taskType || '').trim(),
-    body: [
-      result.message || (ja
-        ? 'チームリーダーが動く前に、agent側のintake契約から確認が返りました。'
-        : 'The agent-side intake contract needs a few details before dispatch.'),
-      '',
-      ...questions.map((question, index) => `${index + 1}. ${question}`),
-      '',
-      ja
-        ? 'まだ実行も課金もしていません。回答後、サーバー側の契約で注文内容を整えます。'
-        : 'Nothing has run or been billed. After you answer, the server-side contract will prepare the order.'
-    ].filter(Boolean).join('\n'),
-    status: 'Need agent-owned intake before SEND ORDER.\n\nNo order was created and no billing occurred.'
-  };
-}
-
-function serverPreparedOrderAnswerFromResult(result = {}, sourcePrompt = '', options = {}) {
-  const nextPrompt = preparedOrderBriefFromServer(result, sourcePrompt);
-  if (!nextPrompt) return null;
-  const ja = looksJapanese(sourcePrompt);
-  return {
-    kind: 'assist',
-    tone: 'ok',
-    patternId: 'pattern_server_prepared_order_contract',
-    responseSource: result.source || 'server_contract',
-    nextPrompt,
-    exposeNextPrompt: false,
-    clearLeaderIntake: true,
-    clearClarifyOptions: true,
-    skipOpenAiPolish: true,
-    body: ja
-      ? [
-          options.followup ? '回答を反映しました。同じ質問は繰り返しません。' : 'agent/server側の契約で注文内容を準備しました。',
-          '',
-          '内容が合っていれば、このまま SEND ORDER できます。',
-          '',
-          `ルート: ${result.resolvedOrderStrategy === 'multi' ? 'Leader Agent' : 'Specialist Agent'}`,
-          result.reason ? `理由: ${result.reason}` : '',
-          '',
-          'まだ実行も課金もしていません。'
-        ].filter(Boolean).join('\n')
-      : [
-          options.followup ? 'I merged your answer and will not repeat the same questions.' : 'The agent/server-side contract prepared this order.',
-          '',
-          'If this looks right, you can SEND ORDER now.',
-          '',
-          `Route: ${result.resolvedOrderStrategy === 'multi' ? 'Leader Agent' : 'Specialist Agent'}`,
-          result.reason ? `Reason: ${result.reason}` : '',
-          '',
-          'Nothing has run or been billed yet.'
-        ].filter(Boolean).join('\n'),
-    status: 'Draft prepared by server contract. Ready for SEND ORDER.'
-  };
-}
-
-async function buildOpenChatServerLeaderIntakeAnswer(prompt = '', inputCounts = {}, draft = {}) {
-  const text = String(prompt || '').trim();
-  if (!text || isStructuredOrderBrief(text)) return null;
-  const pending = openChatPendingLeaderIntakeContext();
-  const taskType = pending?.taskType
-    || openChatImplicitLeaderIntakeTask(text)
-    || openChatNormalizeLeaderIntakeTask(currentRoutingTask())
-    || '';
-  if (!taskType) return null;
-  const sourcePrompt = pending ? combinedLeaderIntakePrompt(pending.prompt, text) : text;
-  const prepared = await prepareWorkOrderViaApi(sourcePrompt, requestedOrderStrategy(), {
-    taskType,
-    intakeAnswered: Boolean(pending),
-    inputCounts,
-    conversationContext: openChatConversationContextForLlm()
-  });
-  if (!prepared) return null;
-  if (chatEngineIsNeedsInputResponse(prepared)) {
-    handleNeedsInputResponse(prepared, {
-      ...draft,
-      prompt: text,
-      task_type: prepared.inferred_task_type || prepared.taskType || taskType
-    });
-    return serverIntakeAnswerFromPreparedOrder(prepared, text);
-  }
-  if (pending || openChatIsLeaderIntakeTask(prepared.taskType || taskType)) {
-    applyServerPreparedOrder(prepared, sourcePrompt);
-    return serverPreparedOrderAnswerFromResult(prepared, sourcePrompt, { followup: Boolean(pending) });
-  }
-  return null;
-}
-
-async function preflightWorkOrderViaApi(draft = {}) {
-  const prompt = String(draft?.prompt || '').trim();
-  if (!prompt) return null;
-  try {
-    return await api('/api/work/preflight-order', {
-      method: 'POST',
-      body: JSON.stringify({
-        ...apiPayloadFromOrderDraft(draft),
-        prompt,
-        task_type: draft.task_type || '',
-        order_strategy: draft.order_strategy || 'auto',
-        resolved_order_strategy: draft.resolved_order_strategy || ''
-      })
-    });
-  } catch (error) {
-    return error?.data && typeof error.data === 'object'
-      ? { ...error.data, ok: false }
-      : null;
-  }
 }
 
 function listCreatorEstimateForDraft(draft = {}) {
@@ -3154,50 +2962,6 @@ function withOpenChatResponseSource(answer = null, responseSource = 'local', det
     llmProvider: responseSource,
     fallbackDetail: String(detail || '').slice(0, 120)
   };
-}
-
-function openChatLlmLeaderIntakeGuardCandidate(prompt = '', result = {}, fallbackAnswer = null) {
-  const action = String(result?.action || '').trim();
-  const rawBrief = String(result?.order_brief || result?.orderBrief || '').trim();
-  const userContext = openChatUserOnlyContextForIntake(prompt);
-  const briefParts = structuredOrderBriefParts(rawBrief);
-  const resultIntent = String(result?.intent || '').trim();
-  const candidates = [
-    briefParts.taskType,
-    fallbackAnswer?.leaderIntakeTask,
-    openChatImplicitLeaderIntakeTask(userContext),
-    openChatImplicitLeaderIntakeTask(rawBrief),
-    inferClientTaskSequence('', userContext)[0],
-    inferClientTaskSequence('', rawBrief)[0]
-  ];
-  const taskType = candidates.map(openChatNormalizeLeaderIntakeTask).find(Boolean) || '';
-  if (!taskType) return null;
-  const isOrderLike = ['prepare_order', 'use_previous_brief'].includes(action) || rawBrief || fallbackAnswer?.leaderIntakeTask;
-  const isLeaderIntent = Boolean(openChatImplicitLeaderIntakeTask(userContext))
-    || openChatIsLeaderIntakeTask(taskType);
-  if (!isOrderLike && !isLeaderIntent) return null;
-  const missing = openChatMissingLeaderIntakeFields(taskType, userContext, orderInputCounts(orderInputFromComposer()));
-  if (!missing.length) return null;
-  return { taskType, userContext, missing };
-}
-
-async function openChatServerLeaderIntakeGuardAnswer(prompt = '', result = {}, fallbackAnswer = null, inputCounts = {}) {
-  const candidate = openChatLlmLeaderIntakeGuardCandidate(prompt, result, fallbackAnswer);
-  if (!candidate) return null;
-  const prepared = await prepareWorkOrderViaApi(candidate.userContext || prompt, requestedOrderStrategy(), {
-    taskType: candidate.taskType,
-    inputCounts,
-    conversationContext: openChatConversationContextForLlm()
-  });
-  if (!prepared) return null;
-  if (chatEngineIsNeedsInputResponse(prepared)) {
-    return serverIntakeAnswerFromPreparedOrder(prepared, prompt);
-  }
-  if (openChatIsLeaderIntakeTask(prepared.taskType || candidate.taskType)) {
-    applyServerPreparedOrder(prepared, candidate.userContext || prompt);
-    return serverPreparedOrderAnswerFromResult(prepared, candidate.userContext || prompt, { followup: false });
-  }
-  return null;
 }
 
 function openChatPreparedOrderActions(answerKind = '', nextPrompt = '') {
@@ -6167,7 +5931,7 @@ async function createAndOptionallyRunJob() {
   }
   let quickAnswer = structuredDispatchPrompt
     ? null
-    : await buildOpenChatServerLeaderIntakeAnswer(draft.prompt, inputCounts, draft);
+    : await resolveOpenChatServerLeaderIntake(draft.prompt, inputCounts, draft);
   if (!quickAnswer && !structuredDispatchPrompt) {
     quickAnswer = buildOpenChatPreLlmGuardAnswer(draft.prompt, inputCounts);
   }
