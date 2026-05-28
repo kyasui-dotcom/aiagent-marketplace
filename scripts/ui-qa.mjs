@@ -52,6 +52,8 @@ const chatUsageLibraryControllerPath = new URL('../public/chat-usage-library-con
 const chatCatalogRuntimePath = new URL('../public/chat-catalog-runtime.js', import.meta.url);
 const chatSchedulePanelControllerPath = new URL('../public/chat-schedule-panel-controller.js', import.meta.url);
 const chatAppHandoffControllerPath = new URL('../public/chat-app-handoff-controller.js', import.meta.url);
+const chatConversationOwnerUtilsPath = new URL('../public/chat-conversation-owner-utils.js', import.meta.url);
+const chatIntentGuardUtilsPath = new URL('../public/chat-intent-guard-utils.js', import.meta.url);
 const accountSettingsJsPath = new URL('../public/account-settings.js', import.meta.url);
 const connectorGateJsPath = new URL('../public/connector-gate.js', import.meta.url);
 const chatSessionStateJsPath = new URL('../public/chat-session-state.js', import.meta.url);
@@ -130,6 +132,8 @@ execFileSync(process.execPath, ['--check', fileURLToPath(chatUsageLibraryControl
 execFileSync(process.execPath, ['--check', fileURLToPath(chatCatalogRuntimePath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatSchedulePanelControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatAppHandoffControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatConversationOwnerUtilsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatIntentGuardUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(connectorGateJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatSessionStateJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(orderRuntimeJsPath)], { stdio: 'pipe' });
@@ -231,6 +235,8 @@ const chatUsageLibraryControllerJs = readFileSync(chatUsageLibraryControllerPath
 const chatCatalogRuntimeJs = readFileSync(chatCatalogRuntimePath, 'utf8');
 const chatSchedulePanelControllerJs = readFileSync(chatSchedulePanelControllerPath, 'utf8');
 const chatAppHandoffControllerJs = readFileSync(chatAppHandoffControllerPath, 'utf8');
+const chatConversationOwnerUtilsJs = readFileSync(chatConversationOwnerUtilsPath, 'utf8');
+const chatIntentGuardUtilsJs = readFileSync(chatIntentGuardUtilsPath, 'utf8');
 const accountSettingsJs = readFileSync(accountSettingsJsPath, 'utf8');
 const connectorGateJs = readFileSync(connectorGateJsPath, 'utf8');
 const chatSessionStateJs = readFileSync(chatSessionStateJsPath, 'utf8');
@@ -550,6 +556,14 @@ assert.equal(
 );
 assert.ok(chatJs.includes('jobBlockedForSaasHandoff(job)'), 'SaaS handoff blockers should render as delivery/app-handoff states.');
 assert.ok(chatJs.includes("from './chat-delivery-file-utils.js"), 'Chat delivery file behavior should be delegated to the chat delivery file module.');
+assert.ok(chatJs.includes("from './chat-conversation-owner-utils.js"), 'Chat conversation owner resolution should be delegated to the conversation owner module.');
+assert.ok(chatConversationOwnerUtilsJs.includes('export function conversationOwnerFromPrepared'), 'Chat conversation owner module should own prepared-order owner resolution.');
+assert.ok(chatConversationOwnerUtilsJs.includes('export function withConversationOwner'), 'Chat conversation owner module should own owner metadata application.');
+assert.ok(!chatJs.includes('function conversationOwnerFromPrepared'), 'Chat entrypoint should not retain conversation owner resolution after the module split.');
+assert.ok(chatJs.includes("from './chat-intent-guard-utils.js"), 'Chat prompt injection and Open Chat intent guards should be delegated to the intent guard module.');
+assert.ok(chatIntentGuardUtilsJs.includes('export function promptInjectionGuard'), 'Chat intent guard module should own prompt injection detection.');
+assert.ok(chatIntentGuardUtilsJs.includes('export function normalizeLlmIntakeQuestions'), 'Chat intent guard module should own Open Chat intake question normalization.');
+assert.ok(!chatJs.includes('function promptInjectionGuard'), 'Chat entrypoint should not retain prompt injection guard implementation after the module split.');
 assert.ok(chatDeliveryFileUtilsJs.includes('export function sanitizeDeliveryMarkdownForUser'), 'Chat delivery rendering should sanitize internal workflow prompt text before display or download.');
 assert.ok(chatJs.includes('sanitizeDeliveryFileForUser(file'), 'Chat delivery file cards should register sanitized files, not raw provider markdown.');
 assert.ok(!chatJs.includes('sanitizeDeliveryMarkdownForUser(cleanReadableBundleContent'), 'Chat delivery must not generate readable delivery bundles from internal handoff files.');
@@ -1152,7 +1166,7 @@ assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
 assert.ok(chatHtml.includes('/chat.css?v=20260526f'), 'Chat page should load the current compact chat header and composer styles.');
-assert.ok(chatHtml.includes('/chat.js?v=20260529b'), 'Chat page should load the current compact chat header and composer controller.');
+assert.ok(chatHtml.includes('/chat.js?v=20260529c'), 'Chat page should load the current compact chat header and composer controller.');
 assert.ok(chatHtml.includes('id="chatHeaderMenu"') && chatHtml.includes('☰ Menu'), 'Chat header should collapse secondary actions into a menu.');
 assert.ok(chatHtml.includes('Chat history') && chatHtml.includes('Schedules') && chatHtml.includes('Agents and workers'), 'Chat menu should use specific workspace action labels.');
 assert.ok(chatHtml.includes('App tools') && chatHtml.includes('Apps hub'), 'Chat menu should distinguish app tools from the Apps hub page.');
@@ -1431,7 +1445,11 @@ assert.ok(
   chatJs.includes('includeAdaptivePending: true') || chatWorkflowProgressUtilsJs.includes('includeAdaptivePending: true'),
   'Agent maps should show adaptive planned later layers instead of hiding all future action work.'
 );
-assert.ok(chatJs.includes('function explicitLeaderChangeTaskTypeFromText'), 'Chat intake routing should use a narrow explicit-leader helper instead of broad role-specific fallbacks.');
+assert.ok(
+  chatJs.includes('explicitLeaderChangeTaskTypeFromText')
+    && chatConversationOwnerUtilsJs.includes('export function explicitLeaderChangeTaskTypeFromText'),
+  'Chat intake routing should use a narrow explicit-leader helper instead of broad role-specific fallbacks.'
+);
 assert.ok(!chatJs.includes('function leaderTextHasCmoSignal'), 'Chat client must not keep broad CMO intent routing outside the CMO leader definition.');
 assert.ok(!workIntentResolver.includes('isBroadMarketingGrowthIntentText'), 'Shared client intent resolver must not route broad growth/marketing prompts directly to CMO.');
 assert.ok(!clientJs.includes('pushCmoGrowthTasks'), 'Open Chat client must not duplicate CMO workflow task expansion.');
