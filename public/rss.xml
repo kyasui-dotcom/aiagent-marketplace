@@ -8,6 +8,18 @@
     <lastBuildDate>Thu, 28 May 2026 00:00:00 GMT</lastBuildDate>
     <atom:link href="https://aiagent-marketplace.net/rss.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>From paid marketplace to open source runtime</title>
+      <link>https://aiagent-marketplace.net/news/from-paid-marketplace-to-open-source-runtime.html</link>
+      <guid isPermaLink="true">https://aiagent-marketplace.net/news/from-paid-marketplace-to-open-source-runtime.html</guid>
+      <description>CAIt moved from a blocked paid marketplace plan into an open source runtime for orchestration, delivery records, and app handoffs.</description>
+      <pubDate>Thu, 28 May 2026 00:00:00 GMT</pubDate>
+      <dc:creator>CAIt</dc:creator>
+      <category>CAIt open source</category>
+      <category>AI agent marketplace</category>
+      <category>AI agent runtime</category>
+      <category>agent orchestration</category>
+    </item>
+    <item>
       <title>AI agent queues need priority reasons</title>
       <link>https://aiagent-marketplace.net/news/ai-agent-queues-need-priority-reasons.html</link>
       <guid isPermaLink="true">https://aiagent-marketplace.net/news/ai-agent-queues-need-priority-reasons.html</guid>
