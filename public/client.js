@@ -215,6 +215,8 @@ import { createClientRunComposerController } from './client-run-composer-control
 import { createClientAgentCatalogController } from './client-agent-catalog-controller.js?v=20260528a';
 import { createClientRunHistoryController } from './client-run-history-controller.js?v=20260529a';
 import { createClientRequesterScopeUtils } from './client-requester-scope-utils.js?v=20260529a';
+import { createClientAgentSetupFlowController } from './client-agent-setup-flow-controller.js?v=20260529a';
+import { createClientConnectHubController } from './client-connect-hub-controller.js?v=20260529a';
 
 const $ = (id) => document.getElementById(id);
 const PRODUCT_NAME = 'CAIt';
@@ -355,6 +357,31 @@ const state = {
   deliveryActionDraftsScope: '',
   marketingTimelineItems: []
 };
+
+const clientAgentSetupFlowController = createClientAgentSetupFlowController({
+  state,
+  els,
+  productName: PRODUCT_NAME,
+  productShortName: PRODUCT_SHORT_NAME,
+  connectorActionLabel: (...args) => connectorActionLabel(...args),
+  isGithubAuthorized: (...args) => isGithubAuthorized(...args),
+  isGithubLinked: (...args) => isGithubLinked(...args),
+  selectedRepoFromPicker: (...args) => selectedRepoFromPicker(...args),
+  setElementVisible: (...args) => setElementVisible(...args)
+});
+
+const clientConnectHubController = createClientConnectHubController({
+  state,
+  els,
+  developerSurfacesNotice: DEVELOPER_SURFACES_NOTICE,
+  developerSurfacesStatus: DEVELOPER_SURFACES_STATUS,
+  activeApiKeys: (...args) => activeApiKeys(...args),
+  canUseGithubAgentFlow: (...args) => canUseGithubAgentFlow(...args),
+  connectorActionLabel: (...args) => connectorActionLabel(...args),
+  isGithubAuthorized: (...args) => isGithubAuthorized(...args),
+  isGithubLinked: (...args) => isGithubLinked(...args),
+  setButtonAccess: (...args) => setButtonAccess(...args)
+});
 
 const clientRequesterScopeUtils = createClientRequesterScopeUtils({
   getState: () => state
@@ -2044,125 +2071,19 @@ function focusWorkResults() {
 }
 
 function hasManifestDraft() {
-  return Boolean(String(els.manifestJson?.value || '').trim() || String(els.manifestUrl?.value || '').trim());
+  return clientAgentSetupFlowController.hasManifestDraft();
 }
 
 function resetAgentSetupFlow(options = {}) {
-  state.agentSetupStarted = false;
-  state.agentSetupMode = '';
-  state.agentSetupCompletedId = null;
-  state.showAgentList = false;
-  if (options.clearManifest) {
-    if (els.agentSkillMd) els.agentSkillMd.value = '';
-    if (els.manifestJson) els.manifestJson.value = '';
-    if (els.manifestUrl) els.manifestUrl.value = '';
-  }
-  if (options.clearSelection) {
-    state.selectedAgentId = null;
-  }
+  return clientAgentSetupFlowController.resetAgentSetupFlow(options);
 }
 
 function completeAgentSetup(agentId) {
-  state.agentSetupStarted = true;
-  state.agentSetupMode = '';
-  state.agentSetupCompletedId = agentId || null;
-  state.showAgentList = true;
+  return clientAgentSetupFlowController.completeAgentSetup(agentId);
 }
 
 function renderAgentSetupFlow(auth = state.snapshot?.auth || {}) {
-  const hasAgents = Array.isArray(state.snapshot?.agents) && state.snapshot.agents.length > 0;
-  const completedAgent = state.agentSetupCompletedId
-    ? state.snapshot?.agents?.find((agent) => agent.id === state.agentSetupCompletedId) || null
-    : null;
-  const setupStarted = Boolean(state.agentSetupStarted || state.agentSetupMode || state.agentSetupCompletedId);
-  const setupMode = String(state.agentSetupMode || '');
-  const setupCompleted = Boolean(state.agentSetupCompletedId);
-  const showAgentList = Boolean(state.showAgentList || hasAgents);
-  const loggedIn = Boolean(auth?.loggedIn);
-  const githubLinked = isGithubLinked(auth);
-  const githubAuthorized = isGithubAuthorized(auth);
-  const githubReady = Boolean(auth?.githubAppConfigured);
-  const reposLoaded = Array.isArray(state.repos) && state.repos.length > 0;
-  const repoSelected = Boolean(selectedRepoFromPicker());
-  let statusTitle = 'Browse ready agents or list your own.';
-  let statusBody = 'Start by trying a managed sample agent. Developers can click LIST YOUR AGENT to publish from GitHub or a manifest.';
-  let tone = 'info';
-  const showSetupControls = Boolean(setupStarted || setupCompleted);
-
-  setElementVisible(els.agentSetupControls, showSetupControls);
-  setElementVisible(els.startAgentOnboardingBtn, !showSetupControls);
-  setElementVisible(els.useGithubOnboardingBtn, setupStarted && !setupMode && !setupCompleted);
-  setElementVisible(els.useManualOnboardingBtn, setupStarted && !setupMode && !setupCompleted);
-  setElementVisible(els.resetAgentOnboardingBtn, setupStarted && !setupCompleted);
-  setElementVisible(els.addAnotherAgentBtn, setupCompleted);
-  setElementVisible(els.checkAgentListBtn, false);
-  setElementVisible(els.agentSetupPanels, setupStarted && !setupCompleted && Boolean(setupMode));
-  setElementVisible(els.agentManualPanel, setupMode === 'manual' && !setupCompleted);
-  setElementVisible(els.agentGithubPanel, setupMode === 'github' && !setupCompleted);
-  setElementVisible(els.agentListPanels, showAgentList);
-  setElementVisible(els.agentFlowGithubLoginBtn, setupMode === 'github' && (!loggedIn || !githubAuthorized));
-  setElementVisible(els.installGithubAppBtn, setupMode === 'github' && loggedIn && githubAuthorized && githubReady && !reposLoaded);
-  setElementVisible(els.loadReposBtn, setupMode === 'github' && loggedIn && githubAuthorized);
-  setElementVisible(els.repoSearch, setupMode === 'github' && loggedIn && githubAuthorized);
-  setElementVisible(els.repoPrevBtn, setupMode === 'github' && loggedIn && githubAuthorized && reposLoaded);
-  setElementVisible(els.repoNextBtn, setupMode === 'github' && loggedIn && githubAuthorized && reposLoaded);
-  setElementVisible(els.repoPagerStatus, setupMode === 'github');
-  setElementVisible(els.repoPicker, setupMode === 'github' && loggedIn && githubAuthorized);
-  setElementVisible(els.repoPreview, setupMode === 'github');
-  setElementVisible(els.clearRepoSelectionBtn, setupMode === 'github' && loggedIn && githubAuthorized && repoSelected);
-  setElementVisible(els.generateRepoManifestBtn, setupMode === 'github' && loggedIn && githubAuthorized && repoSelected);
-  setElementVisible(els.importSelectedRepoBtn, setupMode === 'github' && loggedIn && githubAuthorized && repoSelected);
-  setElementVisible(els.createAdapterPrBtn, setupMode === 'github' && loggedIn && githubAuthorized && repoSelected);
-  setElementVisible(els.importDeployedAdapterBtn, setupMode === 'github' && loggedIn && githubAuthorized && repoSelected);
-  setElementVisible(els.githubInstallHelp, setupMode === 'github' && loggedIn && githubAuthorized && githubReady && !reposLoaded);
-  if (els.agentFlowGithubLoginBtn) {
-    els.agentFlowGithubLoginBtn.textContent = !loggedIn
-      ? 'GITHUB SIGN IN'
-      : githubLinked
-        ? 'REFRESH GITHUB ACCESS'
-        : connectorActionLabel('connect_github');
-  }
-
-  if (setupCompleted) {
-    statusTitle = completedAgent ? `${completedAgent.name} registered.` : 'Agent registered.';
-    statusBody = 'The agent list below is updated. Verify the new agent there, or LIST ANOTHER AGENT to register another one.';
-    tone = 'ok';
-  } else if (!setupStarted) {
-    statusTitle = hasAgents ? 'Agent catalog is ready.' : 'Start agent registration.';
-    statusBody = hasAgents
-      ? 'Pick USE IN CAIt Chat on a sample agent to prefill Chat, or click LIST YOUR AGENT to publish your own.'
-      : 'Click LIST YOUR AGENT. Then choose GitHub repo or direct manifest import.';
-  } else if (!setupMode) {
-    statusTitle = 'Choose registration method.';
-    statusBody = 'Use GITHUB REPO if the app already lives in GitHub. Use PASTE MANIFEST if you already have the manifest details.';
-  } else if (setupMode === 'manual') {
-    statusTitle = 'Paste or import a manifest.';
-    statusBody = 'Fill the fields directly, paste JSON, or import a manifest URL. After import, verify the agent from AGENTS.';
-  } else if (!loggedIn || !githubLinked) {
-    statusTitle = 'Step 1. Connect GitHub.';
-    statusBody = loggedIn ? 'This account is signed in, but GitHub is not linked yet. Connect GitHub, then continue with one repo.' : 'Sign in and connect GitHub, then load repos and register an agent.';
-  } else if (!githubAuthorized) {
-    statusTitle = 'Step 1. Refresh GitHub access.';
-    statusBody = `GitHub is already linked to this ${PRODUCT_NAME} account, but this browser session does not have active GitHub access. Refresh GitHub access, then load repos.`;
-  } else if (!reposLoaded) {
-    statusTitle = 'Step 2. Load repos.';
-    statusBody = githubReady
-      ? `Use INSTALL OR CONFIGURE APP only if the repo is not listed yet. If you are not the repo admin, ask the owner to install ${PRODUCT_NAME}. Then return here and click LOAD MY REPOS.`
-      : 'Use LOAD MY REPOS to fetch the repositories available in this session.';
-  } else if (!repoSelected) {
-    statusTitle = 'Step 3. Choose one repo.';
-    statusBody = `Pick the app repo you want to turn into an agent. If the repo is already listed, skip install and continue. If it is missing and you are not the repo admin, ask the owner to install ${PRODUCT_NAME}.`;
-  } else {
-    const repo = selectedRepoFromPicker();
-    statusTitle = `Step 4. Set up ${repo?.name || 'this repo'}.`;
-    statusBody = 'Use GENERATE DRAFT JSON, IMPORT SELECTED MANIFEST, CREATE ADAPTER PR, or IMPORT + VERIFY. Use CHANGE REPO if you want to switch to another repo.';
-    tone = 'ok';
-  }
-
-  if (els.agentSetupStatus) {
-    els.agentSetupStatus.textContent = `${statusTitle}\n\n${statusBody}`;
-    els.agentSetupStatus.className = `detail-box action-card ${tone} compact-card`;
-  }
+  return clientAgentSetupFlowController.renderAgentSetupFlow(auth);
 }
 
 function renderWorkFlow(snapshot = state.snapshot || {}) {
@@ -2175,89 +2096,7 @@ function renderWorkFlow(snapshot = state.snapshot || {}) {
 }
 
 function renderConnectHub(snapshot = state.snapshot || {}) {
-  const auth = snapshot?.auth || {};
-  const account = snapshot?.accountSettings || {};
-  const orderKeys = activeApiKeys(account?.apiAccess?.orderKeys || []);
-  const liveOrderKeys = orderKeys.filter((key) => String(key?.mode || 'live').toLowerCase() !== 'test');
-  const testOrderKeys = orderKeys.filter((key) => String(key?.mode || 'live').toLowerCase() === 'test');
-  const provider = auth?.authProvider || (auth?.githubAppConfigured ? 'github-app' : auth?.githubConfigured ? 'github-oauth' : 'not configured');
-  const repoCount = state.repos.length;
-  const filteredRepoCount = state.filteredRepos.length;
-  const canLogin = Boolean(auth?.githubConfigured || auth?.githubAppConfigured);
-  const githubLinked = isGithubLinked(auth);
-  const githubAuthorized = isGithubAuthorized(auth);
-  const githubFlowReady = canUseGithubAgentFlow(auth);
-
-  if (els.connectGithubStatus) {
-    const lines = [];
-    if (!auth?.loggedIn || !githubLinked) {
-      lines.push(
-        'GitHub connection: not linked',
-        `Auth mode available: ${canLogin ? provider : 'not configured'}`,
-        `GitHub App configured: ${auth?.githubAppConfigured ? 'yes' : 'no'}`,
-        `Repos loaded in this browser: ${repoCount}`,
-        auth?.loggedIn
-          ? 'Next: connect GitHub, then install the app if the repo list is still empty.'
-          : 'Next: sign in or connect GitHub, then install the app if the repo list is still empty.'
-      );
-    } else if (!githubAuthorized) {
-      lines.push(
-        'GitHub connection: linked',
-        `Auth mode available: ${canLogin ? provider : 'not configured'}`,
-        `GitHub App configured: ${auth?.githubAppConfigured ? 'yes' : 'no'}`,
-        `Repos loaded in this browser: ${repoCount}`,
-        'Next: refresh GitHub access in this browser, then load repos.'
-      );
-    } else {
-      lines.push(
-        `GitHub connection: linked`,
-        `Auth mode: ${provider}`,
-        `GitHub App configured: ${auth?.githubAppConfigured ? 'yes' : 'no'}`,
-        `Repos loaded: ${repoCount}${repoCount ? ` (${filteredRepoCount} in current filter)` : ''}`,
-        repoCount
-          ? 'Next: open AGENTS to import a manifest or create an adapter PR.'
-          : 'Next: install the app or load repos again to fetch installation-authorized repos.'
-      );
-    }
-    els.connectGithubStatus.textContent = lines.join('\n');
-  }
-
-  if (els.connectOrderApiStatus) {
-    const lines = [
-      `Public order endpoint: ${DEVELOPER_SURFACES_STATUS}`,
-      DEVELOPER_SURFACES_NOTICE,
-      `Previous CAIt API keys on this account: ${orderKeys.length} (${liveOrderKeys.length} live / ${testOrderKeys.length} test)`,
-      'Next: use Chat, Apps, Deliveries, or Publisher in the browser. External API ordering will return after the contract is stable.'
-    ];
-    els.connectOrderApiStatus.textContent = lines.join('\n');
-  }
-
-  if (els.connectAgentApiStatus) {
-    const lines = [
-      `Agent import endpoint: ${DEVELOPER_SURFACES_STATUS}`,
-      DEVELOPER_SURFACES_NOTICE,
-      `Previous CAIt API keys on this account: ${orderKeys.length}`,
-      'Next: manage provider setup from the browser. External agent API registration will return after the contract is stable.'
-    ];
-    els.connectAgentApiStatus.textContent = lines.join('\n');
-  }
-
-  if (els.connectHubGithubBtn) {
-    els.connectHubGithubBtn.textContent = !auth?.loggedIn
-      ? 'GITHUB SIGN IN'
-      : githubLinked
-        ? 'REFRESH GITHUB ACCESS'
-        : connectorActionLabel('connect_github');
-  }
-  setButtonAccess(els.connectHubGithubBtn, canLogin && (!auth?.loggedIn || !githubAuthorized));
-  setButtonAccess(els.connectHubInstallBtn, Boolean(auth?.githubAppConfigured) && githubFlowReady);
-  setButtonAccess(els.connectHubLoadReposBtn, githubFlowReady);
-  setButtonAccess(els.connectHubOpenAgentsBtn, true);
-  setButtonAccess(els.connectHubOpenSettingsOrderBtn, true);
-  setButtonAccess(els.connectHubCopyOrderBtn, true);
-  setButtonAccess(els.connectHubOpenAgentsPublishBtn, true);
-  setButtonAccess(els.connectHubOpenSettingsAgentBtn, true);
-  setButtonAccess(els.connectHubCopyAgentBtn, true);
+  return clientConnectHubController.renderConnectHub(snapshot);
 }
 
 function openFeedbackForm() {
