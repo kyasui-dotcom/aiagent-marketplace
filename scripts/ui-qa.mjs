@@ -40,6 +40,7 @@ const clientOpenChatPatternGuardUtilsPath = new URL('../public/open-chat-pattern
 const analyticsLoaderPath = new URL('../public/analytics-loader.js', import.meta.url);
 const chatJsPath = new URL('../public/chat.js', import.meta.url);
 const chatDeliveryFileUtilsPath = new URL('../public/chat-delivery-file-utils.js', import.meta.url);
+const chatWorkflowProgressUtilsPath = new URL('../public/chat-workflow-progress-utils.js', import.meta.url);
 const accountSettingsJsPath = new URL('../public/account-settings.js', import.meta.url);
 const connectorGateJsPath = new URL('../public/connector-gate.js', import.meta.url);
 const chatSessionStateJsPath = new URL('../public/chat-session-state.js', import.meta.url);
@@ -73,6 +74,7 @@ const workActionRegistryPath = new URL('../public/work-action-registry.js', impo
 const workIntentResolverPath = new URL('../public/work-intent-resolver.js', import.meta.url);
 const workerPath = new URL('../worker.js', import.meta.url);
 const workerAssetsPath = new URL('../lib/worker-assets.js', import.meta.url);
+const workflowDispatchRuntimePath = new URL('../lib/workflow-dispatch-runtime.js', import.meta.url);
 const httpCorePath = new URL('../lib/http-core.js', import.meta.url);
 const authHelpersPath = new URL('../lib/auth-helpers.js', import.meta.url);
 const authRoutesPath = new URL('../lib/routes/auth.js', import.meta.url);
@@ -109,6 +111,7 @@ const naturalLanguageNewsPath = new URL('../public/news/order-natural-language-r
 const feedXmlPath = new URL('../public/feed.xml', import.meta.url);
 
 execFileSync(process.execPath, ['--check', fileURLToPath(chatJsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatWorkflowProgressUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(connectorGateJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatSessionStateJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(orderRuntimeJsPath)], { stdio: 'pipe' });
@@ -194,6 +197,7 @@ const clientAnalyticsUtilsJs = readFileSync(clientAnalyticsUtilsPath, 'utf8');
 const analyticsLoaderJs = readFileSync(analyticsLoaderPath, 'utf8');
 const chatJs = readFileSync(chatJsPath, 'utf8');
 const chatDeliveryFileUtilsJs = readFileSync(chatDeliveryFileUtilsPath, 'utf8');
+const chatWorkflowProgressUtilsJs = readFileSync(chatWorkflowProgressUtilsPath, 'utf8');
 const accountSettingsJs = readFileSync(accountSettingsJsPath, 'utf8');
 const connectorGateJs = readFileSync(connectorGateJsPath, 'utf8');
 const chatSessionStateJs = readFileSync(chatSessionStateJsPath, 'utf8');
@@ -225,6 +229,7 @@ const chatCss = readFileSync(chatCssPath, 'utf8');
 const stylesCss = readFileSync(stylesCssPath, 'utf8');
 const worker = readFileSync(workerPath, 'utf8');
 const workerAssets = readFileSync(workerAssetsPath, 'utf8');
+const workflowDispatchRuntimeJs = readFileSync(workflowDispatchRuntimePath, 'utf8');
 const httpCore = readFileSync(httpCorePath, 'utf8');
 const authHelpers = readFileSync(authHelpersPath, 'utf8');
 const authRoutes = readFileSync(authRoutesPath, 'utf8');
@@ -701,7 +706,10 @@ assert.ok(
   'Leader upstream layers should keep data/research/planning capped while expanding action-specific preparation.'
 );
 assert.ok(worker.includes('DISPATCH_SCHEDULE_TIMEOUT_MS'), 'Scheduled dispatch attempts should have a timeout instead of refreshing forever.');
-assert.ok(worker.includes('firstDispatchRequestedAt'), 'Dispatch scheduling should preserve the first requested timestamp for stalled-run diagnosis.');
+assert.ok(
+  worker.includes('firstDispatchRequestedAt') || workflowDispatchRuntimeJs.includes('firstDispatchRequestedAt'),
+  'Dispatch scheduling should preserve the first requested timestamp for stalled-run diagnosis.'
+);
 assert.ok(worker.includes('scheduleAttempts'), 'Dispatch scheduling should count scheduling retries separately from agent dispatch attempts.');
 assert.ok(loginHtml.includes('CAIt | Sign in or sign up'), 'Login page should be an explicit sign-in/sign-up screen.');
 assert.ok(loginHtml.includes('id="loginGoogleBtn"'), 'Login page should offer Google.');
@@ -1094,7 +1102,7 @@ assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
 assert.ok(chatHtml.includes('/chat.css?v=20260526f'), 'Chat page should load the current compact chat header and composer styles.');
-assert.ok(chatHtml.includes('/chat.js?v=20260528a'), 'Chat page should load the current compact chat header and composer controller.');
+assert.ok(chatHtml.includes('/chat.js?v=20260528b'), 'Chat page should load the current compact chat header and composer controller.');
 assert.ok(chatHtml.includes('id="chatHeaderMenu"') && chatHtml.includes('☰ Menu'), 'Chat header should collapse secondary actions into a menu.');
 assert.ok(chatHtml.includes('Chat history') && chatHtml.includes('Schedules') && chatHtml.includes('Agents and workers'), 'Chat menu should use specific workspace action labels.');
 assert.ok(chatHtml.includes('App tools') && chatHtml.includes('Apps hub'), 'Chat menu should distinguish app tools from the Apps hub page.');
@@ -1350,9 +1358,15 @@ assert.ok(chatHtml.includes('deliveryFormatSelect') && chatJs.includes('selected
 assert.ok(chatEngine.includes('delivery_format_preference') && chatEngine.includes('delivery_format'), 'Chat order payloads should preserve the selected delivery shape.');
 assert.ok(chatJs.includes('renderInitialAgentMap(created'), 'Send order should attach the initial Agent map to accepted/recovered workflow orders.');
 assert.ok(chatJs.includes('showWorkflowProgressMap(job);'), 'Polling/backfill should keep the Agent map progress tree updated in chat.');
-assert.ok(chatJs.includes('data-agent-run-open'), 'Agent map nodes should open a per-agent status and intermediate-deliverable detail panel.');
+assert.ok(
+  chatJs.includes('data-agent-run-open') || chatWorkflowProgressUtilsJs.includes('data-agent-run-open'),
+  'Agent map nodes should open a per-agent status and intermediate-deliverable detail panel.'
+);
 assert.ok(chatJs.includes('function openAgentRunDetail'), 'Agent map clicks should fetch and render the selected child run detail.');
-assert.ok(chatJs.includes('function renderAgentRunDetailHtml'), 'Agent map run details should render status, logs, text, and files from the child job.');
+assert.ok(
+  chatJs.includes('function renderAgentRunDetailHtml') || chatWorkflowProgressUtilsJs.includes('function renderAgentRunDetailHtml'),
+  'Agent map run details should render status, logs, text, and files from the child job.'
+);
 assert.ok(chatCss.includes('.agent-run-detail-panel'), 'Chat CSS should style the Agent map run detail panel.');
 assert.ok(chatJs.includes('notifyOrderMilestone(job)'), 'Polling/backfill should notify chat only through Order milestones.');
 assert.ok(!chatJs.includes('function authorityRequestFromText') && !connectorGateJs.includes('delivery_text_approval'), 'Chat connector approval controls should come from structured agent authority requests, not text inference.');
@@ -1363,7 +1377,10 @@ assert.ok(chatJs.includes("fetchVisibleJob(orderId, { force: true })"), 'Explici
 assert.ok(chatJs.includes('appendOrderStatusCheck(job)'), 'Explicit Check status clicks should visibly report the refreshed order state.');
 assert.ok(chatCss.includes('.message-meta') && chatCss.includes('text-transform: none'), 'Chat message labels should preserve CAIt casing instead of rendering CAIT.');
 assert.ok(chatJs.includes('function threadIsNearBottom'), 'Chat should only auto-scroll progress updates when the reader is already near the latest message.');
-assert.ok(chatJs.includes('includeAdaptivePending: true'), 'Agent maps should show adaptive planned later layers instead of hiding all future action work.');
+assert.ok(
+  chatJs.includes('includeAdaptivePending: true') || chatWorkflowProgressUtilsJs.includes('includeAdaptivePending: true'),
+  'Agent maps should show adaptive planned later layers instead of hiding all future action work.'
+);
 assert.ok(chatJs.includes('function explicitLeaderChangeTaskTypeFromText'), 'Chat intake routing should use a narrow explicit-leader helper instead of broad role-specific fallbacks.');
 assert.ok(!chatJs.includes('function leaderTextHasCmoSignal'), 'Chat client must not keep broad CMO intent routing outside the CMO leader definition.');
 assert.ok(!workIntentResolver.includes('isBroadMarketingGrowthIntentText'), 'Shared client intent resolver must not route broad growth/marketing prompts directly to CMO.');
@@ -1542,7 +1559,11 @@ assert.equal(
 assert.ok(chatJs.includes('function renderAppHandoffTools'), 'Chat deliveries should expose generic app handoff cards.');
 assert.ok(chatJs.includes('function renderAppHandoffTree'), 'Chat deliveries should render the preparation artifact to app routing tree.');
 assert.ok(chatJs.includes('function renderAppHandoffRoutingPreview'), 'Agent map progress should preview SaaS routing before final delivery.');
-assert.ok(chatJs.includes('handoffHtml: renderAppHandoffRoutingPreview(job)'), 'Workflow progress maps should include the preparation artifact to SaaS app route.');
+assert.ok(
+  chatJs.includes('handoffHtml: renderAppHandoffRoutingPreview(job)')
+    || chatWorkflowProgressUtilsJs.includes('handoffHtml: renderAppHandoffRoutingPreview(job)'),
+  'Workflow progress maps should include the preparation artifact to SaaS app route.'
+);
 assert.ok(appHandoffTransferJs.includes("content_type: artifactTypes[0] || file?.content_type || file?.contentType || file?.artifact_type || file?.artifactType || file?.type || ''"), 'App context handoff should preserve explicit delivery artifact type contracts before MIME fallbacks.');
 assert.ok(appHandoffTransferJs.includes('export function appContextFromTransferPayload'), 'Generic app handoff fallback context conversion should live in the transfer module.');
 assert.ok(appHandoffTransferJs.includes('delivery_files: [...transferDeliveryFiles, ...fileArtifacts]'), 'Generic app handoff fallback should promote transfer delivery artifacts to server-side delivery_files.');
@@ -1777,7 +1798,11 @@ const restoredSessionOrderCardSource = chatJs.slice(chatJs.indexOf('function res
 assert.ok(!restoredSessionOrderCardSource.includes('deliveryText(job)'), 'Restored order history cards should not duplicate completed delivery bodies; render the delivery card instead.');
 assert.ok(chatJs.includes('data-chat-order-retry'), 'Restored order cards should offer an explicit retry confirmation path.');
 assert.ok(chatJs.includes('deliveryOrderActionsHtml'), 'Terminal delivery updates should keep status/retry actions visible after connector returns.');
-assert.ok(chatJs.includes("return ['completed', 'failed', 'timed_out'].includes"), 'Blocked approval waits should stay progress states, not terminal deliveries.');
+assert.ok(
+  chatJs.includes("return ['completed', 'failed', 'timed_out'].includes")
+    || chatWorkflowProgressUtilsJs.includes("return ['completed', 'failed', 'timed_out'].includes"),
+  'Blocked approval waits should stay progress states, not terminal deliveries.'
+);
 assert.ok(!chatJs.includes('restored-order-progress'), 'Restored order cards should not dump worker progress details into chat.');
 const backfillChatDeliveriesSource = chatJs.slice(chatJs.indexOf('async function backfillChatDeliveries'), chatJs.indexOf('function startDeliveryBackfillLoop'));
 assert.ok(backfillChatDeliveriesSource.indexOf('if (jobHasDeliveryResult(job))') < backfillChatDeliveriesSource.indexOf('showWorkflowProgressMap(job);'), 'Delivery backfill should not show progress maps for terminal restored history before deciding whether to render a delivery.');
@@ -1788,9 +1813,20 @@ assert.ok(!chatJs.includes('Live progress polling reached its limit'), 'Polling 
 assert.ok(chatJs.includes('pollCount >= CHATUX_PROGRESS_MAX_POLLS'), 'Chat polling should still have an explicit long-running order limit.');
 assert.ok(agentProgressViewJs.includes('progress-narrator-bar') && agentProgressViewJs.includes('role="progressbar"'), 'Live order progress should render a visible progress bar.');
 assert.ok(chatJs.includes('showProgressNarrator(progressNarratorTextForJob(job), progressNarratorOptionsForJob(job))'), 'Polling should update the live progress bar from job progress.');
-assert.ok(chatJs.includes('function workflowRunWaitStatus'), 'Chat progress should describe long-running provider/agent waits instead of looking stuck.');
-assert.ok(chatJs.includes('dispatchInProgressAt') && chatJs.includes('dispatchTimeoutMs'), 'Chat progress should show elapsed generation time and the configured wait window.');
-assert.ok(chatJs.includes('Waiting for the generation provider response'), 'Long generation waits should be visible in the live progress narrator.');
+assert.ok(
+  chatJs.includes('function workflowRunWaitStatus') || chatWorkflowProgressUtilsJs.includes('function workflowRunWaitStatus'),
+  'Chat progress should describe long-running provider/agent waits instead of looking stuck.'
+);
+assert.ok(
+  (chatJs.includes('dispatchInProgressAt') && chatJs.includes('dispatchTimeoutMs'))
+    || (chatWorkflowProgressUtilsJs.includes('dispatchInProgressAt') && chatWorkflowProgressUtilsJs.includes('dispatchTimeoutMs')),
+  'Chat progress should show elapsed generation time and the configured wait window.'
+);
+assert.ok(
+  chatJs.includes('Waiting for the generation provider response')
+    || chatWorkflowProgressUtilsJs.includes('Waiting for the generation provider response'),
+  'Long generation waits should be visible in the live progress narrator.'
+);
 assert.ok(workflowReconcileState.includes('dispatchCompletionStatus') && workflowReconcileState.includes('dispatchTimeoutMs'), 'Workflow child snapshots should expose generic dispatch wait state to chat progress.');
 assert.ok(chatCss.includes('.progress-narrator.ok .progress-narrator-caret'), 'Chat CSS should stop the narrator caret animation when progress is done or paused.');
 assert.ok(chatCss.includes('.progress-narrator-bar') && chatCss.includes('--progress-value'), 'Chat CSS should style the live order progress bar.');
@@ -2045,7 +2081,11 @@ assert.ok(googleIntegration.includes('googleApiRecoveryHint'), 'Google integrati
 assert.ok(workerAndIntegrationRoutes.includes('Promise.allSettled(['), 'Worker GA4 detail rows should not make the whole GA4 report fail when one breakdown fails.');
 assert.ok(workerAndIntegrationRoutes.includes('function normalizeGoogleGa4PropertyName'), 'Worker should accept numeric GA4 property IDs and normalize them.');
 assert.ok(workerAndIntegrationRoutes.includes("'sessionDefaultChannelGroup', 'sessionSourceMedium'"), 'Worker should fetch channel source/referral detail from GA4.');
-assert.ok(worker.includes('Math.min(20, Number(options.limit || 12)'), 'Worker queued sweep should allow a larger per-minute dispatch batch.');
+assert.ok(
+  workflowDispatchRuntimeJs.includes('Math.min(20, Number(options.limit || 12)')
+    && [worker, workflowDispatchRuntimeJs].some((source) => source.includes('Math.min(20, Number(env?.QUEUED_DISPATCH_SWEEP_LIMIT || 12) || 12)')),
+  'Worker queued sweep should allow a larger per-minute dispatch batch.'
+);
 assert.ok(workerAndIntegrationRoutes.includes('/searchAnalytics/query'), 'Worker should call the Search Console Search Analytics API.');
 assert.ok(workerIntegrationDeliveryRoutes.includes("repo_path: String(body.repo_path || body.repoPath || draft.repoPath"), 'Delivery routes should pass Publisher PR handoff paths into GitHub executor PR creation.');
 assert.ok(accountEvents.includes('async function mutateAccountByLogin'), 'OAuth callbacks should have an account-scoped storage mutation helper.');
