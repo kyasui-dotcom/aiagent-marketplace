@@ -55,6 +55,10 @@ const chatSchedulePanelControllerPath = new URL('../public/chat-schedule-panel-c
 const chatAppHandoffControllerPath = new URL('../public/chat-app-handoff-controller.js', import.meta.url);
 const chatConversationOwnerUtilsPath = new URL('../public/chat-conversation-owner-utils.js', import.meta.url);
 const chatIntentGuardUtilsPath = new URL('../public/chat-intent-guard-utils.js', import.meta.url);
+const chatTelemetryPath = new URL('../public/chat-telemetry.js', import.meta.url);
+const chatDisplayUtilsPath = new URL('../public/chat-display-utils.js', import.meta.url);
+const chatDeliveryPreferenceControllerPath = new URL('../public/chat-delivery-preference-controller.js', import.meta.url);
+const chatSessionModelPath = new URL('../public/chat-session-model.js', import.meta.url);
 const accountSettingsJsPath = new URL('../public/account-settings.js', import.meta.url);
 const connectorGateJsPath = new URL('../public/connector-gate.js', import.meta.url);
 const chatSessionStateJsPath = new URL('../public/chat-session-state.js', import.meta.url);
@@ -135,6 +139,10 @@ execFileSync(process.execPath, ['--check', fileURLToPath(chatSchedulePanelContro
 execFileSync(process.execPath, ['--check', fileURLToPath(chatAppHandoffControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatConversationOwnerUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatIntentGuardUtilsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatTelemetryPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatDisplayUtilsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatDeliveryPreferenceControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatSessionModelPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(connectorGateJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatSessionStateJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(orderRuntimeJsPath)], { stdio: 'pipe' });
@@ -239,6 +247,9 @@ const chatSchedulePanelControllerJs = readFileSync(chatSchedulePanelControllerPa
 const chatAppHandoffControllerJs = readFileSync(chatAppHandoffControllerPath, 'utf8');
 const chatConversationOwnerUtilsJs = readFileSync(chatConversationOwnerUtilsPath, 'utf8');
 const chatIntentGuardUtilsJs = readFileSync(chatIntentGuardUtilsPath, 'utf8');
+const chatTelemetryJs = readFileSync(chatTelemetryPath, 'utf8');
+const chatDeliveryPreferenceControllerJs = readFileSync(chatDeliveryPreferenceControllerPath, 'utf8');
+const chatSessionModelJs = readFileSync(chatSessionModelPath, 'utf8');
 const accountSettingsJs = readFileSync(accountSettingsJsPath, 'utf8');
 const connectorGateJs = readFileSync(connectorGateJsPath, 'utf8');
 const chatSessionStateJs = readFileSync(chatSessionStateJsPath, 'utf8');
@@ -741,7 +752,7 @@ assert.ok(analyticsLoaderJs.includes("trafic_type: 'internal'"), 'Shared analyti
 assert.ok(analyticsLoaderJs.includes('window.navigator?.webdriver'), 'Shared analytics loader should recognize Playwright browser traffic as internal.');
 assert.ok(clientAnalyticsUtilsJs.includes("traffic_type: 'internal'"), 'Legacy client analytics should mark test traffic as internal.');
 assert.ok(loginJs.includes("traffic_type: 'internal'"), 'Login analytics events should mark test traffic as internal.');
-assert.ok(chatJs.includes('trackChatIntakeStarted') && chatJs.includes('chat_intake_started'), 'Chat should emit GA4 chat_intake_started when an order/intake flow starts.');
+assert.ok(chatJs.includes('trackChatIntakeStarted') && chatTelemetryJs.includes('chat_intake_started'), 'Chat should emit GA4 chat_intake_started when an order/intake flow starts.');
 assert.ok(chatJs.includes('order_submitted') && chatJs.includes('trackChatGa4Once(`order_submitted:'), 'Chat should emit GA4 order_submitted when an order is accepted.');
 assert.ok(worker.includes('GA4_AUTH_EVENT_COOKIE') && worker.includes('ga4AuthEventCookieForAccount'), 'Auth callbacks should hand browser-readable login/sign_up GA4 events to the next page.');
 assert.ok(clientAnalyticsUtilsJs.includes('CLIENT_GA4_EVENT_NAME_MAP') && clientAnalyticsUtilsJs.includes('purchase'), 'Legacy client analytics should map order, lead, checkout, and purchase events into GA4 names.');
@@ -1168,7 +1179,7 @@ assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
 assert.ok(chatHtml.includes('/chat.css?v=20260526f'), 'Chat page should load the current compact chat header and composer styles.');
-assert.ok(chatHtml.includes('/chat.js?v=20260529c'), 'Chat page should load the current compact chat header and composer controller.');
+assert.ok(chatHtml.includes('/chat.js?v=20260529d'), 'Chat page should load the current compact chat header and composer controller.');
 assert.ok(chatHtml.includes('id="chatHeaderMenu"') && chatHtml.includes('☰ Menu'), 'Chat header should collapse secondary actions into a menu.');
 assert.ok(chatHtml.includes('Chat history') && chatHtml.includes('Schedules') && chatHtml.includes('Agents and workers'), 'Chat menu should use specific workspace action labels.');
 assert.ok(chatHtml.includes('App tools') && chatHtml.includes('Apps hub'), 'Chat menu should distinguish app tools from the Apps hub page.');
@@ -1420,7 +1431,7 @@ assert.ok(chatJs.includes('orderMilestoneNoticeKeys'), 'Chat milestone notificat
 assert.ok(chatJs.includes('orderMilestoneChatExists'), 'Reloaded chats should not duplicate already-rendered milestone messages.');
 assert.ok(!chatJs.includes('Sending order. I will keep polling and post progress here.'), 'Chat should not post worker-log style send/progress noise.');
 assert.ok(chatJs.includes('function renderInitialAgentMap'), 'Chat should render the initial Agent map immediately after order creation.');
-assert.ok(chatHtml.includes('deliveryFormatSelect') && chatJs.includes('selectedDeliveryFormat'), 'Chat orders should let users choose delivery shape before dispatch.');
+assert.ok(chatHtml.includes('deliveryFormatSelect') && chatJs.includes('selectedDeliveryFormat') && chatDeliveryPreferenceControllerJs.includes('selectedDeliveryFormatLabel'), 'Chat orders should let users choose delivery shape before dispatch.');
 assert.ok(chatEngine.includes('delivery_format_preference') && chatEngine.includes('delivery_format'), 'Chat order payloads should preserve the selected delivery shape.');
 assert.ok(chatJs.includes('renderInitialAgentMap(created'), 'Send order should attach the initial Agent map to accepted/recovered workflow orders.');
 assert.ok(chatJs.includes('showWorkflowProgressMap(job);'), 'Polling/backfill should keep the Agent map progress tree updated in chat.');

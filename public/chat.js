@@ -85,12 +85,16 @@ import {
   isLeaderCatalogQuestionIntentText,
   isNonOrderConversationIntentText
 } from './work-intent-resolver.js?v=20260526a';
+import { compact, escapeHtml, htmlToPlainText } from './chat-display-utils.js?v=20260529d';
 import { createChatDeliveryFileUtils } from './chat-delivery-file-utils.js?v=20260528a';
+import { createChatDeliveryPreferenceController } from './chat-delivery-preference-controller.js?v=20260529d';
 import { createChatWorkflowProgressUtils } from './chat-workflow-progress-utils.js?v=20260528b';
 import { createChatUsageLibraryController } from './chat-usage-library-controller.js?v=20260528e';
 import { createChatCatalogRuntime } from './chat-catalog-runtime.js?v=20260529a';
 import { createChatSchedulePanelController } from './chat-schedule-panel-controller.js?v=20260529a';
 import { createChatAppHandoffController } from './chat-app-handoff-controller.js?v=20260529a';
+import { createChatSessionModel } from './chat-session-model.js?v=20260529d';
+import { createChatTelemetry } from './chat-telemetry.js?v=20260529d';
 import {
   agentOwner,
   conversationOwnerFromPrepared,
@@ -249,7 +253,6 @@ const state = {
 const agentMapRunStore = new Map();
 let agentMapRunKeyCounter = 0;
 const processedAppContextIds = new Set();
-const chatGa4EventKeys = new Set();
 let appContextBroadcastChannel = null;
 let pendingServerChatSessionSnapshot = null;
 let chatSessionSnapshotTimer = null;
@@ -334,6 +337,21 @@ const {
   usageLibraryHtml
 } = chatUsageLibraryController;
 
+const chatSessionModel = createChatSessionModel({
+  state,
+  compact,
+  isoNow,
+  cloneForSession: (value, options) => safeJsonClone(value, options)
+});
+const {
+  ensureChatSessionId,
+  makeChatTranscriptId,
+  chatSessionTitle,
+  normalizeChatSession,
+  upsertChatSession,
+  currentChatSessionPayload
+} = chatSessionModel;
+
 const chatAppHandoffController = createChatAppHandoffController({
   appAgentManifests: APP_AGENT_MANIFESTS,
   returnPath: CHATUX_RETURN_PATH,
@@ -414,43 +432,18 @@ const {
 
 const $ = (id) => document.getElementById(id);
 
-function ga4SafeString(value = '', max = 120) {
-  return String(value ?? '')
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, max);
-}
+const chatTelemetry = createChatTelemetry({
+  window,
+  getCurrentChatSessionId: () => state.currentChatSessionId || '',
+  getVisitorId: () => state.visitorId || '',
+  getActiveLeaderTaskType: () => state.activeLeader?.taskType || '',
+  chatLanguage
+});
+const {
+  trackChatGa4Once,
+  trackChatIntakeStarted
+} = chatTelemetry;
 
-function trackChatGa4Event(eventName = '', params = {}) {
-  try {
-    if (typeof window.caitTrackGa4Event !== 'function') return false;
-    return window.caitTrackGa4Event(eventName, {
-      source: 'chat',
-      chat_session_id: ga4SafeString(state.currentChatSessionId || '', 80),
-      ...params
-    });
-  } catch {
-    return false;
-  }
-}
-
-function trackChatGa4Once(key = '', eventName = '', params = {}) {
-  const safeKey = ga4SafeString(key, 160);
-  if (!safeKey || chatGa4EventKeys.has(safeKey)) return false;
-  chatGa4EventKeys.add(safeKey);
-  return trackChatGa4Event(eventName, params);
-}
-
-function trackChatIntakeStarted(prompt = '', source = 'chat_submit') {
-  const sessionKey = state.currentChatSessionId || state.visitorId || 'anonymous';
-  return trackChatGa4Once(`chat_intake_started:${sessionKey}`, 'chat_intake_started', {
-    source,
-    prompt_length: String(prompt || '').length,
-    language: chatLanguage(prompt),
-    active_leader: state.activeLeader?.taskType || ''
-  });
-}
 const els = {
   authStatus: $('authStatus'),
   chatThread: $('chatThread'),
@@ -481,6 +474,14 @@ const els = {
   utilityModalCloseBtn: $('utilityModalCloseBtn')
 };
 
+const chatDeliveryPreferenceController = createChatDeliveryPreferenceController({
+  getValue: () => els.deliveryFormatSelect?.value
+});
+const {
+  selectedDeliveryFormat,
+  selectedDeliveryFormatLabel
+} = chatDeliveryPreferenceController;
+
 const PROMPT_PLACEHOLDERS = {
   default: {
     en: 'Example: I want to improve website acquisition',
@@ -499,172 +500,6 @@ const PROMPT_PLACEHOLDERS = {
     ja: '新しい依頼を書くか、状態確認をするか、「このオーダーの続きとして: ...」と明示してください...'
   }
 };
-
-const DELIVERY_FORMAT_LABELS = Object.freeze({
-  chat_summary: 'Chat summary',
-  files: 'Files',
-  review_packets: 'Review packets',
-  planning_options: 'Planning options',
-  approval_queue: 'Approval queue'
-});
-
-function selectedDeliveryFormat() {
-  return String(els.deliveryFormatSelect?.value || 'chat_summary').trim() || 'chat_summary';
-}
-
-function selectedDeliveryFormatLabel(format = selectedDeliveryFormat()) {
-  return DELIVERY_FORMAT_LABELS[String(format || '').trim()] || DELIVERY_FORMAT_LABELS.chat_summary;
-}
-
-function escapeHtml(value = '') {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function compact(value = '', max = 280) {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  return text.length <= max ? text : `${text.slice(0, max - 1).trim()}...`;
-}
-
-function compactChatTitle(value = '') {
-  return compact(value || 'New chat', 72) || 'New chat';
-}
-
-function htmlToPlainText(html = '') {
-  const wrapper = document.createElement('div');
-  wrapper.innerHTML = String(html || '');
-  return String(wrapper.textContent || '').replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-}
-
-function makeChatSessionId() {
-  return `chatux_session_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function ensureChatSessionId(options = {}) {
-  if (!state.currentChatSessionId && options.force) state.currentChatSessionId = makeChatSessionId();
-  return state.currentChatSessionId || '';
-}
-
-function makeChatTranscriptId(sessionId = '') {
-  const safeSessionId = String(sessionId || ensureChatSessionId({ force: true }) || makeChatSessionId())
-    .replace(/[^a-zA-Z0-9:_-]+/g, '_')
-    .slice(0, 120);
-  return `${safeSessionId}_turn_${Date.now().toString(36)}_${Math.max(1, state.chatMessages.length)}`;
-}
-
-function chatSessionTitle(messages = []) {
-  const userMessage = (Array.isArray(messages) ? messages : []).find((message) => message.role === 'user' && message.body);
-  const firstMessage = userMessage || (Array.isArray(messages) ? messages : []).find((message) => message.body);
-  return compactChatTitle(firstMessage?.body || 'New chat');
-}
-
-function normalizeChatSession(session = {}) {
-  const id = String(session.id || session.sessionId || '').trim();
-  if (!id) return null;
-  const messages = (Array.isArray(session.messages) ? session.messages : [])
-    .map((message) => ({
-      role: ['user', 'assistant', 'system'].includes(String(message?.role || '').trim()) ? String(message.role).trim() : 'assistant',
-      body: compact(String(message?.body || '').trim(), 4000),
-      tone: String(message?.tone || '').trim(),
-      label: String(message?.label || '').trim(),
-      ts: String(message?.ts || session.updatedAt || session.createdAt || isoNow()).trim()
-    }))
-    .filter((message) => message.body)
-    .slice(-80);
-  const updatedAt = String(session.updatedAt || session.createdAt || isoNow()).trim();
-  const activeJobIds = [...new Set((Array.isArray(session.activeJobIds) ? session.activeJobIds : [])
-    .map((item) => String(item || '').trim())
-    .filter(Boolean)
-    .slice(0, 20))];
-  const linkedOrderId = String(session.linkedOrderId || '').trim();
-  const relatedOrderIds = [...new Set([
-    ...(Array.isArray(session.relatedOrderIds) ? session.relatedOrderIds : []),
-    linkedOrderId,
-    ...activeJobIds
-  ].map((item) => String(item || '').trim()).filter(Boolean))].slice(0, 40);
-  return {
-    ...session,
-    id,
-    sessionId: String(session.sessionId || id).trim(),
-    title: compactChatTitle(session.title || chatSessionTitle(messages)),
-    messages,
-    activeLeader: session.activeLeader && typeof session.activeLeader === 'object'
-      ? {
-          type: 'leader',
-          taskType: String(session.activeLeader.taskType || session.activeLeader.task_type || '').trim(),
-          label: String(session.activeLeader.label || session.activeLeader.name || '').trim(),
-          reason: String(session.activeLeader.reason || '').trim()
-        }
-      : null,
-    activeLeaderLocked: Boolean(session.activeLeaderLocked || session.active_leader_locked),
-    activeOwner: session.activeOwner && typeof session.activeOwner === 'object'
-      ? {
-          type: String(session.activeOwner.type || '').trim().toLowerCase() || 'agent',
-          taskType: String(session.activeOwner.taskType || session.activeOwner.task_type || '').trim(),
-          label: String(session.activeOwner.label || session.activeOwner.name || '').trim(),
-          reason: String(session.activeOwner.reason || '').trim()
-        }
-      : (session.activeLeader && typeof session.activeLeader === 'object'
-          ? {
-              type: 'leader',
-              taskType: String(session.activeLeader.taskType || session.activeLeader.task_type || '').trim(),
-              label: String(session.activeLeader.label || session.activeLeader.name || '').trim(),
-              reason: String(session.activeLeader.reason || '').trim()
-            }
-          : null),
-    activeOwnerLocked: Boolean(session.activeOwnerLocked || session.active_owner_locked || session.activeLeaderLocked || session.active_leader_locked),
-    activeWork: Boolean(session.activeWork),
-    linkedOrderId,
-    activeJobIds,
-    relatedOrderIds,
-    createdAt: String(session.createdAt || updatedAt).trim(),
-    updatedAt
-  };
-}
-
-function upsertChatSession(session = {}) {
-  const normalized = normalizeChatSession(session);
-  if (!normalized) return null;
-  const others = state.chatSessions.filter((item) => item.id !== normalized.id && item.sessionId !== normalized.sessionId);
-  state.chatSessions = [normalized, ...others]
-    .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
-    .slice(0, 200);
-  return normalized;
-}
-
-function currentChatSessionPayload() {
-  const sessionId = ensureChatSessionId({ force: state.chatMessages.length > 0 });
-  if (!sessionId || !state.chatMessages.length) return null;
-  const existing = state.chatSessions.find((session) => session.id === sessionId || session.sessionId === sessionId) || {};
-  const now = isoNow();
-  const linkedOrderId = String(existing.linkedOrderId || state.orderId || '').trim();
-  const activeJobIds = [];
-  const relatedOrderIds = [...new Set([
-    ...(Array.isArray(existing.relatedOrderIds) ? existing.relatedOrderIds : []),
-    linkedOrderId
-  ].map((item) => String(item || '').trim()).filter(Boolean))].slice(0, 40);
-  return normalizeChatSession({
-    ...existing,
-    id: sessionId,
-    sessionId,
-    title: chatSessionTitle(state.chatMessages),
-    messages: state.chatMessages.slice(-80),
-    activeOwner: state.activeOwner ? safeJsonClone(state.activeOwner, { depth: 3, maxText: 600, maxArray: 4 }) : null,
-    activeOwnerLocked: Boolean(state.activeOwnerLocked && state.activeOwner?.taskType),
-    activeLeader: state.activeLeader ? safeJsonClone(state.activeLeader, { depth: 3, maxText: 600, maxArray: 4 }) : null,
-    activeLeaderLocked: Boolean(state.activeLeaderLocked && state.activeLeader?.taskType),
-    linkedOrderId,
-    activeJobIds,
-    relatedOrderIds,
-    activeWork: false,
-    createdAt: existing.createdAt || state.chatMessages[0]?.ts || now,
-    updatedAt: now
-  });
-}
 
 function persistRuntimeChatSession() {
   const session = currentChatSessionPayload();
