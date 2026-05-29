@@ -80,11 +80,11 @@ export function createChatWorkflowProgressUtils(options = {}) {
     }
     if (dispatchStatus === 'dispatch_scheduled') {
       return {
-        text: ja ? 'を実行キューへ渡しています' : 'is being handed to the agent runtime',
+        text: ja ? 'を実行環境へ渡しています' : 'is being handed to the agent runtime',
         detail: ja
-          ? `${elapsed ? `${elapsed}前に` : ''}dispatch を予約しました。拾われない場合は進捗チェックが再投入します。`
-          : `Dispatch was scheduled${elapsed ? ` ${elapsed} ago` : ''}. Progress checks will requeue it if the runtime misses it.`,
-        step: ja ? 'dispatch 予約済み' : 'Dispatch scheduled',
+          ? `${elapsed ? `${elapsed}前に` : ''}実行引き渡しを予約しました。拾われない場合は進捗チェックがもう一度引き渡します。`
+          : `Runtime handoff was scheduled${elapsed ? ` ${elapsed} ago` : ''}. Progress checks will try the handoff again if the runtime misses it.`,
+        step: ja ? '実行引き渡し予約済み' : 'Handoff scheduled',
         progressLabelSuffix: elapsed || ''
       };
     }
@@ -267,6 +267,8 @@ export function createChatWorkflowProgressUtils(options = {}) {
   function statusDisplayLabel(status = '') {
     const safe = String(status || '').trim().toLowerCase();
     if (safe === 'blocked') return 'waiting';
+    if (safe === 'queued') return 'waiting to start';
+    if (safe === 'created' || safe === 'pending') return 'preparing';
     if (safe === 'timed_out') return 'timed out';
     return String(status || '').trim() || 'created';
   }

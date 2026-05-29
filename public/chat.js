@@ -88,12 +88,13 @@ import {
 import { compact, escapeHtml, htmlToPlainText } from './chat-display-utils.js?v=20260529d';
 import { createChatDeliveryFileUtils } from './chat-delivery-file-utils.js?v=20260528a';
 import { createChatDeliveryPreferenceController } from './chat-delivery-preference-controller.js?v=20260529d';
-import { createChatWorkflowProgressUtils } from './chat-workflow-progress-utils.js?v=20260528b';
+import { createChatWorkflowProgressUtils } from './chat-workflow-progress-utils.js?v=20260529a';
 import { createChatUsageLibraryController } from './chat-usage-library-controller.js?v=20260528e';
 import { createChatCatalogRuntime } from './chat-catalog-runtime.js?v=20260529a';
 import { createChatSchedulePanelController } from './chat-schedule-panel-controller.js?v=20260529a';
 import { createChatAppHandoffController } from './chat-app-handoff-controller.js?v=20260529a';
 import { createChatSessionModel } from './chat-session-model.js?v=20260529d';
+import { createChatSessionSidebarController } from './chat-session-sidebar-controller.js?v=20260529a';
 import { createChatTelemetry } from './chat-telemetry.js?v=20260529d';
 import {
   agentOwner,
@@ -500,6 +501,54 @@ const PROMPT_PLACEHOLDERS = {
     ja: '新しい依頼を書くか、状態確認をするか、「このオーダーの続きとして: ...」と明示してください...'
   }
 };
+
+const chatSessionSidebarController = createChatSessionSidebarController({
+  state,
+  els,
+  window,
+  api,
+  compact,
+  escapeHtml,
+  isoNow,
+  normalizeChatSession,
+  currentChatSessionPayload,
+  upsertChatSession,
+  ensureChatSessionId,
+  makeChatTranscriptId,
+  chatSessionTitle,
+  chatSessionOrderIds,
+  restoredSessionHasActiveWork,
+  renderRestoredSessionOrderContext,
+  startPolling,
+  rememberTrackedOrder,
+  stopProgressNarratorAnimation,
+  clearActiveOrderMemory,
+  clearChatRuntimeState,
+  clearQueuedChatSessionSnapshot,
+  clearChatRestoreParamsFromUrl,
+  bumpChatViewRevision,
+  renderActiveLeaderStatus,
+  appendTextMessage,
+  appendMessage,
+  orderConfirmationHtml,
+  orderErrorMessage,
+  chatText,
+  chatWelcomeText,
+  updateComposerMode,
+  saveChatRuntimeState,
+  persistRuntimeChatSession,
+  applyAuthState
+});
+const {
+  chatSessionTimeLabel,
+  renderChatSessionSidebar,
+  startNewChatSession,
+  loadChatSession,
+  deleteChatSession,
+  refreshChatSessionHistory,
+  recordChatSessionMessage,
+  restoreRequestedChatSessionFromHistory: restoreRequestedChatSessionFromHistoryController
+} = chatSessionSidebarController;
 
 function persistRuntimeChatSession() {
   const session = currentChatSessionPayload();
@@ -997,215 +1046,7 @@ function restoreChatRuntimeState() {
 }
 
 function restoreRequestedChatSessionFromHistory() {
-  const request = chatRestoreRequestFromUrl();
-  if (!request.requested || (!request.sessionId && !request.orderId)) return false;
-  const session = state.chatSessions.find((item) => {
-    if (request.sessionId && (item.id === request.sessionId || item.sessionId === request.sessionId)) return true;
-    if (!request.orderId) return false;
-    return item.linkedOrderId === request.orderId || (Array.isArray(item.relatedOrderIds) && item.relatedOrderIds.includes(request.orderId));
-  });
-  if (!session) {
-    if (!request.orderId) return false;
-    state.orderId = request.orderId;
-    rememberTrackedOrder(request.orderId);
-    appendTextMessage('system', chatText(
-      'Order link restored. Loading current Order state.',
-      'Orderリンクを復元しました。現在のOrder状態を読み込みます。',
-      state.conversationLanguage
-    ), { label: 'Order restored', record: false });
-    startPolling(request.orderId);
-    clearChatRestoreParamsFromUrl();
-    saveChatRuntimeState('runtime_order_restore');
-    return true;
-  }
-  loadChatSession(session.id || session.sessionId, { resumeActiveWork: true });
-  if (request.orderId && !state.orderId) {
-    state.orderId = request.orderId;
-    rememberTrackedOrder(request.orderId);
-    startPolling(request.orderId);
-  }
-  appendTextMessage('system', chatText(
-    'Returned from Google connection. I restored this chat from saved history.',
-    'Google接続から戻りました。保存済み履歴からこのチャットを復元しました。',
-    session.messages?.[0]?.body || ''
-  ), { label: 'Chat restored', record: false });
-  clearChatRestoreParamsFromUrl();
-  return true;
-}
-
-function chatSessionTimeLabel(value = '') {
-  if (!Number.isFinite(Date.parse(value))) return 'saved';
-  return new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-function chatSessionFromMemory(item = {}) {
-  const prompt = String(item.prompt || '').trim();
-  const answer = String(item.answer || '').trim();
-  const sessionId = String(item.sessionId || item.id || '').trim();
-  const messages = Array.isArray(item.messages) ? item.messages : [];
-  if (!sessionId || (!prompt && !answer && !messages.length)) return null;
-  const createdAt = String(item.createdAt || item.updatedAt || isoNow()).trim();
-  return normalizeChatSession({
-    id: sessionId,
-    sessionId,
-    title: String(item.title || '').trim() || prompt || answer || 'Saved chat',
-    activeWork: Boolean(item.activeWork),
-    linkedOrderId: String(item.linkedOrderId || '').trim(),
-    activeJobIds: Array.isArray(item.activeJobIds) ? item.activeJobIds : [],
-    relatedOrderIds: Array.isArray(item.relatedOrderIds) ? item.relatedOrderIds : [],
-    createdAt,
-    updatedAt: String(item.updatedAt || createdAt).trim(),
-    messages: messages.length ? messages : [
-      ...(prompt ? [{ role: 'user', body: prompt, ts: createdAt }] : []),
-      ...(answer ? [{ role: 'assistant', body: answer, tone: item.status === 'blocked' ? 'warn' : 'info', ts: item.updatedAt || createdAt }] : [])
-    ]
-  });
-}
-
-function renderChatSessionSidebar() {
-  if (!els.chatSessionList) return;
-  const current = currentChatSessionPayload();
-  const sessions = [
-    ...(current ? [current] : []),
-    ...state.chatSessions.filter((session) => !current || (session.id !== current.id && session.sessionId !== current.sessionId))
-  ]
-    .map(normalizeChatSession)
-    .filter(Boolean)
-    .sort((left, right) => {
-      if (left.id === state.currentChatSessionId) return -1;
-      if (right.id === state.currentChatSessionId) return 1;
-      return String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''));
-    })
-    .slice(0, 200);
-  if (els.chatSessionSidebar) {
-    els.chatSessionSidebar.classList.toggle('mobile-open', Boolean(state.chatSidebarOpen));
-  }
-  if (els.chatSessionStatus) {
-    if (sessions.length) {
-      const savedCount = Math.max(0, sessions.length - (current ? 1 : 0));
-      els.chatSessionStatus.textContent = savedCount ? `${savedCount} saved chat${savedCount === 1 ? '' : 's'}` : 'Current chat';
-    } else if (state.auth?.loggedIn || state.auth?.user || state.auth?.login) {
-      els.chatSessionStatus.textContent = 'No saved chats yet';
-    } else {
-      els.chatSessionStatus.textContent = 'Sign in to restore chats';
-    }
-  }
-  if (!sessions.length) {
-    els.chatSessionList.innerHTML = '<div class="empty-session-list">Start a chat and it will appear here. Signed-in chat memory is restored from your account.</div>';
-    return;
-  }
-  els.chatSessionList.innerHTML = sessions.map((session) => {
-    const active = session.id === state.currentChatSessionId || session.sessionId === state.currentChatSessionId;
-    const messageCount = Array.isArray(session.messages) ? session.messages.length : 0;
-    const activeWork = session.activeWork ? ' / live order' : '';
-    return [
-      `<div class="chat-session-row ${active ? 'active' : ''}">`,
-      `<button type="button" class="chat-session-item" data-chat-session-id="${escapeHtml(session.id)}" aria-current="${active ? 'true' : 'false'}">`,
-      `<span class="chat-session-title">${escapeHtml(session.title || 'New chat')}</span>`,
-      `<span class="chat-session-meta">${escapeHtml(`${chatSessionTimeLabel(session.updatedAt)} / ${messageCount} msg${activeWork}`)}</span>`,
-      '</button>',
-      `<button type="button" class="chat-session-delete" data-chat-session-delete="${escapeHtml(session.id)}" aria-label="Delete chat">x</button>`,
-      '</div>'
-    ].join('');
-  }).join('\n');
-}
-
-function startNewChatSession() {
-  bumpChatViewRevision();
-  stopProgressNarratorAnimation();
-  state.currentChatSessionId = '';
-  state.chatMessages = [];
-  state.lastTranscriptPrompt = '';
-  state.lastTranscriptId = '';
-  state.draft = null;
-  state.pendingIntake = null;
-  state.activeOwner = null;
-  state.activeOwnerLocked = false;
-  state.activeLeader = null;
-  state.activeLeaderLocked = false;
-  state.pendingLeaderChange = null;
-  state.pendingAppContext = null;
-  state.conversationLanguage = '';
-  state.draftRevision += 1;
-  clearActiveOrderMemory();
-  clearChatRuntimeState();
-  clearQueuedChatSessionSnapshot();
-  clearChatRestoreParamsFromUrl();
-  if (els.promptInput) els.promptInput.value = '';
-  els.chatThread.innerHTML = '';
-  renderActiveLeaderStatus();
-  appendTextMessage('assistant', chatWelcomeText(), { record: false });
-  updateComposerMode();
-  renderChatSessionSidebar();
-}
-
-function loadChatSession(sessionId = '', options = {}) {
-  const session = state.chatSessions.find((item) => item.id === sessionId || item.sessionId === sessionId);
-  if (!session) return;
-  const viewRevision = bumpChatViewRevision();
-  if (state.polling) window.clearInterval(state.polling);
-  stopProgressNarratorAnimation();
-  state.polling = null;
-  state.progressNarratorArticle = null;
-  state.progressNarratorKey = '';
-  state.liveProgressStoppedOrderIds.clear();
-  state.currentChatSessionId = session.id;
-  state.chatMessages = (Array.isArray(session.messages) ? session.messages : []).slice(-80);
-  state.lastTranscriptPrompt = '';
-  state.lastTranscriptId = '';
-  state.draft = null;
-  state.pendingIntake = null;
-  state.activeOwner = session.activeOwner && typeof session.activeOwner === 'object'
-    ? session.activeOwner
-    : (session.activeLeader && typeof session.activeLeader === 'object' ? { type: 'leader', ...session.activeLeader } : null);
-  state.activeOwnerLocked = Boolean(session.activeOwnerLocked && state.activeOwner?.taskType);
-  state.activeLeader = session.activeLeader && typeof session.activeLeader === 'object' ? session.activeLeader : (state.activeOwner?.type === 'leader' ? state.activeOwner : null);
-  state.activeLeaderLocked = Boolean(session.activeLeaderLocked && state.activeLeader?.taskType);
-  state.pendingLeaderChange = null;
-  state.draftRevision += 1;
-  clearActiveOrderMemory();
-  state.orderId = session.linkedOrderId || '';
-  for (const id of chatSessionOrderIds(session)) {
-    const safeId = String(id || '').trim();
-    if (safeId) state.trackedOrderIds.add(safeId);
-  }
-  els.chatThread.innerHTML = '';
-  if (state.chatMessages.length) {
-    for (const message of state.chatMessages) {
-      appendTextMessage(message.role || 'assistant', message.body || '', {
-        tone: message.tone || '',
-        label: message.label || '',
-        record: false
-      });
-    }
-  } else {
-    appendTextMessage('assistant', chatWelcomeText(), { record: false });
-  }
-  renderActiveLeaderStatus();
-  updateComposerMode();
-  renderChatSessionSidebar();
-  state.chatSidebarOpen = false;
-  renderChatSessionSidebar();
-  void renderRestoredSessionOrderContext(session, {
-    viewRevision,
-    sessionId: session.id || session.sessionId,
-    resumeActiveWork: options.resumeActiveWork === true
-  });
-}
-
-function deleteChatSession(sessionId = '') {
-  const safeId = String(sessionId || '').trim();
-  if (!safeId) return;
-  state.chatSessions = state.chatSessions.filter((session) => session.id !== safeId && session.sessionId !== safeId);
-  void api(`/api/settings/chat-memory/${encodeURIComponent(safeId)}`, { method: 'DELETE' })
-    .then(() => { state.chatSessionHistoryFetchedAt = 0; })
-    .catch(() => {});
-  if (state.currentChatSessionId === safeId) startNewChatSession();
-  renderChatSessionSidebar();
-}
-
-function chatSessionHistoryApiPath() {
-  return '/api/chat-memory?limit=200';
+  return restoreRequestedChatSessionFromHistoryController(chatRestoreRequestFromUrl());
 }
 
 function applyAuthState(auth = {}, options = {}) {
@@ -1239,101 +1080,6 @@ function applyAuthState(auth = {}, options = {}) {
   if (loggedIn) void refreshUiLanguageFromAccount();
   renderChatSessionSidebar();
   return true;
-}
-
-async function refreshChatSessionHistory(options = {}) {
-  const force = options.force === true;
-  if (!force && state.chatSessionHistoryFetchedAt && Date.now() - state.chatSessionHistoryFetchedAt < 60_000) return state.chatSessions;
-  if (state.chatSessionHistoryRequest) return state.chatSessionHistoryRequest;
-  const requestBoundaryRevision = Number(state.accountBoundaryRevision) || 0;
-  state.chatSessionHistoryRequest = api(chatSessionHistoryApiPath(), { method: 'GET' })
-    .then((result) => {
-      if (requestBoundaryRevision !== (Number(state.accountBoundaryRevision) || 0)) return state.chatSessions;
-      if (result?.auth && typeof result.auth === 'object') applyAuthState(result.auth);
-      const serverSessions = (Array.isArray(result?.chatMemory) ? result.chatMemory : [])
-        .map(chatSessionFromMemory)
-        .filter(Boolean);
-      const currentSession = currentChatSessionPayload();
-      state.chatSessions = currentSession ? [currentSession] : [];
-      for (const session of serverSessions) upsertChatSession(session);
-      state.chatSessionHistoryFetchedAt = Date.now();
-      renderChatSessionSidebar();
-      return state.chatSessions;
-    })
-    .catch((error) => {
-      if (els.chatSessionStatus) els.chatSessionStatus.textContent = orderErrorMessage(error);
-      return state.chatSessions;
-    })
-    .finally(() => {
-      state.chatSessionHistoryRequest = null;
-    });
-  return state.chatSessionHistoryRequest;
-}
-
-function recordChatSessionMessage(role, body = '', options = {}) {
-  if (options.record === false) return;
-  const text = compact(String(options.plainText || body || '').trim(), 4000);
-  if (!text) return;
-  ensureChatSessionId({ force: true });
-  const message = {
-    role: ['user', 'assistant', 'system'].includes(role) ? role : 'assistant',
-    body: text,
-    tone: String(options.tone || '').trim(),
-    label: String(options.label || '').trim(),
-    ts: isoNow()
-  };
-  state.chatMessages.push(message);
-  state.chatMessages = state.chatMessages.slice(-80);
-  if (message.role === 'user') {
-    state.lastTranscriptPrompt = text;
-    state.lastTranscriptId = makeChatTranscriptId(state.currentChatSessionId);
-  } else if (state.lastTranscriptPrompt) {
-    const transcriptAnswerKind = message.tone || message.role;
-    const transcriptStatus = message.tone || (message.role === 'system' ? 'system' : 'ok');
-    void trackChatTranscript(state.lastTranscriptPrompt, text, {
-      transcriptId: makeChatTranscriptId(state.currentChatSessionId),
-      answerKind: transcriptAnswerKind,
-      status: transcriptStatus
-    });
-  }
-  persistRuntimeChatSession();
-}
-
-async function trackChatTranscript(prompt = '', answer = '', meta = {}) {
-  const cleanPrompt = String(prompt || '').trim();
-  const cleanAnswer = String(answer || '').trim();
-  if (!cleanPrompt && !cleanAnswer) return;
-  try {
-    const sessionId = ensureChatSessionId({ force: true });
-    const headers = new Headers({ 'content-type': 'application/json' });
-    if (state.auth?.csrfToken) headers.set('x-aiagent2-csrf', state.auth.csrfToken);
-    if (state.visitorId) headers.set('x-aiagent2-visitor-id', state.visitorId);
-    await fetch('/api/analytics/chat-transcripts', {
-      method: 'POST',
-      headers,
-      credentials: 'same-origin',
-      keepalive: true,
-      body: JSON.stringify({
-        id: String(meta.transcriptId || '').trim() || makeChatTranscriptId(sessionId),
-        prompt: cleanPrompt.slice(0, 8000),
-        answer: cleanAnswer.slice(0, 8000),
-        answer_kind: String(meta.answerKind || 'chat').slice(0, 40),
-        status: String(meta.status || '').slice(0, 80),
-        session_id: sessionId,
-        visitor_id: state.visitorId,
-        page_path: window.location.pathname || '/chat',
-        current_tab: 'chat',
-        source: 'chatux',
-        meta: {
-          source: 'chatux_session_sidebar',
-          visitorId: state.visitorId
-        }
-      })
-    });
-    state.chatSessionHistoryFetchedAt = 0;
-  } catch {
-    // Chat transcript persistence must not block chat, intake, or order dispatch.
-  }
 }
 
 function lockedLeaderOwnerForPrompt(prompt = '', options = {}) {
@@ -1849,23 +1595,203 @@ function removeMessage(article) {
   if (shouldScroll) scrollThread({ force: true });
 }
 
-function appendThinkingMessage(sample = '') {
-  const article = appendTextMessage('assistant', chatText('Thinking...', '考え中...', sample), {
-    tone: 'thinking',
-    label: 'CAIt',
-    record: false
-  });
-  article.dataset.transient = 'thinking';
-  article.setAttribute('aria-live', 'polite');
-  return article;
-}
-
 function progressNarratorHtml(text = '', options = {}) {
   return agentProgressNarratorHtml(text, {
     ...options,
     language: state.conversationLanguage,
     isJapanese: (sample) => chatLanguage(sample) === 'ja',
     escapeHtml
+  });
+}
+
+function planningStatusConfig(sample = '', stage = 'prepare', overrides = {}) {
+  const ja = chatLanguage([sample, state.conversationLanguage].join(' ')) === 'ja';
+  const formatLabel = String(selectedDeliveryFormatLabel?.() || '').trim();
+  const stages = {
+    intent: ja
+      ? {
+        text: '依頼を読み取り中...',
+        phase: '入力整理',
+        status: '判定中',
+        detail: 'チャット回答、追加質問、発注ドラフトのどれに進むか確認しています。まだ発注も外部実行もしていません。',
+        progressPercent: 18,
+        progressLabel: '判定中',
+        steps: ['依頼の種類を確認', '不足情報を確認', '次の表示を決定']
+      }
+      : {
+        text: 'Reading the request...',
+        phase: 'Input check',
+        status: 'Classifying',
+        detail: 'Deciding whether to answer in chat, ask a follow-up, or prepare an order draft. Nothing has been dispatched yet.',
+        progressPercent: 18,
+        progressLabel: 'Classifying',
+        steps: ['Check request type', 'Check missing input', 'Choose next screen']
+      },
+    prepare: ja
+      ? {
+        text: '実行プランを作成中...',
+        phase: 'プラン作成',
+        status: '準備中',
+        detail: `担当領域、必要な確認事項、納品形式${formatLabel ? `（${formatLabel}）` : ''}を整理しています。SEND ORDER までは実行されません。`,
+        progressPercent: 34,
+        progressLabel: '準備中',
+        steps: ['目的を整理', '担当候補を確認', '不足条件を確認']
+      }
+      : {
+        text: 'Preparing the execution plan...',
+        phase: 'Planning',
+        status: 'Preparing',
+        detail: `Checking the owner, required inputs, and output format${formatLabel ? ` (${formatLabel})` : ''}. Work will not run until SEND ORDER.`,
+        progressPercent: 34,
+        progressLabel: 'Preparing',
+        steps: ['Frame goal', 'Check owner', 'Check missing conditions']
+      },
+    merge: ja
+      ? {
+        text: '回答をプランに統合中...',
+        phase: 'ヒアリング反映',
+        status: '整理中',
+        detail: '回答済みの内容を発注ドラフトへ反映しています。まだ発注も外部実行もしていません。',
+        progressPercent: 42,
+        progressLabel: '整理中',
+        steps: ['回答を反映', '担当を確認', 'ドラフトを更新']
+      }
+      : {
+        text: 'Merging your answers into the plan...',
+        phase: 'Intake merge',
+        status: 'Organizing',
+        detail: 'Applying the answered details to the order draft. Nothing has been dispatched yet.',
+        progressPercent: 42,
+        progressLabel: 'Organizing',
+        steps: ['Merge answers', 'Confirm owner', 'Update draft']
+      },
+    route: ja
+      ? {
+        text: '担当と進め方を確認中...',
+        phase: 'ルーティング確認',
+        status: '確認中',
+        detail: '単独エージェントかリーダー主導か、先に質問が必要かを確認しています。',
+        progressPercent: 62,
+        progressLabel: '確認中',
+        steps: ['実行形を確認', '承認前の不足を確認', '次のカードを準備']
+      }
+      : {
+        text: 'Checking owner and routing...',
+        phase: 'Routing check',
+        status: 'Checking',
+        detail: 'Checking whether this should be single-agent, leader-led, or needs one more question first.',
+        progressPercent: 62,
+        progressLabel: 'Checking',
+        steps: ['Check route', 'Check pre-approval gaps', 'Prepare next card']
+      },
+    intake: ja
+      ? {
+        text: '追加確認に進みます。',
+        phase: '次の入力',
+        status: '質問あり',
+        detail: '不足情報があるため、次に質問を表示します。発注はまだ送信していません。',
+        progressPercent: 100,
+        progressLabel: '質問へ',
+        steps: ['不足情報あり', '質問を表示', '発注は未送信'],
+        done: true
+      }
+      : {
+        text: 'Moving to a follow-up question.',
+        phase: 'Next input',
+        status: 'Needs input',
+        detail: 'A required detail is missing, so the next card will ask for it. No order has been sent.',
+        progressPercent: 100,
+        progressLabel: 'Question',
+        steps: ['Missing detail found', 'Show question', 'Order not sent'],
+        done: true
+      },
+    draft: ja
+      ? {
+        text: '発注ドラフトを表示します。',
+        phase: 'ドラフト完成',
+        status: '確認待ち',
+        detail: '内容確認後に SEND ORDER を押すまで、実作業・課金・外部実行は始まりません。',
+        progressPercent: 100,
+        progressLabel: 'ドラフト',
+        steps: ['ドラフト作成済み', '内容確認待ち', 'SEND ORDER で実行']
+      }
+      : {
+        text: 'Showing the order draft.',
+        phase: 'Draft ready',
+        status: 'Review needed',
+        detail: 'Work, billing, and external execution do not start until you press SEND ORDER.',
+        progressPercent: 100,
+        progressLabel: 'Draft',
+        steps: ['Draft created', 'Waiting for review', 'SEND ORDER runs it']
+      },
+    error: ja
+      ? {
+        text: 'プラン作成で止まりました。',
+        phase: 'プラン作成',
+        status: '停止',
+        detail: '発注・課金・外部実行は発生していません。エラー内容を確認してください。',
+        progressPercent: 100,
+        progressLabel: '停止',
+        steps: ['発注なし', '課金なし', 'エラーを表示'],
+        done: true
+      }
+      : {
+        text: 'Planning stopped.',
+        phase: 'Planning',
+        status: 'Stopped',
+        detail: 'No order, billing, or external execution happened. Review the error message.',
+        progressPercent: 100,
+        progressLabel: 'Stopped',
+        steps: ['No order sent', 'No billing', 'Error shown'],
+        done: true
+      }
+  };
+  const config = { ...(stages[stage] || stages.prepare), ...overrides };
+  config.steps = Array.isArray(config.steps) ? config.steps.filter(Boolean).slice(0, 4) : [];
+  return config;
+}
+
+function setPlanningArticleTone(article, tone = '') {
+  if (!article) return;
+  article.classList.remove('thinking', 'ok', 'warn', 'error', 'info');
+  if (tone) article.classList.add(tone);
+}
+
+function appendPlanningStatusMessage(sample = '', stage = 'prepare', options = {}) {
+  const config = planningStatusConfig(sample, stage, options);
+  const article = appendMessage('assistant', progressNarratorHtml(config.text, config), {
+    tone: options.tone || (config.done ? 'ok' : 'thinking'),
+    label: options.label || chatText('Plan status', 'プラン状況', sample),
+    record: false,
+    forceScroll: options.forceScroll === true
+  });
+  article.dataset.transient = options.transient || 'planning';
+  article.setAttribute('aria-live', 'polite');
+  syncProgressNarratorAnimation(article, config.text, config);
+  return article;
+}
+
+function updatePlanningStatusMessage(article, sample = '', stage = 'prepare', options = {}) {
+  if (!article?.isConnected) return null;
+  const config = planningStatusConfig(sample, stage, options);
+  updateProgressNarratorArticle(article, config.text, config);
+  setPlanningArticleTone(article, options.tone || (config.done ? 'ok' : 'thinking'));
+  return article;
+}
+
+function finishPlanningStatusMessage(article, sample = '', stage = 'draft', options = {}) {
+  if (!article?.isConnected) return null;
+  const tone = options.tone || (stage === 'error' ? 'error' : 'ok');
+  const config = planningStatusConfig(sample, stage, { ...options, done: true });
+  updateProgressNarratorArticle(article, config.text, config);
+  setPlanningArticleTone(article, tone);
+  return article;
+}
+
+function appendThinkingMessage(sample = '') {
+  return appendPlanningStatusMessage(sample, 'intent', {
+    label: 'Thinking...',
+    transient: 'thinking'
   });
 }
 
@@ -5245,6 +5171,10 @@ async function prepareOrder(prompt, options = {}) {
     || '';
   const activeOwnerLocked = Boolean((state.activeOwnerLocked && state.activeOwner?.taskType) || options.activeOwnerLocked === true || options.active_owner_locked === true);
   const skipOpenAiIntent = options.skipOpenAiIntent === true || options.skip_openai_intent === true;
+  const planningMessage = appendPlanningStatusMessage(prompt, options.intakeAnswered === true ? 'merge' : 'prepare', { forceScroll: true });
+  const planningRouteTimer = window.setTimeout(() => {
+    updatePlanningStatusMessage(planningMessage, prompt, 'route');
+  }, 700);
   let prepared;
   try {
     prepared = await apiWithRetry('/api/work/prepare-order', {
@@ -5270,10 +5200,12 @@ async function prepareOrder(prompt, options = {}) {
     }, {
       maxAttempts: 5,
       baseDelayMs: 1000,
-      maxDelayMs: 12000,
-      retryStatuses: [408, 429, 500, 502, 503, 504]
-    });
+        maxDelayMs: 12000,
+        retryStatuses: [408, 429, 500, 502, 503, 504]
+      });
   } catch (error) {
+    window.clearTimeout(planningRouteTimer);
+    finishPlanningStatusMessage(planningMessage, prompt, 'error');
     if (!skipOpenAiIntent || options.intakeAnswered === true) throw error;
     throw new Error(chatText(
       'Server-owned order intake questions could not be loaded. No order or billing happened; retry so CAIt can fetch the selected agent contract from the server.',
@@ -5281,6 +5213,7 @@ async function prepareOrder(prompt, options = {}) {
       prompt
     ));
   }
+  window.clearTimeout(planningRouteTimer);
   const finalPrepared = effectiveConversationOwner
     ? withConversationOwner(prepared, effectiveConversationOwner, {
         leaderChangeRequested,
@@ -5303,6 +5236,7 @@ async function prepareOrder(prompt, options = {}) {
     sample: options.originalPrompt || prompt
   });
   if (isNeedsInputResponse(finalPrepared) && options.intakeAnswered !== true) {
+    finishPlanningStatusMessage(planningMessage, prompt, 'intake');
     startIntake(finalPrepared, prompt);
     return;
   }
@@ -5326,6 +5260,7 @@ async function prepareOrder(prompt, options = {}) {
   }
   state.pendingIntake = null;
   state.draftRevision += 1;
+  finishPlanningStatusMessage(planningMessage, prompt, 'draft');
   appendOrderConfirmation();
 }
 

@@ -1148,7 +1148,7 @@ test.describe('CAIt Chat workspace', () => {
     await expect(page.locator('#chatThread')).toContainText(/Order #e2e-dela?: Order submitted/i);
     await expect(page.locator('.progress-narrator-bar')).toBeVisible({ timeout: chatResponseTimeout });
     await expect(page.locator('.progress-narrator-bar')).toHaveAttribute('role', 'progressbar');
-    await expect(page.locator('.progress-narrator-bar-label')).toContainText(/Starting|running|Working|queued/i);
+    await expect(page.locator('.progress-narrator-bar-label')).toContainText(/Starting|running|Working|queued|waiting/i);
   });
 
   test('starts fresh work by default when a chat already has a running order', async ({ page }) => {

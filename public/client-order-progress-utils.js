@@ -8,6 +8,8 @@ export function orderProgressStatusLabel(status = '', options = {}) {
   const normalized = normalizeOrderProgressStatus(status);
   const ja = Boolean(options.ja);
   if (normalized === 'blocked') return ja ? '待機中' : 'waiting';
+  if (normalized === 'queued') return ja ? '開始待ち' : 'waiting to start';
+  if (normalized === 'created' || normalized === 'pending') return ja ? '準備中' : 'preparing';
   if (normalized === 'timed_out') return ja ? 'タイムアウト' : 'timed out';
   return normalized;
 }

@@ -60,6 +60,7 @@ const chatTelemetryPath = new URL('../public/chat-telemetry.js', import.meta.url
 const chatDisplayUtilsPath = new URL('../public/chat-display-utils.js', import.meta.url);
 const chatDeliveryPreferenceControllerPath = new URL('../public/chat-delivery-preference-controller.js', import.meta.url);
 const chatSessionModelPath = new URL('../public/chat-session-model.js', import.meta.url);
+const chatSessionSidebarControllerPath = new URL('../public/chat-session-sidebar-controller.js', import.meta.url);
 const accountSettingsJsPath = new URL('../public/account-settings.js', import.meta.url);
 const connectorGateJsPath = new URL('../public/connector-gate.js', import.meta.url);
 const chatSessionStateJsPath = new URL('../public/chat-session-state.js', import.meta.url);
@@ -144,6 +145,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(chatTelemetryPath)], { 
 execFileSync(process.execPath, ['--check', fileURLToPath(chatDisplayUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatDeliveryPreferenceControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatSessionModelPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatSessionSidebarControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(connectorGateJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatSessionStateJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(orderRuntimeJsPath)], { stdio: 'pipe' });
@@ -253,6 +255,7 @@ const chatIntentGuardUtilsJs = readFileSync(chatIntentGuardUtilsPath, 'utf8');
 const chatTelemetryJs = readFileSync(chatTelemetryPath, 'utf8');
 const chatDeliveryPreferenceControllerJs = readFileSync(chatDeliveryPreferenceControllerPath, 'utf8');
 const chatSessionModelJs = readFileSync(chatSessionModelPath, 'utf8');
+const chatSessionSidebarControllerJs = readFileSync(chatSessionSidebarControllerPath, 'utf8');
 const accountSettingsJs = readFileSync(accountSettingsJsPath, 'utf8');
 const connectorGateJs = readFileSync(connectorGateJsPath, 'utf8');
 const chatSessionStateJs = readFileSync(chatSessionStateJsPath, 'utf8');
@@ -447,7 +450,8 @@ assert.ok(chatHtml.includes('chatux-nav'), 'Chat should expose links to existing
 assert.ok(chatHtml.includes('href="/delivery-manager.html"'), 'Chat header should link to the built-in Deliveries feature.');
 assert.ok(chatHtml.includes('href="/admin" id="adminNavLink" hidden'), 'Chat should expose an admin link only when admin auth reveals it.');
 assert.ok(chatJs.includes('appendThinkingMessage'), 'Chat should show a transient thinking state while OpenAI intent classification is running.');
-assert.ok(chatJs.includes('Thinking...'), 'Chat thinking state should use English copy on the English chat page.');
+assert.ok(chatJs.includes("chatText('Plan status', 'プラン状況'"), 'Chat thinking state should render as a visible planning status card.');
+assert.ok(chatJs.includes('Reading the request...'), 'Chat thinking state should use English planning-status copy on the English chat page.');
 assert.ok(chatJs.includes('removeMessage(thinkingMessage)'), 'Chat should remove the transient thinking state after OpenAI returns or fails.');
 assert.ok(!chatJs.includes('prepareAccumulatedOrderIfReady'), 'Chat must not synthesize accumulated work-order prompts from client-side conversation heuristics.');
 assert.ok(!chatJs.includes('accumulatedWorkOrderReadiness'), 'OpenAI intent and server prepare-order contracts should own readiness, not chat regexes.');
@@ -728,11 +732,11 @@ assert.ok(chatSchedulePanelControllerJs.includes('reused_completed_order'), 'Sch
 assert.ok(chatJs.includes('createScheduleFromForm'), 'Chat should schedule a selected completed order from the clock panel.');
 assert.ok(chatJs.includes('requestSubmit()'), 'Chat should submit with Ctrl+Enter/Cmd+Enter from the composer.');
 assert.ok(chatSchedulePanelControllerJs.includes('chat_required: false'), 'Scheduled chat work should be marked as background work that does not require the chat to stay open.');
-assert.ok(chatJs.includes('renderChatSessionSidebar'), 'Chat should render a ChatGPT-style session sidebar.');
+assert.ok(chatJs.includes('renderChatSessionSidebar') && chatSessionSidebarControllerJs.includes('renderChatSessionSidebar'), 'Chat should render a ChatGPT-style session sidebar through the session sidebar controller.');
 assert.ok(chatJs.includes('refreshChatSessionHistory'), 'Chat should restore signed-in chat history from the server.');
 assert.ok(chatJs.includes('chatViewRevision'), 'Chat should track the active chat view so stale async order restores cannot repopulate a new blank chat.');
 assert.ok(chatJs.includes('restoredSessionOrderContextIsCurrent'), 'Restored order context should be ignored when the user has switched to a different/new chat.');
-const loadChatSessionSource = chatJs.slice(chatJs.indexOf('function loadChatSession'), chatJs.indexOf('function deleteChatSession'));
+const loadChatSessionSource = chatSessionSidebarControllerJs.slice(chatSessionSidebarControllerJs.indexOf('function loadChatSession'), chatSessionSidebarControllerJs.indexOf('function deleteChatSession'));
 assert.ok(loadChatSessionSource.includes('resumeActiveWork: options.resumeActiveWork === true'), 'Manual chat-session loads should not auto-render live progress unless an OAuth/runtime restore explicitly asks to resume active work.');
 assert.ok(!loadChatSessionSource.includes('startPolling(state.orderId)'), 'Manual chat-session loads must not show the progress narrator just because the session has a linked order.');
 const restoredSessionOrderContextSource = chatJs.slice(chatJs.indexOf('async function renderRestoredSessionOrderContext'), chatJs.indexOf('async function showChatListPanel'));
@@ -743,13 +747,13 @@ assert.ok(chatJs.includes('function applyAuthState'), 'Chat memory should hydrat
 assert.ok(chatJs.includes('authAccountKey'), 'Chat local restore state should be scoped to the signed-in account.');
 assert.ok(chatJs.includes('purgeChatStateForAccountBoundary'), 'Chat should purge local sessions when the signed-in account changes.');
 assert.ok(chatJs.includes('pendingChatRestoreSnapshot'), 'Chat should defer local session restore until auth identifies the current account.');
-assert.ok(chatJs.includes('state.chatSessions = currentSession ? [currentSession] : []'), 'Chat history refresh should replace account-scoped session rows instead of merging stale local rows.');
+assert.ok(chatSessionSidebarControllerJs.includes('state.chatSessions = currentSession ? [currentSession] : []'), 'Chat history refresh should replace account-scoped session rows instead of merging stale local rows.');
 assert.ok(feedbackChatRoutes.includes('stale_chat_session_account'), 'Server chat-session snapshots should reject stale account-bound client state.');
 assert.ok(chatJs.indexOf('void refreshChatSessionHistory({ force: true });') < chatJs.indexOf('void refreshAuth();'), 'Chat should start loading the session list before the full auth status request.');
-assert.ok(chatJs.includes("return '/api/chat-memory"), 'Chat session history should use the lightweight chat-memory API instead of the full snapshot.');
-assert.ok(!chatJs.includes("return '/api/snapshot'"), 'Chat session history should not fetch the full snapshot for the sidebar.');
+assert.ok(chatSessionSidebarControllerJs.includes("return '/api/chat-memory"), 'Chat session history should use the lightweight chat-memory API instead of the full snapshot.');
+assert.ok(!chatSessionSidebarControllerJs.includes("return '/api/snapshot'"), 'Chat session history should not fetch the full snapshot for the sidebar.');
 assert.ok(chatJs.includes('Promise.allSettled(ids.map((id) => fetchVisibleJob(id)))'), 'Restored order context should fetch related orders in parallel.');
-assert.ok(chatJs.includes('/api/analytics/chat-transcripts'), 'Chat should persist chat turns to the server transcript API.');
+assert.ok(chatSessionSidebarControllerJs.includes('/api/analytics/chat-transcripts'), 'Chat should persist chat turns to the server transcript API.');
 assert.ok(analyticsLoaderJs.includes('window.caitTrackGa4Event'), 'Shared analytics loader should expose a safe GA4 event bridge for product flows.');
 assert.ok(analyticsLoaderJs.includes('primary_cta_click'), 'Shared analytics loader should track primary CTA clicks as GA4 events.');
 assert.ok(analyticsLoaderJs.includes('cait_ga4_auth_event'), 'Shared analytics loader should consume server auth completion cookies for GA4 login/sign_up events.');
@@ -762,7 +766,7 @@ assert.ok(chatJs.includes('trackChatIntakeStarted') && chatTelemetryJs.includes(
 assert.ok(chatJs.includes('order_submitted') && chatJs.includes('trackChatGa4Once(`order_submitted:'), 'Chat should emit GA4 order_submitted when an order is accepted.');
 assert.ok(worker.includes('GA4_AUTH_EVENT_COOKIE') && worker.includes('ga4AuthEventCookieForAccount'), 'Auth callbacks should hand browser-readable login/sign_up GA4 events to the next page.');
 assert.ok(clientAnalyticsUtilsJs.includes('CLIENT_GA4_EVENT_NAME_MAP') && clientAnalyticsUtilsJs.includes('purchase'), 'Legacy client analytics should map order, lead, checkout, and purchase events into GA4 names.');
-assert.ok(chatJs.includes('/api/settings/chat-memory/'), 'Chat sidebar delete should hide server chat memory, not just remove DOM rows.');
+assert.ok(chatSessionSidebarControllerJs.includes('/api/settings/chat-memory/'), 'Chat sidebar delete should hide server chat memory, not just remove DOM rows.');
 assert.ok(chatJs.includes('session_id: chatSessionId'), 'Orders dispatched from chat should carry the active chat session id.');
 assert.ok(chatJs.includes('/api/chat-sessions'), 'Chat should persist recoverable chat sessions through the server.');
 assert.ok(chatCss.includes('.chat-session-sidebar'), 'Chat CSS should style the left session sidebar.');
@@ -1185,7 +1189,7 @@ assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
 assert.ok(chatHtml.includes('/chat.css?v=20260526f'), 'Chat page should load the current compact chat header and composer styles.');
-assert.ok(chatHtml.includes('/chat.js?v=20260529d'), 'Chat page should load the current compact chat header and composer controller.');
+assert.ok(chatHtml.includes('/chat.js?v=20260529f'), 'Chat page should load the current compact chat header and composer controller.');
 assert.ok(chatHtml.includes('id="chatHeaderMenu"') && chatHtml.includes('☰ Menu'), 'Chat header should collapse secondary actions into a menu.');
 assert.ok(chatHtml.includes('Chat history') && chatHtml.includes('Schedules') && chatHtml.includes('Agents and workers'), 'Chat menu should use specific workspace action labels.');
 assert.ok(chatHtml.includes('App tools') && chatHtml.includes('Apps hub'), 'Chat menu should distinguish app tools from the Apps hub page.');
@@ -1863,7 +1867,7 @@ assert.ok(
   /apiWithRetry\(contextPath[\s\S]{0,500}statuses:\s*\[408,\s*425,\s*429,\s*500,\s*502,\s*503,\s*504\]/.test(chatAppHandoffControllerJs),
   'Chat app-context handoff should retry transient server failures before falling back to a context-less app open.'
 );
-assert.ok(chatJs.includes("message.role === 'system' ? 'system' : 'ok'"), 'Chat transcript tracking should not send empty status for system handoff messages.');
+assert.ok(chatSessionSidebarControllerJs.includes("message.role === 'system' ? 'system' : 'ok'"), 'Chat transcript tracking should not send empty status for system handoff messages.');
 assert.ok(!chatJs.includes('appAgentFallbackHandoffUrl'), 'Generic app handoffs should not keep the legacy URL payload fallback helper.');
 assert.ok(!chatJs.includes('cait_transfer'), 'Generic app handoffs should not embed serialized transfer payloads in URLs.');
 assert.ok(!chatJs.includes('data-app-agent-open-transfer'), 'Generic app handoff cards should not expose transfer-payload fallback links.');

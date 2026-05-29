@@ -14,7 +14,7 @@ import {
   workflowChildDeliveryLabel,
   workflowChildRunsFromJob,
   workflowProgressDetails
-} from './client-order-progress-utils.js?v=20260522a';
+} from './client-order-progress-utils.js?v=20260529a';
 import {
   isRetriableFetchError,
   waitForNetworkRetry

@@ -141,7 +141,7 @@ import {
   workflowChildDeliveryBody,
   workflowChildDeliveryLabel,
   workflowProgressDetails
-} from './client-order-progress-utils.js?v=20260522a';
+} from './client-order-progress-utils.js?v=20260529a';
 import {
   createClientApiClient,
   isRetriableFetchError,
@@ -164,7 +164,7 @@ import { createClientOpenChatPreorderUtils } from './client-open-chat-preorder-u
 import { createClientOpenChatPreorderIntentUtils } from './client-open-chat-preorder-intent-utils.js?v=20260527a';
 import { createClientOpenChatPreLlmGuardUtils } from './client-open-chat-pre-llm-guard-utils.js?v=20260527a';
 import { createClientOpenChatNaturalFlowUtils } from './client-open-chat-natural-flow-utils.js?v=20260527a';
-import { createClientOpenChatOrderPrepUtils } from './client-open-chat-order-prep-utils.js?v=20260527a';
+import { createClientOpenChatOrderPrepUtils } from './client-open-chat-order-prep-utils.js?v=20260529a';
 import { createClientOpenChatServerOrderUtils } from './client-open-chat-server-order-utils.js?v=20260529a';
 import { createClientOpenChatResponseUtils } from './client-open-chat-response-utils.js?v=20260529a';
 import { createClientOpenChatQuickAnswerUtils } from './client-open-chat-quick-answer-utils.js?v=20260527a';

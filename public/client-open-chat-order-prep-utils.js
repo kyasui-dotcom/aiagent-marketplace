@@ -316,7 +316,9 @@ export function createClientOpenChatOrderPrepUtils(options = {}) {
           ].join('\n'),
         nextPrompt: previousBrief,
         parallelPlan: parallel.plan,
-        status: 'Parallel work plan created.\n\nNo order was created and no billing occurred. Send "add to parallel queue" to queue drafts for review.'
+        status: ja
+          ? '並列ワーク案を作成しました。\n\n発注も課金も発生していません。内容を確認してから SEND ORDER してください。'
+          : 'Parallel work plan created.\n\nNo order was created and no billing occurred. Review the drafts, then press SEND ORDER when ready.'
       };
     }
     const nextBrief = catCompactDispatchBrief(previousBrief, taskType, inputCounts, {

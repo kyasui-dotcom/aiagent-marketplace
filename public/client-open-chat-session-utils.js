@@ -1,5 +1,5 @@
 import { compactClientText as compactChatText } from './client-text-utils.js?v=20260521a';
-import { deliveryFileNames } from './client-order-progress-utils.js?v=20260522a';
+import { deliveryFileNames } from './client-order-progress-utils.js?v=20260529a';
 
 export const OPEN_CHAT_SESSION_MAX_MESSAGES = 16;
 export const OPEN_CHAT_SESSION_MAX_SESSIONS = 30;
