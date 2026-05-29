@@ -26,6 +26,7 @@ const workerRoutingSource = `${workerSource}\n${workerHandlersSource}`;
 const serverSource = read('server.js');
 const storageSource = read('lib/storage.js');
 const sharedSource = read('lib/shared.js');
+const accountStateSource = read('lib/account-state.js');
 const orchestrationSource = read('lib/orchestration.js');
 const xConnectorSource = read('lib/x-connector.js');
 const connectorRoutesSource = read('lib/routes/connectors.js');
@@ -449,7 +450,7 @@ for (const token of [
   'billingReservation'
 ]) {
   assert.ok(
-    workerSource.includes(token) || serverSource.includes(token) || sharedSource.includes(token) || storageSource.includes(token),
+    workerSource.includes(token) || serverSource.includes(token) || sharedSource.includes(token) || accountStateSource.includes(token) || storageSource.includes(token),
     `Billing/job state guard missing ${token}`
   );
 }
