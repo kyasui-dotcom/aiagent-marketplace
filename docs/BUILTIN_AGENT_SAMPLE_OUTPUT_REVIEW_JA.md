@@ -1,11 +1,11 @@
 # Built-in Agents Sample Output Review
 
-作成日: 2026-05-28 (Asia/Tokyo)
+作成日: 2026-05-29 (Asia/Tokyo)
 
 ## 前提
 
 - 対象: `lib/builtin-agents/agents/` の 43 sample agent。
-- チェック方法: `npm run agent:test:snapshot -- --group all --out tmp\automation-2-before-20260528-sample-agents` と `npm run agent:test:compare -- --group all --baseline tmp\automation-2-before-20260528-sample-agents\snapshot.json --out tmp\automation-2-after-20260528-sample-agents`
+- チェック方法: `npm run agent:test:snapshot -- --group all --out tmp\automation-2-before-20260529-sample-agents` と `npm run agent:test:compare -- --group all --baseline tmp\automation-2-before-20260529-sample-agents\snapshot.json --out tmp\automation-2-after-20260529-sample-agents`
 - 出力モード: stable mock OpenAI mode。実モデルの文章品質ではなく、各 agent が provider request packet に agent purpose / action boundaries / delivery contract / forbidden claims を渡せているかを確認するための回帰出力。
 - 現状: 43件すべて `completed`。Before/After の変更は 0 件。公開注文可は 40 件、非公開 fixture は 3 件。
 - 実装判断: 今回の回帰では納品物としての契約差分は見つからないため、サンプルエージェント本体の修正は不要。理想形/現実差分表と今回の証跡を更新する。

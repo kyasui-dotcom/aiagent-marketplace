@@ -4,7 +4,7 @@ This review is generated from the current sample-agent files and the all-agent d
 
 ## Audit Summary
 
-- Run date: 2026-05-28 (Asia/Tokyo).
+- Run date: 2026-05-29 (Asia/Tokyo).
 - Scope: 43 sample agent files.
 - Public orderable catalog: 40 agents.
 - Non-routable internal/legacy fixtures: 3 agents (`free_web_growth_leader`, `launch_team_leader`, `agent_team_leader`).
@@ -16,8 +16,8 @@ This review is generated from the current sample-agent files and the all-agent d
 
 ## Test Evidence
 
-- Before snapshot: `tmp/automation-2-before-20260528-sample-agents/snapshot.json`
-- After comparison: `tmp/automation-2-after-20260528-sample-agents/comparison.md` (`43` cases, `0` changed outputs)
+- Before snapshot: `tmp/automation-2-before-20260529-sample-agents/snapshot.json`
+- After comparison: `tmp/automation-2-after-20260529-sample-agents/comparison.md` (`43` cases, `0` changed outputs)
 - Source-contract discipline + delivery contract QA: `npm run qa:builtin-agents`
 - Routing metadata contract QA: `npm run qa:agent-routing-contracts`
 - Public docs QA: `npm run qa:docs`
