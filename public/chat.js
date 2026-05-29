@@ -131,7 +131,6 @@ const CAIT_APP_CONTEXT_CHANNEL = 'cait-app-context';
 const CHATUX_UI_LANGUAGE_STORAGE_KEY = 'cait.uiLanguage.v1';
 const CHATUX_WELCOME_TEXT = 'What do you want done?';
 const CHATUX_WELCOME_TEXT_JA = '何をしたいですか？';
-const MASAMUNE_STANDALONE_PRODUCT_URL = 'https://marketing-ops.yasuikunihiro.workers.dev/';
 
 function normalizeUiLanguage(value = '', fallback = 'en') {
   const text = String(value || '').trim().toLowerCase().replace(/_/g, '-');
@@ -2830,28 +2829,6 @@ function openAppAgent(id = '', options = {}) {
     `Opened ${entry.name}.`,
     `${entry.name}を開きました。`
   ), { label: 'Library' });
-  return true;
-}
-
-function isMasamuneStandaloneProductIntent(prompt = '') {
-  const text = String(prompt || '').trim().normalize('NFKC');
-  if (!text) return false;
-  const lower = text.toLowerCase();
-  const mentionsMasamune = /\bmasamune\b/i.test(text)
-    || /政宗|正宗|マーケティングオートメーション|マーケティング自動化|marketing automation/i.test(text)
-    || lower.includes('marketing-ops.yasuikunihiro.workers.dev');
-  if (!mentionsMasamune) return false;
-  if (/^(?:masamune|政宗|正宗)$/i.test(text)) return true;
-  return /(open|launch|show|use|start|go to|url|link|開|起動|表示|使|アクセス|リンク|飛|行)/i.test(text);
-}
-
-function openMasamuneStandaloneProduct(prompt = '') {
-  window.open(MASAMUNE_STANDALONE_PRODUCT_URL, '_blank', 'noopener,noreferrer');
-  appendTextMessage('assistant', chatText(
-    'Opened MASAMUNE, the standalone marketing automation cockpit powered by CAIt APIs. It is separate from the CAIt Apps list.',
-    'MASAMUNEを開きました。CAIt API連携で動く独立したマーケティングオートメーションツールです。CAIt Apps一覧の機能ではありません。',
-    prompt
-  ), { tone: 'ok', label: 'MASAMUNE' });
   return true;
 }
 
@@ -5863,12 +5840,9 @@ els.composer.addEventListener('submit', async (event) => {
   setBusy(true);
   try {
     const libraryScope = libraryCommandScope(prompt);
-    const masamuneProductCommand = isMasamuneStandaloneProductIntent(prompt);
     const appCommandId = directAppCommandId(prompt);
     if (libraryScope) {
       await appendUsageLibrary(libraryScope);
-    } else if (masamuneProductCommand) {
-      openMasamuneStandaloneProduct(prompt);
     } else if (appCommandId) {
       openAppAgent(appCommandId, { source: 'chat_command' });
     } else if (/^(send|send order|発注|注文|実行)$/i.test(prompt) && state.draft) {
