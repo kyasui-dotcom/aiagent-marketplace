@@ -60,6 +60,7 @@ const chatConversationOwnerUtilsPath = new URL('../public/chat-conversation-owne
 const chatIntentGuardUtilsPath = new URL('../public/chat-intent-guard-utils.js', import.meta.url);
 const chatTelemetryPath = new URL('../public/chat-telemetry.js', import.meta.url);
 const chatPlanningProgressControllerPath = new URL('../public/chat-planning-progress-controller.js', import.meta.url);
+const chatRuntimeStateControllerPath = new URL('../public/chat-runtime-state-controller.js', import.meta.url);
 const chatDisplayUtilsPath = new URL('../public/chat-display-utils.js', import.meta.url);
 const chatDeliveryPreferenceControllerPath = new URL('../public/chat-delivery-preference-controller.js', import.meta.url);
 const chatSessionModelPath = new URL('../public/chat-session-model.js', import.meta.url);
@@ -146,6 +147,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(chatConversationOwnerUt
 execFileSync(process.execPath, ['--check', fileURLToPath(chatIntentGuardUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatTelemetryPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatPlanningProgressControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatRuntimeStateControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatDisplayUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatDeliveryPreferenceControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatSessionModelPath)], { stdio: 'pipe' });
@@ -262,6 +264,7 @@ const chatConversationOwnerUtilsJs = readFileSync(chatConversationOwnerUtilsPath
 const chatIntentGuardUtilsJs = readFileSync(chatIntentGuardUtilsPath, 'utf8');
 const chatTelemetryJs = readFileSync(chatTelemetryPath, 'utf8');
 const chatPlanningProgressControllerJs = readFileSync(chatPlanningProgressControllerPath, 'utf8');
+const chatRuntimeStateControllerJs = readFileSync(chatRuntimeStateControllerPath, 'utf8');
 const chatDeliveryPreferenceControllerJs = readFileSync(chatDeliveryPreferenceControllerPath, 'utf8');
 const chatSessionModelJs = readFileSync(chatSessionModelPath, 'utf8');
 const chatSessionSidebarControllerJs = readFileSync(chatSessionSidebarControllerPath, 'utf8');
@@ -593,6 +596,10 @@ assert.equal(
 );
 assert.ok(chatJs.includes('jobBlockedForSaasHandoff(job)'), 'SaaS handoff blockers should render as delivery/app-handoff states.');
 assert.ok(chatJs.includes("from './chat-delivery-file-utils.js"), 'Chat delivery file behavior should be delegated to the chat delivery file module.');
+assert.ok(chatJs.includes("from './chat-runtime-state-controller.js"), 'Chat runtime restore and persistence should be delegated to the runtime state controller.');
+assert.ok(chatRuntimeStateControllerJs.includes('function chatRuntimeStateSnapshot'), 'Chat runtime state controller should own runtime snapshot construction.');
+assert.ok(chatRuntimeStateControllerJs.includes('function applyRestoredChatSnapshot'), 'Chat runtime state controller should own restored snapshot application.');
+assert.ok(!chatJs.includes('function chatRuntimeStateSnapshot'), 'Chat entrypoint should not retain runtime snapshot construction after the module split.');
 assert.ok(chatJs.includes("from './chat-conversation-owner-utils.js"), 'Chat conversation owner resolution should be delegated to the conversation owner module.');
 assert.ok(chatConversationOwnerUtilsJs.includes('export function conversationOwnerFromPrepared'), 'Chat conversation owner module should own prepared-order owner resolution.');
 assert.ok(chatConversationOwnerUtilsJs.includes('export function withConversationOwner'), 'Chat conversation owner module should own owner metadata application.');
@@ -782,7 +789,7 @@ assert.ok(worker.includes('GA4_AUTH_EVENT_COOKIE') && worker.includes('ga4AuthEv
 assert.ok(clientAnalyticsUtilsJs.includes('CLIENT_GA4_EVENT_NAME_MAP') && clientAnalyticsUtilsJs.includes('purchase'), 'Legacy client analytics should map order, lead, checkout, and purchase events into GA4 names.');
 assert.ok(chatSessionSidebarControllerJs.includes('/api/settings/chat-memory/'), 'Chat sidebar delete should hide server chat memory, not just remove DOM rows.');
 assert.ok(chatJs.includes('session_id: chatSessionId'), 'Orders dispatched from chat should carry the active chat session id.');
-assert.ok(chatJs.includes('/api/chat-sessions'), 'Chat should persist recoverable chat sessions through the server.');
+assert.ok(chatRuntimeStateControllerJs.includes('/api/chat-sessions'), 'Chat should persist recoverable chat sessions through the server.');
 assert.ok(chatCss.includes('.chat-session-sidebar'), 'Chat CSS should style the left session sidebar.');
 assert.ok(chatCss.includes('.chat-session-row.active'), 'Chat CSS should visibly mark the active chat session.');
 assert.ok(chatCss.includes('.message.thinking .message-body'), 'Chat should style the OpenAI thinking state as a visible assistant message.');
@@ -1203,7 +1210,7 @@ assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
 assert.ok(chatHtml.includes('/chat.css?v=20260526f'), 'Chat page should load the current compact chat header and composer styles.');
-assert.ok(chatHtml.includes('/chat.js?v=20260529g'), 'Chat page should load the current compact chat header and composer controller.');
+assert.ok(chatHtml.includes('/chat.js?v=20260529h'), 'Chat page should load the current compact chat header and composer controller.');
 assert.ok(chatHtml.includes('id="chatHeaderMenu"') && chatHtml.includes('☰ Menu'), 'Chat header should collapse secondary actions into a menu.');
 assert.ok(chatHtml.includes('Chat history') && chatHtml.includes('Schedules') && chatHtml.includes('Agents and workers'), 'Chat menu should use specific workspace action labels.');
 assert.ok(chatHtml.includes('App tools') && chatHtml.includes('Apps hub'), 'Chat menu should distinguish app tools from the Apps hub page.');
@@ -1419,7 +1426,7 @@ assert.ok(chatCatalogRuntimeJs.includes('/api/app-contexts'), 'Chat should read 
 assert.ok(chatJs.includes('BroadcastChannel'), 'Chat should receive app context handoffs from a separate same-origin app window.');
 assert.ok(chatJs.includes('data-app-context-load'), 'Chat should let users load a server-side app context back into the composer.');
 assert.ok(chatJs.includes('refreshRecentJobs'), 'Chat history should be derived from the server job API.');
-assert.ok(chatJs.includes('compactChatRuntimeSnapshot'), 'Chat should compact runtime restore snapshots instead of using localStorage as order state.');
+assert.ok(chatRuntimeStateControllerJs.includes('compactChatRuntimeSnapshot'), 'Chat should compact runtime restore snapshots instead of using localStorage as order state.');
 assert.ok(appManifestRegistryJs.includes('analytics-console'), 'Chat app catalog should include Analytics Console.');
 assert.ok(appManifestRegistryJs.includes('publisher-approval-studio'), 'Chat app catalog should include Publisher and Approval Studio.');
 assert.ok(appManifestRegistryJs.includes('lead-ops-console'), 'Chat app catalog should include Lead Ops Console.');
@@ -1589,7 +1596,7 @@ assert.ok(accountSettingsJs.includes("headers.set('x-aiagent2-csrf', state.auth.
 assert.ok(chatJs.includes('function signOut'), 'Chat should expose sign out.');
 assert.ok(chatJs.includes("await api('/auth/logout'"), 'Chat sign out should call the logout API.');
 assert.ok(chatJs.includes("purgeChatStateForAccountBoundary('sign_out')"), 'Chat sign out should clear account-scoped local chat state before redirecting.');
-assert.ok(chatJs.includes('safeSessionStorageRemove(CHATUX_OAUTH_RETURN_STATE_KEY)'), 'Chat sign out/account boundary should remove OAuth return state.');
+assert.ok(chatRuntimeStateControllerJs.includes('safeSessionStorageRemove(oauthReturnStateKey)'), 'Chat sign out/account boundary should remove OAuth return state.');
 assert.ok(chatJs.includes('data-chat-logout'), 'Chat should render logout controls.');
 assert.ok(chatJs.includes("new URL('/login', window.location.origin)"), 'Chat should client-gate unauthenticated static asset access.');
 assert.ok(chatJs.includes("loginUrl.searchParams.set('next', nextPath || CHATUX_RETURN_PATH)"), 'Chat login gate should preserve the current chat path and context query.');
@@ -2041,7 +2048,7 @@ assert.ok(clientJs.includes('visibleDeliveryFiles(run.output?.files)'), 'Open Ch
 assert.ok(deliveryManagerJs.includes('visibleDeliveryFiles(output.files)'), 'Delivery Manager should hide internal workflow markdown bundles from user-facing files.');
 assert.ok(chatJs.includes('includeHistoricalTracked'), 'Chat backfill should ignore historical tracked orders while a current order is attached.');
 assert.ok(chatJs.includes('renderTerminalDeliveries: false'), 'Chat startup should not render historical terminal deliveries automatically.');
-assert.ok(chatJs.includes('notifyMilestones: false'), 'Chat startup backfill should not post stale completed-order milestone notices for restored history.');
+assert.ok(chatRuntimeStateControllerJs.includes('notifyMilestones: false'), 'Chat startup backfill should not post stale completed-order milestone notices for restored history.');
 assert.ok(!chatJs.includes("String(job?.parentAgentId || '').trim() === 'chatux'"), 'Chat startup recovery should not match all historical chatux parent jobs.');
 
 assert.ok(chatCss.includes('.chatux-panel'));
