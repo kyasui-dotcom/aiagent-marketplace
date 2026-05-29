@@ -43,6 +43,7 @@ const clientFlexibleToolUtilsPath = new URL('../public/client-flexible-tool-util
 const clientOpenChatHistoryUtilsPath = new URL('../public/client-open-chat-history-utils.js', import.meta.url);
 const clientOpenChatOrderProgressUtilsPath = new URL('../public/client-open-chat-order-progress-utils.js', import.meta.url);
 const clientOpenChatServerOrderUtilsPath = new URL('../public/client-open-chat-server-order-utils.js', import.meta.url);
+const clientOpenChatResponseUtilsPath = new URL('../public/client-open-chat-response-utils.js', import.meta.url);
 const clientOpenChatPatternGuardUtilsPath = new URL('../public/open-chat-pattern-guard-utils.js', import.meta.url);
 const analyticsLoaderPath = new URL('../public/analytics-loader.js', import.meta.url);
 const chatJsPath = new URL('../public/chat.js', import.meta.url);
@@ -161,6 +162,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientFlexibleToolUtils
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOrderAgentPickerControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatHistoryUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatPatternGuardUtilsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatResponseUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatServerOrderUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(analyticsLoaderPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(analyticsJsPath)], { stdio: 'pipe' });
