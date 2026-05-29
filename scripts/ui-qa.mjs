@@ -39,6 +39,7 @@ const clientConnectHubControllerPath = new URL('../public/client-connect-hub-con
 const clientDeliveryActionControllerPath = new URL('../public/client-delivery-action-controller.js', import.meta.url);
 const clientAuthAccessUtilsPath = new URL('../public/client-auth-access-utils.js', import.meta.url);
 const clientOrderAgentPickerControllerPath = new URL('../public/client-order-agent-picker-controller.js', import.meta.url);
+const clientParallelOrderControllerPath = new URL('../public/client-parallel-order-controller.js', import.meta.url);
 const clientPaymentRemovalUiPath = new URL('../public/client-payment-removal-ui.js', import.meta.url);
 const clientFlexibleToolUtilsPath = new URL('../public/client-flexible-tool-utils.js', import.meta.url);
 const clientOpenChatHistoryUtilsPath = new URL('../public/client-open-chat-history-utils.js', import.meta.url);
@@ -46,6 +47,7 @@ const clientOpenChatOrderProgressUtilsPath = new URL('../public/client-open-chat
 const clientOpenChatServerOrderUtilsPath = new URL('../public/client-open-chat-server-order-utils.js', import.meta.url);
 const clientOpenChatResponseUtilsPath = new URL('../public/client-open-chat-response-utils.js', import.meta.url);
 const clientOpenChatPatternGuardUtilsPath = new URL('../public/open-chat-pattern-guard-utils.js', import.meta.url);
+const clientViewUtilsPath = new URL('../public/client-view-utils.js', import.meta.url);
 const analyticsLoaderPath = new URL('../public/analytics-loader.js', import.meta.url);
 const chatJsPath = new URL('../public/chat.js', import.meta.url);
 const chatDeliveryFileUtilsPath = new URL('../public/chat-delivery-file-utils.js', import.meta.url);
@@ -172,10 +174,12 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientBrowserTransferUt
 execFileSync(process.execPath, ['--check', fileURLToPath(clientConnectHubControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientFlexibleToolUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOrderAgentPickerControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientParallelOrderControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatHistoryUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatPatternGuardUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatResponseUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatServerOrderUtilsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientViewUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(analyticsLoaderPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(analyticsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(publisherJsPath)], { stdio: 'pipe' });
@@ -234,6 +238,7 @@ const clientRouteAuthControllerJs = readFileSync(clientRouteAuthControllerPath, 
 const clientAgentAccessControllerJs = readFileSync(clientAgentAccessControllerPath, 'utf8');
 const clientDeliveryActionControllerJs = readFileSync(clientDeliveryActionControllerPath, 'utf8');
 const clientAuthAccessUtilsJs = readFileSync(clientAuthAccessUtilsPath, 'utf8');
+const clientParallelOrderControllerJs = readFileSync(clientParallelOrderControllerPath, 'utf8');
 const clientPaymentRemovalUiJs = readFileSync(clientPaymentRemovalUiPath, 'utf8');
 const clientFlexibleToolUtilsJs = readFileSync(clientFlexibleToolUtilsPath, 'utf8');
 const clientOpenChatPreorderIntentJs = readFileSync(new URL('../public/client-open-chat-preorder-intent-utils.js', import.meta.url), 'utf8');
@@ -242,6 +247,7 @@ const clientOpenChatOrderProgressUtilsJs = readFileSync(clientOpenChatOrderProgr
 const clientOpenChatServerOrderUtilsJs = readFileSync(clientOpenChatServerOrderUtilsPath, 'utf8');
 const clientOpenChatPatternGuardUtilsJs = readFileSync(clientOpenChatPatternGuardUtilsPath, 'utf8');
 const clientAnalyticsUtilsJs = readFileSync(clientAnalyticsUtilsPath, 'utf8');
+const clientViewUtilsJs = readFileSync(clientViewUtilsPath, 'utf8');
 const analyticsLoaderJs = readFileSync(analyticsLoaderPath, 'utf8');
 const chatJs = readFileSync(chatJsPath, 'utf8');
 const chatDeliveryFileUtilsJs = readFileSync(chatDeliveryFileUtilsPath, 'utf8');
@@ -483,6 +489,10 @@ assert.ok(!clientJs.includes('async function prepareWorkOrderViaApi') && !client
 assert.ok(clientJs.includes('createClientAgentAccessController'), 'Client app should delegate agent access and onboarding helpers to a dedicated module.');
 assert.ok(!clientJs.includes('function agentShareUrl') && !clientJs.includes('function renderAgentOnboarding'), 'Client app should not keep inline agent access helper implementations after extraction.');
 assert.ok(clientAgentAccessControllerJs.includes('function canCheckAgentOnboarding') && clientAgentAccessControllerJs.includes('function renderAgentOnboarding'), 'Agent access controller should own onboarding access checks and rendering.');
+assert.ok(clientJs.includes('createClientParallelOrderController'), 'Client app should delegate parallel-order queue behavior to a dedicated controller.');
+assert.ok(clientParallelOrderControllerJs.includes('function addCurrentOrderToParallelQueue') && clientParallelOrderControllerJs.includes('function createParallelOrders'), 'Parallel order controller should own queue add/create flows.');
+assert.ok(clientJs.includes('createClientViewUtils'), 'Client app should delegate shared view formatting helpers to a dedicated utility module.');
+assert.ok(clientViewUtilsJs.includes('function formatDurationMs') && clientViewUtilsJs.includes('function renderSummaryRows'), 'View utilities should own reusable formatting and summary rendering helpers.');
 assert.ok(clientOpenChatServerOrderUtilsJs.includes("'/api/work/prepare-order'") && clientOpenChatServerOrderUtilsJs.includes("'/api/work/resolve-intent'"), 'Server order utilities should own Open Chat work-order contract endpoints.');
 const prepareOrderSource = chatJs.slice(chatJs.indexOf('async function prepareOrder'), chatJs.indexOf('async function sendOrder'));
 assert.ok(prepareOrderSource.includes('Server-owned order intake questions could not be loaded'), 'Prepare-order failures should stop instead of falling back to client-generated intake questions.');
