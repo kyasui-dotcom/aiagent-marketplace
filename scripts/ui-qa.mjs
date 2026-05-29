@@ -32,6 +32,7 @@ const clientRunComposerControllerPath = new URL('../public/client-run-composer-c
 const clientDeveloperSurfaceControllerPath = new URL('../public/client-developer-surface-controller.js', import.meta.url);
 const clientSettingsBillingControllerPath = new URL('../public/client-settings-billing-controller.js', import.meta.url);
 const clientRouteAuthControllerPath = new URL('../public/client-route-auth-controller.js', import.meta.url);
+const clientAgentAccessControllerPath = new URL('../public/client-agent-access-controller.js', import.meta.url);
 const clientAgentSetupFlowControllerPath = new URL('../public/client-agent-setup-flow-controller.js', import.meta.url);
 const clientBrowserTransferUtilsPath = new URL('../public/client-browser-transfer-utils.js', import.meta.url);
 const clientConnectHubControllerPath = new URL('../public/client-connect-hub-controller.js', import.meta.url);
@@ -162,6 +163,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientOrderRoutingContr
 execFileSync(process.execPath, ['--check', fileURLToPath(clientRunComposerControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeveloperSurfaceControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientSettingsBillingControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientAgentAccessControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryActionControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientAgentSetupFlowControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientBrowserTransferUtilsPath)], { stdio: 'pipe' });
@@ -227,6 +229,7 @@ const clientRunComposerControllerJs = readFileSync(clientRunComposerControllerPa
 const clientDeveloperSurfaceControllerJs = readFileSync(clientDeveloperSurfaceControllerPath, 'utf8');
 const clientSettingsBillingControllerJs = readFileSync(clientSettingsBillingControllerPath, 'utf8');
 const clientRouteAuthControllerJs = readFileSync(clientRouteAuthControllerPath, 'utf8');
+const clientAgentAccessControllerJs = readFileSync(clientAgentAccessControllerPath, 'utf8');
 const clientDeliveryActionControllerJs = readFileSync(clientDeliveryActionControllerPath, 'utf8');
 const clientAuthAccessUtilsJs = readFileSync(clientAuthAccessUtilsPath, 'utf8');
 const clientPaymentRemovalUiJs = readFileSync(clientPaymentRemovalUiPath, 'utf8');
@@ -472,6 +475,9 @@ assert.ok(clientPreorderIntentBoundarySource.includes('openChatServerLeaderIntak
 assert.ok(!clientPreorderIntentBoundarySource.includes('dynamicIntakeQuestions: dynamicQuestions'), 'Legacy Open Chat must not render OpenAI-provided leader intake questions directly.');
 assert.ok(clientJs.includes('createClientOpenChatServerOrderUtils'), 'Client app should delegate server work-order contracts to a dedicated module.');
 assert.ok(!clientJs.includes('async function prepareWorkOrderViaApi') && !clientJs.includes('function serverPreparedOrderAnswerFromResult'), 'Client app should not own prepare-order API calls or server-prepared answer rendering.');
+assert.ok(clientJs.includes('createClientAgentAccessController'), 'Client app should delegate agent access and onboarding helpers to a dedicated module.');
+assert.ok(!clientJs.includes('function agentShareUrl') && !clientJs.includes('function renderAgentOnboarding'), 'Client app should not keep inline agent access helper implementations after extraction.');
+assert.ok(clientAgentAccessControllerJs.includes('function canCheckAgentOnboarding') && clientAgentAccessControllerJs.includes('function renderAgentOnboarding'), 'Agent access controller should own onboarding access checks and rendering.');
 assert.ok(clientOpenChatServerOrderUtilsJs.includes("'/api/work/prepare-order'") && clientOpenChatServerOrderUtilsJs.includes("'/api/work/resolve-intent'"), 'Server order utilities should own Open Chat work-order contract endpoints.');
 const prepareOrderSource = chatJs.slice(chatJs.indexOf('async function prepareOrder'), chatJs.indexOf('async function sendOrder'));
 assert.ok(prepareOrderSource.includes('Server-owned order intake questions could not be loaded'), 'Prepare-order failures should stop instead of falling back to client-generated intake questions.');
