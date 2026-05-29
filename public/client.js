@@ -221,6 +221,8 @@ import { createClientRequesterScopeUtils } from './client-requester-scope-utils.
 import { createClientAgentSetupFlowController } from './client-agent-setup-flow-controller.js?v=20260529a';
 import { createClientConnectHubController } from './client-connect-hub-controller.js?v=20260529a';
 import { createClientAgentAccessController } from './client-agent-access-controller.js?v=20260529a';
+import { createClientReleaseAccessController } from './client-release-access-controller.js?v=20260529a';
+import { createClientOpenChatRuntimeController } from './client-open-chat-runtime-controller.js?v=20260529a';
 import { createClientViewUtils } from './client-view-utils.js?v=20260529a';
 import { createClientParallelOrderController } from './client-parallel-order-controller.js?v=20260529a';
 import { createClientOrderDraftController } from './client-order-draft-controller.js?v=20260529a';
@@ -1470,6 +1472,29 @@ const {
   setOrderStrategyChoice
 } = clientOrderRoutingController;
 
+const clientReleaseAccessController = createClientReleaseAccessController({
+  document,
+  els,
+  state,
+  productShortName: PRODUCT_SHORT_NAME,
+  agentHealth: (agent) => agentHealth(agent),
+  canManageAgentsFromBrowser: (auth) => canManageAgentsFromBrowser(auth),
+  canManagePaymentsFromBrowser: (auth) => canManagePaymentsFromBrowser(auth),
+  canManagePayoutsFromBrowser: (auth) => canManagePayoutsFromBrowser(auth),
+  canOrderFromBrowser: (auth) => canOrderFromBrowser(auth),
+  canUseDevApi: (auth) => canUseDevApi(auth),
+  canUseGithubAgentFlow: (auth) => canUseGithubAgentFlow(auth),
+  defaultLoggedInTab: (snapshot) => defaultLoggedInTab(snapshot),
+  setButtonAccess: (element, enabled) => setButtonAccess(element, enabled),
+  setElementVisible: (element, visible) => setElementVisible(element, visible),
+  switchTab: (tab) => switchTab(tab)
+});
+const {
+  renderReleaseAccess,
+  renderStartGuide,
+  setTabVisible
+} = clientReleaseAccessController;
+
 const clientRouteAuthController = createClientRouteAuthController({
   state,
   els,
@@ -1636,11 +1661,32 @@ const {
   updateWorkChatStatusCard
 } = clientRunComposerController;
 
-let openChatTypingTimer = null;
-let liveSnapshotRefreshTimer = null;
-let openChatMessageSequence = 0;
 let orderComposerInputTimer = null;
 const ORDER_COMPOSER_INPUT_DEBOUNCE_MS = 260;
+
+const clientOpenChatRuntimeController = createClientOpenChatRuntimeController({
+  state,
+  window,
+  productShortName: PRODUCT_SHORT_NAME,
+  liveSnapshotRefreshMs: LIVE_SNAPSHOT_REFRESH_MS,
+  chatAnswerKind: (answer) => chatAnswerKind(answer),
+  looksJapanese: (value) => looksJapanese(value),
+  normalizeOrderProgressStatus: (status) => normalizeOrderProgressStatus(status),
+  refresh: () => refresh(),
+  renderWorkChatThread: (...args) => renderWorkChatThread(...args),
+  updateWorkChatStatusCard: (title, body, tone) => updateWorkChatStatusCard(title, body, tone)
+});
+const {
+  clearLiveSnapshotRefreshTimer,
+  finishOpenChatTyping,
+  hasActiveOpenChatOrderProgress,
+  makeOpenChatMessageId,
+  scheduleLiveSnapshotRefresh,
+  shouldAnimateOpenChatAnswer,
+  startOpenChatThinking,
+  startOpenChatTyping,
+  stopOpenChatThinking
+} = clientOpenChatRuntimeController;
 
 const clientRunHistoryController = createClientRunHistoryController({
   state,
@@ -1820,138 +1866,6 @@ function cancelOrderComposerRender() {
   if (!orderComposerInputTimer) return;
   window.clearTimeout(orderComposerInputTimer);
   orderComposerInputTimer = null;
-}
-
-function makeOpenChatMessageId() {
-  openChatMessageSequence += 1;
-  return `open-chat-${Date.now()}-${openChatMessageSequence}`;
-}
-
-function clearOpenChatTypingTimer() {
-  if (!openChatTypingTimer) return;
-  window.clearInterval(openChatTypingTimer);
-  openChatTypingTimer = null;
-}
-
-function finishOpenChatTyping(options = {}) {
-  clearOpenChatTypingTimer();
-  let changed = false;
-  state.orderChatMessages = (Array.isArray(state.orderChatMessages) ? state.orderChatMessages : []).map((message) => {
-    if (!message?.typing) return message;
-    const { fullBody, ...rest } = message;
-    changed = true;
-    return { ...rest, body: String(fullBody || message.body || ''), typing: false };
-  });
-  if (changed && options.render !== false) renderWorkChatThread();
-}
-
-function shouldAnimateOpenChatAnswer(answer, answerBody = '') {
-  if (!String(answerBody || '').trim()) return false;
-  return chatAnswerKind(answer) !== 'command';
-}
-
-function startOpenChatTyping(messageId) {
-  clearOpenChatTypingTimer();
-  const findTypingMessage = () => (Array.isArray(state.orderChatMessages) ? state.orderChatMessages : [])
-    .find((message) => message?.id === messageId && message.typing);
-  const message = findTypingMessage();
-  const fullBody = String(message?.fullBody || '');
-  const chars = Array.from(fullBody);
-  if (!message || !chars.length) {
-    finishOpenChatTyping();
-    return;
-  }
-
-  const intervalMs = 28;
-  const targetMs = Math.max(850, Math.min(3800, chars.length * 10));
-  const charsPerTick = Math.max(2, Math.ceil(chars.length / (targetMs / intervalMs)));
-  let visibleChars = 0;
-
-  openChatTypingTimer = window.setInterval(() => {
-    const current = findTypingMessage();
-    if (!current) {
-      clearOpenChatTypingTimer();
-      return;
-    }
-    visibleChars = Math.min(chars.length, visibleChars + charsPerTick);
-    current.body = chars.slice(0, visibleChars).join('');
-    if (visibleChars >= chars.length) {
-      current.body = fullBody;
-      current.typing = false;
-      delete current.fullBody;
-      clearOpenChatTypingTimer();
-    }
-    renderWorkChatThread();
-  }, intervalMs);
-}
-
-function startOpenChatThinking(prompt = '') {
-  finishOpenChatTyping({ render: false });
-  const ja = looksJapanese(prompt);
-  const messageId = makeOpenChatMessageId();
-  const body = ja
-    ? 'CAItが意図を整理しています'
-    : 'CAIt is thinking through the request';
-  state.orderChatMessages = [
-    ...(Array.isArray(state.orderChatMessages) ? state.orderChatMessages : []),
-    {
-      id: messageId,
-      role: 'agent',
-      label: PRODUCT_SHORT_NAME,
-      body,
-      tone: 'info',
-      typing: true,
-      thinking: true
-    }
-  ];
-  updateWorkChatStatusCard(
-    ja ? 'CAItが考えています。' : 'CAIt is thinking.',
-    ja ? '意図を確認して、チャット回答か発注準備かを判断しています。' : 'Checking intent before choosing chat answer or order prep.',
-    'info'
-  );
-  renderWorkChatThread();
-  return messageId;
-}
-
-function stopOpenChatThinking(messageId = '', options = {}) {
-  if (!messageId) return;
-  const before = Array.isArray(state.orderChatMessages) ? state.orderChatMessages.length : 0;
-  state.orderChatMessages = (Array.isArray(state.orderChatMessages) ? state.orderChatMessages : [])
-    .filter((message) => !(message?.id === messageId && message.thinking));
-  if (state.orderChatMessages.length !== before && options.render !== false) renderWorkChatThread();
-}
-
-function clearLiveSnapshotRefreshTimer() {
-  if (!liveSnapshotRefreshTimer) return;
-  window.clearTimeout(liveSnapshotRefreshTimer);
-  liveSnapshotRefreshTimer = null;
-}
-
-function hasActiveLiveJobs(snapshot = state.snapshot || {}) {
-  const jobs = Array.isArray(snapshot?.jobs) ? snapshot.jobs : [];
-  return jobs.some((job) => isActiveLiveOrderStatus(job?.status || ''));
-}
-
-function isActiveLiveOrderStatus(status = '') {
-  return ['queued', 'claimed', 'running', 'dispatched', 'created'].includes(normalizeOrderProgressStatus(status));
-}
-
-function hasActiveOpenChatOrderProgress() {
-  const messages = Array.isArray(state.orderChatMessages) ? state.orderChatMessages : [];
-  return messages.some((message) => {
-    if (message?.pendingDispatch === true) return true;
-    if (!message?.orderProgressId && !message?.workflowParentId) return false;
-    return isActiveLiveOrderStatus(message?.orderProgressStatus || '');
-  });
-}
-
-function scheduleLiveSnapshotRefresh(snapshot = state.snapshot || {}) {
-  clearLiveSnapshotRefreshTimer();
-  if (!hasActiveLiveJobs(snapshot)) return;
-  liveSnapshotRefreshTimer = window.setTimeout(() => {
-    liveSnapshotRefreshTimer = null;
-    void refresh().catch(() => {});
-  }, LIVE_SNAPSHOT_REFRESH_MS);
 }
 
 function guestTrialAlreadyUsedLocally(auth = state.snapshot?.auth || {}) {
@@ -2202,108 +2116,6 @@ function openFeedbackForm() {
       els.feedbackTitle.focus();
     });
   }
-}
-
-function renderStartGuide(snapshot = state.snapshot || {}) {
-  if (!els.startGuideCard) return;
-  const auth = snapshot?.auth || {};
-  const agents = snapshot?.agents || [];
-  const jobs = snapshot?.jobs || [];
-  const readyAgents = agents.filter((agent) => agentHealth(agent).ready);
-  const lastJob = jobs[0] || null;
-  let tone = 'info';
-  let title = 'Start with CAIt Chat.';
-  let body = 'Ask a product question or describe rough work. CAIt Chat can prepare the order brief first; billing starts only after you confirm SEND ORDER.';
-
-  if (!auth?.loggedIn) {
-    tone = 'ok';
-  } else if (auth?.loggedIn && !agents.length) {
-    title = 'CAIt Chat is ready.';
-    body = 'Use Chat to prepare or send an order. Use AGENTS when you want to publish your own agent from GitHub or a manifest.';
-  } else if (auth?.loggedIn && agents.length && !readyAgents.length) {
-    title = 'CAIt Chat can still prepare work.';
-    body = 'Your agent list needs verification before routing to your agents. Built-in and verified agents can still be used from Chat.';
-    tone = 'warn';
-  } else if (readyAgents.length) {
-    title = `CAIt Chat can route to ${readyAgents.length} ready agent${readyAgents.length === 1 ? '' : 's'}.`;
-    body = `Start in Chat, let ${PRODUCT_SHORT_NAME} prepare the brief, then SEND ORDER only when the task and cost are clear.`;
-    tone = 'ok';
-  }
-  if (auth?.loggedIn && lastJob && ['failed', 'timed_out'].includes(lastJob.status)) {
-    title = 'Inspect the last failed run.';
-    body = 'Open Chat, inspect the selected run, then retry only after the cause is clear.';
-    tone = 'warn';
-  }
-  els.startGuideCard.textContent = `${title}\n\n${body}`;
-  els.startGuideCard.className = `detail-box action-card ${tone} compact-card`;
-}
-
-function setTabVisible(tab, visible) {
-  const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
-  if (!btn) return;
-  btn.hidden = !visible;
-}
-
-function renderJobModeOptions(auth) {
-  if (!els.jobMode) return;
-  const options = canUseDevApi(auth)
-    ? [
-        { value: 'complete', label: 'simulate complete' },
-        { value: 'fail', label: 'simulate fail' },
-        { value: 'create-only', label: 'create only' },
-        { value: 'external-demo', label: 'dispatch to connected agent' }
-      ]
-    : [
-        { value: 'create-only', label: 'broker default' }
-      ];
-  const signature = JSON.stringify(options);
-  if (els.jobMode.dataset.signature !== signature) {
-    els.jobMode.innerHTML = options.map((option) => `<option value="${option.value}">${option.label}</option>`).join('');
-    els.jobMode.dataset.signature = signature;
-  }
-  if (!options.some((option) => option.value === els.jobMode.value)) {
-    els.jobMode.value = options[0]?.value || 'create-only';
-  }
-}
-
-function renderReleaseAccess(auth) {
-  const canOrder = canOrderFromBrowser(auth);
-  const canManagePayments = canManagePaymentsFromBrowser(auth);
-  const canManageAgents = canManageAgentsFromBrowser(auth);
-  const canGithubFlow = canUseGithubAgentFlow(auth);
-  const canManagePayouts = canManagePayoutsFromBrowser(auth);
-  const canDev = canUseDevApi(auth);
-  const showDemoTools = Boolean(canDev);
-  const canUseOps = Boolean(canDev);
-  const loggedIn = Boolean(auth?.loggedIn);
-  setTabVisible('start', !loggedIn);
-  setTabVisible('work', loggedIn);
-  setTabVisible('agents', loggedIn);
-  setTabVisible('connect', loggedIn);
-  setTabVisible('settings', loggedIn);
-  setButtonAccess(els.registerAgentBtn, canManageAgents);
-  setButtonAccess(els.draftAgentSkillBtn, true);
-  setButtonAccess(els.importManifestBtn, canManageAgents);
-  setButtonAccess(els.importUrlBtn, canManageAgents);
-  setButtonAccess(els.createJobBtn, true);
-  setButtonAccess(els.loadReposBtn, canGithubFlow);
-  setButtonAccess(els.generateRepoManifestBtn, canGithubFlow);
-  setButtonAccess(els.importSelectedRepoBtn, canGithubFlow);
-  setButtonAccess(els.createAdapterPrBtn, canGithubFlow);
-  setButtonAccess(els.importDeployedAdapterBtn, canGithubFlow);
-  setButtonAccess(els.saveBillingSettingsBtn, canManagePayments);
-  setButtonAccess(els.savePayoutSettingsBtn, canManagePayouts);
-  setButtonAccess(els.retryDispatchBtn, canDev);
-  setButtonAccess(els.claimJobBtn, canUseOps);
-  setButtonAccess(els.submitResultBtn, canUseOps);
-  setElementVisible(els.retryDispatchBtn, canDev);
-  setElementVisible(els.seedBtn, showDemoTools);
-  setTabVisible('ops', canUseOps);
-  if (els.topOpenChatBtn) els.topOpenChatBtn.textContent = loggedIn ? 'CHAT' : 'SIGN IN';
-  if (!canUseOps && state.currentTab === 'ops') {
-    switchTab(loggedIn ? defaultLoggedInTab(state.snapshot) : 'start');
-  }
-  renderJobModeOptions(auth);
 }
 
 function selectedJob() {
