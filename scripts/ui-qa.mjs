@@ -52,6 +52,7 @@ const clientOpenChatPatternGuardUtilsPath = new URL('../public/open-chat-pattern
 const clientViewUtilsPath = new URL('../public/client-view-utils.js', import.meta.url);
 const analyticsLoaderPath = new URL('../public/analytics-loader.js', import.meta.url);
 const chatJsPath = new URL('../public/chat.js', import.meta.url);
+const chatBootstrapStatePath = new URL('../public/chat-bootstrap-state.js', import.meta.url);
 const chatDeliveryFileUtilsPath = new URL('../public/chat-delivery-file-utils.js', import.meta.url);
 const chatWorkflowProgressUtilsPath = new URL('../public/chat-workflow-progress-utils.js', import.meta.url);
 const chatUsageLibraryControllerPath = new URL('../public/chat-usage-library-controller.js', import.meta.url);
@@ -260,6 +261,7 @@ const clientAnalyticsUtilsJs = readFileSync(clientAnalyticsUtilsPath, 'utf8');
 const clientViewUtilsJs = readFileSync(clientViewUtilsPath, 'utf8');
 const analyticsLoaderJs = readFileSync(analyticsLoaderPath, 'utf8');
 const chatJs = readFileSync(chatJsPath, 'utf8');
+const chatBootstrapStateJs = readFileSync(chatBootstrapStatePath, 'utf8');
 const chatDeliveryFileUtilsJs = readFileSync(chatDeliveryFileUtilsPath, 'utf8');
 const chatWorkflowProgressUtilsJs = readFileSync(chatWorkflowProgressUtilsPath, 'utf8');
 const chatUsageLibraryControllerJs = readFileSync(chatUsageLibraryControllerPath, 'utf8');
@@ -781,7 +783,7 @@ assert.ok(chatJs.includes('clearChatRestoreParamsFromUrl();'), 'Starting a new c
 assert.ok(chatJs.includes('function applyAuthState'), 'Chat memory should hydrate lightweight auth without waiting for /auth/status.');
 assert.ok(chatJs.includes('authAccountKey'), 'Chat local restore state should be scoped to the signed-in account.');
 assert.ok(chatJs.includes('purgeChatStateForAccountBoundary'), 'Chat should purge local sessions when the signed-in account changes.');
-assert.ok(chatJs.includes('pendingChatRestoreSnapshot'), 'Chat should defer local session restore until auth identifies the current account.');
+assert.ok(chatJs.includes('pendingChatRestoreSnapshot') || chatBootstrapStateJs.includes('pendingChatRestoreSnapshot'), 'Chat should defer local session restore until auth identifies the current account.');
 assert.ok(chatSessionSidebarControllerJs.includes('state.chatSessions = currentSession ? [currentSession] : []'), 'Chat history refresh should replace account-scoped session rows instead of merging stale local rows.');
 assert.ok(feedbackChatRoutes.includes('stale_chat_session_account'), 'Server chat-session snapshots should reject stale account-bound client state.');
 assert.ok(chatJs.indexOf('void refreshChatSessionHistory({ force: true });') < chatJs.indexOf('void refreshAuth();'), 'Chat should start loading the session list before the full auth status request.');
@@ -1448,7 +1450,7 @@ assert.ok(appManifestRegistryJs.includes('campaign-operations'), 'Chat app catal
 assert.ok(appManifestRegistryJs.includes('pricing-decision-console'), 'Chat app catalog should include Pricing Decision Console.');
 assert.ok(chatJs.includes('CORE_FEATURE_APP_IDS'), 'Chat should filter core CAIt features out of app manifests.');
 assert.ok(!chatJs.includes("id: 'delivery-manager'"), 'Chat app catalog should not include Deliveries as an app.');
-assert.ok(chatJs.includes("const CHATUX_RETURN_PATH = '/chat'"), 'OAuth and delivery return path should use the canonical chat route, not /chatux or /chat.html.');
+assert.ok(chatJs.includes("const CHATUX_RETURN_PATH = '/chat'") || chatBootstrapStateJs.includes("CHATUX_RETURN_PATH = '/chat'"), 'OAuth and delivery return path should use the canonical chat route, not /chatux or /chat.html.');
 assert.ok(chatJs.includes('CHATUX_OAUTH_RETURN_STATE_KEY'), 'Chat should keep a short-lived OAuth return snapshot for in-progress order recovery.');
 assert.ok(chatJs.includes("url.searchParams.set('return_to', currentChatReturnPath());"), 'OAuth links should carry the active chat return path with restore identifiers.');
 assert.ok(chatJs.includes("url.searchParams.set('cait_restore_chat', '1')"), 'Chat OAuth return paths should request active chat restoration.');
@@ -1518,7 +1520,7 @@ assert.ok(!clientJs.includes('pushAgentTeamLaunchTasks'), 'Open Chat client must
 assert.ok(!chatJs.includes('function leaderTextHasSpecificCpoSignal'), 'Chat client must not keep broad CPO product-strategy routing outside the CPO leader definition.');
 assert.ok(!chatJs.includes('function leaderTextHasSpecificCtoSignal'), 'Chat client must not keep broad CTO architecture routing outside the CTO leader definition.');
 assert.ok(!chatJs.includes('function leaderTextHasSpecificBuildSignal'), 'Chat client must not keep broad Build leader routing outside the Build leader definition.');
-assert.ok(chatJs.includes('activeLeaderLocked: false'), 'Chat should track when a leader has been confirmed and locked.');
+assert.ok(chatJs.includes('activeLeaderLocked: false') || chatBootstrapStateJs.includes('activeLeaderLocked: false'), 'Chat should track when a leader has been confirmed and locked.');
 assert.ok(chatJs.includes('function lockedLeaderOwnerForPrompt'), 'Chat should preserve a confirmed leader unless the user explicitly asks to change it.');
 assert.ok(!chatJs.includes('function leaderFollowupSpecialistTaskForText'), 'Chat must not own leader follow-up specialist routing; server/leader definitions decide specialist follow-ups.');
 assert.ok(chatJs.includes('suppressLeaderLock'), 'Server/leader-routed specialist follow-up drafts should not be rewritten back to the locked leader on SEND ORDER.');
@@ -1569,8 +1571,8 @@ assert.ok(
   'Reused child outputs should clearly state that the agent step was skipped.'
 );
 assert.ok(chatJs.includes('function showAppListPanel'), 'Chat should expose app list modal.');
-assert.ok(chatJs.includes('registeredApps: []'), 'Chat should keep registered marketplace apps in state.');
-assert.ok(chatJs.includes('const CHATUX_CATALOG_PAGE_SIZE = 10'), 'Workers and apps should initially load only ten catalog rows.');
+assert.ok(chatJs.includes('registeredApps: []') || chatBootstrapStateJs.includes('registeredApps: []'), 'Chat should keep registered marketplace apps in state.');
+assert.ok(chatJs.includes('const CHATUX_CATALOG_PAGE_SIZE = 10') || chatBootstrapStateJs.includes('CHATUX_CATALOG_PAGE_SIZE = 10'), 'Workers and apps should initially load only ten catalog rows.');
 assert.ok(chatCatalogRuntimeJs.includes("api(catalogApiPath('/api/apps', refreshOptions)"), 'Chat app list should refresh registered apps from the paged app registry API.');
 assert.ok(chatCatalogRuntimeJs.includes("api(catalogApiPath('/api/agents', refreshOptions)"), 'Chat worker list should refresh workers from the paged agent registry API.');
 assert.ok(chatJs.includes('data-utility-load-more'), 'Worker and app panels should lazy-load additional rows on demand.');
@@ -1578,8 +1580,8 @@ assert.ok(chatCatalogRuntimeJs.includes('function warmUtilityCatalogs'), 'Chat s
 assert.ok(!chatJs.includes("api('/api/snapshot', { method: 'GET' })"), 'Worker/app panels should not fetch the full snapshot just to list workers.');
 assert.ok(chatJs.includes('function showInfoPanel'), 'Chat should expose account/info modal.');
 assert.ok(chatJs.includes("adminNavLink: $('adminNavLink')"), 'Chat should wire the admin nav link.');
-assert.ok(chatJs.includes('activeLeader: null'), 'Chat should track whether CAIt or a leader owns the current conversation.');
-assert.ok(chatJs.includes('activeOwner: null'), 'Chat should track generic agent and leader conversation owners.');
+assert.ok(chatJs.includes('activeLeader: null') || chatBootstrapStateJs.includes('activeLeader: null'), 'Chat should track whether CAIt or a leader owns the current conversation.');
+assert.ok(chatJs.includes('activeOwner: null') || chatBootstrapStateJs.includes('activeOwner: null'), 'Chat should track generic agent and leader conversation owners.');
 assert.ok(chatJs.includes('function lockedAgentOwnerForPrompt'), 'Chat should preserve a confirmed agent across follow-up turns.');
 assert.ok(chatJs.includes('Agent:'), 'Chat should show when an individual agent owns the conversation.');
 assert.ok(chatEngine.includes('active_owner_locked'), 'Chat engine should send active agent/leader owner lock state in prepare and job payloads.');
@@ -1614,7 +1616,7 @@ assert.ok(chatRuntimeStateControllerJs.includes('safeSessionStorageRemove(oauthR
 assert.ok(chatJs.includes('data-chat-logout'), 'Chat should render logout controls.');
 assert.ok(chatJs.includes("new URL('/login', window.location.origin)"), 'Chat should client-gate unauthenticated static asset access.');
 assert.ok(chatJs.includes("loginUrl.searchParams.set('next', nextPath || CHATUX_RETURN_PATH)"), 'Chat login gate should preserve the current chat path and context query.');
-assert.ok(chatJs.includes('const CHATUX_CONNECT_WAIT_MS = 60 * 60 * 1000'), 'Chat auth and connector checks should wait up to 60 minutes before aborting user-action flows.');
+assert.ok(chatJs.includes('const CHATUX_CONNECT_WAIT_MS = 60 * 60 * 1000') || chatBootstrapStateJs.includes('CHATUX_CONNECT_WAIT_MS = 60 * 60 * 1000'), 'Chat auth and connector checks should wait up to 60 minutes before aborting user-action flows.');
 assert.ok(chatJs.includes('timeoutMs: CHATUX_CONNECT_WAIT_MS'), 'Chat auth checks should use the long connector wait budget.');
 assert.ok(chatJs.includes('connectorGateStartOAuthPopupMonitor') && connectorGateJs.includes('Math.ceil(waitMs / intervalMs)'), 'Chat OAuth popup monitoring should keep waiting for the full connector window.');
 assert.ok(chatJs.includes('function csrfRequiredApiError'), 'Chat API helper should detect CSRF write failures.');
@@ -1919,7 +1921,7 @@ assert.ok(!chatJs.includes('最終アクション: X Client Ops'), 'X Client Ops
 assert.ok(!chatJs.includes('過程で作成されたX投稿案'), 'X Client Ops delivery card should not show Japanese description copy.');
 assert.ok(chatDeliveryFileUtilsJs.includes('URL.createObjectURL'));
 assert.ok(chatDeliveryFileUtilsJs.includes('navigator.clipboard'));
-assert.ok(chatJs.includes('state.trackedOrderIds:') || chatJs.includes('trackedOrderIds: new Set()'), 'Tracked orders should be in-memory only for the active chat session.');
+assert.ok(chatJs.includes('state.trackedOrderIds:') || chatJs.includes('trackedOrderIds: new Set()') || chatBootstrapStateJs.includes('trackedOrderIds: new Set()'), 'Tracked orders should be in-memory only for the active chat session.');
 assert.ok(chatJs.includes('function clearActiveOrderMemory'), 'Chat should have a single helper for clearing active order-only runtime state.');
 assert.ok(chatJs.includes('state.trackedOrderIds.clear();'), 'Reset/new chat should clear tracked orders so old order history cannot attach to a blank chat.');
 assert.ok(chatJs.includes('state.pendingRecoveryPayloads = [];'), 'Reset/new chat should clear create-recovery candidates before a new blank chat starts.');

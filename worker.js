@@ -141,6 +141,7 @@ import { createWorkflowPriorRunHelpers } from './lib/workflow-prior-runs.js';
 import { createWorkflowLeaderSequenceHelpers } from './lib/workflow-leader-sequence.js';
 import { createWorkflowParentBlockingHelpers } from './lib/workflow-parent-blocking.js';
 import { createWorkflowEndpointDispatchHelpers } from './lib/workflow-endpoint-dispatch.js';
+import { createWorkflowRuntimeDelegates } from './lib/workflow-runtime-delegates.js';
 import { postJsonWithTimeout } from './lib/json-post.js';
 import { sanitizeExactMatchActionsForClient } from './lib/exact-actions.js';
 import { hasAdapterPrConfirmation, hasPostConfirmation, hasRepoWriteConfirmation, hasSendConfirmation } from './lib/external-write-confirmation.js';
@@ -204,6 +205,76 @@ let workflowParentBlockingHelpers = null;
 let workflowEndpointDispatchHelpers = null;
 const reconcileWorkflowParent = (...args) => workflowParentReconcileRuntime.reconcileWorkflowParent(...args);
 const refreshWorkflowLeaderHandoffForJobId = (...args) => workflowParentReconcileRuntime.refreshWorkflowLeaderHandoffForJobId(...args);
+const {
+  braveSearchConfiguredForWorkflow,
+  workflowJobRequiresSearch,
+  workflowSourceCollectionContractForJob,
+  workflowSourceCollectionQualityRule,
+  workflowPrimaryTaskForJob,
+  workflowMetaWithoutGlobalSearchFlags,
+  dispatchJobToAssignedAgent,
+  loadDispatchJobAndAgent,
+  dispatchExistingJobToAssignedAgent,
+  canAutoScheduleAsyncDispatch,
+  workflowChildPlanIndex,
+  workflowChildSortKey,
+  sortWorkflowChildren,
+  workflowChildIsTerminal,
+  workflowChildIsAdaptivePending,
+  workflowChildIsSequentialUserActionDeferred,
+  workflowChildIsLeaderReplanDeferred,
+  workflowChildAdaptiveLayer,
+  workflowChildIsBlockingProgress,
+  workflowChildIsApprovalBlockedTerminal,
+  authorityRequestRequiresSequentialUserAction,
+  workflowChildRequiresSequentialUserAction,
+  workflowHasActiveSequentialUserActionWait,
+  workflowLeaderChildIsApprovalBlockedTerminal,
+  workflowChildIsTerminalForProgress,
+  markWorkflowParentBlockedIfNeeded,
+  workflowCompletedRunHandoff,
+  workflowPriorCompletedRuns,
+  workflowDataUnavailableOutput,
+  workflowUnavailablePriorRunIsOptional,
+  workflowJobHasAttachedDataContext,
+  workflowOptionalUnavailablePriorRun,
+  workflowPriorUnavailableRuns,
+  workflowLeaderPriorLayerUnavailable,
+  workflowLeaderPriorLayerOptionalOnly,
+  workflowReplanTextValue,
+  workflowLeaderReplanDecisionForLayer,
+  workflowLeaderSequence,
+  workflowLeaderCheckpoints,
+  workflowCheckpointStatus,
+  workflowCheckpointBlocksLayer,
+  workflowLayerWasLeaderActivated,
+  workflowFailedPriorLayerShouldWarnNotBlock,
+  workflowBlockingQualityGateBeforeLayer,
+  workflowLeaderSequenceNeedsProgress,
+  workflowChildrenForLayer,
+  workflowShouldEnableLeaderSequence,
+  pickProgressDispatchTargets,
+  pickProgressDispatchTarget,
+  markDispatchScheduled,
+  scheduleProgressDispatchesForJobId,
+  scheduleProgressDispatchForJobId,
+  scheduleInitialWorkflowDispatchFromChildren,
+  scheduleNextWorkflowDispatchLightweight,
+  recoverWorkflowEndpointDispatchJobs,
+  verifyInternalCronRequest,
+  handleInternalWorkflowCompletionSweep,
+  runMinuteWorkflowCompletionSweep,
+  processWorkflowDispatchQueueMessage,
+  runQueuedEndpointDispatchSweep
+} = createWorkflowRuntimeDelegates({
+  getSourceRequirementHelpers: () => workflowSourceRequirementHelpers,
+  getEndpointDispatchHelpers: () => workflowEndpointDispatchHelpers,
+  getChildProgressHelpers: () => workflowChildProgressHelpers,
+  getParentBlockingHelpers: () => workflowParentBlockingHelpers,
+  getPriorRunHelpers: () => workflowPriorRunHelpers,
+  getLeaderSequenceHelpers: () => workflowLeaderSequenceHelpers,
+  getDispatchRuntime: () => workflowDispatchRuntime
+});
 const workflowJobProfileHelpers = createWorkflowJobProfileHelpers({
   leaderUsesSaasPublishHandoff
 });
@@ -2270,251 +2341,6 @@ const {
   handleSeed,
   handleTimeoutSweep
 } = devJobRoutes;
-
-function braveSearchConfiguredForWorkflow(...args) {
-  return workflowSourceRequirementHelpers.braveSearchConfiguredForWorkflow(...args);
-}
-
-function workflowJobRequiresSearch(job = {}) {
-  return workflowSourceRequirementHelpers.workflowJobRequiresSearch(job);
-}
-
-function workflowSourceCollectionContractForJob(...args) {
-  return workflowSourceRequirementHelpers.workflowSourceCollectionContractForJob(...args);
-}
-
-function workflowSourceCollectionQualityRule(...args) {
-  return workflowSourceRequirementHelpers.workflowSourceCollectionQualityRule(...args);
-}
-
-function workflowPrimaryTaskForJob(...args) {
-  return workflowSourceRequirementHelpers.workflowPrimaryTaskForJob(...args);
-}
-
-function workflowMetaWithoutGlobalSearchFlags(...args) {
-  return workflowSourceRequirementHelpers.workflowMetaWithoutGlobalSearchFlags(...args);
-}
-
-async function dispatchJobToAssignedAgent(...args) {
-  return workflowEndpointDispatchHelpers.dispatchJobToAssignedAgent(...args);
-}
-
-async function loadDispatchJobAndAgent(...args) {
-  return workflowEndpointDispatchHelpers.loadDispatchJobAndAgent(...args);
-}
-
-async function dispatchExistingJobToAssignedAgent(...args) {
-  return workflowEndpointDispatchHelpers.dispatchExistingJobToAssignedAgent(...args);
-}
-
-function canAutoScheduleAsyncDispatch(...args) {
-  return workflowEndpointDispatchHelpers.canAutoScheduleAsyncDispatch(...args);
-}
-
-function workflowChildPlanIndex(...args) {
-  return workflowChildProgressHelpers.workflowChildPlanIndex(...args);
-}
-
-function workflowChildSortKey(...args) {
-  return workflowChildProgressHelpers.workflowChildSortKey(...args);
-}
-
-function sortWorkflowChildren(...args) {
-  return workflowChildProgressHelpers.sortWorkflowChildren(...args);
-}
-
-function workflowChildIsTerminal(...args) {
-  return workflowChildProgressHelpers.workflowChildIsTerminal(...args);
-}
-
-function workflowChildIsAdaptivePending(...args) {
-  return workflowChildProgressHelpers.workflowChildIsAdaptivePending(...args);
-}
-
-function workflowChildIsSequentialUserActionDeferred(...args) {
-  return workflowChildProgressHelpers.workflowChildIsSequentialUserActionDeferred(...args);
-}
-
-function workflowChildIsLeaderReplanDeferred(...args) {
-  return workflowChildProgressHelpers.workflowChildIsLeaderReplanDeferred(...args);
-}
-
-function workflowChildAdaptiveLayer(...args) {
-  return workflowChildProgressHelpers.workflowChildAdaptiveLayer(...args);
-}
-
-function workflowChildIsBlockingProgress(...args) {
-  return workflowChildProgressHelpers.workflowChildIsBlockingProgress(...args);
-}
-
-function workflowChildIsApprovalBlockedTerminal(...args) {
-  return workflowChildProgressHelpers.workflowChildIsApprovalBlockedTerminal(...args);
-}
-
-function authorityRequestRequiresSequentialUserAction(...args) {
-  return workflowChildProgressHelpers.authorityRequestRequiresSequentialUserAction(...args);
-}
-
-function workflowChildRequiresSequentialUserAction(...args) {
-  return workflowChildProgressHelpers.workflowChildRequiresSequentialUserAction(...args);
-}
-
-function workflowHasActiveSequentialUserActionWait(...args) {
-  return workflowChildProgressHelpers.workflowHasActiveSequentialUserActionWait(...args);
-}
-
-function workflowLeaderChildIsApprovalBlockedTerminal(...args) {
-  return workflowChildProgressHelpers.workflowLeaderChildIsApprovalBlockedTerminal(...args);
-}
-
-function workflowChildIsTerminalForProgress(...args) {
-  return workflowChildProgressHelpers.workflowChildIsTerminalForProgress(...args);
-}
-
-function markWorkflowParentBlockedIfNeeded(...args) {
-  return workflowParentBlockingHelpers.markWorkflowParentBlockedIfNeeded(...args);
-}
-
-function workflowCompletedRunHandoff(...args) {
-  return workflowPriorRunHelpers.workflowCompletedRunHandoff(...args);
-}
-
-function workflowPriorCompletedRuns(...args) {
-  return workflowPriorRunHelpers.workflowPriorCompletedRuns(...args);
-}
-
-function workflowDataUnavailableOutput(...args) {
-  return workflowPriorRunHelpers.workflowDataUnavailableOutput(...args);
-}
-
-function workflowUnavailablePriorRunIsOptional(...args) {
-  return workflowPriorRunHelpers.workflowUnavailablePriorRunIsOptional(...args);
-}
-
-function workflowJobHasAttachedDataContext(...args) {
-  return workflowPriorRunHelpers.workflowJobHasAttachedDataContext(...args);
-}
-
-function workflowOptionalUnavailablePriorRun(...args) {
-  return workflowPriorRunHelpers.workflowOptionalUnavailablePriorRun(...args);
-}
-
-function workflowPriorUnavailableRuns(...args) {
-  return workflowPriorRunHelpers.workflowPriorUnavailableRuns(...args);
-}
-
-function workflowLeaderPriorLayerUnavailable(...args) {
-  return workflowPriorRunHelpers.workflowLeaderPriorLayerUnavailable(...args);
-}
-
-function workflowLeaderPriorLayerOptionalOnly(...args) {
-  return workflowPriorRunHelpers.workflowLeaderPriorLayerOptionalOnly(...args);
-}
-
-function workflowReplanTextValue(...args) {
-  return workflowLeaderSequenceHelpers.workflowReplanTextValue(...args);
-}
-
-function workflowLeaderReplanDecisionForLayer(...args) {
-  return workflowLeaderSequenceHelpers.workflowLeaderReplanDecisionForLayer(...args);
-}
-
-function workflowLeaderSequence(...args) {
-  return workflowLeaderSequenceHelpers.workflowLeaderSequence(...args);
-}
-
-function workflowLeaderCheckpoints(...args) {
-  return workflowLeaderSequenceHelpers.workflowLeaderCheckpoints(...args);
-}
-
-function workflowCheckpointStatus(...args) {
-  return workflowLeaderSequenceHelpers.workflowCheckpointStatus(...args);
-}
-
-function workflowCheckpointBlocksLayer(...args) {
-  return workflowLeaderSequenceHelpers.workflowCheckpointBlocksLayer(...args);
-}
-
-function workflowLayerWasLeaderActivated(parent = {}, layer = 1) {
-  return workflowLeaderSequenceHelpers.workflowLayerWasLeaderActivated(parent, layer);
-}
-
-function workflowFailedPriorLayerShouldWarnNotBlock(...args) {
-  return workflowLeaderSequenceHelpers.workflowFailedPriorLayerShouldWarnNotBlock(...args);
-}
-
-function workflowBlockingQualityGateBeforeLayer(...args) {
-  return workflowLeaderSequenceHelpers.workflowBlockingQualityGateBeforeLayer(...args);
-}
-
-function workflowLeaderSequenceNeedsProgress(...args) {
-  return workflowLeaderSequenceHelpers.workflowLeaderSequenceNeedsProgress(...args);
-}
-
-function workflowChildrenForLayer(...args) {
-  return workflowLeaderSequenceHelpers.workflowChildrenForLayer(...args);
-}
-
-function workflowShouldEnableLeaderSequence(...args) {
-  return workflowLeaderSequenceHelpers.workflowShouldEnableLeaderSequence(...args);
-}
-
-function workflowDispatchHandlers() {
-  if (!workflowDispatchRuntime) throw new Error('Workflow dispatch runtime is not initialized.');
-  return workflowDispatchRuntime;
-}
-
-function pickProgressDispatchTargets(...args) {
-  return workflowDispatchHandlers().pickProgressDispatchTargets(...args);
-}
-
-function pickProgressDispatchTarget(...args) {
-  return workflowDispatchHandlers().pickProgressDispatchTarget(...args);
-}
-
-async function markDispatchScheduled(...args) {
-  return workflowDispatchHandlers().markDispatchScheduled(...args);
-}
-
-async function scheduleProgressDispatchesForJobId(...args) {
-  return workflowDispatchHandlers().scheduleProgressDispatchesForJobId(...args);
-}
-
-async function scheduleProgressDispatchForJobId(...args) {
-  return workflowDispatchHandlers().scheduleProgressDispatchForJobId(...args);
-}
-
-async function scheduleInitialWorkflowDispatchFromChildren(...args) {
-  return workflowDispatchHandlers().scheduleInitialWorkflowDispatchFromChildren(...args);
-}
-
-async function scheduleNextWorkflowDispatchLightweight(...args) {
-  return workflowDispatchHandlers().scheduleNextWorkflowDispatchLightweight(...args);
-}
-
-async function recoverWorkflowEndpointDispatchJobs(...args) {
-  return workflowDispatchHandlers().recoverWorkflowEndpointDispatchJobs(...args);
-}
-
-async function verifyInternalCronRequest(...args) {
-  return workflowDispatchHandlers().verifyInternalCronRequest(...args);
-}
-
-async function handleInternalWorkflowCompletionSweep(...args) {
-  return workflowDispatchHandlers().handleInternalWorkflowCompletionSweep(...args);
-}
-
-async function runMinuteWorkflowCompletionSweep(...args) {
-  return workflowDispatchHandlers().runMinuteWorkflowCompletionSweep(...args);
-}
-
-async function processWorkflowDispatchQueueMessage(...args) {
-  return workflowDispatchHandlers().processWorkflowDispatchQueueMessage(...args);
-}
-
-async function runQueuedEndpointDispatchSweep(...args) {
-  return workflowDispatchHandlers().runQueuedEndpointDispatchSweep(...args);
-}
 
 workflowDispatchRuntime = createWorkflowDispatchRuntime({
   DISPATCH_IN_PROGRESS_STALE_MS,
