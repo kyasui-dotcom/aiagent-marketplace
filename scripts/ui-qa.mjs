@@ -530,7 +530,8 @@ assert.ok(chatJs.includes('conversationLanguage'), 'Chat should remember the lan
 assert.ok(chatJs.includes('rememberConversationLanguage(prompt)'), 'Chat should set the conversation language from the first submitted prompt.');
 assert.ok(chatJs.includes('PROMPT_PLACEHOLDERS'), 'Chat composer placeholders should be able to follow the selected UI language.');
 assert.ok(chatJs.includes('CHATUX_UI_LANGUAGE_STORAGE_KEY'), 'Chat should persist the explicit UI language setting.');
-assert.ok(chatJs.includes("api('/api/settings/profile'"), 'Chat language setting should save to the account profile API.');
+assert.ok(chatJs.includes("from './chat-ui-runtime-controller.js?v=20260531a'"), 'Chat should load the extracted UI runtime controller cache key.');
+assert.ok(chatUiRuntimeControllerJs.includes("api('/api/settings/profile'"), 'Chat language setting should save to the account profile API.');
 assert.ok(chatJs.includes('will ask one item at a time before dispatch'), 'Leader intake should ask one item at a time instead of dumping all questions at once.');
 const clientOpenChatTaskLabelSource = [
   clientJs,
@@ -1239,9 +1240,9 @@ assert.ok(chatHtml.includes('id="composerModeHint"'), 'Chat composer should show
 assert.ok(chatHtml.includes('id="composerControlsHint"') && chatHtml.includes('Output sets the result format. Schedule runs it later.'), 'Chat composer should explain the Output selector beside Schedule.');
 assert.ok(chatHtml.includes('Preferred output format') && !chatHtml.includes('Delivery shape'), 'Chat output selector should not look like a delivery destination control.');
 assert.ok(chatHtml.includes('data-label-en="Summary"') && chatHtml.includes('data-label-ja="要約"'), 'Chat output selector should keep compact language-aware option labels.');
-assert.ok(chatJs.includes('function chatUiText') && chatJs.includes('function chatUiLanguage'), 'Fixed chat controls should use UI language, not the inferred conversation language.');
+assert.ok(chatUiRuntimeControllerJs.includes('function chatUiText') && chatUiRuntimeControllerJs.includes('function chatUiLanguage'), 'Fixed chat controls should use UI language, not the inferred conversation language.');
 assert.ok(chatJs.includes('data-chat-ui-language'), 'Info panel should expose the UI language selector.');
-assert.ok(chatJs.includes('return chatUiLanguage();'), 'Chat response language should follow the explicit UI language setting by default.');
+assert.ok(chatUiRuntimeControllerJs.includes('return chatUiLanguage();'), 'Chat response language should follow the explicit UI language setting by default.');
 assert.ok(chatJs.includes("chatUiText('Send answer', '回答を送信'"), 'Chat intake mode should rename the submit button from generic chat sending to answer sending.');
 assert.ok(chatJs.includes("chatUiText('Send chat', 'チャット送信'"), 'Chat submit label should follow the UI language setting.');
 assert.ok(!chatJs.includes("chatText('Send chat', 'チャット送信'"), 'Chat submit label must not switch based on Japanese conversation text.');
@@ -1621,17 +1622,17 @@ assert.ok(chatJs.includes("loginUrl.searchParams.set('next', nextPath || CHATUX_
 assert.ok(chatJs.includes('const CHATUX_CONNECT_WAIT_MS = 60 * 60 * 1000') || chatBootstrapStateJs.includes('CHATUX_CONNECT_WAIT_MS = 60 * 60 * 1000'), 'Chat auth and connector checks should wait up to 60 minutes before aborting user-action flows.');
 assert.ok(chatJs.includes('timeoutMs: CHATUX_CONNECT_WAIT_MS'), 'Chat auth checks should use the long connector wait budget.');
 assert.ok(chatJs.includes('connectorGateStartOAuthPopupMonitor') && connectorGateJs.includes('Math.ceil(waitMs / intervalMs)'), 'Chat OAuth popup monitoring should keep waiting for the full connector window.');
-assert.ok(chatJs.includes('function csrfRequiredApiError'), 'Chat API helper should detect CSRF write failures.');
-assert.ok(chatJs.includes('await refreshAuthForUnsafeWrite'), 'Chat API helper should refresh auth before/retry browser writes that need CSRF.');
-assert.ok(chatJs.includes("headers.set('x-aiagent2-csrf', state.auth.csrfToken)"), 'Chat API helper should attach refreshed CSRF tokens to unsafe same-origin writes.');
+assert.ok(chatUiRuntimeControllerJs.includes('function csrfRequiredApiError'), 'Chat API helper should detect CSRF write failures.');
+assert.ok(chatUiRuntimeControllerJs.includes('await refreshAuthForUnsafeWrite'), 'Chat API helper should refresh auth before/retry browser writes that need CSRF.');
+assert.ok(chatUiRuntimeControllerJs.includes("headers.set('x-aiagent2-csrf', state.auth.csrfToken)"), 'Chat API helper should attach refreshed CSRF tokens to unsafe same-origin writes.');
 assert.ok(chatJs.includes("await apiWithRetry('/api/work/prepare-order'"), 'Chat should retry transient prepare-order failures before surfacing an error.');
 assert.ok(chatJs.includes('maxAttempts: 5'), 'Chat prepare-order retry should wait through short production 5xx/429 bursts.');
 assert.ok(chatJs.includes('intake.taskType || intake.task_type'), 'Intake answers should preserve the originally selected leader task.');
 assert.ok(chatJs.includes('taskType: task'), 'Worker list choices should pass the chosen task type into prepare-order.');
 assert.ok(chatJs.includes('data-utility-agent-id'), 'Worker Use buttons should carry the selected agent id, not only the task type.');
 assert.ok(chatJs.includes('selectedAgentId: agentId'), 'Worker Use should pin the selected agent in the order draft.');
-assert.ok(chatJs.includes('function chatText'), 'Chat user-facing status text should go through a language helper.');
-assert.ok(chatJs.includes('function chatUiText'), 'Chat fixed controls should have a separate UI-language helper.');
+assert.ok(chatUiRuntimeControllerJs.includes('function chatText'), 'Chat user-facing status text should go through a language helper.');
+assert.ok(chatUiRuntimeControllerJs.includes('function chatUiText'), 'Chat fixed controls should have a separate UI-language helper.');
 assert.ok(chatJs.includes('I will prepare an order in chat using'), 'Worker Use status should have an English UI copy path.');
 assert.ok(chatJs.includes('prepared_in_chat: true'), 'Approved chat orders should mark the intake/preparation gate as already completed.');
 assert.ok(chatJs.includes("await api('/api/jobs'"));
