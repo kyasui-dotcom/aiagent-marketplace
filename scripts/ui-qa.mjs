@@ -44,6 +44,7 @@ const clientReleaseAccessControllerPath = new URL('../public/client-release-acce
 const clientOpenChatRuntimeControllerPath = new URL('../public/client-open-chat-runtime-controller.js', import.meta.url);
 const clientJobCreateControllerPath = new URL('../public/client-job-create-controller.js', import.meta.url);
 const clientWorkChatActionControllerPath = new URL('../public/client-work-chat-action-controller.js', import.meta.url);
+const clientAgentDetailControllerPath = new URL('../public/client-agent-detail-controller.js', import.meta.url);
 const clientPaymentRemovalUiPath = new URL('../public/client-payment-removal-ui.js', import.meta.url);
 const clientFlexibleToolUtilsPath = new URL('../public/client-flexible-tool-utils.js', import.meta.url);
 const clientOpenChatHistoryUtilsPath = new URL('../public/client-open-chat-history-utils.js', import.meta.url);
@@ -194,6 +195,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientReleaseAccessCont
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatRuntimeControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientJobCreateControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientWorkChatActionControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientAgentDetailControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatHistoryUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatPatternGuardUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatResponseUtilsPath)], { stdio: 'pipe' });
@@ -261,6 +263,7 @@ const clientParallelOrderControllerJs = readFileSync(clientParallelOrderControll
 const clientReleaseAccessControllerJs = readFileSync(clientReleaseAccessControllerPath, 'utf8');
 const clientOpenChatRuntimeControllerJs = readFileSync(clientOpenChatRuntimeControllerPath, 'utf8');
 const clientWorkChatActionControllerJs = readFileSync(clientWorkChatActionControllerPath, 'utf8');
+const clientAgentDetailControllerJs = readFileSync(clientAgentDetailControllerPath, 'utf8');
 const clientPaymentRemovalUiJs = readFileSync(clientPaymentRemovalUiPath, 'utf8');
 const clientFlexibleToolUtilsJs = readFileSync(clientFlexibleToolUtilsPath, 'utf8');
 const clientOpenChatPreorderIntentJs = readFileSync(new URL('../public/client-open-chat-preorder-intent-utils.js', import.meta.url), 'utf8');
@@ -541,6 +544,9 @@ assert.ok(!clientJs.includes('async function createAndOptionallyRunJob'), 'Clien
 assert.ok(clientJs.includes("from './client-work-chat-action-controller.js?v=20260601a'"), 'Client app should load the extracted work-chat action controller cache key.');
 assert.ok(clientWorkChatActionControllerJs.includes('async function handleOpenChatChoiceCommand') && clientWorkChatActionControllerJs.includes('async function handleChatActionButton'), 'Work-chat action controller should own chat choice and action-button dispatch.');
 assert.ok(!clientJs.includes('async function handleOpenChatChoiceCommand') && !clientJs.includes('async function handleChatActionButton'), 'Client app should delegate work-chat command/action dispatch to the extracted controller.');
+assert.ok(clientJs.includes("from './client-agent-detail-controller.js?v=20260601a'"), 'Client app should load the extracted agent detail controller cache key.');
+assert.ok(clientAgentDetailControllerJs.includes('function setAgentDetail') && clientAgentDetailControllerJs.includes("api(`/api/agents/${agent.id}/pricing`"), 'Agent detail controller should own agent detail rendering and pricing updates.');
+assert.ok(!clientJs.includes('function setAgentDetail') && !clientJs.includes('async function saveAgentPricing'), 'Client app should delegate agent detail and pricing updates to the extracted controller.');
 assert.ok(clientOpenChatServerOrderUtilsJs.includes("'/api/work/prepare-order'") && clientOpenChatServerOrderUtilsJs.includes("'/api/work/resolve-intent'"), 'Server order utilities should own Open Chat work-order contract endpoints.');
 const prepareOrderSource = chatJs.slice(chatJs.indexOf('async function prepareOrder'), chatJs.indexOf('async function sendOrder'));
 assert.ok(prepareOrderSource.includes('Server-owned order intake questions could not be loaded'), 'Prepare-order failures should stop instead of falling back to client-generated intake questions.');
