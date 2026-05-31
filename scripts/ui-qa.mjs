@@ -46,6 +46,7 @@ const clientOpenChatExchangeControllerPath = new URL('../public/client-open-chat
 const clientJobCreateControllerPath = new URL('../public/client-job-create-controller.js', import.meta.url);
 const clientWorkChatActionControllerPath = new URL('../public/client-work-chat-action-controller.js', import.meta.url);
 const clientAgentDetailControllerPath = new URL('../public/client-agent-detail-controller.js', import.meta.url);
+const clientTabNavigationControllerPath = new URL('../public/client-tab-navigation-controller.js', import.meta.url);
 const clientPaymentRemovalUiPath = new URL('../public/client-payment-removal-ui.js', import.meta.url);
 const clientFlexibleToolUtilsPath = new URL('../public/client-flexible-tool-utils.js', import.meta.url);
 const clientOpenChatHistoryUtilsPath = new URL('../public/client-open-chat-history-utils.js', import.meta.url);
@@ -267,6 +268,7 @@ const clientOpenChatRuntimeControllerJs = readFileSync(clientOpenChatRuntimeCont
 const clientOpenChatExchangeControllerJs = readFileSync(clientOpenChatExchangeControllerPath, 'utf8');
 const clientWorkChatActionControllerJs = readFileSync(clientWorkChatActionControllerPath, 'utf8');
 const clientAgentDetailControllerJs = readFileSync(clientAgentDetailControllerPath, 'utf8');
+const clientTabNavigationControllerJs = readFileSync(clientTabNavigationControllerPath, 'utf8');
 const clientPaymentRemovalUiJs = readFileSync(clientPaymentRemovalUiPath, 'utf8');
 const clientFlexibleToolUtilsJs = readFileSync(clientFlexibleToolUtilsPath, 'utf8');
 const clientOpenChatPreorderIntentJs = readFileSync(new URL('../public/client-open-chat-preorder-intent-utils.js', import.meta.url), 'utf8');
@@ -556,6 +558,9 @@ assert.ok(!clientJs.includes('async function handleOpenChatChoiceCommand') && !c
 assert.ok(clientJs.includes("from './client-agent-detail-controller.js?v=20260601a'"), 'Client app should load the extracted agent detail controller cache key.');
 assert.ok(clientAgentDetailControllerJs.includes('function setAgentDetail') && clientAgentDetailControllerJs.includes("api(`/api/agents/${agent.id}/pricing`"), 'Agent detail controller should own agent detail rendering and pricing updates.');
 assert.ok(!clientJs.includes('function setAgentDetail') && !clientJs.includes('async function saveAgentPricing'), 'Client app should delegate agent detail and pricing updates to the extracted controller.');
+assert.ok(clientJs.includes("from './client-tab-navigation-controller.js?v=20260601a'"), 'Client app should load the extracted tab navigation controller cache key.');
+assert.ok(clientTabNavigationControllerJs.includes('function switchTab') && clientTabNavigationControllerJs.includes('function pauseWorkChatOnTabLeave'), 'Tab navigation controller should own private route switching and chat-leave pause behavior.');
+assert.ok(!clientJs.includes('function switchTab') && !clientJs.includes('function pauseWorkChatOnTabLeave'), 'Client app should delegate tab switching and chat-leave pause behavior to the extracted controller.');
 assert.ok(clientOpenChatServerOrderUtilsJs.includes("'/api/work/prepare-order'") && clientOpenChatServerOrderUtilsJs.includes("'/api/work/resolve-intent'"), 'Server order utilities should own Open Chat work-order contract endpoints.');
 const prepareOrderSource = chatJs.slice(chatJs.indexOf('async function prepareOrder'), chatJs.indexOf('async function sendOrder'));
 assert.ok(prepareOrderSource.includes('Server-owned order intake questions could not be loaded'), 'Prepare-order failures should stop instead of falling back to client-generated intake questions.');

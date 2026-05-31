@@ -230,6 +230,7 @@ import { createClientPrimaryEventBindingsController } from './client-primary-eve
 import { createClientSecondaryEventBindingsController } from './client-secondary-event-bindings-controller.js?v=20260601a';
 import { createClientWorkChatActionController } from './client-work-chat-action-controller.js?v=20260601a';
 import { createClientAgentDetailController } from './client-agent-detail-controller.js?v=20260601a';
+import { createClientTabNavigationController } from './client-tab-navigation-controller.js?v=20260601a';
 
 const $ = (id) => document.getElementById(id);
 const PRODUCT_NAME = 'CAIt';
@@ -2175,6 +2176,36 @@ const {
   scheduledWorkTimeLabel
 } = clientScheduledWorkController;
 
+const clientTabNavigationController = createClientTabNavigationController({
+  document,
+  els,
+  state,
+  window,
+  clearOpenChatAcceptanceProgressTimer: () => clearOpenChatAcceptanceProgressTimer(),
+  clearOpenChatOrderProgressTimer: () => clearOpenChatOrderProgressTimer(),
+  defaultLoggedInTab: (snapshot) => defaultLoggedInTab(snapshot),
+  finishOpenChatTyping: (options) => finishOpenChatTyping(options),
+  flash: (message, tone) => flash(message, tone),
+  normalizeTab: (tab) => normalizeTab(tab),
+  openChatLastPromptWasOrderDecision: () => openChatLastPromptWasOrderDecision(),
+  openDedicatedLoginPage: (options) => openDedicatedLoginPage(options),
+  persistCurrentOpenChatSession: () => persistCurrentOpenChatSession(),
+  refresh: () => refresh(),
+  rememberTab: (tab) => rememberTab(tab),
+  setElementVisible: (element, visible) => setElementVisible(element, visible),
+  setTabVisible: (tab, visible) => setTabVisible(tab, visible),
+  syncRouteState: () => syncRouteState(),
+  trackConversionEvent: (eventName, payload) => trackConversionEvent(eventName, payload),
+  trackConversionOnce: (eventName, payload, key) => trackConversionOnce(eventName, payload, key)
+});
+const {
+  pauseWorkChatOnTabLeave,
+  requireStartLoginGate,
+  switchTab,
+  syncLanding,
+  syncTopWorkChatCta
+} = clientTabNavigationController;
+
 function closeOrderSettings() {
   state.orderSettingsExpanded = false;
   renderOrderSettingsDrawer();
@@ -3394,145 +3425,6 @@ function setDetail(value) {
   renderRunDelivery(value);
   safeText(els.jobDetail, typeof value === 'string' ? value : summarizeRun(value));
   renderWorkChatThread();
-}
-
-function syncTopWorkChatCta() {
-  setElementVisible(els.topOpenChatBtn, state.currentTab !== 'work');
-}
-
-function requireStartLoginGate(targetTab = 'start', reason = 'Sign in from START first.') {
-  if (els.mainNavMenu) els.mainNavMenu.open = false;
-  const safeTargetTab = normalizeTab(targetTab) || 'work';
-  void trackConversionEvent('start_login_gate_hit', {
-    source: safeTargetTab,
-    current_tab: state.currentTab || 'start'
-  });
-  openDedicatedLoginPage({
-    source: `gate_${safeTargetTab}`,
-    nextTab: safeTargetTab
-  });
-}
-
-function showAuthCheckingScreen(targetTab = 'work') {
-  state.pendingAuthTab = normalizeTab(targetTab) || 'work';
-  state.currentTab = 'auth-check';
-  document.querySelectorAll('[data-screen]').forEach((node) => {
-    node.hidden = node.dataset.screen !== 'auth-check';
-  });
-  document.querySelectorAll('.tab-btn').forEach((btn) => {
-    btn.classList.toggle('active', false);
-  });
-  syncTopWorkChatCta();
-}
-
-function pauseWorkChatOnTabLeave() {
-  const hasBoundaryState = Boolean(
-    state.pendingOrderConfirmation
-    || state.pendingIntake
-    || state.intakeConfirmed
-    || (Array.isArray(state.openChatClarifyOptions) && state.openChatClarifyOptions.length)
-    || openChatLastPromptWasOrderDecision()
-    || String(state.openChatPreparedBrief || '').trim()
-  );
-  if (!hasBoundaryState) return;
-  finishOpenChatTyping({ render: false });
-  clearOpenChatOrderProgressTimer();
-  clearOpenChatAcceptanceProgressTimer();
-  state.openChatProgressOrderId = '';
-  state.openChatProgressLastKey = '';
-  state.openChatProgressPollCount = 0;
-  state.openChatPendingDispatchMessageId = '';
-  state.pendingOrderConfirmation = null;
-  state.pendingIntake = null;
-  state.intakeConfirmed = false;
-  state.intakeAnswer = '';
-  state.openChatClarifyOptions = [];
-  state.openChatDecisionSuppressed = true;
-  state.openChatVagueChoicePrompt = '';
-  state.openChatNaturalChoiceIntent = '';
-  state.openChatIntentShiftPrompt = '';
-  state.openChatIdeaBacklogPrompt = '';
-  state.openChatLeaderChoicePrompt = '';
-  state.openChatLeaderChoiceCandidates = [];
-  state.openChatLeaderIntakePrompt = '';
-  state.openChatLeaderIntakeTask = '';
-  state.openChatPendingQuestionPrompt = '';
-  state.openChatPendingQuestionTask = '';
-  state.openChatPendingQuestionPattern = '';
-  state.openChatPausedByTabLeave = true;
-  if (els.intakeAnswer) els.intakeAnswer.value = '';
-  state.openChatLastStatus = 'CAIt Chat paused after leaving the chat view.\n\nType "continue" to resume this draft, or send a new request.';
-  state.openChatLastStatusTone = 'info';
-  persistCurrentOpenChatSession();
-}
-
-function switchTab(tab, options = {}) {
-  if (els.mainNavMenu) els.mainNavMenu.open = false;
-  const auth = state.snapshot?.auth || null;
-  const authKnown = Boolean(state.snapshot?.auth);
-  const loggedIn = Boolean(auth?.loggedIn);
-  const previousTab = state.currentTab;
-  let nextTab = String(tab || '').trim() || 'start';
-  if (previousTab === 'work' && nextTab !== 'work') {
-    pauseWorkChatOnTabLeave();
-  }
-  if (!loggedIn && nextTab !== 'start') {
-    if (!authKnown && options.allowBootstrapAccess === true) {
-      // During the first snapshot load, preserve the requested post-login route
-      // behind a neutral checking screen instead of showing private UI or login.
-      showAuthCheckingScreen(nextTab);
-      return;
-    } else {
-      requireStartLoginGate(nextTab, 'Sign in from START first. The product experience is private after login.');
-      return;
-    }
-  }
-  if (loggedIn && nextTab === 'start') {
-    nextTab = defaultLoggedInTab(state.snapshot);
-  }
-  if (nextTab === 'admin' && !auth?.isPlatformAdmin) {
-    nextTab = loggedIn ? defaultLoggedInTab(state.snapshot) : 'start';
-  }
-  state.currentTab = nextTab;
-  rememberTab(nextTab);
-  document.querySelectorAll('[data-screen]').forEach((node) => {
-    node.hidden = node.dataset.screen !== nextTab;
-  });
-  document.querySelectorAll('.tab-btn').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.tab === nextTab);
-  });
-  syncTopWorkChatCta();
-  syncRouteState();
-  if (nextTab === 'work') trackConversionOnce('work_chat_opened', { source: 'tab' }, 'work_chat_opened');
-  if (nextTab === 'agents') trackConversionOnce('agent_catalog_opened', { source: 'tab' }, 'agent_catalog_opened');
-  if (nextTab === 'settings' && state.snapshot && !state.initialSnapshotLoading) {
-    void refresh().catch((error) => {
-      flash(error.message, 'error');
-    });
-  }
-}
-
-function syncLanding(snapshot = state.snapshot || {}) {
-  const auth = snapshot?.auth || {};
-  const loggedIn = Boolean(auth?.loggedIn);
-  if (state.currentTab === 'auth-check') {
-    const targetTab = state.pendingAuthTab || 'work';
-    state.pendingAuthTab = '';
-    if (loggedIn) {
-      switchTab(targetTab);
-    } else {
-      requireStartLoginGate(targetTab, 'Sign in from START first. The product experience is private after login.');
-    }
-    return;
-  }
-  setTabVisible('start', !loggedIn);
-  if (!loggedIn && state.currentTab !== 'start') {
-    switchTab('start');
-    return;
-  }
-  if (loggedIn && state.currentTab === 'start') {
-    switchTab(defaultLoggedInTab(snapshot));
-  }
 }
 
 function flash(message, kind = 'ok') {
