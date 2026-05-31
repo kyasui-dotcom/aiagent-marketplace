@@ -42,6 +42,7 @@ const clientOrderAgentPickerControllerPath = new URL('../public/client-order-age
 const clientParallelOrderControllerPath = new URL('../public/client-parallel-order-controller.js', import.meta.url);
 const clientReleaseAccessControllerPath = new URL('../public/client-release-access-controller.js', import.meta.url);
 const clientOpenChatRuntimeControllerPath = new URL('../public/client-open-chat-runtime-controller.js', import.meta.url);
+const clientOpenChatExchangeControllerPath = new URL('../public/client-open-chat-exchange-controller.js', import.meta.url);
 const clientJobCreateControllerPath = new URL('../public/client-job-create-controller.js', import.meta.url);
 const clientWorkChatActionControllerPath = new URL('../public/client-work-chat-action-controller.js', import.meta.url);
 const clientAgentDetailControllerPath = new URL('../public/client-agent-detail-controller.js', import.meta.url);
@@ -193,6 +194,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientOrderAgentPickerC
 execFileSync(process.execPath, ['--check', fileURLToPath(clientParallelOrderControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientReleaseAccessControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatRuntimeControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatExchangeControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientJobCreateControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientWorkChatActionControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientAgentDetailControllerPath)], { stdio: 'pipe' });
@@ -262,6 +264,7 @@ const clientAuthAccessUtilsJs = readFileSync(clientAuthAccessUtilsPath, 'utf8');
 const clientParallelOrderControllerJs = readFileSync(clientParallelOrderControllerPath, 'utf8');
 const clientReleaseAccessControllerJs = readFileSync(clientReleaseAccessControllerPath, 'utf8');
 const clientOpenChatRuntimeControllerJs = readFileSync(clientOpenChatRuntimeControllerPath, 'utf8');
+const clientOpenChatExchangeControllerJs = readFileSync(clientOpenChatExchangeControllerPath, 'utf8');
 const clientWorkChatActionControllerJs = readFileSync(clientWorkChatActionControllerPath, 'utf8');
 const clientAgentDetailControllerJs = readFileSync(clientAgentDetailControllerPath, 'utf8');
 const clientPaymentRemovalUiJs = readFileSync(clientPaymentRemovalUiPath, 'utf8');
@@ -537,6 +540,9 @@ assert.ok(clientJs.includes("from './client-open-chat-runtime-controller.js?v=20
 assert.ok(clientOpenChatRuntimeControllerJs.includes('function startOpenChatTyping') && clientOpenChatRuntimeControllerJs.includes('function scheduleLiveSnapshotRefresh'), 'Open Chat runtime controller should own typing and live-refresh timers.');
 assert.ok(!clientJs.includes('function startOpenChatTyping'), 'Client app should delegate Open Chat typing timers to the extracted runtime controller.');
 assert.ok(!clientJs.includes('function scheduleLiveSnapshotRefresh'), 'Client app should delegate live snapshot refresh timers to the extracted runtime controller.');
+assert.ok(clientJs.includes("from './client-open-chat-exchange-controller.js?v=20260601a'"), 'Client app should load the extracted Open Chat exchange controller cache key.');
+assert.ok(clientOpenChatExchangeControllerJs.includes('function appendOrderChatExchange') && clientOpenChatExchangeControllerJs.includes('trackChatTranscript'), 'Open Chat exchange controller should own message exchange state and transcript tracking.');
+assert.ok(!clientJs.includes('const sourceFiles = Array.isArray(answer?.sourceFiles)'), 'Client app should delegate Open Chat exchange source-file handling to the extracted controller.');
 assert.ok(clientJs.includes("from './client-job-create-controller.js?v=20260601a'"), 'Client app should load the extracted job-create controller cache key.');
 const clientJobCreateControllerJs = readFileSync(clientJobCreateControllerPath, 'utf8');
 assert.ok(clientJobCreateControllerJs.includes('async function createAndOptionallyRunJob') && clientJobCreateControllerJs.includes("api('/api/jobs'"), 'Job-create controller should own chat-to-order dispatch and create API calls.');
