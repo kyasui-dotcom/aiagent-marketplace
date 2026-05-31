@@ -462,7 +462,7 @@ assert.ok(!html.includes('type="module" src="/chat.js'), 'Root should not load c
 assert.ok(chatHtml.includes('<main class="chatux-shell" aria-label="CAIt chat">'), 'Chat page should render the chat-first CAIt UI.');
 assert.ok(chatHtml.includes('/analytics-loader.js?v=20260514a'), 'Chat page should load the shared GA4 analytics loader before chat interactions.');
 assert.ok(/\/chat\.css\?v=202605[0-9]{2}[a-z0-9]+/.test(chatHtml), 'Chat page should load root chat CSS, not /chatux assets.');
-assert.ok(/type="module"\s+src="\/chat\.js\?v=202605[0-9]{2}[a-z0-9]+"/.test(chatHtml), 'Chat page should load root chat JS, not /chatux assets.');
+assert.ok(/type="module"\s+src="\/chat\.js\?v=202606[0-9]{2}[a-z0-9]+"/.test(chatHtml), 'Chat page should load root chat JS, not /chatux assets.');
 assert.ok(chatHtml.includes('What do you want done?'), 'Chat should open with a short English prompt instead of a long routing explanation.');
 assert.ok(!chatHtml.includes('何がしたいですか？'), 'Chat should not default to Japanese copy.');
 assert.ok(!chatHtml.includes('CAIt will route simple work'), 'Chat should not lead with routing mechanics.');
@@ -1587,10 +1587,10 @@ assert.ok(chatJs.includes('registeredApps: []') || chatBootstrapStateJs.includes
 assert.ok(chatJs.includes('const CHATUX_CATALOG_PAGE_SIZE = 10') || chatBootstrapStateJs.includes('CHATUX_CATALOG_PAGE_SIZE = 10'), 'Workers and apps should initially load only ten catalog rows.');
 assert.ok(chatCatalogRuntimeJs.includes("api(catalogApiPath('/api/apps', refreshOptions)"), 'Chat app list should refresh registered apps from the paged app registry API.');
 assert.ok(chatCatalogRuntimeJs.includes("api(catalogApiPath('/api/agents', refreshOptions)"), 'Chat worker list should refresh workers from the paged agent registry API.');
-assert.ok(chatJs.includes('data-utility-load-more'), 'Worker and app panels should lazy-load additional rows on demand.');
+assert.ok(chatUtilityModalControllerJs.includes('data-utility-load-more'), 'Worker and app panels should lazy-load additional rows on demand.');
 assert.ok(chatCatalogRuntimeJs.includes('function warmUtilityCatalogs'), 'Chat should prefetch the first catalog page after auth.');
 assert.ok(!chatJs.includes("api('/api/snapshot', { method: 'GET' })"), 'Worker/app panels should not fetch the full snapshot just to list workers.');
-assert.ok(chatJs.includes('function showInfoPanel'), 'Chat should expose account/info modal.');
+assert.ok(chatUtilityModalControllerJs.includes('function showInfoPanel'), 'Chat utility modal controller should expose account/info modal.');
 assert.ok(chatJs.includes("adminNavLink: $('adminNavLink')"), 'Chat should wire the admin nav link.');
 assert.ok(chatJs.includes('activeLeader: null') || chatBootstrapStateJs.includes('activeLeader: null'), 'Chat should track whether CAIt or a leader owns the current conversation.');
 assert.ok(chatJs.includes('activeOwner: null') || chatBootstrapStateJs.includes('activeOwner: null'), 'Chat should track generic agent and leader conversation owners.');
@@ -1610,9 +1610,9 @@ assert.ok(
     || chatJs.includes("els.adminNavLink.hidden = !(auth?.isPlatformAdmin || auth?.admin)"),
   'Chat should reveal admin only for platform admins.'
 );
-assert.ok(chatJs.includes('href="/admin">Admin</a>'), 'Info panel should include an admin shortcut for platform admins.');
+assert.ok(chatUtilityModalControllerJs.includes('href="/admin">Admin</a>'), 'Info panel should include an admin shortcut for platform admins.');
 assert.ok(chatHtml.includes('href="/account-settings.html"'), 'Chat header should link to account settings.');
-assert.ok(chatJs.includes('Account settings'), 'Info panel should link to account settings.');
+assert.ok(chatUtilityModalControllerJs.includes('Account settings'), 'Info panel should link to account settings.');
 assert.ok(accountSettingsHtml.includes('uiLanguageSelect'), 'Account settings should render the language selector.');
 assert.ok(accountSettingsJs.includes("api('/api/settings/profile'"), 'Account settings should save the UI language through the profile settings API.');
 assert.ok(accountSettingsJs.includes('cait.uiLanguage.v1'), 'Account settings should mirror the UI language locally for immediate chat use.');
@@ -1638,7 +1638,7 @@ assert.ok(chatJs.includes("await apiWithRetry('/api/work/prepare-order'"), 'Chat
 assert.ok(chatJs.includes('maxAttempts: 5'), 'Chat prepare-order retry should wait through short production 5xx/429 bursts.');
 assert.ok(chatJs.includes('intake.taskType || intake.task_type'), 'Intake answers should preserve the originally selected leader task.');
 assert.ok(chatJs.includes('taskType: task'), 'Worker list choices should pass the chosen task type into prepare-order.');
-assert.ok(chatJs.includes('data-utility-agent-id'), 'Worker Use buttons should carry the selected agent id, not only the task type.');
+assert.ok(chatUtilityModalControllerJs.includes('data-utility-agent-id'), 'Worker Use buttons should carry the selected agent id, not only the task type.');
 assert.ok(chatJs.includes('selectedAgentId: agentId'), 'Worker Use should pin the selected agent in the order draft.');
 assert.ok(chatUiRuntimeControllerJs.includes('function chatText'), 'Chat user-facing status text should go through a language helper.');
 assert.ok(chatUiRuntimeControllerJs.includes('function chatUiText'), 'Chat fixed controls should have a separate UI-language helper.');
