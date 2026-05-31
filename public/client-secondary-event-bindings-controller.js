@@ -34,6 +34,7 @@ export function createClientSecondaryEventBindingsController(deps = {}) {
     prepareFollowupOrderFromDelivery,
     refresh,
     renderAgents,
+    renderFlexibleToolPanel,
     renderJobs,
     renderOrderAgentPicker,
     renderOrderComposer,

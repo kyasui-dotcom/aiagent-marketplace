@@ -4079,6 +4079,7 @@ const clientSecondaryEventBindingsController = createClientSecondaryEventBinding
   prepareFollowupOrderFromDelivery,
   refresh,
   renderAgents,
+  renderFlexibleToolPanel,
   renderJobs,
   renderOrderAgentPicker,
   renderOrderComposer,
