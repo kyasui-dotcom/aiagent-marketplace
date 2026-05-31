@@ -54,6 +54,7 @@ const analyticsLoaderPath = new URL('../public/analytics-loader.js', import.meta
 const chatJsPath = new URL('../public/chat.js', import.meta.url);
 const chatBootstrapStatePath = new URL('../public/chat-bootstrap-state.js', import.meta.url);
 const chatUiRuntimeControllerPath = new URL('../public/chat-ui-runtime-controller.js', import.meta.url);
+const chatUtilityModalControllerPath = new URL('../public/chat-utility-modal-controller.js', import.meta.url);
 const chatOrderCreateRecoveryPath = new URL('../public/chat-order-create-recovery.js', import.meta.url);
 const chatDeliveryFileUtilsPath = new URL('../public/chat-delivery-file-utils.js', import.meta.url);
 const chatWorkflowProgressUtilsPath = new URL('../public/chat-workflow-progress-utils.js', import.meta.url);
@@ -153,6 +154,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(chatIntentGuardUtilsPat
 execFileSync(process.execPath, ['--check', fileURLToPath(chatTelemetryPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatPlanningProgressControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatRuntimeStateControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatUtilityModalControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatDisplayUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatDeliveryPreferenceControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatSessionModelPath)], { stdio: 'pipe' });
@@ -265,6 +267,7 @@ const analyticsLoaderJs = readFileSync(analyticsLoaderPath, 'utf8');
 const chatJs = readFileSync(chatJsPath, 'utf8');
 const chatBootstrapStateJs = readFileSync(chatBootstrapStatePath, 'utf8');
 const chatUiRuntimeControllerJs = readFileSync(chatUiRuntimeControllerPath, 'utf8');
+const chatUtilityModalControllerJs = readFileSync(chatUtilityModalControllerPath, 'utf8');
 const chatOrderCreateRecoveryJs = readFileSync(chatOrderCreateRecoveryPath, 'utf8');
 const chatDeliveryFileUtilsJs = readFileSync(chatDeliveryFileUtilsPath, 'utf8');
 const chatWorkflowProgressUtilsJs = readFileSync(chatWorkflowProgressUtilsPath, 'utf8');
@@ -534,6 +537,10 @@ assert.ok(chatJs.includes('PROMPT_PLACEHOLDERS'), 'Chat composer placeholders sh
 assert.ok(chatJs.includes('CHATUX_UI_LANGUAGE_STORAGE_KEY'), 'Chat should persist the explicit UI language setting.');
 assert.ok(chatJs.includes("from './chat-ui-runtime-controller.js?v=20260531a'"), 'Chat should load the extracted UI runtime controller cache key.');
 assert.ok(chatUiRuntimeControllerJs.includes("api('/api/settings/profile'"), 'Chat language setting should save to the account profile API.');
+assert.ok(chatJs.includes("from './chat-utility-modal-controller.js?v=20260601a'"), 'Chat should load the extracted utility modal controller cache key.');
+assert.ok(chatUtilityModalControllerJs.includes('function showWorkerListPanel'), 'Utility modal controller should own the worker catalog panel.');
+assert.ok(chatUtilityModalControllerJs.includes('function showInfoPanel'), 'Utility modal controller should own the account/info panel.');
+assert.ok(!chatJs.includes('function agentUtilityRows'), 'Chat should delegate utility modal row rendering to the utility modal controller.');
 assert.ok(chatJs.includes('will ask one item at a time before dispatch'), 'Leader intake should ask one item at a time instead of dumping all questions at once.');
 const clientOpenChatTaskLabelSource = [
   clientJs,
@@ -1231,7 +1238,7 @@ assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
 assert.ok(chatHtml.includes('/chat.css?v=20260526f'), 'Chat page should load the current compact chat header and composer styles.');
-assert.ok(chatHtml.includes('/chat.js?v=20260531a'), 'Chat page should load the current compact chat header and composer controller.');
+assert.ok(chatHtml.includes('/chat.js?v=20260601a'), 'Chat page should load the current compact chat header and composer controller.');
 assert.ok(chatHtml.includes('id="chatHeaderMenu"') && chatHtml.includes('☰ Menu'), 'Chat header should collapse secondary actions into a menu.');
 assert.ok(chatHtml.includes('Chat history') && chatHtml.includes('Schedules') && chatHtml.includes('Agents and workers'), 'Chat menu should use specific workspace action labels.');
 assert.ok(chatHtml.includes('App tools') && chatHtml.includes('Apps hub'), 'Chat menu should distinguish app tools from the Apps hub page.');
