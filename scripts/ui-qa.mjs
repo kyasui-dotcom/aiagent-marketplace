@@ -43,6 +43,7 @@ const clientParallelOrderControllerPath = new URL('../public/client-parallel-ord
 const clientReleaseAccessControllerPath = new URL('../public/client-release-access-controller.js', import.meta.url);
 const clientOpenChatRuntimeControllerPath = new URL('../public/client-open-chat-runtime-controller.js', import.meta.url);
 const clientJobCreateControllerPath = new URL('../public/client-job-create-controller.js', import.meta.url);
+const clientWorkChatActionControllerPath = new URL('../public/client-work-chat-action-controller.js', import.meta.url);
 const clientPaymentRemovalUiPath = new URL('../public/client-payment-removal-ui.js', import.meta.url);
 const clientFlexibleToolUtilsPath = new URL('../public/client-flexible-tool-utils.js', import.meta.url);
 const clientOpenChatHistoryUtilsPath = new URL('../public/client-open-chat-history-utils.js', import.meta.url);
@@ -192,6 +193,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientParallelOrderCont
 execFileSync(process.execPath, ['--check', fileURLToPath(clientReleaseAccessControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatRuntimeControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientJobCreateControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientWorkChatActionControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatHistoryUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatPatternGuardUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatResponseUtilsPath)], { stdio: 'pipe' });
@@ -258,6 +260,7 @@ const clientAuthAccessUtilsJs = readFileSync(clientAuthAccessUtilsPath, 'utf8');
 const clientParallelOrderControllerJs = readFileSync(clientParallelOrderControllerPath, 'utf8');
 const clientReleaseAccessControllerJs = readFileSync(clientReleaseAccessControllerPath, 'utf8');
 const clientOpenChatRuntimeControllerJs = readFileSync(clientOpenChatRuntimeControllerPath, 'utf8');
+const clientWorkChatActionControllerJs = readFileSync(clientWorkChatActionControllerPath, 'utf8');
 const clientPaymentRemovalUiJs = readFileSync(clientPaymentRemovalUiPath, 'utf8');
 const clientFlexibleToolUtilsJs = readFileSync(clientFlexibleToolUtilsPath, 'utf8');
 const clientOpenChatPreorderIntentJs = readFileSync(new URL('../public/client-open-chat-preorder-intent-utils.js', import.meta.url), 'utf8');
@@ -428,9 +431,13 @@ assert.ok(seoPages.includes("export { newsPosts } from './seo-news-posts.js';"),
 assert.ok(seoNewsPosts.includes('Open Chat, write the desired outcome'), 'generated news source should use the current Chat-first ordering copy.');
 assert.ok(naturalLanguageNewsHtml.includes('Open Chat, write the desired outcome'), 'published news article should use the current Chat-first ordering copy.');
 assert.ok(feedXml.includes('Open Chat, write the desired outcome'), 'public feed should use the current Chat-first ordering copy.');
-assert.ok(clientJs.includes('Saved schedule timeline'), 'client timeline copy should use the current saved schedule wording.');
-assert.ok(!clientJs.includes('Open the stored Work timeline'), 'client timeline copy should not use the old Work timeline phrase.');
-assert.ok(!clientJs.includes('reopen them from Work'), 'client timeline copy should not send users back to the old Work surface.');
+const clientWorkChatActionCopySource = [
+  clientJs,
+  clientWorkChatActionControllerJs
+].join('\n');
+assert.ok(clientWorkChatActionCopySource.includes('Saved schedule timeline'), 'client timeline copy should use the current saved schedule wording.');
+assert.ok(!clientWorkChatActionCopySource.includes('Open the stored Work timeline'), 'client timeline copy should not use the old Work timeline phrase.');
+assert.ok(!clientWorkChatActionCopySource.includes('reopen them from Work'), 'client timeline copy should not send users back to the old Work surface.');
 assert.ok(html.includes('scheduled work continue in the background'), 'Root should mention background scheduled work as supporting value, not the primary headline.');
 assert.ok(html.includes('/home.css?v=20260504b'), 'Root should load the home landing CSS.');
 assert.ok(html.includes('<p class="hero-read">'), 'Root hero should include a short read line between the catch and START.');
@@ -531,6 +538,9 @@ assert.ok(clientJs.includes("from './client-job-create-controller.js?v=20260601a
 const clientJobCreateControllerJs = readFileSync(clientJobCreateControllerPath, 'utf8');
 assert.ok(clientJobCreateControllerJs.includes('async function createAndOptionallyRunJob') && clientJobCreateControllerJs.includes("api('/api/jobs'"), 'Job-create controller should own chat-to-order dispatch and create API calls.');
 assert.ok(!clientJs.includes('async function createAndOptionallyRunJob'), 'Client app should delegate chat-to-order dispatch to the extracted job-create controller.');
+assert.ok(clientJs.includes("from './client-work-chat-action-controller.js?v=20260601a'"), 'Client app should load the extracted work-chat action controller cache key.');
+assert.ok(clientWorkChatActionControllerJs.includes('async function handleOpenChatChoiceCommand') && clientWorkChatActionControllerJs.includes('async function handleChatActionButton'), 'Work-chat action controller should own chat choice and action-button dispatch.');
+assert.ok(!clientJs.includes('async function handleOpenChatChoiceCommand') && !clientJs.includes('async function handleChatActionButton'), 'Client app should delegate work-chat command/action dispatch to the extracted controller.');
 assert.ok(clientOpenChatServerOrderUtilsJs.includes("'/api/work/prepare-order'") && clientOpenChatServerOrderUtilsJs.includes("'/api/work/resolve-intent'"), 'Server order utilities should own Open Chat work-order contract endpoints.');
 const prepareOrderSource = chatJs.slice(chatJs.indexOf('async function prepareOrder'), chatJs.indexOf('async function sendOrder'));
 assert.ok(prepareOrderSource.includes('Server-owned order intake questions could not be loaded'), 'Prepare-order failures should stop instead of falling back to client-generated intake questions.');
