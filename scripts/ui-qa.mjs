@@ -42,6 +42,7 @@ const clientOrderAgentPickerControllerPath = new URL('../public/client-order-age
 const clientParallelOrderControllerPath = new URL('../public/client-parallel-order-controller.js', import.meta.url);
 const clientReleaseAccessControllerPath = new URL('../public/client-release-access-controller.js', import.meta.url);
 const clientOpenChatRuntimeControllerPath = new URL('../public/client-open-chat-runtime-controller.js', import.meta.url);
+const clientJobCreateControllerPath = new URL('../public/client-job-create-controller.js', import.meta.url);
 const clientPaymentRemovalUiPath = new URL('../public/client-payment-removal-ui.js', import.meta.url);
 const clientFlexibleToolUtilsPath = new URL('../public/client-flexible-tool-utils.js', import.meta.url);
 const clientOpenChatHistoryUtilsPath = new URL('../public/client-open-chat-history-utils.js', import.meta.url);
@@ -188,6 +189,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientOrderAgentPickerC
 execFileSync(process.execPath, ['--check', fileURLToPath(clientParallelOrderControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientReleaseAccessControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatRuntimeControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientJobCreateControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatHistoryUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatPatternGuardUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatResponseUtilsPath)], { stdio: 'pipe' });
@@ -522,6 +524,10 @@ assert.ok(clientJs.includes("from './client-open-chat-runtime-controller.js?v=20
 assert.ok(clientOpenChatRuntimeControllerJs.includes('function startOpenChatTyping') && clientOpenChatRuntimeControllerJs.includes('function scheduleLiveSnapshotRefresh'), 'Open Chat runtime controller should own typing and live-refresh timers.');
 assert.ok(!clientJs.includes('function startOpenChatTyping'), 'Client app should delegate Open Chat typing timers to the extracted runtime controller.');
 assert.ok(!clientJs.includes('function scheduleLiveSnapshotRefresh'), 'Client app should delegate live snapshot refresh timers to the extracted runtime controller.');
+assert.ok(clientJs.includes("from './client-job-create-controller.js?v=20260601a'"), 'Client app should load the extracted job-create controller cache key.');
+const clientJobCreateControllerJs = readFileSync(clientJobCreateControllerPath, 'utf8');
+assert.ok(clientJobCreateControllerJs.includes('async function createAndOptionallyRunJob') && clientJobCreateControllerJs.includes("api('/api/jobs'"), 'Job-create controller should own chat-to-order dispatch and create API calls.');
+assert.ok(!clientJs.includes('async function createAndOptionallyRunJob'), 'Client app should delegate chat-to-order dispatch to the extracted job-create controller.');
 assert.ok(clientOpenChatServerOrderUtilsJs.includes("'/api/work/prepare-order'") && clientOpenChatServerOrderUtilsJs.includes("'/api/work/resolve-intent'"), 'Server order utilities should own Open Chat work-order contract endpoints.');
 const prepareOrderSource = chatJs.slice(chatJs.indexOf('async function prepareOrder'), chatJs.indexOf('async function sendOrder'));
 assert.ok(prepareOrderSource.includes('Server-owned order intake questions could not be loaded'), 'Prepare-order failures should stop instead of falling back to client-generated intake questions.');
