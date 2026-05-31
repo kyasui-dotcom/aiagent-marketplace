@@ -370,6 +370,9 @@ const seoNewsPosts = readFileSync(seoNewsPostsPath, 'utf8');
 const naturalLanguageNewsHtml = readFileSync(naturalLanguageNewsPath, 'utf8');
 const feedXml = readFileSync(feedXmlPath, 'utf8');
 const {
+  createClientOpenChatExchangeController
+} = await import(clientOpenChatExchangeControllerPath.href);
+const {
   createClientOpenChatHistoryUtils
 } = await import(clientOpenChatHistoryUtilsPath.href);
 const {
@@ -2037,6 +2040,107 @@ assert.ok(chatOrderCreateRecoveryJs.includes('payload._caitRecoveryRetried = tru
 assert.ok(clientOpenChatOrderProgressUtilsJs.includes('client_order_id'), 'Open Chat order create should include a client order id for idempotent recovery.');
 assert.ok(clientOpenChatOrderProgressUtilsJs.includes('orderCreateRequestBody(payload)'), 'Open Chat order create should strip local recovery markers before POSTing.');
 assert.ok(clientOpenChatOrderProgressUtilsJs.includes('same idempotent order request once'), 'Open Chat recovery should safely retry the same idempotent create request once.');
+{
+  const state = {
+    orderChatMessages: [],
+    orderInputFiles: [],
+    orderInputFileWarnings: [],
+    openChatParallelPlan: [],
+    openChatPreparedBrief: '',
+    openChatLastStatus: '',
+    openChatLastStatusTone: 'info',
+    pendingIntake: { prompt: 'Need audience?' },
+    intakeConfirmed: true,
+    intakeAnswer: 'B2B',
+    currentOpenChatSessionId: 'session_123'
+  };
+  const els = {
+    intakeAnswer: { value: 'B2B' },
+    jobPrompt: { value: '' },
+    runCreateStatus: { textContent: '', className: '' }
+  };
+  const tracked = [];
+  const applied = [];
+  const controller = createClientOpenChatExchangeController({
+    state,
+    els,
+    productShortName: 'CAIt',
+    orderInputMaxFiles: 5,
+    applyOpenChatCommand: (answer) => applied.push(answer?.command || answer?.kind || ''),
+    buildOpenChatTrioDiscussion: () => [],
+    chatAnswerDisplayBody: (answer) => String(answer?.body || ''),
+    chatAnswerKind: (answer) => String(answer?.kind || ''),
+    clearOpenChatDecisionSuppressionForNewBrief: () => {},
+    clearPinnedAgentIfMismatchedBrief: () => {},
+    compactChatText: (value, max = Number.POSITIVE_INFINITY) => String(value || '').slice(0, max),
+    currentRoutingTask: () => '',
+    finishOpenChatTyping: () => {},
+    inferClientTaskSequence: () => ['research'],
+    isStructuredOrderBrief: () => false,
+    makeOpenChatMessageId: () => 'msg_1',
+    normalizeOrderInputFile: (file) => ({ name: String(file?.name || ''), content: String(file?.content || '') }),
+    openChatCanonicalOrderTaskType: () => 'research',
+    openChatPendingQuestionTaskType: () => 'research',
+    openChatPreparedOrderActions: () => [],
+    openChatStatusDisplayText: (value) => String(value || ''),
+    openChatStepItems: () => [],
+    orderInputCounts: () => ({ files: 0, urls: 0 }),
+    orderInputFromComposer: () => ({ files: [], urls: [] }),
+    persistCurrentOpenChatSession: () => {
+      state.persistedSession = true;
+    },
+    renderOpenChatSessionControls: () => {
+      state.renderedSessionControls = true;
+    },
+    renderOrderComposer: () => {
+      state.renderedComposer = true;
+    },
+    rewriteStructuredBriefTaskType: (value) => value,
+    shouldAnimateOpenChatAnswer: () => false,
+    shouldStoreOpenChatPendingQuestion: () => false,
+    startOpenChatTyping: () => {},
+    structuredOrderBriefParts: () => ({}),
+    syncCreateJobButtonForCurrentPrompt: () => {
+      state.syncedCreateButton = true;
+    },
+    trackChatTranscript: (prompt, answer, meta) => {
+      tracked.push({ prompt, answer, meta });
+    },
+    updateWorkChatStatusCard: (title, body, tone) => {
+      state.statusCard = { title, body, tone };
+    }
+  });
+  controller.appendOrderChatExchange('Draft a landing page', {
+    kind: 'assist',
+    body: 'Prepared.',
+    nextPrompt: 'Build a landing page for an accounting SaaS',
+    exposeNextPrompt: true,
+    sourceFiles: [{ name: 'brief.txt', content: 'summary' }],
+    parallelPlan: ['research', 'draft'],
+    status: 'Ready.\n\nNo order was created and no billing occurred.'
+  });
+  assert.equal(state.orderChatMessages.length, 2, 'Open Chat exchange should append both the user prompt and the assistant answer.');
+  assert.equal(els.jobPrompt.value, 'Build a landing page for an accounting SaaS', 'Open Chat exchange should expose the next prompt when requested.');
+  assert.deepEqual(state.orderInputFiles, [{ name: 'brief.txt', content: 'summary' }], 'Open Chat exchange should stage normalized source files from the answer.');
+  assert.deepEqual(state.openChatParallelPlan, ['research', 'draft'], 'Open Chat exchange should keep the suggested parallel plan.');
+  assert.equal(state.openChatPreparedBrief, 'Build a landing page for an accounting SaaS', 'Open Chat exchange should retain the prepared brief for follow-up actions.');
+  assert.equal(state.pendingIntake, null, 'Open Chat exchange should clear pending intake state after handling an answer.');
+  assert.equal(els.intakeAnswer.value, '', 'Open Chat exchange should clear the visible intake answer field.');
+  assert.equal(state.persistedSession, true, 'Open Chat exchange should persist the current chat session for non-reset answers.');
+  assert.equal(state.renderedSessionControls, undefined, 'Open Chat exchange should not rerender session controls for non-reset answers.');
+  assert.equal(state.renderedComposer, true, 'Open Chat exchange should rerender the composer after applying the answer.');
+  assert.equal(state.syncedCreateButton, true, 'Open Chat exchange should resync the create button state after applying the answer.');
+  assert.equal(els.runCreateStatus.textContent, 'Ready.\n\nNo order was created and no billing occurred.', 'Open Chat exchange should surface the latest status text in the UI.');
+  assert.equal(els.runCreateStatus.className, 'detail-box action-card ok compact-card', 'Open Chat exchange should keep the expected status card tone classes.');
+  assert.deepEqual(state.statusCard, {
+    title: 'Ready.',
+    body: 'No order was created and no billing occurred.',
+    tone: 'ok'
+  }, 'Open Chat exchange should update the work-chat status card summary.');
+  assert.equal(tracked.length, 1, 'Open Chat exchange should track the transcript for the appended answer.');
+  assert.equal(applied.length, 1, 'Open Chat exchange should still delegate command application through the injected helper.');
+}
+
 {
   const state = {
     snapshot: { auth: { loggedIn: false } },
