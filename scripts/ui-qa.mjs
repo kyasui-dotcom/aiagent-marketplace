@@ -57,6 +57,7 @@ const clientOrderUiStateControllerPath = new URL('../public/client-order-ui-stat
 const clientWorkSelectionControllerPath = new URL('../public/client-work-selection-controller.js', import.meta.url);
 const clientStatePath = new URL('../public/client-state.js', import.meta.url);
 const clientBootstrapControllerPath = new URL('../public/client-bootstrap-controller.js', import.meta.url);
+const clientAppShellControllerPath = new URL('../public/client-app-shell-controller.js', import.meta.url);
 const clientPaymentRemovalUiPath = new URL('../public/client-payment-removal-ui.js', import.meta.url);
 const clientFlexibleToolUtilsPath = new URL('../public/client-flexible-tool-utils.js', import.meta.url);
 const clientOpenChatHistoryUtilsPath = new URL('../public/client-open-chat-history-utils.js', import.meta.url);
@@ -236,6 +237,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientOrderUiStateContr
 execFileSync(process.execPath, ['--check', fileURLToPath(clientWorkSelectionControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientStatePath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientBootstrapControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientAppShellControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatHistoryUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatPatternGuardUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatResponseUtilsPath)], { stdio: 'pipe' });
@@ -328,6 +330,7 @@ const clientOrderUiStateControllerJs = readFileSync(clientOrderUiStateController
 const clientWorkSelectionControllerJs = readFileSync(clientWorkSelectionControllerPath, 'utf8');
 const clientStateJs = readFileSync(clientStatePath, 'utf8');
 const clientBootstrapControllerJs = readFileSync(clientBootstrapControllerPath, 'utf8');
+const clientAppShellControllerJs = readFileSync(clientAppShellControllerPath, 'utf8');
 const clientPaymentRemovalUiJs = readFileSync(clientPaymentRemovalUiPath, 'utf8');
 const clientFlexibleToolUtilsJs = readFileSync(clientFlexibleToolUtilsPath, 'utf8');
 const clientOpenChatPreorderIntentJs = readFileSync(new URL('../public/client-open-chat-preorder-intent-utils.js', import.meta.url), 'utf8');
@@ -665,6 +668,9 @@ assert.ok(!clientJs.includes('settingsPeriod: `${new Date().getFullYear()}') && 
 assert.ok(clientJs.includes("from './client-bootstrap-controller.js?v=20260602a'"), 'Client app should load the extracted bootstrap controller cache key.');
 assert.ok(clientBootstrapControllerJs.includes('function applyInitialRoute') && clientBootstrapControllerJs.includes('async function bootstrapInitialSnapshot'), 'Client bootstrap controller should own initial route and snapshot startup.');
 assert.ok(!clientJs.includes('async function bootstrapInitialSnapshot') && !clientJs.includes("window.addEventListener('pageshow'"), 'Client app should delegate startup lifecycle handling to the extracted bootstrap controller.');
+assert.ok(clientJs.includes("from './client-app-shell-controller.js?v=20260602a'"), 'Client app should load the extracted app shell controller cache key.');
+assert.ok(clientAppShellControllerJs.includes('function render(snapshot)') && clientAppShellControllerJs.includes('async function refresh()') && clientAppShellControllerJs.includes('async function runAction'), 'Client app shell controller should own snapshot rendering, refresh, and action execution.');
+assert.ok(!clientJs.includes('const runtimeOwner = String(state.openChatRuntimeOwnerLogin') && !clientJs.includes("action.textContent = 'WORKING...'"), 'Client app should delegate app shell rendering and action execution to the extracted controller.');
 assert.ok(clientOpenChatServerOrderUtilsJs.includes("'/api/work/prepare-order'") && clientOpenChatServerOrderUtilsJs.includes("'/api/work/resolve-intent'"), 'Server order utilities should own Open Chat work-order contract endpoints.');
 const prepareOrderSource = chatJs.slice(chatJs.indexOf('async function prepareOrder'), chatJs.indexOf('async function sendOrder'));
 assert.ok(prepareOrderSource.includes('Server-owned order intake questions could not be loaded'), 'Prepare-order failures should stop instead of falling back to client-generated intake questions.');
