@@ -250,6 +250,7 @@ function githubConnectHref() {
   url.searchParams.set('mode', 'link');
   url.searchParams.set('return_to', currentPublisherReturnPath());
   url.searchParams.set('login_source', 'publisher_approval');
+  url.searchParams.set('capabilities', 'github.write_pr');
   return url.toString();
 }
 

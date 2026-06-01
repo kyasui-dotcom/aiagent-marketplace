@@ -1517,6 +1517,7 @@ assert.ok(publisherJs.includes('publishVariants'), 'Publisher Studio should pres
 assert.ok(publisherDestinationContractJs.includes('## Publish variants'), 'Publisher destination contract should include publish variants in approval handoff Markdown.');
 assert.ok(publisherDestinationContractJs.includes('E-E-A-T notes'), 'Publisher destination contract should include E-E-A-T notes in approval handoff Markdown.');
 assert.ok(publisherJs.includes('/api/connectors/wordpress/create-draft'), 'Publisher Studio should create WordPress drafts through the connector API.');
+assert.ok(publisherJs.includes("url.searchParams.set('capabilities', 'github.write_pr')"), 'Publisher Studio should request GitHub PR authority before linking GitHub for PR handoff.');
 assert.ok(publisherJs.includes('/api/connectors/x/status'), 'Publisher Studio should check X connector status before one-click X posting.');
 assert.ok(publisherJs.includes('/api/deliveries/schedule'), 'Publisher Studio should schedule approved X posts through the delivery schedule API.');
 assert.ok(publisherJs.includes('bulkPublishApproved'), 'Publisher Studio should support bulk publishing approved packets from the selected scope.');
