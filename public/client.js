@@ -208,7 +208,7 @@ import { createClientBrowserTransferUtils } from './client-browser-transfer-util
 import { createClientDeliveryRenderUtils } from './client-delivery-render-utils.js?v=20260601b';
 import { createClientDeliveryRenderModel } from './client-delivery-render-model.js?v=20260601a';
 import { createClientRunDetailController } from './client-run-detail-controller.js?v=20260601a';
-import { createClientDeliveryActionController } from './client-delivery-action-controller.js?v=20260601b';
+import { createClientDeliveryActionController } from './client-delivery-action-controller.js?v=20260602b';
 import { createClientRouteAuthController } from './client-route-auth-controller.js?v=20260528a';
 import { createClientGithubAgentSetupController } from './client-github-agent-setup-controller.js?v=20260528a';
 import { createClientDeveloperSurfaceController } from './client-developer-surface-controller.js?v=20260528a';

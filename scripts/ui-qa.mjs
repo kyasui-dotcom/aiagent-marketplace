@@ -38,6 +38,7 @@ const clientBrowserTransferUtilsPath = new URL('../public/client-browser-transfe
 const clientConnectHubControllerPath = new URL('../public/client-connect-hub-controller.js', import.meta.url);
 const clientDeliveryActionControllerPath = new URL('../public/client-delivery-action-controller.js', import.meta.url);
 const clientDeliveryExecutorPreferencesPath = new URL('../public/client-delivery-executor-preferences.js', import.meta.url);
+const clientDeliveryGenericRendererPath = new URL('../public/client-delivery-generic-renderer.js', import.meta.url);
 const clientDeliveryRenderModelPath = new URL('../public/client-delivery-render-model.js', import.meta.url);
 const clientRunDetailControllerPath = new URL('../public/client-run-detail-controller.js', import.meta.url);
 const clientAuthAccessUtilsPath = new URL('../public/client-auth-access-utils.js', import.meta.url);
@@ -219,6 +220,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientSettingsBillingCo
 execFileSync(process.execPath, ['--check', fileURLToPath(clientAgentAccessControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryActionControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryExecutorPreferencesPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryGenericRendererPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryRenderModelPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientRunDetailControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientAuthActionsControllerPath)], { stdio: 'pipe' });
@@ -315,6 +317,7 @@ const clientRouteAuthControllerJs = readFileSync(clientRouteAuthControllerPath, 
 const clientAgentAccessControllerJs = readFileSync(clientAgentAccessControllerPath, 'utf8');
 const clientDeliveryActionControllerJs = readFileSync(clientDeliveryActionControllerPath, 'utf8');
 const clientDeliveryExecutorPreferencesJs = readFileSync(clientDeliveryExecutorPreferencesPath, 'utf8');
+const clientDeliveryGenericRendererJs = readFileSync(clientDeliveryGenericRendererPath, 'utf8');
 const clientDeliveryRenderModelJs = readFileSync(clientDeliveryRenderModelPath, 'utf8');
 const clientRunDetailControllerJs = readFileSync(clientRunDetailControllerPath, 'utf8');
 const clientAuthAccessUtilsJs = readFileSync(clientAuthAccessUtilsPath, 'utf8');
@@ -754,11 +757,16 @@ assert.equal(clientJs.includes('/api/settings/billing'), false, 'Client UI must 
 assert.equal(clientJs.includes('/api/settings/payout'), false, 'Client UI must not call removed payout settings route.');
 assert.equal(clientJs.includes('PAY' + '.JP'), false, 'Client UI should not mention the removed payment provider.');
 assert.ok(clientAuthAccessUtilsJs.includes("if (requested.length) url.searchParams.set('capabilities', requested.join(','))"), 'Chat Google connector should pass exact required Google capabilities into OAuth without adding broad defaults.');
-assert.ok(clientDeliveryActionControllerJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
+assert.ok(clientDeliveryGenericRendererJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
 assert.ok(clientDeliveryActionControllerJs.includes("from './client-delivery-executor-preferences.js?v=20260601a'"), 'Delivery executor preferences should stay in the dedicated preference/source loader module.');
 assert.ok(clientDeliveryExecutorPreferencesJs.includes('async function loadGoogleSourcesForGenericDeliverable'), 'Google source loading should be owned by the delivery executor preference module.');
 assert.ok(clientDeliveryExecutorPreferencesJs.includes('/api/settings/executor-preferences'), 'Executor preference persistence should be owned by the delivery executor preference module.');
 assert.ok(clientDeliveryExecutorPreferencesJs.includes('Array.isArray(state.repos) ? state.repos[0] : null'), 'Executor repo fallback should keep using the shared repo list state.');
+assert.ok(clientDeliveryActionControllerJs.includes("import { createClientDeliveryGenericRenderer } from './client-delivery-generic-renderer.js"), 'Delivery action controller should delegate generic deliverable rendering.');
+assert.ok(clientDeliveryGenericRendererJs.includes('function renderGenericDeliverableSection'), 'Generic deliverable section HTML rendering should be owned by the renderer module.');
+assert.ok(clientDeliveryGenericRendererJs.includes('function renderGoogleSourceControls'), 'Generic deliverable Google source controls should be rendered by the renderer module.');
+assert.ok(!clientDeliveryActionControllerJs.includes('function renderGenericDeliverableSection'), 'Delivery action controller must not own generic deliverable section rendering.');
+assert.ok(!clientDeliveryActionControllerJs.includes('function renderGenericDeliverableApprovalPreview'), 'Delivery action controller must not own generic deliverable approval preview rendering.');
 assert.ok(!clientDeliveryActionControllerJs.includes('async function saveGoogleExecutorPreferences'), 'Delivery action controller should not own executor preference persistence.');
 assert.ok(!clientDeliveryActionControllerJs.includes('function flattenGa4PropertyOptions'), 'Delivery action controller should not own Google asset option flattening.');
 assert.ok(clientDeliveryActionControllerJs.includes('sendFollowupToAgentFromDelivery'), 'Delivery action controller should keep the direct follow-up sender after refactors.');
