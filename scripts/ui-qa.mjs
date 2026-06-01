@@ -62,6 +62,7 @@ const chatUiRuntimeControllerPath = new URL('../public/chat-ui-runtime-controlle
 const chatUtilityModalControllerPath = new URL('../public/chat-utility-modal-controller.js', import.meta.url);
 const chatIntakeControllerPath = new URL('../public/chat-intake-controller.js', import.meta.url);
 const chatOrderCreateRecoveryPath = new URL('../public/chat-order-create-recovery.js', import.meta.url);
+const chatOrderDispatchControllerPath = new URL('../public/chat-order-dispatch-controller.js', import.meta.url);
 const chatDeliveryFileUtilsPath = new URL('../public/chat-delivery-file-utils.js', import.meta.url);
 const chatWorkflowProgressUtilsPath = new URL('../public/chat-workflow-progress-utils.js', import.meta.url);
 const chatUsageLibraryControllerPath = new URL('../public/chat-usage-library-controller.js', import.meta.url);
@@ -162,6 +163,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(chatPlanningProgressCon
 execFileSync(process.execPath, ['--check', fileURLToPath(chatRuntimeStateControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatUtilityModalControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatIntakeControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatOrderDispatchControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatDisplayUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatDeliveryPreferenceControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatSessionModelPath)], { stdio: 'pipe' });
@@ -285,6 +287,7 @@ const chatUiRuntimeControllerJs = readFileSync(chatUiRuntimeControllerPath, 'utf
 const chatUtilityModalControllerJs = readFileSync(chatUtilityModalControllerPath, 'utf8');
 const chatIntakeControllerJs = readFileSync(chatIntakeControllerPath, 'utf8');
 const chatOrderCreateRecoveryJs = readFileSync(chatOrderCreateRecoveryPath, 'utf8');
+const chatOrderDispatchControllerJs = readFileSync(chatOrderDispatchControllerPath, 'utf8');
 const chatDeliveryFileUtilsJs = readFileSync(chatDeliveryFileUtilsPath, 'utf8');
 const chatWorkflowProgressUtilsJs = readFileSync(chatWorkflowProgressUtilsPath, 'utf8');
 const chatUsageLibraryControllerJs = readFileSync(chatUsageLibraryControllerPath, 'utf8');
@@ -588,6 +591,9 @@ assert.ok(chatIntakeControllerJs.includes('function orderConfirmationHtml'), 'Ch
 assert.ok(!chatJs.includes('function intakeChoiceGroups'), 'Chat should delegate intake choice construction to the intake controller.');
 assert.ok(!chatJs.includes('data-intake-confirmed-edit'), 'Chat should not keep inline intake edit/remove handling after extraction.');
 assert.ok(chatIntakeControllerJs.includes('will ask one item at a time before dispatch'), 'Leader intake should ask one item at a time instead of dumping all questions at once.');
+assert.ok(chatJs.includes("from './chat-order-dispatch-controller.js?v=20260601a'"), 'Chat should load the extracted order dispatch controller cache key.');
+assert.ok(chatOrderDispatchControllerJs.includes('async function sendOrder') && chatOrderDispatchControllerJs.includes('function startPolling'), 'Order dispatch controller should own order submission and progress polling.');
+assert.ok(!chatJs.includes('clientOrderIdFromOrderCreate(payload)') && !chatJs.includes('Checking order progress.'), 'Chat should delegate order payload dispatch and progress polling to the order dispatch controller.');
 const clientOpenChatTaskLabelSource = [
   clientJs,
   clientOpenChatPatternGuardUtilsJs
@@ -698,7 +704,7 @@ assert.ok(!chatJs.includes('href="${escapeHtml(openWorkHref)}"'), 'Open chat app
 assert.ok(connectorGateJs.includes('approvalWaitingStatuses') && connectorGateJs.includes("approvalWaitingStatuses.has(status)"), 'Future leader execution approval hints should only render as active chat approvals for blocked/waiting approval states.');
 assert.ok(connectorGateJs.includes("leader_quality_gate_failed") && connectorGateJs.includes("return false;"), 'Leader quality gate blockers must not render as connector approval cards.');
 assert.ok(chatJs.includes('function jobHasDeliveryResult') && chatJs.includes('jobBlockedByLeaderQualityGate(job)'), 'Leader quality gate blockers should render as failed delivery/retry states, not active waiting states.');
-assert.ok(chatJs.includes('nextProgressPollAt = Date.now() + retryDelayMs'), 'Chat polling should retry transient 503-style failures without stopping the order.');
+assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes('nextProgressPollAt = Date.now() + retryDelayMs'), 'Chat polling should retry transient 503-style failures without stopping the order.');
 assert.ok(!chatJs.includes('Progress check temporarily failed'), 'Transient progress errors should not be posted into chat as worker-log noise.');
 assert.ok(chatJs.includes('measurementEvidenceAnswerSaysAvailable as answerSaysAnalyticsAvailable'), 'Chat intake should delegate GA4/Search Console availability detection to the measurement evidence gate.');
 assert.ok(chatJs.includes("from './app-context-gate.js"), 'Chat app-context matching should be delegated to the app context gate module.');
@@ -858,11 +864,11 @@ assert.ok(analyticsLoaderJs.includes('window.navigator?.webdriver'), 'Shared ana
 assert.ok(clientAnalyticsUtilsJs.includes("traffic_type: 'internal'"), 'Legacy client analytics should mark test traffic as internal.');
 assert.ok(loginJs.includes("traffic_type: 'internal'"), 'Login analytics events should mark test traffic as internal.');
 assert.ok(chatJs.includes('trackChatIntakeStarted') && chatTelemetryJs.includes('chat_intake_started'), 'Chat should emit GA4 chat_intake_started when an order/intake flow starts.');
-assert.ok(chatJs.includes('order_submitted') && chatJs.includes('trackChatGa4Once(`order_submitted:'), 'Chat should emit GA4 order_submitted when an order is accepted.');
+assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes('order_submitted') && chatOrderDispatchControllerJs.includes('trackChatGa4Once(`order_submitted:'), 'Chat should emit GA4 order_submitted when an order is accepted.');
 assert.ok(worker.includes('GA4_AUTH_EVENT_COOKIE') && worker.includes('ga4AuthEventCookieForAccount'), 'Auth callbacks should hand browser-readable login/sign_up GA4 events to the next page.');
 assert.ok(clientAnalyticsUtilsJs.includes('CLIENT_GA4_EVENT_NAME_MAP') && clientAnalyticsUtilsJs.includes('purchase'), 'Legacy client analytics should map order, lead, checkout, and purchase events into GA4 names.');
 assert.ok(chatSessionSidebarControllerJs.includes('/api/settings/chat-memory/'), 'Chat sidebar delete should hide server chat memory, not just remove DOM rows.');
-assert.ok(chatJs.includes('session_id: chatSessionId'), 'Orders dispatched from chat should carry the active chat session id.');
+assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes('session_id: chatSessionId'), 'Orders dispatched from chat should carry the active chat session id.');
 assert.ok(chatRuntimeStateControllerJs.includes('/api/chat-sessions'), 'Chat should persist recoverable chat sessions through the server.');
 assert.ok(chatCss.includes('.chat-session-sidebar'), 'Chat CSS should style the left session sidebar.');
 assert.ok(chatCss.includes('.chat-session-row.active'), 'Chat CSS should visibly mark the active chat session.');
@@ -1581,10 +1587,10 @@ assert.ok(!chatJs.includes('function leaderTextHasSpecificBuildSignal'), 'Chat c
 assert.ok(chatJs.includes('activeLeaderLocked: false') || chatBootstrapStateJs.includes('activeLeaderLocked: false'), 'Chat should track when a leader has been confirmed and locked.');
 assert.ok(chatJs.includes('function lockedLeaderOwnerForPrompt'), 'Chat should preserve a confirmed leader unless the user explicitly asks to change it.');
 assert.ok(!chatJs.includes('function leaderFollowupSpecialistTaskForText'), 'Chat must not own leader follow-up specialist routing; server/leader definitions decide specialist follow-ups.');
-assert.ok(chatJs.includes('suppressLeaderLock'), 'Server/leader-routed specialist follow-up drafts should not be rewritten back to the locked leader on SEND ORDER.');
+assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes('suppressLeaderLock'), 'Server/leader-routed specialist follow-up drafts should not be rewritten back to the locked leader on SEND ORDER.');
 assert.ok(chatJs.includes('function explicitActiveOrderFollowupRequestText'), 'Active-order follow-ups must require explicit continuation wording.');
 assert.ok(chatJs.includes('return explicitActiveOrderFollowupRequestText(compact);'), 'Generic messages in an active order chat should start new intake/order work instead of becoming follow-ups.');
-assert.ok(chatJs.includes('function draftIsExplicitFollowupContinuation'), 'Send order should only preserve followup_to_job_id for explicitly requested continuations.');
+assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes('function draftIsExplicitFollowupContinuation') && chatOrderDispatchControllerJs.includes('explicitFollowupContinuation'), 'Send order should only preserve followup_to_job_id for explicitly requested continuations.');
 assert.ok(chatJs.includes('userExplicitContinuation: true'), 'Explicit follow-up drafts should carry an auditable continuation flag.');
 assert.ok(chatJs.includes('Start a new request'), 'Active-order composer copy should say new requests start fresh by default.');
 assert.ok(chatJs.includes('function suggestLeaderChangeIfNeeded'), 'Chat should ask before changing away from a confirmed leader.');
@@ -1603,7 +1609,7 @@ assert.ok(chatJs.indexOf('await handleRetryCommand(prompt)') < chatJs.indexOf('a
 assert.ok(chatJs.includes('Retry as new order'), 'Retry actions should clearly say they create a new order, not continue the selected order.');
 assert.ok(chatJs.includes('CHATUX_RETRY_MODE_NEW_ORDER'), 'Retry drafts should carry an explicit new-order retry mode.');
 assert.ok(chatJs.includes('draftIsSameContentNewOrderRetry'), 'Send order should distinguish same-content new-order retries from follow-up requests.');
-assert.ok(chatJs.includes('sameContentRetryAsNewOrder') && chatJs.includes('delete payload.followup_to_job_id'), 'Same-content retries must strip follow-up ids before dispatch.');
+assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes('sameContentRetryAsNewOrder') && chatOrderDispatchControllerJs.includes('delete payload.followup_to_job_id'), 'Same-content retries must strip follow-up ids before dispatch.');
 assert.ok(chatJs.includes('既存オーダー') && chatJs.includes('続きではありません'), 'Japanese retry confirmation should explicitly say the retry is not a continuation.');
 assert.ok(chatJs.includes('preservePrompt: true'), 'Retry drafts should preserve the previous order prompt instead of redrafting from the retry message.');
 assert.ok(chatJs.includes('preservePlan: plannedTasks.length > 0'), 'Retry drafts should mark previous workflow plans for preservation.');
@@ -1689,8 +1695,8 @@ assert.ok(chatJs.includes('selectedAgentId: agentId'), 'Worker Use should pin th
 assert.ok(chatUiRuntimeControllerJs.includes('function chatText'), 'Chat user-facing status text should go through a language helper.');
 assert.ok(chatUiRuntimeControllerJs.includes('function chatUiText'), 'Chat fixed controls should have a separate UI-language helper.');
 assert.ok(chatJs.includes('I will prepare an order in chat using'), 'Worker Use status should have an English UI copy path.');
-assert.ok(chatJs.includes('prepared_in_chat: true'), 'Approved chat orders should mark the intake/preparation gate as already completed.');
-assert.ok(chatJs.includes("await api('/api/jobs'"));
+assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes('prepared_in_chat: true'), 'Approved chat orders should mark the intake/preparation gate as already completed.');
+assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes("await api('/api/jobs'"));
 assert.ok(chatJs.includes("from './chat-order-create-recovery.js?v=20260531a'"), 'Chat should load the extracted order-create recovery controller cache key.');
 assert.ok(chatOrderCreateRecoveryJs.includes('function recoverAcceptedOrderAfterCreateError'), 'Order-create recovery should live in the dedicated controller.');
 assert.ok(!chatJs.includes("await api('/api/connectors/x/post'"), 'Chat should hand publishable X drafts to the SaaS surface instead of posting directly.');
@@ -2006,11 +2012,11 @@ const backfillChatDeliveriesSource = chatJs.slice(chatJs.indexOf('async function
 assert.ok(backfillChatDeliveriesSource.indexOf('if (jobHasDeliveryResult(job))') < backfillChatDeliveriesSource.indexOf('showWorkflowProgressMap(job);'), 'Delivery backfill should not show progress maps for terminal restored history before deciding whether to render a delivery.');
 assert.ok(chatCss.includes('.restored-order-card'), 'Chat CSS should style restored order history cards.');
 assert.ok(chatJs.includes('recentJobsApiPath'), 'Recent chat/order history should come from the server job API.');
-assert.ok(chatJs.includes('CHATUX_PROGRESS_MAX_POLLS'), 'Chat polling should have an explicit long-running order limit.');
+assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes('CHATUX_PROGRESS_MAX_POLLS'), 'Chat polling should have an explicit long-running order limit.');
 assert.ok(!chatJs.includes('Live progress polling reached its limit'), 'Polling limits should switch to background checks without posting progress noise.');
-assert.ok(chatJs.includes('pollCount >= CHATUX_PROGRESS_MAX_POLLS'), 'Chat polling should still have an explicit long-running order limit.');
+assert.ok(chatOrderDispatchControllerJs.includes('pollCount >= CHATUX_PROGRESS_MAX_POLLS'), 'Chat polling should still have an explicit long-running order limit.');
 assert.ok(agentProgressViewJs.includes('progress-narrator-bar') && agentProgressViewJs.includes('role="progressbar"'), 'Live order progress should render a visible progress bar.');
-assert.ok(chatJs.includes('showProgressNarrator(progressNarratorTextForJob(job), progressNarratorOptionsForJob(job))'), 'Polling should update the live progress bar from job progress.');
+assert.ok(chatOrderDispatchControllerJs.includes('showProgressNarrator(progressNarratorTextForJob(job), progressNarratorOptionsForJob(job))'), 'Polling should update the live progress bar from job progress.');
 assert.ok(
   chatJs.includes('function workflowRunWaitStatus') || chatWorkflowProgressUtilsJs.includes('function workflowRunWaitStatus'),
   'Chat progress should describe long-running provider/agent waits instead of looking stuck.'
@@ -2039,8 +2045,8 @@ assert.ok(submitHandlerSource.indexOf('handleNonOrderConversation(prompt)') < su
 assert.ok(chatJs.includes('const matchesTracked = state.trackedOrderIds.has(safeId)'), 'Chat backfill should only auto-deliver explicitly tracked orders or active recovery candidates.');
 assert.ok(chatJs.includes('if (!matchesTracked && !matchesRecovery) continue;'), 'Chat backfill should not dump every historical chatux job into a new chat.');
 assert.ok(chatJs.includes('_caitRecoveryStartedAt') || chatOrderCreateRecoveryJs.includes('_caitRecoveryStartedAt'), 'Chat recovery matching should ignore older same-session jobs from before the current send attempt.');
-assert.ok(chatJs.includes('client_order_id'), 'Chat order create should include a client order id for idempotent recovery.');
-assert.ok(chatJs.includes('orderCreateRequestBody(payload)') || chatOrderCreateRecoveryJs.includes('orderCreateRequestBody(payload)'), 'Chat order create should strip local recovery markers before POSTing.');
+assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes('client_order_id'), 'Chat order create should include a client order id for idempotent recovery.');
+assert.ok([chatJs, chatOrderDispatchControllerJs, chatOrderCreateRecoveryJs].join('\n').includes('orderCreateRequestBody(payload)'), 'Chat order create should strip local recovery markers before POSTing.');
 assert.ok(chatOrderCreateRecoveryJs.includes('payload._caitRecoveryRetried = true'), 'Chat recovery should safely retry the same idempotent create request once without chat noise.');
 assert.ok(clientOpenChatOrderProgressUtilsJs.includes('client_order_id'), 'Open Chat order create should include a client order id for idempotent recovery.');
 assert.ok(clientOpenChatOrderProgressUtilsJs.includes('orderCreateRequestBody(payload)'), 'Open Chat order create should strip local recovery markers before POSTing.');
