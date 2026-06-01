@@ -127,6 +127,8 @@ import { createChatUtilityModalController } from './chat-utility-modal-controlle
 import { createChatOrderCreateRecovery } from './chat-order-create-recovery.js?v=20260531a';
 import { createChatOrderDispatchController } from './chat-order-dispatch-controller.js?v=20260601a';
 import { createChatIntakeController } from './chat-intake-controller.js?v=20260601a';
+import { createChatRestoredOrderContextController } from './chat-restored-order-context-controller.js?v=20260601a';
+import { createChatHistoryPanelsController } from './chat-history-panels-controller.js?v=20260601a';
 
 const state = createInitialChatState({
   uiLanguage: initialChatUiLanguage({
@@ -175,6 +177,8 @@ const processedAppContextIds = new Set();
 let appContextBroadcastChannel = null;
 let chatRuntimeStateController = null;
 let chatUtilityModalController = null;
+let chatRestoredOrderContextController = null;
+let chatHistoryPanelsController = null;
 let chatIntakeController = null;
 let chatOrderDispatchController = null;
 const chatDeliveryFileUtils = createChatDeliveryFileUtils();
@@ -445,6 +449,24 @@ const PROMPT_PLACEHOLDERS = {
   }
 };
 
+chatRestoredOrderContextController = createChatRestoredOrderContextController({
+  state,
+  compact,
+  escapeHtml,
+  taskLabel,
+  statusDisplayLabel,
+  shortDateTime: (...args) => shortDateTime(...args),
+  jobBlockedByLeaderQualityGate,
+  isTerminalStatus,
+  fetchVisibleJob,
+  rememberTrackedOrder,
+  orderErrorMessage,
+  appendMessage,
+  jobHasDeliveryResult,
+  renderDeliveryOnce,
+  startPolling
+});
+
 const chatSessionSidebarController = createChatSessionSidebarController({
   state,
   els,
@@ -516,6 +538,27 @@ chatUtilityModalController = createChatUtilityModalController({
   loginHref,
   chatUiLanguage,
   chatUiText
+});
+
+chatHistoryPanelsController = createChatHistoryPanelsController({
+  state,
+  escapeHtml,
+  isDeliveryHistoryQuestionIntentText,
+  chatLanguage,
+  chatText,
+  refreshChatSessionHistory,
+  refreshRecentJobs,
+  fetchVisibleJob,
+  jobHasDeliveryResult,
+  jobUtilityRows,
+  chatSessionUtilityRows,
+  utilityEmptyHtml,
+  openUtilityModal,
+  orderErrorMessage,
+  appendTextMessage,
+  rememberTrackedOrder,
+  statusDisplayLabel,
+  renderDeliveryOnce
 });
 
 chatRuntimeStateController = createChatRuntimeStateController({
@@ -1409,6 +1452,16 @@ function chatUtilityController() {
   return chatUtilityModalController;
 }
 
+function restoredOrderContextController() {
+  if (!chatRestoredOrderContextController) throw new Error('Chat restored order context controller is not initialized.');
+  return chatRestoredOrderContextController;
+}
+
+function historyPanelsController() {
+  if (!chatHistoryPanelsController) throw new Error('Chat history panels controller is not initialized.');
+  return chatHistoryPanelsController;
+}
+
 function utilityEmptyHtml(message = 'Nothing to show yet.') {
   return chatUtilityController().utilityEmptyHtml(message);
 }
@@ -1442,196 +1495,27 @@ function chatSessionUtilityRows(sessions = []) {
 }
 
 function orderIdsFromText(value = '') {
-  const text = String(value || '');
-  const ids = [];
-  const patterns = [
-    /Order ID:\s*([0-9a-f]{8}-[0-9a-f-]{27,})/ig,
-    /Order accepted\.[\s\S]{0,140}?([0-9a-f]{8}-[0-9a-f-]{27,})/ig
-  ];
-  for (const pattern of patterns) {
-    let match;
-    while ((match = pattern.exec(text))) {
-      const id = String(match[1] || '').trim();
-      if (id) ids.push(id);
-    }
-  }
-  return ids;
+  return restoredOrderContextController().orderIdsFromText(value);
 }
 
 function chatSessionOrderIds(session = {}, options = {}) {
-  const relatedIds = Array.isArray(session.relatedOrderIds) ? session.relatedOrderIds : [];
-  const activeIds = restoredSessionHasActiveWork(session)
-    ? (Array.isArray(session.activeJobIds) ? session.activeJobIds : [])
-    : [];
-  const directIds = [
-    ...activeIds,
-    session.linkedOrderId,
-    ...(options.includeRelatedHistory === true ? relatedIds : [])
-  ].map((item) => String(item || '').trim()).filter(Boolean);
-  if (!directIds.length && relatedIds.length) {
-    directIds.push(String(relatedIds[0] || '').trim());
-  }
-  const max = options.includeRelatedHistory === true ? 8 : 1;
-  return [...new Set(directIds)].filter(Boolean).slice(0, max);
-}
-
-function restoredSessionOrderCardHtml(job = {}) {
-  const orderId = String(job.id || '').trim();
-  const status = String(job.status || '').trim().toLowerCase();
-  const qualityBlocked = jobBlockedByLeaderQualityGate(job);
-  const terminal = isTerminalStatus(status) || qualityBlocked;
-  const failed = ['failed', 'timed_out'].includes(status) || qualityBlocked;
-  const completed = status === 'completed';
-  const waiting = status === 'blocked' && !qualityBlocked;
-  const active = !terminal && !waiting;
-  const title = [
-    taskLabel(job.taskType || job.workflowTask || 'work'),
-    orderId ? `#${orderId.slice(0, 8)}` : ''
-  ].filter(Boolean).join(' ');
-  const summary = completed
-    ? 'The delivery is rendered below. Use Show result only if you need to reload it.'
-    : failed
-      ? (job.failureReason || job.failure_reason || 'This order ended without a successful delivery.')
-      : (waiting ? 'Waiting for approval or connector action.' : (job.prompt || 'Order details are available.'));
-  const meta = [
-    `Status: ${qualityBlocked ? 'blocked by quality gate' : statusDisplayLabel(status || 'created')}`,
-    job.createdAt ? `Started: ${shortDateTime(job.createdAt)}` : '',
-    job.completedAt ? `Completed: ${shortDateTime(job.completedAt)}` : '',
-    job.failedAt ? `Failed: ${shortDateTime(job.failedAt)}` : '',
-    job.timedOutAt ? `Timed out: ${shortDateTime(job.timedOutAt)}` : ''
-  ].filter(Boolean).join(' / ');
-  const hint = qualityBlocked
-    ? 'This order is blocked by a leader quality gate. Review the failed specialist output before preparing a retry or repair.'
-    : waiting
-    ? 'This order is waiting for an approval or connector action. Review the requested action before continuing.'
-    : active
-      ? 'This order is still in progress. CAIt will resume polling from this chat.'
-      : completed
-        ? 'This order has a result. Review it here before scheduling or retrying.'
-        : 'This order ended without a successful delivery. Review the reason before preparing a retry.';
-  const actions = [
-    orderId ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-open="${escapeHtml(orderId)}">${escapeHtml(terminal ? 'Show result' : 'Check status')}</button>` : '',
-    orderId && terminal ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-retry="${escapeHtml(orderId)}">${escapeHtml(failed ? 'Retry as new order' : 'Run again as new order')}</button>` : '',
-    orderId && completed ? `<button class="ghost-btn inline-btn file-action" type="button" data-chat-order-schedule="${escapeHtml(orderId)}">Schedule</button>` : ''
-  ].filter(Boolean).join('');
-  return [
-    '<div class="restored-order-card">',
-    `<strong>${escapeHtml(title || 'Related order')}</strong>`,
-    meta ? `<div class="utility-meta">${escapeHtml(meta)}</div>` : '',
-    summary ? `<div>${escapeHtml(compact(summary, 520))}</div>` : '<div>Order details are available. Open the result to inspect the delivery.</div>',
-    actions ? `<div class="inline-actions">${actions}</div>` : '',
-    `<span class="chat-hint">${escapeHtml(hint)}</span>`,
-    '</div>'
-  ].join('\n');
-}
-
-function restoredSessionOrderContextIsCurrent(sessionId = '', viewRevision = 0) {
-  const safeSessionId = String(sessionId || '').trim();
-  const safeRevision = Number(viewRevision || 0) || 0;
-  if (safeRevision && Number(state.chatViewRevision || 0) !== safeRevision) return false;
-  if (safeSessionId && String(state.currentChatSessionId || '').trim() !== safeSessionId) return false;
-  return true;
+  return restoredOrderContextController().chatSessionOrderIds(session, options);
 }
 
 function restoredSessionHasActiveWork(session = {}, snapshot = {}) {
-  return Boolean(
-    session?.activeWork
-    || snapshot?.activeWork
-    || (Array.isArray(session?.activeJobIds) && session.activeJobIds.length)
-    || (Array.isArray(snapshot?.activeJobIds) && snapshot.activeJobIds.length)
-  );
+  return restoredOrderContextController().restoredSessionHasActiveWork(session, snapshot);
 }
 
 async function renderRestoredSessionOrderContext(session = {}, options = {}) {
-  const sessionId = String(options.sessionId || session.id || session.sessionId || '').trim();
-  const viewRevision = Number(options.viewRevision || state.chatViewRevision || 0) || 0;
-  if (!restoredSessionOrderContextIsCurrent(sessionId, viewRevision)) return;
-  const ids = chatSessionOrderIds(session);
-  if (!ids.length) return;
-  for (const id of ids) rememberTrackedOrder(id);
-  const settled = await Promise.allSettled(ids.map((id) => fetchVisibleJob(id)));
-  if (!restoredSessionOrderContextIsCurrent(sessionId, viewRevision)) return;
-  const jobs = settled
-    .map((item) => item.status === 'fulfilled' ? item.value : null)
-    .filter((job) => job?.id);
-  const failures = settled
-    .map((item, index) => item.status === 'rejected' ? `${ids[index].slice(0, 8)}: ${orderErrorMessage(item.reason)}` : '')
-    .filter(Boolean);
-  if (!jobs.length && !failures.length) return;
-  const body = [
-    '<strong>Restored order context</strong>',
-    '<span class="chat-hint">This chat session has related order history. No new order was created.</span>',
-    ...jobs.map(restoredSessionOrderCardHtml),
-    failures.length ? `<div class="chat-hint">${escapeHtml(`Could not load: ${failures.join(' / ')}`)}</div>` : ''
-  ].filter(Boolean).join('\n\n');
-  appendMessage('system', body, { label: 'Order history', tone: jobs.some((job) => !jobHasDeliveryResult(job)) ? 'warn' : 'info', record: false });
-  for (const job of jobs) {
-    if (jobHasDeliveryResult(job)) renderDeliveryOnce(job);
-  }
-  const activeJob = jobs.find((job) => !jobHasDeliveryResult(job));
-  const primary = activeJob || jobs[0] || null;
-  if (primary?.id) {
-    if (!restoredSessionOrderContextIsCurrent(sessionId, viewRevision)) return;
-    state.orderId = primary.id;
-    if (options.resumeActiveWork === true && restoredSessionHasActiveWork(session) && !isTerminalStatus(primary.status)) startPolling(primary.id);
-  }
+  return restoredOrderContextController().renderRestoredSessionOrderContext(session, options);
 }
 
 async function showChatListPanel() {
-  openUtilityModal('Chats', utilityEmptyHtml('Loading chat sessions...'));
-  try {
-    const sessions = await refreshChatSessionHistory({ force: true });
-    openUtilityModal('Chats', [
-      '<div class="chat-hint">Chats show conversation and related orders. Live status is loaded from Order state.</div>',
-      chatSessionUtilityRows(sessions)
-    ].join('\n'));
-  } catch (error) {
-    openUtilityModal('Chats', utilityEmptyHtml(orderErrorMessage(error)));
-  }
+  return historyPanelsController().showChatListPanel();
 }
 
 async function showDeliveryHistoryForPrompt(prompt = '') {
-  if (!isDeliveryHistoryQuestionIntentText(prompt)) return false;
-  const ja = chatLanguage(prompt) === 'ja';
-  openUtilityModal('Deliveries', utilityEmptyHtml(ja ? '完了済みの納品を読み込み中です...' : 'Loading completed deliveries...'));
-  try {
-    const directJob = state.orderId ? await fetchVisibleJob(state.orderId, { force: true }).catch(() => null) : null;
-    const jobs = await refreshRecentJobs({ force: true, limit: 50 });
-    const merged = [
-      ...(directJob?.id ? [directJob] : []),
-      ...(Array.isArray(jobs) ? jobs : [])
-    ].filter((job, index, all) => job?.id && all.findIndex((item) => String(item?.id || '') === String(job.id || '')) === index);
-    const completed = merged.filter((job) => String(job.status || '').trim().toLowerCase() === 'completed' && jobHasDeliveryResult(job));
-    const terminal = completed.length ? completed : merged.filter((job) => jobHasDeliveryResult(job));
-    const primary = (state.orderId ? terminal.find((job) => String(job.id || '') === String(state.orderId)) : null) || terminal[0] || null;
-    openUtilityModal('Deliveries', [
-      `<div class="chat-hint">${escapeHtml(ja
-        ? '完了済みまたは納品結果のあるオーダーだけを表示しています。Open でチャットに再表示できます。'
-        : 'Showing completed orders or orders with delivery results. Use Open to restore one into the chat.')}</div>`,
-      jobUtilityRows(terminal)
-    ].join('\n'));
-    if (!primary?.id) {
-      appendTextMessage('assistant', chatText(
-        'I could not find a completed delivery visible to this chat. No order was created.',
-        'このチャットから見える完了済み納品物は見つかりませんでした。新しいオーダーは作成していません。',
-        prompt
-      ), { tone: 'warn', label: 'Delivery history' });
-      return true;
-    }
-    rememberTrackedOrder(primary.id);
-    state.orderId = primary.id;
-    appendTextMessage('system', chatText(
-      `Showing the latest completed delivery I can access: Order #${primary.id.slice(0, 8)} (${statusDisplayLabel(primary.status || 'completed')}). No new order was created.`,
-      `表示できる最新の完了済み納品物を開きます: Order #${primary.id.slice(0, 8)} (${statusDisplayLabel(primary.status || 'completed')})。新しいオーダーは作成していません。`,
-      prompt
-    ), { label: 'Delivery history', record: false });
-    renderDeliveryOnce(primary, { force: true });
-    return true;
-  } catch (error) {
-    openUtilityModal('Deliveries', utilityEmptyHtml(orderErrorMessage(error)));
-    appendTextMessage('assistant', orderErrorMessage(error), { tone: 'error', label: 'Delivery history' });
-    return true;
-  }
+  return historyPanelsController().showDeliveryHistoryForPrompt(prompt);
 }
 
 async function showWorkerListPanel() {

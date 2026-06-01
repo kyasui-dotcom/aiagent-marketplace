@@ -80,6 +80,7 @@ const chatDisplayUtilsPath = new URL('../public/chat-display-utils.js', import.m
 const chatDeliveryPreferenceControllerPath = new URL('../public/chat-delivery-preference-controller.js', import.meta.url);
 const chatSessionModelPath = new URL('../public/chat-session-model.js', import.meta.url);
 const chatSessionSidebarControllerPath = new URL('../public/chat-session-sidebar-controller.js', import.meta.url);
+const chatRestoredOrderContextControllerPath = new URL('../public/chat-restored-order-context-controller.js', import.meta.url);
 const accountSettingsJsPath = new URL('../public/account-settings.js', import.meta.url);
 const connectorGateJsPath = new URL('../public/connector-gate.js', import.meta.url);
 const chatSessionStateJsPath = new URL('../public/chat-session-state.js', import.meta.url);
@@ -158,6 +159,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(chatUsageLibraryControl
 execFileSync(process.execPath, ['--check', fileURLToPath(chatCatalogRuntimePath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatSchedulePanelControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatAppHandoffControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatRestoredOrderContextControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatConversationOwnerUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatIntentGuardUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatTelemetryPath)], { stdio: 'pipe' });
@@ -306,6 +308,7 @@ const chatRuntimeStateControllerJs = readFileSync(chatRuntimeStateControllerPath
 const chatDeliveryPreferenceControllerJs = readFileSync(chatDeliveryPreferenceControllerPath, 'utf8');
 const chatSessionModelJs = readFileSync(chatSessionModelPath, 'utf8');
 const chatSessionSidebarControllerJs = readFileSync(chatSessionSidebarControllerPath, 'utf8');
+const chatRestoredOrderContextControllerJs = readFileSync(chatRestoredOrderContextControllerPath, 'utf8');
 const accountSettingsJs = readFileSync(accountSettingsJsPath, 'utf8');
 const connectorGateJs = readFileSync(connectorGateJsPath, 'utf8');
 const chatSessionStateJs = readFileSync(chatSessionStateJsPath, 'utf8');
@@ -846,11 +849,11 @@ assert.ok(chatSchedulePanelControllerJs.includes('chat_required: false'), 'Sched
 assert.ok(chatJs.includes('renderChatSessionSidebar') && chatSessionSidebarControllerJs.includes('renderChatSessionSidebar'), 'Chat should render a ChatGPT-style session sidebar through the session sidebar controller.');
 assert.ok(chatJs.includes('refreshChatSessionHistory'), 'Chat should restore signed-in chat history from the server.');
 assert.ok(chatJs.includes('chatViewRevision'), 'Chat should track the active chat view so stale async order restores cannot repopulate a new blank chat.');
-assert.ok(chatJs.includes('restoredSessionOrderContextIsCurrent'), 'Restored order context should be ignored when the user has switched to a different/new chat.');
+assert.ok(chatRestoredOrderContextControllerJs.includes('restoredSessionOrderContextIsCurrent'), 'Restored order context should be ignored when the user has switched to a different/new chat.');
 const loadChatSessionSource = chatSessionSidebarControllerJs.slice(chatSessionSidebarControllerJs.indexOf('function loadChatSession'), chatSessionSidebarControllerJs.indexOf('function deleteChatSession'));
 assert.ok(loadChatSessionSource.includes('resumeActiveWork: options.resumeActiveWork === true'), 'Manual chat-session loads should not auto-render live progress unless an OAuth/runtime restore explicitly asks to resume active work.');
 assert.ok(!loadChatSessionSource.includes('startPolling(state.orderId)'), 'Manual chat-session loads must not show the progress narrator just because the session has a linked order.');
-const restoredSessionOrderContextSource = chatJs.slice(chatJs.indexOf('async function renderRestoredSessionOrderContext'), chatJs.indexOf('async function showChatListPanel'));
+const restoredSessionOrderContextSource = chatRestoredOrderContextControllerJs.slice(chatRestoredOrderContextControllerJs.indexOf('async function renderRestoredSessionOrderContext'), chatRestoredOrderContextControllerJs.indexOf('return {'));
 assert.ok(restoredSessionOrderContextSource.includes('options.resumeActiveWork === true'), 'Restored order context should only resume polling for explicit active-work restores.');
 assert.ok(chatJs.includes('clearQueuedChatSessionSnapshot'), 'Starting a new chat should drop queued snapshots from the previous chat.');
 assert.ok(chatJs.includes('clearChatRestoreParamsFromUrl();'), 'Starting a new chat should remove URL restore params so reloads stay blank.');
@@ -863,7 +866,7 @@ assert.ok(feedbackChatRoutes.includes('stale_chat_session_account'), 'Server cha
 assert.ok(chatJs.indexOf('void refreshChatSessionHistory({ force: true });') < chatJs.indexOf('void refreshAuth();'), 'Chat should start loading the session list before the full auth status request.');
 assert.ok(chatSessionSidebarControllerJs.includes("return '/api/chat-memory"), 'Chat session history should use the lightweight chat-memory API instead of the full snapshot.');
 assert.ok(!chatSessionSidebarControllerJs.includes("return '/api/snapshot'"), 'Chat session history should not fetch the full snapshot for the sidebar.');
-assert.ok(chatJs.includes('Promise.allSettled(ids.map((id) => fetchVisibleJob(id)))'), 'Restored order context should fetch related orders in parallel.');
+assert.ok(chatRestoredOrderContextControllerJs.includes('Promise.allSettled(ids.map((id) => fetchVisibleJob(id)))'), 'Restored order context should fetch related orders in parallel.');
 assert.ok(chatSessionSidebarControllerJs.includes('/api/analytics/chat-transcripts'), 'Chat should persist chat turns to the server transcript API.');
 assert.ok(analyticsLoaderJs.includes('window.caitTrackGa4Event'), 'Shared analytics loader should expose a safe GA4 event bridge for product flows.');
 assert.ok(analyticsLoaderJs.includes('primary_cta_click'), 'Shared analytics loader should track primary CTA clicks as GA4 events.');
@@ -2005,19 +2008,19 @@ const resetChatSource = chatJs.slice(chatJs.indexOf('function resetChat()'), cha
 assert.ok(resetChatSource.includes('startNewChatSession();'), 'Reset should still create a blank chat surface.');
 assert.ok(!resetChatSource.includes('startDeliveryBackfillLoop'), 'Reset should not immediately backfill old order history into the blank chat.');
 assert.ok(chatJs.includes('renderRestoredSessionOrderContext'), 'Restored chat sessions should render related order status/results inside the chat.');
-assert.ok(chatJs.includes('if (jobHasDeliveryResult(job)) renderDeliveryOnce(job);'), 'Restored completed order sessions should render the actual delivery card, not only a status summary.');
-const chatSessionOrderIdsSource = chatJs.slice(chatJs.indexOf('function chatSessionOrderIds'), chatJs.indexOf('function restoredSessionOrderCardHtml'));
+assert.ok(chatRestoredOrderContextControllerJs.includes('if (jobHasDeliveryResult(job)) renderDeliveryOnce(job);'), 'Restored completed order sessions should render the actual delivery card, not only a status summary.');
+const chatSessionOrderIdsSource = chatRestoredOrderContextControllerJs.slice(chatRestoredOrderContextControllerJs.indexOf('function chatSessionOrderIds'), chatRestoredOrderContextControllerJs.indexOf('function restoredSessionOrderCardHtml'));
 assert.ok(chatSessionOrderIdsSource.includes('const max = options.includeRelatedHistory === true ? 8 : 1'), 'Restored chat startup should not dump every historical related order into the thread.');
-const restoredSessionOrderCardSource = chatJs.slice(chatJs.indexOf('function restoredSessionOrderCardHtml'), chatJs.indexOf('function restoredSessionOrderContextIsCurrent'));
+const restoredSessionOrderCardSource = chatRestoredOrderContextControllerJs.slice(chatRestoredOrderContextControllerJs.indexOf('function restoredSessionOrderCardHtml'), chatRestoredOrderContextControllerJs.indexOf('function restoredSessionOrderContextIsCurrent'));
 assert.ok(!restoredSessionOrderCardSource.includes('deliveryText(job)'), 'Restored order history cards should not duplicate completed delivery bodies; render the delivery card instead.');
-assert.ok(chatJs.includes('data-chat-order-retry'), 'Restored order cards should offer an explicit retry confirmation path.');
+assert.ok(chatRestoredOrderContextControllerJs.includes('data-chat-order-retry'), 'Restored order cards should offer an explicit retry confirmation path.');
 assert.ok(chatJs.includes('deliveryOrderActionsHtml'), 'Terminal delivery updates should keep status/retry actions visible after connector returns.');
 assert.ok(
   chatJs.includes("return ['completed', 'failed', 'timed_out'].includes")
     || chatWorkflowProgressUtilsJs.includes("return ['completed', 'failed', 'timed_out'].includes"),
   'Blocked approval waits should stay progress states, not terminal deliveries.'
 );
-assert.ok(!chatJs.includes('restored-order-progress'), 'Restored order cards should not dump worker progress details into chat.');
+assert.ok(!chatRestoredOrderContextControllerJs.includes('restored-order-progress'), 'Restored order cards should not dump worker progress details into chat.');
 const backfillChatDeliveriesSource = chatJs.slice(chatJs.indexOf('async function backfillChatDeliveries'), chatJs.indexOf('function startDeliveryBackfillLoop'));
 assert.ok(backfillChatDeliveriesSource.indexOf('if (jobHasDeliveryResult(job))') < backfillChatDeliveriesSource.indexOf('showWorkflowProgressMap(job);'), 'Delivery backfill should not show progress maps for terminal restored history before deciding whether to render a delivery.');
 assert.ok(chatCss.includes('.restored-order-card'), 'Chat CSS should style restored order history cards.');
