@@ -37,6 +37,7 @@ const clientAgentSetupFlowControllerPath = new URL('../public/client-agent-setup
 const clientBrowserTransferUtilsPath = new URL('../public/client-browser-transfer-utils.js', import.meta.url);
 const clientConnectHubControllerPath = new URL('../public/client-connect-hub-controller.js', import.meta.url);
 const clientDeliveryActionControllerPath = new URL('../public/client-delivery-action-controller.js', import.meta.url);
+const clientDeliveryExecutorPreferencesPath = new URL('../public/client-delivery-executor-preferences.js', import.meta.url);
 const clientDeliveryRenderModelPath = new URL('../public/client-delivery-render-model.js', import.meta.url);
 const clientRunDetailControllerPath = new URL('../public/client-run-detail-controller.js', import.meta.url);
 const clientAuthAccessUtilsPath = new URL('../public/client-auth-access-utils.js', import.meta.url);
@@ -200,6 +201,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientDeveloperSurfaceC
 execFileSync(process.execPath, ['--check', fileURLToPath(clientSettingsBillingControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientAgentAccessControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryActionControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryExecutorPreferencesPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryRenderModelPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientRunDetailControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientAuthActionsControllerPath)], { stdio: 'pipe' });
@@ -280,6 +282,7 @@ const clientSettingsBillingControllerJs = readFileSync(clientSettingsBillingCont
 const clientRouteAuthControllerJs = readFileSync(clientRouteAuthControllerPath, 'utf8');
 const clientAgentAccessControllerJs = readFileSync(clientAgentAccessControllerPath, 'utf8');
 const clientDeliveryActionControllerJs = readFileSync(clientDeliveryActionControllerPath, 'utf8');
+const clientDeliveryExecutorPreferencesJs = readFileSync(clientDeliveryExecutorPreferencesPath, 'utf8');
 const clientDeliveryRenderModelJs = readFileSync(clientDeliveryRenderModelPath, 'utf8');
 const clientRunDetailControllerJs = readFileSync(clientRunDetailControllerPath, 'utf8');
 const clientAuthAccessUtilsJs = readFileSync(clientAuthAccessUtilsPath, 'utf8');
@@ -689,6 +692,11 @@ assert.equal(clientJs.includes('/api/settings/payout'), false, 'Client UI must n
 assert.equal(clientJs.includes('PAY' + '.JP'), false, 'Client UI should not mention the removed payment provider.');
 assert.ok(clientAuthAccessUtilsJs.includes("if (requested.length) url.searchParams.set('capabilities', requested.join(','))"), 'Chat Google connector should pass exact required Google capabilities into OAuth without adding broad defaults.');
 assert.ok(clientDeliveryActionControllerJs.includes("data-connector-capabilities"), 'Connector action buttons should carry the exact capability requested by the blocked action.');
+assert.ok(clientDeliveryActionControllerJs.includes("from './client-delivery-executor-preferences.js?v=20260601a'"), 'Delivery executor preferences should stay in the dedicated preference/source loader module.');
+assert.ok(clientDeliveryExecutorPreferencesJs.includes('async function loadGoogleSourcesForGenericDeliverable'), 'Google source loading should be owned by the delivery executor preference module.');
+assert.ok(clientDeliveryExecutorPreferencesJs.includes('/api/settings/executor-preferences'), 'Executor preference persistence should be owned by the delivery executor preference module.');
+assert.ok(!clientDeliveryActionControllerJs.includes('async function saveGoogleExecutorPreferences'), 'Delivery action controller should not own executor preference persistence.');
+assert.ok(!clientDeliveryActionControllerJs.includes('function flattenGa4PropertyOptions'), 'Delivery action controller should not own Google asset option flattening.');
 assert.ok(clientDeliveryActionControllerJs.includes('sendFollowupToAgentFromDelivery'), 'Delivery action controller should keep the direct follow-up sender after refactors.');
 assert.ok(clientJs.includes('sendFollowupToAgentFromDelivery,'), 'Client should destructure the delivery follow-up sender from the delivery action controller.');
 assert.ok(chatJs.includes("from './connector-gate.js"), 'Chat connector approvals should be delegated to the connector gate module.');
