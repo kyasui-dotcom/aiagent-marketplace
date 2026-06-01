@@ -695,6 +695,7 @@ assert.ok(clientDeliveryActionControllerJs.includes("data-connector-capabilities
 assert.ok(clientDeliveryActionControllerJs.includes("from './client-delivery-executor-preferences.js?v=20260601a'"), 'Delivery executor preferences should stay in the dedicated preference/source loader module.');
 assert.ok(clientDeliveryExecutorPreferencesJs.includes('async function loadGoogleSourcesForGenericDeliverable'), 'Google source loading should be owned by the delivery executor preference module.');
 assert.ok(clientDeliveryExecutorPreferencesJs.includes('/api/settings/executor-preferences'), 'Executor preference persistence should be owned by the delivery executor preference module.');
+assert.ok(clientDeliveryExecutorPreferencesJs.includes('Array.isArray(state.repos) ? state.repos[0] : null'), 'Executor repo fallback should keep using the shared repo list state.');
 assert.ok(!clientDeliveryActionControllerJs.includes('async function saveGoogleExecutorPreferences'), 'Delivery action controller should not own executor preference persistence.');
 assert.ok(!clientDeliveryActionControllerJs.includes('function flattenGa4PropertyOptions'), 'Delivery action controller should not own Google asset option flattening.');
 assert.ok(clientDeliveryActionControllerJs.includes('sendFollowupToAgentFromDelivery'), 'Delivery action controller should keep the direct follow-up sender after refactors.');

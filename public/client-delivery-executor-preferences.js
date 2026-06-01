@@ -25,7 +25,7 @@ export function createClientDeliveryExecutorPreferences(deps = {}) {
     if (selected) return selected;
     const picked = selectedRepoFromPicker?.();
     if (picked?.fullName) return normalizeRepoFullName(picked.fullName);
-    const first = Array.isArray(state.githubRepos) ? state.githubRepos[0] : null;
+    const first = Array.isArray(state.repos) ? state.repos[0] : null;
     return normalizeRepoFullName(first?.fullName || '');
   }
 
