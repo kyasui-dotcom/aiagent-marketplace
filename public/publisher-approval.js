@@ -26,6 +26,7 @@ import {
   profileByKey,
   publisherContractArtifactsFromContext,
   publisherContractTypeForProfile,
+  slugFromTitle,
   statusClass
 } from './publisher-destination-contract.js?v=20260602a';
 import {
@@ -1253,7 +1254,7 @@ function seedLandingPageStarter() {
     id,
     type: 'landing_page_change',
     title,
-    slug: `/${slugFromTitle(title)}`,
+    slug: slugFromTitle(title),
     meta: brief.goal || `Landing page for ${title}`,
     h1: brief.selectedAxis || title,
     keywords: brief.audience || '',

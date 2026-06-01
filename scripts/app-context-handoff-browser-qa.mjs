@@ -106,6 +106,7 @@ try {
   await page.waitForFunction(() => document.querySelector('#publisherPlanningPill')?.textContent?.includes('Planning ready'));
   await page.click('#seedLpBtn');
   await page.waitForFunction(() => document.querySelector('#titleInput')?.value?.includes('Stable AIAGENT operations SaaS'));
+  if ((await page.inputValue('#slugInput')) !== '/stable-aiagent-operations-saas') throw new Error('publisher LP starter slug was not restored with a normalized single-leading-slash path');
   const seededPublisherPacket = JSON.parse(await page.textContent('#packetPreview'));
   if (!JSON.stringify(seededPublisherPacket.raw_context || {}).includes('lp_and_posts')) throw new Error('publisher planning delivery shape was not preserved in packet raw_context');
   if (!JSON.stringify(seededPublisherPacket.raw_context || {}).includes('cait_usage')) throw new Error('publisher SaaS billing model was not preserved in packet raw_context');

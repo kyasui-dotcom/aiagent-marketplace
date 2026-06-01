@@ -576,7 +576,7 @@ function destinationFromArtifact(artifact = {}, type = '', profile = null) {
   return String(profile?.label || (type === 'directory' ? 'Directory / listing' : 'Generic publishing packet')).trim();
 }
 
-function slugFromTitle(value = '') {
+export function slugFromTitle(value = '') {
   const slug = String(value || '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
