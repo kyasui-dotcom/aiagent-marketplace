@@ -508,6 +508,7 @@ try {
     source_app: 'qa_leads',
     source_app_label: 'QA Leads',
     title: 'Imported lead packet',
+    handoff_targets: ['email_ops', 'list_creator', 'sms_ops'],
     artifacts: [
       {
         type: 'lead_rows',
@@ -559,6 +560,7 @@ try {
   if (!(await page.textContent('#leadTable')).includes('Imported Travel Partner')) throw new Error('lead context was not rendered');
   if (!(await page.inputValue('#leadSourceInput')).includes('https://example.com/source')) throw new Error('lead evidence_urls artifact was not merged into the selected row');
   if (!(await page.inputValue('#emailSubjectInput')).includes('Imported subject')) throw new Error('lead email draft was not rendered');
+  if ((await page.inputValue('#leaderSelect')) !== 'email_ops') throw new Error('lead execution handoff target was not preserved when opening an Email Ops packet');
   await page.waitForFunction(() => document.querySelector('#leadHandoffSessionNotice')?.textContent?.includes('CAIt lead handoff session is attached'));
   if (!(await page.textContent('#leadHandoffSessionNotice')).includes('CAIt lead handoff session is attached')) throw new Error('lead server context notice was not rendered');
   await page.waitForFunction(() => document.querySelector('#leadOpsReadinessPill')?.textContent?.includes('3/4 ops checks ready'));
@@ -567,6 +569,7 @@ try {
   if (leadPacket.raw_context?.chat_handoff_id !== 'lead-handoff') throw new Error('lead chat handoff id was not preserved in packet');
   if (leadPacket.raw_context?.chat_return_to !== '/chat?thread=lead') throw new Error('lead chat return path was not preserved in packet');
   if (leadPacket.raw_context?.selected_lead_id !== 'lead-x') throw new Error('lead selected lead id was not preserved in packet');
+  if (leadPacket.handoff_targets?.[0] !== 'email_ops') throw new Error('lead packet did not preserve Email Ops as the primary handoff target');
   if (!JSON.stringify(leadPacket.artifacts || []).includes('email_drafts')) throw new Error('lead packet did not return plural email_drafts for app contract reuse');
   if (!JSON.stringify(leadPacket.artifacts || []).includes('Review imported supplemental action')) throw new Error('lead next_actions artifact was not preserved in the returned packet');
 

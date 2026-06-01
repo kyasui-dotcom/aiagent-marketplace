@@ -140,12 +140,13 @@ function optionHtml(value = '', label = '') {
   return `<option value="${escapeHtml(value)}">${escapeHtml(label || value || '-')}</option>`;
 }
 
-function renderLeadOpsHandoffTargetOptions() {
-  const current = normalizeLeadOpsHandoffTarget(els.leaderSelect?.value) || defaultLeadOpsHandoffTarget();
-  els.leaderSelect.innerHTML = leadOpsHandoffTargetOptions()
+function renderLeadOpsHandoffTargetOptions(selectedTarget = '') {
+  const current = normalizeLeadOpsHandoffTarget(selectedTarget || els.leaderSelect?.value) || defaultLeadOpsHandoffTarget();
+  const includeExecutionTargets = current === 'email_ops' || current === 'sms_ops';
+  els.leaderSelect.innerHTML = leadOpsHandoffTargetOptions({ includeExecutionTargets })
     .map((target) => optionHtml(target.value, target.label))
     .join('');
-  els.leaderSelect.value = normalizeLeadOpsHandoffTarget(current) || defaultLeadOpsHandoffTarget();
+  els.leaderSelect.value = current;
 }
 
 const STATUS_DISPLAY_LABELS = Object.freeze({
@@ -725,7 +726,7 @@ function applyInboundContext(context = null) {
   leads = importedLeads;
   selectedId = leads[0]?.id || '';
   const target = leadOpsHandoffTargetFromContext(context);
-  if (target && [...els.leaderSelect.options].some((option) => option.value === target)) els.leaderSelect.value = target;
+  if (target) renderLeadOpsHandoffTargetOptions(target);
 }
 
 function leadFromDeliveryItem(item = {}, index = 0) {
