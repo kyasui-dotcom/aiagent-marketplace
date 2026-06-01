@@ -1,4 +1,12 @@
 import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526i';
+import {
+  defaultLeadOpsHandoffTarget,
+  leadOpsContextHandoffTargets,
+  leadOpsHandoffTargetFromContext,
+  leadOpsHandoffTargetOptions,
+  leadOpsSourcingHandoffTargets,
+  normalizeLeadOpsHandoffTarget
+} from './lead-ops-handoff-target-contract.js?v=20260602a';
 
 let leads = [];
 let selectedId = '';
@@ -126,6 +134,18 @@ function statusLabel(value = '') {
   if (safe === 'blocked') return 'waiting';
   if (safe === 'triggered') return 'trigger-ready';
   return String(value || 'needs review');
+}
+
+function optionHtml(value = '', label = '') {
+  return `<option value="${escapeHtml(value)}">${escapeHtml(label || value || '-')}</option>`;
+}
+
+function renderLeadOpsHandoffTargetOptions() {
+  const current = normalizeLeadOpsHandoffTarget(els.leaderSelect?.value) || defaultLeadOpsHandoffTarget();
+  els.leaderSelect.innerHTML = leadOpsHandoffTargetOptions()
+    .map((target) => optionHtml(target.value, target.label))
+    .join('');
+  els.leaderSelect.value = normalizeLeadOpsHandoffTarget(current) || defaultLeadOpsHandoffTarget();
 }
 
 const STATUS_DISPLAY_LABELS = Object.freeze({
@@ -704,7 +724,7 @@ function applyInboundContext(context = null) {
   applyOutreachSteps(importedLeads, outreachSteps);
   leads = importedLeads;
   selectedId = leads[0]?.id || '';
-  const target = (Array.isArray(context.handoff_targets) ? context.handoff_targets : []).find(Boolean);
+  const target = leadOpsHandoffTargetFromContext(context);
   if (target && [...els.leaderSelect.options].some((option) => option.value === target)) els.leaderSelect.value = target;
 }
 
@@ -907,7 +927,7 @@ function buildLeadSourcingContext() {
       'After List Creator returns rows, reopen Lead Ops to review evidence, consent, message drafts, and approval state.',
       'Keep outreach execution blocked until each row has source evidence and a consent-safe contact path.'
     ],
-    handoff_targets: ['list_creator', 'cmo_leader', 'email_ops'],
+    handoff_targets: leadOpsSourcingHandoffTargets(),
     raw_context: {
       chat_handoff_id: leadChatHandoffId(),
       chat_return_to: leadChatReturnTo(),
@@ -939,7 +959,7 @@ function outreachStepsPayload() {
 }
 
 function buildContext() {
-  const target = String(els.leaderSelect.value || 'cmo_leader');
+  const target = normalizeLeadOpsHandoffTarget(els.leaderSelect.value) || defaultLeadOpsHandoffTarget();
   const lead = selectedLead();
   const chatHandoffId = leadChatHandoffId();
   const chatReturnTo = leadChatReturnTo();
@@ -954,7 +974,7 @@ function buildContext() {
       facts: ['No lead rows, evidence URLs, contact paths, outreach channels, schedules, triggers, or messages are loaded.'],
       assumptions: ['No built-in demo lead data is used.', 'This app uses CAIt Resend for approved email sends only after explicit user confirmation. SMS remains a CAIt handoff.'],
       recommended_next_actions: ['Load a CAIt app context that contains lead_rows or ask List Creator / CMO Leader to produce public-source rows and consent-safe contact paths.'],
-      handoff_targets: [target, 'list_creator', 'email_ops', 'sms_ops'],
+      handoff_targets: leadOpsContextHandoffTargets(target),
       raw_context: {
         chat_handoff_id: chatHandoffId,
         chat_return_to: chatReturnTo,
@@ -1054,7 +1074,7 @@ function buildContext() {
       'For event-triggered outreach, bind the trigger to a concrete CAIt event or CRM signal before execution.',
       'Keep any row without a public source URL or consent-safe contact path waiting for review.'
     ],
-    handoff_targets: [target, 'list_creator', 'email_ops', 'sms_ops'],
+    handoff_targets: leadOpsContextHandoffTargets(target),
     raw_context: {
       ...(importedContext ? { received_context: importedContext } : {}),
       chat_handoff_id: chatHandoffId,
@@ -1204,7 +1224,7 @@ function renderTable() {
       return `<tr class="${lead.id === selectedId ? 'active-row' : ''}" data-lead="${escapeHtml(lead.id)}"><td><strong>${escapeHtml(lead.company)}</strong><br>${escapeHtml(lead.contact || lead.evidenceUrl || lead.website || 'Contact not checked')}</td><td>${escapeHtml(channelDisplayLabel(lead.channel || 'email'))}<br>${escapeHtml(consentDisplayLabel(lead.consent || 'needs_review'))}</td><td>${escapeHtml(sendModeDisplayLabel(lead.sendMode || 'manual_approval'))}<br>${escapeHtml(timing)}</td><td><span class="status-pill ${statusClass(lead.status)}">${escapeHtml(statusDisplayLabel(lead.status))}</span></td></tr>`;
     }),
     '</tbody>'
-  ].join('') : '<tbody><tr><td colspan="4"><div class="empty-state"><strong>No lead rows are loaded yet.</strong><span>Fill in the lead search form above, then ask CAIt to create the list.</span></div></td></tr></tbody>';
+  ].join('') : '<tbody><tr><td colspan="4"><div class="empty-state"><strong>No lead rows loaded.</strong><span>Fill in the lead search form above, then ask CAIt to create the list.</span></div></td></tr></tbody>';
 }
 
 function renderEditor() {
@@ -1397,7 +1417,7 @@ function renderLeadHandoffSessionNotice() {
   els.leadHandoffSessionNotice.hidden = false;
   els.leadHandoffSessionNotice.className = `notice${warning ? ' notice-warning' : ''}`;
   els.leadHandoffSessionNotice.innerHTML = [
-    `<strong>${escapeHtml(warning ? 'Ready to return to chat, but lead data has not loaded yet.' : 'Connected to CAIt chat.')}</strong>`,
+    `<strong>${escapeHtml(warning ? 'Chat handoff is open but no server lead packet is loaded yet.' : 'CAIt lead handoff session is attached.')}</strong>`,
     `<span>${escapeHtml(fragments.join(' '))}</span>`
   ].join('');
 }
@@ -1443,7 +1463,7 @@ function renderLeadOpsReadiness() {
       detail: hasServerContext
         ? 'The same lead data can be opened in the next CAIt task.'
         : (hasChatReturn
-          ? 'Use the green button at the top to return to chat.'
+          ? 'Send to CAIt will create the server-side lead packet reference before returning to chat.'
           : 'Open this screen from CAIt chat when you want review results to return cleanly.'),
       status: hasServerContext ? 'ready' : (hasChatReturn ? 'pending' : 'blocked')
     }
@@ -1453,7 +1473,7 @@ function renderLeadOpsReadiness() {
     const blockedCount = readinessItems.filter((entry) => entry.status === 'blocked').length;
     const pillStatus = readyCount === readinessItems.length ? 'approved' : blockedCount ? 'blocked' : 'pending';
     els.leadOpsReadinessPill.textContent = lead
-      ? `${readyCount}/${readinessItems.length} checked`
+      ? `${readyCount}/${readinessItems.length} ops checks ready`
       : 'No lead yet';
     els.leadOpsReadinessPill.className = `status-pill ${lead ? pillStatus : 'pending'}`;
   }
@@ -1659,6 +1679,7 @@ els.copyLeadContextBtn.addEventListener('click', async () => {
 });
 
 async function bootstrap() {
+  renderLeadOpsHandoffTargetOptions();
   await refreshAuthSnapshot();
   applyInboundContext(await fetchCaitAppContextFromUrl());
   await loadLeadDeliveryItems();

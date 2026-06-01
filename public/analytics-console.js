@@ -1,4 +1,11 @@
 import { buildCaitAppContext, copyContextJson, downloadContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526i';
+import {
+  analyticsHandoffTargetFromContext,
+  analyticsHandoffTargetOptions,
+  analyticsHandoffTargetsForContext,
+  defaultAnalyticsHandoffTarget,
+  normalizeAnalyticsHandoffTarget
+} from './analytics-handoff-target-contract.js?v=20260602a';
 
 const GOOGLE_SOURCE_CACHE_COOKIE = 'cait_analytics_sources';
 
@@ -22,7 +29,7 @@ const data = {
 const state = {
   section: 'dashboard',
   range: '28',
-  target: 'cmo_leader',
+  target: defaultAnalyticsHandoffTarget(),
   googleConnected: false,
   googleWarnings: [],
   googleApiErrors: {},
@@ -225,6 +232,15 @@ function readAuthErrorFromUrl() {
 
 function optionHtml(value = '', label = '') {
   return `<option value="${escapeHtml(value)}">${escapeHtml(label || value || '-')}</option>`;
+}
+
+function renderAnalyticsHandoffTargetOptions() {
+  const current = normalizeAnalyticsHandoffTarget(els.targetSelect?.value) || state.target || defaultAnalyticsHandoffTarget();
+  els.targetSelect.innerHTML = analyticsHandoffTargetOptions()
+    .map((target) => optionHtml(target.value, target.label))
+    .join('');
+  state.target = normalizeAnalyticsHandoffTarget(current) || defaultAnalyticsHandoffTarget();
+  els.targetSelect.value = state.target;
 }
 
 function readCookie(name = '') {
@@ -1112,10 +1128,10 @@ function applyInboundContext(context = null) {
     ]);
   }
 
-  const target = (Array.isArray(context.handoff_targets) ? context.handoff_targets : []).find(Boolean);
+  const target = analyticsHandoffTargetFromContext(context);
   if (target) {
-    state.target = String(target);
-    if ([...els.targetSelect.options].some((option) => option.value === state.target)) els.targetSelect.value = state.target;
+    state.target = target;
+    els.targetSelect.value = state.target;
   }
   const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
   const googleSourceRows = artifactRows(context, 'google_sources');
@@ -1223,7 +1239,7 @@ function primaryRows() {
 }
 
 function buildContext() {
-  const target = String(state.target || 'cmo_leader');
+  const target = normalizeAnalyticsHandoffTarget(state.target) || defaultAnalyticsHandoffTarget();
   const importedFacts = importedContext ? [`Imported context: ${importedContext.title || importedContext.id || 'CAIt app context'}`] : [];
   const topQuery = data.queries[0]?.[0] || '';
   const topPage = data.pages[0]?.[0] || '';
@@ -1304,7 +1320,7 @@ function buildContext() {
       'Use Publisher & Approval Studio for page/meta changes before external publishing.',
       'Run a 24h and 7d post-run measurement after the approved action is executed.'
     ],
-    handoff_targets: [target, 'seo_specialist', 'growth'],
+    handoff_targets: analyticsHandoffTargetsForContext(target),
     raw_context: {
       ...(importedContext ? { received_context: importedContext } : {}),
       connector_type: state.ga4Property
@@ -1464,7 +1480,7 @@ els.rangeSelect.addEventListener('change', () => {
 });
 
 els.targetSelect.addEventListener('change', () => {
-  state.target = String(els.targetSelect.value || 'cmo_leader');
+  state.target = normalizeAnalyticsHandoffTarget(els.targetSelect.value) || defaultAnalyticsHandoffTarget();
   render();
 });
 
@@ -1524,6 +1540,7 @@ document.addEventListener('keydown', (event) => {
 });
 
 async function bootstrap() {
+  renderAnalyticsHandoffTargetOptions();
   applyCachedGoogleSources();
   const authError = readAuthErrorFromUrl();
   if (authError) state.googleWarnings = [authError];

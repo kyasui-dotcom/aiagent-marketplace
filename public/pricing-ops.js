@@ -1,4 +1,5 @@
 import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526i';
+import { pricingOpsHandoffTargets } from './pricing-ops-handoff-target-contract.js?v=20260602a';
 
 const els = {
   returnToChatLink: document.getElementById('pricingReturnToChatLink'),
@@ -426,7 +427,7 @@ function contextPacket() {
       '承認者、実行条件、実行後に見る数字、戻す条件がそろってから次の作業へ進めてください。',
       '承認する人が確認するまで、外部の料金や請求設定は変更しないでください。'
     ],
-    handoff_targets: ['pricing-decision-console', 'cfo_leader', 'pricing'],
+    handoff_targets: pricingOpsHandoffTargets(),
     raw_context: {
       chat_handoff_id: chatHandoffId(),
       chat_return_to: chatReturnTo(),
@@ -473,7 +474,7 @@ function renderNotice() {
   const handoff = chatHandoffId();
   if (importedContext) {
     els.pricingHandoffNotice.hidden = false;
-    els.pricingHandoffNotice.textContent = `チャットから料金相談のデータを受け取りました${handoff ? `（${handoff}）` : ''}。確認してからチャットへ戻せます。`;
+    els.pricingHandoffNotice.textContent = `CAIt pricing handoff session is attached${handoff ? ` (${handoff})` : ''}. チャットから料金相談のデータを受け取りました。確認してからチャットへ戻せます。`;
   } else if (returnTo || handoff) {
     els.pricingHandoffNotice.hidden = false;
     els.pricingHandoffNotice.textContent = 'チャットへ戻る準備はできています。料金相談のデータがない場合は、この画面の確認内容をチャットへ渡します。';

@@ -1,4 +1,9 @@
 import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526i';
+import {
+  growthBlockerHandoffTargets,
+  growthContextReturnHandoffTargets,
+  growthPublisherLaunchHandoffTargets
+} from './growth-ops-handoff-target-contract.js?v=20260602a';
 
 const els = {
   returnToChatLink: document.getElementById('growthReturnToChatLink'),
@@ -493,7 +498,7 @@ function buildPublisherLaunchBlockerPacket(rows = publisherLaunchRows()) {
       'Return to CAIt or the responsible Growth leader and request explicit Growth experiment, artifact, activation, and measurement contracts.',
       'Open Publisher only after those contracts are retained in a server-side app context.'
     ],
-    handoff_targets: ['growth-experiment-console'],
+    handoff_targets: growthBlockerHandoffTargets(),
     raw_context: {
       chat_handoff_id: chatHandoffId(),
       chat_return_to: chatReturnTo(),
@@ -633,7 +638,7 @@ function buildPublisherLaunchPacket() {
       'Ask CAIt from Publisher to draft final LP and social variants only after the Growth hypothesis and measurement guardrails are accepted.',
       'Return Publisher approval and execution proof back to Growth before deciding continue or stop.'
     ],
-    handoff_targets: ['publisher-approval-studio', 'cmo_leader', 'seo_specialist'],
+    handoff_targets: growthPublisherLaunchHandoffTargets(),
     raw_context: {
       chat_handoff_id: chatHandoffId(),
       chat_return_to: chatReturnTo(),
@@ -709,7 +714,7 @@ function contextPacket() {
       'Review retained experiment, artifact, owner, threshold, kill rule, proof tracker, and review date before asking CAIt to continue.',
       'Do not launch traffic, publish assets, change product surfaces, or claim results until owner approval and proof are attached.'
     ],
-    handoff_targets: ['growth-experiment-console', 'growth', 'campaign_operations', 'analytics_console'],
+    handoff_targets: growthContextReturnHandoffTargets(),
     raw_context: {
       chat_handoff_id: chatHandoffId(),
       chat_return_to: chatReturnTo(),

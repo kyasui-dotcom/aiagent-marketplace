@@ -1,4 +1,5 @@
 import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526i';
+import { campaignOperationsHandoffTargets } from './campaign-operations-handoff-target-contract.js?v=20260602a';
 
 const listEl = document.getElementById('campaignList');
 const detailEl = document.getElementById('campaignDetail');
@@ -1111,7 +1112,7 @@ function buildCampaignContext() {
       measurements.length ? 'Use the measurement loop after approved channel actions run.' : 'Attach a 24h and 7d measurement check before closing the campaign run.',
       nextActionOwners.length ? 'Route the next CAIt follow-up to the recorded next action owner.' : 'Add next_action_owner before relying on chat memory for campaign responsibility.'
     ],
-    handoff_targets: ['cmo_leader', 'campaign_operations', 'analytics_console', 'publisher_approval_studio'],
+    handoff_targets: campaignOperationsHandoffTargets(),
     raw_context: {
       ...(importedContext ? { received_context: importedContext } : {}),
       campaign_id: campaign?.id || '',

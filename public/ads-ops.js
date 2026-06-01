@@ -1,4 +1,5 @@
 import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526i';
+import { adsOpsHandoffTargets } from './ads-ops-handoff-target-contract.js?v=20260602a';
 
 const els = {
   returnToChatLink: document.getElementById('adsReturnToChatLink'),
@@ -609,7 +610,7 @@ function buildAdsContext() {
       adsRecord.handoffRows.length ? 'Open the destination Ads SaaS only after approval and connector readiness are confirmed.' : 'Attach Ads SaaS account and connector readiness before requesting launch work.',
       adsRecord.measurementRows.length ? 'Route the next CAIt follow-up after the first spend and conversion-quality checkpoints.' : 'Attach 24h and 7d measurement checks before closing this ads plan.'
     ],
-    handoff_targets: ['ads_planner', 'ads_launch_console', 'campaign_operations', 'analytics_console'],
+    handoff_targets: adsOpsHandoffTargets(),
     raw_context: {
       ...(importedContext ? { received_context: importedContext } : {}),
       ads_handoff_audit: {
