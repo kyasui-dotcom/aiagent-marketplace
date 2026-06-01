@@ -289,6 +289,9 @@ for (const caseId of agentOutputCases.groups.marketing || []) {
   const agentCase = agentOutputCases.cases.find((item) => item.id === caseId);
   assert.ok(agentCase, `marketing agent output fixture ${caseId} must exist`);
   const source = read(`lib/builtin-agents/agents/${agentCase.file}`);
+  const providerSource = agentCase.file === 'cmo-leader.js'
+    ? read('lib/builtin-agents/cmo-leader-provider.js')
+    : source;
   assert.ok(
     source.includes('agentPurpose:'),
     `${agentCase.file} must own its agent purpose in the agent definition`
@@ -302,11 +305,11 @@ for (const caseId of agentOutputCases.groups.marketing || []) {
     `${agentCase.file} must own its delivery contract in the agent definition`
   );
   assert.ok(
-    source.includes('action_boundaries: Array.isArray(definition.agentActionBoundaries) ? definition.agentActionBoundaries : []'),
+    providerSource.includes('action_boundaries: Array.isArray(definition.agentActionBoundaries) ? definition.agentActionBoundaries : []'),
     `${agentCase.file} must pass structured action boundaries through provider health/run packets`
   );
   assert.ok(
-    source.includes('delivery_contract:'),
+    providerSource.includes('delivery_contract:'),
     `${agentCase.file} must pass the delivery contract through provider health/run packets`
   );
 }
@@ -1109,20 +1112,28 @@ const stripeProhibitedGamblingAgentPattern =
 assert.ok(agentFiles.length > 0, 'agent files must exist');
 for (const fileName of agentFiles) {
   const source = readFileSync(join(agentsDir, fileName), 'utf8');
+  const providerSource = fileName === 'cmo-leader.js'
+    ? readFileSync(join(root, 'lib', 'builtin-agents', 'cmo-leader-provider.js'), 'utf8')
+    : source;
   assert.equal(
     stripeProhibitedGamblingAgentPattern.test(source),
     false,
     `${fileName} must not define gambling, casino, betting, wagering, lottery, or odds-making agent behavior`
   );
-  assert.ok(source.includes('const AGENT_PROVIDER = Object.freeze({'), `${fileName} must own its provider behavior`);
+  if (fileName === 'cmo-leader.js') {
+    assert.ok(source.includes('const AGENT_PROVIDER = createCmoLeaderAgentProvider({'), `${fileName} must wire its CMO-owned provider behavior`);
+    assert.ok(providerSource.includes('export function createCmoLeaderAgentProvider({'), `${fileName} must keep provider behavior in its CMO-specific module`);
+  } else {
+    assert.ok(source.includes('const AGENT_PROVIDER = Object.freeze({'), `${fileName} must own its provider behavior`);
+  }
   assert.ok(source.includes('AGENT_DEFINITION.manifest = Object.freeze({'), `${fileName} must own its manifest`);
-  assert.ok(source.includes('health({'), `${fileName} must expose health behavior`);
-  assert.ok(source.includes('async runJob({'), `${fileName} must expose jobs behavior`);
+  assert.ok(providerSource.includes('health({'), `${fileName} must expose health behavior`);
+  assert.ok(providerSource.includes('async runJob({'), `${fileName} must expose jobs behavior`);
   assert.ok(source.includes('provider: AGENT_PROVIDER'), `${fileName} must export the provider`);
-  assert.ok(source.includes('missing_required_deliverable'), `${fileName} must fail when it cannot return an agent-owned delivery`);
+  assert.ok(providerSource.includes('missing_required_deliverable'), `${fileName} must fail when it cannot return an agent-owned delivery`);
   assert.ok(source.includes('Deliver in the user requested language in a clear, user-readable format.'), `${fileName} must keep delivery formatting guidance minimal`);
-  assert.equal(source.includes('The agent could not produce a safe user-facing delivery'), false, `${fileName} must not convert failed generation into a shared template delivery`);
-  assert.equal(source.includes('Supplied request and available context.'), false, `${fileName} must not use generic fallback request text as delivery input`);
+  assert.equal(providerSource.includes('The agent could not produce a safe user-facing delivery'), false, `${fileName} must not convert failed generation into a shared template delivery`);
+  assert.equal(providerSource.includes('Supplied request and available context.'), false, `${fileName} must not use generic fallback request text as delivery input`);
   assertNotIncludes(source, [
     'agent-provider-runtime',
     'sample-agent-provider',

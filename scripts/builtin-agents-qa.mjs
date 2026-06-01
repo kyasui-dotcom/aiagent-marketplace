@@ -331,24 +331,32 @@ for (const expectation of [...engineeringContractExpectations, ...operationsCont
 
 for (const fileName of agentFiles) {
   const source = readFileSync(join(agentsDir, fileName), 'utf8');
-  assert.ok(source.includes('const AGENT_PROVIDER = Object.freeze({'), `${fileName} must define its own provider`);
+  const providerSource = fileName === 'cmo-leader.js'
+    ? readFileSync(join(root, 'lib', 'builtin-agents', 'cmo-leader-provider.js'), 'utf8')
+    : source;
+  if (fileName === 'cmo-leader.js') {
+    assert.ok(source.includes('const AGENT_PROVIDER = createCmoLeaderAgentProvider({'), `${fileName} must wire its CMO-specific provider`);
+    assert.ok(providerSource.includes('export function createCmoLeaderAgentProvider({'), `${fileName} must define its own CMO-specific provider module`);
+  } else {
+    assert.ok(source.includes('const AGENT_PROVIDER = Object.freeze({'), `${fileName} must define its own provider`);
+  }
   assert.ok(source.includes('AGENT_DEFINITION.manifest = Object.freeze({'), `${fileName} must define its own manifest`);
-  assert.ok(source.includes('health({'), `${fileName} provider must own health response behavior`);
-  assert.ok(source.includes('async runJob({'), `${fileName} provider must own job execution behavior`);
+  assert.ok(providerSource.includes('health({'), `${fileName} provider must own health response behavior`);
+  assert.ok(providerSource.includes('async runJob({'), `${fileName} provider must own job execution behavior`);
   assert.ok(source.includes('provider: AGENT_PROVIDER'), `${fileName} default export must expose its provider`);
   assert.ok(source.includes('agent_purpose: AGENT_DEFINITION.agentPurpose'), `${fileName} manifest metadata must expose the agent-owned purpose inside the agent file`);
   assert.ok(source.includes('action_boundaries: AGENT_DEFINITION.agentActionBoundaries'), `${fileName} manifest metadata must expose action boundaries inside the agent file`);
   assert.ok(source.includes('delivery_contract: AGENT_DEFINITION.deliveryContract'), `${fileName} manifest metadata must expose the delivery contract inside the agent file`);
-  assert.ok(!source.includes('agent-provider-runtime'), `${fileName} must not import a shared provider runtime`);
-  assert.ok(!source.includes('sample-agent-provider'), `${fileName} must not call a central sample provider`);
-  assert.ok(!source.includes('sample-agent-catalog'), `${fileName} must not call a central sample catalog`);
-  assert.ok(!source.includes('additionalProperties: true'), `${fileName} OpenAI strict schemas must not allow additionalProperties: true`);
-  assert.ok(!source.includes("name: 'cait_agent_delivery'"), `${fileName} must not require OpenAI to emit CAIt's internal delivery schema`);
-  assert.ok(!source.includes('Return valid JSON matching the schema'), `${fileName} must accept raw OpenAI delivery text instead of requiring JSON`);
-  assert.ok(!source.includes('agentProviderFallbackDelivery'), `${fileName} must not recover failed model output with an agent-definition fallback`);
-  assert.ok(!source.includes('agent_definition_packet'), `${fileName} must not mark fallback definition packets as completed deliveries`);
+  assert.ok(!providerSource.includes('agent-provider-runtime'), `${fileName} must not import a shared provider runtime`);
+  assert.ok(!providerSource.includes('sample-agent-provider'), `${fileName} must not call a central sample provider`);
+  assert.ok(!providerSource.includes('sample-agent-catalog'), `${fileName} must not call a central sample catalog`);
+  assert.ok(!providerSource.includes('additionalProperties: true'), `${fileName} OpenAI strict schemas must not allow additionalProperties: true`);
+  assert.ok(!providerSource.includes("name: 'cait_agent_delivery'"), `${fileName} must not require OpenAI to emit CAIt's internal delivery schema`);
+  assert.ok(!providerSource.includes('Return valid JSON matching the schema'), `${fileName} must accept raw OpenAI delivery text instead of requiring JSON`);
+  assert.ok(!providerSource.includes('agentProviderFallbackDelivery'), `${fileName} must not recover failed model output with an agent-definition fallback`);
+  assert.ok(!providerSource.includes('agent_definition_packet'), `${fileName} must not mark fallback definition packets as completed deliveries`);
   assert.ok(
-    !source.includes("required: ['summary', 'report_summary', 'bullets', 'next_action', 'file_markdown']"),
+    !providerSource.includes("required: ['summary', 'report_summary', 'bullets', 'next_action', 'file_markdown']"),
     `${fileName} delivery generation schema must require every declared strict-schema property`
   );
 }
@@ -390,7 +398,10 @@ assert.match(seoSpecialist.systemPrompt, /owned blog/i, 'seo_specialist should r
 assert.match(seoSpecialist.systemPrompt, /estimate cost[\s\S]*explicit user approval/i, 'seo_specialist should require cost estimate and explicit approval before full-batch writing');
 assert.match(seoSpecialist.systemPrompt, /Publisher & Approval Studio batch handoff/i, 'seo_specialist should create Publisher batch handoff after approval');
 
-const cmoLeaderSource = readFileSync(join(agentsDir, 'cmo-leader.js'), 'utf8');
+const cmoLeaderSource = [
+  readFileSync(join(agentsDir, 'cmo-leader.js'), 'utf8'),
+  readFileSync(join(root, 'lib', 'builtin-agents', 'cmo-leader-provider.js'), 'utf8')
+].join('\n');
 assert.ok(
   cmoLeaderSource.includes('file_markdown is the raw agent delivery shown to the user'),
   'CMO leader LLM contract must treat file_markdown as the user-visible raw agent delivery'
