@@ -96,6 +96,7 @@ const chatRestoredOrderContextControllerPath = new URL('../public/chat-restored-
 const chatDeliveryRenderControllerPath = new URL('../public/chat-delivery-render-controller.js', import.meta.url);
 const chatEventBindingsControllerPath = new URL('../public/chat-event-bindings-controller.js', import.meta.url);
 const chatAppContextOAuthControllerPath = new URL('../public/chat-app-context-oauth-controller.js', import.meta.url);
+const chatRetryFollowupControllerPath = new URL('../public/chat-retry-followup-controller.js', import.meta.url);
 const accountSettingsJsPath = new URL('../public/account-settings.js', import.meta.url);
 const connectorGateJsPath = new URL('../public/connector-gate.js', import.meta.url);
 const chatSessionStateJsPath = new URL('../public/chat-session-state.js', import.meta.url);
@@ -280,6 +281,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(accountSettingsJsPath)]
 execFileSync(process.execPath, ['--check', fileURLToPath(chatDeliveryRenderControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatEventBindingsControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatAppContextOAuthControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatRetryFollowupControllerPath)], { stdio: 'pipe' });
 
 const html = readFileSync(htmlPath, 'utf8');
 const chatHtml = readFileSync(chatHtmlPath, 'utf8');
@@ -369,6 +371,7 @@ const chatRestoredOrderContextControllerJs = readFileSync(chatRestoredOrderConte
 const chatDeliveryRenderControllerJs = readFileSync(chatDeliveryRenderControllerPath, 'utf8');
 const chatEventBindingsControllerJs = readFileSync(chatEventBindingsControllerPath, 'utf8');
 const chatAppContextOAuthControllerJs = readFileSync(chatAppContextOAuthControllerPath, 'utf8');
+const chatRetryFollowupControllerJs = readFileSync(chatRetryFollowupControllerPath, 'utf8');
 const chatSubmitHandlerSource = chatEventBindingsControllerJs.slice(
   chatEventBindingsControllerJs.indexOf('async function handleComposerSubmit'),
   chatEventBindingsControllerJs.indexOf('function handleWindowMessage')
@@ -1741,10 +1744,12 @@ assert.ok(chatConversationOwnerControllerJs.includes('function lockedLeaderOwner
 assert.ok(!chatJs.includes('function lockedLeaderOwnerForPrompt'), 'Chat entrypoint should not own confirmed leader lock logic.');
 assert.ok(!chatJs.includes('function leaderFollowupSpecialistTaskForText'), 'Chat must not own leader follow-up specialist routing; server/leader definitions decide specialist follow-ups.');
 assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes('suppressLeaderLock'), 'Server/leader-routed specialist follow-up drafts should not be rewritten back to the locked leader on SEND ORDER.');
-assert.ok(chatJs.includes('function explicitActiveOrderFollowupRequestText'), 'Active-order follow-ups must require explicit continuation wording.');
-assert.ok(chatJs.includes('return explicitActiveOrderFollowupRequestText(compact);'), 'Generic messages in an active order chat should start new intake/order work instead of becoming follow-ups.');
+assert.ok(chatJs.includes("from './chat-retry-followup-controller.js?v=20260602a'"), 'Chat retry and running-order follow-up behavior should live in the dedicated controller.');
+assert.ok(chatRetryFollowupControllerJs.includes('function explicitActiveOrderFollowupRequestText'), 'Active-order follow-ups must require explicit continuation wording.');
+assert.ok(chatRetryFollowupControllerJs.includes('return explicitActiveOrderFollowupRequestText(compact);'), 'Generic messages in an active order chat should start new intake/order work instead of becoming follow-ups.');
+assert.ok(!chatJs.includes('function retryDraftFromJob') && !chatJs.includes('function prepareFollowupForRunningOrder'), 'Chat entrypoint should not own retry or running-order follow-up implementation after extraction.');
 assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes('function draftIsExplicitFollowupContinuation') && chatOrderDispatchControllerJs.includes('explicitFollowupContinuation'), 'Send order should only preserve followup_to_job_id for explicitly requested continuations.');
-assert.ok(chatJs.includes('userExplicitContinuation: true'), 'Explicit follow-up drafts should carry an auditable continuation flag.');
+assert.ok(chatRetryFollowupControllerJs.includes('userExplicitContinuation: true'), 'Explicit follow-up drafts should carry an auditable continuation flag.');
 assert.ok(chatJs.includes('Start a new request'), 'Active-order composer copy should say new requests start fresh by default.');
 assert.ok(chatConversationOwnerControllerJs.includes('function suggestLeaderChangeIfNeeded'), 'Chat should ask before changing away from a confirmed leader.');
 assert.ok(chatConversationOwnerControllerJs.includes('data-chat-action="keep-leader"'), 'Chat should offer a keep-current-leader action when a different leader is suggested.');
@@ -1754,23 +1759,23 @@ assert.ok(chatJs.includes("chat-engine.js?v=20260526l"), 'Chat should cache-bust
 assert.ok(chatJs.includes("delivery-renderer.js?v=20260526a"), 'Chat should cache-bust the delivery renderer when agent work-product ledger rendering changes.');
 assert.ok(deliveryRendererJs.includes('Agent work products') && deliveryRendererJs.includes('specialist_output_ledger'), 'Delivery renderer should expose the per-agent work-product ledger in completed chat deliveries.');
 assert.ok(chatCss.includes('.agent-work-products') && chatCss.includes('.agent-work-product-row'), 'Chat CSS should style the per-agent work-product ledger.');
-assert.ok(chatJs.includes('function retryDraftFromJob'), 'Chat should prepare retries from the previous persisted order.');
-assert.ok(chatJs.includes("fetchVisibleJob(safeId, { force: true, progress: false, inspectOnly: true })"), 'Prepare retry should inspect the saved order without triggering progress side effects.');
-assert.ok(chatJs.includes('function handleRetryCommand'), 'Chat should treat typed retry commands as explicit retry preparation instead of a new order.');
-assert.ok(chatJs.includes('retryCommandText(compact)'), 'Chat should prevent typed retry commands from becoming running-order followups.');
+assert.ok(chatRetryFollowupControllerJs.includes('function retryDraftFromJob'), 'Chat should prepare retries from the previous persisted order.');
+assert.ok(chatRetryFollowupControllerJs.includes("fetchVisibleJob(safeId, { force: true, progress: false, inspectOnly: true })"), 'Prepare retry should inspect the saved order without triggering progress side effects.');
+assert.ok(chatRetryFollowupControllerJs.includes('function handleRetryCommand'), 'Chat should treat typed retry commands as explicit retry preparation instead of a new order.');
+assert.ok(chatRetryFollowupControllerJs.includes('retryCommandText(compact)'), 'Chat should prevent typed retry commands from becoming running-order followups.');
 assert.ok(chatSubmitHandlerSource.indexOf('await handleRetryCommand(prompt)') < chatSubmitHandlerSource.indexOf('activeOrderFollowupAllowedText(prompt)'), 'Typed retry should be handled before active-order followup routing.');
-assert.ok(chatJs.includes('Retry as new order'), 'Retry actions should clearly say they create a new order, not continue the selected order.');
-assert.ok(chatJs.includes('CHATUX_RETRY_MODE_NEW_ORDER'), 'Retry drafts should carry an explicit new-order retry mode.');
+assert.ok(chatRetryFollowupControllerJs.includes('Retry as new order'), 'Retry actions should clearly say they create a new order, not continue the selected order.');
+assert.ok(chatRetryFollowupControllerJs.includes('CHATUX_RETRY_MODE_NEW_ORDER'), 'Retry drafts should carry an explicit new-order retry mode.');
 assert.ok(chatJs.includes('draftIsSameContentNewOrderRetry'), 'Send order should distinguish same-content new-order retries from follow-up requests.');
 assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes('sameContentRetryAsNewOrder') && chatOrderDispatchControllerJs.includes('delete payload.followup_to_job_id'), 'Same-content retries must strip follow-up ids before dispatch.');
-assert.ok(chatJs.includes('既存オーダー') && chatJs.includes('続きではありません'), 'Japanese retry confirmation should explicitly say the retry is not a continuation.');
-assert.ok(chatJs.includes('preservePrompt: true'), 'Retry drafts should preserve the previous order prompt instead of redrafting from the retry message.');
-assert.ok(chatJs.includes('preservePlan: plannedTasks.length > 0'), 'Retry drafts should mark previous workflow plans for preservation.');
-assert.ok(chatJs.includes('workflowPlannedTasks: plannedTasks'), 'Retry drafts should carry previous workflow planned tasks.');
+assert.ok(chatRetryFollowupControllerJs.includes('既存オーダー') && chatRetryFollowupControllerJs.includes('続きではありません'), 'Japanese retry confirmation should explicitly say the retry is not a continuation.');
+assert.ok(chatRetryFollowupControllerJs.includes('preservePrompt: true'), 'Retry drafts should preserve the previous order prompt instead of redrafting from the retry message.');
+assert.ok(chatRetryFollowupControllerJs.includes('preservePlan: plannedTasks.length > 0'), 'Retry drafts should mark previous workflow plans for preservation.');
+assert.ok(chatRetryFollowupControllerJs.includes('workflowPlannedTasks: plannedTasks'), 'Retry drafts should carry previous workflow planned tasks.');
 assert.ok(chatJs.includes('function renderRetryReuseControls'), 'Failed deliveries should expose optional user-selected artifact reuse controls.');
 assert.ok(chatJs.includes('data-retry-reuse-artifact'), 'Retry reuse must require an explicit checkbox selection per completed artifact.');
 assert.ok(chatJs.includes('selectedRetryReuseArtifactsForOrder'), 'Retry preparation should carry only the selected completed artifacts.');
-assert.ok(chatJs.includes('retryReuseArtifacts'), 'Retry drafts should preserve selected artifacts for the new order payload.');
+assert.ok(chatRetryFollowupControllerJs.includes('retryReuseArtifacts'), 'Retry drafts should preserve selected artifacts for the new order payload.');
 assert.ok(chatEngine.includes('active_leader_locked'), 'Chat engine should send active leader lock state in prepare and job payloads.');
 assert.ok(chatEngine.includes('fallbackLeaderLocked'), 'Chat engine should ignore unlocked active leader fallbacks when deriving the conversation owner.');
 assert.ok(chatEngine.includes('workflow_planned_tasks'), 'Chat engine should send preserved workflow planned tasks when retrying a workflow order.');

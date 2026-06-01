@@ -31,6 +31,7 @@ const orchestrationSource = read('lib/orchestration.js');
 const sharedSource = read('lib/shared.js');
 const chatSource = read('public/chat.js');
 const chatAppContextOAuthControllerSource = read('public/chat-app-context-oauth-controller.js');
+const chatRetryFollowupControllerSource = read('public/chat-retry-followup-controller.js');
 const chatAppHandoffControllerSource = read('public/chat-app-handoff-controller.js');
 const chatUsageLibraryControllerSource = read('public/chat-usage-library-controller.js');
 const connectorGateSource = read('public/connector-gate.js');
@@ -899,7 +900,8 @@ assert.ok(
   'client delivery follow-up order drafts must be prepared by the server route from the delivery action controller'
 );
 assert.ok(
-  chatSource.includes('/api/deliveries/prepare-followup-order'),
+  chatRetryFollowupControllerSource.includes('/api/deliveries/prepare-followup-order')
+    && chatSource.includes('createChatRetryFollowupController'),
   'chat running-order follow-up drafts must be prepared by the server route'
 );
 assert.ok(
