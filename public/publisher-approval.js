@@ -245,6 +245,33 @@ function visibleItems() {
   });
 }
 
+function githubConnectHref() {
+  const url = new URL('/auth/github', window.location.origin);
+  url.searchParams.set('mode', 'link');
+  url.searchParams.set('return_to', currentPublisherReturnPath());
+  url.searchParams.set('login_source', 'publisher_approval');
+  return url.toString();
+}
+
+function xConnectHref() {
+  const url = new URL('/auth/x', window.location.origin);
+  url.searchParams.set('return_to', currentPublisherReturnPath());
+  url.searchParams.set('login_source', 'publisher_approval');
+  url.searchParams.set('capabilities', 'x.post');
+  return url.toString();
+}
+
+function repoOptionHtml(repo = null) {
+  if (!repo) return '<option value="">Connect GitHub and refresh repositories</option>';
+  const fullName = String(repo.fullName || repo.full_name || '').trim();
+  const label = [
+    fullName,
+    repo.private ? 'private' : 'public',
+    repo.installationAccountLogin ? `install: ${repo.installationAccountLogin}` : ''
+  ].filter(Boolean).join(' · ');
+  return `<option value="${escapeHtml(fullName)}">${escapeHtml(label)}</option>`;
+}
+
 async function refreshAuthSnapshot() {
   try {
     const response = await fetch('/api/snapshot', {
