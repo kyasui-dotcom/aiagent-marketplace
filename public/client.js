@@ -240,6 +240,8 @@ import { createClientWorkChatThreadController } from './client-work-chat-thread-
 import { createClientAgentSkillManifestController } from './client-agent-skill-manifest-controller.js?v=20260601b';
 import { createClientOrderUiStateController } from './client-order-ui-state-controller.js?v=20260601a';
 import { createClientWorkSelectionController } from './client-work-selection-controller.js?v=20260601a';
+import { createClientState } from './client-state.js?v=20260602a';
+import { createClientBootstrapController } from './client-bootstrap-controller.js?v=20260602a';
 
 const $ = (id) => document.getElementById(id);
 const PRODUCT_NAME = 'CAIt';
@@ -277,129 +279,7 @@ const {
   sinceLabel
 } = clientViewUtils;
 
-function initialOpenChatMode() {
-  return 'clarify';
-}
-
-const state = {
-  snapshot: null,
-  repos: [],
-  filteredRepos: [],
-  repoPage: 0,
-  repoPageSize: 50,
-  repoAutoLoadedFor: '',
-  repoAutoLoading: false,
-  repoAdapterHints: {},
-  selectedRepoFullName: '',
-  workFlowMode: '',
-  workFlowShowList: false,
-  workFlowLastCreatedJobId: null,
-  connectFlowMode: '',
-  stripeStatus: null,
-  lastIssuedOrderApiKey: null,
-  settingsSection: 'payments',
-  billingProfileExpanded: false,
-  providerProfileExpanded: false,
-  agentSetupStarted: false,
-  agentSetupMode: '',
-  agentSetupCompletedId: null,
-  showAgentList: false,
-  settingsPeriod: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
-  planIntentArmed: false,
-  eventFilter: '',
-  currentTab: 'start',
-  pendingAuthTab: '',
-  initialSnapshotLoading: false,
-  runSearch: '',
-  runRequesterFilter: 'all',
-  jobAgentSearch: '',
-  runStatusFilter: '',
-  runActionFilter: '',
-  runPage: 0,
-  parallelOrderDrafts: [],
-  parallelToolsExpanded: false,
-  orderSettingsExpanded: false,
-  followupToJobId: '',
-  followupSourceTaskType: '',
-  followupSourceAgentId: '',
-  pendingIntake: null,
-  intakeConfirmed: false,
-  intakeAnswer: '',
-  orderChatMessages: [],
-  orderComposerDirtySinceSend: false,
-  flexToolDismissedKey: '',
-  flexToolLastShownKey: '',
-  flexToolLastActiveId: '',
-  openChatMode: initialOpenChatMode(),
-  currentOpenChatSessionId: '',
-  openChatRuntimeSessions: [],
-  openChatRuntimeOwnerLogin: '',
-  openChatHistoryOpen: false,
-  openChatPreparedBrief: '',
-  openChatParallelPlan: [],
-  openChatClarifyOptions: [],
-  openChatVagueChoicePrompt: '',
-  openChatNaturalChoiceIntent: '',
-  openChatIntentShiftPrompt: '',
-  openChatIdeaBacklogPrompt: '',
-  openChatLeaderChoicePrompt: '',
-  openChatLeaderChoiceCandidates: [],
-  openChatLeaderIntakePrompt: '',
-  openChatLeaderIntakeTask: '',
-  openChatPendingQuestionPrompt: '',
-  openChatPendingQuestionTask: '',
-  openChatPendingQuestionPattern: '',
-  serverResolvedIntent: null,
-  serverPreparedOrder: null,
-  openChatEntryDismissed: false,
-  openChatDecisionSuppressed: false,
-  openChatDecisionSuppressedBriefKey: '',
-  openChatPausedByTabLeave: false,
-  openChatLastStatus: '',
-  openChatLastStatusTone: 'info',
-  openChatProgressOrderId: '',
-  openChatProgressLastKey: '',
-  openChatProgressPollCount: 0,
-  openChatPendingDispatchMessageId: '',
-  openChatDispatchInFlightKey: '',
-  openChatDispatchInFlightAt: 0,
-  optimisticOrderJobs: {},
-  pendingOrderConfirmation: null,
-  orderInputFiles: [],
-  orderInputFileWarnings: [],
-  pageViewTracked: false,
-  loginCompletionTrackedFor: '',
-  agentSearch: '',
-  agentStatusFilter: '',
-  agentAvailabilityFilter: '',
-  agentActionFilter: '',
-  agentTaskFilter: '',
-  agentSort: 'readiness',
-  adminChatFilter: 'all',
-  adminPages: {
-    accounts: 0,
-    orders: 0,
-    chats: 0,
-    agents: 0,
-    reports: 0,
-    events: 0
-  },
-  agentOnboarding: {},
-  onboardingLoading: {},
-  routeAgentId: '',
-  selectedJobId: null,
-  selectedAgentId: null,
-  selectedFeedbackId: null,
-  selectedChatTranscriptId: null,
-  deliveryPublishDrafts: {},
-  deliveryPublishClassifications: {},
-  deliveryPublishSeeds: {},
-  deliveryExecutionSeeds: {},
-  deliveryActionDrafts: {},
-  deliveryPublishDraftsScope: '',
-  deliveryActionDraftsScope: '',
-  marketingTimelineItems: []
-};
+const state = createClientState();
 
 const clientOpenChatResponseUtils = createClientOpenChatResponseUtils({
   state,
@@ -3126,43 +3006,6 @@ const clientSecondaryEventBindingsController = createClientSecondaryEventBinding
 });
 clientSecondaryEventBindingsController.bindSecondaryEventHandlers();
 
-initAnalytics();
-loadManifestExample();
-{
-  const initialRoute = readInitialRouteState();
-  closePlanModal();
-  state.routeAgentId = initialRoute.agentId;
-  if (initialRoute.settingsSection) state.settingsSection = initialRoute.settingsSection;
-  switchTab(initialRoute.tab || readRememberedTab() || 'start', { allowBootstrapAccess: true });
-  if (initialRoute.stripeState) {
-    if (initialRoute.stripeState === 'subscription_success') {
-      void trackConversionEvent('purchase', {
-        source: 'stripe_return',
-        status: initialRoute.stripeState
-      });
-    }
-    const currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.delete('stripe');
-    history.replaceState({}, '', `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
-  }
-  if (initialRoute.authError) {
-    const currentUrl = new URL(window.location.href);
-    flash(`Sign-in failed: ${initialRoute.authError}`, 'error');
-    currentUrl.searchParams.delete('auth_error');
-    history.replaceState({}, '', `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
-  }
-}
-
-window.addEventListener('pageshow', () => {
-  closePlanModal();
-});
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden && state.currentTab === 'work') pauseWorkChatOnTabLeave();
-});
-window.addEventListener('pagehide', () => {
-  if (state.currentTab === 'work') pauseWorkChatOnTabLeave();
-});
-
 function ensureSettingsLogin() {
   return clientAuthActionsController.ensureSettingsLogin();
 }
@@ -3171,24 +3014,23 @@ function ensureGithubLinkedAccess(options = {}) {
   return clientAuthActionsController.ensureGithubLinkedAccess(options);
 }
 
-async function bootstrapInitialSnapshot() {
-  const startedOnAuthCheck = state.currentTab === 'auth-check';
-  if (startedOnAuthCheck) {
-    const resolved = await primeAuthCheckFromStatus();
-    if (resolved && !state.snapshot?.auth?.loggedIn && state.currentTab === 'auth-check') return;
-  }
-  state.initialSnapshotLoading = true;
-  try {
-    await refresh();
-  } catch (error) {
-    flash(error.message || 'Initial data load failed. Refresh the page or sign in again.', 'error');
-    if (startedOnAuthCheck && state.currentTab === 'auth-check') {
-      requireStartLoginGate(state.pendingAuthTab || 'work', 'Session check timed out. Sign in to continue.');
-    }
-  } finally {
-    state.initialSnapshotLoading = false;
-    trackPageViewOnce();
-  }
-}
-
-void bootstrapInitialSnapshot();
+const clientBootstrapController = createClientBootstrapController({
+  state,
+  document,
+  window,
+  history,
+  closePlanModal,
+  flash,
+  initAnalytics,
+  loadManifestExample,
+  pauseWorkChatOnTabLeave,
+  primeAuthCheckFromStatus,
+  readInitialRouteState,
+  readRememberedTab,
+  refresh,
+  requireStartLoginGate,
+  switchTab,
+  trackConversionEvent,
+  trackPageViewOnce
+});
+clientBootstrapController.start();
