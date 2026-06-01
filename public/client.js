@@ -166,6 +166,7 @@ import { createClientOpenChatOrderPrepUtils } from './client-open-chat-order-pre
 import { createClientOpenChatServerOrderUtils } from './client-open-chat-server-order-utils.js?v=20260529a';
 import { createClientOpenChatResponseUtils } from './client-open-chat-response-utils.js?v=20260529a';
 import { createClientOpenChatQuickAnswerUtils } from './client-open-chat-quick-answer-utils.js?v=20260527a';
+import { createClientOpenChatAnswerBuilders } from './client-open-chat-answer-builders.js?v=20260601a';
 import { createClientOpenChatLocalAnswerUtils } from './client-open-chat-local-answer-utils.js?v=20260527a';
 import { createClientOpenChatCommandUtils } from './client-open-chat-command-utils.js?v=20260527a';
 import { createOpenChatIntakeUtils } from './open-chat-intake-utils.js?v=20260527a';
@@ -1404,6 +1405,34 @@ clientOpenChatQuickAnswerUtils = createClientOpenChatQuickAnswerUtils({
   temporaryInvoiceBillingEnabled: TEMPORARY_INVOICE_BILLING_ENABLED
 });
 
+const clientOpenChatAnswerBuilders = createClientOpenChatAnswerBuilders({
+  productShortName: PRODUCT_SHORT_NAME,
+  quickAnswerUtils: clientOpenChatQuickAnswerUtils,
+  looksJapanese: (value) => looksJapanese(value),
+  inferClientTaskSequence: (taskType, prompt) => inferClientTaskSequence(taskType, prompt),
+  currentRoutingTask: () => currentRoutingTask(),
+  catCompactDispatchBrief: (source, taskType, inputCounts, config) => catCompactDispatchBrief(source, taskType, inputCounts, config),
+  openChatClarifyingQuestions: (taskType, prompt) => openChatClarifyingQuestions(taskType, prompt),
+  openChatReadinessBlock: (taskType, prompt, inputCounts, config) => openChatReadinessBlock(taskType, prompt, inputCounts, config),
+  openChatHumanDispatchPreview: (brief, taskType, prompt, inputCounts) => openChatHumanDispatchPreview(brief, taskType, prompt, inputCounts),
+  orderRoutingDecision: (taskType, prompt, requested) => orderRoutingDecision(taskType, prompt, requested),
+  readyAgentsForTask: (taskType) => readyAgentsForTask(taskType),
+  agentRoutingScore: (agent, taskType) => agentRoutingScore(agent, taskType),
+  isStructuredOrderBrief: (brief) => isStructuredOrderBrief(brief),
+  structuredOrderBriefParts: (brief) => structuredOrderBriefParts(brief),
+  resolveOpenChatFollowupAnswer: (prompt, inputCounts) => resolveOpenChatFollowupAnswer(prompt, inputCounts),
+  resolveOpenChatDispatchReadyPrompt: (prompt) => resolveOpenChatDispatchReadyPrompt(prompt),
+  resolveOpenChatShouldPrepareOrderBeforeDispatch: (draft) => resolveOpenChatShouldPrepareOrderBeforeDispatch(draft),
+  resolveOpenChatImplicitOrderPrepAnswer: (prompt, inputCounts, options) => resolveOpenChatImplicitOrderPrepAnswer(prompt, inputCounts, options),
+  resolveOpenChatLongPromptGuardAnswer: (prompt, inputCounts) => resolveOpenChatLongPromptGuardAnswer(prompt, inputCounts)
+});
+const {
+  buildOpenChatOrderPreview: buildOpenChatOrderPreviewFromModule,
+  buildOpenChatClarifyModeAnswer: buildOpenChatClarifyModeAnswerFromModule,
+  openChatRoutePreview: openChatRoutePreviewFromModule,
+  buildOpenChatLlmFallbackUnavailableAnswer: buildOpenChatLlmFallbackUnavailableAnswerFromModule
+} = clientOpenChatAnswerBuilders;
+
 const clientOpenChatIntakeUtils = createOpenChatIntakeUtils({
   getState: () => state,
   getEls: () => els,
@@ -2505,71 +2534,11 @@ function buildOpenChatFollowupAnswer(prompt = '', inputCounts = {}) {
 }
 
 function openChatRoutePreview(taskType = 'research', prompt = '') {
-  const decision = orderRoutingDecision(taskType, prompt, 'auto');
-  const plan = decision.plan || {};
-  if (decision.strategy === 'multi' && Array.isArray(plan.picks) && plan.picks.length) {
-    return `Route: Agent Team candidate\nAgents: ${plan.picks.map((item) => `${item.taskType}:${item.agent?.name || item.agent?.id || 'agent'}`).join(' / ')}\nReason: ${decision.reason}`;
-  }
-  const candidates = readyAgentsForTask(taskType)
-    .slice()
-    .sort((left, right) => agentRoutingScore(right, taskType) - agentRoutingScore(left, taskType))
-    .slice(0, 3);
-  if (!candidates.length) {
-    return `Route: single-agent candidate\nAgents: no ready ${taskType} agent visible yet\nReason: ${decision.reason}`;
-  }
-  return [
-    'Route: single-agent candidate',
-    `Likely agent: ${candidates[0].name || candidates[0].id}`,
-    candidates.length > 1 ? `Other matches: ${candidates.slice(1).map((agent) => agent.name || agent.id).join(' / ')}` : '',
-    `Reason: ${decision.reason}`
-  ].filter(Boolean).join('\n');
+  return openChatRoutePreviewFromModule(taskType, prompt);
 }
 
 function buildOpenChatOrderPreview(prompt = '', inputCounts = {}) {
-  const text = String(prompt || '').trim();
-  if (!text) return '';
-  const ja = looksJapanese(text);
-  const taskType = inferClientTaskSequence('', text)[0] || currentRoutingTask() || 'research';
-  const brief = catCompactDispatchBrief(text, taskType, inputCounts);
-  const questions = openChatClarifyingQuestions(taskType, text);
-  const routePreview = openChatRoutePreview(taskType, text);
-  const readinessBlock = openChatReadinessBlock(taskType, text, inputCounts, { ja });
-  if (ja) {
-    return [
-      'この内容は注文候補に見えます。まず発注ブリーフに整えてから、正式オーダーとして送ります。',
-      '',
-      '発注前プレビューです。次に PREPARE ORDER で内容を整えます。',
-      '',
-      `推定タスク: ${taskType}`,
-      routePreview,
-      readinessBlock,
-      '',
-      '発注前に足すと良い情報:',
-      ...questions.map((question, index) => `${index + 1}. ${question}`),
-      '',
-      '実行ブリーフ案:',
-      brief,
-      '',
-      '次の動き: PREPARE ORDER で発注ブリーフを作ります。内容を確認し、実行する場合は SEND ORDER してください。'
-    ].join('\n');
-  }
-  return [
-    `This looks like work to prepare as an order. ${PRODUCT_SHORT_NAME} prepares a structured brief before paid dispatch.`,
-    '',
-    'Pre-dispatch preview. Next, PREPARE ORDER turns this into a reviewable draft.',
-    '',
-    `Inferred task: ${taskType}`,
-    routePreview,
-    readinessBlock,
-    '',
-    'Useful details to add before dispatch:',
-    ...questions.map((question, index) => `${index + 1}. ${question}`),
-    '',
-    'Execution brief draft:',
-    brief,
-    '',
-    'Next: press PREPARE ORDER to create the structured brief. Review it, then press SEND ORDER to run it.'
-  ].join('\n');
+  return buildOpenChatOrderPreviewFromModule(prompt, inputCounts);
 }
 
 function isOpenChatDispatchReadyPrompt(prompt = '') {
@@ -2585,52 +2554,7 @@ function buildOpenChatImplicitOrderPrepAnswer(prompt = '', inputCounts = {}, opt
 }
 
 function buildOpenChatClarifyModeAnswer(prompt = '', inputCounts = {}, options = {}) {
-  const source = String(prompt || '').trim() || 'Use the attached source material and infer the most useful delivery.';
-  const ja = looksJapanese(source);
-  const parts = isStructuredOrderBrief(source) ? structuredOrderBriefParts(source) : {};
-  const taskType = parts.taskType || inferClientTaskSequence('', source)[0] || currentRoutingTask() || 'research';
-  const sequence = inferClientTaskSequence(taskType, source);
-  const routingDecision = orderRoutingDecision(taskType, source, 'auto');
-  const questions = openChatClarifyingQuestions(taskType, source);
-  const brief = isStructuredOrderBrief(source) ? source : catCompactDispatchBrief(source, taskType, inputCounts);
-  const readinessBlock = openChatReadinessBlock(taskType, brief, inputCounts, { ja });
-  const preflightLines = openChatPreflightPreviewLines(taskType, brief, ja);
-  const routeText = routingDecision.strategy === 'multi'
-    ? `Agent Team candidate (${routingDecision.reason})`
-    : `single-agent candidate (${routingDecision.reason})`;
-  const sourceNote = options.sourceOnly
-    ? (ja ? '入力ソースをもとに計画用draftを作りました。' : 'I prepared a planning draft from the attached source material.')
-    : (ja ? 'PLAN mode で発注前draftを確認します。' : 'PLAN mode is reviewing this pre-order draft.');
-  const body = ja
-    ? [
-      `${sourceNote} 内容がまとまったので ORDER に切り替えました。`,
-      '',
-      openChatHumanDispatchPreview(brief, taskType, source, inputCounts),
-      ...preflightLines,
-      '',
-      '確認質問:',
-      ...questions.map((question, index) => `${index + 1}. ${question}`),
-      '',
-      '次の動き: 足りない条件はこのまま返信してください。内容が合っていれば SEND ORDER してください。'
-    ].join('\n')
-    : [
-      `${sourceNote} The draft is ready, so I switched this chat to ORDER.`,
-      '',
-      openChatHumanDispatchPreview(brief, taskType, source, inputCounts),
-      ...preflightLines,
-      '',
-      'Clarifying questions:',
-      ...questions.map((question, index) => `${index + 1}. ${question}`),
-      '',
-      'Next: reply with missing constraints here, or press SEND ORDER if this is ready.'
-    ].join('\n');
-  return {
-    kind: 'assist',
-    tone: 'info',
-    body,
-    nextPrompt: brief,
-    status: 'Order draft ready.\n\nReview the order summary, then press SEND ORDER to run it.'
-  };
+  return buildOpenChatClarifyModeAnswerFromModule(prompt, inputCounts, options);
 }
 
 function buildOpenChatLongPromptGuardAnswer(prompt = '', inputCounts = {}) {
@@ -2673,32 +2597,7 @@ function quickOrderChatAnswer(prompt = '', inputCounts = {}) {
 }
 
 function buildOpenChatLlmFallbackUnavailableAnswer(prompt = '', reason = '') {
-  const ja = looksJapanese(prompt);
-  return {
-    kind: 'clarify',
-    tone: 'warn',
-    patternId: 'pattern_llm_fallback_unavailable',
-    responseSource: 'openai_unavailable',
-    llmProvider: 'openai_unavailable',
-    body: ja
-      ? [
-          '今の内容だと解釈が割れます。まだ実行も課金もしていません。',
-          '',
-          '質問に答えてほしいのか、実際に作業を発注したいのかを一言で教えてください。',
-          '発注なら、対象URL/商材、対象ユーザー、欲しい成果、制約を分かる範囲で足してください。',
-          '',
-          'まだ注文も課金も発生しません。'
-        ].join('\n')
-      : [
-          'The intent is still ambiguous. Nothing has run or been billed yet.',
-          '',
-          'Tell me in one short line whether you want an answer here or you want to order actual work.',
-          'If you want to order work, add the target URL/product, audience, desired outcome, and any constraint you know.',
-          '',
-          'No order or billing happens yet.'
-        ].join('\n'),
-    status: `Need one more clarification before SEND ORDER.\n\nReason: ${String(reason || 'uncertain').slice(0, 80)}`
-  };
+  return buildOpenChatLlmFallbackUnavailableAnswerFromModule(prompt, reason);
 }
 
 const clientOpenChatExchangeController = createClientOpenChatExchangeController({
