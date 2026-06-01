@@ -17,9 +17,13 @@ const filesToCheck = [
   '../lib/apps.js',
   '../lib/app-context.js',
   '../lib/storage.js',
+  '../lib/worker-handlers.js',
   '../server.js',
   '../worker.js',
   '../public/chat.js',
+  '../public/chat-app-handoff-controller.js',
+  '../public/chat-bootstrap-state.js',
+  '../public/chat-catalog-runtime.js',
   '../scripts/external-chat.mjs'
 ];
 
@@ -106,6 +110,7 @@ const seededPublisher = initial.apps.find((item) => item.id === 'publisher-appro
 assert.equal(seededPublisher?.contextIngestUrl, '/api/publisher/context-ingest', 'default Publisher app seed should expose its context ingest route');
 assert.ok(seededPublisher?.directCommandAliases?.includes('approval studio'), 'default Publisher app seed should expose direct command aliases outside chat code');
 assert.ok(seededPublisher?.inputContract?.accepts?.includes('visual_asset_readiness_matrix'), 'default Publisher app seed should accept Instagram visual asset readiness packets');
+assert.ok(seededPublisher?.inputContract?.handoffTargets?.some((target) => target.value === 'seo_specialist'), 'default Publisher app seed should expose Publisher handoff targets through its app contract');
 const seededAnalytics = initial.apps.find((item) => item.id === 'analytics-console');
 assert.ok(seededAnalytics?.directCommandAliases?.includes('ga4'), 'default Analytics app seed should expose direct command aliases outside chat code');
 const seededAdsLaunch = initial.apps.find((item) => item.id === 'ads-launch-console');
@@ -155,8 +160,12 @@ assert.equal(publicContextWithoutPayload.operational_summary.anchors_total >= 4,
 
 const server = readFileSync(new URL('../server.js', import.meta.url), 'utf8');
 const worker = readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
+const workerHandlers = readFileSync(new URL('../lib/worker-handlers.js', import.meta.url), 'utf8');
 const snapshotSource = readFileSync(new URL('../lib/snapshot.js', import.meta.url), 'utf8');
 const chat = readFileSync(new URL('../public/chat.js', import.meta.url), 'utf8');
+const chatAppHandoffController = readFileSync(new URL('../public/chat-app-handoff-controller.js', import.meta.url), 'utf8');
+const chatBootstrapState = readFileSync(new URL('../public/chat-bootstrap-state.js', import.meta.url), 'utf8');
+const chatCatalogRuntime = readFileSync(new URL('../public/chat-catalog-runtime.js', import.meta.url), 'utf8');
 const cli = readFileSync(new URL('../scripts/external-chat.mjs', import.meta.url), 'utf8');
 const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 const developerHelp = readFileSync(new URL('../public/ai-agent-api.html', import.meta.url), 'utf8');
@@ -180,7 +189,7 @@ assert.ok(!server.includes('handleRegisterApp'), 'Node server should not duplica
 assert.ok(!server.includes('handleAppHandoff'), 'Node server should not duplicate app handoff handlers');
 assert.ok(!server.includes('handleCreateAppContext'), 'Node server should not duplicate app context handlers');
 
-for (const source of [worker]) {
+for (const source of [`${worker}\n${workerHandlers}`]) {
   assert.ok(source.includes('/api/apps'), 'Worker should expose /api/apps');
   assert.ok(source.includes('/api/apps/import-manifest'), 'Worker should expose app manifest import');
   assert.ok(source.includes('/api/apps/import-url'), 'Worker should expose app URL import');
@@ -196,10 +205,10 @@ for (const source of [worker]) {
   assert.ok(snapshotSource.includes('apps:') && snapshotSource.includes('publicApp(app)'), 'Snapshots should include public app catalog rows.');
 }
 
-assert.ok(chat.includes('registeredApps: []'), 'chat state should include registered apps');
-assert.ok(chat.includes("api(catalogApiPath('/api/apps', options)"), 'chat should refresh registered apps with paged catalog API');
+assert.ok(chatBootstrapState.includes('registeredApps: []'), 'chat state should include registered apps');
+assert.ok(chatCatalogRuntime.includes("api(catalogApiPath('/api/apps', refreshOptions)"), 'chat should refresh registered apps with paged catalog API');
 assert.ok(chat.includes('appManifestSources'), 'chat should merge CAIt-managed and registered apps');
-assert.ok(chat.includes('/api/apps/${encodeURIComponent(manifest.id || appId)}/handoff'), 'chat should call the same-origin app handoff proxy');
+assert.ok(chatAppHandoffController.includes('/api/apps/${encodeURIComponent(manifest.id || appId)}/handoff'), 'chat should call the same-origin app handoff proxy');
 
 assert.ok(cli.includes('runAppCli'), 'CLI should expose app commands');
 assert.ok(cli.includes('/api/apps/import-manifest'), 'CLI should import app manifests');

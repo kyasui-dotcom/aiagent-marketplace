@@ -106,6 +106,11 @@ export const BUILT_IN_APP_MANIFESTS = Object.freeze([
         instagram: { connector: 'instagram', capability: 'instagram.post', method: 'instagram_connector_or_manual_copy' },
         social: { connector: 'manual', capability: 'manual.copy', method: 'manual_social_copy' }
       },
+      handoffTargets: [
+        { value: 'seo_specialist', label: 'SEO SPECIALIST', role: 'primary_review' },
+        { value: 'cmo_leader', label: 'CMO Leader', role: 'planning_leader' },
+        { value: 'build_team_leader', label: 'Build Team Leader', role: 'implementation_leader' }
+      ],
       returns: ['approval_requests', 'artifacts', 'delivery_files', 'recommended_next_actions']
     },
     tags: ['publisher', 'approval', 'seo'],

@@ -1,23 +1,27 @@
-const PUBLISHER_HANDOFF_TARGETS = Object.freeze([
-  Object.freeze({
-    value: 'seo_specialist',
-    label: 'SEO SPECIALIST',
-    role: 'primary_review'
-  }),
-  Object.freeze({
-    value: 'cmo_leader',
-    label: 'CMO Leader',
-    role: 'planning_leader'
-  }),
-  Object.freeze({
-    value: 'build_team_leader',
-    label: 'Build Team Leader',
-    role: 'implementation_leader'
-  })
-]);
+import { BUILT_IN_APP_MANIFESTS } from './app-manifest-registry.js?v=20260602a';
 
+const PUBLISHER_APP_ID = 'publisher-approval-studio';
+
+function publisherManifest() {
+  return BUILT_IN_APP_MANIFESTS.find((manifest) => manifest?.id === PUBLISHER_APP_ID) || {};
+}
+
+function publisherHandoffTargetsFromManifest() {
+  const targets = publisherManifest()?.inputContract?.handoffTargets;
+  return Array.isArray(targets)
+    ? targets
+        .map((target) => ({
+          value: String(target?.value || '').trim(),
+          label: String(target?.label || target?.value || '').trim(),
+          role: String(target?.role || '').trim()
+        }))
+        .filter((target) => target.value && target.label)
+    : [];
+}
+
+const PUBLISHER_HANDOFF_TARGETS = Object.freeze(publisherHandoffTargetsFromManifest().map(Object.freeze));
 const TARGET_BY_VALUE = new Map(PUBLISHER_HANDOFF_TARGETS.map((target) => [target.value, target]));
-const DEFAULT_TARGET = PUBLISHER_HANDOFF_TARGETS[0].value;
+const DEFAULT_TARGET = PUBLISHER_HANDOFF_TARGETS.find((target) => target.role === 'primary_review')?.value || PUBLISHER_HANDOFF_TARGETS[0]?.value || '';
 const PLANNING_TARGET = PUBLISHER_HANDOFF_TARGETS.find((target) => target.role === 'planning_leader')?.value || DEFAULT_TARGET;
 
 function uniqueTargets(values = []) {

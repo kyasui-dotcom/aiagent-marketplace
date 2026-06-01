@@ -36,7 +36,7 @@ import {
   publisherHandoffTargetOptions,
   publisherHandoffTargetsForPacket,
   publisherPlanningHandoffTarget
-} from './publisher-handoff-target-contract.js?v=20260601a';
+} from './publisher-handoff-target-contract.js?v=20260602a';
 
 let items = [];
 let selectedId = '';

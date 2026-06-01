@@ -1126,7 +1126,10 @@ assert.ok(publisherHtml.includes('id="reshapeSelectedBtn"'), 'Publisher Studio s
 assert.ok(publisherJs.includes('publisher_manual_media_override'), 'Publisher reshape save should preserve the human-selected medium override.');
 assert.ok(publisherJs.includes('/api/publisher/context-ingest'), 'Publisher reshape save should reuse the Publisher ingest route for DB persistence.');
 assert.ok(publisherJs.includes('/api/publisher/items?limit=100'), 'Publisher Studio should reload dedicated Publisher DB items.');
-assert.ok(publisherJs.includes("publisher-handoff-target-contract.js?v=20260601a"), 'Publisher Studio should import handoff target options from the contract module.');
+assert.ok(publisherJs.includes("publisher-handoff-target-contract.js?v=20260602a"), 'Publisher Studio should import handoff target options from the contract module.');
+assert.ok(publisherHandoffTargetContractJs.includes("from './app-manifest-registry.js?v=20260602a'"), 'Publisher handoff targets should come from the app manifest registry contract.');
+assert.ok(appManifestRegistryJs.includes('handoffTargets') && appManifestRegistryJs.includes('primary_review') && appManifestRegistryJs.includes('planning_leader'), 'Publisher app manifest should own its handoff target contract.');
+assert.ok(!publisherHandoffTargetContractJs.includes("value: 'seo_specialist'"), 'Publisher handoff target contract must not own concrete agent ids.');
 assert.ok(publisherJs.includes('publisherHandoffTargetsForPacket(target'), 'Publisher Studio should delegate packet handoff target ordering to the contract module.');
 assert.ok(!publisherHtml.includes('<option value="seo_specialist"'), 'Publisher Studio HTML must not hardcode concrete agent handoff targets.');
 assert.ok(!publisherJs.includes("'build_team_leader', 'cmo_leader'") && !publisherJs.includes("'seo_specialist', 'build_team_leader'"), 'Publisher Studio controller must not hardcode concrete agent handoff target fallback arrays.');
