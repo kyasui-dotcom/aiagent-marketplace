@@ -204,8 +204,10 @@ import { createClientMarketingTimelineUtils } from './client-marketing-timeline-
 import { createClientOperatorDashboardUtils } from './client-operator-dashboard-utils.js?v=20260527a';
 import { createClientAgentProfileUtils } from './client-agent-profile-utils.js?v=20260527a';
 import { createClientBrowserTransferUtils } from './client-browser-transfer-utils.js?v=20260529a';
-import { createClientDeliveryRenderUtils } from './client-delivery-render-utils.js?v=20260527a';
-import { createClientDeliveryActionController } from './client-delivery-action-controller.js?v=20260527a';
+import { createClientDeliveryRenderUtils } from './client-delivery-render-utils.js?v=20260601b';
+import { createClientDeliveryRenderModel } from './client-delivery-render-model.js?v=20260601a';
+import { createClientRunDetailController } from './client-run-detail-controller.js?v=20260601a';
+import { createClientDeliveryActionController } from './client-delivery-action-controller.js?v=20260601b';
 import { createClientRouteAuthController } from './client-route-auth-controller.js?v=20260528a';
 import { createClientGithubAgentSetupController } from './client-github-agent-setup-controller.js?v=20260528a';
 import { createClientDeveloperSurfaceController } from './client-developer-surface-controller.js?v=20260528a';
@@ -1323,6 +1325,16 @@ const {
   openChatLooksPreorderIntentLlmCandidate
 } = clientOpenChatPreLlmGuardUtils;
 
+const clientDeliveryRenderModel = createClientDeliveryRenderModel({
+  visibleDeliveryFiles
+});
+const {
+  clarifyingQuestionsFromReport,
+  deliveryStateFromValue,
+  deliverySummaryText,
+  workflowChildRunsFromDelivery
+} = clientDeliveryRenderModel;
+
 const clientMarketingTimelineUtils = createClientMarketingTimelineUtils({
   state,
   els,
@@ -2006,6 +2018,7 @@ const {
   prepareGenericDeliverableExecutionSeed,
   prepareGenericDeliverableOrderFromDelivery,
   preparePublishOrderFromDelivery,
+  bindDeliveryCommonActionButtons,
   bindRunDeliveryInteractions,
   renderDeliveryPublishCard,
   renderGenericDeliverableCard,
@@ -3074,46 +3087,28 @@ const {
   renderWorkflowTeamSummary
 } = clientDeliveryRenderUtils;
 
-function deliveryStateFromValue(value) {
-  const run = value && typeof value === 'object' && !Array.isArray(value) && ('taskType' in value || 'assignedAgentId' in value || 'jobKind' in value || 'createdAt' in value)
-    ? value
-    : (value?.job && typeof value.job === 'object' ? value.job : null);
-  const directDelivery = value?.delivery && typeof value.delivery === 'object' ? value.delivery : null;
-  const derivedDelivery = run
-    ? {
-        report: run.output?.report || null,
-        files: visibleDeliveryFiles(run.output?.files),
-        returnTargets: run.output?.returnTargets || ['chat', 'api']
-      }
-    : null;
-  return {
-    run,
-    delivery: directDelivery || derivedDelivery || null
-  };
-}
-
-function deliverySummaryText(report = {}) {
-  const lines = [];
-  if (report.summary) lines.push(`Summary: ${report.summary}`);
-  if (Array.isArray(report.bullets) && report.bullets.length) {
-    lines.push('', 'Bullets:');
-    report.bullets.forEach((bullet) => lines.push(`- ${bullet}`));
-  }
-  if (report.nextAction) lines.push('', `Next action: ${report.nextAction}`);
-  const questions = clarifyingQuestionsFromReport(report);
-  if (questions.length) {
-    lines.push('', 'Clarifying questions:');
-    questions.forEach((question, index) => lines.push(`${index + 1}. ${question}`));
-  }
-  return lines.join('\n').trim();
-}
-
-function workflowChildRunsFromDelivery(run = null, report = {}) {
-  const reportChildren = Array.isArray(report?.childRuns) ? report.childRuns : [];
-  if (reportChildren.length) return reportChildren;
-  const workflowChildren = Array.isArray(run?.workflow?.childRuns) ? run.workflow.childRuns : [];
-  return workflowChildren;
-}
+const clientRunDetailController = createClientRunDetailController({
+  els,
+  bindDeliveryCommonActionButtons,
+  bindRunDeliveryInteractions,
+  deliveryCardBodyLines,
+  deliveryEmptyStatePresentation,
+  deliveryRenderContextFromValue,
+  deliverySummaryTone,
+  hideDeliveryFollowupPanel,
+  maybeClassifyDeliveryCandidates,
+  renderDeliverySummaryCard,
+  renderMarketingTimelineModal,
+  renderRunDeliverySections,
+  renderWorkChatThread,
+  runNextAction,
+  safeText,
+  summarizeRun
+});
+const {
+  renderRunDelivery,
+  setDetail
+} = clientRunDetailController;
 
 function loadOrderDraftIntoComposer(order = {}) {
   state.followupToJobId = '';
@@ -3137,93 +3132,6 @@ function loadOrderDraftIntoComposer(order = {}) {
   switchTab('work');
   renderOrderComposer();
   window.requestAnimationFrame(() => els.jobPrompt?.focus());
-}
-
-function clarifyingQuestionsFromReport(report = {}) {
-  const raw = report?.clarifyingQuestions
-    ?? report?.clarifying_questions
-    ?? report?.followupQuestions
-    ?? report?.follow_up_questions
-    ?? report?.questions
-    ?? [];
-  const values = Array.isArray(raw)
-    ? raw
-    : String(raw || '').split(/\r?\n|(?:^|\s)\d+\.\s+/);
-  return values
-    .map((item) => String(item || '').trim().replace(/^[-*]\s+/, ''))
-    .filter(Boolean);
-}
-
-function renderRunDelivery(value) {
-  if (!els.runDeliveryCard || !els.runDeliveryFiles) return;
-  const context = deliveryRenderContextFromValue(value);
-  const {
-    run,
-    delivery,
-    report,
-    files,
-    workflowChildren,
-    workflowParent,
-    summaryText,
-    genericDeliverable,
-    fileCount
-  } = context;
-  els.runDeliveryFiles.innerHTML = '';
-  hideDeliveryFollowupPanel();
-  renderMarketingTimelineModal(run);
-  const emptyState = deliveryEmptyStatePresentation(run, delivery, report, files);
-  if (emptyState) {
-    els.runDeliveryCard.textContent = emptyState.text;
-    els.runDeliveryCard.className = `detail-box action-card ${emptyState.tone} compact-card`;
-    return;
-  }
-
-  const candidates = { article: context.article, genericDeliverable };
-  maybeClassifyDeliveryCandidates(run, report || {}, files, candidates, context.cachedPublishClassification || null);
-  const article = candidates.article;
-  const summaryDownloadText = deliveryCardBodyLines(run, report || {}, {
-    summaryText,
-    workflowChildren,
-    fileCount
-  }).join('\n');
-  els.runDeliveryCard.innerHTML = renderDeliverySummaryCard(run, report || {}, {
-    summaryText: summaryDownloadText
-  });
-  els.runDeliveryCard.className = `detail-box action-card ${deliverySummaryTone(run, report || {})} compact-card`;
-  els.runDeliveryFiles.innerHTML = renderRunDeliverySections(run, {
-    summaryText: summaryDownloadText,
-    fileCount,
-    files,
-    workflowParent,
-    article,
-    genericDeliverable,
-    workflowChildren
-  });
-  bindDeliveryCommonActionButtons(els.runDeliveryCard, {
-    run,
-    workflowParent,
-    renderedFiles: files,
-    summaryText: summaryDownloadText
-  });
-  bindRunDeliveryInteractions(els.runDeliveryFiles, value, {
-    run,
-    article,
-    genericDeliverable,
-    workflowParent,
-    files,
-    summaryText: summaryDownloadText
-  });
-}
-
-function setDetail(value) {
-  if (value && typeof value === 'object' && !Array.isArray(value) && ('taskType' in value || 'assignedAgentId' in value) && els.runActionCard) {
-    const action = runNextAction(value);
-    els.runActionCard.textContent = `${action.title}\n\n${action.body}`;
-    els.runActionCard.className = `detail-box action-card ${action.tone}`;
-  }
-  renderRunDelivery(value);
-  safeText(els.jobDetail, typeof value === 'string' ? value : summarizeRun(value));
-  renderWorkChatThread();
 }
 
 function flash(message, kind = 'ok') {

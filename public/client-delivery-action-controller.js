@@ -2261,6 +2261,7 @@ async function prepareFollowupOrderFromDelivery() {
     renderGenericDeliverableCard,
     renderGenericDeliverableControls,
     renderRunDeliverySections,
+    bindDeliveryCommonActionButtons,
     bindRunDeliveryInteractions,
     saveGithubExecutorPreferences,
     saveGoogleExecutorPreferences,

@@ -37,6 +37,8 @@ const clientAgentSetupFlowControllerPath = new URL('../public/client-agent-setup
 const clientBrowserTransferUtilsPath = new URL('../public/client-browser-transfer-utils.js', import.meta.url);
 const clientConnectHubControllerPath = new URL('../public/client-connect-hub-controller.js', import.meta.url);
 const clientDeliveryActionControllerPath = new URL('../public/client-delivery-action-controller.js', import.meta.url);
+const clientDeliveryRenderModelPath = new URL('../public/client-delivery-render-model.js', import.meta.url);
+const clientRunDetailControllerPath = new URL('../public/client-run-detail-controller.js', import.meta.url);
 const clientAuthAccessUtilsPath = new URL('../public/client-auth-access-utils.js', import.meta.url);
 const clientOrderAgentPickerControllerPath = new URL('../public/client-order-agent-picker-controller.js', import.meta.url);
 const clientParallelOrderControllerPath = new URL('../public/client-parallel-order-controller.js', import.meta.url);
@@ -193,6 +195,8 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientDeveloperSurfaceC
 execFileSync(process.execPath, ['--check', fileURLToPath(clientSettingsBillingControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientAgentAccessControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryActionControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryRenderModelPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientRunDetailControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientAgentSetupFlowControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientBrowserTransferUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientConnectHubControllerPath)], { stdio: 'pipe' });
@@ -267,6 +271,8 @@ const clientSettingsBillingControllerJs = readFileSync(clientSettingsBillingCont
 const clientRouteAuthControllerJs = readFileSync(clientRouteAuthControllerPath, 'utf8');
 const clientAgentAccessControllerJs = readFileSync(clientAgentAccessControllerPath, 'utf8');
 const clientDeliveryActionControllerJs = readFileSync(clientDeliveryActionControllerPath, 'utf8');
+const clientDeliveryRenderModelJs = readFileSync(clientDeliveryRenderModelPath, 'utf8');
+const clientRunDetailControllerJs = readFileSync(clientRunDetailControllerPath, 'utf8');
 const clientAuthAccessUtilsJs = readFileSync(clientAuthAccessUtilsPath, 'utf8');
 const clientParallelOrderControllerJs = readFileSync(clientParallelOrderControllerPath, 'utf8');
 const clientReleaseAccessControllerJs = readFileSync(clientReleaseAccessControllerPath, 'utf8');
@@ -2240,7 +2246,9 @@ assert.ok(!chatJs.includes('internalAllDeliverablesFallbackFile'), 'Chat deliver
 assert.ok(!chatJs.includes('agent-deliverables-${id}.md'), 'Chat delivery must expose only agent-returned files, not generated readable bundles.');
 assert.ok(!chatJs.includes('review-ready-delivery-${id}.md'), 'Chat delivery must not expose generated review-ready files for old internal specialist bundles.');
 assert.ok(!chatJs.includes('delivery-summary-${id}.md'), 'Chat delivery must not synthesize downloadable summary markdown when no real agent file exists.');
-assert.ok(clientJs.includes('visibleDeliveryFiles(run.output?.files)'), 'Open Chat delivery should hide internal workflow markdown bundles from user-facing files.');
+assert.ok(clientDeliveryRenderModelJs.includes('visibleDeliveryFiles(run.output?.files)'), 'Open Chat delivery should hide internal workflow markdown bundles from user-facing files.');
+assert.ok(clientJs.includes("from './client-delivery-render-model.js?v=20260601a'"), 'Open Chat delivery visibility filtering should stay in the delivery render model.');
+assert.ok(clientRunDetailControllerJs.includes('renderRunDelivery(value)'), 'Open Chat run detail delivery rendering should stay outside client.js.');
 assert.ok(deliveryManagerJs.includes('visibleDeliveryFiles(output.files)'), 'Delivery Manager should hide internal workflow markdown bundles from user-facing files.');
 assert.ok(chatJs.includes('includeHistoricalTracked'), 'Chat backfill should ignore historical tracked orders while a current order is attached.');
 assert.ok(chatJs.includes('renderTerminalDeliveries: false'), 'Chat startup should not render historical terminal deliveries automatically.');
