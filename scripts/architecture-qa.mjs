@@ -36,6 +36,7 @@ const exactActionsSource = read('lib/exact-actions.js');
 const externalWriteConfirmationSource = read('lib/external-write-confirmation.js');
 const httpPolicySource = read('lib/http-policy.js');
 const chatSource = read('public/chat.js');
+const chatAppContextOAuthControllerSource = read('public/chat-app-context-oauth-controller.js');
 const clientSource = read('public/client.js');
 const cmoLeaderSource = read('lib/builtin-agents/agents/cmo-leader.js');
 const agentOrchestrationDisciplineSource = read('docs/AGENT_ORCHESTRATION_DISCIPLINE.md');
@@ -439,7 +440,7 @@ assert.ok(exactActionsSource.includes('EXACT_MATCH_ALLOWED_WORK_ACTIONS'), 'Shar
 
 assert.ok(appContextSource.includes('CAIT_APP_CONTEXT_SCHEMA'), 'App context should keep an explicit schema marker');
 assert.ok(appContextSource.includes('APP_CONTEXT_TTL_MS'), 'App context should remain server-side and expiring');
-assert.ok(chatSource.includes('consumeCaitAppContextForChat'), 'Chat should consume server-side app context handoff');
+assert.ok(chatAppContextOAuthControllerSource.includes('consumeCaitAppContextForChat'), 'Chat should consume server-side app context handoff');
 assert.ok(chatSource.includes('caitAppContextChatPrompt'), 'Chat should render app context into order prompt context');
 
 for (const token of [

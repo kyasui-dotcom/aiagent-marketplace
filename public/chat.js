@@ -8,12 +8,6 @@ import {
   chatEngineIsNeedsInputResponse
 } from './chat-engine.js?v=20260526l';
 import {
-  connectorGateHandleOAuthPopupReturn,
-  connectorGateHandleOAuthPopupReturnMessage,
-  connectorGateOpenOAuthPopup,
-  connectorGateStartOAuthPopupMonitor
-} from './connector-gate.js?v=20260519a';
-import {
   safeLocalStorageGet,
   safeLocalStorageSet
 } from './chat-session-state.js?v=20260519a';
@@ -55,8 +49,7 @@ import {
 import { renderAgentRunDetailHtml as agentProgressRenderAgentRunDetailHtml } from './agent-progress-view.js?v=20260519a';
 import {
   caitAppContextChatPrompt,
-  caitAppContextThreadHtml,
-  consumeCaitAppContextForChat
+  caitAppContextThreadHtml
 } from './cait-app-bridge.js?v=20260526i';
 import {
   isDeliveryHistoryQuestionIntentText,
@@ -92,7 +85,6 @@ import {
   taskTypeFromOpenChatIntent
 } from './chat-intent-guard-utils.js?v=20260529c';
 import {
-  CAIT_APP_CONTEXT_CHANNEL,
   CHATUX_AUTH_STATUS_TIMEOUT_MS,
   CHATUX_BACKFILL_INTERVAL_MS,
   CHATUX_CATALOG_CACHE_TTL_MS,
@@ -124,6 +116,7 @@ import { createChatHistoryPanelsController } from './chat-history-panels-control
 import { createChatDeliveryRenderController } from './chat-delivery-render-controller.js?v=20260601a';
 import { createChatEventBindingsController } from './chat-event-bindings-controller.js?v=20260601a';
 import { createChatConversationOwnerController } from './chat-conversation-owner-controller.js?v=20260601a';
+import { createChatAppContextOAuthController } from './chat-app-context-oauth-controller.js?v=20260602a';
 
 const state = createInitialChatState({
   uiLanguage: initialChatUiLanguage({
@@ -168,8 +161,6 @@ function leaderCatalogChatAnswer(prompt = '') {
 
 const agentMapRunStore = new Map();
 let agentMapRunKeyCounter = 0;
-const processedAppContextIds = new Set();
-let appContextBroadcastChannel = null;
 let chatRuntimeStateController = null;
 let chatUtilityModalController = null;
 let chatRestoredOrderContextController = null;
@@ -2558,152 +2549,35 @@ function resetChat() {
   setBusy(false);
 }
 
-async function handleInboundAppContext(context = {}, options = {}) {
-  if (!context) return false;
-  const contextId = String(context.id || '').trim();
-  const dedupeKey = contextId || `${context.source_app || 'app'}:${context.created_at || Date.now()}`;
-  if (dedupeKey && processedAppContextIds.has(dedupeKey)) return true;
-  if (dedupeKey) processedAppContextIds.add(dedupeKey);
-  appendMessage('assistant', caitAppContextThreadHtml(context), { label: 'App context', tone: 'ok' });
-  if (attachInboundAppContextToIntakeOrDraft(context, options)) return true;
-  state.pendingAppContext = context;
-  els.promptInput.value = caitAppContextChatPrompt(context);
-  els.promptInput.focus();
-  return true;
-}
-
-function handleInboundAppContextServerRecord(data = {}) {
-  const id = String(data.app_context_id || data.context_id || '').trim();
-  if (!id) return false;
-  const token = String(data.app_context_token || '').trim();
-  const chatUrl = String(data.chat_url || '').trim();
-  const record = { id, token, chatUrl };
-  if (state.pendingIntake) {
-    state.pendingIntake.appContextServerRecord = record;
-  }
-  if (state.pendingAppContext && typeof state.pendingAppContext === 'object') {
-    state.pendingAppContext.server_record = record;
-  }
-  return true;
-}
-
-function handleCaitAppContextMessage(data = {}, options = {}) {
-  if (!data || typeof data !== 'object') return false;
-  const origin = String(options.origin || data.origin || '').trim();
-  if (origin && origin !== window.location.origin) return false;
-  if (data.type === 'cait-app-context-server-record') {
-    return handleInboundAppContextServerRecord(data);
-  }
-  if (data.type !== 'cait-app-context') return false;
-  void handleInboundAppContext(data.context || {}, {
-    label: 'App context',
-    appContextId: data.app_context_id || '',
-    appContextToken: data.app_context_token || ''
-  });
-  return true;
-}
-
-function startAppContextBroadcastListener() {
-  if (appContextBroadcastChannel || typeof BroadcastChannel !== 'function') return;
-  try {
-    appContextBroadcastChannel = new BroadcastChannel(CAIT_APP_CONTEXT_CHANNEL);
-    appContextBroadcastChannel.addEventListener('message', (event) => {
-      handleCaitAppContextMessage(event.data || {});
-    });
-  } catch {
-    appContextBroadcastChannel = null;
-  }
-}
-
-async function hydrateAppContextFromUrl() {
-  const context = await consumeCaitAppContextForChat();
-  if (!context) return false;
-  return handleInboundAppContext(context, { label: 'App context' });
-}
-
-function startOAuthPopupMonitor(popup = null) {
-  if (!popup) return;
-  if (state.oauthPopupMonitor) window.clearInterval(state.oauthPopupMonitor);
-  state.oauthPopupMonitor = connectorGateStartOAuthPopupMonitor(popup, {
-    waitMs: CHATUX_CONNECT_WAIT_MS,
-    intervalMs: CHATUX_CONNECT_CHECK_INTERVAL_MS,
-    onClosedOrTimedOut: () => {
-      window.clearInterval(state.oauthPopupMonitor);
-      state.oauthPopupMonitor = null;
-      void refreshAuth();
-      if (state.orderId) {
-        state.authorityNoticeKeys.clear();
-        void fetchVisibleJob(state.orderId)
-          .then((job) => {
-            maybeRenderAuthorityNotice(job, { label: 'Approval required' });
-            if (jobHasDeliveryResult(job)) renderDeliveryOnce(job, { force: true });
-            else {
-              resumeLiveProgress(job.id || state.orderId);
-              startPolling(job.id || state.orderId);
-            }
-          })
-          .catch(() => startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false }));
-      }
-    }
-  });
-}
-
-function openChatOAuthPopup(href = '', label = 'Google connection') {
-  const target = String(href || '').trim();
-  if (!target) return false;
-  saveChatOAuthReturnState('oauth_popup_open');
-  const popup = connectorGateOpenOAuthPopup(target);
-  if (!popup) return false;
-  appendTextMessage('system', chatText(
-    `${label} opened in a separate window. Keep this chat open; I will wait up to 60 minutes and continue from here when the connection finishes.`,
-    `${label} を別ウィンドウで開きました。このチャットは開いたままにしてください。最大60分待機し、接続が終わったらここから続けます。`,
-    state.chatMessages[0]?.body || state.conversationLanguage
-  ), { label: 'Connector' });
-  startOAuthPopupMonitor(popup);
-  return true;
-}
-
-async function handleOAuthPopupReturnMessage(data = {}) {
-  return connectorGateHandleOAuthPopupReturnMessage(data, {
-    onError: ({ connectorLabel, error }) => {
-      appendTextMessage('assistant', chatText(
-        `${connectorLabel} connection did not complete: ${error}`,
-        `${connectorLabel}接続が完了しませんでした: ${error}`,
-        state.chatMessages[0]?.body || state.conversationLanguage
-      ), { tone: 'error', label: 'Connector' });
-    },
-    onSuccess: ({ connectorLabel }) => {
-      appendTextMessage('system', chatText(
-        `${connectorLabel} connection finished. Checking this order again from the original chat.`,
-        `${connectorLabel}接続が完了しました。元のチャットでこのオーダーを再確認します。`,
-        state.chatMessages[0]?.body || state.conversationLanguage
-      ), { label: 'Connector' });
-      state.authorityNoticeKeys.clear();
-    },
-    refreshAuth,
-    afterRefresh: async () => {
-      if (state.orderId) {
-        try {
-          const job = await fetchVisibleJob(state.orderId);
-          maybeRenderAuthorityNotice(job, { label: 'Approval required' });
-          if (jobHasDeliveryResult(job)) renderDeliveryOnce(job, { force: true });
-          else {
-            resumeLiveProgress(job.id || state.orderId);
-            startPolling(job.id || state.orderId);
-          }
-        } catch {
-          startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
-        }
-      } else {
-        startDeliveryBackfillLoop({ maxRuns: 6, renderTerminalDeliveries: false });
-      }
-    }
-  });
-}
-
-function handleChatOAuthPopupReturn() {
-  return connectorGateHandleOAuthPopupReturn();
-}
+const chatAppContextOAuthController = createChatAppContextOAuthController({
+  state,
+  els,
+  window,
+  chatText,
+  appendMessage,
+  appendTextMessage,
+  attachInboundAppContextToIntakeOrDraft,
+  saveChatOAuthReturnState,
+  refreshAuth,
+  fetchVisibleJob,
+  maybeRenderAuthorityNotice,
+  jobHasDeliveryResult,
+  renderDeliveryOnce,
+  resumeLiveProgress,
+  startPolling,
+  startDeliveryBackfillLoop,
+  connectWaitMs: CHATUX_CONNECT_WAIT_MS,
+  connectCheckIntervalMs: CHATUX_CONNECT_CHECK_INTERVAL_MS
+});
+const {
+  handleCaitAppContextMessage,
+  handleChatOAuthPopupReturn,
+  handleInboundAppContext,
+  handleOAuthPopupReturnMessage,
+  hydrateAppContextFromUrl,
+  openChatOAuthPopup,
+  startAppContextBroadcastListener
+} = chatAppContextOAuthController;
 
 const chatEventBindingsController = createChatEventBindingsController({
   state,

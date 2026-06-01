@@ -30,6 +30,7 @@ const workflowLayeringSource = read('lib/workflow-layering.js');
 const orchestrationSource = read('lib/orchestration.js');
 const sharedSource = read('lib/shared.js');
 const chatSource = read('public/chat.js');
+const chatAppContextOAuthControllerSource = read('public/chat-app-context-oauth-controller.js');
 const chatAppHandoffControllerSource = read('public/chat-app-handoff-controller.js');
 const chatUsageLibraryControllerSource = read('public/chat-usage-library-controller.js');
 const connectorGateSource = read('public/connector-gate.js');
@@ -380,7 +381,7 @@ assert.equal(
   'ads planner must describe approval boundaries, not create approval packets for the execution owner'
 );
 assert.ok(
-  chatSource.includes("from './connector-gate.js"),
+  chatAppContextOAuthControllerSource.includes("from './connector-gate.js"),
   'chat connector display must be delegated to the connector gate module'
 );
 assert.ok(

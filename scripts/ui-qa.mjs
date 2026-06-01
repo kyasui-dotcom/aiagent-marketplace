@@ -94,6 +94,7 @@ const chatSessionSidebarControllerPath = new URL('../public/chat-session-sidebar
 const chatRestoredOrderContextControllerPath = new URL('../public/chat-restored-order-context-controller.js', import.meta.url);
 const chatDeliveryRenderControllerPath = new URL('../public/chat-delivery-render-controller.js', import.meta.url);
 const chatEventBindingsControllerPath = new URL('../public/chat-event-bindings-controller.js', import.meta.url);
+const chatAppContextOAuthControllerPath = new URL('../public/chat-app-context-oauth-controller.js', import.meta.url);
 const accountSettingsJsPath = new URL('../public/account-settings.js', import.meta.url);
 const connectorGateJsPath = new URL('../public/connector-gate.js', import.meta.url);
 const chatSessionStateJsPath = new URL('../public/chat-session-state.js', import.meta.url);
@@ -264,6 +265,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(providerMoneyReadinessP
 execFileSync(process.execPath, ['--check', fileURLToPath(accountSettingsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatDeliveryRenderControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatEventBindingsControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatAppContextOAuthControllerPath)], { stdio: 'pipe' });
 
 const html = readFileSync(htmlPath, 'utf8');
 const chatHtml = readFileSync(chatHtmlPath, 'utf8');
@@ -351,6 +353,7 @@ const chatSessionSidebarControllerJs = readFileSync(chatSessionSidebarController
 const chatRestoredOrderContextControllerJs = readFileSync(chatRestoredOrderContextControllerPath, 'utf8');
 const chatDeliveryRenderControllerJs = readFileSync(chatDeliveryRenderControllerPath, 'utf8');
 const chatEventBindingsControllerJs = readFileSync(chatEventBindingsControllerPath, 'utf8');
+const chatAppContextOAuthControllerJs = readFileSync(chatAppContextOAuthControllerPath, 'utf8');
 const chatSubmitHandlerSource = chatEventBindingsControllerJs.slice(
   chatEventBindingsControllerJs.indexOf('async function handleComposerSubmit'),
   chatEventBindingsControllerJs.indexOf('function handleWindowMessage')
@@ -733,7 +736,7 @@ assert.ok(!clientDeliveryActionControllerJs.includes('async function saveGoogleE
 assert.ok(!clientDeliveryActionControllerJs.includes('function flattenGa4PropertyOptions'), 'Delivery action controller should not own Google asset option flattening.');
 assert.ok(clientDeliveryActionControllerJs.includes('sendFollowupToAgentFromDelivery'), 'Delivery action controller should keep the direct follow-up sender after refactors.');
 assert.ok(clientJs.includes('sendFollowupToAgentFromDelivery,'), 'Client should destructure the delivery follow-up sender from the delivery action controller.');
-assert.ok(chatJs.includes("from './connector-gate.js"), 'Chat connector approvals should be delegated to the connector gate module.');
+assert.ok(chatAppContextOAuthControllerJs.includes("from './connector-gate.js"), 'Chat connector approvals should be delegated to the connector gate module.');
 assert.ok(connectorGateJs.includes('connectorGateGoogleAuthorityConnectGroups'), 'Chat Google approval should connect every requested Google source in one OAuth popup.');
 assert.ok(connectorGateJs.includes('Connect GA4 + Search Console'), 'Chat Google approval should label combined GA4/Search Console requests clearly.');
 assert.ok(chatJs.includes('function authorityRequestHandledBySaasHandoffInChat'), 'Chat should treat X/social publishing authority requests as SaaS handoffs, not chat approvals.');
@@ -936,7 +939,7 @@ assert.ok(chatJs.includes('purgeChatStateForAccountBoundary'), 'Chat should purg
 assert.ok(chatJs.includes('pendingChatRestoreSnapshot') || chatBootstrapStateJs.includes('pendingChatRestoreSnapshot'), 'Chat should defer local session restore until auth identifies the current account.');
 assert.ok(chatSessionSidebarControllerJs.includes('state.chatSessions = currentSession ? [currentSession] : []'), 'Chat history refresh should replace account-scoped session rows instead of merging stale local rows.');
 assert.ok(feedbackChatRoutes.includes('stale_chat_session_account'), 'Server chat-session snapshots should reject stale account-bound client state.');
-assert.ok(chatJs.indexOf('void refreshChatSessionHistory({ force: true });') < chatJs.indexOf('void refreshAuth();'), 'Chat should start loading the session list before the full auth status request.');
+assert.ok(chatEventBindingsControllerJs.indexOf('void refreshChatSessionHistory({ force: true });') < chatEventBindingsControllerJs.indexOf('void refreshAuth();'), 'Chat should start loading the session list before the full auth status request.');
 assert.ok(chatSessionSidebarControllerJs.includes("return '/api/chat-memory"), 'Chat session history should use the lightweight chat-memory API instead of the full snapshot.');
 assert.ok(!chatSessionSidebarControllerJs.includes("return '/api/snapshot'"), 'Chat session history should not fetch the full snapshot for the sidebar.');
 assert.ok(chatRestoredOrderContextControllerJs.includes('Promise.allSettled(ids.map((id) => fetchVisibleJob(id)))'), 'Restored order context should fetch related orders in parallel.');
@@ -1382,7 +1385,7 @@ assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
 assert.ok(chatHtml.includes('/chat.css?v=20260526f'), 'Chat page should load the current compact chat header and composer styles.');
-assert.ok(chatHtml.includes('/chat.js?v=20260601c'), 'Chat page should load the current compact chat header and composer controller.');
+assert.ok(chatHtml.includes('/chat.js?v=20260602a'), 'Chat page should load the current compact chat header and composer controller.');
 assert.ok(chatHtml.includes('id="chatHeaderMenu"') && chatHtml.includes('☰ Menu'), 'Chat header should collapse secondary actions into a menu.');
 assert.ok(chatHtml.includes('Chat history') && chatHtml.includes('Schedules') && chatHtml.includes('Agents and workers'), 'Chat menu should use specific workspace action labels.');
 assert.ok(chatHtml.includes('App tools') && chatHtml.includes('Apps hub'), 'Chat menu should distinguish app tools from the Apps hub page.');
@@ -1594,11 +1597,12 @@ assert.ok(!appHandoffTransferJs.includes("from './delivery-action-contract.js?v=
 assert.ok(!appHandoffTransferJs.includes('extractSocialPostTextFromDeliveryContent'), 'Dedicated app handoff text should come from explicit artifact metadata only.');
 assert.ok(!chatJs.includes("from './delivery-action-contract.js?v=20260501a'"), 'Chat JS should not import delivery action parsing helpers directly.');
 assert.ok(chatJs.includes("from './cait-app-bridge.js?v=20260526i'"), 'Chat JS should receive app contexts through the shared CAIt app bridge.');
-assert.ok(chatJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
-assert.ok(chatJs.includes('await consumeCaitAppContextForChat()'), 'Chat should await server-side app context retrieval before filling the composer.');
+assert.ok(chatJs.includes("from './chat-app-context-oauth-controller.js?v=20260602a'"), 'Chat app context and popup OAuth runtime should live in the dedicated controller.');
+assert.ok(chatAppContextOAuthControllerJs.includes('hydrateAppContextFromUrl'), 'Chat should hydrate app context handoffs on explicit app return.');
+assert.ok(chatAppContextOAuthControllerJs.includes('await consumeCaitAppContextForChat()'), 'Chat should await server-side app context retrieval before filling the composer.');
 assert.ok(chatJs.includes('refreshAppContexts'), 'Chat Apps panel should load reusable app contexts from the server.');
 assert.ok(chatCatalogRuntimeJs.includes('/api/app-contexts'), 'Chat should read app context history through the server API.');
-assert.ok(chatJs.includes('BroadcastChannel'), 'Chat should receive app context handoffs from a separate same-origin app window.');
+assert.ok(chatAppContextOAuthControllerJs.includes('BroadcastChannel'), 'Chat should receive app context handoffs from a separate same-origin app window.');
 assert.ok([chatJs, chatUtilityModalControllerJs, chatEventBindingsControllerJs].join('\n').includes('data-app-context-load'), 'Chat should let users load a server-side app context back into the composer.');
 assert.ok(chatJs.includes('refreshRecentJobs'), 'Chat history should be derived from the server job API.');
 assert.ok(chatRuntimeStateControllerJs.includes('compactChatRuntimeSnapshot'), 'Chat should compact runtime restore snapshots instead of using localStorage as order state.');
@@ -1617,10 +1621,10 @@ assert.ok(chatJs.includes("url.searchParams.set('cait_chat_session_id', sessionI
 assert.ok(chatJs.includes("url.searchParams.set('cait_order_id', orderId)"), 'Chat OAuth return paths should include the active order id.');
 assert.ok(chatJs.includes("url.searchParams.set('cait_oauth_popup', '1')"), 'Chat Google connector return paths should mark popup OAuth returns.');
 assert.ok(connectorGateJs.includes('data-chat-oauth-popup="google"'), 'Chat Google connector approval links should open OAuth outside the active chat tab.');
-assert.ok(chatJs.includes('function openChatOAuthPopup'), 'Chat should keep the active thread open while Google OAuth runs in a separate window.');
+assert.ok(chatAppContextOAuthControllerJs.includes('function openChatOAuthPopup'), 'Chat should keep the active thread open while Google OAuth runs in a separate window.');
 assert.ok(chatJs.includes('function ensureAuthRefreshProgress') && [chatJs, chatEventBindingsControllerJs].join('\n').includes('window.setTimeout(ensureAuthRefreshProgress, 8000)'), 'Chat should retry auth refresh if startup remains stuck at Checking session.');
 assert.ok(connectorGateJs.includes("type: 'cait-oauth-return'"), 'OAuth popup returns should notify the original chat window.');
-assert.ok(chatJs.includes('handleOAuthPopupReturnMessage'), 'Original chat should refresh connector/order state after popup OAuth completes.');
+assert.ok(chatAppContextOAuthControllerJs.includes('handleOAuthPopupReturnMessage'), 'Original chat should refresh connector/order state after popup OAuth completes.');
 assert.ok(chatJs.includes('restoreChatOAuthReturnStateFromUrl'), 'Chat should restore the active thread immediately after Google OAuth returns.');
 assert.ok(chatJs.includes('restoreRequestedChatSessionFromHistory'), 'Chat should fall back to server chat memory when the OAuth snapshot is unavailable.');
 assert.ok(connectorGateJs.includes("saveOAuthState?.('oauth_link_click')"), 'Chat should save the latest runtime state immediately before OAuth navigation.');
@@ -1780,7 +1784,7 @@ assert.ok(chatJs.includes("new URL('/login', window.location.origin)"), 'Chat sh
 assert.ok(chatJs.includes("loginUrl.searchParams.set('next', nextPath || CHATUX_RETURN_PATH)"), 'Chat login gate should preserve the current chat path and context query.');
 assert.ok(chatJs.includes('const CHATUX_CONNECT_WAIT_MS = 60 * 60 * 1000') || chatBootstrapStateJs.includes('CHATUX_CONNECT_WAIT_MS = 60 * 60 * 1000'), 'Chat auth and connector checks should wait up to 60 minutes before aborting user-action flows.');
 assert.ok(chatJs.includes('timeoutMs: CHATUX_CONNECT_WAIT_MS'), 'Chat auth checks should use the long connector wait budget.');
-assert.ok(chatJs.includes('connectorGateStartOAuthPopupMonitor') && connectorGateJs.includes('Math.ceil(waitMs / intervalMs)'), 'Chat OAuth popup monitoring should keep waiting for the full connector window.');
+assert.ok(chatAppContextOAuthControllerJs.includes('connectorGateStartOAuthPopupMonitor') && connectorGateJs.includes('Math.ceil(waitMs / intervalMs)'), 'Chat OAuth popup monitoring should keep waiting for the full connector window.');
 assert.ok(chatUiRuntimeControllerJs.includes('function csrfRequiredApiError'), 'Chat API helper should detect CSRF write failures.');
 assert.ok(chatUiRuntimeControllerJs.includes('await refreshAuthForUnsafeWrite'), 'Chat API helper should refresh auth before/retry browser writes that need CSRF.');
 assert.ok(chatUiRuntimeControllerJs.includes("headers.set('x-aiagent2-csrf', state.auth.csrfToken)"), 'Chat API helper should attach refreshed CSRF tokens to unsafe same-origin writes.');
@@ -2089,7 +2093,7 @@ assert.ok(chatJs.includes('state.trackedOrderIds:') || chatJs.includes('trackedO
 assert.ok(chatJs.includes('function clearActiveOrderMemory'), 'Chat should have a single helper for clearing active order-only runtime state.');
 assert.ok(chatJs.includes('state.trackedOrderIds.clear();'), 'Reset/new chat should clear tracked orders so old order history cannot attach to a blank chat.');
 assert.ok(chatJs.includes('state.pendingRecoveryPayloads = [];'), 'Reset/new chat should clear create-recovery candidates before a new blank chat starts.');
-const resetChatSource = chatJs.slice(chatJs.indexOf('function resetChat()'), chatJs.indexOf('async function handleInboundAppContext'));
+const resetChatSource = chatJs.slice(chatJs.indexOf('function resetChat()'), chatJs.indexOf('const chatAppContextOAuthController'));
 assert.ok(resetChatSource.includes('startNewChatSession();'), 'Reset should still create a blank chat surface.');
 assert.ok(!resetChatSource.includes('startDeliveryBackfillLoop'), 'Reset should not immediately backfill old order history into the blank chat.');
 assert.ok(chatJs.includes('renderRestoredSessionOrderContext'), 'Restored chat sessions should render related order status/results inside the chat.');
