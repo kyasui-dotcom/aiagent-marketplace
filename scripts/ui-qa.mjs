@@ -58,6 +58,7 @@ const clientOpenChatOrderProgressUtilsPath = new URL('../public/client-open-chat
 const clientOpenChatServerOrderUtilsPath = new URL('../public/client-open-chat-server-order-utils.js', import.meta.url);
 const clientOpenChatResponseUtilsPath = new URL('../public/client-open-chat-response-utils.js', import.meta.url);
 const clientOpenChatPatternGuardUtilsPath = new URL('../public/open-chat-pattern-guard-utils.js', import.meta.url);
+const clientOpenChatContextUtilsPath = new URL('../public/client-open-chat-context-utils.js', import.meta.url);
 const clientViewUtilsPath = new URL('../public/client-view-utils.js', import.meta.url);
 const analyticsLoaderPath = new URL('../public/analytics-loader.js', import.meta.url);
 const chatJsPath = new URL('../public/chat.js', import.meta.url);
@@ -231,6 +232,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(deliveryActionContractP
 execFileSync(process.execPath, ['--check', fileURLToPath(appContextDomainPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(workActionRegistryPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(workIntentResolverPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatContextUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(onboardingPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(seoPagesPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(seoNewsPostsPath)], { stdio: 'pipe' });
@@ -294,6 +296,7 @@ const clientOpenChatQuickAnswerJs = readFileSync(new URL('../public/client-open-
 const clientOpenChatOrderProgressUtilsJs = readFileSync(clientOpenChatOrderProgressUtilsPath, 'utf8');
 const clientOpenChatServerOrderUtilsJs = readFileSync(clientOpenChatServerOrderUtilsPath, 'utf8');
 const clientOpenChatPatternGuardUtilsJs = readFileSync(clientOpenChatPatternGuardUtilsPath, 'utf8');
+const clientOpenChatContextUtilsJs = readFileSync(clientOpenChatContextUtilsPath, 'utf8');
 const clientAnalyticsUtilsJs = readFileSync(clientAnalyticsUtilsPath, 'utf8');
 const clientViewUtilsJs = readFileSync(clientViewUtilsPath, 'utf8');
 const analyticsLoaderJs = readFileSync(analyticsLoaderPath, 'utf8');
@@ -574,6 +577,9 @@ assert.ok(!clientJs.includes('function scheduleLiveSnapshotRefresh'), 'Client ap
 assert.ok(clientJs.includes("from './client-open-chat-exchange-controller.js?v=20260601a'"), 'Client app should load the extracted Open Chat exchange controller cache key.');
 assert.ok(clientOpenChatExchangeControllerJs.includes('function appendOrderChatExchange') && clientOpenChatExchangeControllerJs.includes('trackChatTranscript'), 'Open Chat exchange controller should own message exchange state and transcript tracking.');
 assert.ok(!clientJs.includes('const sourceFiles = Array.isArray(answer?.sourceFiles)'), 'Client app should delegate Open Chat exchange source-file handling to the extracted controller.');
+assert.ok(clientJs.includes("from './client-open-chat-context-utils.js?v=20260601a'"), 'Client app should load the extracted Open Chat context utilities cache key.');
+assert.ok(clientOpenChatContextUtilsJs.includes('function lastOpenChatPreparedBrief') && clientOpenChatContextUtilsJs.includes('function openChatConversationContextForLlm'), 'Open Chat context utilities should own prepared-brief and LLM context derivation.');
+assert.ok(!clientJs.includes('function lastOpenChatPreparedBrief') && !clientJs.includes('function openChatConversationContextForLlm'), 'Client app should delegate Open Chat context derivation to the extracted context module.');
 assert.ok(clientJs.includes("from './client-job-create-controller.js?v=20260601a'"), 'Client app should load the extracted job-create controller cache key.');
 const clientJobCreateControllerJs = readFileSync(clientJobCreateControllerPath, 'utf8');
 assert.ok(clientJobCreateControllerJs.includes('async function createAndOptionallyRunJob') && clientJobCreateControllerJs.includes("api('/api/jobs'"), 'Job-create controller should own chat-to-order dispatch and create API calls.');
