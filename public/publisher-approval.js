@@ -1,4 +1,12 @@
 import { buildCaitAppContext, copyContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526j';
+import {
+  defaultPublisherHandoffTarget,
+  normalizePublisherHandoffTarget,
+  publisherHandoffTargetFromContext,
+  publisherHandoffTargetOptions,
+  publisherHandoffTargetsForPacket,
+  publisherPlanningHandoffTarget
+} from './publisher-handoff-target-contract.js?v=20260601a';
 
 let items = [];
 let selectedId = '';
@@ -1637,7 +1645,7 @@ function applyInboundContext(context = null) {
   }
   items = importedItems;
   selectedId = items[0]?.id || '';
-  const target = (Array.isArray(context.handoff_targets) ? context.handoff_targets : []).find(Boolean);
+  const target = publisherHandoffTargetFromContext(context);
   if (target && [...els.handoffTargetSelect.options].some((option) => option.value === target)) els.handoffTargetSelect.value = target;
 }
 
@@ -1676,7 +1684,7 @@ function persistSelectedFromFields() {
 
 function buildPacket() {
   const item = selectedItem();
-  const target = String(els.handoffTargetSelect.value || 'seo_specialist');
+  const target = selectedPublisherHandoffTarget();
   const repo = selectedRepo();
   const prUrl = String(repoStatus?.result?.pull_request?.htmlUrl || repoStatus?.result?.entity?.pull_request?.htmlUrl || '').trim();
   const wpDraftUrl = String(wordpressStatus?.result?.draft?.editUrl || wordpressStatus?.result?.draft?.link || '').trim();
@@ -1689,7 +1697,7 @@ function buildPacket() {
       facts: ['No content, page, directory, or approval packet is loaded.'],
       assumptions: ['No built-in demo content is used.', 'Publishing, PR creation, directory submission, or connector execution still requires explicit approval.'],
       recommended_next_actions: ['Load a CAIt app context that contains artifacts or approval requests.'],
-      handoff_targets: [target, 'build_team_leader', 'cmo_leader'],
+      handoff_targets: publisherHandoffTargetsForPacket(target),
       raw_context: {
         chat_handoff_id: chatHandoffId(),
         chat_return_to: chatReturnTo(),
@@ -1778,7 +1786,7 @@ function buildPacket() {
       prUrl ? 'Review the created GitHub PR before merging or publishing.' : 'Approve the selected packet, choose a GitHub repository or WordPress connector, then create the handoff needed for that destination.',
       'Use this packet as the approval source before sending to owned sites, partner publications, social channels, directories, email, or publishing tools.'
     ],
-    handoff_targets: [target, 'build_team_leader', 'cmo_leader'],
+    handoff_targets: publisherHandoffTargetsForPacket(target),
     raw_context: {
       ...(importedContext ? { received_context: importedContext } : {}),
       chat_handoff_id: chatHandoffId(),
@@ -1809,6 +1817,19 @@ function buildPacket() {
 
 function optionHtml(value = '', label = '') {
   return `<option value="${escapeHtml(value)}">${escapeHtml(label || value)}</option>`;
+}
+
+function renderPublisherHandoffTargetOptions() {
+  if (!els.handoffTargetSelect) return;
+  const current = normalizePublisherHandoffTarget(els.handoffTargetSelect.value) || defaultPublisherHandoffTarget();
+  els.handoffTargetSelect.innerHTML = publisherHandoffTargetOptions()
+    .map((target) => optionHtml(target.value, target.label))
+    .join('');
+  els.handoffTargetSelect.value = normalizePublisherHandoffTarget(current) || defaultPublisherHandoffTarget();
+}
+
+function selectedPublisherHandoffTarget(fallback = defaultPublisherHandoffTarget()) {
+  return normalizePublisherHandoffTarget(els.handoffTargetSelect?.value) || fallback;
 }
 
 function channelOptionHtml(profile = null) {
@@ -1916,9 +1937,10 @@ function publisherQueueSummary() {
 
 function buildPublisherPlanningContext(mode = 'axes') {
   const brief = currentLaunchBrief();
-  const target = mode === 'draft_assets'
-    ? String(els.handoffTargetSelect.value || 'cmo_leader')
-    : 'cmo_leader';
+  const target = publisherPlanningHandoffTarget({
+    useSelected: mode === 'draft_assets',
+    selected: els.handoffTargetSelect?.value
+  });
   const wantsDrafts = mode === 'draft_assets';
   const requestedOutputs = brief.deliveryFormat === 'lp_and_posts'
     ? ['landing_page_change', 'site_publish_packet', 'x_post_packet', 'social_copy_packet', 'approval_request']
@@ -1984,7 +2006,7 @@ function buildPublisherPlanningContext(mode = 'axes') {
           'Recommend which axis to choose first and explain why.',
           'Return the axes as structured Publisher planning artifacts so the chosen axis can be used for the next draft request.'
         ],
-    handoff_targets: [target, 'seo_specialist', 'build_team_leader'],
+    handoff_targets: publisherHandoffTargetsForPacket(target, { mode: 'planning' }),
     raw_context: {
       chat_handoff_id: chatHandoffId(),
       chat_return_to: chatReturnTo(),
@@ -2730,6 +2752,7 @@ els.copyPacketBtn.addEventListener('click', async () => {
 
 async function bootstrap() {
   restorePublisherPlanningState();
+  renderPublisherHandoffTargetOptions();
   await refreshAuthSnapshot();
   renderPublisherLoginState();
   applyInboundContext(await fetchCaitAppContextFromUrl());

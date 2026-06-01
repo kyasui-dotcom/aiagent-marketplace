@@ -105,6 +105,7 @@ const agentProgressViewJsPath = new URL('../public/agent-progress-view.js', impo
 const appManifestRegistryPath = new URL('../public/app-manifest-registry.js', import.meta.url);
 const analyticsJsPath = new URL('../public/analytics-console.js', import.meta.url);
 const publisherJsPath = new URL('../public/publisher-approval.js', import.meta.url);
+const publisherHandoffTargetContractPath = new URL('../public/publisher-handoff-target-contract.js', import.meta.url);
 const leadOpsJsPath = new URL('../public/lead-ops.js', import.meta.url);
 const campaignOperationsJsPath = new URL('../public/campaign-operations.js', import.meta.url);
 const adsOpsJsPath = new URL('../public/ads-ops.js', import.meta.url);
@@ -231,6 +232,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientViewUtilsPath)], 
 execFileSync(process.execPath, ['--check', fileURLToPath(analyticsLoaderPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(analyticsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(publisherJsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(publisherHandoffTargetContractPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(leadOpsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(campaignOperationsJsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(adsOpsJsPath)], { stdio: 'pipe' });
@@ -360,6 +362,7 @@ const appsDomainJs = readFileSync(appsDomainPath, 'utf8');
 const appContextDomainJs = readFileSync(appContextDomainPath, 'utf8');
 const analyticsJs = readFileSync(analyticsJsPath, 'utf8');
 const publisherJs = readFileSync(publisherJsPath, 'utf8');
+const publisherHandoffTargetContractJs = readFileSync(publisherHandoffTargetContractPath, 'utf8');
 const leadOpsJs = readFileSync(leadOpsJsPath, 'utf8');
 const campaignOperationsJs = readFileSync(campaignOperationsJsPath, 'utf8');
 const adsOpsJs = readFileSync(adsOpsJsPath, 'utf8');
@@ -1055,7 +1058,7 @@ assert.ok(analyticsHtml.includes('id="analyticsQueriesCount"'), 'Analytics Conso
 assert.ok(publisherHtml.includes('Publisher & Approval'), 'Publisher and Approval Studio should be a first-class app page.');
 assert.ok(publisherHtml.includes('href="/apps.html"'), 'Publisher Studio should link back to the apps hub.');
 assert.ok(publisherHtml.includes('id="approvalTable"'), 'Publisher Studio should include an approval queue.');
-assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260526b'), 'Publisher Studio should load the app-context receiving controller.');
+assert.ok(publisherHtml.includes('/publisher-approval.js?v=20260601a'), 'Publisher Studio should load the app-context receiving controller.');
 assert.ok(publisherHtml.includes('id="publisherStepApproval"'), 'Publisher Studio should show approval progress before handoff.');
 assert.ok(publisherHtml.includes('id="channelSelect"'), 'Publisher Studio should expose media/channel separation.');
 assert.ok(publisherHtml.includes('id="connectorInput"'), 'Publisher Studio should expose the publish connector per channel.');
@@ -1072,6 +1075,12 @@ assert.ok(publisherHtml.includes('id="reshapeSelectedBtn"'), 'Publisher Studio s
 assert.ok(publisherJs.includes('publisher_manual_media_override'), 'Publisher reshape save should preserve the human-selected medium override.');
 assert.ok(publisherJs.includes('/api/publisher/context-ingest'), 'Publisher reshape save should reuse the Publisher ingest route for DB persistence.');
 assert.ok(publisherJs.includes('/api/publisher/items?limit=100'), 'Publisher Studio should reload dedicated Publisher DB items.');
+assert.ok(publisherJs.includes("publisher-handoff-target-contract.js?v=20260601a"), 'Publisher Studio should import handoff target options from the contract module.');
+assert.ok(publisherJs.includes('publisherHandoffTargetsForPacket(target'), 'Publisher Studio should delegate packet handoff target ordering to the contract module.');
+assert.ok(!publisherHtml.includes('<option value="seo_specialist"'), 'Publisher Studio HTML must not hardcode concrete agent handoff targets.');
+assert.ok(!publisherJs.includes("'build_team_leader', 'cmo_leader'") && !publisherJs.includes("'seo_specialist', 'build_team_leader'"), 'Publisher Studio controller must not hardcode concrete agent handoff target fallback arrays.');
+assert.ok(publisherHandoffTargetContractJs.includes('publisherHandoffTargetOptions'), 'Publisher handoff target option ownership should live in the target contract module.');
+assert.ok(publisherHandoffTargetContractJs.includes('publisherPlanningHandoffTarget'), 'Publisher planning target policy should live in the target contract module.');
 assert.ok(publisherHtml.includes('id="connectGithubBtn"'), 'Publisher Studio should expose GitHub connection.');
 assert.ok(publisherHtml.includes('id="repoSelect"'), 'Publisher Studio should expose repository selection.');
 assert.ok(publisherHtml.includes('id="createPrBtn"'), 'Publisher Studio should expose PR handoff creation.');
