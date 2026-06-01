@@ -2059,6 +2059,7 @@ const clientDeliveryActionController = createClientDeliveryActionController({
   selectedJob: (...args) => selectedJob(...args),
   selectedRepoFromPicker: (...args) => selectedRepoFromPicker(...args),
   setDetail: (...args) => setDetail(...args),
+  startOpenChatOrderProgressPolling: (...args) => startOpenChatOrderProgressPolling(...args),
   summarizeOrderDraftForAnalytics: (...args) => summarizeOrderDraftForAnalytics(...args),
   switchTab: (...args) => switchTab(...args),
   trackChatTranscript: (...args) => trackChatTranscript(...args),
