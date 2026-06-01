@@ -83,6 +83,8 @@ const chatDeliveryPreferenceControllerPath = new URL('../public/chat-delivery-pr
 const chatSessionModelPath = new URL('../public/chat-session-model.js', import.meta.url);
 const chatSessionSidebarControllerPath = new URL('../public/chat-session-sidebar-controller.js', import.meta.url);
 const chatRestoredOrderContextControllerPath = new URL('../public/chat-restored-order-context-controller.js', import.meta.url);
+const chatDeliveryRenderControllerPath = new URL('../public/chat-delivery-render-controller.js', import.meta.url);
+const chatEventBindingsControllerPath = new URL('../public/chat-event-bindings-controller.js', import.meta.url);
 const accountSettingsJsPath = new URL('../public/account-settings.js', import.meta.url);
 const connectorGateJsPath = new URL('../public/connector-gate.js', import.meta.url);
 const chatSessionStateJsPath = new URL('../public/chat-session-state.js', import.meta.url);
@@ -239,6 +241,8 @@ execFileSync(process.execPath, ['--check', fileURLToPath(publisherContextPath)],
 execFileSync(process.execPath, ['--check', fileURLToPath(appRoutesPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(providerMoneyReadinessPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(accountSettingsJsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatDeliveryRenderControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(chatEventBindingsControllerPath)], { stdio: 'pipe' });
 
 const html = readFileSync(htmlPath, 'utf8');
 const chatHtml = readFileSync(chatHtmlPath, 'utf8');
@@ -315,6 +319,12 @@ const chatDeliveryPreferenceControllerJs = readFileSync(chatDeliveryPreferenceCo
 const chatSessionModelJs = readFileSync(chatSessionModelPath, 'utf8');
 const chatSessionSidebarControllerJs = readFileSync(chatSessionSidebarControllerPath, 'utf8');
 const chatRestoredOrderContextControllerJs = readFileSync(chatRestoredOrderContextControllerPath, 'utf8');
+const chatDeliveryRenderControllerJs = readFileSync(chatDeliveryRenderControllerPath, 'utf8');
+const chatEventBindingsControllerJs = readFileSync(chatEventBindingsControllerPath, 'utf8');
+const chatSubmitHandlerSource = chatEventBindingsControllerJs.slice(
+  chatEventBindingsControllerJs.indexOf('async function handleComposerSubmit'),
+  chatEventBindingsControllerJs.indexOf('function handleWindowMessage')
+);
 const accountSettingsJs = readFileSync(accountSettingsJsPath, 'utf8');
 const connectorGateJs = readFileSync(connectorGateJsPath, 'utf8');
 const chatSessionStateJs = readFileSync(chatSessionStateJsPath, 'utf8');
@@ -593,7 +603,7 @@ assert.ok(chatIntakeControllerJs.includes('intakeGroupOrder'), 'Step-by-step int
 assert.ok(chatIntakeControllerJs.indexOf("['goal', 3]") < chatIntakeControllerJs.indexOf("['audience', 4]"), 'Growth intake should ask goal/conversion before target audience.');
 assert.ok(chatIntakeControllerJs.indexOf("['constraints', 5]") < chatIntakeControllerJs.indexOf("['deliverable', 7]"), 'Growth intake should ask constraints/channels before output format.');
 assert.ok(chatJs.includes('conversationLanguage'), 'Chat should remember the language of the first user input for the conversation.');
-assert.ok(chatJs.includes('rememberConversationLanguage(prompt)'), 'Chat should set the conversation language from the first submitted prompt.');
+assert.ok([chatJs, chatEventBindingsControllerJs].join('\n').includes('rememberConversationLanguage(prompt)'), 'Chat should set the conversation language from the first submitted prompt.');
 assert.ok(chatJs.includes('PROMPT_PLACEHOLDERS'), 'Chat composer placeholders should be able to follow the selected UI language.');
 assert.ok(chatJs.includes('CHATUX_UI_LANGUAGE_STORAGE_KEY'), 'Chat should persist the explicit UI language setting.');
 assert.ok(chatJs.includes("from './chat-ui-runtime-controller.js?v=20260531a'"), 'Chat should load the extracted UI runtime controller cache key.');
@@ -850,7 +860,7 @@ assert.ok(chatSchedulePanelControllerJs.includes('Completed order to rerun'), 'C
 assert.ok(chatSchedulePanelControllerJs.includes('buildScheduledJobPayloadFromCompletedOrder'), 'Chat should build schedules from a completed order payload.');
 assert.ok(chatSchedulePanelControllerJs.includes('reused_completed_order'), 'Scheduled reruns should preserve that intake already happened on the source order.');
 assert.ok(chatJs.includes('createScheduleFromForm'), 'Chat should schedule a selected completed order from the clock panel.');
-assert.ok(chatJs.includes('requestSubmit()'), 'Chat should submit with Ctrl+Enter/Cmd+Enter from the composer.');
+assert.ok([chatJs, chatEventBindingsControllerJs].join('\n').includes('requestSubmit()'), 'Chat should submit with Ctrl+Enter/Cmd+Enter from the composer.');
 assert.ok(chatSchedulePanelControllerJs.includes('chat_required: false'), 'Scheduled chat work should be marked as background work that does not require the chat to stay open.');
 assert.ok(chatJs.includes('renderChatSessionSidebar') && chatSessionSidebarControllerJs.includes('renderChatSessionSidebar'), 'Chat should render a ChatGPT-style session sidebar through the session sidebar controller.');
 assert.ok(chatJs.includes('refreshChatSessionHistory'), 'Chat should restore signed-in chat history from the server.');
@@ -1309,7 +1319,7 @@ assert.ok(chatHtml.includes('id="openInfoBtn"'));
 assert.ok(chatHtml.includes('id="activeLeaderStatus"'), 'Chat should show the current CAIt/leader conversation owner.');
 assert.ok(chatHtml.includes('id="utilityModal"'));
 assert.ok(chatHtml.includes('/chat.css?v=20260526f'), 'Chat page should load the current compact chat header and composer styles.');
-assert.ok(chatHtml.includes('/chat.js?v=20260601b'), 'Chat page should load the current compact chat header and composer controller.');
+assert.ok(chatHtml.includes('/chat.js?v=20260601c'), 'Chat page should load the current compact chat header and composer controller.');
 assert.ok(chatHtml.includes('id="chatHeaderMenu"') && chatHtml.includes('☰ Menu'), 'Chat header should collapse secondary actions into a menu.');
 assert.ok(chatHtml.includes('Chat history') && chatHtml.includes('Schedules') && chatHtml.includes('Agents and workers'), 'Chat menu should use specific workspace action labels.');
 assert.ok(chatHtml.includes('App tools') && chatHtml.includes('Apps hub'), 'Chat menu should distinguish app tools from the Apps hub page.');
@@ -1321,7 +1331,7 @@ assert.ok(chatHtml.includes('id="composerControlsHint"') && chatHtml.includes('O
 assert.ok(chatHtml.includes('Preferred output format') && !chatHtml.includes('Delivery shape'), 'Chat output selector should not look like a delivery destination control.');
 assert.ok(chatHtml.includes('data-label-en="Summary"') && chatHtml.includes('data-label-ja="要約"'), 'Chat output selector should keep compact language-aware option labels.');
 assert.ok(chatUiRuntimeControllerJs.includes('function chatUiText') && chatUiRuntimeControllerJs.includes('function chatUiLanguage'), 'Fixed chat controls should use UI language, not the inferred conversation language.');
-assert.ok(chatJs.includes('data-chat-ui-language'), 'Info panel should expose the UI language selector.');
+assert.ok([chatJs, chatUtilityModalControllerJs, chatEventBindingsControllerJs].join('\n').includes('data-chat-ui-language'), 'Info panel should expose the UI language selector.');
 assert.ok(chatUiRuntimeControllerJs.includes('return chatUiLanguage();'), 'Chat response language should follow the explicit UI language setting by default.');
 assert.ok(chatJs.includes("chatUiText('Send answer', '回答を送信'"), 'Chat intake mode should rename the submit button from generic chat sending to answer sending.');
 assert.ok(chatJs.includes("chatUiText('Send chat', 'チャット送信'"), 'Chat submit label should follow the UI language setting.');
@@ -1523,7 +1533,7 @@ assert.ok(chatJs.includes('await consumeCaitAppContextForChat()'), 'Chat should 
 assert.ok(chatJs.includes('refreshAppContexts'), 'Chat Apps panel should load reusable app contexts from the server.');
 assert.ok(chatCatalogRuntimeJs.includes('/api/app-contexts'), 'Chat should read app context history through the server API.');
 assert.ok(chatJs.includes('BroadcastChannel'), 'Chat should receive app context handoffs from a separate same-origin app window.');
-assert.ok(chatJs.includes('data-app-context-load'), 'Chat should let users load a server-side app context back into the composer.');
+assert.ok([chatJs, chatUtilityModalControllerJs, chatEventBindingsControllerJs].join('\n').includes('data-app-context-load'), 'Chat should let users load a server-side app context back into the composer.');
 assert.ok(chatJs.includes('refreshRecentJobs'), 'Chat history should be derived from the server job API.');
 assert.ok(chatRuntimeStateControllerJs.includes('compactChatRuntimeSnapshot'), 'Chat should compact runtime restore snapshots instead of using localStorage as order state.');
 assert.ok(appManifestRegistryJs.includes('analytics-console'), 'Chat app catalog should include Analytics Console.');
@@ -1542,7 +1552,7 @@ assert.ok(chatJs.includes("url.searchParams.set('cait_order_id', orderId)"), 'Ch
 assert.ok(chatJs.includes("url.searchParams.set('cait_oauth_popup', '1')"), 'Chat Google connector return paths should mark popup OAuth returns.');
 assert.ok(connectorGateJs.includes('data-chat-oauth-popup="google"'), 'Chat Google connector approval links should open OAuth outside the active chat tab.');
 assert.ok(chatJs.includes('function openChatOAuthPopup'), 'Chat should keep the active thread open while Google OAuth runs in a separate window.');
-assert.ok(chatJs.includes('function ensureAuthRefreshProgress') && chatJs.includes('window.setTimeout(ensureAuthRefreshProgress, 8000)'), 'Chat should retry auth refresh if startup remains stuck at Checking session.');
+assert.ok(chatJs.includes('function ensureAuthRefreshProgress') && [chatJs, chatEventBindingsControllerJs].join('\n').includes('window.setTimeout(ensureAuthRefreshProgress, 8000)'), 'Chat should retry auth refresh if startup remains stuck at Checking session.');
 assert.ok(connectorGateJs.includes("type: 'cait-oauth-return'"), 'OAuth popup returns should notify the original chat window.');
 assert.ok(chatJs.includes('handleOAuthPopupReturnMessage'), 'Original chat should refresh connector/order state after popup OAuth completes.');
 assert.ok(chatJs.includes('restoreChatOAuthReturnStateFromUrl'), 'Chat should restore the active thread immediately after Google OAuth returns.');
@@ -1578,13 +1588,13 @@ assert.ok(
   'Agent map run details should render status, logs, text, and files from the child job.'
 );
 assert.ok(chatCss.includes('.agent-run-detail-panel'), 'Chat CSS should style the Agent map run detail panel.');
-assert.ok(chatJs.includes('notifyOrderMilestone(job)'), 'Polling/backfill should notify chat only through Order milestones.');
+assert.ok([chatJs, chatEventBindingsControllerJs, chatDeliveryRenderControllerJs, chatOrderDispatchControllerJs].join('\n').includes('notifyOrderMilestone(job)'), 'Polling/backfill should notify chat only through Order milestones.');
 assert.ok(!chatJs.includes('function authorityRequestFromText') && !connectorGateJs.includes('delivery_text_approval'), 'Chat connector approval controls should come from structured agent authority requests, not text inference.');
 assert.ok(connectorGateJs.includes('executorState.authorityRequired'), 'Chat should render approval controls from executorState authority requests.');
-assert.ok(chatJs.includes('data-chat-order-approve'), 'Chat approval cards should use a dedicated approval action instead of a status-only refresh.');
+assert.ok([chatJs, chatEventBindingsControllerJs, connectorGateJs].join('\n').includes('data-chat-order-approve'), 'Chat approval cards should use a dedicated approval action instead of a status-only refresh.');
 assert.ok(chatJs.includes('/approve'), 'Chat approval action should call the server approval resume endpoint.');
-assert.ok(chatJs.includes("fetchVisibleJob(orderId, { force: true })"), 'Explicit Check status clicks should bypass cached jobs and fetch fresh order state.');
-assert.ok(chatJs.includes('appendOrderStatusCheck(job)'), 'Explicit Check status clicks should visibly report the refreshed order state.');
+assert.ok([chatJs, chatEventBindingsControllerJs].join('\n').includes("fetchVisibleJob(orderId, { force: true })"), 'Explicit Check status clicks should bypass cached jobs and fetch fresh order state.');
+assert.ok([chatJs, chatEventBindingsControllerJs].join('\n').includes('appendOrderStatusCheck(job)'), 'Explicit Check status clicks should visibly report the refreshed order state.');
 assert.ok(chatCss.includes('.message-meta') && chatCss.includes('text-transform: none'), 'Chat message labels should preserve CAIt casing instead of rendering CAIT.');
 assert.ok(chatJs.includes('function threadIsNearBottom'), 'Chat should only auto-scroll progress updates when the reader is already near the latest message.');
 assert.ok(
@@ -1624,7 +1634,7 @@ assert.ok(chatJs.includes('function retryDraftFromJob'), 'Chat should prepare re
 assert.ok(chatJs.includes("fetchVisibleJob(safeId, { force: true, progress: false, inspectOnly: true })"), 'Prepare retry should inspect the saved order without triggering progress side effects.');
 assert.ok(chatJs.includes('function handleRetryCommand'), 'Chat should treat typed retry commands as explicit retry preparation instead of a new order.');
 assert.ok(chatJs.includes('retryCommandText(compact)'), 'Chat should prevent typed retry commands from becoming running-order followups.');
-assert.ok(chatJs.indexOf('await handleRetryCommand(prompt)') < chatJs.indexOf('activeOrderFollowupAllowedText(prompt)'), 'Typed retry should be handled before active-order followup routing.');
+assert.ok(chatSubmitHandlerSource.indexOf('await handleRetryCommand(prompt)') < chatSubmitHandlerSource.indexOf('activeOrderFollowupAllowedText(prompt)'), 'Typed retry should be handled before active-order followup routing.');
 assert.ok(chatJs.includes('Retry as new order'), 'Retry actions should clearly say they create a new order, not continue the selected order.');
 assert.ok(chatJs.includes('CHATUX_RETRY_MODE_NEW_ORDER'), 'Retry drafts should carry an explicit new-order retry mode.');
 assert.ok(chatJs.includes('draftIsSameContentNewOrderRetry'), 'Send order should distinguish same-content new-order retries from follow-up requests.');
@@ -1696,7 +1706,7 @@ assert.ok(chatJs.includes('function signOut'), 'Chat should expose sign out.');
 assert.ok(chatJs.includes("await api('/auth/logout'"), 'Chat sign out should call the logout API.');
 assert.ok(chatJs.includes("purgeChatStateForAccountBoundary('sign_out')"), 'Chat sign out should clear account-scoped local chat state before redirecting.');
 assert.ok(chatRuntimeStateControllerJs.includes('safeSessionStorageRemove(oauthReturnStateKey)'), 'Chat sign out/account boundary should remove OAuth return state.');
-assert.ok(chatJs.includes('data-chat-logout'), 'Chat should render logout controls.');
+assert.ok([chatJs, chatUtilityModalControllerJs, chatEventBindingsControllerJs].join('\n').includes('data-chat-logout'), 'Chat should render logout controls.');
 assert.ok(chatJs.includes("new URL('/login', window.location.origin)"), 'Chat should client-gate unauthenticated static asset access.');
 assert.ok(chatJs.includes("loginUrl.searchParams.set('next', nextPath || CHATUX_RETURN_PATH)"), 'Chat login gate should preserve the current chat path and context query.');
 assert.ok(chatJs.includes('const CHATUX_CONNECT_WAIT_MS = 60 * 60 * 1000') || chatBootstrapStateJs.includes('CHATUX_CONNECT_WAIT_MS = 60 * 60 * 1000'), 'Chat auth and connector checks should wait up to 60 minutes before aborting user-action flows.');
@@ -1708,12 +1718,12 @@ assert.ok(chatUiRuntimeControllerJs.includes("headers.set('x-aiagent2-csrf', sta
 assert.ok(chatJs.includes("await apiWithRetry('/api/work/prepare-order'"), 'Chat should retry transient prepare-order failures before surfacing an error.');
 assert.ok(chatJs.includes('maxAttempts: 5'), 'Chat prepare-order retry should wait through short production 5xx/429 bursts.');
 assert.ok(chatIntakeControllerJs.includes('intake.taskType || intake.task_type'), 'Intake answers should preserve the originally selected leader task.');
-assert.ok(chatJs.includes('taskType: task'), 'Worker list choices should pass the chosen task type into prepare-order.');
+assert.ok([chatJs, chatEventBindingsControllerJs].join('\n').includes('taskType: task'), 'Worker list choices should pass the chosen task type into prepare-order.');
 assert.ok(chatUtilityModalControllerJs.includes('data-utility-agent-id'), 'Worker Use buttons should carry the selected agent id, not only the task type.');
-assert.ok(chatJs.includes('selectedAgentId: agentId'), 'Worker Use should pin the selected agent in the order draft.');
+assert.ok([chatJs, chatEventBindingsControllerJs].join('\n').includes('selectedAgentId: agentId'), 'Worker Use should pin the selected agent in the order draft.');
 assert.ok(chatUiRuntimeControllerJs.includes('function chatText'), 'Chat user-facing status text should go through a language helper.');
 assert.ok(chatUiRuntimeControllerJs.includes('function chatUiText'), 'Chat fixed controls should have a separate UI-language helper.');
-assert.ok(chatJs.includes('I will prepare an order in chat using'), 'Worker Use status should have an English UI copy path.');
+assert.ok([chatJs, chatEventBindingsControllerJs].join('\n').includes('I will prepare an order in chat using'), 'Worker Use status should have an English UI copy path.');
 assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes('prepared_in_chat: true'), 'Approved chat orders should mark the intake/preparation gate as already completed.');
 assert.ok([chatJs, chatOrderDispatchControllerJs].join('\n').includes("await api('/api/jobs'"));
 assert.ok(chatJs.includes("from './chat-order-create-recovery.js?v=20260531a'"), 'Chat should load the extracted order-create recovery controller cache key.');
@@ -2057,8 +2067,8 @@ assert.ok(chatJs.includes('isNonOrderConversationIntentText'), 'Chat should keep
 assert.ok(workIntentResolver.includes('isDeliveryHistoryQuestionIntentText'), 'Shared intent resolver should keep delivery/history display requests out of order dispatch.');
 assert.ok(workIntentResolver.includes('completedの納品物') || workOrderRoutes.includes('completedの納品物を見せてください'), 'OpenAI intent prompt should treat completed delivery display as chat, not intake.');
 assert.ok(workActionRegistry.includes('completed delivery') && workActionRegistry.includes('納品物'), 'Static work commands should recognize completed delivery display requests.');
-assert.ok(chatJs.includes('showDeliveryHistoryForPrompt') && chatJs.includes('await showDeliveryHistoryForPrompt(prompt)'), 'Chat should display existing completed deliveries before OpenAI intake/order routing.');
-const submitHandlerSource = chatJs.slice(chatJs.indexOf("els.composer.addEventListener('submit'"), chatJs.indexOf("els.chatThread.addEventListener"));
+assert.ok(chatJs.includes('showDeliveryHistoryForPrompt') && chatSubmitHandlerSource.includes('await showDeliveryHistoryForPrompt(prompt)'), 'Chat should display existing completed deliveries before OpenAI intake/order routing.');
+const submitHandlerSource = chatSubmitHandlerSource;
 assert.ok(submitHandlerSource.indexOf('await showDeliveryHistoryForPrompt(prompt)') < submitHandlerSource.indexOf('handleNonOrderConversation(prompt)'), 'Completed delivery display requests must be handled before generic non-order chat.');
 assert.ok(submitHandlerSource.indexOf('handleNonOrderConversation(prompt)') < submitHandlerSource.indexOf('state.pendingIntake)'), 'Explicit pause/cancel chat controls must still work while intake is open.');
 assert.ok(chatJs.includes('const matchesTracked = state.trackedOrderIds.has(safeId)'), 'Chat backfill should only auto-deliver explicitly tracked orders or active recovery candidates.');
