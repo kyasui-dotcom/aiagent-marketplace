@@ -6,13 +6,18 @@ export function createClientAgentSkillManifestController(deps = {}) {
     state,
     api,
     appendOrderChatExchange = () => {},
+    agentVerifyFailureSummary = () => ({ cause: 'unknown', next: 'Check the manifest and endpoint, then retry verification.' }),
+    completeAgentSetup = () => {},
     flash = () => {},
+    loadAgentOnboarding = async () => {},
     looksJapanese = () => false,
     openChatPreviewSteps = () => [],
+    refresh = async () => {},
     renderAgentSetupFlow = () => {},
     renderAgents = () => {},
     setDetail = () => {},
     switchTab = () => {},
+    trackConversionEvent = () => {},
     window: browserWindow = globalThis.window
   } = deps;
 
@@ -37,6 +42,78 @@ export function createClientAgentSkillManifestController(deps = {}) {
     if (els?.manifestJson) els.manifestJson.value = JSON.stringify(res.draft_manifest, null, 2);
     setDetail(res);
     return res;
+  }
+
+  function loadManifestExample() {
+    if (!els?.manifestJson) return;
+    els.manifestJson.value = JSON.stringify({
+      schema_version: 'agent-manifest/v1',
+      name: 'codex_worker',
+      description: 'Handles code changes and debugging tickets.',
+      task_types: ['code', 'debug'],
+      pricing: { provider_markup_rate: 0.1, token_markup_rate: 0.1, platform_margin_rate: 0.1 },
+      requirements: [
+        {
+          type: 'github_repo',
+          label: 'GitHub repository access',
+          fulfillment: 'native_ui',
+          launch_label: 'Open GitHub app or repository settings',
+          completion_signal: 'manual_confirm',
+          purpose: 'Code changes should run in a sandbox branch and be delivered as a pull request.'
+        }
+      ],
+      usage_contract: {
+        report_input_tokens: true,
+        report_output_tokens: true,
+        report_model: true,
+        report_external_api_cost: true
+      },
+      success_rate: 0.92,
+      avg_latency_sec: 45,
+      owner: 'Kuni',
+      healthcheck_url: 'https://example.com/api/health',
+      verification: {
+        challenge_path: '/.well-known/agent-challenge.txt',
+        challenge_token: 'replace-me'
+      }
+    }, null, 2);
+  }
+
+  async function importManifestUrlAndVerify(manifestUrl, label = 'Manifest') {
+    const imported = await api('/api/agents/import-url', {
+      method: 'POST',
+      body: JSON.stringify({ manifest_url: manifestUrl })
+    });
+    const importedAgentId = imported.agent?.id || '';
+    if (!importedAgentId) throw new Error(`${label} import did not return an agent id.`);
+    const verification = await api(`/api/agents/${importedAgentId}/verify`, { method: 'POST' });
+    const selectedId = verification.agent?.id || importedAgentId;
+    state.selectedAgentId = selectedId;
+    delete state.agentOnboarding[selectedId];
+    setDetail({ input: manifestUrl, import: imported, verification });
+    await refresh();
+    if (selectedId) await loadAgentOnboarding(selectedId, { force: true, silent: true });
+    completeAgentSetup(selectedId);
+    renderAgentSetupFlow(state.snapshot?.auth);
+    const verifiedAgent = verification.agent || imported.agent || null;
+    const verifyFailure = agentVerifyFailureSummary(verifiedAgent);
+    void trackConversionEvent('agent_imported', {
+      source: 'manifest_url',
+      status: imported.agent?.id ? 'imported' : 'unknown',
+      agentId: selectedId
+    });
+    void trackConversionEvent('agent_verified', {
+      source: 'manifest_url',
+      status: verification.verification?.ok ? 'verified' : 'failed',
+      agentId: selectedId
+    });
+    flash(
+      verification.verification?.ok
+        ? `${label} imported and verified for ${verifiedAgent?.name || selectedId}.`
+        : `${label} imported, but verify failed: ${verifyFailure.cause} Next: ${verifyFailure.next}`,
+      verification.verification?.ok ? 'ok' : 'error'
+    );
+    return { imported, verification };
   }
 
   function openManualAgentSkillFlow() {
@@ -104,6 +181,8 @@ export function createClientAgentSkillManifestController(deps = {}) {
   return {
     draftAgentSkillManifestFromText,
     handleAgentSkillMarkdownFromChat,
+    importManifestUrlAndVerify,
+    loadManifestExample,
     looksLikeAgentSkillMarkdown,
     openManualAgentSkillFlow
   };

@@ -60,6 +60,7 @@ const clientOpenChatServerOrderUtilsPath = new URL('../public/client-open-chat-s
 const clientOpenChatResponseUtilsPath = new URL('../public/client-open-chat-response-utils.js', import.meta.url);
 const clientOpenChatPatternGuardUtilsPath = new URL('../public/open-chat-pattern-guard-utils.js', import.meta.url);
 const clientOpenChatContextUtilsPath = new URL('../public/client-open-chat-context-utils.js', import.meta.url);
+const clientOpenChatAnswerBuildersPath = new URL('../public/client-open-chat-answer-builders.js', import.meta.url);
 const clientViewUtilsPath = new URL('../public/client-view-utils.js', import.meta.url);
 const analyticsLoaderPath = new URL('../public/analytics-loader.js', import.meta.url);
 const chatJsPath = new URL('../public/chat.js', import.meta.url);
@@ -300,6 +301,7 @@ const clientOpenChatOrderProgressUtilsJs = readFileSync(clientOpenChatOrderProgr
 const clientOpenChatServerOrderUtilsJs = readFileSync(clientOpenChatServerOrderUtilsPath, 'utf8');
 const clientOpenChatPatternGuardUtilsJs = readFileSync(clientOpenChatPatternGuardUtilsPath, 'utf8');
 const clientOpenChatContextUtilsJs = readFileSync(clientOpenChatContextUtilsPath, 'utf8');
+const clientOpenChatAnswerBuildersJs = readFileSync(clientOpenChatAnswerBuildersPath, 'utf8');
 const clientAnalyticsUtilsJs = readFileSync(clientAnalyticsUtilsPath, 'utf8');
 const clientViewUtilsJs = readFileSync(clientViewUtilsPath, 'utf8');
 const analyticsLoaderJs = readFileSync(analyticsLoaderPath, 'utf8');
@@ -600,6 +602,10 @@ assert.ok(clientJs.includes("from './client-work-chat-thread-controller.js?v=202
 assert.ok(clientWorkChatThreadControllerJs.includes('function renderWorkChatThread') && clientWorkChatThreadControllerJs.includes('function shouldStickWorkChatScrollToBottom'), 'Work-chat thread controller should own thread rendering and scroll preservation.');
 assert.ok(!clientJs.includes('function renderWorkChatThread') && !clientJs.includes('function shouldStickWorkChatScrollToBottom'), 'Client app should delegate work-chat thread rendering to the extracted controller.');
 assert.ok(clientJs.includes("from './client-agent-skill-manifest-controller.js?v=20260601b'"), 'Client app should load the extracted agent skill manifest controller cache key.');
+assert.ok(clientAgentSkillManifestControllerJs.includes('function loadManifestExample()'), 'Agent manifest example loading should stay in the agent skill manifest controller.');
+assert.ok(clientAgentSkillManifestControllerJs.includes('async function importManifestUrlAndVerify'), 'Agent manifest import/verify should stay in the agent skill manifest controller.');
+assert.ok(!clientJs.includes('function loadManifestExample()'), 'Agent manifest example loading should stay outside client.js.');
+assert.ok(!clientJs.includes('async function importManifestUrlAndVerify'), 'Agent manifest import/verify should stay outside client.js.');
 assert.ok(clientAgentSkillManifestControllerJs.includes('async function draftAgentSkillManifestFromText') && clientAgentSkillManifestControllerJs.includes('function openManualAgentSkillFlow'), 'Agent skill manifest controller should own markdown detection, draft API, and manual setup flow.');
 assert.ok(!clientJs.includes('async function draftAgentSkillManifestFromText') && !clientJs.includes('function openManualAgentSkillFlow'), 'Client app should delegate Agent Skill manifest drafting to the extracted controller.');
 assert.ok(clientOpenChatServerOrderUtilsJs.includes("'/api/work/prepare-order'") && clientOpenChatServerOrderUtilsJs.includes("'/api/work/resolve-intent'"), 'Server order utilities should own Open Chat work-order contract endpoints.');
@@ -2272,6 +2278,9 @@ assert.ok(clientJs.includes("from './client-auth-actions-controller.js?v=2026060
 assert.ok(clientAuthActionsControllerJs.includes('function renderAuth(auth)'), 'Auth rendering should stay outside client.js.');
 assert.ok(clientAuthActionsControllerJs.includes('function ensureGithubLinkedAccess(options = {})'), 'GitHub access gating should stay outside client.js.');
 assert.ok(!clientJs.includes('function trackAuthCompletion('), 'Auth completion analytics should stay outside client.js.');
+assert.ok(clientOpenChatAnswerBuildersJs.includes('buildOpenChatNoLoginAnswer: (prompt = \'\') => quick.buildOpenChatNoLoginAnswer'), 'Open Chat quick answer surface should be owned by the answer builders module.');
+assert.ok(!clientJs.includes('function buildOpenChatNoLoginAnswer('), 'Open Chat quick answer wrappers should stay outside client.js.');
+assert.ok(!clientJs.includes('function buildOpenChatImplicitOrderPrepAnswer('), 'Open Chat order-prep answer wrappers should stay outside client.js.');
 assert.ok(deliveryManagerJs.includes('visibleDeliveryFiles(output.files)'), 'Delivery Manager should hide internal workflow markdown bundles from user-facing files.');
 assert.ok(chatJs.includes('includeHistoricalTracked'), 'Chat backfill should ignore historical tracked orders while a current order is attached.');
 assert.ok(chatJs.includes('renderTerminalDeliveries: false'), 'Chat startup should not render historical terminal deliveries automatically.');

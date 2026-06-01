@@ -1020,18 +1020,25 @@ const clientAgentSkillManifestController = createClientAgentSkillManifestControl
   productShortName: PRODUCT_SHORT_NAME,
   api: (path, init) => api(path, init),
   appendOrderChatExchange: (prompt, answer, options) => appendOrderChatExchange(prompt, answer, options),
+  agentVerifyFailureSummary: (agent) => agentVerifyFailureSummary(agent),
+  completeAgentSetup: (agentId) => completeAgentSetup(agentId),
   flash: (message, tone) => flash(message, tone),
+  loadAgentOnboarding: (agentId, options) => loadAgentOnboarding(agentId, options),
   looksJapanese: (value) => looksJapanese(value),
   openChatPreviewSteps: (kind, prompt) => openChatPreviewSteps(kind, prompt),
+  refresh: () => refresh(),
   renderAgentSetupFlow: (auth) => renderAgentSetupFlow(auth),
   renderAgents: (agents) => renderAgents(agents),
   setDetail: (value) => setDetail(value),
   switchTab: (tab) => switchTab(tab),
+  trackConversionEvent: (eventName, payload) => trackConversionEvent(eventName, payload),
   window
 });
 const {
   draftAgentSkillManifestFromText,
   handleAgentSkillMarkdownFromChat,
+  importManifestUrlAndVerify,
+  loadManifestExample,
   looksLikeAgentSkillMarkdown,
   openManualAgentSkillFlow
 } = clientAgentSkillManifestController;
@@ -1466,10 +1473,32 @@ const clientOpenChatAnswerBuilders = createClientOpenChatAnswerBuilders({
   resolveOpenChatLongPromptGuardAnswer: (prompt, inputCounts) => resolveOpenChatLongPromptGuardAnswer(prompt, inputCounts)
 });
 const {
-  buildOpenChatOrderPreview: buildOpenChatOrderPreviewFromModule,
-  buildOpenChatClarifyModeAnswer: buildOpenChatClarifyModeAnswerFromModule,
-  openChatRoutePreview: openChatRoutePreviewFromModule,
-  buildOpenChatLlmFallbackUnavailableAnswer: buildOpenChatLlmFallbackUnavailableAnswerFromModule
+  buildOpenChatNoLoginAnswer,
+  buildOpenChatExamplesAnswer,
+  buildOpenChatAcknowledgementAnswer,
+  buildOpenChatDirectResearchQuestionAnswer,
+  buildOpenChatRunConfirmationAnswer,
+  isOpenChatBriefEditInstruction,
+  isOpenChatAdditionalRequirementFollowup,
+  explicitOpenChatAssistMode,
+  buildOpenChatFollowupAnswer,
+  openChatRoutePreview,
+  buildOpenChatOrderPreview,
+  isOpenChatDispatchReadyPrompt,
+  shouldPrepareOrderBeforeDispatch,
+  buildOpenChatImplicitOrderPrepAnswer,
+  buildOpenChatClarifyModeAnswer,
+  buildOpenChatLongPromptGuardAnswer,
+  openChatLooksGeneralHelpPrompt,
+  buildOpenChatGeneralHelpAnswer,
+  buildOpenChatMarketingAgentListAnswer,
+  buildOpenChatLeaderCatalogAnswer,
+  buildOpenChatRecurringWorkAnswer,
+  buildOpenChatPaymentQuestionAnswer,
+  openChatLooksLowInfoAmbiguousPrompt,
+  buildOpenChatLowInfoAmbiguousAnswer,
+  quickOrderChatAnswer,
+  buildOpenChatLlmFallbackUnavailableAnswer
 } = clientOpenChatAnswerBuilders;
 
 const clientOpenChatIntakeUtils = createOpenChatIntakeUtils({
@@ -2436,109 +2465,6 @@ const {
   parallelDraftFromOpenChatPlanItem
 } = clientOpenChatContextUtils;
 
-function buildOpenChatNoLoginAnswer(prompt = '') {
-  return clientOpenChatQuickAnswerUtils.buildOpenChatNoLoginAnswer(prompt);
-}
-
-function buildOpenChatExamplesAnswer(prompt = '') {
-  return clientOpenChatQuickAnswerUtils.buildOpenChatExamplesAnswer(prompt);
-}
-
-function buildOpenChatAcknowledgementAnswer(prompt = '') {
-  return clientOpenChatQuickAnswerUtils.buildOpenChatAcknowledgementAnswer(prompt);
-}
-
-function buildOpenChatDirectResearchQuestionAnswer(prompt = '', inputCounts = {}) {
-  return clientOpenChatQuickAnswerUtils.buildOpenChatDirectResearchQuestionAnswer(prompt, inputCounts);
-}
-
-function buildOpenChatRunConfirmationAnswer(prompt = '') {
-  return clientOpenChatQuickAnswerUtils.buildOpenChatRunConfirmationAnswer(prompt);
-}
-
-function isOpenChatBriefEditInstruction(prompt = '') {
-  return clientOpenChatQuickAnswerUtils.isOpenChatBriefEditInstruction(prompt);
-}
-
-function isOpenChatAdditionalRequirementFollowup(prompt = '') {
-  return clientOpenChatQuickAnswerUtils.isOpenChatAdditionalRequirementFollowup(prompt);
-}
-
-function explicitOpenChatAssistMode(prompt = '') {
-  return clientOpenChatQuickAnswerUtils?.explicitOpenChatAssistMode(prompt) || '';
-}
-
-function buildOpenChatFollowupAnswer(prompt = '', inputCounts = {}) {
-  return resolveOpenChatFollowupAnswer(prompt, inputCounts);
-}
-
-function openChatRoutePreview(taskType = 'research', prompt = '') {
-  return openChatRoutePreviewFromModule(taskType, prompt);
-}
-
-function buildOpenChatOrderPreview(prompt = '', inputCounts = {}) {
-  return buildOpenChatOrderPreviewFromModule(prompt, inputCounts);
-}
-
-function isOpenChatDispatchReadyPrompt(prompt = '') {
-  return resolveOpenChatDispatchReadyPrompt(prompt);
-}
-
-function shouldPrepareOrderBeforeDispatch(draft = {}) {
-  return resolveOpenChatShouldPrepareOrderBeforeDispatch(draft);
-}
-
-function buildOpenChatImplicitOrderPrepAnswer(prompt = '', inputCounts = {}, options = {}) {
-  return resolveOpenChatImplicitOrderPrepAnswer(prompt, inputCounts, options);
-}
-
-function buildOpenChatClarifyModeAnswer(prompt = '', inputCounts = {}, options = {}) {
-  return buildOpenChatClarifyModeAnswerFromModule(prompt, inputCounts, options);
-}
-
-function buildOpenChatLongPromptGuardAnswer(prompt = '', inputCounts = {}) {
-  return resolveOpenChatLongPromptGuardAnswer(prompt, inputCounts);
-}
-function openChatLooksGeneralHelpPrompt(prompt = '') {
-  return clientOpenChatQuickAnswerUtils.openChatLooksGeneralHelpPrompt(prompt);
-}
-
-function buildOpenChatGeneralHelpAnswer(prompt = '') {
-  return clientOpenChatQuickAnswerUtils.buildOpenChatGeneralHelpAnswer(prompt);
-}
-
-function buildOpenChatMarketingAgentListAnswer(prompt = '') {
-  return clientOpenChatQuickAnswerUtils.buildOpenChatMarketingAgentListAnswer(prompt);
-}
-
-function buildOpenChatLeaderCatalogAnswer(prompt = '') {
-  return clientOpenChatQuickAnswerUtils.buildOpenChatLeaderCatalogAnswer(prompt);
-}
-
-function buildOpenChatRecurringWorkAnswer(prompt = '', inputCounts = {}) {
-  return clientOpenChatQuickAnswerUtils.buildOpenChatRecurringWorkAnswer(prompt, inputCounts);
-}
-
-function buildOpenChatPaymentQuestionAnswer(prompt = '') {
-  return clientOpenChatQuickAnswerUtils.buildOpenChatPaymentQuestionAnswer(prompt);
-}
-
-function openChatLooksLowInfoAmbiguousPrompt(prompt = '', inputCounts = {}) {
-  return clientOpenChatQuickAnswerUtils.buildOpenChatLowInfoAmbiguousAnswer(prompt, inputCounts) !== null;
-}
-
-function buildOpenChatLowInfoAmbiguousAnswer(prompt = '', inputCounts = {}) {
-  return clientOpenChatQuickAnswerUtils.buildOpenChatLowInfoAmbiguousAnswer(prompt, inputCounts);
-}
-
-function quickOrderChatAnswer(prompt = '', inputCounts = {}) {
-  return clientOpenChatQuickAnswerUtils.quickOrderChatAnswer(prompt, inputCounts);
-}
-
-function buildOpenChatLlmFallbackUnavailableAnswer(prompt = '', reason = '') {
-  return buildOpenChatLlmFallbackUnavailableAnswerFromModule(prompt, reason);
-}
-
 const clientOpenChatExchangeController = createClientOpenChatExchangeController({
   state,
   els,
@@ -3145,78 +3071,6 @@ async function refresh() {
   scheduleLiveSnapshotRefresh(snapshot);
   void backfillTrackedJobsIntoSnapshot(snapshot).catch(() => {});
   void maybeAutoLoadRepos(snapshot.auth).catch(() => {});
-}
-
-function loadManifestExample() {
-  if (!els.manifestJson) return;
-  els.manifestJson.value = JSON.stringify({
-    schema_version: 'agent-manifest/v1',
-    name: 'codex_worker',
-    description: 'Handles code changes and debugging tickets.',
-    task_types: ['code', 'debug'],
-    pricing: { provider_markup_rate: 0.1, token_markup_rate: 0.1, platform_margin_rate: 0.1 },
-    requirements: [
-      {
-        type: 'github_repo',
-        label: 'GitHub repository access',
-        fulfillment: 'native_ui',
-        launch_label: 'Open GitHub app or repository settings',
-        completion_signal: 'manual_confirm',
-        purpose: 'Code changes should run in a sandbox branch and be delivered as a pull request.'
-      }
-    ],
-    usage_contract: {
-      report_input_tokens: true,
-      report_output_tokens: true,
-      report_model: true,
-      report_external_api_cost: true
-    },
-    success_rate: 0.92,
-    avg_latency_sec: 45,
-    owner: 'Kuni',
-    healthcheck_url: 'https://example.com/api/health',
-    verification: {
-      challenge_path: '/.well-known/agent-challenge.txt',
-      challenge_token: 'replace-me'
-    }
-  }, null, 2);
-}
-
-async function importManifestUrlAndVerify(manifestUrl, label = 'Manifest') {
-  const imported = await api('/api/agents/import-url', {
-    method: 'POST',
-    body: JSON.stringify({ manifest_url: manifestUrl })
-  });
-  const importedAgentId = imported.agent?.id || '';
-  if (!importedAgentId) throw new Error(`${label} import did not return an agent id.`);
-  const verification = await api(`/api/agents/${importedAgentId}/verify`, { method: 'POST' });
-  const selectedId = verification.agent?.id || importedAgentId;
-  state.selectedAgentId = selectedId;
-  delete state.agentOnboarding[selectedId];
-  setDetail({ input: manifestUrl, import: imported, verification });
-  await refresh();
-  if (selectedId) await loadAgentOnboarding(selectedId, { force: true, silent: true });
-  completeAgentSetup(selectedId);
-  renderAgentSetupFlow(state.snapshot?.auth);
-  const verifiedAgent = verification.agent || imported.agent || null;
-  const verifyFailure = agentVerifyFailureSummary(verifiedAgent);
-  void trackConversionEvent('agent_imported', {
-    source: 'manifest_url',
-    status: imported.agent?.id ? 'imported' : 'unknown',
-    agentId: selectedId
-  });
-  void trackConversionEvent('agent_verified', {
-    source: 'manifest_url',
-    status: verification.verification?.ok ? 'verified' : 'failed',
-    agentId: selectedId
-  });
-  flash(
-    verification.verification?.ok
-      ? `${label} imported and verified for ${verifiedAgent?.name || selectedId}.`
-      : `${label} imported, but verify failed: ${verifyFailure.cause} Next: ${verifyFailure.next}`,
-    verification.verification?.ok ? 'ok' : 'error'
-  );
-  return { imported, verification };
 }
 
 function applyAgentToRunForm(agent, options = {}) {
