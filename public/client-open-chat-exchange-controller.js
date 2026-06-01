@@ -109,9 +109,7 @@ export function createClientOpenChatExchangeController(deps = {}) {
         ].slice(-4);
       }
     }
-    if (Array.isArray(answer?.parallelPlan)) {
-      state.openChatParallelPlan = answer.parallelPlan;
-    }
+    state.openChatParallelPlan = Array.isArray(answer?.parallelPlan) ? answer.parallelPlan : [];
     if (answer?.vagueChoicePrompt) {
       state.openChatVagueChoicePrompt = String(answer.vagueChoicePrompt || '').trim();
     } else if (answer?.clearVagueChoice || answerKind !== 'clarify') {
