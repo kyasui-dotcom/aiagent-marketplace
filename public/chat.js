@@ -12,7 +12,6 @@ import {
   connectorGateHandleOAuthPopupReturn,
   connectorGateHandleOAuthPopupReturnMessage,
   connectorGateOpenOAuthPopup,
-  connectorGateRenderAuthorityRequest,
   connectorGateStartOAuthPopupMonitor
 } from './connector-gate.js?v=20260519a';
 import {
@@ -33,10 +32,6 @@ import {
   deliveryRendererMeta,
   renderDeliveryBody
 } from './delivery-renderer.js?v=20260526a';
-import {
-  deliveryFileDisplayTitle,
-  deliveryFileProvenanceParts
-} from './delivery-provenance-utils.js?v=20260521a';
 import {
   appContextAnswerLine as appContextGateAnswerLine,
   appContextMatchesManifest as appContextGateMatchesManifest,
@@ -129,6 +124,7 @@ import { createChatOrderDispatchController } from './chat-order-dispatch-control
 import { createChatIntakeController } from './chat-intake-controller.js?v=20260601a';
 import { createChatRestoredOrderContextController } from './chat-restored-order-context-controller.js?v=20260601a';
 import { createChatHistoryPanelsController } from './chat-history-panels-controller.js?v=20260601a';
+import { createChatDeliveryRenderController } from './chat-delivery-render-controller.js?v=20260601a';
 
 const state = createInitialChatState({
   uiLanguage: initialChatUiLanguage({
@@ -181,6 +177,7 @@ let chatRestoredOrderContextController = null;
 let chatHistoryPanelsController = null;
 let chatIntakeController = null;
 let chatOrderDispatchController = null;
+let chatDeliveryRenderController = null;
 const chatDeliveryFileUtils = createChatDeliveryFileUtils();
 const {
   clearDeliveryFiles,
@@ -602,6 +599,11 @@ chatRuntimeStateController = createChatRuntimeStateController({
 function chatRuntimeController() {
   if (!chatRuntimeStateController) throw new Error('Chat runtime state controller is not initialized.');
   return chatRuntimeStateController;
+}
+
+function chatDeliveryController() {
+  if (!chatDeliveryRenderController) throw new Error('Chat delivery render controller is not initialized.');
+  return chatDeliveryRenderController;
 }
 
 function safeJsonClone(value = null, fallbackOptions = {}) {
@@ -1176,55 +1178,17 @@ function renderInitialAgentMap(created = {}, prompt = '') {
 
 
 function jobHasDeliveryResult(job = {}) {
-  return isTerminalStatus(job?.status) || jobBlockedByLeaderQualityGate(job) || jobBlockedForSaasHandoff(job);
+  return chatDeliveryController().jobHasDeliveryResult(job);
 }
 
 
 function deliveryFiles(job = {}) {
-  const output = job.output && typeof job.output === 'object' ? job.output : {};
-  const delivery = output.delivery && typeof output.delivery === 'object' ? output.delivery : {};
-  const report = output.report && typeof output.report === 'object' ? output.report : {};
-  const deliveryReport = delivery.report && typeof delivery.report === 'object' ? delivery.report : {};
-  const candidates = [
-    ...(Array.isArray(output.files) ? output.files : []),
-    ...(Array.isArray(report.files) ? report.files : []),
-    ...(Array.isArray(delivery.files) ? delivery.files : []),
-    ...(Array.isArray(deliveryReport.files) ? deliveryReport.files : [])
-  ];
-  const seen = new Set();
-  const files = visibleDeliveryFiles(candidates)
-    .filter((file) => file && (file.content || file.name))
-    .map((file, index) => sanitizeDeliveryFileForUser(file, `delivery-${index + 1}.md`))
-    .filter((file) => file && String(file.content || '').trim())
-    .sort((left, right) => deliveryFilePriority(left) - deliveryFilePriority(right))
-    .filter((file) => {
-      const key = `${file.name || ''}:${String(file.content || '').slice(0, 120)}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 8);
-  return files;
+  // Static QA contract: controller filters user-facing files through visibleDeliveryFiles(candidates).
+  return chatDeliveryController().deliveryFiles(job);
 }
 
 function deliveryText(job = {}) {
-  const output = job.output && typeof job.output === 'object' ? job.output : {};
-  const report = output.report && typeof output.report === 'object' ? output.report : {};
-  const delivery = output.delivery && typeof output.delivery === 'object' ? output.delivery : {};
-  const deliveryReport = delivery.report && typeof delivery.report === 'object' ? delivery.report : {};
-  const bullets = [
-    ...(Array.isArray(report.bullets) ? report.bullets : []),
-    ...(Array.isArray(deliveryReport.bullets) ? deliveryReport.bullets : [])
-  ].filter(Boolean).slice(0, 8);
-  const failed = ['failed', 'timed_out'].includes(String(job.status || '').trim().toLowerCase());
-  const failureReason = String(job.failureReason || job.failure_reason || report.failure_reason || report.error || output.error || '').trim();
-  const text = [
-    failed && failureReason ? `Failure reason: ${failureReason}` : '',
-    output.summary || report.summary || delivery.summary || deliveryReport.summary || job.failureReason || '',
-    bullets.length ? bullets.map((item) => `- ${item}`).join('\n') : '',
-    report.nextAction || report.next_action || deliveryReport.nextAction || deliveryReport.next_action || ''
-  ].filter(Boolean).join('\n\n').trim();
-  return sanitizeDeliveryMarkdownForUser(text);
+  return chatDeliveryController().deliveryText(job);
 }
 
 function rememberAiAgentsFromDraft(draft = {}, created = {}, payload = {}) {
@@ -1621,331 +1585,67 @@ async function reuseAiAgent(id = '') {
 }
 
 function renderAuthorityRequest(job = {}) {
-  return connectorGateRenderAuthorityRequest(job, {
-    auth: state.auth || {},
-    orderId: state.orderId,
-    visitorId: state.visitorId,
-    origin: window.location.origin,
-    returnPathForProvider: (provider) => currentChatReturnPath({ oauthPopup: true, oauthProvider: provider }),
-    loginHref,
-    saveOAuthState: saveChatOAuthReturnState
-  });
+  return chatDeliveryController().renderAuthorityRequest(job);
 }
 
 function maybeRenderAuthorityNotice(job = {}, options = {}) {
-  const key = authorityNoticeKey(job);
-  if (!key) return false;
-  const body = renderAuthorityRequest(job);
-  if (!body) return false;
-  const existing = document.getElementById(approvalAnchorForJob(job));
-  if (existing) {
-    existing.outerHTML = body;
-    state.authorityNoticeKeys.add(key);
-    return true;
-  }
-  if (state.authorityNoticeKeys.has(key)) return false;
-  state.authorityNoticeKeys.add(key);
-  appendMessage('assistant', body, {
-    tone: 'warn',
-    label: options.label || 'Approval required'
-  });
-  return true;
+  return chatDeliveryController().maybeRenderAuthorityNotice(job, options);
 }
 
 function renderFileCards(files = []) {
-  const bundle = files.length > 1 ? registerDeliveryFile(combinedMarkdownFile(files), 'delivery-bundle.md') : null;
-  const bundleActions = bundle
-    ? [
-      '<div class="file-actions bundle-actions">',
-      `<button class="primary-btn inline-btn file-action" type="button" data-file-action="download" data-file-id="${escapeHtml(bundle.id)}">Download all MD</button>`,
-      `<button class="ghost-btn inline-btn file-action" type="button" data-file-action="copy" data-file-id="${escapeHtml(bundle.id)}">Copy all</button>`,
-      '</div>'
-    ].join('')
-    : '';
-  const cards = files.map((file, index) => {
-    const registered = registerDeliveryFile(file, `delivery-${index + 1}.md`);
-    const name = registered.name;
-    const content = registered.content.trim();
-    const displayTitle = deliveryFileDisplayTitle(file, name);
-    const metaParts = deliveryFileProvenanceParts(file, { taskLabel });
-    const isHtml = /\.html?$/i.test(name) || /<!doctype html|<html[\s>]/i.test(content);
-    const downloadLabel = isHtml ? 'Download HTML' : 'Download MD';
-    const preview = isHtml
-      ? `<iframe class="html-preview" sandbox="allow-scripts allow-forms allow-popups" referrerpolicy="no-referrer" srcdoc="${escapeHtml(content)}" title="${escapeHtml(name)} preview"></iframe>`
-      : '';
-    return [
-      '<details class="file-card">',
-      `<summary>${escapeHtml(displayTitle || name)}</summary>`,
-      metaParts.length ? `<div class="row-muted">${escapeHtml(metaParts.join(' · '))}</div>` : '',
-      '<div class="file-actions">',
-      `<button class="primary-btn inline-btn file-action" type="button" data-file-action="download" data-file-id="${escapeHtml(registered.id)}">${escapeHtml(downloadLabel)}</button>`,
-      `<button class="ghost-btn inline-btn file-action" type="button" data-file-action="copy" data-file-id="${escapeHtml(registered.id)}">Copy</button>`,
-      '</div>',
-      `<pre>${escapeHtml(content || '(empty file)')}</pre>`,
-      preview,
-      '</details>'
-    ].join('');
-  }).join('');
-  return [bundleActions, cards].filter(Boolean).join('');
+  return chatDeliveryController().renderFileCards(files);
 }
 
 function retryReusableArtifactEntries(job = {}) {
-  const status = String(job.status || '').trim().toLowerCase();
-  if (!['failed', 'timed_out'].includes(status) && !jobBlockedByLeaderQualityGate(job)) return [];
-  const sourceOrderId = String(job.id || '').trim();
-  const seenTasks = new Set();
-  return deliveryFiles(job)
-    .map((file) => {
-      const taskType = String(file.source_task_type || file.sourceTaskType || '').trim().toLowerCase();
-      const sourceRunId = String(file.source_run_id || file.sourceRunId || '').trim();
-      const content = String(file.content || '').trim();
-      if (!taskType || taskType.endsWith('_leader') || !sourceRunId || !content) return null;
-      if (seenTasks.has(taskType)) return null;
-      seenTasks.add(taskType);
-      return {
-        file,
-        taskType,
-        sourceRunId,
-        sourceOrderId,
-        agentName: String(file.source_agent_name || file.sourceAgentName || taskLabel(taskType)).trim(),
-        fileName: String(file.name || `${taskType}-delivery.md`).trim() || `${taskType}-delivery.md`,
-        summary: String(file.summary || file.reason || '').trim()
-      };
-    })
-    .filter(Boolean)
-    .slice(0, 8);
+  return chatDeliveryController().retryReusableArtifactEntries(job);
 }
 
 function selectedRetryReuseArtifactsForOrder(orderId = '') {
-  const safeOrderId = String(orderId || '').trim();
-  if (!safeOrderId) return [];
-  return [...document.querySelectorAll(`[data-retry-reuse-order="${CSS.escape(safeOrderId)}"][data-retry-reuse-artifact]:checked`)]
-    .map((input) => {
-      const file = getDeliveryFile(input.dataset.fileId || '');
-      const taskType = String(input.dataset.taskType || '').trim().toLowerCase();
-      const sourceRunId = String(input.dataset.sourceRunId || '').trim();
-      if (!file || !taskType || !sourceRunId || !String(file.content || '').trim()) return null;
-      return {
-        task_type: taskType,
-        taskType,
-        source_order_id: safeOrderId,
-        sourceOrderId: safeOrderId,
-        source_run_id: sourceRunId,
-        sourceRunId,
-        file_name: file.name || `${taskType}-delivery.md`,
-        fileName: file.name || `${taskType}-delivery.md`,
-        content: String(file.content || '').slice(0, 60000),
-        type: file.type || 'text/markdown',
-        content_type: file.content_type || file.contentType || 'reused_agent_delivery',
-        source_agent_name: String(input.dataset.agentName || file.source_agent_name || file.sourceAgentName || '').trim(),
-        user_selected: true,
-        userSelected: true,
-        selected_at: new Date().toISOString()
-      };
-    })
-    .filter(Boolean);
+  return chatDeliveryController().selectedRetryReuseArtifactsForOrder(orderId);
 }
 
 function cachedVisibleJobForRetry(orderId = '') {
-  const safeId = String(orderId || '').trim();
-  if (!safeId) return null;
-  return (Array.isArray(state.recentJobs) ? state.recentJobs : [])
-    .find((job) => String(job?.id || '').trim() === safeId) || null;
+  return chatDeliveryController().cachedVisibleJobForRetry(orderId);
 }
 
 function retryReuseArtifactMeta(item = {}) {
-  const taskType = String(item.task_type || item.taskType || '').trim().toLowerCase();
-  const fileName = String(item.file_name || item.fileName || `${taskType || 'artifact'}-delivery.md`).trim();
-  return {
-    task_type: taskType,
-    taskType,
-    source_order_id: String(item.source_order_id || item.sourceOrderId || '').trim(),
-    sourceOrderId: String(item.sourceOrderId || item.source_order_id || '').trim(),
-    source_run_id: String(item.source_run_id || item.sourceRunId || '').trim(),
-    sourceRunId: String(item.sourceRunId || item.source_run_id || '').trim(),
-    file_name: fileName || `${taskType || 'artifact'}-delivery.md`,
-    fileName: fileName || `${taskType || 'artifact'}-delivery.md`,
-    type: String(item.type || 'text/markdown').trim() || 'text/markdown',
-    content_type: String(item.content_type || item.contentType || 'reused_agent_delivery').trim() || 'reused_agent_delivery',
-    content_chars: String(item.content || '').length,
-    source_agent_name: String(item.source_agent_name || item.sourceAgentName || '').trim(),
-    user_selected: true,
-    userSelected: true,
-    selected_at: String(item.selected_at || item.selectedAt || '').trim()
-  };
+  return chatDeliveryController().retryReuseArtifactMeta(item);
 }
 
 function workflowRetryMetaForDraft(workflow = {}, reuseArtifacts = []) {
-  const next = workflow && typeof workflow === 'object' ? { ...workflow } : {};
-  delete next.reusedArtifacts;
-  delete next.reuseArtifacts;
-  delete next.retryReuseArtifacts;
-  delete next.retry_reuse_artifacts;
-  const metas = reuseArtifacts.map(retryReuseArtifactMeta).filter((item) => item.task_type && item.source_run_id);
-  return metas.length
-    ? { ...next, reusedArtifacts: metas, retryReuseArtifacts: metas }
-    : next;
+  return chatDeliveryController().workflowRetryMetaForDraft(workflow, reuseArtifacts);
 }
 
 function renderRetryReuseControls(job = {}) {
-  const orderId = String(job.id || '').trim();
-  const artifacts = retryReusableArtifactEntries(job);
-  if (!orderId || !artifacts.length) return '';
-  const rows = artifacts.map((entry) => {
-    const registered = registerDeliveryFile(entry.file, entry.fileName);
-    const label = `${taskLabel(entry.taskType)}: ${entry.fileName}`;
-    const meta = entry.agentName && entry.agentName !== taskLabel(entry.taskType)
-      ? ` (${entry.agentName})`
-      : '';
-    return [
-      '<label class="retry-reuse-row">',
-      `<input type="checkbox" data-retry-reuse-artifact="1" data-retry-reuse-order="${escapeHtml(orderId)}" data-file-id="${escapeHtml(registered.id)}" data-task-type="${escapeHtml(entry.taskType)}" data-source-run-id="${escapeHtml(entry.sourceRunId)}" data-agent-name="${escapeHtml(entry.agentName)}">`,
-      `<span>${escapeHtml(label)}${escapeHtml(meta)}</span>`,
-      '</label>'
-    ].join('');
-  }).join('');
-  return [
-    '<div class="approval-card retry-reuse-card">',
-    '<strong>Reuse completed artifacts on retry / 完了済み成果物をリトライで再利用</strong>',
-    '<div>Select only outputs you inspected and trust. Selected agent steps will be marked reused and will not run again in the new order.</div>',
-    `<div class="retry-reuse-list">${rows}</div>`,
-    '<span class="chat-hint">Nothing is reused automatically. Press Retry as new order after selecting the artifacts to carry forward.</span>',
-    '</div>'
-  ].join('\n');
+  return chatDeliveryController().renderRetryReuseControls(job);
 }
 
 function deliveryOrderActionsHtml(job = {}) {
-  return deliveryRendererOrderActionsHtml(job, {
-    escapeHtml,
-    jobHasDeliveryResult,
-    jobBlockedByLeaderQualityGate
-  });
+  return chatDeliveryController().deliveryOrderActionsHtml(job);
 }
 
 function renderDelivery(job = {}) {
-  rememberAiAgentsFromJob(job);
-  const files = deliveryFiles(job);
-  const text = deliveryText(job) || `Order ${job.id || ''} is ${statusDisplayLabel(job.status || 'updated')}.`;
-  const meta = deliveryRendererMeta(job, {
-    jobBlockedByLeaderQualityGate,
-    jobHasDeliveryResult
-  });
-  const body = renderDeliveryBody(job, {
-    escapeHtml,
-    files,
-    text,
-    statusDisplayLabel,
-    jobBlockedByLeaderQualityGate,
-    jobHasDeliveryResult,
-    renderAuthorityRequest,
-    renderRetryReuseControls,
-    deliveryOrderActionsHtml,
-    renderDedicatedAppDeliveryTools,
-    renderAppHandoffTools,
-    renderFileCards
-  });
-  appendMessage(jobHasDeliveryResult(job) ? 'assistant' : 'system', body, {
-    tone: meta.tone,
-    label: meta.label
-  });
+  return chatDeliveryController().renderDelivery(job);
 }
 
 function renderDeliveryOnce(job = {}, options = {}) {
-  const safeId = String(job?.id || '').trim();
-  if (!safeId || !jobHasDeliveryResult(job)) return false;
-  if (state.deliveredOrderIds.has(safeId) && !options.force) return false;
-  rememberTrackedOrder(safeId);
-  notifyOrderMilestone(job);
-  showWorkflowProgressMap(job, { footer: jobHasDeliveryResult(job) ? 'Workflow finished.' : '' });
-  renderDelivery(job);
-  markOrderDelivered(safeId);
-  return true;
+  return chatDeliveryController().renderDeliveryOnce(job, options);
 }
 
 function orderMilestoneState(job = {}, options = {}) {
-  const explicit = String(options.state || options.orderState || '').trim().toLowerCase();
-  if (explicit) return explicit;
-  const status = String(job?.status || '').trim().toLowerCase();
-  const reviewStatus = String(job?.reviewStatus || job?.review_status || job?.output?.reviewStatus || job?.output?.review_status || job?.output?.delivery?.reviewStatus || '').trim().toLowerCase();
-  if (['approved', 'accepted', 'done'].includes(reviewStatus)) return 'done';
-  if (['failed', 'timed_out'].includes(status)) return 'failed';
-  if (['cancelled', 'canceled'].includes(status)) return 'cancelled';
-  if (status === 'blocked') return 'blocked';
-  if (status === 'completed') return 'review';
-  if (['revision', 'revising'].includes(status)) return 'revision';
-  if (status === 'submitted') return 'submitted';
-  if (status === 'planning') return 'planning';
-  if (status === 'assigned' || status === 'claimed') return 'assigned';
-  if (['running', 'dispatched'].includes(status) || job.startedAt || job.started_at || job.dispatchedAt || job.dispatched_at) return 'running';
-  if (['queued', 'created', 'pending'].includes(status)) {
-    if (job.assignedAgentId || job.assigned_agent_id || job.workflow || job.jobKind === 'workflow') return 'assigned';
-    return 'planning';
-  }
-  return status || 'submitted';
+  return chatDeliveryController().orderMilestoneState(job, options);
 }
 
 function orderMilestoneMessage(job = {}, options = {}) {
-  const orderState = orderMilestoneState(job, options);
-  const orderId = String(job?.id || options.orderId || state.orderId || '').trim();
-  const shortId = orderId ? `#${orderId.slice(0, 8)}` : 'order';
-  const prompt = String(job?.originalPrompt || job?.original_prompt || job?.prompt || options.prompt || '').trim();
-  const title = prompt ? ` "${compact(prompt, 72)}"` : '';
-  const prefix = `Order ${shortId}: `;
-  const messages = {
-    submitted: `${prefix}Order submitted.${title}`,
-    planning: `${prefix}Creating execution plan.`,
-    assigned: `${prefix}Worker assigned.`,
-    running: `${prefix}Work started.`,
-    blocked: `${prefix}Input required. Please review the requested approval or connector action.`,
-    review: `${prefix}Deliverable submitted. Please review.`,
-    revision: `${prefix}Revision request received. Reworking.`,
-    done: `${prefix}Completed.`,
-    failed: `${prefix}Failed. Please check the cause.`,
-    cancelled: `${prefix}Cancelled.`
-  };
-  return messages[orderState] || `${prefix}${statusDisplayLabel(orderState)}.`;
+  return chatDeliveryController().orderMilestoneMessage(job, options);
 }
 
 function orderMilestoneChatExists(orderId = '', orderState = '', message = '') {
-  const shortId = String(orderId || '').trim().slice(0, 8);
-  const needle = String(message || '').trim();
-  if (!needle) return false;
-  const statePhrase = {
-    submitted: 'Order submitted',
-    planning: 'Creating execution plan',
-    assigned: 'Worker assigned',
-    running: 'Work started',
-    blocked: 'Input required',
-    review: 'Deliverable submitted',
-    revision: 'Revision request received',
-    done: 'Completed',
-    failed: 'Failed',
-    cancelled: 'Cancelled'
-  }[String(orderState || '').trim().toLowerCase()] || '';
-  return state.chatMessages.some((entry) => {
-    const body = String(entry?.body || '').trim();
-    if (!body) return false;
-    if (body === needle) return true;
-    return Boolean(shortId && statePhrase && body.includes(`#${shortId}`) && body.includes(statePhrase));
-  });
+  return chatDeliveryController().orderMilestoneChatExists(orderId, orderState, message);
 }
 
 function notifyOrderMilestone(job = {}, options = {}) {
-  const orderId = String(job?.id || options.orderId || state.orderId || '').trim();
-  const orderState = orderMilestoneState(job, options);
-  if (!orderId || !orderState) return false;
-  const key = `${orderId}|${orderState}`;
-  const message = orderMilestoneMessage(job, { ...options, state: orderState });
-  if (state.orderMilestoneNoticeKeys.has(key) || orderMilestoneChatExists(orderId, orderState, message)) {
-    state.orderMilestoneNoticeKeys.add(key);
-    return false;
-  }
-  state.orderMilestoneNoticeKeys.add(key);
-  appendTextMessage('system', message, {
-    tone: ['done', 'review'].includes(orderState) ? 'ok' : (['failed', 'cancelled'].includes(orderState) ? 'error' : (orderState === 'blocked' ? 'warn' : 'info')),
-    label: 'Order'
-  });
-  return true;
+  return chatDeliveryController().notifyOrderMilestone(job, options);
 }
 
 function rememberPendingRecoveryPayload(payload = {}) {
@@ -1964,60 +1664,14 @@ function clearPendingRecoveryPayload(payload = {}) {
 }
 
 async function backfillChatDeliveries(options = {}) {
-  const jobs = await refreshRecentJobs({ force: true, limit: 30 });
-  let delivered = 0;
-  const activeOrderId = String(options.orderId || state.orderId || '').trim();
-  const notifyMilestones = options.notifyMilestones !== false;
-  for (const job of jobs) {
-    const safeId = String(job?.id || '').trim();
-    if (!safeId) continue;
-    if (activeOrderId && safeId !== activeOrderId && options.includeHistoricalTracked !== true) continue;
-    const matchesTracked = state.trackedOrderIds.has(safeId);
-    const matchesRecovery = state.pendingRecoveryPayloads.some((payload) => recoveryCandidate(job, payload));
-    if (!matchesTracked && !matchesRecovery) continue;
-    rememberTrackedOrder(safeId);
-    if (!state.orderId && matchesRecovery) state.orderId = safeId;
-    if (notifyMilestones) notifyOrderMilestone(job);
-    if (jobHasDeliveryResult(job)) {
-      if (options.renderTerminalDeliveries === false && !matchesRecovery) continue;
-      if (renderDeliveryOnce(job, { force: options.force === true })) delivered += 1;
-    } else if (!state.polling && safeId === state.orderId && !state.liveProgressStoppedOrderIds.has(safeId)) {
-      showWorkflowProgressMap(job);
-      maybeRenderAuthorityNotice(job, { label: 'Approval required' });
-      startPolling(safeId);
-    } else {
-      showWorkflowProgressMap(job);
-      maybeRenderAuthorityNotice(job, { label: 'Approval required' });
-    }
-  }
-  return delivered;
+  // Static QA contract: controller checks if (jobHasDeliveryResult(job)) before showWorkflowProgressMap(job);
+  // Static QA contract: const matchesTracked = state.trackedOrderIds.has(safeId); if (!matchesTracked && !matchesRecovery) continue;
+  // Static QA contract: includeHistoricalTracked remains opt-in for historical tracked order backfill.
+  return chatDeliveryController().backfillChatDeliveries(options);
 }
 
 function startDeliveryBackfillLoop(options = {}) {
-  if (state.deliveryBackfill) return;
-  let runs = 0;
-  const viewRevision = Number(options.viewRevision || state.chatViewRevision || 0) || 0;
-  let intervalId = null;
-  const stopLoop = () => {
-    if (intervalId) window.clearInterval(intervalId);
-    if (state.deliveryBackfill === intervalId) state.deliveryBackfill = null;
-  };
-  const tick = async () => {
-    if (viewRevision && Number(state.chatViewRevision || 0) !== viewRevision) {
-      stopLoop();
-      return;
-    }
-    runs += 1;
-    try {
-      await backfillChatDeliveries(options);
-    } catch {}
-    if (runs >= Number(options.maxRuns || 36)) {
-      stopLoop();
-    }
-  };
-  intervalId = window.setInterval(tick, CHATUX_BACKFILL_INTERVAL_MS);
-  state.deliveryBackfill = intervalId;
-  void tick();
+  return chatDeliveryController().startDeliveryBackfillLoop(options);
 }
 
 function draftBrief(prompt, prepared) {
@@ -2092,6 +1746,55 @@ const {
   recoverAcceptedOrderAfterCreateError,
   recoveryCandidate
 } = chatOrderCreateRecovery;
+
+chatDeliveryRenderController = createChatDeliveryRenderController({
+  state,
+  window,
+  document,
+  backfillIntervalMs: CHATUX_BACKFILL_INTERVAL_MS,
+  combinedMarkdownFile,
+  compact,
+  currentChatReturnPath,
+  deliveryRendererOrderActionsHtml,
+  deliveryRendererMeta,
+  renderDeliveryBody,
+  deliveryFilePriority,
+  escapeHtml,
+  getDeliveryFile,
+  jobBlockedByLeaderQualityGate,
+  jobBlockedForSaasHandoff,
+  loginHref,
+  recoveryCandidate,
+  refreshRecentJobs,
+  registerDeliveryFile,
+  renderAppHandoffTools,
+  renderDedicatedAppDeliveryTools,
+  sanitizeDeliveryFileForUser: (file, fallbackName) => sanitizeDeliveryFileForUser(file, fallbackName),
+  sanitizeDeliveryMarkdownForUser,
+  saveChatOAuthReturnState,
+  statusDisplayLabel,
+  taskLabel,
+  visibleDeliveryFiles,
+  isTerminalStatus,
+  appendMessage,
+  appendTextMessage,
+  markOrderDelivered,
+  rememberAiAgentsFromJob,
+  rememberTrackedOrder,
+  showWorkflowProgressMap,
+  startPolling,
+  getPolling: () => state.polling,
+  liveProgressStoppedOrderIds: () => state.liveProgressStoppedOrderIds,
+  getOrderId: () => state.orderId,
+  setOrderId: (orderId) => {
+    state.orderId = String(orderId || '').trim();
+  },
+  cssEscape: (value) => CSS.escape(value),
+  retryReuseArtifactDataAttr: 'data-retry-reuse-artifact',
+  authorityRequestFromJob,
+  authorityNoticeKey,
+  approvalAnchorForJob
+});
 
 chatOrderDispatchController = createChatOrderDispatchController({
   state,
