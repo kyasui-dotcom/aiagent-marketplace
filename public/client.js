@@ -238,6 +238,8 @@ import { createClientAgentDetailController } from './client-agent-detail-control
 import { createClientTabNavigationController } from './client-tab-navigation-controller.js?v=20260601a';
 import { createClientWorkChatThreadController } from './client-work-chat-thread-controller.js?v=20260601b';
 import { createClientAgentSkillManifestController } from './client-agent-skill-manifest-controller.js?v=20260601b';
+import { createClientOrderUiStateController } from './client-order-ui-state-controller.js?v=20260601a';
+import { createClientWorkSelectionController } from './client-work-selection-controller.js?v=20260601a';
 
 const $ = (id) => document.getElementById(id);
 const PRODUCT_NAME = 'CAIt';
@@ -1906,7 +1908,6 @@ const {
   updateWorkChatStatusCard
 } = clientRunComposerController;
 
-let orderComposerInputTimer = null;
 const ORDER_COMPOSER_INPUT_DEBOUNCE_MS = 260;
 
 const clientOpenChatRuntimeController = createClientOpenChatRuntimeController({
@@ -2100,102 +2101,46 @@ const {
   updateGenericDeliverableDraft
 } = clientDeliveryActionController;
 
-function scheduleOrderComposerRender() {
-  if (orderComposerInputTimer) window.clearTimeout(orderComposerInputTimer);
-  orderComposerInputTimer = window.setTimeout(() => {
-    orderComposerInputTimer = null;
-    renderOrderComposer();
-  }, ORDER_COMPOSER_INPUT_DEBOUNCE_MS);
-}
-
-function cancelOrderComposerRender() {
-  if (!orderComposerInputTimer) return;
-  window.clearTimeout(orderComposerInputTimer);
-  orderComposerInputTimer = null;
-}
-
-function guestTrialAlreadyUsedLocally(auth = state.snapshot?.auth || {}) {
-  return false;
-}
-
-function markGuestTrialUsedLocally(result = null) {
-  return null;
-}
-
-function shouldOfferGuestTrialForDraft(draft = currentOrderDraft()) {
-  return false;
-}
-
-function guestTrialPromoTextForDraft(draft = currentOrderDraft(), prompt = draft?.prompt || '') {
-  const auth = state.snapshot?.auth || {};
-  if (canOrderFromBrowser(auth)) return '';
-  if (looksJapanese(prompt || draft?.prompt || '')) {
-    return [
-      '実行はログイン後のみです。',
-      'CAItはオープンソースなので利用はフリーです。ただしOpenAI/APIコストがかかるため、1アカウント月10ドルまでで止まります。'
-    ].join('\n');
-  }
-  return [
-    'Dispatch requires sign-in.',
-    'CAIt is free to use because it is open source. OpenAI/API calls still cost money, so each account stops at $10 per month.'
-  ].join('\n');
-}
-
-async function maybeClaimGuestTrialCredits(auth = state.snapshot?.auth || {}) {
-  return null;
-}
-
-function listCreatorEstimateForDraft(draft = {}) {
-  const taskType = normalizeTaskTypeToken(draft.task_type || draft.taskType || currentRoutingTask());
-  if (taskType !== 'list_creator') return null;
-  const requestedCount = inferListCreatorRequestedCount([
-    draft.prompt,
-    draft.goal,
-    draft.input,
-    currentEffectiveOrderPrompt()
-  ]);
-  return listCreatorUsageEstimateForCount(requestedCount);
-}
-
-function renderParallelTools() {
-  updateParallelToolsControls(els, state.parallelToolsExpanded, (element, visible) => setElementVisible(element, visible));
-}
-
-function renderOrderSettingsDrawer() {
-  updateOrderSettingsDrawerControls(els, state.orderSettingsExpanded, {
-    body: document.body,
-    setElementVisible: (element, visible) => setElementVisible(element, visible)
-  });
-}
-
-function openChatMode() {
-  return normalizeOpenChatMode(state.openChatMode);
-}
-
-function isOpenChatClarifyMode() {
-  return openChatMode() === 'clarify';
-}
-
-function persistOpenChatModeValue(mode = 'clarify') {
-  state.openChatMode = normalizeOpenChatMode(mode);
-}
-
-function promotePreparedBriefToOrderMode() {
-  // Keep explicit mode control user-driven to avoid surprise mode switches.
-}
-
-function setOpenChatMode(mode = 'clarify', options = {}) {
-  const next = normalizeOpenChatMode(mode);
-  state.openChatMode = next;
-  persistOpenChatModeValue(next);
-  if (els.openChatModeMenu) els.openChatModeMenu.open = false;
-  renderOrderComposer();
-  if (!options.silent) {
-    flash(next === 'clarify'
-      ? 'PLAN mode enabled. Chat prepares and revises order drafts.'
-      : 'ORDER mode enabled. Chat keeps dispatch-ready structure before SEND ORDER.', 'info');
-  }
-}
+const clientOrderUiStateController = createClientOrderUiStateController({
+  state,
+  els,
+  document,
+  window,
+  orderComposerInputDebounceMs: ORDER_COMPOSER_INPUT_DEBOUNCE_MS,
+  canOrderFromBrowser,
+  currentEffectiveOrderPrompt: () => currentEffectiveOrderPrompt(),
+  currentOrderDraft: () => currentOrderDraft(),
+  currentRoutingTask: () => currentRoutingTask(),
+  flash: (message, tone) => flash(message, tone),
+  inferListCreatorRequestedCount,
+  listCreatorUsageEstimateForCount,
+  looksJapanese,
+  normalizeOpenChatMode,
+  normalizeTaskTypeToken,
+  renderOrderComposer: () => renderOrderComposer(),
+  setElementVisible,
+  updateOrderSettingsDrawerControls,
+  updateParallelToolsControls
+});
+const {
+  cancelOrderComposerRender,
+  closeOrderSettings,
+  guestTrialAlreadyUsedLocally,
+  guestTrialPromoTextForDraft,
+  isOpenChatClarifyMode,
+  listCreatorEstimateForDraft,
+  markGuestTrialUsedLocally,
+  maybeClaimGuestTrialCredits,
+  openChatMode,
+  persistOpenChatModeValue,
+  promotePreparedBriefToOrderMode,
+  renderOrderAdvancedPanel,
+  renderOrderSettingsDrawer,
+  renderParallelTools,
+  scheduleOrderComposerRender,
+  setOpenChatMode,
+  shouldOfferGuestTrialForDraft
+} = clientOrderUiStateController;
 
 const clientOpenChatComposerUtils = createClientOpenChatComposerUtils({
   getState: () => state,
@@ -2339,21 +2284,8 @@ const {
   syncTopWorkChatCta
 } = clientTabNavigationController;
 
-function closeOrderSettings() {
-  state.orderSettingsExpanded = false;
-  renderOrderSettingsDrawer();
-}
-
-function renderOrderAdvancedPanel() {
-  setElementVisible(els.orderAdvancedPanel, true);
-}
-
 function focusWorkResults() {
-  if (els.workListPanels && !els.workListPanels.hidden) {
-    els.workListPanels.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    return;
-  }
-  if (els.jobsTable) els.jobsTable.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  return clientWorkSelectionController.focusWorkResults();
 }
 
 function hasManifestDraft() {
@@ -2395,39 +2327,19 @@ function openFeedbackForm() {
 }
 
 function selectedJob() {
-  return state.snapshot?.jobs?.find((job) => job.id === state.selectedJobId) || null;
+  return clientWorkSelectionController.selectedJob();
 }
 
 function jobById(id = '') {
-  const safeId = String(id || '').trim();
-  if (!safeId) return null;
-  return state.snapshot?.jobs?.find((job) => job.id === safeId) || null;
+  return clientWorkSelectionController.jobById(id);
 }
 
 function openJobDetail(jobId = '') {
-  const job = jobById(jobId);
-  if (!job) return;
-  state.selectedJobId = job.id;
-  setDetail(job);
-  renderJobs(state.snapshot?.jobs || []);
+  return clientWorkSelectionController.openJobDetail(jobId);
 }
 
 async function loadJobForChatAction(orderId = '') {
-  const safeOrderId = String(orderId || '').trim();
-  if (!safeOrderId) return null;
-  const existing = jobById(safeOrderId);
-  if (downloadableDeliveryFilesForJob(existing).length) return existing;
-  const response = await api(`/api/jobs/${encodeURIComponent(safeOrderId)}?visitor_id=${encodeURIComponent(visitorId())}`, {
-    preserveAuthOn401: true
-  });
-  const job = response?.job && typeof response.job === 'object'
-    ? { ...response.job, id: response.job.id || safeOrderId }
-    : { ...(response || {}), id: response?.id || safeOrderId };
-  if (job?.id) {
-    mergeProgressJobIntoSnapshot(job);
-    return jobById(job.id) || job;
-  }
-  return existing;
+  return clientWorkSelectionController.loadJobForChatAction(orderId);
 }
 
 const clientOpenChatContextUtils = createClientOpenChatContextUtils({
@@ -2887,28 +2799,24 @@ const {
   setDetail
 } = clientRunDetailController;
 
+let clientWorkSelectionController = createClientWorkSelectionController({
+  state,
+  els,
+  window,
+  api,
+  agentTaskFit,
+  downloadableDeliveryFilesForJob,
+  flash: (message, tone) => flash(message, tone),
+  mergeProgressJobIntoSnapshot: (job) => mergeProgressJobIntoSnapshot(job),
+  renderJobs: (jobs) => renderJobs(jobs),
+  renderOrderComposer: () => renderOrderComposer(),
+  setDetail: (job) => setDetail(job),
+  switchTab: (tab, options) => switchTab(tab, options),
+  visitorId: () => visitorId()
+});
+
 function loadOrderDraftIntoComposer(order = {}) {
-  state.followupToJobId = '';
-  state.followupSourceTaskType = '';
-  state.followupSourceAgentId = '';
-  state.pendingIntake = null;
-  state.intakeConfirmed = false;
-  state.intakeAnswer = '';
-  if (els.followupAnswer) els.followupAnswer.value = '';
-  if (els.intakeAnswer) els.intakeAnswer.value = '';
-  state.followupToJobId = String(order.followupToJobId || '').trim();
-  state.followupSourceTaskType = String(order.taskType || '').trim();
-  state.followupSourceAgentId = String(order.agentId || '').trim();
-  if (els.jobPrompt) els.jobPrompt.value = String(order.prompt || '');
-  if (els.jobType) els.jobType.value = String(order.taskType || 'research');
-  if (els.jobAgentId) els.jobAgentId.value = String(order.agentId || '');
-  if (els.jobBudget) els.jobBudget.value = String(order.budgetCap ?? 300);
-  if (els.jobDeadline) els.jobDeadline.value = String(order.deadlineSec ?? 120);
-  if (els.jobStrategy) els.jobStrategy.value = String(order.orderStrategy || 'auto');
-  state.orderSettingsExpanded = true;
-  switchTab('work');
-  renderOrderComposer();
-  window.requestAnimationFrame(() => els.jobPrompt?.focus());
+  return clientWorkSelectionController.loadOrderDraftIntoComposer(order);
 }
 
 function flash(message, kind = 'ok') {
@@ -3074,23 +2982,7 @@ async function refresh() {
 }
 
 function applyAgentToRunForm(agent, options = {}) {
-  if (!agent) return;
-  const fit = agentTaskFit(agent);
-  if (els.jobAgentId) els.jobAgentId.value = agent.id;
-  if (els.jobType) {
-    const preferredTask = fit.matches && fit.taskType ? fit.taskType : agent.taskTypes?.[0] || els.jobType.value || 'research';
-    els.jobType.value = preferredTask;
-  }
-  if (els.jobPrompt && !els.jobPrompt.value.trim()) {
-    els.jobPrompt.value = `I want to use ${agent.name} for ${(els.jobType?.value || agent.taskTypes?.[0] || 'research')} work. Help me shape the request before ordering.`;
-  }
-  renderOrderComposer();
-  if (options.switchToRuns) {
-    state.workFlowMode = 'create';
-    state.workFlowShowList = false;
-    switchTab('work');
-  }
-  if (options.announce) flash(options.message || `CAIt Chat pinned to ${agent.name}.`, 'ok');
+  return clientWorkSelectionController.applyAgentToRunForm(agent, options);
 }
 
 async function runAction(action, fn) {

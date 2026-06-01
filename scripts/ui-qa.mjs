@@ -53,6 +53,8 @@ const clientAgentDetailControllerPath = new URL('../public/client-agent-detail-c
 const clientTabNavigationControllerPath = new URL('../public/client-tab-navigation-controller.js', import.meta.url);
 const clientWorkChatThreadControllerPath = new URL('../public/client-work-chat-thread-controller.js', import.meta.url);
 const clientAgentSkillManifestControllerPath = new URL('../public/client-agent-skill-manifest-controller.js', import.meta.url);
+const clientOrderUiStateControllerPath = new URL('../public/client-order-ui-state-controller.js', import.meta.url);
+const clientWorkSelectionControllerPath = new URL('../public/client-work-selection-controller.js', import.meta.url);
 const clientPaymentRemovalUiPath = new URL('../public/client-payment-removal-ui.js', import.meta.url);
 const clientFlexibleToolUtilsPath = new URL('../public/client-flexible-tool-utils.js', import.meta.url);
 const clientOpenChatHistoryUtilsPath = new URL('../public/client-open-chat-history-utils.js', import.meta.url);
@@ -219,6 +221,8 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatExchangeC
 execFileSync(process.execPath, ['--check', fileURLToPath(clientJobCreateControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientWorkChatActionControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientAgentDetailControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientOrderUiStateControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientWorkSelectionControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatHistoryUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatPatternGuardUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatResponseUtilsPath)], { stdio: 'pipe' });
@@ -298,6 +302,8 @@ const clientAgentDetailControllerJs = readFileSync(clientAgentDetailControllerPa
 const clientTabNavigationControllerJs = readFileSync(clientTabNavigationControllerPath, 'utf8');
 const clientWorkChatThreadControllerJs = readFileSync(clientWorkChatThreadControllerPath, 'utf8');
 const clientAgentSkillManifestControllerJs = readFileSync(clientAgentSkillManifestControllerPath, 'utf8');
+const clientOrderUiStateControllerJs = readFileSync(clientOrderUiStateControllerPath, 'utf8');
+const clientWorkSelectionControllerJs = readFileSync(clientWorkSelectionControllerPath, 'utf8');
 const clientPaymentRemovalUiJs = readFileSync(clientPaymentRemovalUiPath, 'utf8');
 const clientFlexibleToolUtilsJs = readFileSync(clientFlexibleToolUtilsPath, 'utf8');
 const clientOpenChatPreorderIntentJs = readFileSync(new URL('../public/client-open-chat-preorder-intent-utils.js', import.meta.url), 'utf8');
@@ -614,6 +620,12 @@ assert.ok(!clientJs.includes('function loadManifestExample()'), 'Agent manifest 
 assert.ok(!clientJs.includes('async function importManifestUrlAndVerify'), 'Agent manifest import/verify should stay outside client.js.');
 assert.ok(clientAgentSkillManifestControllerJs.includes('async function draftAgentSkillManifestFromText') && clientAgentSkillManifestControllerJs.includes('function openManualAgentSkillFlow'), 'Agent skill manifest controller should own markdown detection, draft API, and manual setup flow.');
 assert.ok(!clientJs.includes('async function draftAgentSkillManifestFromText') && !clientJs.includes('function openManualAgentSkillFlow'), 'Client app should delegate Agent Skill manifest drafting to the extracted controller.');
+assert.ok(clientJs.includes("from './client-order-ui-state-controller.js?v=20260601a'"), 'Client app should load the extracted order UI state controller cache key.');
+assert.ok(clientOrderUiStateControllerJs.includes('function scheduleOrderComposerRender') && clientOrderUiStateControllerJs.includes('function setOpenChatMode'), 'Order UI state controller should own composer debounce and Open Chat mode state.');
+assert.ok(!clientJs.includes('let orderComposerInputTimer') && !clientJs.includes('function setOpenChatMode'), 'Client app should delegate order UI timers and mode state to the extracted controller.');
+assert.ok(clientJs.includes("from './client-work-selection-controller.js?v=20260601a'"), 'Client app should load the extracted work selection controller cache key.');
+assert.ok(clientWorkSelectionControllerJs.includes('async function loadJobForChatAction') && clientWorkSelectionControllerJs.includes('function loadOrderDraftIntoComposer'), 'Work selection controller should own job lookup/detail loading and composer draft loading.');
+assert.ok(!clientJs.includes('const safeOrderId = String(orderId') && !clientJs.includes('state.followupSourceTaskType = String(order.taskType'), 'Client app should delegate job detail loading and draft composer mutation to the extracted work selection controller.');
 assert.ok(clientOpenChatServerOrderUtilsJs.includes("'/api/work/prepare-order'") && clientOpenChatServerOrderUtilsJs.includes("'/api/work/resolve-intent'"), 'Server order utilities should own Open Chat work-order contract endpoints.');
 const prepareOrderSource = chatJs.slice(chatJs.indexOf('async function prepareOrder'), chatJs.indexOf('async function sendOrder'));
 assert.ok(prepareOrderSource.includes('Server-owned order intake questions could not be loaded'), 'Prepare-order failures should stop instead of falling back to client-generated intake questions.');
