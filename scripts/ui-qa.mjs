@@ -37,6 +37,7 @@ const clientAgentSetupFlowControllerPath = new URL('../public/client-agent-setup
 const clientBrowserTransferUtilsPath = new URL('../public/client-browser-transfer-utils.js', import.meta.url);
 const clientConnectHubControllerPath = new URL('../public/client-connect-hub-controller.js', import.meta.url);
 const clientDeliveryActionControllerPath = new URL('../public/client-delivery-action-controller.js', import.meta.url);
+const clientDeliveryAuthorityControllerPath = new URL('../public/client-delivery-authority-controller.js', import.meta.url);
 const clientDeliveryExecutorPreferencesPath = new URL('../public/client-delivery-executor-preferences.js', import.meta.url);
 const clientDeliveryGenericRendererPath = new URL('../public/client-delivery-generic-renderer.js', import.meta.url);
 const clientDeliveryRenderModelPath = new URL('../public/client-delivery-render-model.js', import.meta.url);
@@ -219,6 +220,7 @@ execFileSync(process.execPath, ['--check', fileURLToPath(clientDeveloperSurfaceC
 execFileSync(process.execPath, ['--check', fileURLToPath(clientSettingsBillingControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientAgentAccessControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryActionControllerPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryAuthorityControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryExecutorPreferencesPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryGenericRendererPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(clientDeliveryRenderModelPath)], { stdio: 'pipe' });
@@ -316,6 +318,7 @@ const clientSettingsBillingControllerJs = readFileSync(clientSettingsBillingCont
 const clientRouteAuthControllerJs = readFileSync(clientRouteAuthControllerPath, 'utf8');
 const clientAgentAccessControllerJs = readFileSync(clientAgentAccessControllerPath, 'utf8');
 const clientDeliveryActionControllerJs = readFileSync(clientDeliveryActionControllerPath, 'utf8');
+const clientDeliveryAuthorityControllerJs = readFileSync(clientDeliveryAuthorityControllerPath, 'utf8');
 const clientDeliveryExecutorPreferencesJs = readFileSync(clientDeliveryExecutorPreferencesPath, 'utf8');
 const clientDeliveryGenericRendererJs = readFileSync(clientDeliveryGenericRendererPath, 'utf8');
 const clientDeliveryRenderModelJs = readFileSync(clientDeliveryRenderModelPath, 'utf8');
@@ -765,8 +768,15 @@ assert.ok(clientDeliveryExecutorPreferencesJs.includes('Array.isArray(state.repo
 assert.ok(clientDeliveryActionControllerJs.includes("import { createClientDeliveryGenericRenderer } from './client-delivery-generic-renderer.js"), 'Delivery action controller should delegate generic deliverable rendering.');
 assert.ok(clientDeliveryGenericRendererJs.includes('function renderGenericDeliverableSection'), 'Generic deliverable section HTML rendering should be owned by the renderer module.');
 assert.ok(clientDeliveryGenericRendererJs.includes('function renderGoogleSourceControls'), 'Generic deliverable Google source controls should be rendered by the renderer module.');
+assert.ok(clientDeliveryActionControllerJs.includes("from './client-delivery-authority-controller.js?v=20260602a'"), 'Delivery action controller should delegate authority parsing/state to the authority controller.');
+assert.ok(clientDeliveryAuthorityControllerJs.includes('function authorityRequestFromReport'), 'Delivery authority parsing should be owned by the authority controller.');
+assert.ok(clientDeliveryAuthorityControllerJs.includes('function genericDeliverableAuthorityState'), 'Delivery authority state resolution should be owned by the authority controller.');
+assert.ok(clientDeliveryAuthorityControllerJs.includes('function describeAuthorityNeed'), 'Delivery authority copy should be owned by the authority controller.');
 assert.ok(!clientDeliveryActionControllerJs.includes('function renderGenericDeliverableSection'), 'Delivery action controller must not own generic deliverable section rendering.');
 assert.ok(!clientDeliveryActionControllerJs.includes('function renderGenericDeliverableApprovalPreview'), 'Delivery action controller must not own generic deliverable approval preview rendering.');
+assert.ok(!clientDeliveryActionControllerJs.includes('function authorityRequestFromReport'), 'Delivery action controller must not own authority request parsing.');
+assert.ok(!clientDeliveryActionControllerJs.includes('function genericDeliverableAuthorityState'), 'Delivery action controller must not own authority state resolution.');
+assert.ok(!clientDeliveryActionControllerJs.includes('function describeAuthorityNeed'), 'Delivery action controller must not own authority need copy.');
 assert.ok(!clientDeliveryActionControllerJs.includes('async function saveGoogleExecutorPreferences'), 'Delivery action controller should not own executor preference persistence.');
 assert.ok(!clientDeliveryActionControllerJs.includes('function flattenGa4PropertyOptions'), 'Delivery action controller should not own Google asset option flattening.');
 assert.ok(clientDeliveryActionControllerJs.includes('sendFollowupToAgentFromDelivery'), 'Delivery action controller should keep the direct follow-up sender after refactors.');
