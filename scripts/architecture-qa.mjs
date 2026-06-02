@@ -45,6 +45,8 @@ const agentOrchestrationDisciplineSource = read('docs/AGENT_ORCHESTRATION_DISCIP
 const deliveryActionContractSource = read('public/delivery-action-contract.js');
 const appContextSource = read('lib/app-context.js');
 const migrationSource = read('migrations/0001_init.sql');
+const workerApiCmoWorkflowQaSource = read('scripts/worker-api-cmo-workflow-qa.mjs');
+const workerApiCmoWorkflowFixturesSource = read('scripts/worker-api-cmo-workflow-fixtures.mjs');
 const workerLeaderFollowupFunction = workerSource.match(/function orderCreateSpecialistTaskForLeaderText[\s\S]*?\n}/)?.[0] || '';
 const workerConcreteRequirementFunction = workerSource.match(/function workflowTaskRequiresConcreteSpecialistArtifact[\s\S]*?\n}/)?.[0] || '';
 
@@ -462,6 +464,12 @@ for (const token of [
     `Billing/job state guard missing ${token}`
   );
 }
+
+assert.ok(workerApiCmoWorkflowQaSource.includes("from './worker-api-cmo-workflow-fixtures.mjs'"), 'CMO workflow QA should delegate large specialist fixture helpers.');
+assert.ok(workerApiCmoWorkflowFixturesSource.includes('export async function completeAsyncWorkflowSpecialists'), 'CMO workflow fixtures should own specialist phase completion helpers.');
+assert.ok(workerApiCmoWorkflowFixturesSource.includes('function cmoWorkflowSpecialistArtifact'), 'CMO workflow fixtures should own large specialist artifact bodies.');
+assert.ok(!workerApiCmoWorkflowQaSource.includes('function cmoWorkflowSpecialistArtifact'), 'CMO workflow QA scenario should not inline specialist artifact fixture generation.');
+assert.ok(!workerApiCmoWorkflowQaSource.includes('## SEO page packet'), 'CMO workflow QA scenario should keep large specialist artifact text in the fixture module.');
 
 assert.ok(storageSource.includes('ensureStorageSchema'), 'Storage should keep runtime schema initialization');
 assert.ok(storageSource.includes('ensureD1StorageSchema'), 'Storage should delegate D1 column migration to the schema module');
