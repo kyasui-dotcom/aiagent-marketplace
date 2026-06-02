@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { renderChatPagesNav, renderHomeHeader } from '../lib/site-header.js';
 
 const htmlPath = new URL('../public/index.html', import.meta.url);
 const chatHtmlPath = new URL('../public/chat.html', import.meta.url);
@@ -175,7 +176,9 @@ const publicHeadersPath = new URL('../public/_headers', import.meta.url);
 const agentOrchestrationDisciplinePath = new URL('../docs/AGENT_ORCHESTRATION_DISCIPLINE.md', import.meta.url);
 const onboardingPath = new URL('../lib/onboarding.js', import.meta.url);
 const seoPagesPath = new URL('../lib/seo-pages.js', import.meta.url);
+const siteHeaderPath = new URL('../lib/site-header.js', import.meta.url);
 const seoNewsPostsPath = new URL('../lib/seo-news-posts.js', import.meta.url);
+const syncSharedHeadersPath = new URL('../scripts/sync-shared-headers.mjs', import.meta.url);
 const naturalLanguageNewsPath = new URL('../public/news/order-natural-language-request.html', import.meta.url);
 const feedXmlPath = new URL('../public/feed.xml', import.meta.url);
 
@@ -274,7 +277,9 @@ execFileSync(process.execPath, ['--check', fileURLToPath(workIntentResolverPath)
 execFileSync(process.execPath, ['--check', fileURLToPath(clientOpenChatContextUtilsPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(onboardingPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(seoPagesPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(siteHeaderPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(seoNewsPostsPath)], { stdio: 'pipe' });
+execFileSync(process.execPath, ['--check', fileURLToPath(syncSharedHeadersPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(mcpPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(httpPolicyPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(httpCorePath)], { stdio: 'pipe' });
@@ -286,6 +291,14 @@ execFileSync(process.execPath, ['--check', fileURLToPath(chatDeliveryRenderContr
 execFileSync(process.execPath, ['--check', fileURLToPath(chatEventBindingsControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatAppContextOAuthControllerPath)], { stdio: 'pipe' });
 execFileSync(process.execPath, ['--check', fileURLToPath(chatRetryFollowupControllerPath)], { stdio: 'pipe' });
+
+function sharedHeaderBlock(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker);
+  assert.ok(start >= 0, `missing shared header start marker ${startMarker}`);
+  assert.ok(end > start, `missing shared header end marker ${endMarker}`);
+  return source.slice(start + startMarker.length, end).trim();
+}
 
 const html = readFileSync(htmlPath, 'utf8');
 const chatHtml = readFileSync(chatHtmlPath, 'utf8');
@@ -549,6 +562,11 @@ assert.ok(html.includes('class="primary-action start-action"'), 'Root should exp
 assert.equal((html.match(/class="primary-action/g) || []).length, 1, 'Root should only have one prominent primary action.');
 assert.ok(!html.includes('href="/chat.html"'), 'Root should not link directly to chat; START should go through the dedicated login screen.');
 assert.ok(html.includes('<nav class="home-links" aria-label="CAIt pages">'), 'Root should expose the common public navigation in the landing header.');
+assert.equal(
+  sharedHeaderBlock(html, '<!-- CAIT_SHARED_HEADER:home:start -->', '<!-- CAIT_SHARED_HEADER:home:end -->'),
+  renderHomeHeader().trim(),
+  'Root shared header should stay synced with lib/site-header.js.'
+);
 assert.ok(html.includes('href="/login?next=%2Fchat&amp;source=nav"'), 'Root header Chat link should route through login.');
 assert.ok(html.includes('href="/apps.html"'), 'Root should expose the new CAIt app hub.');
 assert.ok(html.includes('href="/delivery-manager.html"'), 'Root header should expose the built-in Deliveries feature.');
@@ -1441,9 +1459,16 @@ assert.ok(!deliveryManagerJs.includes('/publish now|post now|send now|schedule|æ
 assert.ok(html.includes('href="/agents.html"'));
 assert.ok(html.includes('href="/publish-ai-agents.html"'));
 assert.ok(html.includes('href="/ai-agent-api.html"'));
+assert.ok(html.includes('href="/ai-agent-api.html#api-keys"'), 'Home header should expose API keys directly.');
 assert.ok(html.includes('Runtime-gated external clients'), 'Home API/CLI card should describe runtime-gated developer surfaces.');
 assert.ok(html.includes('href="/resources.html"'));
 assert.ok(chatHtml.includes('href="/ai-agent-api.html"') && chatHtml.includes('API / CLI / MCP'), 'Chat should expose one API/CLI/MCP tab.');
+assert.ok(chatHtml.includes('href="/ai-agent-api.html#api-keys"') && chatHtml.includes('API keys'), 'Chat header should expose API keys directly.');
+assert.equal(
+  sharedHeaderBlock(chatHtml, '<!-- CAIT_SHARED_HEADER:chat-pages:start -->', '<!-- CAIT_SHARED_HEADER:chat-pages:end -->'),
+  renderChatPagesNav().trim(),
+  'Chat page menu links should stay synced with lib/site-header.js.'
+);
 assert.ok(!chatHtml.includes('href="/cli-help.html"'), 'Chat should not expose a separate CLI tab.');
 assert.ok(chatHtml.includes('href="/apps.html"'));
 assert.ok(chatHtml.includes('href="/help.html"'));
@@ -1478,7 +1503,7 @@ assert.ok(chatCss.includes('.composer-controls-hint'), 'Chat CSS should style th
 assert.ok(/\/apps\.js\?v=202605\d+[a-z]/.test(appsHtml), 'Apps page should load the current workspace-grouped app hub controller.');
 assert.ok(workerAssets.includes("'/pricing-ops.html'") && workerAssets.includes("'/pricing-ops.js'"), 'Worker should no-cache Pricing Decision Console assets after deploy.');
 assert.ok(appsHtml.includes('data-app-registry-list'), 'Apps page should expose the live app registry list.');
-assert.ok(appsHtml.includes('One API / CLI / MCP developer surface') && appsHtml.includes('Disabled by default'), 'Apps page should describe API/CLI/MCP as one disabled-by-default developer surface.');
+assert.ok(appsHtml.includes('One API / CLI / MCP developer surface') && appsHtml.includes('Active through runtime flags'), 'Apps page should describe API/CLI/MCP as one active runtime-gated developer surface.');
 assert.ok(!appsHtml.includes('href="#mcp"'), 'Apps page should not expose a separate MCP side tab.');
 assert.ok(appsHtml.includes('Recent app contexts'), 'Apps page should expose server-side app context history.');
 assert.ok(appsHtml.includes("server-side context API"), 'Apps page should explain the server-side app context API.');
@@ -2568,7 +2593,7 @@ assert.ok(
   || workerHandlers.includes('return json(await appsCatalogPayload(storage, request));'),
   'Worker /api/apps should use the paged catalog endpoint.'
 );
-assert.ok((worker.includes('/.well-known/mcp.json') || workerHandlers.includes('/.well-known/mcp.json')) && mcpRoutes.includes('mcpDisabledPayload'), 'Worker should keep MCP discovery behind a disabled-by-default route gate.');
+assert.ok((worker.includes('/.well-known/mcp.json') || workerHandlers.includes('/.well-known/mcp.json')) && mcpRoutes.includes('mcpDisabledPayload'), 'Worker should keep MCP discovery behind a runtime-policy route gate.');
 assert.ok((worker.includes("url.pathname === '/mcp'") || workerHandlers.includes("url.pathname === '/mcp'")) && mcpRoutes.includes('async function handleMcpRequest'), 'Worker should route MCP JSON-RPC through the gated MCP route module.');
 assert.ok(mcpRoutes.includes('runtimePolicy(env).mcpEnabled'), 'MCP should require an explicit runtime flag before returning protocol payloads.');
 assert.ok(appRoutes.includes('async function handleAppHandoff'), 'App routes should proxy generic app handoff requests.');

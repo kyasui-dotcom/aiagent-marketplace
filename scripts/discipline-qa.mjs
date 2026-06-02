@@ -44,6 +44,8 @@ const deliveryManagerSource = read('public/delivery-manager.js');
 const deliveryActionContractSource = read('public/delivery-action-contract.js');
 const openChatIntentSource = read('lib/open-chat-intent.js');
 const chatHtmlSource = read('public/chat.html');
+const siteHeaderSource = read('lib/site-header.js');
+const syncSharedHeadersSource = read('scripts/sync-shared-headers.mjs');
 const appHandoffGateSource = read('public/app-handoff-gate.js');
 const appHandoffTransferSource = read('public/app-handoff-transfer.js');
 const appContextGateSource = read('public/app-context-gate.js');
@@ -190,8 +192,8 @@ assert.ok(
   'development discipline must prevent unlimited beta test-mode execution'
 );
 assert.ok(
-  disciplineDoc.includes('public CLI/API-key access and MCP must stay disabled by default'),
-  'development discipline must keep unstable external developer surfaces disabled by default'
+  disciplineDoc.includes('Public CLI/API-key access and MCP must stay behind explicit runtime flags'),
+  'development discipline must keep external developer surfaces behind explicit runtime flags'
 );
 assert.ok(
   operatorAccessSource.includes('CAIT_DEVELOPER_API_ENABLED') && operatorAccessSource.includes('CAIT_MCP_ENABLED'),
@@ -199,11 +201,30 @@ assert.ok(
 );
 assert.ok(
   apiKeyRoutesSource.includes('developerApiDisabled') && mcpRoutesSource.includes('mcpDisabledPayload'),
-  'API key and MCP routes must have explicit disabled gates while external contracts stabilize'
+  'API key and MCP routes must have explicit disabled gates for runtime-policy off states'
 );
 assert.ok(
   chatHtmlSource.includes('API / CLI / MCP') && chatHtmlSource.includes('href="/ai-agent-api.html"'),
   'chat navigation must expose one unified external developer surface'
+);
+assert.ok(
+  chatHtmlSource.includes('API keys') && chatHtmlSource.includes('href="/ai-agent-api.html#api-keys"'),
+  'chat navigation must expose API key issuance directly instead of hiding it behind an abstract API label'
+);
+assert.ok(
+  siteHeaderSource.includes('export const HOME_NAV_LINKS')
+    && siteHeaderSource.includes('export const DOC_NAV_LINKS')
+    && siteHeaderSource.includes('export const CHAT_PAGE_LINKS')
+    && siteHeaderSource.includes("API_KEYS_HREF = '/ai-agent-api.html#api-keys'")
+    && siteHeaderSource.includes("DEVELOPER_ACCESS_HREF = '/ai-agent-api.html'"),
+  'public headers must share one navigation source for API keys and API/CLI/MCP links'
+);
+assert.ok(
+  generateSeoPagesSource.includes("import { renderDocHeader } from '../lib/site-header.js'")
+    && generateSeoPagesSource.includes('renderDocHeader({ sublogo:')
+    && syncSharedHeadersSource.includes('renderHomeHeader')
+    && syncSharedHeadersSource.includes('renderChatPagesNav'),
+  'static and generated pages must render headers from the shared site header module'
 );
 assertNotIncludes(chatHtmlSource, [
   'href="/cli-help.html"',

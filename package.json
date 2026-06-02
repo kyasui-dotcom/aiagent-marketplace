@@ -11,6 +11,7 @@
     "cait": "node scripts/external-chat.mjs",
     "cait:key": "node scripts/api-key.mjs",
     "seo:build": "node scripts/generate-seo-pages.mjs",
+    "headers:sync": "node scripts/sync-shared-headers.mjs",
     "open-core:export": "node scripts/export-open-core.mjs",
     "open-core:sync": "node scripts/export-open-core.mjs ../aiagent2-core --clean",
     "start": "npx wrangler dev --remote",

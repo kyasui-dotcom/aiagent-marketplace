@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { contributionPage, glossaryCategories, glossaryTerms, newsPosts, seoLandingPages, SITE_NAME, SITE_SHORT_NAME, SITE_URL } from '../lib/seo-pages.js';
 import { SAMPLE_AGENT_DEFINITIONS } from '../lib/builtin-agents/agents/index.js';
 import { DEFAULT_AGENT_SEEDS, DEPRECATED_AGENT_SEED_IDS } from '../lib/shared.js';
+import { renderDocHeader } from '../lib/site-header.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -251,7 +252,7 @@ const HOWTO_STEPS_BY_SLUG = {
     'List the verified agent so buyers can route funded work orders to it.'
   ],
   'ai-agent-runtime': [
-    'Accept a natural-language work order from the browser while API / CLI / MCP access stays paused.',
+    'Accept a natural-language work order from the browser or active API / CLI / MCP developer surface.',
     'Infer or select the task type and route the order to a ready agent.',
     'Run readiness checks before dispatching work.',
     'Store the delivery, files, confidence notes, cost context, and follow-up state.',
@@ -272,11 +273,11 @@ const HOWTO_STEPS_BY_SLUG = {
     'Inspect the delivery and create a follow-up order when more work is needed.'
   ],
   'ai-agent-api': [
-    'Use browser Chat, Apps, Deliveries, and Publisher for current work.',
-    'Keep API-key, CLI, and MCP access disabled by default unless explicit runtime flags activate them.',
-    'Stabilize app handoff, delivery, auth, approval, and cost-context contracts.',
-    'Republish API, CLI, and MCP examples together after validation.',
-    'Re-enable only with explicit runtime flags when ready.'
+    'Sign in and issue a live CAIt API key from the API keys surface.',
+    'Set CAIT_API_KEY in the server or CLI environment that will call CAIt.',
+    'Use the API for order creation, delivery reads, app context, and manifest workflows.',
+    'Use MCP discovery and JSON-RPC for public catalog metadata.',
+    'Keep private context and write actions behind CAIt session or API-key auth.'
   ],
   'ai-agent-verification': [
     'Prepare a manifest that describes the agent, owner, task types, and endpoints.',
@@ -464,21 +465,7 @@ ${head({ title, description, canonical: absoluteUrl(canonicalPath), type, date, 
 <body>
   <div class="crt"></div>
   <main class="app-shell doc-shell">
-    <header class="topbar box">
-      <div>
-        <a class="logo logo-link" href="/" aria-label="Back to CAIt start">CAIt</a>
-        <div class="sublogo">${escapeHtml(sublogo || 'AI AGENT RUNTIME')}</div>
-      </div>
-      <nav class="doc-nav" aria-label="CAIt pages">
-        <a href="/" class="mini-btn link-btn">Home</a>
-        <a href="/chat.html" class="mini-btn link-btn">Chat</a>
-        <a href="/agents.html" class="mini-btn link-btn">Agents</a>
-        <a href="/ai-agent-api.html" class="mini-btn link-btn">API / CLI / MCP</a>
-        <a href="/resources.html" class="mini-btn link-btn">Resources</a>
-        <a href="/help.html" class="mini-btn link-btn">Help</a>
-        <a href="/news.html" class="mini-btn link-btn">News</a>
-      </nav>
-    </header>
+${renderDocHeader({ sublogo: sublogo || 'AI AGENT RUNTIME' })}
 ${breadcrumbHtml(breadcrumbs)}
 ${children}
   </main>
@@ -608,18 +595,18 @@ function seoLandingPageHtml(landingPage) {
       children: `    <article class="box panel-stack news-article-page seo-landing-page" style="margin-bottom:16px">
       <div class="doc-meta">CAIt guide / unified developer access</div>
       <h1>AI Agent API, CLI, and MCP access share one contract.</h1>
-      <p><strong>Current status:</strong> API-key access, CLI execution, and MCP are disabled by default in code, and deployments can activate them with explicit runtime flags. Browser Chat, Apps, Deliveries, and Publisher remain available.</p>
+      <p><strong>Current status:</strong> API-key access is active, CLI execution uses the same API policy, and MCP discovery is active on the public deployment through explicit runtime flags. Browser Chat, Apps, Deliveries, and Publisher remain available.</p>
       <p>This single page replaces separate API, CLI, and MCP tabs because all three surfaces must obey the same leader-guided ordering, delivery history, app context, approval, auth, and cost-context rules.</p>
       <h2>One external surface</h2>
       <ul class="flow-list compact-list">
-        <li><strong>API:</strong> future backend and workflow automation access for reviewable orders and delivery reads.</li>
-        <li><strong>CLI:</strong> future terminal access for repeatable orders, follow-ups, delivery inspection, and manifest workflows.</li>
-        <li><strong>MCP:</strong> tool and resource discovery for clients that need catalog, app, and delivery context when MCP is enabled.</li>
+        <li><strong>API:</strong> backend and workflow automation access for reviewable orders and delivery reads.</li>
+        <li><strong>CLI:</strong> terminal access for repeatable orders, follow-ups, delivery inspection, and manifest workflows.</li>
+        <li><strong>MCP:</strong> tool and resource discovery for clients that need catalog, app, and delivery context.</li>
       </ul>
       <h2>Runtime activation policy</h2>
-      <p>External API-key, CLI, and MCP access stay disabled by default unless the deployment sets explicit runtime flags. API-created work remains visible in CAIt with status, delivery files, cost context, and approval state.</p>
+      <p>External API-key, CLI, and MCP access are active on the public deployment because the deployment sets explicit runtime flags. API-created work remains visible in CAIt with status, delivery files, cost context, and approval state.</p>
       <h2>API shape</h2>
-      <p>The API supports order creation, delivery reads, app-context reuse, app and agent manifest import, verification, and follow-up workflows when API-key access is enabled.</p>
+      <p>The API supports order creation, delivery reads, app-context reuse, app and agent manifest import, verification, and follow-up workflows with a live CAIt API key.</p>
       <pre class="detail-box code-box"># Requires a live CAIt API key
 curl.exe -X POST https://aiagent-marketplace.net/api/jobs ^
   -H "content-type: application/json" ^
@@ -635,19 +622,23 @@ curl.exe -X POST https://aiagent-marketplace.net/api/app-contexts ^
   -H "content-type: application/json" ^
   -H "authorization: Bearer &lt;CAIT_API_KEY&gt;" ^
   -d "{&quot;app_id&quot;:&quot;analytics-console&quot;,&quot;context&quot;:{&quot;title&quot;:&quot;GSC query gap&quot;,&quot;summary&quot;:&quot;Search evidence is ready.&quot;}}"</pre>
-      <h2>CLI shape</h2>
-      <p>The CLI wraps the same API without creating a second policy surface. Terminal usage must retain delivery history, app context, clarification state, and follow-up links.</p>
+      <h2 id="api-keys">API keys</h2>
+      <p>CAIt API keys are issued from the account API keys surface after sign-in. The raw key is shown once, so store it in the service that will call CAIt.</p>
       <pre class="detail-box code-box"># Issue or manage CAIt API keys
 npm run cait:key -- create --label codex-desktop --export
-npm run cait:key -- list
+npm run cait:key -- list</pre>
 
-# Order-oriented CLI commands share the same API policy
+      <h2>CLI shape</h2>
+      <p>The CLI wraps the same API without creating a second policy surface. Terminal usage must retain delivery history, app context, clarification state, and follow-up links.</p>
+      <pre class="detail-box code-box"># Order-oriented CLI commands share the same API policy
+export CAIT_API_KEY=&lt;CAIT_API_KEY&gt;
+
 npm run cait -- send --watch "Compare support options for used iPhone repairs in Japan"
 npm run cait -- get &lt;job_id&gt;
 npm run cait -- follow-up &lt;job_id&gt; "Revise for Japan and add sources"</pre>
       <h2>MCP shape</h2>
-      <p>MCP discovery and JSON-RPC routes are gated by runtime flags. When enabled, MCP exposes allowed tools and resources, preserves structured content, and requires auth for private app context or write actions.</p>
-      <pre class="detail-box code-box"># MCP is disabled by default unless CAIT_MCP_ENABLED is active
+      <p>MCP discovery and JSON-RPC routes are active for public catalog metadata. Private app context and write actions still require CAIt session or API-key auth.</p>
+      <pre class="detail-box code-box"># MCP discovery is active on the public deployment
 curl.exe https://aiagent-marketplace.net/.well-known/mcp.json
 
 curl.exe -X POST https://aiagent-marketplace.net/mcp ^
@@ -655,10 +646,10 @@ curl.exe -X POST https://aiagent-marketplace.net/mcp ^
   -d "{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:1,&quot;method&quot;:&quot;tools/list&quot;,&quot;params&quot;:{}}"</pre>
       <h2>What CAIt gives you</h2>
       <ul class="flow-list compact-list">
-        <li>API-key access, CLI execution, and MCP are one paused developer access surface.</li>
+        <li>API-key access, CLI execution, and MCP are one active developer access surface.</li>
         <li>Browser Chat, Apps, Deliveries, and Publisher remain available.</li>
-        <li>Examples for API, CLI, and MCP should be republished together after validation.</li>
-        <li>Re-enable only through explicit runtime flags after the shared contract is stable.</li>
+        <li>Examples for API, CLI, and MCP are published together because they share one policy.</li>
+        <li>Private context and write actions require CAIt session or API-key auth.</li>
       </ul>
       <h2>Implementation steps</h2>
       <ol class="flow-list compact-list">
@@ -666,11 +657,11 @@ curl.exe -X POST https://aiagent-marketplace.net/mcp ^
       </ol>
       <h2>Common questions</h2>
       <h3>Are API, CLI, and MCP available today?</h3>
-      <p>They are disabled by default in code and active only on deployments where explicit runtime flags enable them.</p>
+      <p>Yes. They are active on the public deployment through explicit runtime flags.</p>
       <h3>Why are API, CLI, and MCP on one page?</h3>
       <p>They are the same external access surface with different clients. Splitting them into separate tabs made the policy look separate even though the rules are shared.</p>
-      <h3>What should I use instead?</h3>
-      <p>Use browser Chat, Apps, Deliveries, and Publisher flows.</p>
+      <h3>How do I authenticate?</h3>
+      <p>Sign in, create a CAIt API key from the API keys surface, and send it as a Bearer token for API or CLI workflows.</p>
       <div class="footer-links">
         ${listAgentCta('btn link-btn')}
         <a href="/chat.html" class="mini-btn link-btn">ORDER AN AI AGENT</a>
@@ -916,7 +907,7 @@ function agentFaqJsonLd(agent) {
         name: 'Can this built-in agent be used from API, CLI, or MCP?',
         acceptedAnswer: {
           '@type': 'Answer',
-          text: 'Use browser orders now. API, CLI, and MCP share one disabled-by-default developer surface until the external contract is stable.'
+          text: 'Use browser orders or the active API and CLI surface with a CAIt API key. MCP exposes public catalog metadata for compatible clients.'
         }
       }
     ]
@@ -1209,7 +1200,7 @@ function agentPageHtml(agent, relatedAgents) {
     .join('\n        ');
   return page({
     title: `${details.title} | Built-In CAIt Agent`,
-    description: `${details.title} on CAIt helps with ${details.bestFor.slice(0, 2).join(' and ')}. Order it from the browser while API / CLI / MCP access is paused.`,
+    description: `${details.title} on CAIt helps with ${details.bestFor.slice(0, 2).join(' and ')}. Order it from the browser or the active API / CLI / MCP developer surface.`,
     canonicalPath: `/agents/${agentPageSlug(agent)}.html`,
     keywords: [details.keyword, label, 'built-in AI agent', 'CAIt', ...agent.taskTypes],
     sublogo: 'BUILT-IN AI AGENT',
@@ -1227,7 +1218,7 @@ function agentPageHtml(agent, relatedAgents) {
         ${taskTypes}
       </div>
       <h2>What this agent does</h2>
-      <p>${escapeHtml(agent.description)} CAIt wraps it in a browser order workflow with routing, delivery review, cost context, and a future unified API / CLI / MCP surface.</p>
+      <p>${escapeHtml(agent.description)} CAIt wraps it in a browser order workflow with routing, delivery review, cost context, and the unified API / CLI / MCP surface.</p>
       ${manifestSummaryPanelHtml(agent)}
       <h2>Best use cases</h2>
       <ul class="flow-list compact-list">
@@ -1255,7 +1246,7 @@ function agentPageHtml(agent, relatedAgents) {
         ${trustLimits}
       </ul>
       <h2>How to order it</h2>
-      <p>Open ORDER, describe the desired outcome in natural language, and let CAIt auto-route to a matching ready agent. API / CLI / MCP access can return later through the same external developer contract.</p>
+      <p>Open ORDER, describe the desired outcome in natural language, and let CAIt auto-route to a matching ready agent. External clients can use the same developer contract through API, CLI, or MCP discovery.</p>
       <h2>Common questions</h2>
       <h3>Is this a sample or a real built-in agent?</h3>
       <p>It is a built-in CAIt agent. In production, built-in agents can run through the CAIt runtime and return structured delivery for supported task types.</p>
@@ -1430,7 +1421,7 @@ function siteMapHtml(agents, terms) {
     { href: '/demo.html', label: 'Demo Video', description: 'short provider and product demo' },
     { href: '/help.html', label: 'Help Center', description: 'first-time paths and support entry points' },
     { href: '/guide.html', label: 'First Run Guide', description: 'developer setup guide' },
-    { href: '/ai-agent-api.html', label: 'API / CLI / MCP', description: 'one disabled-by-default developer surface' },
+    { href: '/ai-agent-api.html', label: 'API / CLI / MCP', description: 'active API-key, CLI, and MCP developer surface' },
     { href: '/qa.html', label: 'Q&A', description: 'GitHub, product, and cost-transparency answers' },
     { href: '/contribute.html', label: 'Contribute', description: 'field-note and issue contribution path' },
     { href: '/terms.html', label: 'Terms', description: 'terms of service' },
@@ -1520,7 +1511,7 @@ function llmsTxt(agents, terms) {
   const lines = [
     '# CAIt',
     '',
-    '> CAIt is an AI agent marketplace runtime for ordering, publishing, verifying, and monetizing AI agents with browser workflows now and a paused unified API / CLI / MCP developer surface.',
+    '> CAIt is an AI agent marketplace runtime for ordering, publishing, verifying, and monetizing AI agents with browser workflows and an active unified API / CLI / MCP developer surface.',
     '',
     '## Core resources',
     `- [CAIt Start](${SITE_URL}/): Public landing page for the CAIt hosted app.`,
@@ -1541,7 +1532,7 @@ function llmsTxt(agents, terms) {
     '## Developer and product docs',
     `- [Help Center](${SITE_URL}/help.html): Product help, first-time paths, and support entry points.`,
     `- [First Run Guide](${SITE_URL}/guide.html): Local and developer setup guide.`,
-    `- [API / CLI / MCP](${SITE_URL}/ai-agent-api.html): one disabled-by-default developer surface for order and app-context workflows.`,
+    `- [API / CLI / MCP](${SITE_URL}/ai-agent-api.html): active API-key, CLI, and MCP developer surface for order and app-context workflows.`,
     `- [Demo Video](${SITE_URL}/demo.html): Product demo for provider and order flows.`,
     `- [News and Field Notes](${SITE_URL}/news.html): Product updates and AI agent field notes.`,
     `- [RSS Feed](${SITE_URL}/rss.xml): Machine-readable CAIt news feed for release updates and field notes.`,
@@ -1619,7 +1610,7 @@ function demoHtml() {
       <h2>Who this is for</h2>
       <p>Developers can use CAIt to register and verify AI agents or apps, while buyers can order work from the chat UI. The product goal is to make high-quality AI agent output easy to order, visible, and reviewable.</p>
       <h2>Try the flow yourself</h2>
-      <p>Start from CAIt Chat to shape a request, or open AGENTS to list your own agent. API / CLI / MCP access stays on one paused developer surface until the shared contract is stable.</p>
+      <p>Start from CAIt Chat to shape a request, or open AGENTS to list your own agent. API / CLI / MCP access uses the same active developer contract for external clients.</p>
       <div class="footer-links">
         ${listAgentCta('btn link-btn')}
         <a href="/chat.html" class="mini-btn link-btn">ORDER AN AI AGENT</a>
@@ -1778,7 +1769,7 @@ function glossaryTermHtml(entry, allTerms) {
       <h2>How this relates to AI agents</h2>
       <p>AI agents combine model reasoning, context, tool access, workflow rules, and delivery checks. Terms like ${escapeHtml(entry.term)} help describe what the agent is doing, what can go wrong, and how a user should judge the output.</p>
       <h2>How CAIt uses this concept</h2>
-      <p>CAIt uses this vocabulary across orders, agent profiles, quality checks, routing, delivery review, the future API / CLI / MCP surface, and provider onboarding. The goal is to make agent behavior easier to inspect rather than treating an AI result as a black box.</p>
+      <p>CAIt uses this vocabulary across orders, agent profiles, quality checks, routing, delivery review, the active API / CLI / MCP surface, and provider onboarding. The goal is to make agent behavior easier to inspect rather than treating an AI result as a black box.</p>
       <div class="footer-links">
         <a href="/glossary.html#${escapeHtml(entry.categoryId)}" class="mini-btn link-btn">BACK TO ${escapeHtml(entry.categoryTitle.toUpperCase())}</a>
         ${related}
@@ -1945,11 +1936,11 @@ function build() {
   for (const landingPage of seoLandingPages) writePublic(`${landingPage.slug}.html`, seoLandingPageHtml(landingPage));
   writePublic('ai-agent-cli.html', developerAccessRedirectHtml(
     'AI Agent CLI is now part of API / CLI / MCP',
-    'API, CLI, and MCP share one developer access page and one coming-soon policy.'
+    'API, CLI, and MCP share one active developer access page and one runtime policy.'
   ));
   writePublic('cli-help.html', developerAccessRedirectHtml(
     'CLI help is now part of API / CLI / MCP',
-    'API, CLI, and MCP share one developer access page, one tab, and one coming-soon policy.'
+    'API, CLI, and MCP share one developer access page, one tab, and one runtime policy.'
   ));
   writePublic('resources.html', resourcesHtml(agents, terms));
   writePublic('agents.html', agentCatalogHtml(agents));

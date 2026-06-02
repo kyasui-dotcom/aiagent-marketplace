@@ -103,7 +103,7 @@ assert.ok(resourcesHtml.includes('/feed.xml'));
 assert.ok(resourcesHtml.includes('/agents/prompt-brushup-ai-agent.html'));
 assert.ok(resourcesHtml.includes('/glossary/ai-agent.html'));
 assert.ok(resourcesHtml.includes('API / CLI / MCP'), 'Resource hub should expose one developer access link.');
-assert.ok(resourcesHtml.includes('External developer surfaces are disabled by default'), 'Resource hub should show the unified developer surface as runtime-gated.');
+assert.ok(resourcesHtml.includes('External developer surfaces are active'), 'Resource hub should show the unified developer surface as active.');
 
 assert.ok(agentsHtml.includes('QUALITY FLOW'));
 assert.ok(agentsHtml.includes('DELIVERY READINESS'));
@@ -149,7 +149,7 @@ assert.ok(apiHtml.includes('API / CLI / MCP'));
 assert.ok(apiHtml.includes('curl.exe'));
 assert.ok(apiHtml.includes('delivery history'));
 assert.ok(apiHtml.includes('app context'));
-assert.ok(apiHtml.includes('disabled by default'));
+assert.ok(apiHtml.includes('API-key access is active'));
 assert.ok(apiHtml.includes('https://aiagent-marketplace.net/api/jobs'));
 assert.ok(apiHtml.includes('/.well-known/mcp.json'));
 assert.ok(cliHtml.includes('OPEN API / CLI / MCP'));

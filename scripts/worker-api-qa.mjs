@@ -68,14 +68,14 @@ const publicSampleJob = await request('/mock/research/jobs', {
 }, { env: publicLockedEnv });
 assert.equal(publicSampleJob.status, 404, 'same-worker sample job execution must not exist in production');
 const publicMcpDiscoveryDisabled = await request('/.well-known/mcp.json', {}, { env: publicLockedEnv });
-assert.equal(publicMcpDiscoveryDisabled.status, 503, 'MCP discovery should be disabled by default on public deployments');
+assert.equal(publicMcpDiscoveryDisabled.status, 503, 'MCP discovery should be disabled when runtime policy disables the external developer surface');
 assert.equal(publicMcpDiscoveryDisabled.body.code, 'mcp_disabled');
 const publicMcpRpcDisabled = await request('/mcp', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' })
 }, { env: publicLockedEnv });
-assert.equal(publicMcpRpcDisabled.status, 503, 'MCP JSON-RPC should be disabled by default on public deployments');
+assert.equal(publicMcpRpcDisabled.status, 503, 'MCP JSON-RPC should be disabled when runtime policy disables the external developer surface');
 assert.equal(publicMcpRpcDisabled.body.code, 'mcp_disabled');
 const publicMcpDiscoveryEnabled = await request('/.well-known/mcp.json', {}, { env: publicExternalEnabledEnv });
 assert.equal(publicMcpDiscoveryEnabled.status, 200, 'MCP discovery should return when explicitly enabled');
@@ -156,14 +156,14 @@ const adminIssuedKey = await request('/api/admin/api-keys', {
 assert.equal(adminIssuedKey.status, 201);
 assert.ok(adminIssuedKey.body.api_key.token.startsWith('ai2k_'));
 const disabledApiKeyList = await request('/api/settings/api-keys', {}, { sessionCookie: daveSession, env: publicLockedEnv });
-assert.equal(disabledApiKeyList.status, 403, 'developer API key listing should be disabled by default on public deployments');
+assert.equal(disabledApiKeyList.status, 403, 'developer API key listing should be disabled when runtime policy disables the external developer surface');
 assert.equal(disabledApiKeyList.body.code, 'developer_api_disabled');
 const disabledApiKeyCreate = await request('/api/settings/api-keys', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ label: 'disabled-public-key' })
 }, { sessionCookie: daveSession, env: publicLockedEnv });
-assert.equal(disabledApiKeyCreate.status, 403, 'developer API key creation should be disabled by default on public deployments');
+assert.equal(disabledApiKeyCreate.status, 403, 'developer API key creation should be disabled when runtime policy disables the external developer surface');
 assert.equal(disabledApiKeyCreate.body.code, 'developer_api_disabled');
 const disabledAdminKeyCreate = await request('/api/admin/api-keys', {
   method: 'POST',

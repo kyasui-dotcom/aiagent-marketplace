@@ -25,6 +25,7 @@ const workerHandlersSource = read('lib/worker-handlers.js');
 const workerRoutingSource = `${workerSource}\n${workerHandlersSource}`;
 const serverSource = read('server.js');
 const storageSource = read('lib/storage.js');
+const storageD1SchemaSource = read('lib/storage-d1-schema.js');
 const sharedSource = read('lib/shared.js');
 const accountStateSource = read('lib/account-state.js');
 const orchestrationSource = read('lib/orchestration.js');
@@ -463,7 +464,8 @@ for (const token of [
 }
 
 assert.ok(storageSource.includes('ensureStorageSchema'), 'Storage should keep runtime schema initialization');
-assert.ok(storageSource.includes('ensureColumns'), 'Storage should keep additive D1 column migration guard');
+assert.ok(storageSource.includes('ensureD1StorageSchema'), 'Storage should delegate D1 column migration to the schema module');
+assert.ok(storageD1SchemaSource.includes('ensureColumns'), 'Storage D1 schema module should keep additive column migration guard');
 
 const storageTables = parseCreateTables(STORAGE_SCHEMA_SQL);
 const migrationTables = parseCreateTables(migrationSource);
