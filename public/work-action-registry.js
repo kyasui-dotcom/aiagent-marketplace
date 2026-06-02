@@ -131,9 +131,9 @@ export const WORK_COMMAND_COPY = Object.freeze({
     status: 'Go to the AGENTS tab for listing.\n\nNo order was created and no billing occurred.'
   },
   open_api_keys: {
-    ja: 'API key は SETTINGS > KEYS で作成・管理できます。有効化はデプロイのruntime policyに従います。',
-    en: 'API keys can be created and managed in SETTINGS > KEYS when the deployed runtime policy enables them.',
-    status: 'Go to SETTINGS > KEYS.\n\nNo order was created and no billing occurred.'
+    ja: 'API key は API / CLI / MCP 画面で作成・管理できます。有効化はデプロイのruntime policyに従います。',
+    en: 'API keys can be created and managed on the API / CLI / MCP screen when the deployed runtime policy enables them.',
+    status: 'Open API / CLI / MCP.\n\nNo order was created and no billing occurred.'
   },
   open_cli: {
     ja: 'CLI / API / MCP は CONNECT タブで確認できます。有効化はデプロイのruntime policyに従います。',
@@ -202,7 +202,7 @@ export const WORK_COMMAND_BUTTON_ACTIONS = Object.freeze({
   open_provider: [{ action: 'open_provider', labelJa: 'PROVIDER を開く', labelEn: 'OPEN PROVIDER' }],
   open_agent_catalog: [{ action: 'browse_agents', labelJa: 'AGENTS を開く', labelEn: 'OPEN AGENTS' }],
   open_agent_listing: [{ action: 'list_agent', labelJa: 'AGENTS で登録する', labelEn: 'GO TO AGENTS' }],
-  open_api_keys: [{ action: 'open_api_keys', labelJa: 'KEYS を開く', labelEn: 'OPEN KEYS' }],
+  open_api_keys: [{ action: 'open_api_keys', labelJa: 'API / CLI / MCP を開く', labelEn: 'OPEN API / CLI / MCP' }],
   open_cli: [{ action: 'open_cli_tab', labelJa: 'CONNECT を開く', labelEn: 'OPEN CONNECT' }],
   open_account_settings: [{ action: 'open_settings', labelJa: 'SETTINGS を開く', labelEn: 'OPEN SETTINGS' }],
   open_feedback: [{ action: 'open_feedback_tab', labelJa: 'REPORTS を開く', labelEn: 'OPEN REPORTS' }],

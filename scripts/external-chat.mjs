@@ -34,7 +34,7 @@ function usage() {
 Use this to test an external chat integration from the command line.
 
 Setup:
-  1. Issue a CAIt API key from CLI or CAIt Web UI > SETTINGS > KEYS
+  1. Issue a CAIt API key from CLI or the CAIt API / CLI / MCP screen
   2. Store it only in your shell/backend environment
 
 PowerShell:
@@ -126,7 +126,7 @@ function parseArgs(argv = []) {
 function requireApiKey() {
   const token = envValue('CAIT_API_KEY');
   if (!token) {
-    throw new Error('CAIT_API_KEY is required. Issue one with npm run cait:key -- create, or in SETTINGS > KEYS, then set it in your shell/backend env.');
+    throw new Error('CAIT_API_KEY is required. Issue one with npm run cait:key -- create, or on API / CLI / MCP, then set it in your shell/backend env.');
   }
   return token;
 }

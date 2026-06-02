@@ -208,16 +208,15 @@ assert.ok(
   'chat navigation must expose one unified external developer surface'
 );
 assert.ok(
-  chatHtmlSource.includes('API keys') && chatHtmlSource.includes('href="/ai-agent-api.html#api-keys"'),
-  'chat navigation must expose API key issuance directly instead of hiding it behind an abstract API label'
+  !/href="\/ai-agent-api\.html#api-keys"[\s\S]*?>API keys<\/a>/.test(chatHtmlSource),
+  'chat navigation must not expose API keys as a separate menu item; issuance belongs inside API / CLI / MCP'
 );
 assert.ok(
   siteHeaderSource.includes('export const HOME_NAV_LINKS')
     && siteHeaderSource.includes('export const DOC_NAV_LINKS')
     && siteHeaderSource.includes('export const CHAT_PAGE_LINKS')
-    && siteHeaderSource.includes("API_KEYS_HREF = '/ai-agent-api.html#api-keys'")
     && siteHeaderSource.includes("DEVELOPER_ACCESS_HREF = '/ai-agent-api.html'"),
-  'public headers must share one navigation source for API keys and API/CLI/MCP links'
+  'public headers must share one navigation source for API/CLI/MCP links'
 );
 assert.ok(
   generateSeoPagesSource.includes("import { renderDocHeader } from '../lib/site-header.js'")

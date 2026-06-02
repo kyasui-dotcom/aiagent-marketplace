@@ -599,6 +599,39 @@ const {
   sampleAgentManifestRoute
 } = sampleAgentManifestRoutes;
 
+async function runInternalSampleAgentDispatch({ endpoint = '', payload = {}, env = {} } = {}) {
+  const value = String(endpoint || '').trim();
+  if (!value) return null;
+  let pathname = '';
+  if (value.startsWith('/')) {
+    pathname = value;
+  } else {
+    try {
+      pathname = new URL(value).pathname;
+    } catch {
+      return null;
+    }
+  }
+  const route = sampleAgentManifestRoute(pathname);
+  if (!route || route.error || route.action !== 'jobs') return null;
+  const request = new Request(`${baseUrlFromEnv(env)}${pathname}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const response = await handleSampleAgentManifestRequest(request, env, route);
+  const text = await response.text();
+  let body = {};
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new Error(`Internal sample agent dispatch response was not valid JSON (${response.status})`);
+    }
+  }
+  return { response, body, endpoint: `internal:${pathname}` };
+}
+
 const leaderWorkerPlanningHelpers = createLeaderWorkerPlanningHelpers({
   ensureLeaderWorkflowActionTasksFromDefinition,
   isWorkflowLeaderTask,
@@ -1318,6 +1351,8 @@ const apiKeyRoutes = createApiKeyRouteHandlers({
   accountUserFromSettings,
   canViewAdminDashboard,
   currentUserContext,
+  getSession,
+  lightweightCurrentFromSession,
   parseBody,
   runtimePolicy,
   secretEquals,
@@ -2096,6 +2131,7 @@ workflowEndpointDispatchHelpers = createWorkflowEndpointDispatchHelpers({
   providerRunAttempts,
   providerRunLimitReached,
   recordBillingOutcome,
+  runInternalEndpointDispatch: runInternalSampleAgentDispatch,
   reconcileWorkflowParent,
   refreshWorkflowLeaderHandoffForJobId,
   releaseBillingReservationInState,

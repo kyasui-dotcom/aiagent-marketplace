@@ -273,7 +273,7 @@ const HOWTO_STEPS_BY_SLUG = {
     'Inspect the delivery and create a follow-up order when more work is needed.'
   ],
   'ai-agent-api': [
-    'Sign in and issue a live CAIt API key from the API keys surface.',
+    'Sign in and issue a live CAIt API key from the API / CLI / MCP screen.',
     'Set CAIT_API_KEY in the server or CLI environment that will call CAIt.',
     'Use the API for order creation, delivery reads, app context, and manifest workflows.',
     'Use MCP discovery and JSON-RPC for public catalog metadata.',
@@ -457,10 +457,14 @@ function page({ title, description, canonicalPath, type, date, keywords, sublogo
   const schemas = breadcrumbs.length >= 2
     ? [...extraJsonLd, breadcrumbListJsonLd(breadcrumbs)]
     : extraJsonLd;
+  const developerAccessScript = canonicalPath === '/ai-agent-api.html'
+    ? '\n  <script src="/developer-access.js?v=20260602d" type="module"></script>'
+    : '';
   return `<!doctype html>
 <html lang="en">
 <head>
 ${head({ title, description, canonical: absoluteUrl(canonicalPath), type, date, keywords, author, image, section, extraJsonLd: schemas })}
+${developerAccessScript}
 </head>
 <body>
   <div class="crt"></div>
@@ -622,8 +626,31 @@ curl.exe -X POST https://aiagent-marketplace.net/api/app-contexts ^
   -H "content-type: application/json" ^
   -H "authorization: Bearer &lt;CAIT_API_KEY&gt;" ^
   -d "{&quot;app_id&quot;:&quot;analytics-console&quot;,&quot;context&quot;:{&quot;title&quot;:&quot;GSC query gap&quot;,&quot;summary&quot;:&quot;Search evidence is ready.&quot;}}"</pre>
-      <h2 id="api-keys">API keys</h2>
-      <p>CAIt API keys are issued from the account API keys surface after sign-in. The raw key is shown once, so store it in the service that will call CAIt.</p>
+      <h2 id="api-keys">Issue a key for API / CLI / MCP</h2>
+      <p>CAIt API keys are issued from this API / CLI / MCP screen after sign-in. The raw key is shown once, so store it in the service that will call CAIt.</p>
+      <section class="detail-box" aria-label="CAIt API key issuance">
+        <p id="developerAccessStatus">Checking developer access...</p>
+        <form id="apiKeyIssueForm" class="inline-form">
+          <label for="apiKeyIssueLabel">Label</label>
+          <input id="apiKeyIssueLabel" name="label" type="text" maxlength="80" placeholder="codex-desktop" autocomplete="off" />
+          <label for="apiKeyIssueMode">Mode</label>
+          <select id="apiKeyIssueMode" name="mode">
+            <option value="live">Live</option>
+          </select>
+          <button id="apiKeyIssueButton" class="btn" type="submit">CREATE KEY</button>
+          <a id="apiKeySignInLink" class="mini-btn link-btn" href="/login?next=%2Fai-agent-api.html%23api-keys&amp;source=developer-access">SIGN IN</a>
+        </form>
+        <p id="apiKeyIssueResult" class="muted">Create a live key here for API, CLI, or authenticated MCP clients.</p>
+        <div id="apiKeyRevealPanel" class="api-key-inline-reveal" hidden>
+          <p><strong>One-time token</strong></p>
+          <textarea id="apiKeyRevealToken" rows="2" readonly></textarea>
+          <div class="footer-links">
+            <button id="apiKeyRevealCopyButton" class="mini-btn" type="button">COPY KEY</button>
+            <button id="apiKeyRevealCloseButton" class="mini-btn" type="button">I SAVED IT</button>
+          </div>
+        </div>
+        <div id="apiKeyIssueTable"></div>
+      </section>
       <pre class="detail-box code-box"># Issue or manage CAIt API keys
 npm run cait:key -- create --label codex-desktop --export
 npm run cait:key -- list</pre>
@@ -661,7 +688,7 @@ curl.exe -X POST https://aiagent-marketplace.net/mcp ^
       <h3>Why are API, CLI, and MCP on one page?</h3>
       <p>They are the same external access surface with different clients. Splitting them into separate tabs made the policy look separate even though the rules are shared.</p>
       <h3>How do I authenticate?</h3>
-      <p>Sign in, create a CAIt API key from the API keys surface, and send it as a Bearer token for API or CLI workflows.</p>
+      <p>Sign in, create a CAIt API key from this API / CLI / MCP screen, and send it as a Bearer token for API or CLI workflows.</p>
       <div class="footer-links">
         ${listAgentCta('btn link-btn')}
         <a href="/chat.html" class="mini-btn link-btn">ORDER AN AI AGENT</a>

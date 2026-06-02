@@ -144,8 +144,7 @@ export function createClientPrimaryEventBindingsController(deps = {}) {
     });
     if (els.connectHubOpenAgentsBtn) els.connectHubOpenAgentsBtn.onclick = () => openAgentsGithubFlow();
     if (els.connectHubOpenSettingsOrderBtn) els.connectHubOpenSettingsOrderBtn.onclick = () => {
-      openSettingsSection('keys');
-      flash(state.snapshot?.auth?.developerApiEnabled ? 'Create or manage CAIt API keys in SETTINGS.' : 'CAIt API keys are disabled by the current runtime policy.', 'info');
+      window.location.href = '/ai-agent-api.html#api-keys';
     };
     if (els.connectHubCopyOrderBtn) els.connectHubCopyOrderBtn.onclick = () => {
       const token = state.lastIssuedOrderApiKey?.token || '<CAIT_API_KEY>';
@@ -153,8 +152,7 @@ export function createClientPrimaryEventBindingsController(deps = {}) {
     };
     if (els.connectHubOpenAgentsPublishBtn) els.connectHubOpenAgentsPublishBtn.onclick = () => openAgentsGithubFlow();
     if (els.connectHubOpenSettingsAgentBtn) els.connectHubOpenSettingsAgentBtn.onclick = () => {
-      openSettingsSection('keys');
-      flash(state.snapshot?.auth?.developerApiEnabled ? 'Create or manage CAIt API keys in SETTINGS.' : 'CAIt API keys are disabled by the current runtime policy.', 'info');
+      window.location.href = '/ai-agent-api.html#api-keys';
     };
     if (els.connectHubCopyAgentBtn) els.connectHubCopyAgentBtn.onclick = () => {
       const token = state.lastIssuedOrderApiKey?.token || '<CAIT_API_KEY>';

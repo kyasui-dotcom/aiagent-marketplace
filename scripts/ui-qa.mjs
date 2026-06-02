@@ -31,6 +31,7 @@ const clientJsPath = new URL('../public/client.js', import.meta.url);
 const clientOrderRoutingControllerPath = new URL('../public/client-order-routing-controller.js', import.meta.url);
 const clientRunComposerControllerPath = new URL('../public/client-run-composer-controller.js', import.meta.url);
 const clientDeveloperSurfaceControllerPath = new URL('../public/client-developer-surface-controller.js', import.meta.url);
+const developerAccessJsPath = new URL('../public/developer-access.js', import.meta.url);
 const clientSettingsBillingControllerPath = new URL('../public/client-settings-billing-controller.js', import.meta.url);
 const clientRouteAuthControllerPath = new URL('../public/client-route-auth-controller.js', import.meta.url);
 const clientAgentAccessControllerPath = new URL('../public/client-agent-access-controller.js', import.meta.url);
@@ -327,6 +328,7 @@ const clientJs = readFileSync(clientJsPath, 'utf8');
 const clientOrderRoutingControllerJs = readFileSync(clientOrderRoutingControllerPath, 'utf8');
 const clientRunComposerControllerJs = readFileSync(clientRunComposerControllerPath, 'utf8');
 const clientDeveloperSurfaceControllerJs = readFileSync(clientDeveloperSurfaceControllerPath, 'utf8');
+const developerAccessJs = readFileSync(developerAccessJsPath, 'utf8');
 const clientSettingsBillingControllerJs = readFileSync(clientSettingsBillingControllerPath, 'utf8');
 const clientRouteAuthControllerJs = readFileSync(clientRouteAuthControllerPath, 'utf8');
 const clientAgentAccessControllerJs = readFileSync(clientAgentAccessControllerPath, 'utf8');
@@ -1057,7 +1059,7 @@ assert.ok(loginHtml.includes('id="loginGithubBtn"'), 'Login page should offer Gi
 assert.ok(loginHtml.includes('id="loginEmailInput"'), 'Login page should offer email magic link sign in.');
 assert.ok(loginHtml.includes('id="loginTrustNotice"'), 'Login page should show an official sign-in trust notice.');
 assert.ok(loginHtml.includes('/home.css?v=20260505b'), 'Login page should use the current light product styling.');
-assert.ok(loginHtml.includes('type="module" src="/login.js?v=20260505b"'), 'Login page should load the current login controller.');
+assert.ok(loginHtml.includes('type="module" src="/login.js?v=20260602a"'), 'Login page should load the current login controller.');
 assert.ok(loginJs.includes('auth-flash'), 'Login flash should use auth page styling.');
 assert.ok(loginJs.includes('CAIT_TRUSTED_AUTH_ORIGIN'), 'Login should know the official CAIt auth origin for local preview users.');
 assert.ok(loginJs.includes('runtimeAuthBaseUrl'), 'Login provider links should be able to use the trusted auth origin.');
@@ -1066,6 +1068,10 @@ assert.ok(loginJs.includes('const LOGIN_ACTION_WAIT_MS = 60 * 60 * 1000'), 'Logi
 assert.ok(loginJs.includes('recordLoginAttemptStarted'), 'Login should record when the user actually starts a provider/email login attempt.');
 assert.ok(!loginJs.includes('controller.abort(), AUTH_STATUS_TIMEOUT_MS'), 'Opening the login page should not start the 60-minute login action countdown.');
 assert.ok(loginJs.includes('AUTH_STATUS_SOFT_REVEAL_MS'), 'Login should reveal provider options while a long auth check continues in the background.');
+assert.ok(loginJs.includes('AUTH_STATUS_HARD_TIMEOUT_MS'), 'Login auth/status checks should have a short hard timeout.');
+assert.ok(loginJs.includes('AbortController'), 'Login auth/status checks should be abortable instead of hanging forever.');
+assert.ok(!loginJs.includes("await track('page_view'"), 'Login analytics should not block the initial session check.');
+assert.ok(!loginJs.includes("await track('sign_in_required_shown'"), 'Login analytics should not block rendering provider options.');
 assert.ok(fastAuthJs.includes('FAST_AUTH_STATUS_TIMEOUT_MS = 60 * 60 * 1000'), 'Fast auth gate should not redirect logged-in users to login just because auth/status is slow.');
 assert.ok(
   [clientJs, clientRouteAuthControllerJs].some((source) => source.includes('fetchFastAuthStatus(timeoutMs = 60 * 60 * 1000)')),
@@ -1459,11 +1465,14 @@ assert.ok(!deliveryManagerJs.includes('/publish now|post now|send now|schedule|æ
 assert.ok(html.includes('href="/agents.html"'));
 assert.ok(html.includes('href="/publish-ai-agents.html"'));
 assert.ok(html.includes('href="/ai-agent-api.html"'));
-assert.ok(html.includes('href="/ai-agent-api.html#api-keys"'), 'Home header should expose API keys directly.');
+assert.equal(html.includes('href="/ai-agent-api.html#api-keys">API keys</a>'), false, 'Home header should not expose API keys as a separate menu item.');
 assert.ok(html.includes('Runtime-gated external clients'), 'Home API/CLI card should describe runtime-gated developer surfaces.');
 assert.ok(html.includes('href="/resources.html"'));
 assert.ok(chatHtml.includes('href="/ai-agent-api.html"') && chatHtml.includes('API / CLI / MCP'), 'Chat should expose one API/CLI/MCP tab.');
-assert.ok(chatHtml.includes('href="/ai-agent-api.html#api-keys"') && chatHtml.includes('API keys'), 'Chat header should expose API keys directly.');
+assert.equal(chatHtml.includes('href="/ai-agent-api.html#api-keys">API keys</a>'), false, 'Chat header should not expose API keys as a separate menu item.');
+assert.ok(developerAccessJs.includes('apiKeysFromResponse'), 'API / CLI / MCP API-key UI should read the list response apiKeys shape.');
+assert.ok(developerAccessJs.includes('result.api_keys'), 'API / CLI / MCP API-key UI should read the deployed snake_case api_keys response shape.');
+assert.ok(developerAccessJs.includes('renderKeys({ setResultMessage: false })'), 'API / CLI / MCP API-key UI should not overwrite create/revoke error or success messages during rerender.');
 assert.equal(
   sharedHeaderBlock(chatHtml, '<!-- CAIT_SHARED_HEADER:chat-pages:start -->', '<!-- CAIT_SHARED_HEADER:chat-pages:end -->'),
   renderChatPagesNav().trim(),

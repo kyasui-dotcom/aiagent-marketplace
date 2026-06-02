@@ -20,7 +20,9 @@ let authStatusChecked = false;
 let runtimeAuthBaseUrl = '';
 let runtimeUsesExternalAuth = false;
 const LOGIN_ACTION_WAIT_MS = 60 * 60 * 1000;
-const AUTH_STATUS_SOFT_REVEAL_MS = 3500;
+const AUTH_STATUS_SOFT_REVEAL_MS = 1200;
+const AUTH_STATUS_HARD_TIMEOUT_MS = 2500;
+const ANALYTICS_TIMEOUT_MS = 1200;
 const LOGIN_ATTEMPT_STARTED_AT_KEY = 'cait.login.startedAt.v1';
 const CAIT_TRUSTED_AUTH_ORIGIN = 'https://aiagent-marketplace.net';
 const LOGIN_TEST_TRAFFIC_PARAMS = ['e2e', 'smoke', 'playwright', 'test', 'cait_test', 'qa'];
@@ -174,15 +176,20 @@ function setCheckingStatus(message = '') {
   if (els.checkingStatus) els.checkingStatus.textContent = safeString(message, 240);
 }
 
-async function track(event, meta = {}) {
+function track(event, meta = {}) {
   const eventName = safeString(event, 64).toLowerCase().replace(/[^a-z0-9_:-]+/g, '_').replace(/^_+|_+$/g, '');
   if (!eventName) return;
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timeoutId = controller
+    ? window.setTimeout(() => controller.abort(), ANALYTICS_TIMEOUT_MS)
+    : null;
   try {
-    await fetch('/api/analytics/events', {
+    fetch('/api/analytics/events', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       credentials: 'same-origin',
       keepalive: true,
+      signal: controller?.signal,
       body: JSON.stringify({
         event: eventName,
         visitor_id: visitorId(),
@@ -197,9 +204,34 @@ async function track(event, meta = {}) {
           ...loginInternalTrafficParams()
         }
       })
-    });
+    })
+      .catch(() => {})
+      .finally(() => {
+        if (timeoutId) window.clearTimeout(timeoutId);
+      });
   } catch {
     // Analytics must never block login.
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
+}
+
+async function fetchAuthStatus() {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timeoutId = controller
+    ? window.setTimeout(() => controller.abort(), AUTH_STATUS_HARD_TIMEOUT_MS)
+    : null;
+  try {
+    const response = await fetch('/auth/status', {
+      credentials: 'same-origin',
+      signal: controller?.signal
+    });
+    if (!response.ok) throw new Error('Auth status check failed');
+    return response.json().catch(() => ({}));
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('Auth status check timed out');
+    throw error;
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
   }
 }
 
@@ -285,11 +317,7 @@ async function loadAuthStatus(route = currentRoute()) {
   };
   const softReveal = window.setTimeout(revealLoginOptionsDuringLongCheck, AUTH_STATUS_SOFT_REVEAL_MS);
   try {
-    const response = await fetch('/auth/status', {
-      credentials: 'same-origin'
-    });
-    if (!response.ok) throw new Error('Auth status check failed');
-    const status = await response.json().catch(() => ({}));
+    const status = await fetchAuthStatus();
     const nextPath = postLoginPath(route.next);
     authStatusChecked = true;
     const usingExternalAuth = applyTrustedAuthOrigin(status);
@@ -311,7 +339,7 @@ async function loadAuthStatus(route = currentRoute()) {
       return;
     }
     showLoginPanel(true);
-    await track('sign_in_required_shown', { source: `login_page:${route.source}`, status: 'visible' });
+    track('sign_in_required_shown', { source: `login_page:${route.source}`, status: 'visible' });
   } catch {
     authStatusChecked = true;
     applyTrustedAuthOrigin({});
@@ -330,7 +358,7 @@ async function loadAuthStatus(route = currentRoute()) {
       els.github.disabled = false;
     }
     if (els.status) els.status.textContent = 'Could not verify login provider status. You can still try a provider below.';
-    await track('sign_in_required_shown', { source: `login_page:${route.source}`, status: 'unknown' });
+    track('sign_in_required_shown', { source: `login_page:${route.source}`, status: 'unknown' });
   } finally {
     window.clearTimeout(softReveal);
   }
@@ -365,7 +393,7 @@ async function requestEmailLink(route = currentRoute()) {
   if (els.emailBtn) els.emailBtn.disabled = true;
   if (els.status) els.status.textContent = 'Sending your sign-in link. The page stays here.';
   recordLoginAttemptStarted('email', route);
-  await track('email_login_started', {
+  track('email_login_started', {
     source: `login_page:${route.source}`,
     action: nextPath
   });
@@ -410,7 +438,7 @@ async function init() {
   });
   bindProviderButton(els.google, 'google', route);
   bindProviderButton(els.github, 'github', route);
-  await track('page_view', { source: `login_page:${route.source}` });
+  track('page_view', { source: `login_page:${route.source}` });
   await loadAuthStatus(route);
 }
 

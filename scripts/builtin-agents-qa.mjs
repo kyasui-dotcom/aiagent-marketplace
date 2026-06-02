@@ -400,6 +400,7 @@ assert.match(seoSpecialist.systemPrompt, /Publisher & Approval Studio batch hand
 
 const cmoLeaderSource = [
   readFileSync(join(agentsDir, 'cmo-leader.js'), 'utf8'),
+  readFileSync(join(root, 'lib', 'builtin-agents', 'cmo-leader-synthesis.js'), 'utf8'),
   readFileSync(join(root, 'lib', 'builtin-agents', 'cmo-leader-provider.js'), 'utf8')
 ].join('\n');
 assert.ok(

@@ -349,7 +349,7 @@ export function createClientFlexibleToolUtils({
       return;
     }
     if (kind === 'open_api_keys') {
-      openSettingsSection?.('keys');
+      window.location.href = '/ai-agent-api.html#api-keys';
       return;
     }
     if (kind === 'open_connect') {
