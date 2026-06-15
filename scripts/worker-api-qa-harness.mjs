@@ -146,6 +146,16 @@ export function workerApiQaOpenAiStructuredOutput(schemaName = '') {
       'Metric and stop rule are included for the next run.'
     ].slice(0, 4),
     next_action: 'Review the packet, approve the exact connector action, then dispatch the next specialist.',
+    ...((!kind || /(^|_)(research|teardown|validation)(_|$)/i.test(kind)) ? {
+      web_sources: [{
+        title: 'CAIt AI agent marketplace',
+        url: 'https://aiagent-marketplace.net/',
+        snippet: 'QA search result used for workflow progression tests.',
+        query: 'CAIt AI agent marketplace acquisition',
+        action: 'brave_search',
+        provider: 'brave'
+      }]
+    } : {}),
     file_markdown: [
       `# QA ${kind || 'agent'} delivery`,
       '',
@@ -308,8 +318,18 @@ globalThis.fetch = async (input, init) => {
         }
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
+    const providerPacketText = (Array.isArray(requestBody?.input) ? requestBody.input : [])
+      .flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+      .map((part) => String(part?.text || part?.value || part?.content || ''))
+      .filter(Boolean)
+      .at(-1) || '{}';
+    let providerPacket = {};
+    try {
+      providerPacket = JSON.parse(providerPacketText);
+    } catch {}
+    const providerKind = String(providerPacket?.agent?.kind || providerPacket?.kind || schemaName || '').trim();
     return new Response(JSON.stringify({
-      output_text: JSON.stringify(workerApiQaOpenAiStructuredOutput(schemaName)),
+      output_text: JSON.stringify(workerApiQaOpenAiStructuredOutput(providerKind)),
       usage: {
         input_tokens: 120,
         output_tokens: 80,

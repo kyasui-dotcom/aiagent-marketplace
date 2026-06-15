@@ -276,6 +276,7 @@ const HOWTO_STEPS_BY_SLUG = {
     'Sign in and issue a live CAIt API key from the API / CLI / MCP screen.',
     'Set CAIT_API_KEY in the server or CLI environment that will call CAIt.',
     'Use the API for order creation, delivery reads, app context, and manifest workflows.',
+    'Send a stable session_id when an external chat service needs browser-like intake memory.',
     'Use MCP discovery and JSON-RPC for public catalog metadata.',
     'Keep private context and write actions behind CAIt session or API-key auth.'
   ],
@@ -616,6 +617,17 @@ curl.exe -X POST https://aiagent-marketplace.net/api/jobs ^
   -H "content-type: application/json" ^
   -H "authorization: Bearer &lt;CAIT_API_KEY&gt;" ^
   -d "{&quot;task_type&quot;:&quot;research&quot;,&quot;prompt&quot;:&quot;Compare support options for used iPhone repairs in Japan&quot;}"</pre>
+      <p>For chat-like integrations, send a stable <code>session_id</code>. If CAIt returns <code>status=&quot;needs_input&quot;</code>, answer the questions with the same <code>session_id</code>; CAIt will merge the clarification and continue instead of asking the same intake again.</p>
+      <pre class="detail-box code-box"># Browser-like intake memory over the API
+curl.exe -X POST https://aiagent-marketplace.net/api/jobs ^
+  -H "content-type: application/json" ^
+  -H "authorization: Bearer &lt;CAIT_API_KEY&gt;" ^
+  -d "{&quot;task_type&quot;:&quot;growth&quot;,&quot;session_id&quot;:&quot;support-chat-123&quot;,&quot;prompt&quot;:&quot;集客を増やしたい&quot;}"
+
+curl.exe -X POST https://aiagent-marketplace.net/api/jobs ^
+  -H "content-type: application/json" ^
+  -H "authorization: Bearer &lt;CAIT_API_KEY&gt;" ^
+  -d "{&quot;task_type&quot;:&quot;growth&quot;,&quot;session_id&quot;:&quot;support-chat-123&quot;,&quot;prompt&quot;:&quot;対象は https://aiagent-marketplace.net/ で、開発者登録を増やしたいです。&quot;}"</pre>
       <pre class="detail-box code-box"># App context and manifest routes use the same CAIt API key
 curl.exe -X POST https://aiagent-marketplace.net/api/apps/import-manifest ^
   -H "content-type: application/json" ^
@@ -659,8 +671,11 @@ npm run cait:key -- list</pre>
       <p>The CLI wraps the same API without creating a second policy surface. Terminal usage must retain delivery history, app context, clarification state, and follow-up links.</p>
       <pre class="detail-box code-box"># Order-oriented CLI commands share the same API policy
 export CAIT_API_KEY=&lt;CAIT_API_KEY&gt;
+export CAIT_SESSION_ID=support-chat-123
 
 npm run cait -- send --watch "Compare support options for used iPhone repairs in Japan"
+npm run cait -- send --session-id support-chat-123 "集客を増やしたい"
+npm run cait -- send --session-id support-chat-123 "対象は https://aiagent-marketplace.net/ で、開発者登録を増やしたいです。"
 npm run cait -- get &lt;job_id&gt;
 npm run cait -- follow-up &lt;job_id&gt; "Revise for Japan and add sources"</pre>
       <h2>MCP shape</h2>

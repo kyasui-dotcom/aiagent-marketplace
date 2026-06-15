@@ -70,7 +70,7 @@ function cmoWorkflowSpecialistFileContent(job, phase) {
   const firstPriorSummary = String(priorRuns.find((run) => run?.summary)?.summary || '').trim();
   if (phase === 'research') {
     return [
-      `# qa ${phase} for ${job.taskType}`,
+      `# ${job.taskType} delivery`,
       '## Web sources used',
       '- CAIt AI agent marketplace https://aiagent-marketplace.net/',
       '- Observation date: 2026-04-29'
@@ -88,18 +88,29 @@ function cmoWorkflowSpecialistFileContent(job, phase) {
   ].filter(Boolean).join('\n');
 }
 
+function cmoWorkflowJobPhase(job = {}) {
+  return String(
+    job.input?._broker?.workflow?.sequencePhase
+    || job.workflow?.sequencePhase
+    || job.sequencePhase
+    || job.phase
+    || ''
+  ).trim().toLowerCase();
+}
+
 export async function completeAsyncWorkflowSpecialists({
   qaStorage,
   workflowJobId,
   phase,
   nextAction
 } = {}) {
+  const normalizedPhase = String(phase || '').trim().toLowerCase();
   await qaStorage.mutate(async (draft) => {
     for (const job of draft.jobs) {
       if (
         job.workflowParentId === workflowJobId
         && job.taskType !== 'cmo_leader'
-        && job.input?._broker?.workflow?.sequencePhase === phase
+        && cmoWorkflowJobPhase(job) === normalizedPhase
       ) {
         job.status = 'completed';
         job.completedAt = job.completedAt || nowIso();

@@ -47,7 +47,7 @@ for (const agent of DEFAULT_AGENT_SEEDS) {
 const expectedOutputContracts = new Map([
   ['agent_ads_planner_01', ['objective', 'pre_launch_measurement_blocker', 'audience', 'provider', 'campaign_structure', 'budget_cap_and_cpa_assumption', 'stop_rules', 'creative_asset_packet', 'ads_saas_handoff', 'approval_and_launch_boundary', 'execution_status_labels', 'measurement_plan']],
   ['agent_campaign_operations_01', ['campaign_state', 'publisher_queue', 'asset_status_queue', 'approval_backlog', 'connector_readiness', 'planned_action_queue', 'now_week_0_1', 'next_week_1_3', 'waiting_conditions', 'measurement_loop', 'next_action_owner']],
-  ['agent_cfo_leader_01', ['decision_question', 'assumption_table', 'source_to_model_ledger', 'formula_model', 'scenarios', 'sensitivity', 'decision_trigger', 'approval_owner', 'execution_proof_tracker', 'confidence_labels', 'risk_notes']],
+  ['agent_cfo_leader_01', ['decision_question', 'assumption_table', 'competitive_benchmark_ledger', 'source_to_model_ledger', 'winning_economics', 'formula_model', 'scenarios', 'sensitivity', 'specialist_handoff_plan', 'decision_trigger', 'approval_owner', 'execution_proof_tracker', 'confidence_labels', 'risk_notes']],
   ['agent_list_creator_01', ['lead_rows', 'evidence_urls', 'next_actions', 'lead_ops_packet', 'target_segment', 'source_policy', 'qualification_rules', 'field_schema', 'row_level_source_ledger', 'exclusion_and_duplicate_review', 'review_status', 'approval_owner', 'import_outreach_boundary', 'downstream_handoff_packet', 'execution_proof_tracker', 'next_owner']],
   ['agent_research_01', ['answer_first', 'source_status', 'source_ledger', 'current_vs_inferred_facts', 'options', 'recommendation', 'verification_queue', 'verification_gaps', 'source_access_boundary', 'decision_handoff_packet', 'execution_status_labels']],
   ['agent_teardown_01', ['source_access_status', 'competitor_classification', 'observed_facts', 'observed_unavailable', 'inferences', 'comparison_table', 'wedge', 'first_test', 'verification_queue', 'evidence_gaps']],
@@ -87,6 +87,18 @@ assertBefore(multiChannelSequence, 'writing', 'reddit', 'multi-channel launch sh
 assertBefore(multiChannelSequence, 'writing', 'indie_hackers', 'multi-channel launch should draft before Indie Hackers handoff copy');
 assert.equal(multiChannelSequence.includes('x_post'), false, 'multi-channel leader route should not require an X connector execution agent');
 assert.equal(multiChannelSequence.includes('instagram'), false, 'multi-channel leader route should not require an Instagram connector execution agent');
+
+const cfoCompetitiveSequence = inferTaskSequence(
+  'cfo_leader',
+  'MASAMUNEのようなマーケティング自動化サービスを作る。アイドマホールディングスのIR資料を参考に、どう勝てるかを財務・競争優位・ユニットエコノミクスで分析したい。',
+  { maxTasks: 8 }
+);
+assertBefore(cfoCompetitiveSequence, 'research', 'pricing', 'CFO competitive finance should collect source research before pricing');
+assertBefore(cfoCompetitiveSequence, 'teardown', 'pricing', 'CFO competitive finance should run competitor teardown before pricing');
+assert.ok(cfoCompetitiveSequence.includes('data_analysis'), 'CFO competitive finance should include data analysis');
+assert.ok(cfoCompetitiveSequence.includes('diligence'), 'CFO competitive finance should include diligence');
+assert.equal(cfoCompetitiveSequence.includes('growth'), false, 'CFO competitive finance should not pull in CMO growth work');
+assert.equal(cfoCompetitiveSequence.includes('automation'), false, 'CFO competitive finance should not invent an unsupported automation task');
 
 const userTwitterAgent = {
   id: 'agent_user_twitter_adapter_qa',

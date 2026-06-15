@@ -1680,6 +1680,84 @@ try {
     assert.equal(apiKeyRead.body.pagination?.limit, 1);
   }
 
+  const apiKeyPrepareSessionId = `qa-api-key-prepare-session-${Date.now()}`;
+  const apiKeyPrepareNeedsInput = await request('/api/work/prepare-order', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${issuedOrderKey.body.api_key.token}`
+    },
+    body: JSON.stringify({
+      session_id: apiKeyPrepareSessionId,
+      prompt: '集客を増やしたい'
+    })
+  }, { env: publicExternalEnabledEnv });
+  assert.equal(apiKeyPrepareNeedsInput.status, 200, 'API-key prepare-order should run the same Open Chat intake as browser chat');
+  assert.equal(apiKeyPrepareNeedsInput.body.status, 'needs_input');
+  assert.equal(apiKeyPrepareNeedsInput.body.chat_session_memory?.session_id, apiKeyPrepareSessionId);
+  assert.equal(apiKeyPrepareNeedsInput.body.chat_session_memory?.pending_intake, true);
+
+  const apiKeyPrepareAnswered = await request('/api/work/prepare-order', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${issuedOrderKey.body.api_key.token}`
+    },
+    body: JSON.stringify({
+      session_id: apiKeyPrepareSessionId,
+      prompt: '対象は https://aiagent-marketplace.net/ で、開発者登録を増やしたいです。GA4は未接続なので公開ページだけで改善案をください。'
+    })
+  }, { env: publicExternalEnabledEnv });
+  assert.equal(apiKeyPrepareAnswered.status, 200);
+  assert.notEqual(apiKeyPrepareAnswered.body.status, 'needs_input', 'same-session API-key prepare answer should proceed instead of repeating intake');
+  assert.equal(apiKeyPrepareAnswered.body.chat_session_memory?.applied_pending_intake, true);
+
+  const apiKeySnapshotSessionId = `qa-api-key-snapshot-session-${Date.now()}`;
+  const apiKeySnapshot = await request('/api/chat-sessions', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${issuedOrderKey.body.api_key.token}`
+    },
+    body: JSON.stringify({
+      session: {
+        id: apiKeySnapshotSessionId,
+        sessionId: apiKeySnapshotSessionId,
+        title: 'API key external chat session',
+        messages: [{ role: 'user', body: 'Persisted from a CAIt API key integration.' }]
+      }
+    })
+  }, { env: publicExternalEnabledEnv });
+  assert.equal(apiKeySnapshot.status, 201, 'API-key chat session snapshots should save without a browser cookie');
+  assert.equal(apiKeySnapshot.body.saved, true);
+  const apiKeySnapshotMemory = await request('/api/chat-memory', {}, { sessionCookie: daveSession });
+  assert.equal(apiKeySnapshotMemory.status, 200);
+  assert.ok(
+    (apiKeySnapshotMemory.body.chatMemory || []).some((item) => item.id === apiKeySnapshotSessionId || item.sessionId === apiKeySnapshotSessionId),
+    'API-key saved chat sessions should be visible in the owning account chat memory'
+  );
+
+  const apiKeyIntakeSessionId = `qa-api-key-intake-session-${Date.now()}`;
+  const apiKeyNeedsInput = await request('/api/jobs', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${issuedOrderKey.body.api_key.token}`
+    },
+    body: JSON.stringify({
+      parent_agent_id: 'qa-api-runner',
+      agent_id: imported.body.agent.id,
+      task_type: 'ops',
+      session_id: apiKeyIntakeSessionId,
+      prompt: 'レビューして'
+    })
+  }, { env: publicExternalEnabledEnv });
+  assert.equal(apiKeyNeedsInput.status, 200, 'thin CAIt API key order should use the same intake contract as Work Chat');
+  assert.equal(apiKeyNeedsInput.body.status, 'needs_input');
+  assert.equal(apiKeyNeedsInput.body.chat_session_memory?.session_id, apiKeyIntakeSessionId);
+  assert.equal(apiKeyNeedsInput.body.chat_session_memory?.pending_intake, true);
+  assert.ok(Array.isArray(apiKeyNeedsInput.body.questions) && apiKeyNeedsInput.body.questions.length >= 3);
+
   const apiKeyOrder = await request('/api/jobs', {
     method: 'POST',
     headers: {
@@ -1690,11 +1768,14 @@ try {
       parent_agent_id: 'qa-api-runner',
       agent_id: imported.body.agent.id,
       task_type: 'ops',
-      prompt: 'Run the funded ops task through the public CAIt API key.'
+      session_id: apiKeyIntakeSessionId,
+      prompt: '対象は CAIt API キー経由の外部チャットです。目的はサポート導線のレビューで、納品は改善チェックリストにしてください。'
     })
   }, { env: publicExternalEnabledEnv });
   assert.equal(apiKeyOrder.status, 201);
   assert.equal(apiKeyOrder.body.status, 'completed');
+  assert.equal(apiKeyOrder.body.chat_session_memory?.session_id, apiKeyIntakeSessionId);
+  assert.equal(apiKeyOrder.body.chat_session_memory?.applied_pending_intake, true);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const apiKeyReadAfterOrder = await request('/api/jobs?limit=1', {
       headers: { authorization: `Bearer ${issuedOrderKey.body.api_key.token}` }

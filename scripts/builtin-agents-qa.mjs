@@ -255,6 +255,13 @@ const externalCommunicationContractExpectations = [
 
 const marketingExecutionContractExpectations = [
   {
+    kind: 'media_planner',
+    actions: ['prepare_channel_fit_matrix', 'prepare_next_channel_handoff', 'prepare_channel_readiness_ledger', 'prepare_awareness_foundation_handoff'],
+    requiredSections: ['Decision first', 'Awareness stage diagnosis', 'Public discoverability gap', 'Top three channels', 'Leader routing packet', 'SaaS/App handoff payload', 'Channel readiness ledger'],
+    guidedSections: ['Decision first', 'Awareness stage diagnosis', 'Public discoverability gap', 'Leader routing packet', 'SaaS/App handoff payload', 'Channel readiness ledger'],
+    forbiddenClaims: ['general awareness achieved', 'crawlable content verified', 'brand demand verified', 'app handoff completed']
+  },
+  {
     kind: 'seo_specialist',
     actions: ['prepare_seo_rewrite_packet', 'prepare_article_plan_or_batch', 'prepare_publisher_handoff', 'prepare_search_console_intent_map'],
     requiredSections: ['SEO mode', 'SERP/source status', 'Search Console source status', 'Search Console row coverage ledger', 'Search Console missing export queue', 'Search Console landing intent map', 'CTA/trust plan', 'Source ledger'],

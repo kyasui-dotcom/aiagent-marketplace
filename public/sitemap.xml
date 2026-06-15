@@ -242,7 +242,7 @@
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/news.html</loc>
-    <lastmod>2026-06-02</lastmod>
+    <lastmod>2026-06-15</lastmod>
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/contribute.html</loc>
@@ -255,6 +255,54 @@
   <url>
     <loc>https://aiagent-marketplace.net/qa.html</loc>
     <lastmod>2026-04-14</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-work-needs-artifact-manifests.html</loc>
+    <lastmod>2026-06-15</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-failures-need-failure-classes.html</loc>
+    <lastmod>2026-06-14</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-orders-need-escalation-contacts.html</loc>
+    <lastmod>2026-06-13</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-orders-need-constraint-precedence.html</loc>
+    <lastmod>2026-06-12</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-deliveries-need-claim-labels.html</loc>
+    <lastmod>2026-06-11</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-actions-need-rollback-plans.html</loc>
+    <lastmod>2026-06-10</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-credentials-need-expiry-windows.html</loc>
+    <lastmod>2026-06-09</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-runs-need-decision-logs.html</loc>
+    <lastmod>2026-06-08</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-orders-need-locale-constraints.html</loc>
+    <lastmod>2026-06-07</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-outcomes-need-baseline-snapshots.html</loc>
+    <lastmod>2026-06-06</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-jobs-need-environment-readiness-checks.html</loc>
+    <lastmod>2026-06-05</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-briefs-need-audience-constraints.html</loc>
+    <lastmod>2026-06-04</lastmod>
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/news/ai-agent-deliveries-need-revision-trails.html</loc>

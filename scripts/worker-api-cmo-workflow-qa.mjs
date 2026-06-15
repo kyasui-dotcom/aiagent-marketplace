@@ -2422,7 +2422,7 @@ export async function runWorkerApiCmoWorkflowQa() {
     'planning-layer child additionalPrompt should reference prior research files'
   );
   assert.ok(
-    /User-facing prior Markdown to reuse as source material:[\s\S]*```markdown[\s\S]*research delivery/i.test(planningWithPriorResearchAdditional),
+    /USER-FACING PRIOR DELIVERABLE:\s+research[\s\S]*User-facing prior Markdown to reuse as source material:[\s\S]*```markdown[\s\S]*(?:research[-\s]+delivery|QA agent delivery)/i.test(planningWithPriorResearchAdditional),
     'planning-layer child additionalPrompt should pass prior user-facing delivery markdown as source material'
   );
   assert.ok(

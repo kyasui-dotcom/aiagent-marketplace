@@ -555,12 +555,44 @@
       "id": "cfo-leader-pricing-scenario",
       "file": "cfo-leader.js",
       "kind": "cfo_leader",
-      "prompt": "Create a unit-economics decision model for provider payouts and marketplace margin. Include assumptions, formulas, scenarios, sensitivity, and decision trigger.",
+      "prompt": "Use MASAMUNE (https://masamune.online) and the supplied Aidma Holdings IR excerpt to decide how a similar marketing automation service could win. Include a competitive benchmark ledger, source-to-model ledger, winning economics, formulas, scenarios, sensitivity, specialist handoff plan, decision trigger, approval owner, proof tracker, confidence labels, and risks. Do not claim the strategy has won, prices changed, budgets changed, or external work executed without proof.",
       "body": {
+        "web_sources": [
+          {
+            "title": "MASAMUNE",
+            "url": "https://masamune.online/",
+            "snippet": "Marketing automation. Login first, then start planning from a single service URL. Go to login. Create account."
+          },
+          {
+            "title": "Aidma Holdings 2026 Q2 IR",
+            "url": "https://global-assets.irdirect.jp/pdf/menu_file/7373/20260413132201_4817.pdf",
+            "snippet": "2026 Q2 cumulative revenue 7,248 million yen, operating profit 1,520 million yen, sales-support orders 2,641, HR-support orders 1,889. Sales support uses sales DX tools, cloud workers, and consulting."
+          }
+        ],
         "input": {
-          "monthly_orders": 120,
-          "provider_payout_rate": 0.7,
-          "target_margin": 0.25
+          "target_url": "https://masamune.online",
+          "business_model": "marketing automation service that starts planning from one service URL",
+          "decision_question": "How can a similar service beat incumbents and Aidma-like sales-support operators?",
+          "reference_company": "Aidma Holdings",
+          "reference_source_status": "public IR excerpt supplied; full model inputs, cohort data, CAC, churn, unit cost, pricing, and payback are not supplied",
+          "ir_excerpt": {
+            "source_date": "2026-04-10",
+            "revenue_million_yen": 7248,
+            "operating_profit_million_yen": 1520,
+            "sales_support_orders": 2641,
+            "hr_support_orders": 1889,
+            "operating_model_notes": [
+              "sales DX tools",
+              "cloud-worker outsourcing",
+              "consulting"
+            ]
+          },
+          "scenario_assumptions": {
+            "starter_price_yen_per_month": 49800,
+            "target_gross_margin": 0.65,
+            "first_90_day_paid_customers": [20, 50, 100]
+          },
+          "approval_owner": "founder"
         }
       }
     },
