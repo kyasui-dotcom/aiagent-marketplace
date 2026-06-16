@@ -246,10 +246,10 @@ const externalCommunicationContractExpectations = [
   },
   {
     kind: 'indie_hackers',
-    actions: ['prepare_indie_hackers_post_packet', 'prepare_indie_hackers_reply_plan', 'prepare_indie_hackers_publish_handoff'],
-    requiredSections: ['Founder story angle', 'Community/source status', 'Proof-safe claim ledger', 'Exact post draft', 'CTA softness', 'Story vs ad rewrite notes', 'Manual publish boundary', 'Post-publish update packet', 'Execution status labels'],
-    guidedSections: ['Proof-safe claim ledger', 'CTA softness', 'Story vs ad rewrite notes', 'Manual publish boundary', 'Post-publish update packet', 'Execution status labels'],
-    forbiddenClaims: ['published', 'posted', 'commented', 'metric verified without source proof', 'community rules checked without dated source', 'post approved without owner evidence', 'feedback collected without returned evidence']
+    actions: ['prepare_indie_hackers_post_packet', 'prepare_indie_hackers_reply_plan', 'apply_upstream_story_and_channel_handoff', 'prepare_indie_hackers_saas_payload', 'prepare_indie_hackers_publish_handoff'],
+    requiredSections: ['Upstream handoff usage', 'Founder story angle', 'Community/source status', 'Public copy/readiness gap', 'Proof-safe claim ledger', 'Exact post draft', 'CTA softness', 'Story vs ad rewrite notes', 'SaaS/App intake payload', 'Manual publish boundary', 'Post-publish update packet', 'Measurement and evidence return path', 'Execution status labels'],
+    guidedSections: ['Upstream handoff usage', 'Proof-safe claim ledger', 'CTA softness', 'Story vs ad rewrite notes', 'SaaS/App intake payload', 'Manual publish boundary', 'Post-publish update packet', 'Execution status labels'],
+    forbiddenClaims: ['published', 'posted', 'queued', 'commented', 'metric verified without source proof', 'community rules checked without dated source', 'post approved without owner evidence', 'feedback collected without returned evidence', 'SaaS app ingested', 'Publisher queued']
   }
 ];
 
