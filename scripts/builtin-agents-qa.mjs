@@ -239,10 +239,10 @@ const externalCommunicationContractExpectations = [
   },
   {
     kind: 'reddit',
-    actions: ['prepare_subreddit_fit_packet', 'draft_reddit_discussion_packet', 'prepare_reddit_manual_posting_handoff'],
-    requiredSections: ['Subreddit assumptions', 'Community fit', 'Rule risk', 'Non-promotional angle', 'Manual posting boundary', 'Execution status labels'],
-    guidedSections: ['Subreddit assumptions', 'Manual posting boundary', 'Execution status labels'],
-    forbiddenClaims: ['posted', 'submitted', 'queued']
+    actions: ['prepare_subreddit_fit_packet', 'apply_upstream_reddit_handoff', 'draft_reddit_discussion_packet', 'prepare_reddit_saas_payload', 'prepare_reddit_manual_posting_handoff'],
+    requiredSections: ['Upstream handoff usage', 'Subreddit assumptions', 'Community fit', 'Rule risk', 'Public copy/readiness gap', 'Non-promotional angle', 'SaaS/App intake payload', 'Manual posting boundary', 'Measurement and evidence return path', 'Execution status labels'],
+    guidedSections: ['Upstream handoff usage', 'Subreddit assumptions', 'Public copy/readiness gap', 'SaaS/App intake payload', 'Manual posting boundary', 'Execution status labels'],
+    forbiddenClaims: ['posted', 'submitted', 'queued', 'community rules checked without dated source', 'SaaS app ingested', 'Publisher queued']
   },
   {
     kind: 'indie_hackers',
@@ -799,6 +799,16 @@ for (const kind of SAMPLE_AGENT_KINDS) {
     assert.ok(instagramItem, 'Instagram delivery file should become a Publisher delivery item without body-text inference');
     assert.equal(instagramItem.metadata.connector, 'instagram', 'Instagram Publisher item should preserve connector metadata');
     assert.equal(instagramItem.metadata.connector_capability, 'instagram.post', 'Instagram Publisher item should preserve connector capability');
+  }
+  if (kind === 'reddit') {
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'reddit_saas_handoff');
+    assert.ok(artifact, 'Reddit delivery should emit a structured SaaS/App handoff artifact');
+    assert.equal(artifact.surface, 'publisher', 'Reddit handoff artifact should target the Publisher surface');
+    assert.ok(Array.isArray(artifact.upstream_handoff_usage), 'Reddit handoff should expose upstream usage ledger');
+    assert.ok(Array.isArray(artifact.community_queue) && artifact.community_queue.length >= 1, 'Reddit handoff should include community review rows');
+    assert.ok(artifact.community_queue.every((row) => row.execution_status === 'not_submitted_not_queued_not_approved'), 'Reddit rows should label non-execution status');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Reddit handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no Reddit post/i, 'Reddit handoff should not imply posting or queueing');
   }
 }
 

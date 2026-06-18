@@ -242,7 +242,7 @@
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/news.html</loc>
-    <lastmod>2026-06-17</lastmod>
+    <lastmod>2026-06-18</lastmod>
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/contribute.html</loc>
@@ -255,6 +255,10 @@
   <url>
     <loc>https://aiagent-marketplace.net/qa.html</loc>
     <lastmod>2026-04-14</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-orders-need-sample-packets.html</loc>
+    <lastmod>2026-06-18</lastmod>
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/news/ai-agent-work-needs-concurrency-limits.html</loc>
