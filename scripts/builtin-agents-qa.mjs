@@ -1322,12 +1322,17 @@ const cmoLeaderFinalSynthesis = await cmoLeaderFinal.provider.runJob({
 assertUserFacingDelivery(cmoLeaderFinalSynthesis, 'cmo_leader final synthesis', [
   /Growth improvement plan|Executive summary|Direct answer/i,
   /Perspective review/i,
+  /Confirmed facts/i,
+  /Source coverage ledger/i,
+  /Open questions/i,
+  /Priority diagnosis/i,
+  /Channel priority table/i,
   /Inputs needed next/i
 ]);
 const cmoLeaderFinalContent = cmoLeaderFinalSynthesis.files?.[0]?.content || '';
 assert.match(cmoLeaderFinalContent, /SEO page work/i, 'CMO final synthesis should require LLM judgment over the preparation artifact content without exposing task ids');
 assert.match(cmoLeaderFinalContent, /Access analytics[\s\S]*554 sessions/i, 'CMO final synthesis should carry analytics evidence without exposing internal agent names');
-assert.match(cmoLeaderFinalContent, /Lead\/source list work[\s\S]*missing/i, 'CMO final synthesis should separate blocked lead/list work in user-facing language');
+assert.match(cmoLeaderFinalContent, /Lead\/source list work[\s\S]*(missing|No public lead source|source gap|Hold until source rules)/i, 'CMO final synthesis should separate blocked lead/list work in user-facing language');
 assert.doesNotMatch(cmoLeaderFinalContent, /Adoption matrix|Specialist adoption matrix|DATA ANALYSIS AGENT|RESEARCH AGENT|LANDING PAGE CRITIQUE AGENT|seo_specialist|data_analysis|media_planner|list_creator|Publisher handoff draft prepared|External app ingest|Publisher\/SaaS|site_publish_packet|artifact_for_next_agent|recommended_next_owner|Downstream handoff|facts_verified|assumptions_used|evidence_gaps|採用判断表|source_task_type|source_agent_name/i, 'CMO final synthesis must not expose internal agent, routing, app, or handoff terms');
 assert.doesNotMatch(cmoLeaderFinalContent, /Landing page change packet prepared|Publish status:\s*prepared\s*\/\s*not/i, 'CMO final synthesis must not overclaim Publisher packet preparation');
 assert.doesNotMatch(JSON.stringify(cmoLeaderFinalSynthesis), /\[object Object\]/, 'CMO final synthesis must flatten object-shaped summary and next action fields');
@@ -1339,6 +1344,108 @@ assert.equal(cmoLeaderPublisherArtifact?.surface, 'publisher', 'CMO final synthe
 assert.equal(cmoLeaderPublisherArtifact?.action_type, 'site_publish_packet', 'CMO final Publisher artifact should use site_publish_packet');
 assert.equal(cmoLeaderPublisherArtifact?.metadata?.ingest_status, 'not_ingested', 'CMO final Publisher artifact must say it is not ingested');
 assert.equal(cmoLeaderPublisherArtifact?.metadata?.publish_status, 'not_published', 'CMO final Publisher artifact must say it is not published');
+assert.match(cmoLeaderPublisherArtifact?.body || '', /H1:\s*AI agent marketplace for developers/i, 'CMO final Publisher artifact should carry selected specialist H1 copy');
+assert.match(cmoLeaderPublisherArtifact?.body || '', /Meta description:\s*Compare AI agents/i, 'CMO final Publisher artifact should carry selected specialist meta copy');
+
+const cmoLeaderMasamuneFinalSynthesis = await cmoLeaderFinal.provider.runJob({
+  kind: 'cmo_leader',
+  definition: cmoLeaderFinal,
+  body: {
+    prompt: [
+      'Task: cmo_leader',
+      'Goal: https://masamune.online を一般的な認知度までもっていく',
+      'Product/service: MASAMUNE - マーケティングを自動化するサービス',
+      'Target audience: 日本の中小企業、BtoB SaaS、営業/マーケ責任者',
+      'Main goal: 一般認知、指名検索、問い合わせ増加',
+      'Priority channel: Organic search / SEO + founder/community distribution',
+      'Output language: Japanese'
+    ].join('\n'),
+    output_language: 'ja',
+    input: {
+      target_url: 'https://masamune.online',
+      service_summary: 'マーケティングを自動化するサービス',
+      page_source_status: 'HTML shell only; readable page copy not supplied',
+      objective: '一般的な認知度までもっていく',
+      _broker: {
+        workflow: {
+          sequencePhase: 'final_summary',
+          leaderHandoff: {
+            priorRuns: [
+              {
+                taskType: 'data_analysis',
+                sequencePhase: 'data',
+                status: 'completed',
+                summary: 'GA4/Search Consoleは未提供。現時点ではセッション、CV、指名検索数は未確認。'
+              },
+              {
+                taskType: 'research',
+                sequencePhase: 'research',
+                status: 'completed',
+                summary: 'MASAMUNEの確認済み情報はURLと「マーケティングを自動化するサービス」。ページ本文はHTML shellのみで、具体機能・価格・導入実績は未取得。'
+              },
+              {
+                taskType: 'media_planner',
+                sequencePhase: 'planning',
+                status: 'completed',
+                summary: '優先はSEOでカテゴリ認知を取りに行き、次にX/Note/比較記事で創業者・マーケ責任者に配布。広告は計測前は後回し。'
+              },
+              {
+                taskType: 'seo_specialist',
+                sequencePhase: 'preparation',
+                status: 'completed',
+                summary: 'SEOページ案を作成。狙うテーマは「マーケティング 自動化 中小企業」「MAツール 選び方」。',
+                files: [{
+                  name: 'masamune-seo.md',
+                  content: [
+                    '# SEO page packet',
+                    '## SEO page recommendation',
+                    '- H1: マーケティング自動化を小さく始めるならMASAMUNE',
+                    '- Meta title: MASAMUNE - 中小企業向けマーケティング自動化',
+                    '- Meta description: 見込み客管理、フォローアップ、効果測定を自動化するMASAMUNEの導入判断ページ。',
+                    '## Replacement copy',
+                    'Headline: マーケティングの手作業を、売上につながる自動化へ。',
+                    'Primary CTA: 無料相談を予約'
+                  ].join('\n')
+                }]
+              },
+              {
+                taskType: 'landing',
+                sequencePhase: 'preparation',
+                status: 'completed',
+                summary: 'ファーストビューは「誰向け」「何を自動化」「導入後の次アクション」を明確化。実績は未提供のため成果数値は使わない。'
+              },
+              {
+                taskType: 'reddit',
+                sequencePhase: 'preparation',
+                status: 'completed',
+                summary: 'コミュニティ投稿は宣伝ではなく、マーケ自動化の失敗パターン共有からMASAMUNEの文脈へつなげる。'
+              },
+              {
+                taskType: 'list_creator',
+                sequencePhase: 'preparation',
+                status: 'blocked',
+                summary: '公開ソース条件と対象企業リストが未提供のため、営業先リストは作成不可。'
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: cmoLeaderFinal.manifest
+});
+const cmoLeaderMasamuneContent = cmoLeaderMasamuneFinalSynthesis.files?.[0]?.content || '';
+assert.match(cmoLeaderMasamuneContent, /# 認知拡大プラン|## 先に結論/, 'Masamune CMO final synthesis should be a Japanese awareness plan');
+assert.match(cmoLeaderMasamuneContent, /確認済みの事実[\s\S]*MASAMUNE/, 'Masamune CMO final synthesis should carry the user-supplied service fact');
+assert.match(cmoLeaderMasamuneContent, /情報ソースの充足状況[\s\S]*HTML shell|情報ソースの充足状況[\s\S]*未提供/, 'Masamune CMO final synthesis should expose source limitations');
+assert.match(cmoLeaderMasamuneContent, /優先診断[\s\S]*SEOページ作成/, 'Masamune CMO final synthesis should name the first reviewable lane');
+assert.match(cmoLeaderMasamuneContent, /チャネル優先順位[\s\S]*SEO|チャネル優先順位[\s\S]*自社ページ/, 'Masamune CMO final synthesis should include a channel priority table');
+assert.doesNotMatch(cmoLeaderMasamuneContent, /seo_specialist|data_analysis|media_planner|list_creator|Publisher\/SaaS|site_publish_packet|External app ingest/i, 'Masamune CMO final synthesis must stay user-facing');
+const cmoLeaderMasamuneArtifact = cmoLeaderMasamuneFinalSynthesis.report?.artifacts?.[0];
+assert.match(cmoLeaderMasamuneArtifact?.body || '', /H1:\s*マーケティング自動化を小さく始めるならMASAMUNE/, 'Masamune Publisher artifact should carry the selected H1');
+assert.match(cmoLeaderMasamuneArtifact?.body || '', /Meta description:\s*見込み客管理/, 'Masamune Publisher artifact should carry selected meta description');
+assert.match(cmoLeaderMasamuneArtifact?.body || '', /Primary CTA:\s*無料相談を予約/, 'Masamune Publisher artifact should carry the selected CTA');
 
 const cmoLeaderCheckpointSynthesis = await cmoLeaderFinal.provider.runJob({
   kind: 'cmo_leader',
