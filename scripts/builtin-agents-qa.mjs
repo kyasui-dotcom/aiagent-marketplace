@@ -204,10 +204,10 @@ const externalCommunicationContractExpectations = [
   },
   {
     kind: 'x_post',
-    actions: ['prepare_x_post_packet', 'prepare_x_schedule_packet', 'prepare_x_pre_publish_review', 'prepare_x_connector_handoff'],
-    requiredSections: ['Exact post text', 'Account and link policy', 'Pre-publish review', 'Approval checklist', 'Connector handoff boundary', 'Publish readiness handoff', 'Execution status labels'],
-    guidedSections: ['Exact post text', 'Account and link policy', 'Pre-publish review', 'Connector handoff boundary', 'Publish readiness handoff', 'Execution status labels'],
-    forbiddenClaims: ['posted', 'scheduled', 'queued', 'ready to post without approval proof', 'approved without owner evidence']
+    actions: ['prepare_x_post_packet', 'prepare_x_schedule_packet', 'prepare_x_pre_publish_review', 'apply_upstream_x_handoff', 'prepare_x_saas_payload', 'prepare_x_connector_handoff'],
+    requiredSections: ['Upstream handoff usage', 'Public copy/readiness gap', 'Exact post text', 'Account and link policy', 'Pre-publish review', 'SaaS/App intake payload', 'Approval checklist', 'Connector handoff boundary', 'Publish readiness handoff', 'Measurement and evidence return path', 'Execution status labels'],
+    guidedSections: ['Upstream handoff usage', 'Public copy/readiness gap', 'Exact post text', 'Account and link policy', 'Pre-publish review', 'SaaS/App intake payload', 'Connector handoff boundary', 'Publish readiness handoff', 'Execution status labels'],
+    forbiddenClaims: ['posted', 'scheduled', 'queued', 'ready to post without approval proof', 'approved without owner evidence', 'SaaS app ingested', 'Publisher queued']
   },
   {
     kind: 'email_ops',
@@ -775,6 +775,23 @@ for (const kind of SAMPLE_AGENT_KINDS) {
   assert.equal(delivery.runtime?.generation_provider, 'openai_responses', `${kind} should mark OpenAI generation`);
   assert.match(content, /Livraison|Décision|français/i, `${kind} should use the OpenAI-generated non-English content`);
   assert.doesNotMatch(content, /Answer first|先に結論|prepared a concrete work product/i, `${kind} should not fall back to hardcoded bilingual delivery text when OpenAI is configured`);
+  if (kind === 'x_post') {
+    const file = delivery.files?.[0] || {};
+    assert.equal(file.content_type, 'x_post_packet', 'X delivery file should default to an explicit Publisher handoff packet type');
+    assert.equal(file.artifact_type, 'x_post_packet', 'X delivery file should expose the Publisher artifact type');
+    assert.ok((file.artifact_types || []).includes('x_post'), 'X delivery file should expose the channel-specific artifact type');
+    assert.equal(file.surface, 'publisher', 'X delivery file should target the Publisher surface');
+    assert.equal(file.item_type, 'x_post', 'X delivery file should target X post review');
+    assert.equal(file.action_type, 'x_post', 'X delivery file should expose the action type without claiming execution');
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'x_post_saas_handoff');
+    assert.ok(artifact, 'X delivery should emit a structured SaaS/App handoff artifact');
+    assert.equal(artifact.surface, 'publisher', 'X handoff artifact should target the Publisher surface');
+    assert.ok(Array.isArray(artifact.upstream_handoff_usage), 'X handoff should expose upstream usage ledger');
+    assert.ok(Array.isArray(artifact.post_queue) && artifact.post_queue.length >= 1, 'X handoff should include post review rows');
+    assert.ok(artifact.post_queue.every((row) => row.execution_status === 'not_posted_not_scheduled_not_queued_not_approved'), 'X rows should label non-execution status');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'X handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no X post/i, 'X handoff should not imply posting or queueing');
+  }
   if (kind === 'instagram') {
     const file = delivery.files?.[0] || {};
     assert.equal(file.content_type, 'instagram_post_packet', 'Instagram delivery file should default to an explicit Publisher handoff packet type');
