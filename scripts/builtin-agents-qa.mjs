@@ -232,10 +232,10 @@ const externalCommunicationContractExpectations = [
   },
   {
     kind: 'instagram',
-    actions: ['prepare_instagram_caption_packet', 'prepare_instagram_content_outline_guidance', 'prepare_instagram_creative_brief', 'prepare_instagram_schedule_handoff'],
-    requiredSections: ['Destination URL/copy status', 'Format decision', 'Visual brief', 'Visual asset readiness matrix', 'Content outline guidance', 'Exact caption or outline', 'Schedule handoff', 'Approval checklist', 'Connector boundary', 'Execution status labels'],
-    guidedSections: ['Destination URL/copy status', 'Visual asset readiness matrix', 'Content outline guidance', 'Exact caption or outline', 'Schedule handoff', 'Approval checklist', 'Connector handoff boundary', 'Execution status labels'],
-    forbiddenClaims: ['posted', 'scheduled', 'queued', 'approved destination URL supplied', 'approved copy supplied', 'visual asset available without supplied file or URL proof', 'asset rights cleared without evidence', 'publishing proof supplied', 'channel-ready copy approved']
+    actions: ['prepare_instagram_caption_packet', 'prepare_instagram_content_outline_guidance', 'prepare_instagram_creative_brief', 'apply_upstream_instagram_handoff', 'prepare_instagram_saas_payload', 'prepare_instagram_schedule_handoff'],
+    requiredSections: ['Upstream handoff usage', 'Public copy/readiness gap', 'Destination URL/copy status', 'Format decision', 'Visual brief', 'Visual asset readiness matrix', 'Content outline guidance', 'Proof-safe claim ledger', 'Exact caption or outline', 'SaaS/App intake payload', 'Schedule handoff', 'Approval checklist', 'Connector boundary', 'Measurement and evidence return path', 'Execution status labels'],
+    guidedSections: ['Upstream handoff usage', 'Public copy/readiness gap', 'Destination URL/copy status', 'Visual asset readiness matrix', 'Content outline guidance', 'SaaS/App intake payload', 'Schedule handoff', 'Approval checklist', 'Connector handoff boundary', 'Execution status labels'],
+    forbiddenClaims: ['posted', 'scheduled', 'queued', 'uploaded', 'approved destination URL supplied', 'approved copy supplied', 'visual asset available without supplied file or URL proof', 'asset rights cleared without evidence', 'publishing proof supplied', 'channel-ready copy approved', 'SaaS app ingested', 'Publisher queued']
   },
   {
     kind: 'reddit',
@@ -816,6 +816,15 @@ for (const kind of SAMPLE_AGENT_KINDS) {
     assert.ok(instagramItem, 'Instagram delivery file should become a Publisher delivery item without body-text inference');
     assert.equal(instagramItem.metadata.connector, 'instagram', 'Instagram Publisher item should preserve connector metadata');
     assert.equal(instagramItem.metadata.connector_capability, 'instagram.post', 'Instagram Publisher item should preserve connector capability');
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'instagram_saas_handoff');
+    assert.ok(artifact, 'Instagram delivery should emit a structured SaaS/App handoff artifact');
+    assert.equal(artifact.surface, 'publisher', 'Instagram handoff artifact should target the Publisher surface');
+    assert.ok(Array.isArray(artifact.upstream_handoff_usage), 'Instagram handoff should expose upstream usage ledger');
+    assert.ok(Array.isArray(artifact.visual_asset_readiness_matrix) && artifact.visual_asset_readiness_matrix.length >= 1, 'Instagram handoff should include visual asset readiness rows');
+    assert.ok(Array.isArray(artifact.creative_queue) && artifact.creative_queue.length >= 1, 'Instagram handoff should include creative review rows');
+    assert.ok(artifact.creative_queue.every((row) => row.execution_status === 'not_posted_not_scheduled_not_queued_not_approved'), 'Instagram creative rows should label non-execution status');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Instagram handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no Instagram post/i, 'Instagram handoff should not imply posting or queueing');
   }
   if (kind === 'reddit') {
     const artifact = delivery.report?.artifacts?.find((item) => item.type === 'reddit_saas_handoff');
