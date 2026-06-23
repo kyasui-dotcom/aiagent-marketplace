@@ -565,6 +565,12 @@ globalThis.fetch = async (url, options = {}) => {
       assert.equal(packet.lead_ops_return_contract?.return_packet, 'lead_ops_packet');
       assert.deepEqual(packet.lead_ops_return_contract?.artifact_types, ['lead_rows', 'evidence_urls', 'next_actions']);
     }
+    if (kind === 'cfo_leader') {
+      assert.ok(packet.structured_finance_context, 'CFO provider request must carry structured finance context');
+      assert.ok(Array.isArray(packet.structured_finance_context.formula_model) && packet.structured_finance_context.formula_model.length >= 1, 'CFO structured context should include formula rows');
+      assert.ok(Array.isArray(packet.structured_finance_context.winning_economics_hypotheses) && packet.structured_finance_context.winning_economics_hypotheses.length >= 1, 'CFO structured context should include winning-economics hypotheses');
+      assert.match(packet.structured_finance_context.generation_instruction || '', /Do not mark those supplied rows as missing/i, 'CFO structured context should instruct the model to reuse supplied facts');
+    }
     const cmoReportExtras = packet.leader_synthesis?.reportExtras || {};
     const leaderEvaluationRequired = packet.leader_synthesis?.mode === 'llm_leader_evaluation_required'
       || cmoReportExtras.leader_evaluation_required === true;
@@ -835,6 +841,19 @@ for (const kind of SAMPLE_AGENT_KINDS) {
     assert.ok(artifact.community_queue.every((row) => row.execution_status === 'not_submitted_not_queued_not_approved'), 'Reddit rows should label non-execution status');
     assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Reddit handoff should expose blocked decision intake field');
     assert.match(artifact.execution_boundary || '', /no Reddit post/i, 'Reddit handoff should not imply posting or queueing');
+  }
+  if (kind === 'cfo_leader') {
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'cfo_competitive_finance_handoff');
+    assert.ok(artifact, 'CFO delivery should emit a structured competitive finance SaaS handoff artifact');
+    assert.equal(artifact.surface, 'pricing_decision_console', 'CFO handoff artifact should target the Pricing Decision Console surface');
+    assert.ok(Array.isArray(artifact.benchmark_ledger), 'CFO handoff should expose a benchmark ledger');
+    assert.ok(Array.isArray(artifact.winning_economics_hypotheses) && artifact.winning_economics_hypotheses.length >= 1, 'CFO handoff should include winning-economics hypotheses');
+    assert.ok(Array.isArray(artifact.formula_model) && artifact.formula_model.length >= 1, 'CFO handoff should include formula rows');
+    assert.ok(Array.isArray(artifact.scenario_table) && artifact.scenario_table.length >= 1, 'CFO handoff should include scenario rows');
+    assert.ok(Array.isArray(artifact.specialist_handoff_plan) && artifact.specialist_handoff_plan.some((row) => row.task_type === 'pricing'), 'CFO handoff should preserve downstream specialist routing');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'CFO handoff should expose blocked decision intake field');
+    assert.ok((artifact.pricing_and_payment_design_queue || []).every((row) => /not_priced_not_launched_not_tested/.test(row.execution_status || '')), 'CFO pricing rows should label non-execution status');
+    assert.match(artifact.execution_boundary || '', /no price, budget, payout, billing, payment, market validation, benchmark audit, or SaaS app ingestion/i, 'CFO handoff should not imply finance execution or app ingest');
   }
 }
 
