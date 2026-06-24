@@ -842,6 +842,17 @@ for (const kind of SAMPLE_AGENT_KINDS) {
     assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Reddit handoff should expose blocked decision intake field');
     assert.match(artifact.execution_boundary || '', /no Reddit post/i, 'Reddit handoff should not imply posting or queueing');
   }
+  if (kind === 'pricing') {
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'pricing_strategy_saas_handoff');
+    assert.ok(artifact, 'Pricing delivery should emit a structured pricing SaaS handoff artifact');
+    assert.equal(artifact.surface, 'pricing_decision_console', 'Pricing handoff artifact should target the Pricing Decision Console surface');
+    assert.ok(Array.isArray(artifact.package_architecture) && artifact.package_architecture.length >= 1, 'Pricing handoff should include package architecture rows');
+    assert.ok(Array.isArray(artifact.formula_model) && artifact.formula_model.length >= 1, 'Pricing handoff should include formula rows');
+    assert.ok(Array.isArray(artifact.pricing_experiment_queue) && artifact.pricing_experiment_queue.length >= 1, 'Pricing handoff should include pricing experiment rows');
+    assert.ok(artifact.pricing_experiment_queue.every((row) => /not_priced_not_launched_not_tested/.test(row.execution_status || '')), 'Pricing experiment rows should label non-execution status');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Pricing handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no price, checkout, billing, discount, contract, traffic, experiment, measurement, result, or SaaS app ingestion/i, 'Pricing handoff should not imply price execution or app ingest');
+  }
   if (kind === 'cfo_leader') {
     const artifact = delivery.report?.artifacts?.find((item) => item.type === 'cfo_competitive_finance_handoff');
     assert.ok(artifact, 'CFO delivery should emit a structured competitive finance SaaS handoff artifact');
