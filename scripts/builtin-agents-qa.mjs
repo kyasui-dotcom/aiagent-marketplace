@@ -180,10 +180,10 @@ const workSupportContractExpectations = [
   },
   {
     kind: 'data_analysis',
-    actions: ['prepare_metric_audit', 'prepare_analysis_memo', 'verify_conversion_instrumentation'],
-    requiredSections: ['Question', 'Dataset status', 'Conversion instrumentation verification', 'Row-level sample audit', 'Metric definitions', 'Derived metric calculation table', 'Findings', 'Caveats', 'Analysis notes', 'Next decision'],
-    guidedSections: ['Question', 'Dataset status', 'Conversion instrumentation verification', 'Analytics admin/access status', 'Row-level sample audit', 'Metric definitions', 'Derived metric calculation table', 'Findings', 'Caveats', 'Analysis notes', 'Next decision'],
-    forbiddenClaims: ['data-backed conclusion without dataset evidence', 'causal claim without test design', 'conversion conclusion without instrumentation proof', 'GA4/Search Console verified without admin evidence', 'computed conversion rate without row count, numerator, denominator, and formula', 'full-funnel conclusion from sample rows without caveat']
+    actions: ['prepare_metric_audit', 'prepare_analysis_memo', 'verify_conversion_instrumentation', 'prepare_measurement_console_handoff'],
+    requiredSections: ['Question', 'Dataset status', 'Conversion instrumentation verification', 'Row-level sample audit', 'Metric definitions', 'Derived metric calculation table', 'Findings', 'Caveats', 'Analysis notes', 'Measurement Console handoff', 'Next decision'],
+    guidedSections: ['Question', 'Dataset status', 'Conversion instrumentation verification', 'Analytics admin/access status', 'Row-level sample audit', 'Metric definitions', 'Derived metric calculation table', 'Findings', 'Caveats', 'Analysis notes', 'Measurement Console handoff', 'Next decision'],
+    forbiddenClaims: ['data-backed conclusion without dataset evidence', 'causal claim without test design', 'conversion conclusion without instrumentation proof', 'GA4/Search Console verified without admin evidence', 'computed conversion rate without row count, numerator, denominator, and formula', 'full-funnel conclusion from sample rows without caveat', 'dashboard live, events connected, experiment launched, or SaaS app ingested without execution proof']
   },
   {
     kind: 'diligence',
@@ -571,6 +571,14 @@ globalThis.fetch = async (url, options = {}) => {
       assert.ok(Array.isArray(packet.structured_finance_context.winning_economics_hypotheses) && packet.structured_finance_context.winning_economics_hypotheses.length >= 1, 'CFO structured context should include winning-economics hypotheses');
       assert.match(packet.structured_finance_context.generation_instruction || '', /Do not mark those supplied rows as missing/i, 'CFO structured context should instruct the model to reuse supplied facts');
     }
+    if (kind === 'data_analysis') {
+      assert.ok(packet.structured_analysis_context, 'Data Analysis provider request must carry structured analysis context');
+      assert.ok(Array.isArray(packet.structured_analysis_context.metric_dictionary) && packet.structured_analysis_context.metric_dictionary.length >= 1, 'Data Analysis structured context should include metric definitions');
+      assert.ok(Array.isArray(packet.structured_analysis_context.formula_model) && packet.structured_analysis_context.formula_model.length >= 1, 'Data Analysis structured context should include formula rows');
+      assert.ok(packet.structured_analysis_context.dashboard_spec?.surface === 'measurement_console', 'Data Analysis structured context should target the measurement console');
+      assert.ok(Array.isArray(packet.structured_analysis_context.experiment_queue) && packet.structured_analysis_context.experiment_queue.length >= 1, 'Data Analysis structured context should include experiment rows');
+      assert.match(packet.structured_analysis_context.generation_instruction || '', /Do not mark supplied benchmark rows as missing/i, 'Data Analysis structured context should instruct the model to reuse supplied benchmark facts');
+    }
     const cmoReportExtras = packet.leader_synthesis?.reportExtras || {};
     const leaderEvaluationRequired = packet.leader_synthesis?.mode === 'llm_leader_evaluation_required'
       || cmoReportExtras.leader_evaluation_required === true;
@@ -841,6 +849,19 @@ for (const kind of SAMPLE_AGENT_KINDS) {
     assert.ok(artifact.community_queue.every((row) => row.execution_status === 'not_submitted_not_queued_not_approved'), 'Reddit rows should label non-execution status');
     assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Reddit handoff should expose blocked decision intake field');
     assert.match(artifact.execution_boundary || '', /no Reddit post/i, 'Reddit handoff should not imply posting or queueing');
+  }
+  if (kind === 'data_analysis') {
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'data_analysis_saas_handoff');
+    assert.ok(artifact, 'Data Analysis delivery should emit a structured Measurement Console SaaS handoff artifact');
+    assert.equal(artifact.surface, 'measurement_console', 'Data Analysis handoff artifact should target the Measurement Console surface');
+    assert.ok(Array.isArray(artifact.metric_dictionary) && artifact.metric_dictionary.length >= 1, 'Data Analysis handoff should include metric definitions');
+    assert.ok(Array.isArray(artifact.formula_model) && artifact.formula_model.length >= 1, 'Data Analysis handoff should include formula rows');
+    assert.ok(Array.isArray(artifact.experiment_queue) && artifact.experiment_queue.length >= 1, 'Data Analysis handoff should include experiment rows');
+    assert.ok(artifact.experiment_queue.every((row) => /not_launched_not_measured_not_validated/.test(row.execution_status || '')), 'Data Analysis experiment rows should label non-execution status');
+    assert.ok(Array.isArray(artifact.required_data_queue) && artifact.required_data_queue.length >= 1, 'Data Analysis handoff should include required data rows');
+    assert.equal(artifact.dashboard_spec?.surface, 'measurement_console', 'Data Analysis handoff should include a Measurement Console dashboard spec');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Data Analysis handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no GA4, Search Console, internal analytics, billing, event instrumentation, dashboard ingestion, experiment launch, measurement result, validation, or SaaS app ingestion/i, 'Data Analysis handoff should not imply analytics connection, measurement, validation, or app ingest');
   }
   if (kind === 'pricing') {
     const artifact = delivery.report?.artifacts?.find((item) => item.type === 'pricing_strategy_saas_handoff');
