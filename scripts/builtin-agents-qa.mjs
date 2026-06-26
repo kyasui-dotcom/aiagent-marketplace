@@ -863,6 +863,18 @@ for (const kind of SAMPLE_AGENT_KINDS) {
     assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Data Analysis handoff should expose blocked decision intake field');
     assert.match(artifact.execution_boundary || '', /no GA4, Search Console, internal analytics, billing, event instrumentation, dashboard ingestion, experiment launch, measurement result, validation, or SaaS app ingestion/i, 'Data Analysis handoff should not imply analytics connection, measurement, validation, or app ingest');
   }
+  if (kind === 'diligence') {
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'diligence_saas_handoff');
+    assert.ok(artifact, 'Diligence delivery should emit a structured risk verification SaaS handoff artifact');
+    assert.equal(artifact.surface, 'risk_verification_console', 'Diligence handoff artifact should target the Risk Verification Console surface');
+    assert.ok(Array.isArray(artifact.evidence_map) && artifact.evidence_map.length >= 1, 'Diligence handoff should include evidence map rows');
+    assert.ok(Array.isArray(artifact.red_flag_matrix) && artifact.red_flag_matrix.length >= 1, 'Diligence handoff should include red flag rows');
+    assert.ok(artifact.red_flag_matrix.every((row) => /not_cleared_not_approved_not_verified/.test(row.execution_status || '')), 'Diligence red flags should label non-execution status');
+    assert.ok(Array.isArray(artifact.verification_queue) && artifact.verification_queue.length >= 1, 'Diligence handoff should include verification queue rows');
+    assert.ok(Array.isArray(artifact.verification_proof_tracker) && artifact.verification_proof_tracker.length >= 1, 'Diligence handoff should include proof tracker rows');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Diligence handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no launch, go\/no-go approval, blocker closure, completed verification, connector execution, pricing change, pilot launch, or SaaS app ingestion/i, 'Diligence handoff should not imply approval, verification, execution, pricing, pilot, or app ingest');
+  }
   if (kind === 'pricing') {
     const artifact = delivery.report?.artifacts?.find((item) => item.type === 'pricing_strategy_saas_handoff');
     assert.ok(artifact, 'Pricing delivery should emit a structured pricing SaaS handoff artifact');
