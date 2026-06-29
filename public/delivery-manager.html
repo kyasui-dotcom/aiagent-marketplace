@@ -3,20 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Delivery Manager | CAIt</title>
-  <meta name="description" content="CAIt Delivery Manager lists reusable delivery packages, files, downloads, and app handoffs." />
+  <title>Deliveries | CAIt</title>
+  <meta name="description" content="CAIt Deliveries lists reusable delivery packages, files, downloads, and follow-up context." />
   <meta name="robots" content="noindex,follow" />
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/app-console.css?v=20260505c" />
-  <script type="module" src="/delivery-manager.js?v=20260505d"></script>
+  <script type="module" src="/delivery-manager.js?v=20260526a"></script>
 </head>
 <body>
-  <main class="app-console-shell delivery-shell" aria-label="CAIt Delivery Manager">
+  <main class="app-console-shell delivery-shell" aria-label="CAIt Deliveries">
     <section class="app-console-panel delivery-panel">
       <header class="app-console-header delivery-header">
-        <a class="app-brand" href="/" aria-label="CAIt"><img src="/cait-icon.svg" alt="" /><span>Delivery Manager</span></a>
-        <nav class="app-nav" aria-label="CAIt app navigation">
+        <a class="app-brand" href="/" aria-label="CAIt"><img src="/cait-icon.svg" alt="" /><span>Deliveries</span></a>
+        <nav class="app-nav" aria-label="CAIt feature navigation">
           <a href="/chat">Chat</a>
           <a href="/apps.html">Apps</a>
           <a href="/analytics-console.html">Analytics</a>
@@ -41,6 +41,14 @@
           <div class="delivery-search-row">
             <label class="sr-only" for="deliverySearchInput">Search deliveries</label>
             <input id="deliverySearchInput" type="search" placeholder="Search deliveries, agents, files..." autocomplete="off" />
+            <label class="sr-only" for="deliverySortSelect">Sort deliveries</label>
+            <select id="deliverySortSelect" aria-label="Sort deliveries">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="status">Status</option>
+              <option value="files">Most files</option>
+              <option value="title">Title A-Z</option>
+            </select>
           </div>
 
           <div class="delivery-filter-tabs" aria-label="Delivery filters">
@@ -84,6 +92,7 @@
           </div>
 
           <section class="delivery-tab-panel active" id="overviewPanel" aria-label="Delivery overview">
+            <div class="notice delivery-handoff-notice" id="deliveryHandoffNotice" hidden></div>
             <div class="delivery-overview-grid">
               <article>
                 <span>Next action</span>
@@ -104,6 +113,13 @@
                 <button class="ghost-btn" id="copyPreviewBtn" type="button">Copy preview</button>
               </div>
               <pre class="delivery-output-preview" id="outputPreview"></pre>
+            </div>
+            <div class="delivery-handoff-audit">
+              <div class="status-row">
+                <h2>AIAGENT handoff audit</h2>
+                <span class="status-pill pending" id="deliveryHandoffAuditPill">0 / 6 anchors</span>
+              </div>
+              <div class="delivery-handoff-audit-list" id="deliveryHandoffAuditList"></div>
             </div>
           </section>
 
@@ -135,6 +151,19 @@
             <h2>Next step</h2>
             <p id="actionRailSummary">Choose a reusable delivery and send it to CAIt as follow-up context.</p>
             <button class="primary-btn" id="runFollowupBtn" type="button">Run follow-up</button>
+          </section>
+
+          <section class="delivery-approval-gate" aria-label="Approval gate">
+            <div class="status-row">
+              <h2>Approval gate</h2>
+              <span class="status-pill pending" id="approvalStatePill">review</span>
+            </div>
+            <p id="approvalGateSummary">Load a delivery to review the deliverable, channel, evidence, and external action boundary.</p>
+            <div class="approval-checklist" id="approvalChecklist"></div>
+            <div class="delivery-approval-actions">
+              <button class="primary-btn" id="approveDeliveryBtn" type="button">Approve & resume</button>
+              <button class="ghost-btn" id="copyApprovalBtn" type="button">Copy approval note</button>
+            </div>
           </section>
 
           <section class="delivery-rail-actions" aria-label="Package actions">

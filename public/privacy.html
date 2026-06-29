@@ -15,14 +15,13 @@
       <div>
         <a class="logo logo-link" href="/" aria-label="Back to CAIt start">CAIt</a>
         <div class="sublogo">PRIVACY POLICY</div>
-        <div class="doc-meta">Last updated: 2026-04-17</div>
+        <div class="doc-meta">Last updated: 2026-05-15</div>
       </div>
       <nav class="doc-nav" aria-label="CAIt pages">
         <a href="/" class="mini-btn link-btn">Home</a>
         <a href="/chat.html" class="mini-btn link-btn">Chat</a>
         <a href="/agents.html" class="mini-btn link-btn">Agents</a>
-        <a href="/ai-agent-api.html" class="mini-btn link-btn">API</a>
-        <a href="/cli-help.html" class="mini-btn link-btn">CLI</a>
+        <a href="/ai-agent-api.html" class="mini-btn link-btn">API / CLI / MCP</a>
         <a href="/resources.html" class="mini-btn link-btn">Resources</a>
         <a href="/help.html" class="mini-btn link-btn">Help</a>
         <a href="/news.html" class="mini-btn link-btn">News</a>
@@ -43,8 +42,10 @@
         <ul class="doc-list">
           <li>Account and session data such as login state, GitHub account identifiers, and session cookies.</li>
           <li>Repository and manifest metadata, plus selected repository file contents and extracted signals needed to import, generate, validate, and verify AI agents.</li>
+          <li>Google account identity and Google API data only after a user starts a Google OAuth connection and grants the requested scopes.</li>
+          <li>Provider identity verification data, including legal name, birth date, address, phone number, document type, notes, and submitted identity photos when a provider requests payout eligibility.</li>
           <li>Run, job, output, billing, and operator log data needed to route work and audit outcomes.</li>
-          <li>CAIt Chat messages, CAIt replies, and AI-assisted pre-order classifier outputs may be saved in redacted, truncated form to improve onboarding, routing, and order-prep quality.</li>
+          <li>CAIt Chat messages, CAIt replies, and AI-assisted pre-order classifier outputs may be saved in redacted, truncated form to improve onboarding, routing, and order-prep quality. Google user data received from Google APIs is excluded from these training or evaluation exports.</li>
           <li>Technical telemetry such as timestamps, request identifiers, verification results, and deploy target details.</li>
         </ul>
       </section>
@@ -53,6 +54,8 @@
         <ul class="doc-list">
           <li>To authenticate users and manage sessions.</li>
           <li>To import manifests from GitHub, generate draft manifests from selected repositories, and verify agent ownership and health.</li>
+          <li>To connect user-approved Google sources, display available Google resources, load selected reports or source data, and attach only the selected context to a user-requested CAIt order.</li>
+          <li>To review provider payout eligibility, administer identity review, and prevent unauthorized or restricted-business payouts.</li>
           <li>To route jobs, retry failed dispatches, calculate billing, and expose operator audit trails.</li>
           <li>To review redacted chat transcripts and create reviewed training or evaluation datasets for CAIt prompts, rules, clarification flows, and agent routing quality.</li>
           <li>To secure, debug, and improve the runtime and marketplace workflow.</li>
@@ -60,35 +63,62 @@
       </section>
     </section>
 
+    <section class="box panel-stack" style="margin:16px 0">
+      <div class="section-title">3. GOOGLE USER DATA AND OAUTH SCOPES</div>
+      <p>
+        CAIt requests Google OAuth access only when a user chooses a Google-powered feature, such as signing in,
+        connecting Analytics Console, attaching Search Console or GA4 evidence, preparing Google Workspace context,
+        or explicitly approving a Gmail or Calendar action. CAIt does not request every Google scope at basic sign-in.
+      </p>
+      <ul class="doc-list">
+        <li><strong>Google identity:</strong> <code>openid</code>, <code>email</code>, and <code>profile</code> are used to authenticate the user and show the signed-in Google account.</li>
+        <li><strong>Google Analytics:</strong> <code>https://www.googleapis.com/auth/analytics.readonly</code> is used to list accessible GA4 accounts/properties and read selected report metrics such as sessions, conversions, channels, landing pages, countries, and date ranges.</li>
+        <li><strong>Search Console:</strong> <code>https://www.googleapis.com/auth/webmasters.readonly</code> is used to list accessible Search Console sites and read selected search performance rows such as queries, pages, clicks, impressions, CTR, and average position.</li>
+        <li><strong>Google Drive, Docs, Sheets, and Slides:</strong> read-only Drive access is used only when a user asks CAIt to use selected Workspace files. CAIt may list file metadata such as file name, type, link, and modified time, and may process selected file content when needed for the user-requested task.</li>
+        <li><strong>Google Calendar:</strong> read-only Calendar access may be used to review selected calendars, events, and availability for scheduling work. Calendar write access is used only after explicit user approval to create or update a calendar event, invite, or meeting-link packet.</li>
+        <li><strong>Gmail:</strong> Gmail read access may be used to read selected mailbox, label, message, or thread context for inbox triage, reply drafting, meeting prep, or other user-requested assistant work. Gmail send access is used only after explicit user approval to send a user-reviewed email.</li>
+      </ul>
+      <p>
+        CAIt uses Google user data only to provide or improve the user-facing feature that the user requested:
+        loading analytics evidence, preparing an order, creating a draft, showing a review packet, or carrying out an
+        explicitly approved Google action. CAIt does not sell Google user data, use it for advertising, or use Google
+        Workspace API data to develop, improve, or train generalized AI or ML models.
+      </p>
+      <p>
+        The use and transfer of information received from Google APIs to any other app will adhere to the Google API
+        Services User Data Policy, including the Limited Use requirements.
+      </p>
+    </section>
+
     <section class="doc-grid">
       <section class="box panel-stack">
-        <div class="section-title">3. GITHUB AND THIRD-PARTY SERVICES</div>
+        <div class="section-title">4. GITHUB AND THIRD-PARTY SERVICES</div>
         <p>When you connect GitHub, CAIt processes the minimum metadata and repository access required by the configured integration mode. For draft manifest generation, CAIt may read a limited allowlist of repository files such as <code>README.md</code>, <code>package.json</code>, <code>pyproject.toml</code>, <code>requirements.txt</code>, and <code>Dockerfile</code>. CAIt may use a configured model provider to analyze those selected repo signals and produce a more accurate draft description, feature profile, comparison axes, limitations, and evidence. GitHub App is preferred for repo-scoped permissions. OAuth fallback stays intentionally limited. CAIt may also rely on Cloudflare for hosting and storage.</p>
       </section>
       <section class="box panel-stack">
-        <div class="section-title">4. SHARING</div>
-        <p>Data may be shared with infrastructure and integration providers such as Cloudflare and GitHub, and with connected agent providers when needed to execute a run or return results. CAIt does not need to sell personal data to operate the service.</p>
+        <div class="section-title">5. SHARING</div>
+        <p>Data may be shared with infrastructure and integration providers such as Cloudflare, Google, and GitHub, and with connected agent or model providers only when needed to execute a user-requested run or return results. When Google user data is included in an order context, CAIt sends only the selected or summarized data needed for that task. CAIt does not sell personal data or Google user data.</p>
       </section>
     </section>
 
     <section class="doc-grid">
       <section class="box panel-stack">
-        <div class="section-title">5. RETENTION</div>
-        <p>Session, manifest, run, billing, redacted chat transcript, reviewed training/evaluation export, and log data is retained only as long as needed for service operation, troubleshooting, security, legal compliance, marketplace accounting, or product improvement, subject to the operator's retention policy.</p>
+        <div class="section-title">6. RETENTION</div>
+        <p>Session, manifest, run, billing, provider identity review records and submitted photos, redacted chat transcript, reviewed training/evaluation export, and log data is retained only as long as needed for service operation, troubleshooting, security, legal compliance, marketplace accounting, payout review, or product improvement, subject to the operator's retention policy. Google OAuth tokens may be stored to keep a user-approved Google connector available until the user disconnects it or the token expires or is revoked. Google report data and Workspace source data are retained only as selected order context, delivery artifacts, or audit records needed to provide the requested service.</p>
       </section>
       <section class="box panel-stack">
-        <div class="section-title">6. SECURITY</div>
-        <p>CAIt uses access controls, short-lived integration tokens where supported, session protections, and platform security controls. No system is perfectly secure, so users should avoid submitting secrets or sensitive data unless the deployment is specifically configured for that use.</p>
+        <div class="section-title">7. SECURITY</div>
+        <p>CAIt uses access controls, OAuth state validation, connector-scoped permissions, short-lived integration tokens where supported, session protections, and platform security controls. Google access is gated by user consent and requested per feature or connector action. No system is perfectly secure, so users should avoid submitting secrets or sensitive data unless the deployment is specifically configured for that use.</p>
       </section>
     </section>
 
     <section class="doc-grid">
       <section class="box panel-stack">
-        <div class="section-title">7. YOUR CHOICES</div>
-        <p>You can disconnect integrations, avoid private repository imports, avoid submitting secrets in CAIt Chat, avoid logging in for guest-mode evaluation, and request account or data handling support through the operator contact channel.</p>
+        <div class="section-title">8. YOUR CHOICES</div>
+        <p>You can disconnect Google and other integrations, revoke CAIt's Google access from your Google Account permissions page, avoid private repository imports, avoid submitting secrets in CAIt Chat, avoid logging in for guest-mode evaluation, and request account or data handling support through the operator contact channel. After a Google connector is disconnected or revoked, CAIt will not be able to make new Google API requests unless you reconnect and consent again.</p>
       </section>
       <section class="box panel-stack">
-        <div class="section-title">8. CHANGES AND CONTACT</div>
+        <div class="section-title">9. CHANGES AND CONTACT</div>
         <p>This policy may change as the service evolves. Material changes should be reflected by updating the published date. Questions should be directed through the operator support channel, repository issue tracker, or contact method published with the deployed service.</p>
       </section>
     </section>

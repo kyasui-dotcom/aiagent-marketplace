@@ -1,3 +1,9 @@
+export {
+  buildDeliveryPublishOrderBody,
+  buildReportNextOrderBody,
+  deliveryPublishTargetInstruction
+} from './delivery-order-body-builder.js';
+
 const CONNECTOR_ACTION_LABELS = Object.freeze({
   connect_x: 'CONNECT X',
   connect_google: 'CONNECT GOOGLE',
@@ -7,8 +13,8 @@ const CONNECTOR_ACTION_LABELS = Object.freeze({
 const DELIVERY_ACTION_CONTRACTS = Object.freeze({
   article_draft: Object.freeze({
     type: 'article_draft',
-    title: 'ARTICLE DRAFT DETECTED',
-    description: 'CAIt detected a publishable long-form draft. Route it into publish preparation or export it as-is.',
+    title: 'ARTICLE DRAFT CONTRACT',
+    description: 'The agent returned an explicit publishable long-form draft contract. Route it into publish preparation or export it as-is.',
     copyLabel: 'COPY ARTICLE',
     prepareLabel: 'PREPARE PUBLISH ORDER',
     connectAction: '',
@@ -58,8 +64,8 @@ const DELIVERY_ACTION_CONTRACTS = Object.freeze({
 });
 
 const DELIVERY_UI_TEXT = Object.freeze({
-  articleDetectedLabel: 'ARTICLE DETECTED',
-  articleDetectedDescription: 'CAIt detected a publishable article draft from this delivery. Confirm the target and URL path before preparing the next execution.',
+  articleDetectedLabel: 'ARTICLE DRAFT CONTRACT',
+  articleDetectedDescription: 'This delivery returned explicit article draft metadata. Confirm the target and URL path before preparing the next execution.',
   genericReasonFallback: 'Detected from the previous delivery and ready for the next action.',
   executionStoppedNotice: 'Execution for this delivery is stopped because the user cancelled it. Clear the stop state to run it again.',
   googleSourcesTitle: 'GOOGLE SOURCES',
@@ -137,6 +143,57 @@ function socialPostCandidatesFromJson(content = '', options = {}) {
   return candidates;
 }
 
+const SOCIAL_POST_FIELD_LABEL_PATTERN = '(?:x\\s+post\\s+draft|post\\s+draft|post\\s+text|tweet\\s+text|exact[_\\s-]*copy|post[_\\s-]*text|投稿本文|投稿コピー|投稿ドラフト|本文)';
+const SOCIAL_POST_FIELD_SUFFIX_PATTERN = '(?:\\s*\\([^\\n)]{0,180}\\)|\\s+[-–—]\\s+[^\\n:：]{0,160})?';
+
+function socialPostCandidatesFromLabeledBlocks(content = '', options = {}) {
+  const candidates = [];
+  const lines = String(content || '').replace(/\r\n/g, '\n').split('\n');
+  const labelLinePattern = new RegExp(`^\\s*(?:[-*]\\s*)?(?:\\*\\*)?${SOCIAL_POST_FIELD_LABEL_PATTERN}${SOCIAL_POST_FIELD_SUFFIX_PATTERN}\\s*[:：]\\s*(?:\\*\\*)?\\s*$`, 'i');
+  const nextLabelPattern = new RegExp(`^\\s*(?:[-*]\\s*)?(?:\\*\\*)?${SOCIAL_POST_FIELD_LABEL_PATTERN}`, 'i');
+  const stopPattern = /^(?:#{1,6}\s+|deliverable\b|approval packet\b|oauth\b|execution handoff\b|cadence\b|reply candidates\b|optional thread\b|status\b|required\b)/i;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] || '';
+    if (!labelLinePattern.test(line)) continue;
+    let cursor = index + 1;
+    while (cursor < lines.length && !String(lines[cursor] || '').trim()) cursor += 1;
+
+    const quoted = [];
+    for (; cursor < lines.length; cursor += 1) {
+      const current = lines[cursor] || '';
+      if (/^\s*>/.test(current)) {
+        quoted.push(current.replace(/^\s*>\s?/, '').trimEnd());
+        continue;
+      }
+      if (quoted.length && !String(current || '').trim()) {
+        quoted.push('');
+        continue;
+      }
+      break;
+    }
+    if (quoted.length) {
+      addSocialPostCandidate(candidates, quoted.join('\n').replace(/\n+$/g, ''), options);
+      continue;
+    }
+
+    const paragraph = [];
+    for (; cursor < lines.length; cursor += 1) {
+      const current = lines[cursor] || '';
+      const trimmed = current.trim();
+      const plain = trimmed.replace(/\*\*/g, '');
+      if (!trimmed) {
+        if (paragraph.length) break;
+        continue;
+      }
+      if (stopPattern.test(plain) || nextLabelPattern.test(trimmed)) break;
+      paragraph.push(current.replace(/^\s*>\s?/, '').trimEnd());
+    }
+    addSocialPostCandidate(candidates, paragraph.join('\n'), options);
+  }
+  return candidates;
+}
+
 export function extractSocialPostTextFromDeliveryContent(content = '', options = {}) {
   const text = String(content || '').replace(/\r\n/g, '\n');
   const maxLength = Number(options.maxLength || 0);
@@ -145,7 +202,10 @@ export function extractSocialPostTextFromDeliveryContent(content = '', options =
   for (const candidate of socialPostCandidatesFromJson(text, candidateOptions)) {
     addSocialPostCandidate(candidates, candidate, candidateOptions);
   }
-  const fieldPattern = /(?:^|\n)\s*(?:[-*]\s*)?(?:x\s+post\s+draft|post\s+draft|post\s+text|tweet\s+text|exact[_\s-]*copy|post[_\s-]*text|投稿本文|投稿コピー|投稿ドラフト|本文)\s*[:：]\s*([^\n]+)/gi;
+  for (const candidate of socialPostCandidatesFromLabeledBlocks(text, candidateOptions)) {
+    addSocialPostCandidate(candidates, candidate, candidateOptions);
+  }
+  const fieldPattern = new RegExp(`(?:^|\\n)\\s*(?:[-*]\\s*)?(?:\\*\\*)?${SOCIAL_POST_FIELD_LABEL_PATTERN}${SOCIAL_POST_FIELD_SUFFIX_PATTERN}(?:\\*\\*)?\\s*[:：][ \\t]*(?:\\*\\*)?[ \\t]*([^\\n]+)`, 'gi');
   for (const match of text.matchAll(fieldPattern)) {
     addSocialPostCandidate(candidates, match[1], candidateOptions);
   }
@@ -267,6 +327,181 @@ export function deliveryScheduleConfirmationRequirement(actionKind = '') {
   return deliveryApiActionPolicy(actionKind)?.requiresScheduleConfirmation
     ? DELIVERY_SCHEDULE_CONFIRMATION_REQUIREMENT
     : '';
+}
+
+export function hasDeliveryExecutionConfirmation(body = {}) {
+  return body?.confirm_execute === true || body?.confirmExecute === true;
+}
+
+export function hasDeliveryScheduleConfirmation(body = {}) {
+  return body?.confirm_schedule === true || body?.confirmSchedule === true;
+}
+
+export function deliveryExecutorActionPayload(body = {}) {
+  const actionKind = String(body?.action_kind || body?.actionKind || '').trim();
+  const draft = body?.draft && typeof body.draft === 'object' ? body.draft : {};
+  if (actionKind === 'x_post') {
+    return {
+      kind: 'x_post',
+      text: String(draft.postText || '').trim(),
+      approvedXUsername: String(body.approved_x_username || body.approvedXUsername || draft.approvedXUsername || draft.approved_x_username || '').trim(),
+      approvedXUserId: String(body.approved_x_user_id || body.approvedXUserId || draft.approvedXUserId || draft.approved_x_user_id || '').trim(),
+      approvedText: String(body.approved_text || body.approvedText || draft.approvedText || draft.approved_text || '').trim()
+    };
+  }
+  if (actionKind === 'instagram_post') {
+    return {
+      kind: 'instagram_post',
+      caption: String(draft.postText || '').trim(),
+      accessToken: String(draft.instagramAccessToken || '').trim(),
+      instagramUserId: String(draft.instagramUserId || '').trim(),
+      mediaUrl: String(draft.instagramMediaUrl || '').trim()
+    };
+  }
+  if (actionKind === 'gmail_send') {
+    return {
+      kind: 'gmail_send',
+      to: String(draft.recipientEmail || '').trim(),
+      subject: String(draft.emailSubject || '').trim(),
+      text: String(draft.emailBody || '').trim()
+    };
+  }
+  if (actionKind === 'resend_send') {
+    return {
+      kind: 'resend_send',
+      to: String(draft.recipientEmail || '').trim(),
+      from: String(draft.senderEmail || '').trim(),
+      replyTo: String(draft.replyToEmail || '').trim(),
+      subject: String(draft.emailSubject || '').trim(),
+      text: String(draft.emailBody || '').trim()
+    };
+  }
+  return null;
+}
+
+export function normalizeDeliveryExecuteResponse(result = {}, actionKind = '') {
+  const kind = String(actionKind || '').trim();
+  if (kind === 'github_pr') {
+    return {
+      ok: true,
+      action_kind: kind,
+      outcome_kind: 'github_pr',
+      message: 'GitHub PR handoff created.',
+      entity: {
+        repo: result.repo?.fullName || '',
+        branch: result.branch || '',
+        pull_request_url: result.pull_request?.html_url || result.pull_request?.htmlUrl || '',
+        pull_request_number: result.pull_request?.number || null,
+        files: Array.isArray(result.files) ? result.files : []
+      },
+      raw: result
+    };
+  }
+  if (kind === 'report_next') {
+    return {
+      ok: true,
+      action_kind: kind,
+      outcome_kind: 'job',
+      message: 'Follow-up order started.',
+      entity: {
+        job_id: result.job_id || '',
+        status: result.status || '',
+        workflow_parent_id: result.workflow_parent_id || null,
+        matched_agent_id: result.matched_agent_id || null
+      },
+      raw: result
+    };
+  }
+  return {
+    ok: true,
+    action_kind: kind,
+    outcome_kind: 'connector_action',
+    message: result.status === 'sent' ? 'Connector send completed.' : 'Connector action completed.',
+    entity: {
+      connector_action: result.connector_action || kind,
+      connector_action_id: result.connector_action_id || '',
+      url: result.url || '',
+      account_handle: result.account_handle || '',
+      account_id: result.account_id || '',
+      to: result.to || '',
+      subject: result.subject || '',
+      thread_id: result.thread_id || ''
+    },
+    raw: result
+  };
+}
+
+export function normalizeDeliveryScheduleResponse(result = {}, actionKind = '') {
+  return {
+    ok: true,
+    action_kind: String(actionKind || '').trim(),
+    outcome_kind: 'scheduled',
+    message: 'Scheduled action created.',
+    entity: {
+      recurring_order_id: result.recurring_order?.id || '',
+      next_run_at: result.recurring_order?.nextRunAt || '',
+      status: result.recurring_order?.status || '',
+      task_type: result.recurring_order?.taskType || ''
+    },
+    raw: result
+  };
+}
+
+export function normalizeDeliveryExecuteFailureResponse(result = {}, actionKind = '') {
+  const payload = result && typeof result === 'object' ? result : {};
+  const message = String(payload.error || 'Execution failed').trim();
+  const missingConnectors = Array.isArray(payload.missingConnectors || payload.missing_connectors) ? (payload.missingConnectors || payload.missing_connectors) : [];
+  const missingConnectorCapabilities = Array.isArray(payload.missingConnectorCapabilities || payload.missing_connector_capabilities)
+    ? (payload.missingConnectorCapabilities || payload.missing_connector_capabilities)
+    : [];
+  const statusCode = Number(payload.statusCode || 0) || 400;
+  const errorKind = payload.code === 'confirmation_required' || payload.needs_confirmation
+    ? 'confirmation_required'
+    : payload.code === 'connector_required' || payload.needs_connector || missingConnectors.length || missingConnectorCapabilities.length
+    ? 'authority_required'
+    : (statusCode >= 500 ? 'server_error' : 'validation_error');
+  return {
+    ok: false,
+    action_kind: String(actionKind || payload.action_kind || '').trim(),
+    outcome_kind: 'error',
+    error_kind: errorKind,
+    code: String(payload.code || '').trim(),
+    required: String(payload.required || '').trim(),
+    message,
+    entity: {
+      missing_connectors: missingConnectors,
+      missing_connector_capabilities: missingConnectorCapabilities,
+      use: String(payload.use || '').trim(),
+      next_step: String(payload.next_step || '').trim(),
+      required: String(payload.required || '').trim(),
+      action: String(payload.action || '').trim(),
+      path: String(payload.path || '').trim(),
+      source: String(payload.source || '').trim(),
+      status_code: statusCode
+    },
+    raw: payload
+  };
+}
+
+export function normalizeDeliveryScheduleFailureResponse(result = {}, actionKind = '') {
+  const payload = result && typeof result === 'object' ? result : {};
+  const statusCode = Number(payload.statusCode || 0) || 400;
+  return {
+    ok: false,
+    action_kind: String(actionKind || payload.action_kind || '').trim(),
+    outcome_kind: 'error',
+    error_kind: statusCode >= 500 ? 'server_error' : 'validation_error',
+    code: String(payload.code || '').trim(),
+    required: String(payload.required || '').trim(),
+    message: String(payload.error || 'Scheduling failed').trim(),
+    entity: {
+      use: String(payload.use || '').trim(),
+      next_step: String(payload.next_step || '').trim(),
+      required: String(payload.required || '').trim(),
+      status_code: statusCode
+    },
+    raw: payload
+  };
 }
 
 export function deliveryActionContractForType(type = '') {
@@ -1169,17 +1404,6 @@ export function deliveryGoogleSourceLoadLabel(options = {}) {
   return options.loading ? 'LOADING...' : 'LOAD GOOGLE SOURCES';
 }
 
-export function deliveryPublishTargetInstruction(target = '') {
-  const normalizedTarget = String(target || '').trim();
-  if (normalizedTarget === 'github_repo') {
-    return 'Use GitHub-connected publishing. Create a branch or pull request that adds this article to the site repository at the requested URL path.';
-  }
-  if (normalizedTarget === 'local_terminal') {
-    return 'Prepare a local terminal handoff. Return the exact file path, file content, and the minimal CAIt CLI run-local command plan needed to place the article safely.';
-  }
-  return 'Return a publish-ready export package and the next action needed to publish externally.';
-}
-
 export function deliveryPublishFieldDescriptors(draft = {}, article = null) {
   return [
     {
@@ -1267,6 +1491,81 @@ export function prepareDeliveryPublishContractPayload(draft = {}, options = {}) 
     suggested_primary_action: String(draft?.target || '').trim() === 'github_repo' && !options.githubReady
       ? 'connect_github'
       : 'prepare_publish_order'
+  };
+}
+
+function firstNonEmptyLine(value = '') {
+  return String(value || '').trim().split(/\n/).map((line) => line.trim()).find(Boolean) || '';
+}
+
+export function buildDeliveryExecutionDraftDefaults(type = '', body = {}, options = {}) {
+  const current = options.current || {};
+  const connectors = options.connectors || {};
+  const executorPreferences = options.executorPreferences || {};
+  const xPrefs = executorPreferences.x || {};
+  const googlePrefs = executorPreferences.google || {};
+  const githubPrefs = executorPreferences.github || {};
+  const githubConnected = Boolean(current?.githubLinked || connectors?.github?.connected);
+  const draftDefaults = deliveryDraftDefaultsForType(type, {
+    preferredChannel: xPrefs.channel,
+    preferredActionMode: xPrefs.actionMode,
+    xConnected: Boolean(connectors?.x?.connected),
+    suggestedPostText: firstNonEmptyLine(body.content || ''),
+    defaultScheduledAt: '',
+    isPlatformAdmin: Boolean(current?.isPlatformAdmin),
+    defaultEmailTarget: current?.isPlatformAdmin ? 'cait_resend' : 'gmail',
+    defaultEmailSubject: String(body.title || '').trim() || 'Email draft',
+    defaultEmailBody: String(body.content || '').trim(),
+    githubConnected,
+    defaultCodeTarget: githubConnected ? 'github_repo' : 'local_terminal',
+    preferredRepoFullName: String(githubPrefs.repoFullName || '').trim()
+  });
+  draftDefaults.googleSearchConsoleSite = String(googlePrefs.searchConsoleSite || '').trim();
+  draftDefaults.googleGa4Property = String(googlePrefs.ga4Property || '').trim();
+  draftDefaults.googleDriveFileId = String(googlePrefs.driveFileId || '').trim();
+  draftDefaults.googleCalendarId = String(googlePrefs.calendarId || '').trim();
+  draftDefaults.googleGmailLabelId = String(googlePrefs.gmailLabelId || '').trim();
+  return draftDefaults;
+}
+
+export function prepareDeliveryExecutionResponsePayload(type = '', body = {}, options = {}) {
+  const draftDefaults = buildDeliveryExecutionDraftDefaults(type, body, options);
+  const prepared = prepareDeliveryExecutionContractPayload(type, draftDefaults, {
+    authorityReadyToResume: Boolean(options.authorityReadyToResume),
+    reportNeedsGoogleLoad: Boolean(options.reportNeedsGoogleLoad)
+  });
+  return {
+    ok: true,
+    content_type: String(type || '').trim(),
+    draft_defaults: draftDefaults,
+    ...prepared
+  };
+}
+
+export function buildDeliveryPublishDraftDefaults(body = {}, options = {}) {
+  const githubReady = Boolean(options.githubReady);
+  return {
+    target: githubReady ? 'github_repo' : 'local_terminal',
+    pathPrefix: String(body.path_prefix || body.pathPrefix || '/blog').trim() || '/blog',
+    slug: String(body.suggested_slug || body.suggestedSlug || '').trim(),
+    publishMode: 'draft_pr'
+  };
+}
+
+export function prepareDeliveryPublishResponsePayload(body = {}, options = {}) {
+  const githubReady = Boolean(options.githubReady);
+  const draftDefaults = buildDeliveryPublishDraftDefaults(body, { githubReady });
+  const prepared = prepareDeliveryPublishContractPayload(draftDefaults, {
+    githubReady,
+    article: {
+      suggestedSlug: draftDefaults.slug
+    }
+  });
+  return {
+    ok: true,
+    draft_defaults: draftDefaults,
+    github_ready: githubReady,
+    ...prepared
   };
 }
 

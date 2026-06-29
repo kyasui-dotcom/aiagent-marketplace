@@ -1,4 +1,4 @@
-import { buildCaitAppContext, downloadContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260506b';
+import { buildCaitAppContext, downloadContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526i';
 
 let deliveries = [];
 let selectedId = '';
@@ -6,8 +6,67 @@ let selectedFileIndex = 0;
 let filter = 'all';
 let activeTab = 'overview';
 let searchText = '';
+let sortMode = 'newest';
 let importedContext = null;
+let handoffSession = handoffSessionFromUrl();
 const expandedWorkIds = new Set();
+
+function requestedDeliveryIdFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    return String(
+      url.searchParams.get('order_id')
+      || url.searchParams.get('job_id')
+      || url.searchParams.get('delivery_id')
+      || ''
+    ).trim();
+  } catch {
+    return '';
+  }
+}
+
+function handoffSessionFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    const serverContextId = String(url.searchParams.get('app_context_id') || url.searchParams.get('cait_app_context_id') || '').trim();
+    const token = String(url.searchParams.get('app_context_token') || url.searchParams.get('cait_app_context_token') || url.searchParams.get('token') || '').trim();
+    const chatReturnTo = String(url.searchParams.get('chat_return_to') || url.searchParams.get('chatReturnTo') || '').trim();
+    const chatHandoffId = String(url.searchParams.get('chat_handoff_id') || url.searchParams.get('chatHandoffId') || '').trim();
+    return {
+      serverContextId,
+      tokenAttached: Boolean(token),
+      chatReturnTo,
+      chatHandoffId,
+      hasServerContext: Boolean(serverContextId),
+      hasChatReturn: Boolean(chatReturnTo || chatHandoffId)
+    };
+  } catch {
+    return {
+      serverContextId: '',
+      tokenAttached: false,
+      chatReturnTo: '',
+      chatHandoffId: '',
+      hasServerContext: false,
+      hasChatReturn: false
+    };
+  }
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let timeoutId = null;
+  if (controller && Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  }
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller ? controller.signal : options.signal
+    });
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
+}
 
 const els = {
   filterButtons: [...document.querySelectorAll('[data-filter]')],
@@ -18,6 +77,7 @@ const els = {
     context: document.getElementById('contextPanel')
   },
   deliverySearchInput: document.getElementById('deliverySearchInput'),
+  deliverySortSelect: document.getElementById('deliverySortSelect'),
   deliveryInboxMeta: document.getElementById('deliveryInboxMeta'),
   deliveryList: document.getElementById('deliveryList'),
   fileTable: document.getElementById('fileTable'),
@@ -43,11 +103,19 @@ const els = {
   railDownloadBtn: document.getElementById('railDownloadBtn'),
   railCopyBtn: document.getElementById('railCopyBtn'),
   railJsonBtn: document.getElementById('railJsonBtn'),
+  approvalStatePill: document.getElementById('approvalStatePill'),
+  approvalGateSummary: document.getElementById('approvalGateSummary'),
+  approvalChecklist: document.getElementById('approvalChecklist'),
+  approveDeliveryBtn: document.getElementById('approveDeliveryBtn'),
+  copyApprovalBtn: document.getElementById('copyApprovalBtn'),
   actionRailSummary: document.getElementById('actionRailSummary'),
   readinessScore: document.getElementById('readinessScore'),
   readinessMeter: document.getElementById('readinessMeter'),
   readinessList: document.getElementById('readinessList'),
   readinessNote: document.getElementById('readinessNote'),
+  deliveryHandoffNotice: document.getElementById('deliveryHandoffNotice'),
+  deliveryHandoffAuditPill: document.getElementById('deliveryHandoffAuditPill'),
+  deliveryHandoffAuditList: document.getElementById('deliveryHandoffAuditList'),
   allCount: document.getElementById('allCount'),
   completedCount: document.getElementById('completedCount'),
   blockedCount: document.getElementById('blockedCount'),
@@ -59,6 +127,416 @@ function selectedDelivery() {
   return deliveries.find((delivery) => delivery.id === selectedId) || deliveries[0] || null;
 }
 
+function safeList(value = [], maxItems = 12) {
+  const input = Array.isArray(value) ? value : (value ? [value] : []);
+  const seen = new Set();
+  return input
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, maxItems);
+}
+
+function safeBool(value) {
+  return value === true || value === 'true' || value === 1 || value === '1';
+}
+
+function safeObject(value = null) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function listValues(value = []) {
+  if (Array.isArray(value)) return value;
+  if (value == null || value === '') return [];
+  return [value];
+}
+
+function normalizeContractToken(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function explicitDeliveryMetadata(file = {}) {
+  return safeObject(file.metadata || file.meta || file.raw_metadata || file.rawMetadata);
+}
+
+function explicitDeliveryContractTokensFromRecord(record = {}) {
+  if (!record || typeof record !== 'object') return [];
+  const metadata = explicitDeliveryMetadata(record);
+  return [
+    record.artifact_type,
+    record.artifactType,
+    record.content_type,
+    record.contentType,
+    record.type,
+    record.surface,
+    record.item_type,
+    record.itemType,
+    record.action_type,
+    record.actionType,
+    record.channel,
+    record.connector,
+    record.connector_capability,
+    record.connectorCapability,
+    metadata.artifact_type,
+    metadata.artifactType,
+    metadata.content_type,
+    metadata.contentType,
+    metadata.surface,
+    metadata.item_type,
+    metadata.itemType,
+    metadata.action_type,
+    metadata.actionType,
+    metadata.channel,
+    metadata.connector,
+    metadata.connector_capability,
+    metadata.connectorCapability,
+    ...listValues(record.artifact_types || record.artifactTypes),
+    ...listValues(metadata.artifact_types || metadata.artifactTypes),
+    ...listValues(metadata.channels),
+    ...listValues(metadata.connectors),
+    ...listValues(metadata.connector_capabilities || metadata.connectorCapabilities)
+  ].map(normalizeContractToken).filter(Boolean);
+}
+
+function explicitDeliveryContractTokens(delivery = {}) {
+  const authority = delivery.authorityRequest || {};
+  return [...new Set([
+    ...explicitDeliveryContractTokensFromRecord(delivery),
+    ...listValues(authority.missingConnectorCapabilities).map(normalizeContractToken),
+    ...listValues(authority.requiredGoogleSources).map(normalizeContractToken),
+    ...listValues(authority.channelCandidates).map(normalizeContractToken),
+    ...(delivery.files || []).flatMap(explicitDeliveryContractTokensFromRecord)
+  ].filter(Boolean))];
+}
+
+function contractMatches(delivery = {}, pattern) {
+  return explicitDeliveryContractTokens(delivery).some((token) => pattern.test(token));
+}
+
+function normalizeAuthorityRequest(raw = null, fallback = {}) {
+  if (!raw || typeof raw !== 'object') return null;
+  const reason = String(raw.reason || raw.message || raw.error || fallback.reason || '').trim();
+  const missingConnectors = safeList(raw.missingConnectors || raw.missing_connectors || raw.connectors || fallback.missingConnectors || []);
+  const missingConnectorCapabilities = safeList(
+    raw.missingConnectorCapabilities
+      || raw.missing_connector_capabilities
+      || raw.capabilities
+      || fallback.missingConnectorCapabilities
+      || [],
+    16
+  );
+  const requiredGoogleSources = safeList(raw.requiredGoogleSources || raw.required_google_sources || raw.googleSourceTypes || raw.google_source_types || [], 8);
+  const requiredRepositorySelection = safeBool(raw.requiredRepositorySelection || raw.required_repository_selection);
+  const requiredChannelSelection = safeBool(raw.requiredChannelSelection || raw.required_channel_selection);
+  const repoCandidates = safeList(raw.repoCandidates || raw.repo_candidates || raw.repositories || [], 20);
+  const channelCandidates = safeList(raw.channelCandidates || raw.channel_candidates || raw.channels || [], 12);
+  const source = String(raw.source || raw.kind || fallback.source || '').trim();
+  if (
+    !reason
+    && !missingConnectors.length
+    && !missingConnectorCapabilities.length
+    && !requiredGoogleSources.length
+    && !requiredRepositorySelection
+    && !requiredChannelSelection
+  ) {
+    return null;
+  }
+  return {
+    reason: reason || 'Human approval is required before this execution can continue.',
+    missingConnectors,
+    missingConnectorCapabilities,
+    requiredGoogleSources,
+    requiredRepositorySelection,
+    requiredChannelSelection,
+    repoCandidates,
+    channelCandidates,
+    source,
+    ownerLabel: String(raw.ownerLabel || raw.owner_label || fallback.ownerLabel || '').trim(),
+    requestedAt: String(raw.requestedAt || raw.requested_at || fallback.requestedAt || '').trim()
+  };
+}
+
+function authorityRequestFromReport(report = {}) {
+  if (!report || typeof report !== 'object') return null;
+  return normalizeAuthorityRequest(
+    report.authority_request
+      || report.authorityRequest
+      || report.executor_request
+      || report.executorRequest
+      || (Array.isArray(report.approval_requests) ? report.approval_requests[0] : null)
+      || (Array.isArray(report.approvalRequests) ? report.approvalRequests[0] : null)
+      || null
+  );
+}
+
+function authorityRequestFromJob(job = {}) {
+  const report = job?.output?.report && typeof job.output.report === 'object' ? job.output.report : {};
+  const fromReport = authorityRequestFromReport(report);
+  if (fromReport) return fromReport;
+  const executorAuthority = job?.executorState?.authorityRequired || job?.executorState?.authority_required || null;
+  const fromExecutor = normalizeAuthorityRequest(executorAuthority, {
+    source: 'executor_state',
+    ownerLabel: job.workflowAgentName || job.assignedAgentId || job.taskType || ''
+  });
+  if (fromExecutor) return fromExecutor;
+  return null;
+}
+
+function authorityRequestFromContext(context = {}) {
+  if (!context || typeof context !== 'object') return null;
+  const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
+  return normalizeAuthorityRequest(
+    context.authority_request
+      || context.authorityRequest
+      || raw.authority_request
+      || raw.authorityRequest
+      || raw.approval_gate?.authority_request
+      || raw.approval_gate?.authorityRequest
+      || null
+  );
+}
+
+function marketingDeliverableLabel(delivery = {}) {
+  if (contractMatches(delivery, /^(seo|article|blog|meta_description|h1|article_draft|seo_article)/)) return 'SEO article or content draft';
+  if (contractMatches(delivery, /^(landing|lp|page|hero|cta|conversion|signup|landing_page)/)) return 'Landing page or conversion copy';
+  if (contractMatches(delivery, /^(x_post|twitter|tweet|social|social_post|social_copy|instagram|reddit|indie_hackers)/)) return 'Social post package';
+  if (contractMatches(delivery, /^(email|gmail|cold_mail|outreach|subject|recipient|email_pack)/)) return 'Email or outreach package';
+  if (contractMatches(delivery, /^(lead|prospect|company_list|lead_list|lead_ops)/)) return 'Lead list or prospecting package';
+  if (contractMatches(delivery, /^(analytics|ga4|search_console|gsc|measurement|measurement_report)/)) return 'Analytics or measurement report';
+  if (contractMatches(delivery, /^(research|competitive|competitor|market|source_collection)/)) return 'Marketing research report';
+  return 'Reusable delivery package';
+}
+
+function marketingChannelLabel(delivery = {}) {
+  const tokens = explicitDeliveryContractTokens(delivery);
+  const channels = [];
+  if (tokens.some((token) => /^(seo|organic_search|search_console|gsc)/.test(token))) channels.push('SEO');
+  if (tokens.some((token) => /^(x|x_post|twitter|tweet)/.test(token))) channels.push('X');
+  if (tokens.some((token) => /^(instagram|insta)/.test(token))) channels.push('Instagram');
+  if (tokens.some((token) => /^reddit/.test(token))) channels.push('Reddit');
+  if (tokens.some((token) => /^indie_hackers/.test(token))) channels.push('Indie Hackers');
+  if (tokens.some((token) => /^(email|gmail|resend|outreach)/.test(token))) channels.push('Email');
+  if (tokens.some((token) => /^(landing|owned_site|wordpress|publisher|lp)/.test(token))) channels.push('Owned site');
+  if (tokens.some((token) => /^(directory|listing)/.test(token))) channels.push('Directory');
+  if (tokens.some((token) => /^(lead|prospect|lead_ops)/.test(token))) channels.push('Lead Ops');
+  return channels.length ? channels.join(' / ') : 'No explicit channel contract';
+}
+
+function evidenceLabel(delivery = {}) {
+  const authority = delivery.authorityRequest || {};
+  const tokens = explicitDeliveryContractTokens(delivery);
+  if (tokens.some((token) => /^(ga4|google_analytics|search_console|gsc|analytics)/.test(token))) return 'Analytics/source connector referenced';
+  const sourceRefs = (delivery.files || []).flatMap((file) => {
+    const metadata = explicitDeliveryMetadata(file);
+    return [
+      ...listValues(metadata.source_urls || metadata.sourceUrls),
+      ...listValues(metadata.sources),
+      ...listValues(metadata.citations),
+      ...listValues(file.source_urls || file.sourceUrls),
+      ...listValues(file.sources),
+      ...listValues(file.citations)
+    ].filter(Boolean);
+  });
+  if (sourceRefs.length) return `${sourceRefs.length} explicit source reference${sourceRefs.length === 1 ? '' : 's'}`;
+  if ((authority.requiredGoogleSources || []).length) return 'Google source selection required';
+  return 'No explicit source evidence found';
+}
+
+function externalActionLabel(delivery = {}) {
+  if (explicitExternalWriteRequested(delivery)) return 'External publish/send action requested';
+  if (contractMatches(delivery, /^(prepare|draft|handoff|approval|review|app_review|approval_gate|authority_request)/)) return 'Preparation or approval handoff';
+  return 'Internal follow-up only';
+}
+
+function explicitExternalWriteRequested(delivery = {}) {
+  return contractMatches(delivery, /^(external|publish|post|send|schedule|submit|repository_write|pull_request|github_pr|x_post|email_send|connector_action)/);
+}
+
+function explicitApprovalWaiting(delivery = {}) {
+  if (delivery.authorityRequest) return true;
+  return [
+    delivery.status,
+    delivery.failureCategory,
+    delivery.dispatchCompletionStatus
+  ].map(normalizeContractToken).some((token) => [
+    'blocked_waiting_for_approval',
+    'approval_required',
+    'authority_required',
+    'connector_authority_required'
+  ].includes(token));
+}
+
+function approvalGateForDelivery(delivery = selectedDelivery()) {
+  if (!delivery) {
+    return {
+      state: 'pending',
+      label: 'review',
+      summary: 'Load a delivery to review the deliverable, channel, evidence, and external action boundary.',
+      approveEnabled: false,
+      actionLabel: 'Approval not blocking',
+      note: 'No delivery selected.',
+      items: [
+        { label: 'Deliverable', value: 'No delivery selected', ok: false },
+        { label: 'Channel/action', value: 'No channel selected', ok: false },
+        { label: 'Evidence/source', value: 'No evidence loaded', ok: false },
+        { label: 'Human approval', value: 'Waiting for a delivery', ok: false }
+      ],
+      context: { state: 'pending', label: 'review', checkpoints: [] }
+    };
+  }
+  const authority = delivery.authorityRequest || null;
+  const approvalWaiting = explicitApprovalWaiting(delivery);
+  const deliverable = marketingDeliverableLabel(delivery);
+  const channel = marketingChannelLabel(delivery);
+  const evidence = evidenceLabel(delivery);
+  const action = externalActionLabel(delivery);
+  const hasFiles = (delivery.files || []).length > 0;
+  const externalWrite = explicitExternalWriteRequested(delivery);
+  const canResumeApproval = delivery.jobKind !== 'app_context' && delivery.sourceLabel === 'Server job';
+  const state = approvalWaiting ? 'blocked' : (externalWrite ? 'pending' : 'approved');
+  const label = approvalWaiting ? 'approval needed' : (externalWrite ? 'review before action' : 'ready');
+  const humanApprovalValue = approvalWaiting
+    ? authority?.reason || 'Approve this delivery before resuming execution.'
+    : externalWrite
+      ? 'Approval is required before any external publish, post, send, or schedule step.'
+      : 'No external write is implied by this delivery.';
+  const items = [
+    { label: 'Deliverable', value: deliverable, ok: Boolean(String(delivery.title || delivery.summary || '').trim()) },
+    { label: 'Channel/action', value: channel === 'No explicit channel contract' ? action : `${channel} - ${action}`, ok: channel !== 'No explicit channel contract' || action !== 'Internal follow-up only' },
+    { label: 'Evidence/source', value: evidence, ok: !/^No explicit/.test(evidence) },
+    { label: 'Files/package', value: hasFiles ? `${delivery.files.length} file${delivery.files.length === 1 ? '' : 's'} attached` : 'No attached files', ok: hasFiles },
+    { label: 'Human approval', value: humanApprovalValue, ok: !approvalWaiting }
+  ];
+  if (authority?.missingConnectors?.length || authority?.missingConnectorCapabilities?.length) {
+    items.push({
+      label: 'Authority needed',
+      value: [
+        authority.missingConnectors.length ? `Connectors: ${authority.missingConnectors.join(', ')}` : '',
+        authority.missingConnectorCapabilities.length ? `Capabilities: ${authority.missingConnectorCapabilities.join(', ')}` : ''
+      ].filter(Boolean).join(' / '),
+      ok: false
+    });
+  }
+  if (authority?.requiredRepositorySelection || authority?.requiredChannelSelection) {
+    items.push({
+      label: 'Selection needed',
+      value: [
+        authority.requiredRepositorySelection ? 'Repository selection required' : '',
+        authority.requiredChannelSelection ? 'Channel selection required' : ''
+      ].filter(Boolean).join(' / '),
+      ok: false
+    });
+  }
+  const summary = approvalWaiting
+    ? canResumeApproval
+      ? 'This work is paused until a human approves the exact continuation boundary.'
+      : 'This context records an approval requirement. Send it to CAIt or open the source order to resume execution.'
+    : externalWrite
+      ? 'This delivery can be reused, but any external publish/send action still needs explicit approval.'
+      : 'This delivery is ready for internal follow-up context.';
+  const note = [
+    `Approval gate: ${label}`,
+    `Delivery id: ${delivery.id || '-'}`,
+    `Deliverable: ${deliverable}`,
+    `Channel/action: ${channel} - ${action}`,
+    `Evidence/source: ${evidence}`,
+    `Files: ${(delivery.files || []).length}`,
+    authority ? `Authority request: ${authority.reason}` : '',
+    authority?.missingConnectorCapabilities?.length ? `Capabilities: ${authority.missingConnectorCapabilities.join(', ')}` : '',
+    'Decision boundary: do not publish, post, send, schedule, or write externally unless the exact account, target, and copy are approved.'
+  ].filter(Boolean).join('\n');
+  return {
+    state,
+    label,
+    summary,
+    approveEnabled: Boolean(approvalWaiting && canResumeApproval && delivery.id),
+    actionLabel: approvalWaiting
+      ? (canResumeApproval ? 'Approve & resume' : 'Source order required')
+      : 'Approval not blocking',
+    note,
+    items,
+    context: {
+      state,
+      label,
+      summary,
+      deliverable,
+      channel,
+      evidence,
+      action,
+      authority_request: authority,
+      checkpoints: items.map((item) => ({ label: item.label, value: item.value, ok: item.ok }))
+    }
+  };
+}
+
+function handoffSourceKinds(delivery = selectedDelivery()) {
+  return [...new Set((delivery?.files || []).map((file) => String(file.sourceKind || '').trim()).filter(Boolean))];
+}
+
+function deliveryHandoffAuditForDelivery(delivery = selectedDelivery()) {
+  const files = delivery?.files || [];
+  const gate = approvalGateForDelivery(delivery);
+  const raw = plainObject(importedContext?.raw_context);
+  const rawChatReturn = String(raw.chat_return_to || raw.chatReturnTo || '').trim();
+  const rawHandoffId = String(raw.chat_handoff_id || raw.chatHandoffId || '').trim();
+  const sourceKinds = handoffSourceKinds(delivery);
+  const imported = Boolean(importedContext);
+  const serverBacked = imported ? handoffSession.hasServerContext : delivery?.sourceLabel === 'Server job';
+  const hasReturnPath = Boolean(handoffSession.hasChatReturn || rawChatReturn || rawHandoffId);
+  const recoveredFromTransfer = sourceKinds.some((kind) => /artifact|files|delivery/i.test(kind));
+  const items = [
+    {
+      label: 'Server record',
+      ok: Boolean(serverBacked),
+      value: imported
+        ? (handoffSession.serverContextId ? `Context ${handoffSession.serverContextId}` : 'No server context id in URL')
+        : (delivery?.sourceLabel === 'Server job' ? 'Loaded from server-side job output' : 'No server delivery loaded')
+    },
+    {
+      label: 'Delivery selected',
+      ok: Boolean(delivery?.id),
+      value: delivery?.id || 'No selected package'
+    },
+    {
+      label: 'Files recovered',
+      ok: files.length > 0,
+      value: files.length ? `${files.length} file${files.length === 1 ? '' : 's'} available` : 'No delivery file recovered'
+    },
+    {
+      label: 'AIAGENT artifacts normalized',
+      ok: imported ? Boolean(recoveredFromTransfer || files.length) : files.length > 0,
+      value: sourceKinds.length ? sourceKinds.join(', ') : 'Server job package'
+    },
+    {
+      label: 'Approval boundary',
+      ok: Boolean(gate?.context?.checkpoints?.length),
+      value: gate?.label || 'No approval gate'
+    },
+    {
+      label: 'Return path',
+      ok: imported ? hasReturnPath : true,
+      value: hasReturnPath
+        ? [handoffSession.chatHandoffId || rawHandoffId, handoffSession.chatReturnTo || rawChatReturn].filter(Boolean).join(' / ')
+        : (imported ? 'No chat return metadata attached' : 'Follow-up starts from Delivery Manager')
+    }
+  ];
+  return {
+    items,
+    complete: items.filter((item) => item.ok).length,
+    total: items.length,
+    missing: items.filter((item) => !item.ok).map((item) => item.label)
+  };
+}
+
 function deliverySearchBlob(delivery = {}) {
   return [
     delivery.title,
@@ -68,6 +546,7 @@ function deliverySearchBlob(delivery = {}) {
     delivery.workTitle,
     delivery.taskType,
     delivery.nextAction,
+    delivery.updatedAt,
     ...(delivery.files || []).map((file) => `${file.name} ${file.type}`)
   ].join('\n').toLowerCase();
 }
@@ -82,9 +561,12 @@ function filteredDeliveries() {
   if (filter === 'blocked') list = list.filter((item) => isWaitingStatus(item.status));
   if (filter === 'files') list = list.filter((item) => (item.files || []).length);
   if (filter === 'reusable') list = list.filter((item) => item.summary || (item.files || []).length);
-  const query = searchText.trim().toLowerCase();
-  if (query) list = list.filter((item) => deliverySearchBlob(item).includes(query));
-  return list;
+  const queryTokens = searchText.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (queryTokens.length) list = list.filter((item) => {
+    const blob = deliverySearchBlob(item);
+    return queryTokens.every((token) => blob.includes(token));
+  });
+  return sortDeliveries(list);
 }
 
 function statusClass(value = '') {
@@ -106,6 +588,17 @@ function compact(value = '', max = 120) {
   return text.length > max ? `${text.slice(0, max - 1)}...` : text;
 }
 
+function fitTitleInput() {
+  const input = els.deliveryTitleInput;
+  if (!input) return;
+  input.style.fontSize = '';
+  const width = input.clientWidth;
+  if (!width || input.scrollWidth <= width + 2) return;
+  const current = Number.parseFloat(window.getComputedStyle(input).fontSize) || 24;
+  const next = Math.max(14, Math.floor(current * (width / Math.max(input.scrollWidth, 1))));
+  input.style.fontSize = `${next}px`;
+}
+
 function fileSizeLabel(content = '') {
   const bytes = new Blob([String(content || '')]).size;
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -123,6 +616,69 @@ function normalizedDate(value = '') {
     hour: 'numeric',
     minute: '2-digit'
   }).format(new Date(timestamp));
+}
+
+function deliveryTimestamp(delivery = {}) {
+  const timestamp = Date.parse(delivery.updatedAt || delivery.completedAt || delivery.createdAt || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function statusSortRank(value = '') {
+  const safe = String(value || '').trim().toLowerCase();
+  if (safe === 'completed') return 0;
+  if (/blocked|waiting|failed|timed_out/.test(safe)) return 1;
+  if (/running|claimed|dispatched/.test(safe)) return 2;
+  if (/queued/.test(safe)) return 3;
+  return 4;
+}
+
+function sortModeLabel(value = sortMode) {
+  return {
+    newest: 'newest first',
+    oldest: 'oldest first',
+    status: 'status',
+    files: 'most files',
+    title: 'title A-Z'
+  }[value] || 'newest first';
+}
+
+function compareDeliveries(left = {}, right = {}, mode = sortMode) {
+  if (mode === 'oldest') {
+    const timeDiff = deliveryTimestamp(left) - deliveryTimestamp(right);
+    if (timeDiff) return timeDiff;
+  } else if (mode === 'status') {
+    const statusDiff = statusSortRank(left.status) - statusSortRank(right.status);
+    if (statusDiff) return statusDiff;
+    const timeDiff = deliveryTimestamp(right) - deliveryTimestamp(left);
+    if (timeDiff) return timeDiff;
+  } else if (mode === 'files') {
+    const fileDiff = (right.files || []).length - (left.files || []).length;
+    if (fileDiff) return fileDiff;
+    const timeDiff = deliveryTimestamp(right) - deliveryTimestamp(left);
+    if (timeDiff) return timeDiff;
+  } else if (mode === 'title') {
+    const titleDiff = String(left.title || left.workTitle || '').localeCompare(String(right.title || right.workTitle || ''), undefined, { sensitivity: 'base' });
+    if (titleDiff) return titleDiff;
+  } else {
+    const timeDiff = deliveryTimestamp(right) - deliveryTimestamp(left);
+    if (timeDiff) return timeDiff;
+  }
+  const rankDiff = deliverySortRank(left) - deliverySortRank(right);
+  if (rankDiff) return rankDiff;
+  return String(right.id || '').localeCompare(String(left.id || ''));
+}
+
+function sortDeliveries(list = []) {
+  return [...list].sort((left, right) => compareDeliveries(left, right));
+}
+
+function upsertDelivery(delivery = null) {
+  if (!delivery?.id) return false;
+  deliveries = sortDeliveries([
+    delivery,
+    ...deliveries.filter((item) => String(item.id || '') !== String(delivery.id || ''))
+  ]);
+  return true;
 }
 
 function isLeaderDelivery(delivery = {}) {
@@ -168,6 +724,32 @@ function deliveryChildBlockerType(child = {}) {
   return 'waiting_on_internal_workflow';
 }
 
+function isInternalDeliveryFile(file = {}) {
+  const name = String(file?.name || file?.filename || '').trim().toLowerCase();
+  const content = String(file?.content || file?.body || '').trim();
+  const contentType = String(file?.content_type || file?.contentType || '').trim().toLowerCase();
+  const visibility = String(file?.visibility || file?.delivery_visibility || file?.deliveryVisibility || '').trim().toLowerCase();
+  if (file?.internal === true || file?.user_visible === false || file?.userVisible === false || file?.delivery_visible === false || file?.deliveryVisible === false) return true;
+  if (['internal', 'hidden', 'system'].includes(visibility)) return true;
+  if ([
+    'supporting_specialist_deliverables',
+    'workflow_integrated_delivery',
+    'partial_workflow_delivery',
+    'all_deliverables_bundle',
+    'review_ready_delivery'
+  ].includes(contentType)) return true;
+  if (name === 'supporting-specialist-deliverables.md') return true;
+  if (name === 'integrated-delivery.md' && /#\s+Integrated delivery|##\s+Supporting work products|##\s+Integrated next actions/i.test(content)) return true;
+  if (name === 'workflow-partial-delivery.md') return true;
+  if (name === 'all-deliverables.md' || /^all-deliverables-[^.]+\.md$/i.test(name)) return true;
+  if (name === 'review-ready-delivery.md' || /^review-ready-delivery-[^.]+\.md$/i.test(name)) return true;
+  return false;
+}
+
+function visibleDeliveryFiles(files = []) {
+  return (Array.isArray(files) ? files : []).filter((file) => file && !isInternalDeliveryFile(file));
+}
+
 function deliveryWorkflowSummary(job = {}, output = {}) {
   const raw = String(output.summary || output.text || job.failureReason || `Order ${String(job.id || '').slice(0, 8)} is ${job.status || 'updated'}.`);
   if (!/waiting for approval|承認待ち/i.test(raw)) return raw;
@@ -190,7 +772,7 @@ function deliveryWorkflowSummary(job = {}, output = {}) {
 
 function normalizeJobDelivery(job = {}) {
   const output = job.output && typeof job.output === 'object' ? job.output : {};
-  const files = Array.isArray(output.files) ? output.files : [];
+  const files = visibleDeliveryFiles(output.files);
   const createdAt = String(job.completedAt || job.updatedAt || job.createdAt || '');
   const taskType = String(job.workflowTask || job.taskType || '');
   const workId = String(job.workflowParentId || job.id || `job-${Date.now()}`);
@@ -203,12 +785,25 @@ function normalizeJobDelivery(job = {}) {
     workflowTask: String(job.workflowTask || ''),
     workflowParentId: String(job.workflowParentId || ''),
     workflow: job.workflow && typeof job.workflow === 'object' ? job.workflow : null,
+    authorityRequest: authorityRequestFromJob(job),
+    failureCategory: String(job.failureCategory || ''),
+    dispatchCompletionStatus: String(job.dispatch?.completionStatus || ''),
     title: String(output.title || output.summary || job.task || `Order ${String(job.id || '').slice(0, 8)}` || 'Delivery'),
     status: String(job.status || 'updated'),
     summary: deliveryWorkflowSummary(job, output),
     files: files.map((file, index) => ({
       name: String(file.name || file.filename || `delivery-${index + 1}.md`),
       type: String(file.type || file.mime || 'text/plain'),
+      artifact_type: String(file.artifact_type || file.artifactType || ''),
+      artifact_types: listValues(file.artifact_types || file.artifactTypes).map(String).filter(Boolean),
+      content_type: String(file.content_type || file.contentType || file.type || file.mime || 'text/plain'),
+      surface: String(file.surface || file.metadata?.surface || ''),
+      item_type: String(file.item_type || file.itemType || file.metadata?.item_type || file.metadata?.itemType || ''),
+      action_type: String(file.action_type || file.actionType || file.metadata?.action_type || file.metadata?.actionType || ''),
+      channel: String(file.channel || file.metadata?.channel || ''),
+      connector: String(file.connector || file.metadata?.connector || ''),
+      connector_capability: String(file.connector_capability || file.connectorCapability || file.metadata?.connector_capability || file.metadata?.connectorCapability || ''),
+      metadata: safeObject(file.metadata),
       content: String(file.content || file.body || ''),
       updatedAt: createdAt
     })),
@@ -219,39 +814,184 @@ function normalizeJobDelivery(job = {}) {
   };
 }
 
+function plainObject(value = null) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function compactMultiline(value = '', max = 5000) {
+  const text = String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ')
+    .trim();
+  return text.length > max ? `${text.slice(0, max - 1).trim()}...` : text;
+}
+
+function objectTextArtifact(value = null, max = 5000) {
+  if (value == null) return '';
+  if (typeof value === 'string') return compactMultiline(value, max);
+  try {
+    return compactMultiline(JSON.stringify(value, null, 2), max);
+  } catch {
+    return '';
+  }
+}
+
+function appContextFileContent(item = {}) {
+  if (!item || typeof item !== 'object') return '';
+  return compactMultiline(
+    item.content
+      || item.body
+      || item.markdown
+      || item.text
+      || item.contentPreview
+      || item.content_preview
+      || item.preview
+      || '',
+    9000
+  );
+}
+
+function appContextFileName(item = {}, index = 0, prefix = 'context-file') {
+  const type = String(item.artifact_type || item.artifactType || item.content_type || item.contentType || item.type || '').trim();
+  const raw = String(item.name || item.filename || item.title || '').trim();
+  if (raw) return raw;
+  const suffix = type ? type.toLowerCase().replace(/[^a-z0-9_-]+/g, '-') : `${prefix}-${index + 1}`;
+  return suffix.endsWith('.md') || suffix.includes('.') ? suffix : `${suffix || `${prefix}-${index + 1}`}.md`;
+}
+
+function appContextFileType(item = {}) {
+  return String(item.mime || item.content_type || item.contentType || item.type || item.artifact_type || item.artifactType || 'text/plain').trim() || 'text/plain';
+}
+
+function normalizeAppContextFile(item = {}, index = 0, sourceKind = 'app_context') {
+  const content = appContextFileContent(item);
+  if (!content) return null;
+  return {
+    name: appContextFileName(item, index, sourceKind),
+    type: appContextFileType(item),
+    artifact_type: String(item.artifact_type || item.artifactType || ''),
+    artifact_types: listValues(item.artifact_types || item.artifactTypes).map(String).filter(Boolean),
+    content_type: String(item.content_type || item.contentType || item.type || item.mime || 'text/plain'),
+    surface: String(item.surface || item.metadata?.surface || ''),
+    item_type: String(item.item_type || item.itemType || item.metadata?.item_type || item.metadata?.itemType || ''),
+    action_type: String(item.action_type || item.actionType || item.metadata?.action_type || item.metadata?.actionType || ''),
+    channel: String(item.channel || item.metadata?.channel || ''),
+    connector: String(item.connector || item.metadata?.connector || ''),
+    connector_capability: String(item.connector_capability || item.connectorCapability || item.metadata?.connector_capability || item.metadata?.connectorCapability || ''),
+    metadata: safeObject(item.metadata),
+    content,
+    updatedAt: String(item.updated_at || item.updatedAt || item.created_at || item.createdAt || ''),
+    sourceKind
+  };
+}
+
+function artifactAsFile(item = {}, index = 0, sourceKind = 'artifact') {
+  if (!item || typeof item !== 'object') return null;
+  const content = appContextFileContent(item) || objectTextArtifact(item.rows || item.items || item.data || null);
+  if (!content) return null;
+  return normalizeAppContextFile({ ...item, content }, index, sourceKind);
+}
+
+function fileList(value = []) {
+  return Array.isArray(value) ? value.filter((item) => item && typeof item === 'object') : [];
+}
+
+function deliveryFilesFromAppContext(context = {}) {
+  const raw = plainObject(context.raw_context);
+  const rawDelivery = plainObject(raw.delivery);
+  const rawDeliveryPackage = plainObject(raw.delivery_package || raw.deliveryPackage || raw.delivery_context || raw.deliveryContext);
+  const rawDeliveryPacket = plainObject(raw.delivery_packet || raw.deliveryPacket);
+  const rawTransfer = plainObject(raw.transfer);
+  const rawTransferDelivery = plainObject(rawTransfer.delivery);
+  const candidates = [
+    ...fileList(context.delivery_files).map((item, index) => normalizeAppContextFile(item, index, 'delivery_files')),
+    ...fileList(context.deliveryFiles).map((item, index) => normalizeAppContextFile(item, index, 'delivery_files')),
+    ...fileList(context.files).map((item, index) => normalizeAppContextFile(item, index, 'files')),
+    ...fileList(context.attachments).map((item, index) => normalizeAppContextFile(item, index, 'attachments')),
+    ...fileList(context.output_files || context.outputFiles).map((item, index) => normalizeAppContextFile(item, index, 'output_files')),
+    ...fileList(context.result_files || context.resultFiles).map((item, index) => normalizeAppContextFile(item, index, 'result_files')),
+    ...fileList(context.deliverables).map((item, index) => artifactAsFile(item, index, 'deliverables')),
+    ...fileList(context.delivery_artifacts || context.deliveryArtifacts).map((item, index) => artifactAsFile(item, index, 'delivery_artifacts')),
+    ...fileList(plainObject(context.delivery_package || context.deliveryPackage).artifacts).map((item, index) => artifactAsFile(item, index, 'delivery_package_artifacts')),
+    ...fileList(plainObject(context.delivery_package || context.deliveryPackage).files).map((item, index) => normalizeAppContextFile(item, index, 'delivery_package_files')),
+    ...fileList(plainObject(context.delivery_packet || context.deliveryPacket).artifacts).map((item, index) => artifactAsFile(item, index, 'delivery_packet_artifacts')),
+    ...fileList(plainObject(context.delivery_packet || context.deliveryPacket).files).map((item, index) => normalizeAppContextFile(item, index, 'delivery_packet_files')),
+    ...fileList(context.artifacts).map((item, index) => artifactAsFile(item, index, 'artifacts')),
+    ...fileList(raw.delivery_files).map((item, index) => normalizeAppContextFile(item, index, 'raw_delivery_files')),
+    ...fileList(raw.deliveryFiles).map((item, index) => normalizeAppContextFile(item, index, 'raw_delivery_files')),
+    ...fileList(raw.attachments).map((item, index) => normalizeAppContextFile(item, index, 'raw_attachments')),
+    ...fileList(raw.output_files || raw.outputFiles).map((item, index) => normalizeAppContextFile(item, index, 'raw_output_files')),
+    ...fileList(raw.result_files || raw.resultFiles).map((item, index) => normalizeAppContextFile(item, index, 'raw_result_files')),
+    ...fileList(raw.deliverables).map((item, index) => artifactAsFile(item, index, 'raw_deliverables')),
+    ...fileList(raw.delivery_artifacts || raw.deliveryArtifacts).map((item, index) => artifactAsFile(item, index, 'raw_delivery_artifacts')),
+    ...fileList(raw.files).map((item, index) => normalizeAppContextFile(item, index, 'raw_files')),
+    ...fileList(rawDelivery.artifacts).map((item, index) => artifactAsFile(item, index, 'raw_delivery_artifacts')),
+    ...fileList(rawDelivery.files).map((item, index) => normalizeAppContextFile(item, index, 'raw_delivery_files')),
+    ...fileList(rawDeliveryPackage.artifacts).map((item, index) => artifactAsFile(item, index, 'raw_delivery_package_artifacts')),
+    ...fileList(rawDeliveryPackage.files).map((item, index) => normalizeAppContextFile(item, index, 'raw_delivery_package_files')),
+    ...fileList(rawDeliveryPacket.artifacts).map((item, index) => artifactAsFile(item, index, 'raw_delivery_packet_artifacts')),
+    ...fileList(rawDeliveryPacket.files).map((item, index) => normalizeAppContextFile(item, index, 'raw_delivery_packet_files')),
+    ...fileList(rawTransferDelivery.artifacts).map((item, index) => artifactAsFile(item, index, 'raw_transfer_delivery_artifacts')),
+    ...fileList(rawTransferDelivery.files).map((item, index) => normalizeAppContextFile(item, index, 'raw_transfer_delivery_files'))
+  ].filter(Boolean);
+  const seen = new Set();
+  return visibleDeliveryFiles(candidates).filter((file) => {
+    const key = `${String(file.name || '').toLowerCase()}\n${String(file.content || '').slice(0, 240)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function contextSummaryFromDelivery(context = {}) {
+  const raw = plainObject(context.raw_context);
+  const rawDelivery = plainObject(raw.delivery);
+  const rawDeliveryPackage = plainObject(raw.delivery_package || raw.deliveryPackage || raw.delivery_context || raw.deliveryContext);
+  const rawDeliveryPacket = plainObject(raw.delivery_packet || raw.deliveryPacket);
+  const contextDeliveryPackage = plainObject(context.delivery_package || context.deliveryPackage);
+  const contextDeliveryPacket = plainObject(context.delivery_packet || context.deliveryPacket);
+  return String(
+    context.summary
+      || rawDelivery.summary
+      || rawDeliveryPackage.summary
+      || rawDeliveryPacket.summary
+      || contextDeliveryPackage.summary
+      || contextDeliveryPacket.summary
+      || context.title
+      || ''
+  ).trim();
+}
+
 function deliveryFromAppContext(context = {}) {
-  const files = [
-    ...(Array.isArray(context.delivery_files) ? context.delivery_files : []),
-    ...(Array.isArray(context.artifacts) ? context.artifacts : [])
-      .filter((artifact) => artifact?.content || artifact?.body || artifact?.markdown)
-      .map((artifact, index) => ({
-        name: artifact.name || artifact.title || `artifact-${index + 1}.md`,
-        type: artifact.content_type || artifact.type || 'text/plain',
-        content: artifact.content || artifact.body || artifact.markdown || ''
-      }))
-  ];
+  const files = deliveryFilesFromAppContext(context);
+  const summary = contextSummaryFromDelivery(context);
   return {
     id: String(context.id || `context-${Date.now()}`),
     workId: String(context.id || `context-${Date.now()}`),
-    workTitle: String(context.title || 'Imported CAIt app context'),
+    workTitle: String(context.title || 'Imported CAIt context'),
     jobKind: 'app_context',
     taskType: String(context.source_app || 'app_context'),
     workflowTask: '',
     workflowParentId: '',
     workflow: null,
-    title: String(context.title || 'Imported CAIt app context'),
+    authorityRequest: authorityRequestFromContext(context),
+    failureCategory: '',
+    dispatchCompletionStatus: '',
+    title: String(context.title || 'Imported CAIt context'),
     status: 'reusable',
-    summary: String(context.summary || ''),
+    summary,
     files: files.map((file, index) => ({
       name: String(file.name || file.filename || `context-file-${index + 1}.md`),
       type: String(file.type || file.mime || file.content_type || 'text/plain'),
       content: String(file.content || file.body || ''),
-      updatedAt: String(context.updated_at || context.updatedAt || '')
+      updatedAt: String(file.updatedAt || context.updated_at || context.updatedAt || ''),
+      sourceKind: String(file.sourceKind || 'app_context')
     })),
     nextAction: String((Array.isArray(context.recommended_next_actions) ? context.recommended_next_actions[0] : '') || 'Use this context for a follow-up order.'),
-    agentName: String(context.source_app_label || context.source_app || 'CAIt app'),
+    agentName: String(context.source_app_label || context.source_app || 'CAIt context'),
     updatedAt: String(context.updated_at || context.updatedAt || ''),
-    sourceLabel: 'App context',
+    sourceLabel: 'CAIt context',
     sourceContext: context
   };
 }
@@ -268,13 +1008,20 @@ function applyInboundContext(context = null) {
 
 async function refreshDeliveries() {
   els.refreshDeliveriesBtn.textContent = 'Refreshing';
+  const requestedId = requestedDeliveryIdFromUrl();
   try {
-    const response = await fetch('/api/jobs?limit=40', { credentials: 'same-origin' });
+    const response = await fetchWithTimeout('/api/jobs?limit=40', { credentials: 'same-origin' }, 10000);
     if (!response.ok) throw new Error(`jobs ${response.status}`);
     const data = await response.json();
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
-    deliveries = jobs.map(normalizeJobDelivery).filter((item) => item.id);
-    selectedId = deliveries[0]?.id || '';
+    deliveries = sortDeliveries(jobs.map(normalizeJobDelivery).filter((item) => item.id));
+    if (requestedId && !deliveries.some((item) => item.id === requestedId)) {
+      const direct = await fetchDeliveryJobById(requestedId).catch(() => null);
+      if (direct?.id) upsertDelivery(direct);
+    }
+    selectedId = deliveries.some((item) => item.id === requestedId) ? requestedId : (deliveries[0]?.id || '');
+    const selected = selectedDelivery();
+    if (requestedId && selected?.workId) expandedWorkIds.add(selected.workId);
     selectedFileIndex = 0;
   } catch {
     deliveries = [];
@@ -284,6 +1031,18 @@ async function refreshDeliveries() {
     els.refreshDeliveriesBtn.textContent = 'Refresh';
     render();
   }
+}
+
+async function fetchDeliveryJobById(id = '') {
+  const safeId = String(id || '').trim();
+  if (!safeId) return null;
+  const response = await fetchWithTimeout(`/api/jobs/${encodeURIComponent(safeId)}`, {
+    credentials: 'same-origin'
+  }, 10000);
+  if (!response.ok) throw new Error(`job ${response.status}`);
+  const data = await response.json();
+  const job = data?.job && typeof data.job === 'object' ? data.job : null;
+  return job ? normalizeJobDelivery(job) : null;
 }
 
 function saveEditor() {
@@ -298,40 +1057,68 @@ function buildContext() {
   if (!delivery) {
     return buildCaitAppContext({
       source_app: 'delivery_manager',
-      source_app_label: 'Delivery Manager',
-      title: 'Delivery Manager context',
-      summary: 'No delivery package is currently loaded. Refresh server jobs or open this app from a CAIt app context handoff.',
+      source_app_label: 'CAIt Deliveries',
+      title: 'CAIt delivery context',
+      summary: 'No delivery package is currently loaded. Refresh server jobs or open Deliveries from a CAIt context handoff.',
       facts: ['No delivery selected'],
-      recommended_next_actions: ['Refresh server-side jobs or return to chat and select a delivery.'],
-      handoff_targets: ['cmo_leader', 'seo_gap', 'build_team_leader']
+      recommended_next_actions: ['Refresh server-side jobs or return to chat and select a delivery.']
     });
   }
+  const approvalGate = approvalGateForDelivery(delivery);
+  const handoffAudit = deliveryHandoffAuditForDelivery(delivery);
   return buildCaitAppContext({
     source_app: 'delivery_manager',
-    source_app_label: 'Delivery Manager',
+    source_app_label: 'CAIt Deliveries',
     title: `Reusable delivery - ${delivery.title}`,
     summary: delivery.summary,
     facts: [
-      importedContext ? `Imported context: ${importedContext.title || importedContext.id || 'CAIt app context'}` : '',
+      importedContext ? `Imported context: ${importedContext.title || importedContext.id || 'CAIt context'}` : '',
       `Delivery id: ${delivery.id}`,
       `Status: ${delivery.status}`,
       `Files: ${(delivery.files || []).length}`,
+      `Approval gate: ${approvalGate.label}`,
       delivery.updatedAt ? `Updated: ${delivery.updatedAt}` : ''
     ].filter(Boolean),
     assumptions: [
-      importedContext ? 'Files and artifacts are loaded from a server-side CAIt app context.' : 'Files are loaded from server-side job output when available.',
-      'Reusing a delivery creates a new CAIt context; it does not automatically execute follow-up work.'
+      importedContext ? 'Files and artifacts are loaded from a server-side CAIt context.' : 'Files are loaded from server-side job output when available.',
+      'Reusing a delivery creates a new CAIt context; it does not automatically execute follow-up work.',
+      'External publishing, posting, sending, scheduling, or repository writes require explicit approval of the exact target and content.'
     ],
     artifacts: [
-      { type: 'delivery_package', id: delivery.id, status: delivery.status, summary: delivery.summary, next_action: delivery.nextAction }
+      { type: 'delivery_package', id: delivery.id, status: delivery.status, summary: delivery.summary, next_action: delivery.nextAction },
+      { type: 'approval_gate', id: `${delivery.id}-approval-gate`, status: approvalGate.state, summary: approvalGate.summary, checkpoints: approvalGate.context.checkpoints },
+      { type: 'handoff_audit', id: `${delivery.id}-handoff-audit`, complete: handoffAudit.complete, total: handoffAudit.total, missing: handoffAudit.missing, checkpoints: handoffAudit.items }
     ],
-    delivery_files: (delivery.files || []).map((file) => ({ name: file.name, type: file.type, content: file.content })),
+    delivery_files: (delivery.files || []).map((file) => ({
+      name: file.name,
+      type: file.type,
+      artifact_type: file.artifact_type,
+      artifact_types: file.artifact_types,
+      content_type: file.content_type,
+      surface: file.surface,
+      item_type: file.item_type,
+      action_type: file.action_type,
+      channel: file.channel,
+      connector: file.connector,
+      connector_capability: file.connector_capability,
+      metadata: file.metadata,
+      content: file.content
+    })),
     recommended_next_actions: [
+      approvalGate.approveEnabled ? 'Approve and resume the paused execution lane from Delivery Manager.' : '',
       delivery.nextAction || 'Ask a leader to run follow-up with this delivery.',
-      'Send to the appropriate app only after approval and connector state are visible.'
-    ],
-    handoff_targets: ['cmo_leader', 'seo_gap', 'build_team_leader'],
-    raw_context: importedContext ? { received_context: importedContext } : {}
+      'Use external action tools only after approval and connector state are visible.'
+    ].filter(Boolean),
+    raw_context: {
+      ...(importedContext ? { received_context: importedContext } : {}),
+      source_context_id: importedContext?.id || '',
+      chat_handoff_id: handoffSession.chatHandoffId || '',
+      chat_return_to: handoffSession.chatReturnTo || '',
+      source_file_count: (delivery.files || []).length,
+      source_file_kinds: handoffSourceKinds(delivery),
+      approval_gate: approvalGate.context,
+      delivery_manager_handoff_audit: handoffAudit
+    }
   });
 }
 
@@ -360,12 +1147,16 @@ function readinessItems(delivery = selectedDelivery()) {
   const files = delivery?.files || [];
   const summary = String(delivery?.summary || '').trim();
   const context = buildContext();
+  const approvalGate = approvalGateForDelivery(delivery);
+  const handoffAudit = deliveryHandoffAuditForDelivery(delivery);
   return [
     ['Summary present', Boolean(summary)],
     ['Delivery selected', Boolean(delivery?.id)],
     ['Status visible', Boolean(delivery?.status)],
     ['Files attached', files.length > 0],
     ['Next action captured', Boolean(String(delivery?.nextAction || '').trim())],
+    ['Approval gate captured', Boolean(approvalGate?.context?.checkpoints?.length)],
+    ['Server handoff audited', handoffAudit.complete === handoffAudit.total],
     ['Reusable context built', Boolean(context?.source_app === 'delivery_manager')],
     ['No empty title', Boolean(String(delivery?.title || '').trim())]
   ];
@@ -379,7 +1170,40 @@ function renderCounts() {
   els.reusableCount.textContent = deliveries.filter((item) => item.summary || (item.files || []).length).length;
   const visible = filteredDeliveries().length;
   const workCount = groupedDeliveries(filteredDeliveries()).length;
-  els.deliveryInboxMeta.textContent = `${workCount} work item${workCount === 1 ? '' : 's'}, ${visible} run${visible === 1 ? '' : 's'} shown.`;
+  const searchSuffix = searchText.trim() ? ` Search: "${compact(searchText.trim(), 32)}".` : '';
+  els.deliveryInboxMeta.textContent = `${workCount} work item${workCount === 1 ? '' : 's'}, ${visible} run${visible === 1 ? '' : 's'} shown. Sorted ${sortModeLabel()}.${searchSuffix}`;
+}
+
+function groupTimestamp(group = {}) {
+  return Math.max(...(group.items || []).map(deliveryTimestamp), deliveryTimestamp(group));
+}
+
+function groupFileCount(group = {}) {
+  return (group.items || []).reduce((sum, item) => sum + (item.files || []).length, 0);
+}
+
+function compareDeliveryGroups(left = {}, right = {}) {
+  if (sortMode === 'oldest') {
+    const timeDiff = groupTimestamp(left) - groupTimestamp(right);
+    if (timeDiff) return timeDiff;
+  } else if (sortMode === 'status') {
+    const statusDiff = statusSortRank(groupStatus(left)) - statusSortRank(groupStatus(right));
+    if (statusDiff) return statusDiff;
+    const timeDiff = groupTimestamp(right) - groupTimestamp(left);
+    if (timeDiff) return timeDiff;
+  } else if (sortMode === 'files') {
+    const fileDiff = groupFileCount(right) - groupFileCount(left);
+    if (fileDiff) return fileDiff;
+    const timeDiff = groupTimestamp(right) - groupTimestamp(left);
+    if (timeDiff) return timeDiff;
+  } else if (sortMode === 'title') {
+    const titleDiff = String(left.title || '').localeCompare(String(right.title || ''), undefined, { sensitivity: 'base' });
+    if (titleDiff) return titleDiff;
+  } else {
+    const timeDiff = groupTimestamp(right) - groupTimestamp(left);
+    if (timeDiff) return timeDiff;
+  }
+  return String(right.id || '').localeCompare(String(left.id || ''));
 }
 
 function groupedDeliveries(list = filteredDeliveries()) {
@@ -403,13 +1227,9 @@ function groupedDeliveries(list = filteredDeliveries()) {
   return [...byWork.values()]
     .map((group) => ({
       ...group,
-      items: group.items.sort((left, right) => {
-        const rankDiff = deliverySortRank(left) - deliverySortRank(right);
-        if (rankDiff) return rankDiff;
-        return String(right.updatedAt || right.id || '').localeCompare(String(left.updatedAt || left.id || ''));
-      })
+      items: group.items.sort((left, right) => compareDeliveries(left, right))
     }))
-    .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
+    .sort(compareDeliveryGroups);
 }
 
 function groupStatus(group = {}) {
@@ -431,11 +1251,11 @@ function groupSummary(group = {}) {
 
 function renderList() {
   const list = filteredDeliveries();
-  if (!list.some((item) => item.id === selectedId) && list[0]) {
-    selectedId = list[0].id;
+  const groups = groupedDeliveries(list);
+  if (!list.some((item) => item.id === selectedId) && groups[0]?.items?.[0]) {
+    selectedId = groups[0].items[0].id;
     selectedFileIndex = 0;
   }
-  const groups = groupedDeliveries(list);
   els.deliveryList.innerHTML = groups.length ? groups.map((group) => {
     const groupOpen = expandedWorkIds.has(group.id) || group.items.some((item) => item.id === selectedId);
     const files = group.items.reduce((sum, item) => sum + (item.files || []).length, 0);
@@ -466,7 +1286,7 @@ function renderList() {
   }).join('') : [
     '<div class="delivery-empty">',
     '<strong>No matching delivery</strong>',
-    '<span>Refresh jobs, clear search, or open this app from a CAIt context handoff.</span>',
+    '<span>Refresh jobs, clear search, or open Deliveries from a CAIt context handoff.</span>',
     '</div>'
   ].join('');
 }
@@ -500,14 +1320,15 @@ function renderSelected() {
     els.railCopyBtn
   ].forEach((button) => { button.disabled = !hasDelivery; });
   els.deliveryTitleInput.value = delivery?.title || 'No delivery selected';
-  els.deliverySummaryInput.value = delivery?.summary || 'Refresh server jobs or open Delivery Manager from a CAIt context handoff to review reusable work.';
+  fitTitleInput();
+  els.deliverySummaryInput.value = delivery?.summary || 'Refresh server jobs or open Deliveries from a CAIt context handoff to review reusable work.';
   els.deliveryStatusPill.textContent = hasDelivery ? statusLabel(delivery?.status || '') : 'waiting';
   els.deliveryStatusPill.className = `status-pill ${hasDelivery ? statusClass(delivery?.status || '') : 'pending'}`;
   els.deliveryUpdatedMeta.textContent = delivery?.updatedAt ? `Updated ${normalizedDate(delivery.updatedAt) || delivery.updatedAt}` : 'No timestamp';
   els.summaryCount.textContent = `${String(delivery?.summary || '').length.toLocaleString('en-US')} / 1000`;
   els.nextActionText.textContent = delivery?.nextAction || 'Load a delivery package before running follow-up.';
   els.packageMetaText.textContent = files.length ? `${files.length} file${files.length === 1 ? '' : 's'} ready` : 'No files attached';
-  els.sourceMetaText.textContent = delivery?.sourceLabel || (importedContext ? 'App context' : 'Server jobs');
+  els.sourceMetaText.textContent = delivery?.sourceLabel || (importedContext ? 'CAIt context' : 'Server jobs');
   els.previewTitle.textContent = selectedFile ? `Preview: ${selectedFile.name}` : 'Output preview';
   els.outputPreview.textContent = selectedFile?.content || delivery?.summary || 'No delivery output is available yet. Refresh jobs or return from chat with a completed delivery context.';
   els.fileMetaText.textContent = files.length ? `${files.length} file${files.length === 1 ? '' : 's'} in this package.` : 'No files loaded.';
@@ -525,7 +1346,7 @@ function renderSelected() {
   ].join('') : '<tbody><tr><td>No files loaded.</td><td>-</td><td>-</td><td>-</td></tr></tbody>';
   els.actionRailSummary.textContent = delivery
     ? `Send "${compact(delivery.title, 58)}" to CAIt as context for the next order.`
-    : 'No delivery is loaded yet. Refresh jobs or open this app from a completed CAIt delivery.';
+    : 'No delivery is loaded yet. Refresh jobs or open Deliveries from a completed CAIt delivery.';
 }
 
 function renderReadiness() {
@@ -545,11 +1366,74 @@ function renderReadiness() {
     : 'Complete the missing items before sending this package to a leader.';
 }
 
+function renderApprovalGate() {
+  const gate = approvalGateForDelivery();
+  els.approvalStatePill.textContent = gate.label;
+  els.approvalStatePill.className = `status-pill ${gate.state === 'blocked' ? 'blocked' : gate.state === 'approved' ? 'approved' : 'pending'}`;
+  els.approvalGateSummary.textContent = gate.summary;
+  els.approvalChecklist.innerHTML = gate.items.map((item) => [
+    `<div class="approval-item ${item.ok ? 'ready' : 'needs-review'}">`,
+    `<span>${item.ok ? 'Ready' : 'Review'}</span>`,
+    '<strong>',
+    escapeHtml(item.label),
+    `<small>${escapeHtml(item.value)}</small>`,
+    '</strong>',
+    '</div>'
+  ].join('')).join('');
+  els.approveDeliveryBtn.disabled = !gate.approveEnabled;
+  els.approveDeliveryBtn.textContent = gate.actionLabel;
+  els.copyApprovalBtn.disabled = !selectedDelivery();
+}
+
+function renderHandoffNotice() {
+  if (!els.deliveryHandoffNotice) return;
+  const delivery = selectedDelivery();
+  if (importedContext) {
+    els.deliveryHandoffNotice.hidden = false;
+    els.deliveryHandoffNotice.classList.toggle('notice-warning', !handoffSession.hasServerContext);
+    els.deliveryHandoffNotice.innerHTML = [
+      '<strong>Stable delivery handoff loaded</strong>',
+      handoffSession.hasServerContext
+        ? 'Before: AIAGENT chat output could be copied, closed, or lose its files. After: Deliveries keeps this server-side package, recovered files, approval gate, and return path available for the next CAIt run.'
+        : 'This browser has delivery context, but no server context id is attached. Send to CAIt will create the server-side delivery packet before follow-up.'
+    ].join('');
+    return;
+  }
+  if (handoffSession.hasChatReturn) {
+    els.deliveryHandoffNotice.hidden = false;
+    els.deliveryHandoffNotice.classList.add('notice-warning');
+    els.deliveryHandoffNotice.innerHTML = [
+      '<strong>Chat return is attached, but no server package is loaded yet</strong>',
+      'Refresh server jobs or send a selected delivery to CAIt so the follow-up run receives a durable Delivery Manager context instead of a chat-only handoff.'
+    ].join('');
+    return;
+  }
+  els.deliveryHandoffNotice.hidden = true;
+  els.deliveryHandoffNotice.textContent = '';
+}
+
+function renderDeliveryHandoffAudit() {
+  if (!els.deliveryHandoffAuditPill || !els.deliveryHandoffAuditList) return;
+  const audit = deliveryHandoffAuditForDelivery();
+  els.deliveryHandoffAuditPill.textContent = `${audit.complete} / ${audit.total} anchors`;
+  els.deliveryHandoffAuditPill.className = `status-pill ${audit.complete === audit.total ? 'approved' : audit.complete ? 'pending' : 'blocked'}`;
+  els.deliveryHandoffAuditList.innerHTML = audit.items.map((item) => [
+    `<div class="delivery-handoff-audit-item ${item.ok ? 'ready' : ''}">`,
+    `<span>${item.ok ? 'Present' : 'Missing'}</span>`,
+    `<strong>${escapeHtml(item.label)}</strong>`,
+    `<small>${escapeHtml(item.value || '')}</small>`,
+    '</div>'
+  ].join('')).join('');
+}
+
 function render() {
   renderCounts();
   renderList();
   renderTabs();
   renderSelected();
+  renderApprovalGate();
+  renderHandoffNotice();
+  renderDeliveryHandoffAudit();
   renderReadiness();
   els.deliveryContextPreview.textContent = JSON.stringify(buildContext(), null, 2);
 }
@@ -596,6 +1480,62 @@ function sendFollowup() {
   });
 }
 
+async function copyApprovalNote() {
+  const gate = approvalGateForDelivery();
+  await navigator.clipboard.writeText(gate.note);
+  const old = els.copyApprovalBtn.textContent;
+  els.copyApprovalBtn.textContent = 'Copied';
+  window.setTimeout(() => { els.copyApprovalBtn.textContent = old; }, 1200);
+}
+
+async function approveSelectedDelivery() {
+  saveEditor();
+  const delivery = selectedDelivery();
+  const gate = approvalGateForDelivery(delivery);
+  if (!delivery || !gate.approveEnabled) {
+    window.alert('This delivery is not currently blocked on approval.');
+    return;
+  }
+  const confirmed = window.confirm([
+    'Approve and resume this paused execution lane?',
+    '',
+    gate.note
+  ].join('\n'));
+  if (!confirmed) return;
+  const old = els.approveDeliveryBtn.textContent;
+  els.approveDeliveryBtn.disabled = true;
+  els.approveDeliveryBtn.textContent = 'Approving';
+  try {
+    const response = await fetchWithTimeout(`/api/jobs/${encodeURIComponent(delivery.id)}/approve`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        confirm_approval: true,
+        approval_note: gate.note,
+        source: 'delivery_manager'
+      })
+    }, 15000);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.error) throw new Error(payload.error || `approval ${response.status}`);
+    if (payload.job) {
+      const normalized = normalizeJobDelivery(payload.job);
+      upsertDelivery(normalized);
+      selectedId = normalized.id;
+      selectedFileIndex = 0;
+    } else {
+      await refreshDeliveries();
+      return;
+    }
+    render();
+  } catch (error) {
+    window.alert(`Approval failed: ${error.message}`);
+  } finally {
+    els.approveDeliveryBtn.textContent = old;
+    renderApprovalGate();
+  }
+}
+
 els.filterButtons.forEach((button) => {
   button.addEventListener('click', () => {
     saveEditor();
@@ -614,6 +1554,16 @@ els.tabButtons.forEach((button) => {
 
 els.deliverySearchInput.addEventListener('input', () => {
   searchText = els.deliverySearchInput.value;
+  render();
+});
+
+els.deliverySortSelect.addEventListener('change', () => {
+  saveEditor();
+  sortMode = String(els.deliverySortSelect.value || 'newest');
+  deliveries = sortDeliveries(deliveries);
+  const groups = groupedDeliveries(filteredDeliveries());
+  selectedId = groups[0]?.items?.[0]?.id || filteredDeliveries()[0]?.id || selectedId;
+  selectedFileIndex = 0;
   render();
 });
 
@@ -646,15 +1596,20 @@ els.fileTable.addEventListener('click', (event) => {
 [els.deliveryTitleInput, els.deliverySummaryInput].forEach((input) => {
   input.addEventListener('input', () => {
     saveEditor();
+    fitTitleInput();
     renderReadiness();
     els.deliveryContextPreview.textContent = JSON.stringify(buildContext(), null, 2);
     els.summaryCount.textContent = `${String(els.deliverySummaryInput.value || '').length.toLocaleString('en-US')} / 1000`;
   });
 });
 
+window.addEventListener('resize', fitTitleInput);
+
 els.refreshDeliveriesBtn.addEventListener('click', refreshDeliveries);
 els.sendDeliveryContextBtn.addEventListener('click', sendFollowup);
 els.runFollowupBtn.addEventListener('click', sendFollowup);
+els.approveDeliveryBtn.addEventListener('click', approveSelectedDelivery);
+els.copyApprovalBtn.addEventListener('click', copyApprovalNote);
 els.downloadJsonBtn.addEventListener('click', downloadJson);
 els.railJsonBtn.addEventListener('click', downloadJson);
 els.downloadSelectedBtn.addEventListener('click', downloadPackage);

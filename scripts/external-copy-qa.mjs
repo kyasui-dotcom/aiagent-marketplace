@@ -26,13 +26,13 @@ const requiredByFile = new Map([
   ['public/index.html', ['Anyone can create high-quality AI agent output', 'agent leaders', 'SaaS-style apps']],
   ['public/apps.html', ['SaaS-style apps', 'context', 'order']],
   ['public/ai-agent-marketplace.html', ['anyone easily produce high-quality AI agent output', 'agent leaders', 'SaaS-style apps']],
-  ['public/ai-agent-api.html', ['leader-guided', 'delivery history', 'app context']],
-  ['public/cli-help.html', ['delivery history', 'app context']]
+  ['public/ai-agent-api.html', ['leader-guided', 'delivery history', 'app context', 'API / CLI / MCP']],
+  ['public/cli-help.html', ['OPEN API / CLI / MCP']]
 ]);
 
 const forbidden = [
   'private operating repo',
-  'chat-first AI agent marketplace runtime',
+  'chat-first AI agent service runtime',
   'runtime infrastructure',
   'broker routing',
   'provider onboarding',
@@ -52,7 +52,7 @@ const forbidden = [
   'debug a failed order',
   'internal tool',
   `leader-led ${'orchestration'}`,
-  `${'quality'}-first ${'AI agent marketplace'}`
+  `${'quality'}-first ${'AI agent service'}`
 ];
 
 for (const file of files) {

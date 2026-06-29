@@ -7,6 +7,8 @@ import {
   touchOrderApiKeyUsageInState
 } from '../lib/shared.js';
 import { createD1LikeStorage } from '../lib/storage.js';
+import { createAuthStatusRouteHandlers } from '../lib/routes/auth-status.js';
+import { createApiKeyRouteHandlers } from '../lib/routes/api-keys.js';
 import { parseApiKeyArgs, runApiKeyCli } from './api-key.mjs';
 
 const state = { agents: [], jobs: [], events: [], accounts: [] };
@@ -58,6 +60,14 @@ assert.ok(auth.apiKey.scopes.includes('agent:write'));
 const authTest = authenticateOrderApiKey(state, createdTest.apiKey.token);
 assert.ok(authTest);
 assert.equal(authTest.apiKey.mode, 'test');
+
+state.accounts[0].deletedAt = new Date().toISOString();
+assert.equal(
+  authenticateOrderApiKey(state, created.apiKey.token),
+  null,
+  'deleted accounts must not authenticate via retained API keys'
+);
+delete state.accounts[0].deletedAt;
 
 const touched = touchOrderApiKeyUsageInState(state, 'alice', auth.apiKey.id, {
   lastUsedPath: '/api/agents/import-manifest',
@@ -111,6 +121,134 @@ assert.ok(
   authenticateOrderApiKey(afterStaleMerge, persistedToken),
   'stale sanitized account writes must not erase API key hashes'
 );
+await storage.mutate(async (draft) => {
+  draft.accounts[0].deletedAt = new Date().toISOString();
+});
+assert.equal(
+  await storage.authenticateOrderApiKey(persistedToken),
+  null,
+  'deleted persisted accounts must not authenticate through indexed API keys'
+);
+
+const routeStorage = createD1LikeStorage(null, { allowInMemory: true, stateCacheTtlMs: 0 });
+await routeStorage.replaceState({ agents: [], jobs: [], events: [], accounts: [] });
+const apiKeyRoutes = createApiKeyRouteHandlers({
+  currentUserContext: async () => ({
+    user: { login: 'event-failure-user', name: 'Event Failure User', email: 'event-failure-user@example.com' },
+    login: 'event-failure-user',
+    authProvider: 'email'
+  }),
+  parseBody: async () => ({ label: 'event-write-failure', mode: 'live' }),
+  runtimePolicy: () => ({ developerApiEnabled: true, releaseStage: 'development' }),
+  logError: () => {},
+  touchEvent: async () => {
+    throw new Error('event write failed');
+  }
+});
+const routeCreateResult = await apiKeyRoutes.createOrderApiKey(routeStorage, new Request('https://example.test/api/settings/api-keys', {
+  method: 'POST',
+  body: JSON.stringify({ label: 'event-write-failure' })
+}), {});
+assert.equal(routeCreateResult.ok, true, 'API key creation should not fail when event logging fails');
+assert.ok(routeCreateResult.apiKey?.token?.startsWith('ai2k_'));
+
+let heavyCurrentUserContextCalls = 0;
+const lightweightRouteStorage = createD1LikeStorage(null, { allowInMemory: true, stateCacheTtlMs: 0 });
+await lightweightRouteStorage.replaceState({ agents: [], jobs: [], events: [], accounts: [] });
+const lightweightRoutes = createApiKeyRouteHandlers({
+  accountSettingsForLogin: (stateArg, login, user, authProvider) => sanitizeAccountSettingsForClient(
+    createOrderApiKeyInState({ accounts: [] }, login, user, authProvider, { label: 'unused-default' }).account
+  ),
+  currentUserContext: async () => {
+    heavyCurrentUserContextCalls += 1;
+    throw new Error('heavy currentUserContext should not run');
+  },
+  getSession: async () => ({
+    user: { login: 'light-api-key-user', name: 'Light API Key User' },
+    accountLogin: 'light-api-key-user',
+    authProvider: 'email'
+  }),
+  lightweightCurrentFromSession: (session) => ({
+    session,
+    user: session.user,
+    login: session.accountLogin,
+    authProvider: session.authProvider
+  }),
+  parseBody: async () => ({ label: 'lightweight-route-key', mode: 'live' }),
+  runtimePolicy: () => ({ developerApiEnabled: true, releaseStage: 'development' }),
+  touchEvent: async () => {}
+});
+const lightweightCreateResult = await lightweightRoutes.createOrderApiKey(lightweightRouteStorage, new Request('https://example.test/api/settings/api-keys', {
+  method: 'POST',
+  body: JSON.stringify({ label: 'lightweight-route-key' })
+}), {});
+assert.equal(lightweightCreateResult.ok, true, 'API key creation should use lightweight session context');
+assert.equal(heavyCurrentUserContextCalls, 0, 'API key user routes should not call heavy currentUserContext');
+
+const authStatusRoutes = createAuthStatusRouteHandlers({
+  accountHasGithubConnector: () => false,
+  accountHasGoogleConnector: () => false,
+  accountHasXConnector: () => false,
+  accountIdentityForProvider: () => null,
+  baseUrl: () => 'https://example.test',
+  canReviewAgents: () => false,
+  canReviewFeedbackReports: () => false,
+  canViewAdminDashboard: () => false,
+  csrfTokenForRequest: async () => 'csrf-lightweight',
+  getSession: async () => ({
+    user: { login: 'slow-account-user', name: 'Slow Account User' },
+    accountLogin: 'slow-account-user',
+    authProvider: 'email'
+  }),
+  githubAppConfigured: () => false,
+  githubAppInstallationsFromSession: () => [],
+  githubAppReposFromSession: () => [],
+  githubClientId: () => '',
+  githubClientSecret: () => '',
+  githubGrantedScopes: () => [],
+  githubOAuthScope: () => 'read:user',
+  githubPrivateRepoImportEnabled: () => false,
+  googleConfigured: () => false,
+  googleConnectorForAccount: () => null,
+  googleConnectorScopeSet: () => new Set(),
+  googleOAuthCapabilitiesFromGroups: (groups) => groups,
+  identityLoginsForCurrent: (current) => [current.login].filter(Boolean),
+  lightweightCurrentFromSession: (session) => ({
+    session,
+    user: session.user,
+    login: session.accountLogin,
+    authProvider: session.authProvider
+  }),
+  missingGoogleScopeGroups: () => [],
+  requestOrigin: () => 'https://example.test',
+  resendConfigured: () => false,
+  runtimePolicy: () => ({
+    releaseStage: 'development',
+    openWriteApiEnabled: false,
+    guestRunReadEnabled: true,
+    devApiEnabled: true,
+    developerApiEnabled: true,
+    cliEnabled: true,
+    mcpEnabled: true,
+    developerSurfacesPaused: false,
+    exposeJobSecrets: true,
+    billingPaused: true,
+    billingActivationEnabled: false
+  }),
+  runtimeStorage: () => ({
+    getAccountByLogin: () => new Promise(() => {})
+  }),
+  sessionHasGithubApp: () => false,
+  sessionHasGithubOauth: () => false,
+  xOAuthConfigured: () => false,
+  xOAuthScopeLabel: () => 'tweet.read users.read',
+  xTokenEncryptionConfigured: () => false
+});
+const slowAccountStartedAt = Date.now();
+const slowAccountStatus = await authStatusRoutes.authStatus(new Request('https://example.test/auth/status'), {});
+assert.equal(slowAccountStatus.loggedIn, true, 'auth status should return logged-in state without waiting indefinitely for account lookup');
+assert.equal(slowAccountStatus.csrfToken, 'csrf-lightweight');
+assert.ok(Date.now() - slowAccountStartedAt < 2000, 'auth status account lookup should time out quickly');
 
 const parsedUserCli = parseApiKeyArgs(['create', '--label', 'codex-desktop', '--cookie', 'aiagent2_session=abc', '--export']);
 assert.equal(parsedUserCli.command, 'create');

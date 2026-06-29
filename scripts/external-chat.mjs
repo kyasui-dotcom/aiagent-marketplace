@@ -34,7 +34,7 @@ function usage() {
 Use this to test an external chat integration from the command line.
 
 Setup:
-  1. Issue a CAIt API key from CLI or CAIt Web UI > SETTINGS > KEYS
+  1. Issue a CAIt API key from CLI or the CAIt API / CLI / MCP screen
   2. Store it only in your shell/backend environment
 
 PowerShell:
@@ -56,6 +56,8 @@ Commands:
   npm run cait -- app verify <app_id>
   npm run cait -- send "Compare used iPhone resale routes in Japan"
   npm run cait -- send --watch "Compare used iPhone resale routes in Japan"
+  npm run cait -- send --session-id support-chat-123 "集客を増やしたい"
+  npm run cait -- send --session-id support-chat-123 "対象は https://aiagent-marketplace.net/ です。開発者登録を増やしたいです。"
   npm run cait -- watch <job_id>
   npm run cait -- follow-up <job_id> "Focus on Japan and include sources"
   npm run cait -- run-local --cwd C:\\path\\to\\repo -- git status
@@ -69,6 +71,7 @@ Env:
   CAIT_BASE_URL        default: ${DEFAULT_BASE_URL}
   CAIT_TASK_TYPE       default: research
   CAIT_AGENT_ID        optional deterministic target agent
+  CAIT_SESSION_ID      optional chat session id for browser-like intake memory
   CAIT_ORDER_STRATEGY  default: auto
   CAIT_SKIP_INTAKE     true/false
   CAIT_WATCH_INTERVAL  seconds, default: 5
@@ -86,6 +89,7 @@ function parseArgs(argv = []) {
     taskType: envValue('CAIT_TASK_TYPE', 'research'),
     agentId: envValue('CAIT_AGENT_ID'),
     strategy: envValue('CAIT_ORDER_STRATEGY', 'auto'),
+    sessionId: envValue('CAIT_SESSION_ID'),
     skipIntake: ['1', 'true', 'yes', 'on'].includes(envValue('CAIT_SKIP_INTAKE').toLowerCase()),
     watch: false,
     watchIntervalSeconds: Math.max(1, Number(envValue('CAIT_WATCH_INTERVAL', '5')) || 5),
@@ -102,6 +106,8 @@ function parseArgs(argv = []) {
       options.agentId = String(args.shift() || '').trim();
     } else if (arg === '--strategy') {
       options.strategy = String(args.shift() || '').trim() || options.strategy;
+    } else if (arg === '--session-id' || arg === '--session') {
+      options.sessionId = String(args.shift() || '').trim();
     } else if (arg === '--skip-intake') {
       options.skipIntake = true;
     } else if (arg === '--watch') {
@@ -126,7 +132,7 @@ function parseArgs(argv = []) {
 function requireApiKey() {
   const token = envValue('CAIT_API_KEY');
   if (!token) {
-    throw new Error('CAIT_API_KEY is required. Issue one with npm run cait:key -- create, or in SETTINGS > KEYS, then set it in your shell/backend env.');
+    throw new Error('CAIT_API_KEY is required. Issue one with npm run cait:key -- create, or on API / CLI / MCP, then set it in your shell/backend env.');
   }
   return token;
 }
@@ -293,12 +299,16 @@ function printJobProgress(job = {}, prefix = 'CAIt') {
 }
 
 function printOrderResult(result) {
+  const sessionId = result?.chat_session_memory?.session_id || result?.chatSessionMemory?.sessionId || '';
   if (result?.needs_input || result?.status === 'needs_input') {
     printJson({
       status: 'needs_input',
       message: 'CAIt needs more details before creating a billable order.',
+      session_id: sessionId || null,
       questions: result.questions || [],
-      next: 'Answer the questions and run the send command again, or add --skip-intake if the broad request is intentional.'
+      next: sessionId
+        ? `Answer the questions and run send again with --session-id ${sessionId}.`
+        : 'Answer the questions and run the send command again with the same --session-id, or add --skip-intake if the broad request is intentional.'
     });
     return;
   }
@@ -308,6 +318,7 @@ function printOrderResult(result) {
     job_id: result?.job_id || result?.job?.id || null,
     workflow_job_id: result?.workflow_job_id || result?.workflowJobId || null,
     assigned_agent_id: result?.assigned_agent_id || result?.job?.assignedAgentId || null,
+    session_id: sessionId || null,
     estimated_billing: result?.billing || result?.job?.billingEstimate || null,
     next: result?.job_id || result?.job?.id
       ? `npm run cait -- get ${result.job_id || result.job.id}`
@@ -631,6 +642,7 @@ async function main() {
       order_strategy: options.strategy,
       prompt: options.prompt
     };
+    if (options.sessionId) payload.session_id = options.sessionId;
     if (options.watch) payload.respond_async = true;
     if (options.agentId) payload.agent_id = options.agentId;
     if (options.skipIntake) payload.skip_intake = true;
@@ -656,6 +668,7 @@ async function main() {
       followup_to_job_id: jobId,
       prompt: options.prompt
     };
+    if (options.sessionId) payload.session_id = options.sessionId;
     if (options.agentId) payload.agent_id = options.agentId;
     if (options.skipIntake) payload.skip_intake = true;
     const result = await requestJson('/api/jobs', {

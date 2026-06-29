@@ -64,6 +64,11 @@ const defaultGroups = [
   ['e2e/mcp.spec.js', 'e2e/production-chat.spec.js']
 ];
 
+const shouldRunOrderScenario = env.E2E_ORDER_SCENARIO === '1' || Boolean(env.E2E_ORDER_ID);
+if (shouldRunOrderScenario) {
+  defaultGroups[defaultGroups.length - 1].push('e2e/order-scenario.spec.js');
+}
+
 function hasExplicitSpecArgs(args = []) {
   return args.some((arg) => /\.spec\.js$/i.test(String(arg)) || /^e2e[\\/]/i.test(String(arg)));
 }

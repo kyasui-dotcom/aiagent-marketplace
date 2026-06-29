@@ -10,10 +10,13 @@ function envValue(name, fallback = '') {
 function usage() {
   return `CAIt API key CLI
 
-Issue, list, and revoke CAIt API keys without using the browser key form.
+Issue, list, and revoke CAIt API keys from the CLI or the API / CLI / MCP screen.
+
+Current status:
+  CLI calls the deployed CAIt API-key routes. The server runtime policy decides whether access is active.
 
 User session mode:
-  1. Log in to CAIt in the browser
+  1. Log in to CAIt in the browser or open API / CLI / MCP
   2. Copy the ${SESSION_COOKIE_NAME} cookie value from the browser devtools
   3. Run:
 

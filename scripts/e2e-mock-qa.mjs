@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 
 const PORT = Number(process.env.PORT || 4327);
 const BASE = `http://127.0.0.1:${PORT}`;
+const PROVIDER_PORT = Number(process.env.PROVIDER_PORT || (PORT + 100));
+const PROVIDER_BASE = `http://127.0.0.1:${PROVIDER_PORT}`;
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 async function request(path, options = {}) {
@@ -12,6 +15,9 @@ async function request(path, options = {}) {
   if (text) { try { body = JSON.parse(text); } catch { body = { raw: text }; } }
   return { status: res.status, body };
 }
+function jobPayload(response) {
+  return response?.body?.job || response?.body || {};
+}
 async function waitForServer(timeoutMs = 8000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -20,14 +26,77 @@ async function waitForServer(timeoutMs = 8000) {
   }
   throw new Error('Server did not become ready in time');
 }
+async function waitForJob(jobId, predicate, timeoutMs = 6000) {
+  const start = Date.now();
+  let latest = null;
+  while (Date.now() - start < timeoutMs) {
+    latest = await request(`/api/jobs/${jobId}`);
+    if (latest.status === 200 && predicate(jobPayload(latest))) return latest;
+    await sleep(200);
+  }
+  return latest;
+}
+
+function startProviderServer() {
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url || '/', PROVIDER_BASE);
+    const [, kind = '', route = ''] = url.pathname.match(/^\/([^/]+)\/([^/]+)$/) || [];
+    if (route === 'health') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, service: `e2e_${kind}_provider` }));
+      return;
+    }
+    if (route === 'jobs') {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const payload = body ? JSON.parse(body) : {};
+      const taskType = String(payload.task_type || kind || 'agent').trim().toLowerCase();
+      if (kind === 'accepted') {
+        res.writeHead(202, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ accepted: true, status: 'accepted', external_job_id: `e2e-${String(payload.job_id || '').slice(0, 8)}` }));
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'completed',
+        summary: `E2E ${taskType} provider completed.`,
+        report: {
+          summary: `E2E ${taskType} report completed with concrete output.`,
+          bullets: ['External provider endpoint was used instead of an in-worker sample route.'],
+          nextAction: 'Review the generated delivery.'
+        },
+        files: [{
+          name: `${taskType}-delivery.md`,
+          content: [
+            `# E2E ${taskType} delivery`,
+            '',
+            'Source: external provider endpoint returned this delivery artifact.',
+            'Risk: the job should fail if the provider only returns status metadata.',
+            'Recommendation: accept this concrete provider-backed delivery and continue the QA flow.',
+            'Next action: review the generated delivery in the job record.'
+          ].join('\n')
+        }],
+        usage: { input_tokens: 50, output_tokens: 50, total_tokens: 100, api_cost: 1 }
+      }));
+      return;
+    }
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not found' }));
+  });
+  return new Promise((resolve) => server.listen(PROVIDER_PORT, '127.0.0.1', () => resolve(server)));
+}
 
 async function main() {
+  const provider = await startProviderServer();
   const child = spawn('node', ['server.js'], {
     cwd: process.cwd(),
     env: {
       ...process.env,
       NODE_ENV: 'test',
       ALLOW_IN_MEMORY_STORAGE: '1',
+      ALLOW_OPEN_WRITE_API: '1',
+      ALLOW_DEV_API: '1',
+      BUILTIN_AGENT_SAMPLE_FALLBACK: '1',
       PORT: String(PORT)
     },
     stdio: 'ignore'
@@ -45,8 +114,8 @@ async function main() {
         pricing: { premium_rate: 0.05, basic_rate: 0.1 },
         success_rate: 0.99,
         avg_latency_sec: 5,
-        healthcheck_url: `${BASE}/mock/research/health`,
-        job_endpoint: `${BASE}/mock/research/jobs`
+        healthcheck_url: `${PROVIDER_BASE}/research/health`,
+        job_endpoint: `${PROVIDER_BASE}/research/jobs`
       } })
     });
     const syncAgentId = syncImport.body.agent.id;
@@ -62,8 +131,8 @@ async function main() {
         pricing: { premium_rate: 0.35, basic_rate: 0.1 },
         success_rate: 0.8,
         avg_latency_sec: 40,
-        healthcheck_url: `${BASE}/mock/research/health`,
-        job_endpoint: `${BASE}/mock/accepted/jobs`
+        healthcheck_url: `${PROVIDER_BASE}/accepted/health`,
+        job_endpoint: `${PROVIDER_BASE}/accepted/jobs`
       } })
     });
     const asyncAgentId = asyncImport.body.agent.id;
@@ -79,8 +148,8 @@ async function main() {
         pricing: { premium_rate: 0.08, basic_rate: 0.1 },
         success_rate: 0.97,
         avg_latency_sec: 8,
-        healthcheck_url: `${BASE}/mock/writer/health`,
-        job_endpoint: `${BASE}/mock/writer/jobs`
+        healthcheck_url: `${PROVIDER_BASE}/writer/health`,
+        job_endpoint: `${PROVIDER_BASE}/writer/jobs`
       } })
     });
     const writerAgentId = writerImport.body.agent.id;
@@ -92,12 +161,12 @@ async function main() {
       body: JSON.stringify({ confirm_routing: true, manifest: {
         schema_version: 'agent-manifest/v1',
         name: 'seo_agent',
-        task_types: ['seo'],
+        task_types: ['seo', 'seo_specialist'],
         pricing: { premium_rate: 0.06, basic_rate: 0.1 },
         success_rate: 0.99,
         avg_latency_sec: 5,
-        healthcheck_url: `${BASE}/mock/writer/health`,
-        job_endpoint: `${BASE}/mock/writer/jobs`
+        healthcheck_url: `${PROVIDER_BASE}/writer/health`,
+        job_endpoint: `${PROVIDER_BASE}/writer/jobs`
       } })
     });
     const seoAgentId = seoImport.body.agent.id;
@@ -148,9 +217,10 @@ async function main() {
     assert.equal(followupJob.body.status, 'completed');
     const followupState = await request(`/api/jobs/${followupJob.body.job_id}`);
     assert.equal(followupState.status, 200);
-    assert.equal(followupState.body.input._broker.conversation.followupToJobId, syncJob.body.job_id);
-    assert.equal(followupState.body.input._broker.conversation.turn, 2);
-    assert.ok(followupState.body.input._broker.conversation.previousJob.summaryText.includes('Summary:'));
+    const followupJobState = jobPayload(followupState);
+    assert.equal(followupJobState.input._broker.conversation.followupToJobId, syncJob.body.job_id);
+    assert.equal(followupJobState.input._broker.conversation.turn, 2);
+    assert.ok(followupJobState.input._broker.conversation.previousJob.summaryText.includes('Summary:'));
 
     const asyncJob = await request('/api/jobs', {
       method: 'POST', headers: { 'content-type': 'application/json' },
@@ -160,7 +230,7 @@ async function main() {
     assert.equal(asyncJob.body.status, 'dispatched');
 
     const asyncJobState = await request(`/api/jobs/${asyncJob.body.job_id}`);
-    const token = asyncJobState.body.callbackToken;
+    const token = jobPayload(asyncJobState).callbackToken;
     const callback = await request('/api/agent-callbacks/jobs', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
@@ -168,7 +238,21 @@ async function main() {
         job_id: asyncJob.body.job_id,
         agent_id: asyncAgentId,
         status: 'completed',
-        report: { summary: 'async finished' },
+        report: {
+          summary: 'async finished with source-backed recommendation and risk note',
+          recommendation: 'Accept the async callback after confirming the delivery file exists.'
+        },
+        files: [{
+          name: 'async-delivery.md',
+          content: [
+            '# Async callback delivery',
+            '',
+            'Source: accepted provider callback completed the remote job.',
+            'Risk: async callbacks must include a concrete user-facing artifact.',
+            'Recommendation: store this delivery and keep duplicate callback protection enabled.',
+            'Next action: inspect the terminal job state.'
+          ].join('\n')
+        }],
         usage: { total_cost_basis: 70, compute_cost: 20, tool_cost: 10, labor_cost: 40 }
       })
     });
@@ -192,13 +276,27 @@ async function main() {
     assert.equal(workflowJob.body.order_strategy_resolved, 'multi');
     assert.ok(workflowJob.body.workflow_job_id);
     assert.ok(workflowJob.body.child_runs.length >= 2);
-    assert.ok(workflowJob.body.planned_task_types.includes('seo'));
+    assert.ok(
+      workflowJob.body.planned_task_types.includes('seo_specialist')
+        || workflowJob.body.planned_task_types.includes('seo'),
+      'workflow should include the SEO specialist planning task'
+    );
 
-    const workflowState = await request(`/api/jobs/${workflowJob.body.workflow_job_id}`);
+    const workflowState = await waitForJob(workflowJob.body.workflow_job_id, (job) => job.status === 'completed');
     assert.equal(workflowState.status, 200);
-    assert.equal(workflowState.body.jobKind, 'workflow');
-    assert.equal(workflowState.body.status, 'completed');
-    assert.ok((workflowState.body.workflow?.childRuns || []).length >= 2);
+    const workflowStateJob = jobPayload(workflowState);
+    assert.equal(workflowStateJob.jobKind, 'workflow');
+    assert.equal(workflowStateJob.status, 'completed', `workflow should complete: ${JSON.stringify({
+      status: workflowStateJob.status,
+      failureReason: workflowStateJob.failureReason || '',
+      statusCounts: workflowStateJob.workflow?.statusCounts || {},
+      childRuns: (workflowStateJob.workflow?.childRuns || []).map((run) => ({
+        taskType: run.taskType,
+        status: run.status,
+        failureReason: run.failureReason || run.failure_reason || ''
+      }))
+    })}`);
+    assert.ok((workflowStateJob.workflow?.childRuns || []).length >= 2);
 
     const autoSingleJob = await request('/api/jobs', {
       method: 'POST',
@@ -250,6 +348,7 @@ async function main() {
     console.log('e2e mock qa passed');
   } finally {
     child.kill('SIGTERM');
+    provider.close();
     await sleep(300);
   }
 }

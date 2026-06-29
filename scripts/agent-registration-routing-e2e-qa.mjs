@@ -5,8 +5,10 @@ import { DEFAULT_AGENT_SEEDS, createOrderApiKeyInState } from '../lib/shared.js'
 
 const PORT = Number(process.env.PORT || 4335);
 const MANIFEST_PORT = Number(process.env.MANIFEST_PORT || 4336);
+const PROVIDER_PORT = Number(process.env.PROVIDER_PORT || 4435);
 const BASE = `http://127.0.0.1:${PORT}`;
 const MANIFEST_BASE = `http://127.0.0.1:${MANIFEST_PORT}`;
+const PROVIDER_BASE = `http://127.0.0.1:${PROVIDER_PORT}`;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -48,8 +50,8 @@ function startManifestServer() {
       pricing: { provider_markup_rate: 0.1, platform_margin_rate: 0.1 },
       success_rate: 0.97,
       avg_latency_sec: 8,
-      healthcheck_url: `${BASE}/mock/writer/health`,
-      job_endpoint: `${BASE}/mock/writer/jobs`
+      healthcheck_url: `${PROVIDER_BASE}/writer/health`,
+      job_endpoint: `${PROVIDER_BASE}/writer/jobs`
     },
     '/x-manifest.json': {
       schema_version: 'agent-manifest/v1',
@@ -61,8 +63,8 @@ function startManifestServer() {
       pricing: { provider_markup_rate: 0.1, platform_margin_rate: 0.1 },
       success_rate: 0.96,
       avg_latency_sec: 9,
-      healthcheck_url: `${BASE}/mock/x_post/health`,
-      job_endpoint: `${BASE}/mock/x_post/jobs`
+      healthcheck_url: `${PROVIDER_BASE}/x_post/health`,
+      job_endpoint: `${PROVIDER_BASE}/x_post/jobs`
     }
   };
   const server = createServer((req, res) => {
@@ -77,6 +79,38 @@ function startManifestServer() {
   });
   return new Promise((resolve) => {
     server.listen(MANIFEST_PORT, '127.0.0.1', () => resolve(server));
+  });
+}
+
+function startProviderServer() {
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url || '/', PROVIDER_BASE);
+    const [, kind = '', route = ''] = url.pathname.match(/^\/([^/]+)\/([^/]+)$/) || [];
+    if (route === 'health') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, service: `routing_${kind}_provider` }));
+      return;
+    }
+    if (route === 'jobs') {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const payload = body ? JSON.parse(body) : {};
+      const taskType = String(payload.task_type || kind || 'agent').trim().toLowerCase();
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'completed',
+        summary: `Routing E2E ${taskType} provider completed.`,
+        report: { summary: `Routing E2E ${taskType} provider delivery.`, bullets: [], nextAction: 'Review routing.' },
+        files: [{ name: `${taskType}-delivery.md`, content: `# Routing E2E ${taskType} delivery` }],
+        usage: { input_tokens: 50, output_tokens: 50, total_tokens: 100, api_cost: 1 }
+      }));
+      return;
+    }
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not found' }));
+  });
+  return new Promise((resolve) => {
+    server.listen(PROVIDER_PORT, '127.0.0.1', () => resolve(server));
   });
 }
 
@@ -161,6 +195,7 @@ async function assertConfirmed(path, token, payload, expected = {}) {
 
 async function main() {
   const manifestServer = await startManifestServer();
+  const providerServer = await startProviderServer();
   const seededState = { agents: structuredClone(DEFAULT_AGENT_SEEDS), jobs: [], events: [], accounts: [] };
   const issued = createOrderApiKeyInState(
     seededState,
@@ -229,18 +264,18 @@ async function main() {
         pricing: { provider_markup_rate: 0.1, platform_margin_rate: 0.1 },
         success_rate: 0.96,
         avg_latency_sec: 9,
-        healthcheck_url: `${BASE}/mock/x_post/health`,
-        job_endpoint: `${BASE}/mock/x_post/jobs`
+        healthcheck_url: `${PROVIDER_BASE}/x_post/health`,
+        job_endpoint: `${PROVIDER_BASE}/x_post/jobs`
       }
     };
     const manifestPreview = await assertPreview('/api/agents/import-manifest', token, manifestPayload, {
-      layer: 'execution',
+      layer: 'action',
       role: 'channel_adapter',
       upstreamTask: 'writing'
     });
     assert.ok(manifestPreview.body.routing_confirmation.inferred.upstream.resolved.some((agent) => agent.id === 'agent_writer_01'));
     const manifestConfirmed = await assertConfirmed('/api/agents/import-manifest', token, manifestPayload, {
-      layer: 'execution',
+      layer: 'action',
       role: 'channel_adapter',
       upstreamTask: 'writing'
     });
@@ -248,12 +283,12 @@ async function main() {
 
     const urlPayload = { manifest_url: `${MANIFEST_BASE}/writer-manifest.json` };
     await assertPreview('/api/agents/import-url', token, urlPayload, {
-      layer: 'content_generation',
+      layer: 'preparation',
       role: 'writer_planner',
       upstreamTask: 'research'
     });
     const urlConfirmed = await assertConfirmed('/api/agents/import-url', token, urlPayload, {
-      layer: 'content_generation',
+      layer: 'preparation',
       role: 'writer_planner',
       upstreamTask: 'research'
     });
@@ -270,7 +305,7 @@ async function main() {
     });
     assert.equal(camelCaseConfirmed.status, 201);
     assert.equal(camelCaseConfirmed.body.agent.metadata.routing_confirmation.confirmed, true);
-    assert.equal(camelCaseConfirmed.body.agent.metadata.agent_layer, 'execution');
+    assert.equal(camelCaseConfirmed.body.agent.metadata.agent_layer, 'action');
 
     const catalog = await request('/api/agents');
     assert.equal(catalog.status, 200);
@@ -278,14 +313,15 @@ async function main() {
     const manifestPublic = catalog.body.agents.find((agent) => agent.id === manifestConfirmed.body.agent.id);
     const urlPublic = catalog.body.agents.find((agent) => agent.id === urlConfirmed.body.agent.id);
     assert.equal(manualPublic.links.layer, 'research');
-    assert.equal(manifestPublic.links.layer, 'execution');
+    assert.equal(manifestPublic.links.layer, 'action');
     assert.ok(manifestPublic.links.upstream.task_types.includes('writing'));
-    assert.equal(urlPublic.links.layer, 'content_generation');
+    assert.equal(urlPublic.links.layer, 'preparation');
 
     console.log('agent registration routing e2e qa passed');
   } finally {
     await stopChild(child);
     await closeServer(manifestServer);
+    await closeServer(providerServer);
   }
 }
 

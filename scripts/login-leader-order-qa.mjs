@@ -1,15 +1,13 @@
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
 import worker from '../worker.js';
 import {
   chatEngineBuildIntakeCombinedPrompt,
   chatEngineBuildJobPayload,
   chatEngineBuildOrderDraft
 } from '../public/chat-engine.js';
-import { deliveryQualityScoreForJob } from '../lib/shared.js';
+import { deliveryCompletionEvidenceScoreForJob } from '../lib/delivery-completion-gate.js';
 
 const EMAIL_AUTH_SECRET = 'qa-login-leader-email-secret';
-const STRIPE_WEBHOOK_SECRET = 'whsec_login_leader_qa';
 const BASE = 'https://example.test';
 
 const env = {
@@ -17,11 +15,11 @@ const env = {
   ALLOW_IN_MEMORY_STORAGE: '1',
   SESSION_SECRET: 'login-leader-order-qa-session',
   EMAIL_AUTH_SECRET,
-  STRIPE_SECRET_KEY: 'sk_test_login_leader_qa',
-  STRIPE_WEBHOOK_SECRET,
-  STRIPE_DEFAULT_CURRENCY: 'USD',
+  BUILTIN_OPENAI_API_KEY: 'sk_test_builtin_openai_login_leader',
   BASE_URL: BASE,
+  SAMPLE_AGENT_ENDPOINT_BASE_URL: `${BASE}/sample-agents`,
   BRAVE_SEARCH_API_KEY: 'brave-login-leader-qa',
+  BUILTIN_AGENT_SAMPLE_FALLBACK: '1',
   MY_BINDING: null,
   ASSETS: {
     async fetch(request) {
@@ -80,14 +78,14 @@ async function emailAuthToken({
   return sealPayload(payload);
 }
 
-function cookieHeaderFromSetCookie(value = '') {
-  return String(value || '').split(';')[0].trim();
-}
-
-function stripeSignatureForPayload(payload) {
-  const timestamp = Math.floor(Date.now() / 1000);
-  const signature = createHmac('sha256', STRIPE_WEBHOOK_SECRET).update(`${timestamp}.${payload}`).digest('hex');
-  return `t=${timestamp},v1=${signature}`;
+function cookieHeaderFromSetCookie(value = '', name = 'aiagent2_session') {
+  const raw = Array.isArray(value) ? value.join('\n') : String(value || '');
+  const marker = `${name}=`;
+  const start = raw.indexOf(marker);
+  if (start === -1) return '';
+  const tail = raw.slice(start);
+  const end = tail.indexOf(';');
+  return end === -1 ? tail.trim() : tail.slice(0, end).trim();
 }
 
 async function request(path, init = {}, options = {}) {
@@ -110,9 +108,14 @@ async function request(path, init = {}, options = {}) {
     body = text ? JSON.parse(text) : null;
   } catch {}
   await Promise.allSettled(waitUntilPromises);
+  const responseHeaders = Object.fromEntries(response.headers.entries());
+  if (typeof response.headers.getSetCookie === 'function') {
+    const setCookies = response.headers.getSetCookie();
+    if (setCookies.length) responseHeaders['set-cookie'] = setCookies.join('\n');
+  }
   return {
     status: response.status,
-    headers: Object.fromEntries(response.headers.entries()),
+    headers: responseHeaders,
     body,
     text
   };
@@ -145,38 +148,10 @@ async function loginWithEmail() {
   return sessionCookie;
 }
 
-async function registerCardForLoggedInAccount(sessionCookie) {
-  const setupPayload = JSON.stringify({
-    id: 'evt_login_leader_setup_1',
-    type: 'checkout.session.completed',
-    data: {
-      object: {
-        id: 'cs_login_leader_setup_1',
-        customer: 'cus_login_leader',
-        setup_intent: 'seti_login_leader_card',
-        metadata: {
-          aiagent2_kind: 'payment_method_setup',
-          aiagent2_account_login: 'leader@example.com'
-        }
-      }
-    }
-  });
-  const setupWebhook = await request('/api/stripe/webhook', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'stripe-signature': stripeSignatureForPayload(setupPayload)
-    },
-    body: setupPayload
-  }, { skipCsrf: true });
-  assert.equal(setupWebhook.status, 200, 'Stripe setup webhook should be accepted');
-  assert.equal(setupWebhook.body.ok, true);
-
+async function assertPaymentProcessingRemovedForLoggedInAccount(sessionCookie) {
   const settings = await request('/api/settings', {}, { sessionCookie });
   assert.equal(settings.status, 200);
-  assert.equal(settings.body.account.billing.mode, 'monthly_invoice');
-  assert.equal(settings.body.account.billing.invoiceApproved, true);
-  assert.equal(settings.body.account.stripe.defaultPaymentMethodId, 'pm_login_leader');
+  assert.equal(settings.body.account.stripe.defaultPaymentMethodId || '', '');
 }
 
 async function waitForWorkflowCompletion(workflowJobId, sessionCookie) {
@@ -204,18 +179,60 @@ async function waitForWorkflowCompletion(workflowJobId, sessionCookie) {
 async function main() {
   globalThis.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input.url;
-    if (url === 'https://api.stripe.com/v1/setup_intents/seti_login_leader_card') {
-      return new Response(JSON.stringify({
-        id: 'seti_login_leader_card',
-        object: 'setup_intent',
-        payment_method: 'pm_login_leader'
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    if (String(url || '').startsWith(`${BASE}/sample-agents/`)) {
+      return worker.fetch(new Request(url, init), env, {
+        waitUntil(promise) {
+          void Promise.resolve(promise);
+        }
+      });
     }
-    if (url === 'https://api.stripe.com/v1/customers/cus_login_leader') {
+    if (url === 'https://api.openai.com/v1/responses') {
       return new Response(JSON.stringify({
-        id: 'cus_login_leader',
-        object: 'customer',
-        invoice_settings: { default_payment_method: 'pm_login_leader' }
+        output_text: JSON.stringify({
+          summary: 'autowifi-travel.com should focus Japan traveler eSIM purchase conversion before adding broad registration work.',
+          report_summary: 'Source-backed acquisition plan for autowifi-travel.com eSIM purchases, with assumptions, risks, recommendations, and next actions.',
+          next_action: 'Ship the purchase-focused landing and SEO actions first, then review Search Console and purchase events after seven days.',
+          bullets: [
+            'Preserve autowifi-travel.com and Japan travel eSIM purchase as the conversion goal.',
+            'Use search-backed source evidence before channel expansion.',
+            'Do not claim posts, submissions, sends, or account execution without connector proof.'
+          ],
+          file_markdown: [
+            '# autowifi-travel.com eSIM acquisition plan',
+            '',
+            '## Executive summary',
+            'autowifi-travel.com should prioritize Japan traveler eSIM purchase conversion, not generic registration goals. The strongest near-term path is a purchase-focused landing page, search-intent SEO pages, and measurable owned-channel copy.',
+            '',
+            '## Confirmed facts',
+            '- Product URL/source: https://autowifi-travel.com/',
+            '- Product category: Japan travel eSIM connectivity.',
+            '- Conversion goal: purchase / paid conversion for Japan eSIMs.',
+            '- Source status: QA Brave Search evidence included Japan travel eSIM buying guide and connectivity tips.',
+            '',
+            '## Open questions',
+            '- Analytics and Search Console access are not confirmed.',
+            '- Current purchase funnel events and abandonment points are assumptions until GA4 evidence is connected.',
+            '',
+            '## Priority diagnosis',
+            'The first risk is conversion-path clarity: travelers must immediately see coverage, activation timing, device compatibility, refund limits, and checkout trust before paid conversion. The second risk is thin SEO capture for Japan eSIM buying intent.',
+            '',
+            '## Recommended actions',
+            '- Update hero, plan comparison, FAQ, and checkout CTA around purchase readiness.',
+            '- Publish two source-backed SEO pages: Japan eSIM buying guide and Japan connectivity tips.',
+            '- Add purchase event checks for view_item, begin_checkout, and purchase.',
+            '- Prepare community and directory drafts, but label them not posted until approval and connector evidence exist.',
+            '',
+            '## 2-week execution plan',
+            'Week 1: landing rewrite, SEO page brief, measurement QA, and purchase CTA test. Week 2: publish approved SEO pages, submit only approved directory/community drafts, and review paid conversion signal quality.',
+            '',
+            '## Inputs needed next',
+            'Connect GA4/Search Console, confirm eSIM regions and pricing, and provide checkout screenshots or funnel metrics. Assumption risk remains medium until those sources are available.',
+            ''
+          ].join('\n'),
+          content_type: 'cmo_leader_delivery',
+          artifacts: [],
+          approval_requests: []
+        })
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     if (String(url || '').startsWith('https://api.search.brave.com/')) {
@@ -254,7 +271,7 @@ async function main() {
 
     const sessionCookie = await loginWithEmail();
 
-    const paymentBlocked = await request('/api/jobs', {
+    const welcomeFunded = await request('/api/jobs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -266,10 +283,15 @@ async function main() {
         budget_cap: 500
       })
     }, { sessionCookie });
-    assert.equal(paymentBlocked.status, 402, 'logged-in paid leader order should require a registered card first');
-    assert.equal(paymentBlocked.body.code, 'payment_method_missing');
+    assert.equal(welcomeFunded.status, 201, 'first logged-in leader order should be accepted without card registration');
+    assert.equal(welcomeFunded.body.mode, 'workflow');
+    assert.ok((welcomeFunded.body.planned_task_types || []).includes('cmo_leader'), 'welcome-funded leader order should preserve the requested leader task');
 
-    await registerCardForLoggedInAccount(sessionCookie);
+    const settingsBeforePayment = await request('/api/settings', {}, { sessionCookie });
+    assert.equal(settingsBeforePayment.status, 200);
+    assert.equal(settingsBeforePayment.body.account.stripe.defaultPaymentMethodId || '', '', 'card registration should remain absent after the first order');
+
+    await assertPaymentProcessingRemovedForLoggedInAccount(sessionCookie);
 
     const initialPrepare = await request('/api/work/prepare-order', {
       method: 'POST',
@@ -364,9 +386,9 @@ async function main() {
     })}`);
     assert.ok(childRuns.length >= 5, 'CMO leader orchestration should include enough specialist runs');
     assert.ok(childRuns.some((run) => run.taskType === 'research'), 'CMO workflow should include research');
-    assert.ok(childRuns.some((run) => run.taskType === 'teardown'), 'CMO workflow should include competitor teardown');
-    assert.ok(childRuns.some((run) => run.taskType === 'media_planner'), 'CMO workflow should include media planning');
-    assert.ok(childRuns.some((run) => run.taskType === 'growth'), 'CMO workflow should include growth execution planning');
+    assert.equal(childRuns.some((run) => run.taskType === 'teardown'), false, 'CMO workflow should not include competitor teardown unless competitor analysis is requested');
+    assert.ok(childRuns.some((run) => ['media_planner', 'growth'].includes(run.taskType)), 'CMO workflow should include one planning specialist');
+    assert.ok(childRuns.filter((run) => ['media_planner', 'growth'].includes(run.taskType)).length <= 1, 'CMO workflow should not duplicate the planning layer');
     assert.equal(Number(statusCounts.failed || 0), 0, 'no child run should fail');
     assert.equal(Number(statusCounts.queued || 0), 0, 'no child run should remain queued');
     assert.equal(Number(statusCounts.running || 0), 0, 'no child run should remain running');
@@ -394,7 +416,7 @@ async function main() {
       completed.output?.report?.nextAction,
       ...completed.output.files.map((file) => `${file?.name || ''}\n${file?.content || ''}`)
     ].map((value) => typeof value === 'string' ? value : JSON.stringify(value || '')).join('\n');
-    assert.ok(deliveryQualityScoreForJob(completed) >= 75, 'final delivery should pass the delivery quality score gate');
+    assert.ok(deliveryCompletionEvidenceScoreForJob(completed) >= 75, 'final delivery should pass the delivery completion gate score gate');
     assert.match(deliveryText, /autowifi-travel\.com/i, 'delivery should preserve the product URL/domain');
     assert.match(deliveryText, /eSIM|esim/i, 'delivery should preserve the product category');
     assert.match(deliveryText, /purchase|paid conversion|購入|有料化/i, 'delivery should preserve the purchase conversion goal');

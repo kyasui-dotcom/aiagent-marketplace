@@ -17,6 +17,12 @@ function assertBefore(sequence, left, right, message) {
   assert.ok(indexOf(sequence, left) < indexOf(sequence, right), message);
 }
 
+function normalizeContractItems(items = []) {
+  return items
+    .map((item) => String(item || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''))
+    .filter(Boolean);
+}
+
 for (const agent of DEFAULT_AGENT_SEEDS) {
   const links = agentLinksFromRecord(agent, { catalog: DEFAULT_AGENT_SEEDS });
   assert.ok(links.layer, `${agent.id} should infer a routing layer`);
@@ -38,14 +44,61 @@ for (const agent of DEFAULT_AGENT_SEEDS) {
   }
 }
 
+const expectedOutputContracts = new Map([
+  ['agent_ads_planner_01', ['objective', 'pre_launch_measurement_blocker', 'audience', 'provider', 'campaign_structure', 'budget_cap_and_cpa_assumption', 'stop_rules', 'creative_asset_packet', 'ads_saas_handoff', 'approval_and_launch_boundary', 'execution_status_labels', 'measurement_plan']],
+  ['agent_campaign_operations_01', ['campaign_state', 'publisher_queue', 'asset_status_queue', 'approval_backlog', 'connector_readiness', 'planned_action_queue', 'now_week_0_1', 'next_week_1_3', 'waiting_conditions', 'measurement_loop', 'next_action_owner']],
+  ['agent_cfo_leader_01', ['decision_question', 'assumption_table', 'competitive_benchmark_ledger', 'source_to_model_ledger', 'winning_economics', 'formula_model', 'scenarios', 'sensitivity', 'specialist_handoff_plan', 'decision_trigger', 'approval_owner', 'execution_proof_tracker', 'confidence_labels', 'risk_notes']],
+  ['agent_list_creator_01', ['lead_rows', 'evidence_urls', 'next_actions', 'lead_ops_packet', 'target_segment', 'source_policy', 'qualification_rules', 'field_schema', 'row_level_source_ledger', 'exclusion_and_duplicate_review', 'review_status', 'approval_owner', 'import_outreach_boundary', 'downstream_handoff_packet', 'execution_proof_tracker', 'next_owner']],
+  ['agent_research_01', ['answer_first', 'source_status', 'source_ledger', 'current_vs_inferred_facts', 'options', 'recommendation', 'verification_queue', 'verification_gaps', 'source_access_boundary', 'decision_handoff_packet', 'execution_status_labels']],
+  ['agent_teardown_01', ['source_access_status', 'competitor_classification', 'observed_facts', 'observed_unavailable', 'inferences', 'comparison_table', 'wedge', 'first_test', 'verification_queue', 'evidence_gaps']],
+  ['agent_validation_01', ['target_user', 'current_workaround', 'riskiest_assumption', 'test_design', 'test_script_or_asset', 'concrete_smoke_test_asset', 'learning_acceptance_table', 'success_threshold', 'kill_criteria', 'false_positives_to_ignore', 'execution_handoff_packet', 'evidence_return_path', 'execution_status_labels', 'next_decision']],
+  ['agent_pricing_01', ['pricing_question', 'value_metric', 'assumptions', 'source_to_model_ledger', 'formula', 'scenario_table', 'sensitivity_table', 'recommendation', 'approval_owner', 'price_change_handoff', 'execution_proof_tracker', 'execution_status_labels', 'decision_trigger', 'rollback_or_continue_rule']],
+  ['agent_prompt_brushup_01', ['intent_ledger', 'original_prompt', 'rewritten_prompt', 'preserved_constraints', 'source/context_ledger', 'change_rationale', 'test_cases', 'failure_modes', 'dispatch_recommendation', 'dispatch_handoff_packet', 'execution_status_labels']],
+  ['agent_hiring_01', ['role_context/source_status', 'role_outcomes', 'scorecard', 'job_description', 'must_have_and_nice_to_have', 'screening_questions', 'evaluation_rubric', 'interview_loop_and_decision_thresholds', 'protected_class/legal_risk_gate', 'candidate_evidence_boundary', 'exclusion_risks', 'exclusion/legal_risks', 'hiring_owner_handoff_and_next_step']],
+  ['agent_data_analysis_01', ['question', 'dataset_status', 'conversion_instrumentation_verification', 'row_level_sample_audit', 'metric_definitions', 'derived_metric_calculation_table', 'findings', 'caveats', 'analysis_notes', 'next_decision']],
+  ['agent_diligence_01', ['decision_context', 'evidence_map', 'red_flag_matrix', 'fact_vs_inference', 'verification_queue', 'blocker_severity', 'go/no_go_impact', 'next_verification_per_red_flag', 'decision_owner_handoff', 'verification_proof_tracker', 'approval/execution_status_labels', 'conditional_recommendation']],
+  ['agent_follow_up_01', ['open_loop_id', 'waiting_on_party', 'owner', 'deadline_or_timing_status', 'deadline_gap_handling', 'priority_rank_and_reason', 'relationship_context', 'business_impact', 'follow_up_copy', 'approval_condition', 'send_or_reminder_handoff', 'execution_status_labels', 'next_check_trigger']],
+  ['agent_meeting_prep_01', ['agenda', 'briefing_notes', 'questions', 'decision_points', 'participant_visible_context_scope', 'calendar_send_boundary', 'execution_status_labels']],
+  ['agent_inbox_triage_01', ['inbox_scope', 'message_or_thread_source', 'source_freshness_status', 'priority', 'priority_reason', 'reply_needed_status', 'owner', 'deadline_or_timing_status', 'risk_flag', 'recommended_next_action', 'specialist_handoff', 'connector_state', 'snapshot_freshness', 'privacy_scope', 'approval_packet']],
+  ['agent_reply_draft_01', ['message_or_thread_source', 'sender', 'recipient', 'relationship_context', 'desired_outcome', 'source_freshness', 'unresolved_facts', 'fact_commitment_ledger', 'recipient_visible_context_scope', 'reply_draft', 'placeholder_map', 'tone_rationale', 'approval_condition', 'send_handoff', 'execution_status_labels', 'follow_up_timing']],
+  ['agent_schedule_coordination_01', ['schedule_request_source', 'participants', 'timezone', 'duration', 'meeting_purpose', 'availability_source', 'candidate_times', 'conflicts_or_constraints', 'invite_draft', 'participant_response_handoff', 'time_option_expiry', 'confirmation_owner', 'calendar_event_handoff', 'meeting_link_handoff', 'execution_status_labels', 'connector_state', 'next_check', 'draft_then_schedule']]
+]);
+
+for (const [agentId, expected] of expectedOutputContracts) {
+  const agent = DEFAULT_AGENT_SEEDS.find((item) => item.id === agentId);
+  assert.ok(agent, `${agentId} should exist in default seeds`);
+  const links = agentLinksFromRecord(agent, { catalog: DEFAULT_AGENT_SEEDS });
+  assert.deepEqual(links.output_contract, expected, `${agentId} should expose its current delivery contract via routing metadata`);
+  if (Array.isArray(agent.metadata?.output_contract)) {
+    assert.deepEqual(
+      normalizeContractItems(agent.metadata.output_contract),
+      expected,
+      `${agentId} seed metadata output contract should match routing metadata`
+    );
+  }
+}
+
 const xPostSequence = inferTaskSequence('x_post', 'X postまで作って承認後に投稿準備したい', { maxTasks: 5 });
 assertBefore(xPostSequence, 'research', 'writing', 'x_post should research before writing');
 assertBefore(xPostSequence, 'writing', 'x_post', 'x_post should draft before execution');
 
 const multiChannelSequence = inferTaskSequence('cmo_leader', '1告知でX Reddit Indie Hackers Instagramまでまとめて作って投稿準備したい', { maxTasks: 14 });
-assertBefore(multiChannelSequence, 'writing', 'x_post', 'multi-channel launch should draft before X execution');
-assertBefore(multiChannelSequence, 'writing', 'instagram', 'multi-channel launch should draft before Instagram execution');
-assertBefore(multiChannelSequence, 'writing', 'reddit', 'multi-channel launch should draft before Reddit execution');
+assertBefore(multiChannelSequence, 'writing', 'reddit', 'multi-channel launch should draft before Reddit handoff copy');
+assertBefore(multiChannelSequence, 'writing', 'indie_hackers', 'multi-channel launch should draft before Indie Hackers handoff copy');
+assert.equal(multiChannelSequence.includes('x_post'), false, 'multi-channel leader route should not require an X connector execution agent');
+assert.equal(multiChannelSequence.includes('instagram'), false, 'multi-channel leader route should not require an Instagram connector execution agent');
+
+const cfoCompetitiveSequence = inferTaskSequence(
+  'cfo_leader',
+  'MASAMUNEのようなマーケティング自動化サービスを作る。アイドマホールディングスのIR資料を参考に、どう勝てるかを財務・競争優位・ユニットエコノミクスで分析したい。',
+  { maxTasks: 8 }
+);
+assertBefore(cfoCompetitiveSequence, 'research', 'pricing', 'CFO competitive finance should collect source research before pricing');
+assertBefore(cfoCompetitiveSequence, 'teardown', 'pricing', 'CFO competitive finance should run competitor teardown before pricing');
+assert.ok(cfoCompetitiveSequence.includes('data_analysis'), 'CFO competitive finance should include data analysis');
+assert.ok(cfoCompetitiveSequence.includes('diligence'), 'CFO competitive finance should include diligence');
+assert.equal(cfoCompetitiveSequence.includes('growth'), false, 'CFO competitive finance should not pull in CMO growth work');
+assert.equal(cfoCompetitiveSequence.includes('automation'), false, 'CFO competitive finance should not invent an unsupported automation task');
 
 const userTwitterAgent = {
   id: 'agent_user_twitter_adapter_qa',

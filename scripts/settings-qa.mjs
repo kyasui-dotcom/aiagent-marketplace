@@ -1,7 +1,38 @@
 import assert from 'node:assert/strict';
-import { accountIdForLogin, buildAdminDashboard, buildConversionAnalytics, buildMonthlyAccountSummary, chatTrainingExamplesForClient, chatTranscriptsForClient, createChatTranscript, createConversionEventPayload, hideChatMemoryTranscriptForLoginInState, ownChatMemoryForClient, promptInjectionGuardForPrompt, requesterContextFromUser, updateChatTranscriptReviewInState, upsertAccountSettingsInState } from '../lib/shared.js';
+import { buildAdminDashboard } from '../lib/admin-dashboard-model.js';
+import { accountIdForLogin, buildConversionAnalytics, buildMonthlyAccountSummary, chatTrainingExamplesForClient, chatTranscriptsForClient, createChatTranscript, createConversionEventPayload, hideChatMemoryTranscriptForLoginInState, orderPreflightForAgent, ownChatMemoryForClient, promptInjectionGuardForPrompt, requesterContextFromUser, updateChatTranscriptReviewInState, upsertAccountSettingsInState } from '../lib/shared.js';
 
 const requester = requesterContextFromUser({ login: 'alice', name: 'Alice Example' }, 'github-app');
+const analyticsContext = {
+  source_app: 'analytics_console',
+  title: 'Acquisition analytics summary',
+  artifacts: [
+    { type: 'google_sources', rows: [{ source: 'ga4', value: 'properties/123' }] },
+    { type: 'google_report_status', rows: [{ loaded: true, range: '2026-04-09 to 2026-05-06' }] }
+  ],
+  raw_context: {
+    connector_provider: 'google',
+    googleGa4Property: 'properties/123',
+    googleReportLoaded: true,
+    googleReportSources: { ga4: true, gsc: false }
+  }
+};
+const analyticsPreflight = orderPreflightForAgent(
+  { id: 'ga4-reader', name: 'GA4 Reader', kind: 'data_analysis', metadata: { requiredConnectorCapabilities: ['google.read_ga4'] } },
+  {},
+  null,
+  { input: { _broker: { appContexts: [analyticsContext], connectorContexts: [analyticsContext] } } }
+);
+assert.equal(analyticsPreflight.ok, true, 'loaded Analytics Console context should satisfy downstream GA4 read requirements for the same order.');
+assert.deepEqual(analyticsPreflight.context_granted_connector_capabilities, ['google.read_ga4']);
+const searchConsolePreflight = orderPreflightForAgent(
+  { id: 'gsc-reader', name: 'GSC Reader', kind: 'data_analysis', metadata: { requiredConnectorCapabilities: ['google.read_gsc'] } },
+  {},
+  null,
+  { input: { _broker: { appContexts: [analyticsContext] } } }
+);
+assert.equal(searchConsolePreflight.ok, false, 'GA4-only attached context should not satisfy Search Console read requirements.');
+assert.deepEqual(searchConsolePreflight.missing_connector_capabilities, ['google.read_gsc']);
 const state = {
   agents: [
     { id: 'agent_alice_01', name: 'ALICE_AGENT', owner: 'alice' },
@@ -121,6 +152,12 @@ const account = upsertAccountSettingsInState(
       mode: 'deposit',
       legalName: 'Alice Example LLC',
       billingEmail: 'billing@example.com',
+      billingPhone: '+81-3-1234-5678',
+      billingPostalCode: '100-0001',
+      billingRegion: 'Tokyo',
+      billingCity: 'Chiyoda',
+      billingAddressLine1: '1-1 Chiyoda',
+      billingAddressLine2: 'Billing Desk',
       country: 'jp',
       currency: 'usd',
       dueDays: 21,
@@ -136,7 +173,16 @@ const account = upsertAccountSettingsInState(
       displayName: 'Alice Marketplace',
       payoutEmail: 'payout@example.com',
       country: 'jp',
-      currency: 'usd'
+      currency: 'usd',
+      identityVerification: {
+        status: 'approved',
+        submittedAt: '2026-04-01T00:00:00.000Z',
+        reviewedAt: '2026-04-01T01:00:00.000Z',
+        reviewedBy: 'admin',
+        rejectionReason: '',
+        fields: {},
+        photo: { submitted: true }
+      }
     }
   }
 );
@@ -145,6 +191,12 @@ assert.equal(account.id, accountIdForLogin('alice'));
 assert.equal(account.billing.currency, 'USD');
 assert.equal(account.billing.country, 'JP');
 assert.equal(account.billing.mode, 'monthly_invoice');
+assert.equal(account.billing.billingPhone, '+81-3-1234-5678');
+assert.equal(account.billing.billingPostalCode, '100-0001');
+assert.equal(account.billing.billingRegion, 'Tokyo');
+assert.equal(account.billing.billingCity, 'Chiyoda');
+assert.equal(account.billing.billingAddressLine1, '1-1 Chiyoda');
+assert.equal(account.billing.billingAddressLine2, 'Billing Desk');
 assert.equal(account.billing.depositBalance, 1200);
 assert.equal(account.billing.autoTopupEnabled, false);
 assert.equal(account.billing.autoTopupThreshold, 0);

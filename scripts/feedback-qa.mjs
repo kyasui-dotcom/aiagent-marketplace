@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { buildAdminDashboard, chatTrainingExamplesForClient, createChatTranscript, createFeedbackReport, feedbackReportsForClient, formatFeedbackReportEmail, updateChatTranscriptReviewInState, updateFeedbackReportInState } from '../lib/shared.js';
+import { buildAdminDashboard } from '../lib/admin-dashboard-model.js';
+import { chatTrainingExamplesForClient, createChatTranscript, createFeedbackReport, feedbackReportsForClient, formatFeedbackReportEmail, updateChatTranscriptReviewInState, updateFeedbackReportInState } from '../lib/shared.js';
 import { createD1LikeStorage } from '../lib/storage.js';
 
 try {

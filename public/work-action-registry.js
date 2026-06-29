@@ -81,9 +81,7 @@ export const WORK_UI_ACTION_DEFINITIONS = Object.freeze({
   connect_github: { kind: 'connector' },
   connect_google: { kind: 'connector' },
   connect_x: { kind: 'connector' },
-  post_current_to_x: { kind: 'executor' },
   download_delivery_zip: { kind: 'download' },
-  register_card: { kind: 'payment' },
   open_payments: { kind: 'navigation' },
   open_provider: { kind: 'navigation' },
   open_api_keys: { kind: 'navigation' },
@@ -113,9 +111,9 @@ export const WORK_COMMAND_COPY = Object.freeze({
     status: 'Logging out.\n\nNo order was created and no billing occurred.'
   },
   open_payments: {
-    ja: '支払いまわりは SETTINGS の PAYMENTS で確認してください。カード登録、プラン、支払い履歴はそこで管理します。',
-    en: 'For billing, go to SETTINGS > PAYMENTS. Manage card registration, plan, and payment history there.',
-    status: 'Go to SETTINGS > PAYMENTS.\n\nNo order was created and no billing occurred.'
+    ja: '寄付・サポート方針は SETTINGS の PAYMENTS で確認してください。CAIt内ではカード登録、Checkout、請求、出金を扱いません。',
+    en: 'For support/donation policy, go to SETTINGS > PAYMENTS. CAIt does not handle card setup, checkout, billing, or payouts in-app.',
+    status: 'Go to SETTINGS > PAYMENTS.\n\nNo order was created and no payment occurred.'
   },
   open_provider: {
     ja: '提供者まわりは SETTINGS の PROVIDER で確認してください。プロフィールと収益受け取りの準備状況はそこで管理します。',
@@ -133,18 +131,18 @@ export const WORK_COMMAND_COPY = Object.freeze({
     status: 'Go to the AGENTS tab for listing.\n\nNo order was created and no billing occurred.'
   },
   open_api_keys: {
-    ja: 'API key は SETTINGS の KEYS で発行・管理してください。注文、エージェント登録、CLI/API で使います。',
-    en: 'For API keys, go to SETTINGS > KEYS. Issue and manage the CAIt API key there.',
-    status: 'Go to SETTINGS > KEYS.\n\nNo order was created and no billing occurred.'
+    ja: 'API key は API / CLI / MCP 画面で作成・管理できます。有効化はデプロイのruntime policyに従います。',
+    en: 'API keys can be created and managed on the API / CLI / MCP screen when the deployed runtime policy enables them.',
+    status: 'Open API / CLI / MCP.\n\nNo order was created and no billing occurred.'
   },
   open_cli: {
-    ja: 'CLI / API 情報は CONNECT タブで見てください。CAIt API key と /api/jobs の使い方を確認できます。',
-    en: 'For CLI / API docs, go to the CONNECT tab. You can inspect CAIt API key usage and /api/jobs examples there.',
+    ja: 'CLI / API / MCP は CONNECT タブで確認できます。有効化はデプロイのruntime policyに従います。',
+    en: 'CLI / API / MCP status and examples are available in CONNECT and follow the deployed runtime policy.',
     status: 'Go to the CONNECT tab.\n\nNo order was created and no billing occurred.'
   },
   open_account_settings: {
-    ja: 'アカウント設定は SETTINGS タブで管理してください。支払い、提供者設定、APIキー、レポートがあります。',
-    en: 'Go to the SETTINGS tab for account settings. Manage billing, provider setup, API keys, and reports there.',
+    ja: 'アカウント設定は SETTINGS タブで管理してください。支払い、提供者設定、Coming soonのAPIキー状態、レポートがあります。',
+    en: 'Go to the SETTINGS tab for account settings. Manage billing, provider setup, coming-soon API key status, and reports there.',
     status: 'Go to the SETTINGS tab.\n\nNo order was created and no billing occurred.'
   },
   open_feedback: {
@@ -153,14 +151,14 @@ export const WORK_COMMAND_COPY = Object.freeze({
     status: 'Go to SETTINGS > REPORTS.\n\nNo order was created and no billing occurred.'
   },
   open_delivery_history: {
-    ja: '注文履歴と納品は WORK タブで確認してください。完了した注文、納品、フォローアップをそこで見られます。',
-    en: 'Go to the WORK tab for order history and delivery. Review completed orders, deliveries, and follow-up actions there.',
-    status: 'Go to the WORK tab.\n\nNo order was created and no billing occurred.'
+    ja: '注文履歴と納品は Chat の履歴と Deliveries で確認してください。完了した注文、納品、フォローアップをそこから続けられます。',
+    en: 'Use Chat history and Deliveries for order history and delivery review. Continue completed orders, deliveries, and follow-up actions there.',
+    status: 'Open Chat history or Deliveries.\n\nNo order was created and no billing occurred.'
   },
   open_marketing_timeline: {
-    ja: '保存済みの Work timeline を開きます。完了済み run、今後の scheduled action、再実行候補をここで確認できます。',
-    en: 'Opening the stored Work timeline. You can inspect completed runs, upcoming scheduled actions, and restart candidates there.',
-    status: 'Opening Work timeline.\n\nNo order was created and no billing occurred.'
+    ja: '保存済みのスケジュールとキャンペーン運用状況を開きます。完了済み run、今後の scheduled action、再実行候補をここで確認できます。',
+    en: 'Opening saved schedules and campaign operations context. You can inspect completed runs, upcoming scheduled actions, and restart candidates there.',
+    status: 'Opening schedules and campaign operations.\n\nNo order was created and no billing occurred.'
   },
   open_order_settings: {
     ja: 'URL、ファイル、エージェント指定、並列注文は ORDER SETTINGS で設定してください。',
@@ -200,11 +198,11 @@ export const WORK_COMMAND_COPY = Object.freeze({
 });
 
 export const WORK_COMMAND_BUTTON_ACTIONS = Object.freeze({
-  open_payments: [{ action: 'open_payments', labelJa: 'PAYMENTS を開く', labelEn: 'OPEN PAYMENTS' }],
+  open_payments: [{ action: 'open_payments', labelJa: '寄付方針を見る', labelEn: 'DONATION POLICY' }],
   open_provider: [{ action: 'open_provider', labelJa: 'PROVIDER を開く', labelEn: 'OPEN PROVIDER' }],
   open_agent_catalog: [{ action: 'browse_agents', labelJa: 'AGENTS を開く', labelEn: 'OPEN AGENTS' }],
   open_agent_listing: [{ action: 'list_agent', labelJa: 'AGENTS で登録する', labelEn: 'GO TO AGENTS' }],
-  open_api_keys: [{ action: 'open_api_keys', labelJa: 'KEYS を開く', labelEn: 'OPEN KEYS' }],
+  open_api_keys: [{ action: 'open_api_keys', labelJa: 'API / CLI / MCP を開く', labelEn: 'OPEN API / CLI / MCP' }],
   open_cli: [{ action: 'open_cli_tab', labelJa: 'CONNECT を開く', labelEn: 'OPEN CONNECT' }],
   open_account_settings: [{ action: 'open_settings', labelJa: 'SETTINGS を開く', labelEn: 'OPEN SETTINGS' }],
   open_feedback: [{ action: 'open_feedback_tab', labelJa: 'REPORTS を開く', labelEn: 'OPEN REPORTS' }],
@@ -259,7 +257,11 @@ const WORK_COMMAND_PATTERNS = Object.freeze([
   { action: 'set_clarify_mode', patterns: [/^(clarify mode|clarification mode|ask first mode|question mode|確認モード|質問モード|整理モード|クラリファイモード)$/i, /(?:clarify|clarification|ask first|question|確認|質問|整理|ヒアリング).*(?:mode|モード).*(?:on|切替|変更|して|にして)?/i] },
   { action: 'set_order_mode', patterns: [/^(order mode|dispatch mode|send order mode|注文モード|発注モード|実行モード|オーダーモード)$/i, /(?:order|dispatch|send order|注文|発注|実行|オーダー).*(?:mode|モード).*(?:on|切替|変更|して|にして)?/i] },
   { action: 'restore_brief', patterns: [/^(copy brief|copy order|restore brief|restore order|発注文をコピー|発注文コピー|ブリーフコピー|発注文を戻して|ブリーフを戻して|コピー)$/i, /(?:発注文|ブリーフ|brief|order).*(?:コピー|copy|戻|restore|入力欄)/i] },
-  { action: 'open_delivery_history', patterns: [/^(orders|order history|delivery|deliveries|注文履歴|納品|納品確認|履歴)$/i, /(?:order|orders|delivery|deliveries|注文|納品|履歴|結果).*(?:見る|見たい|確認|開|open|探|inspect)/i] },
+  { action: 'open_delivery_history', patterns: [
+    /^(orders|order history|delivery|deliveries|deliverables|results|completed delivery|completed deliveries|注文履歴|納品|納品物|納品確認|履歴|完了済み納品|完了済み納品物)$/i,
+    /(?:order|orders|delivery|deliveries|deliverables|result|results|completed|complete|done|finished|注文|納品|納品物|成果物|履歴|結果|完了|完了済).*(?:見る|見たい|見せ|表示|確認|開|一覧|リスト|open|show|view|list|display|探|inspect|review)/i,
+    /(?:見る|見たい|見せ|表示|確認|開|一覧|リスト|open|show|view|list|display|探|inspect|review).*(?:order|orders|delivery|deliveries|deliverables|result|results|completed|complete|done|finished|注文|納品|納品物|成果物|履歴|結果|完了|完了済)/i
+  ] },
   { action: 'open_marketing_timeline', patterns: [/^(work timeline|run history|agent work history|stored timeline|実行履歴|workタイムライン|タイムライン履歴)$/i] },
   { action: 'open_order_settings', patterns: [/^(open order settings|order settings|source settings|詳細設定|歯車|ソースを追加|urlを追加|ファイルを追加)$/i, /(?:url|file|ファイル|source|ソース|添付|歯車).*(?:追加|入れ|開|open|移動|ジャンプ)/i] },
   { action: 'queue_parallel_plan', patterns: [/^(queue parallel|add parallel|add to parallel queue|queue these|並列キューに追加|キューに追加|並列に追加|これを並列に追加)$/i, /(?:parallel|並列).*(?:queue|キュー|追加|add)/i] },
@@ -297,7 +299,7 @@ export function exactWorkActionRuleForPrompt(prompt = '', exactActions = []) {
 
 export function isDeveloperExecutionIntentText(prompt = '') {
   const compact = String(prompt || '').replace(/\s+/g, ' ').trim();
-  return /(github|git hub|repo|repository|pull request|\bpr\b|branch|commit|diff|sandbox|code|coding|debug|fix|bug|修正|直して|実装|デバッグ|コード|プルリク|リポジトリ|ブランチ|コミット|差分|サンドボックス)/i.test(compact)
+  return /(\b(?:github|git hub|repo|repository|pull request|pr|branch|commit|diff|sandbox|code|coding|debug|fix|bug)\b|修正|直して|実装|デバッグ|コード|プルリク|リポジトリ|ブランチ|コミット|差分|サンドボックス)/i.test(compact)
     && !/^(feedback|report issue|bug report|contact|問い合わせ|バグ報告|不具合報告|要望|問い合わせフォーム)$/i.test(compact)
     && !/(?:feedback|report issue|bug report|問い合わせ|バグ報告|不具合報告|要望|問い合わせフォーム).*(?:送|出|報告|開|open|書きたい|したい)/i.test(compact);
 }

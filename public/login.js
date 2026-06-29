@@ -19,8 +19,13 @@ let runtimeVisitorId = '';
 let authStatusChecked = false;
 let runtimeAuthBaseUrl = '';
 let runtimeUsesExternalAuth = false;
-const AUTH_STATUS_TIMEOUT_MS = 3500;
+const LOGIN_ACTION_WAIT_MS = 60 * 60 * 1000;
+const AUTH_STATUS_SOFT_REVEAL_MS = 1200;
+const AUTH_STATUS_HARD_TIMEOUT_MS = 2500;
+const ANALYTICS_TIMEOUT_MS = 1200;
+const LOGIN_ATTEMPT_STARTED_AT_KEY = 'cait.login.startedAt.v1';
 const CAIT_TRUSTED_AUTH_ORIGIN = 'https://aiagent-marketplace.net';
+const LOGIN_TEST_TRAFFIC_PARAMS = ['e2e', 'smoke', 'playwright', 'test', 'cait_test', 'qa'];
 
 function safeString(value = '', max = 100) {
   return String(value ?? '')
@@ -36,6 +41,30 @@ function visitorId() {
   const hinted = safeString(url.searchParams.get('visitor_id') || '', 80);
   runtimeVisitorId = hinted || window.crypto?.randomUUID?.() || `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
   return runtimeVisitorId;
+}
+
+function loginInternalTestTraffic() {
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    const explicit = String(params.get('traffic_type') || params.get('trafic_type') || '').trim().toLowerCase();
+    if (explicit === 'internal') return true;
+    if (LOGIN_TEST_TRAFFIC_PARAMS.some((key) => params.has(key))) return true;
+    const hints = [
+      params.get('login_source'),
+      params.get('source'),
+      params.get('utm_source'),
+      params.get('next'),
+      params.get('return_to')
+    ].join(' ');
+    if (/\b(?:playwright|e2e|smoke|test|qa)\b/i.test(hints)) return true;
+  } catch {}
+  return Boolean(window.navigator?.webdriver);
+}
+
+function loginInternalTrafficParams() {
+  return loginInternalTestTraffic()
+    ? { traffic_type: 'internal', trafic_type: 'internal' }
+    : {};
 }
 
 function normalizeLocalPath(value = '', fallback = '/') {
@@ -97,7 +126,10 @@ function applyTrustedAuthOrigin(status = {}) {
     const label = runtimeUsesExternalAuth
       ? `Sign-in opens ${runtimeAuthBaseUrl}.`
       : 'You are on the official CAIt sign-in origin.';
-    els.trustNotice.querySelector('span').textContent = `${label} If Google shows an unverified-app warning for analytics access, use email login first and connect Google from the official CAIt domain after the consent screen is verified.`;
+    const noticeText = els.trustNotice.querySelector('span');
+    if (noticeText) {
+      noticeText.textContent = `${label} If Google shows an unverified-app warning for analytics access, use email login first and connect Google from the official CAIt domain after the consent screen is verified.`;
+    }
   }
   return runtimeUsesExternalAuth;
 }
@@ -124,6 +156,20 @@ function flash(message = '', kind = 'info') {
   els.flash.textContent = safe;
 }
 
+function recordLoginAttemptStarted(provider = 'login', route = currentRoute()) {
+  const startedAt = Date.now();
+  try {
+    window.sessionStorage.setItem(LOGIN_ATTEMPT_STARTED_AT_KEY, JSON.stringify({
+      provider: safeString(provider, 40),
+      startedAt,
+      expiresAt: startedAt + LOGIN_ACTION_WAIT_MS,
+      next: postLoginPath(route.next),
+      source: safeString(route.source, 60)
+    }));
+  } catch {}
+  return startedAt;
+}
+
 function showLoginPanel(visible = true) {
   if (els.panel) els.panel.hidden = !visible;
   if (els.checkingPanel) els.checkingPanel.hidden = Boolean(visible);
@@ -133,30 +179,62 @@ function setCheckingStatus(message = '') {
   if (els.checkingStatus) els.checkingStatus.textContent = safeString(message, 240);
 }
 
-async function track(event, meta = {}) {
+function track(event, meta = {}) {
   const eventName = safeString(event, 64).toLowerCase().replace(/[^a-z0-9_:-]+/g, '_').replace(/^_+|_+$/g, '');
   if (!eventName) return;
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timeoutId = controller
+    ? window.setTimeout(() => controller.abort(), ANALYTICS_TIMEOUT_MS)
+    : null;
   try {
-    await fetch('/api/analytics/events', {
+    fetch('/api/analytics/events', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       credentials: 'same-origin',
       keepalive: true,
+      signal: controller?.signal,
       body: JSON.stringify({
         event: eventName,
         visitor_id: visitorId(),
         page_path: window.location.pathname || '/login.html',
         current_tab: '',
         source: 'web',
+        ...loginInternalTrafficParams(),
         meta: {
           source: safeString(meta.source || '', 60),
           status: safeString(meta.status || '', 60),
-          action: safeString(meta.action || '', 60)
+          action: safeString(meta.action || '', 60),
+          ...loginInternalTrafficParams()
         }
       })
-    });
+    })
+      .catch(() => {})
+      .finally(() => {
+        if (timeoutId) window.clearTimeout(timeoutId);
+      });
   } catch {
     // Analytics must never block login.
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
+}
+
+async function fetchAuthStatus() {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timeoutId = controller
+    ? window.setTimeout(() => controller.abort(), AUTH_STATUS_HARD_TIMEOUT_MS)
+    : null;
+  try {
+    const response = await fetch('/auth/status', {
+      credentials: 'same-origin',
+      signal: controller?.signal
+    });
+    if (!response.ok) throw new Error('Auth status check failed');
+    return response.json().catch(() => ({}));
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('Auth status check timed out');
+    throw error;
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
   }
 }
 
@@ -217,17 +295,32 @@ function gatedSourceTabLabel(source = '') {
 async function loadAuthStatus(route = currentRoute()) {
   authStatusChecked = false;
   showLoginPanel(false);
-  setCheckingStatus('Checking your session. This should only take a moment; if it times out, login options will appear.');
+  setCheckingStatus('Checking your session. Login options will remain available if the check takes longer than a few seconds.');
   applyProviderAvailability({});
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), AUTH_STATUS_TIMEOUT_MS);
+  const revealLoginOptionsDuringLongCheck = () => {
+    if (authStatusChecked) return;
+    authStatusChecked = true;
+    applyTrustedAuthOrigin({});
+    showLoginPanel(true);
+    if (els.emailInput) els.emailInput.disabled = false;
+    if (els.emailBtn) {
+      els.emailBtn.hidden = false;
+      els.emailBtn.disabled = false;
+    }
+    if (els.google) {
+      els.google.hidden = false;
+      els.google.disabled = false;
+    }
+    if (els.github) {
+      els.github.hidden = false;
+      els.github.disabled = false;
+    }
+    setCheckingStatus('Still checking your current session. You can also start a sign-in provider below.');
+    if (els.status) els.status.textContent = 'Still checking your session in the background. You can choose a provider now if needed.';
+  };
+  const softReveal = window.setTimeout(revealLoginOptionsDuringLongCheck, AUTH_STATUS_SOFT_REVEAL_MS);
   try {
-    const response = await fetch('/auth/status', {
-      credentials: 'same-origin',
-      signal: controller.signal
-    });
-    if (!response.ok) throw new Error('Auth status check failed');
-    const status = await response.json().catch(() => ({}));
+    const status = await fetchAuthStatus();
     const nextPath = postLoginPath(route.next);
     authStatusChecked = true;
     const usingExternalAuth = applyTrustedAuthOrigin(status);
@@ -249,7 +342,7 @@ async function loadAuthStatus(route = currentRoute()) {
       return;
     }
     showLoginPanel(true);
-    await track('sign_in_required_shown', { source: `login_page:${route.source}`, status: 'visible' });
+    track('sign_in_required_shown', { source: `login_page:${route.source}`, status: 'visible' });
   } catch {
     authStatusChecked = true;
     applyTrustedAuthOrigin({});
@@ -268,15 +361,17 @@ async function loadAuthStatus(route = currentRoute()) {
       els.github.disabled = false;
     }
     if (els.status) els.status.textContent = 'Could not verify login provider status. You can still try a provider below.';
-    await track('sign_in_required_shown', { source: `login_page:${route.source}`, status: 'unknown' });
+    track('sign_in_required_shown', { source: `login_page:${route.source}`, status: 'unknown' });
   } finally {
-    window.clearTimeout(timeout);
+    window.clearTimeout(softReveal);
   }
 }
 
 function bindProviderButton(button, provider, route = currentRoute()) {
   if (!button) return;
   button.onclick = () => {
+    recordLoginAttemptStarted(provider, route);
+    if (els.status) els.status.textContent = 'Login started. CAIt will wait up to 60 minutes from this login attempt.';
     void track(`${provider}_login_started`, {
       source: `login_page:${route.source}`,
       action: route.next
@@ -287,6 +382,7 @@ function bindProviderButton(button, provider, route = currentRoute()) {
 
 async function requestEmailLink(route = currentRoute()) {
   if (runtimeUsesExternalAuth) {
+    recordLoginAttemptStarted('email', route);
     window.location.href = buildOfficialLoginUrl(route);
     return;
   }
@@ -299,7 +395,8 @@ async function requestEmailLink(route = currentRoute()) {
   }
   if (els.emailBtn) els.emailBtn.disabled = true;
   if (els.status) els.status.textContent = 'Sending your sign-in link. The page stays here.';
-  await track('email_login_started', {
+  recordLoginAttemptStarted('email', route);
+  track('email_login_started', {
     source: `login_page:${route.source}`,
     action: nextPath
   });
@@ -344,7 +441,7 @@ async function init() {
   });
   bindProviderButton(els.google, 'google', route);
   bindProviderButton(els.github, 'github', route);
-  await track('page_view', { source: `login_page:${route.source}` });
+  track('page_view', { source: `login_page:${route.source}` });
   await loadAuthStatus(route);
 }
 

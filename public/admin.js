@@ -22,7 +22,10 @@ const els = {
   chatsCountLabel: $('chatsCountLabel'),
   agentsCountLabel: $('agentsCountLabel'),
   appsCountLabel: $('appsCountLabel'),
+  identityReviewsCountLabel: $('identityReviewsCountLabel'),
   accountsTable: $('accountsTable'),
+  identityReviewsTable: $('identityReviewsTable'),
+  identityReviewDetail: $('identityReviewDetail'),
   ordersTable: $('ordersTable'),
   chatsTable: $('chatsTable'),
   agentsTable: $('agentsTable'),
@@ -143,8 +146,92 @@ function statusClass(status = '') {
   const value = String(status || '').toLowerCase();
   if (['completed', 'ready', 'verified', 'resolved', 'live', 'active'].includes(value)) return 'ok';
   if (['failed', 'timed_out', 'blocked', 'rejected', 'error'].includes(value)) return 'error';
-  if (['queued', 'claimed', 'running', 'dispatched', 'reviewing', 'pending'].includes(value)) return 'warn';
+  if (['queued', 'claimed', 'running', 'dispatched', 'reviewing', 'pending', 'waiting'].includes(value)) return 'warn';
   return '';
+}
+
+function identityStatusClass(status = '') {
+  const value = String(status || '').toLowerCase();
+  if (value === 'approved') return 'ok';
+  if (value === 'rejected') return 'error';
+  if (value === 'pending') return 'warn';
+  return '';
+}
+
+function isWaitingOrderStatus(status = '') {
+  return /queued|claimed|running|dispatched|blocked|failed|timed_out|waiting/i.test(String(status || ''));
+}
+
+function orderTimestamp(order = {}) {
+  const timestamp = Date.parse(order.updatedAt || order.completedAt || order.failedAt || order.timedOutAt || order.createdAt || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function isLeaderOrder(order = {}) {
+  return /_leader$/i.test(String(order.workflowTask || order.taskType || order.workflowAgentName || ''));
+}
+
+function orderSortRank(order = {}) {
+  if (order.jobKind === 'workflow') return 0;
+  if (isLeaderOrder(order)) return 1;
+  if (isWaitingOrderStatus(order.status) && order.status !== 'completed') return 2;
+  if (order.status === 'completed') return 3;
+  return 4;
+}
+
+function compareOrders(left = {}, right = {}) {
+  const timeDiff = orderTimestamp(right) - orderTimestamp(left);
+  if (timeDiff) return timeDiff;
+  const rankDiff = orderSortRank(left) - orderSortRank(right);
+  if (rankDiff) return rankDiff;
+  return String(right.id || '').localeCompare(String(left.id || ''));
+}
+
+function orderGroupStatus(group = {}) {
+  const statuses = (group.items || []).map((item) => String(item.status || '').toLowerCase());
+  if (statuses.some((status) => /running|claimed|dispatched/.test(status))) return 'running';
+  if (statuses.some((status) => /queued/.test(status))) return 'queued';
+  if (statuses.some((status) => /blocked|failed|timed_out|waiting/.test(status))) return 'waiting';
+  if (statuses.length && statuses.every((status) => status === 'completed')) return 'completed';
+  return statuses[0] || 'unknown';
+}
+
+function orderGroupSummary(group = {}) {
+  const completed = (group.items || []).filter((item) => item.status === 'completed').length;
+  const waiting = (group.items || []).filter((item) => isWaitingOrderStatus(item.status) && item.status !== 'completed').length;
+  const leader = (group.items || []).find(isLeaderOrder);
+  const requester = group.requesterLogin || '-';
+  const leaderLabel = leader ? `Leader: ${leader.workflowAgentName || leader.taskType}` : 'Leader not in page';
+  return `${leaderLabel} / requester ${requester} / ${completed} completed / ${waiting} waiting`;
+}
+
+function groupedOrders(orders = []) {
+  const byWork = new Map();
+  for (const order of Array.isArray(orders) ? orders : []) {
+    const workId = String(order.workId || order.workflowParentId || order.id || '').trim();
+    if (!workId) continue;
+    if (!byWork.has(workId)) {
+      byWork.set(workId, {
+        id: workId,
+        title: order.workTitle || order.originalPrompt || order.prompt || `Order ${workId.slice(0, 8)}`,
+        requesterLogin: order.requesterLogin || '',
+        updatedAt: order.updatedAt || order.createdAt || '',
+        items: []
+      });
+    }
+    const group = byWork.get(workId);
+    group.items.push(order);
+    if (!group.requesterLogin && order.requesterLogin) group.requesterLogin = order.requesterLogin;
+    if (String(order.updatedAt || order.createdAt || '').localeCompare(String(group.updatedAt || '')) > 0) group.updatedAt = order.updatedAt || order.createdAt || group.updatedAt;
+    if (order.jobKind === 'workflow') group.title = order.workTitle || order.originalPrompt || order.prompt || group.title;
+  }
+  return [...byWork.values()]
+    .map((group) => ({ ...group, items: group.items.sort(compareOrders) }))
+    .sort((left, right) => {
+      const timeDiff = Math.max(...left.items.map(orderTimestamp)) - Math.max(...right.items.map(orderTimestamp));
+      if (timeDiff) return -timeDiff;
+      return String(right.id || '').localeCompare(String(left.id || ''));
+    });
 }
 
 function tableHtml(headers = [], rows = [], emptyText = 'No records yet.') {
@@ -188,7 +275,7 @@ function renderAccounts(accounts = []) {
     return [
       `<strong>${escapeHtml(account.login || account.displayName || '-')}</strong><small>${escapeHtml(account.email || account.id || '-')}</small>`,
       `<strong>${escapeHtml(providers)}</strong><small>API keys ${number(account.apiKeys?.active)} / ${number(account.apiKeys?.total)} / repos ${number(account.githubRepos)}</small>`,
-      `<strong>${escapeHtml(billing)}</strong><small>Stripe ${escapeHtml(account.stripeCustomerStatus || 'not_started')}</small>`,
+      `<strong>${escapeHtml(billing)}</strong><small>Payments removed</small>`,
       `<strong>${escapeHtml(relativeDate(account.createdAt))}</strong><small>${escapeHtml(formatDate(account.createdAt))}</small>`,
       `<strong>${escapeHtml(relativeDate(account.updatedAt || account.createdAt))}</strong><small>${escapeHtml(formatDate(account.updatedAt || account.createdAt))}</small>`
     ];
@@ -199,14 +286,121 @@ function renderAccounts(accounts = []) {
   }
 }
 
+function identityReviewCandidates(accounts = []) {
+  return (Array.isArray(accounts) ? accounts : [])
+    .filter((account) => {
+      const status = String(account.providerIdentityStatus || 'not_submitted').toLowerCase();
+      return status !== 'not_submitted' || account.providerEnabled || Number(account.pendingProviderBalance || 0) > 0;
+    })
+    .sort((left, right) => {
+      const leftPending = String(left.providerIdentityStatus || '').toLowerCase() === 'pending' ? 0 : 1;
+      const rightPending = String(right.providerIdentityStatus || '').toLowerCase() === 'pending' ? 0 : 1;
+      if (leftPending !== rightPending) return leftPending - rightPending;
+      return Date.parse(right.providerIdentitySubmittedAt || right.updatedAt || '') - Date.parse(left.providerIdentitySubmittedAt || left.updatedAt || '');
+    });
+}
+
+function renderIdentityReviews(accounts = []) {
+  const candidates = identityReviewCandidates(accounts);
+  const pendingCount = candidates.filter((account) => String(account.providerIdentityStatus || '').toLowerCase() === 'pending').length;
+  setText(els.identityReviewsCountLabel, `${number(pendingCount)} pending / ${number(candidates.length)} providers`);
+  const rows = candidates.slice(0, 80).map((account) => {
+    const login = String(account.login || '').trim();
+    const status = String(account.providerIdentityStatus || 'not_submitted').toLowerCase();
+    const actions = [
+      `<button class="admin-inline-btn" type="button" data-identity-action="view" data-login="${escapeHtml(login)}">View</button>`,
+      `<button class="admin-inline-btn primary" type="button" data-identity-action="approve" data-login="${escapeHtml(login)}"${status === 'pending' ? '' : ' disabled'}>Approve</button>`,
+      `<button class="admin-inline-btn danger" type="button" data-identity-action="reject" data-login="${escapeHtml(login)}"${status === 'pending' ? '' : ' disabled'}>Reject</button>`
+    ].join('');
+    return [
+      `<strong>${escapeHtml(login || account.displayName || '-')}</strong><small>${escapeHtml(account.email || account.id || '-')}</small>`,
+      `<span class="status-pill ${identityStatusClass(status)}">${escapeHtml(status)}</span><small>${account.providerEnabled ? 'provider enabled' : 'provider not enabled'}</small>`,
+      `<strong>${escapeHtml(relativeDate(account.providerIdentitySubmittedAt))}</strong><small>${escapeHtml(formatDate(account.providerIdentitySubmittedAt))}</small>`,
+      `<strong>${account.providerIdentityPhotoSubmitted ? 'yes' : 'no'}</strong><small>photo submitted</small>`,
+      `<div class="admin-action-row">${actions}</div><small>${escapeHtml(account.providerIdentityReviewedAt ? `reviewed ${relativeDate(account.providerIdentityReviewedAt)}` : 'awaiting review')}</small>`
+    ];
+  });
+  if (els.identityReviewsTable) {
+    els.identityReviewsTable.innerHTML = tableHtml(['Provider', 'Status', 'Submitted', 'Photo', 'Action'], rows, 'No provider identity reviews yet.');
+  }
+}
+
+function identityDetailHtml(payload = {}) {
+  const identity = payload.identity_verification || {};
+  const fields = identity.fields || {};
+  const photo = identity.photo || {};
+  const fieldRows = [
+    ['Full name', fields.fullName],
+    ['Birth date', fields.birthDate],
+    ['Phone', fields.phone],
+    ['Country', fields.country],
+    ['Address 1', fields.addressLine1],
+    ['Address 2', fields.addressLine2],
+    ['City', fields.city],
+    ['Region', fields.region],
+    ['Postal code', fields.postalCode],
+    ['Document type', fields.documentType],
+    ['Notes', fields.notes],
+    ['Rejection reason', identity.rejectionReason]
+  ].map(([label, value]) => `<div><span>${escapeHtml(label)}</span>${escapeHtml(value || '-')}</div>`).join('');
+  const image = photo.dataUrl
+    ? `<div class="identity-photo-wrap"><span>Submitted photo</span><img src="${escapeHtml(photo.dataUrl)}" alt="Provider submitted identity photo" /><small>${escapeHtml(photo.mimeType || 'image')} / ${number(photo.size || 0)} bytes / ${escapeHtml(photo.name || '-')}</small></div>`
+    : '<div class="identity-photo-wrap"><span>Submitted photo</span><small>No photo submitted.</small></div>';
+  return [
+    `<div class="section-head compact"><div><span class="admin-kicker">Identity detail</span><h2>${escapeHtml(payload.display_name || payload.login || '-')}</h2></div><span class="status-pill ${identityStatusClass(identity.status)}">${escapeHtml(identity.status || 'not_submitted')}</span></div>`,
+    `<p><strong>Submitted:</strong> ${escapeHtml(formatDate(identity.submittedAt))} / <strong>Reviewed:</strong> ${escapeHtml(formatDate(identity.reviewedAt))} / <strong>Reviewer:</strong> ${escapeHtml(identity.reviewedBy || '-')}</p>`,
+    `<div class="identity-detail-grid">${fieldRows}</div>`,
+    image
+  ].join('');
+}
+
+async function loadIdentityReview(login = '') {
+  if (!login) return;
+  const detail = await api(`/api/admin/provider-identities/${encodeURIComponent(login)}`);
+  if (els.identityReviewDetail) {
+    els.identityReviewDetail.hidden = false;
+    els.identityReviewDetail.innerHTML = identityDetailHtml(detail);
+  }
+}
+
+async function reviewIdentity(login = '', decision = '') {
+  if (!login || !decision) return;
+  let rejectionReason = '';
+  if (decision === 'rejected') {
+    rejectionReason = window.prompt('Reason for rejection') || '';
+    if (!rejectionReason.trim()) return;
+  }
+  await api(`/api/admin/provider-identities/${encodeURIComponent(login)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ decision, rejection_reason: rejectionReason })
+  });
+  await loadAdminDashboard();
+  await loadIdentityReview(login);
+}
+
 function renderOrders(orders = []) {
-  const rows = orders.slice(0, 30).map((order) => [
-    `<strong>${escapeHtml(order.taskType || 'work')}</strong><small>${escapeHtml(order.id || '-')}</small>`,
-    `<strong>${escapeHtml(order.requesterLogin || '-')}</strong><small>${escapeHtml(compact(order.prompt || order.deliverySummary || '-', 90))}</small>`,
-    `<span class="status-pill ${statusClass(order.status)}">${escapeHtml(order.status || '-')}</span><small>${escapeHtml(relativeDate(order.createdAt))}</small>`,
-    `<strong>${escapeHtml(order.actualBilling ? number(order.actualBilling.total) : '-')}</strong><small>${escapeHtml(order.billingMode || '-')}</small>`
-  ]);
-  setText(els.ordersCountLabel, `${number(orders.length)} orders`);
+  const groups = groupedOrders(orders).slice(0, 30);
+  const rows = groups.map((group) => {
+    const status = orderGroupStatus(group);
+    const totalCost = group.items.reduce((sum, item) => sum + Number(item.actualBilling?.total || 0), 0);
+    const runs = group.items.map((order) => [
+      '<div class="admin-order-run">',
+      '<span>',
+      `<strong>${escapeHtml(order.workflowTask || order.taskType || 'work')}</strong>`,
+      `<small>${escapeHtml(order.workflowAgentName || order.parentAgentId || order.id || '-')} / ${escapeHtml(relativeDate(order.updatedAt || order.createdAt))}</small>`,
+      '</span>',
+      `<span class="status-pill ${statusClass(order.status)}">${escapeHtml(order.status || '-')}</span>`,
+      '</div>'
+    ].join('')).join('');
+    return [
+      `<details class="admin-order-group"><summary><span><strong>${escapeHtml(compact(group.title, 96))}</strong><small>${escapeHtml(group.id)}</small></span></summary><div class="admin-order-runs">${runs}</div></details>`,
+      `<strong>${escapeHtml(group.requesterLogin || '-')}</strong><small>${escapeHtml(orderGroupSummary(group))}</small>`,
+      `<span class="status-pill ${statusClass(status)}">${escapeHtml(status)}</span><small>${number(group.items.length)} runs / ${escapeHtml(relativeDate(group.updatedAt))}</small>`,
+      `<strong>${escapeHtml(totalCost ? number(totalCost) : '-')}</strong><small>${escapeHtml(group.items[0]?.billingMode || '-')}</small>`
+    ];
+  });
+  setText(els.ordersCountLabel, `${number(groups.length)} orders / ${number(orders.length)} runs`);
   if (els.ordersTable) {
     els.ordersTable.innerHTML = tableHtml(['Order', 'Requester', 'Status', 'Cost'], rows, 'No orders yet.');
   }
@@ -259,6 +453,7 @@ function render(snapshot = {}) {
   state.dashboard = dashboard;
   renderMetrics(dashboard, apps);
   renderAccounts(Array.isArray(dashboard.accounts) ? dashboard.accounts : []);
+  renderIdentityReviews(Array.isArray(dashboard.accounts) ? dashboard.accounts : []);
   renderOrders(Array.isArray(dashboard.orders) ? dashboard.orders : []);
   renderChats(Array.isArray(dashboard.chats) ? dashboard.chats : []);
   renderAgents(Array.isArray(dashboard.agents) ? dashboard.agents : []);
@@ -303,7 +498,8 @@ async function loadAdminDashboard() {
   if (els.refreshBtn) els.refreshBtn.disabled = true;
   showGate('Loading admin dashboard.', 'Checking your session and platform admin permissions.');
   try {
-    const auth = await api('/auth/status');
+    const snapshot = await api('/api/admin/dashboard');
+    const auth = snapshot.auth || {};
     state.auth = auth;
     const login = auth.login || auth.user?.login || auth.user?.email || '';
     setText(els.authStatus, auth.loggedIn ? `Signed in as ${login || 'account'}` : 'Not signed in');
@@ -316,7 +512,7 @@ async function loadAdminDashboard() {
       showGate('Admin access required.', 'This account is signed in, but it is not listed in ADMIN_DASHBOARD_LOGINS.', { error: true });
       return;
     }
-    render(await api('/api/snapshot'));
+    render(snapshot);
   } catch (error) {
     showGate('Admin dashboard failed to load.', error?.message || 'Unknown error', { error: true });
   } finally {
@@ -329,5 +525,24 @@ els.refreshBtn?.addEventListener('click', () => {
 });
 
 els.downloadAccountsBtn?.addEventListener('click', downloadAccountsCsv);
+
+els.identityReviewsTable?.addEventListener('click', (event) => {
+  const button = event.target?.closest?.('[data-identity-action][data-login]');
+  if (!button) return;
+  const login = button.getAttribute('data-login') || '';
+  const action = button.getAttribute('data-identity-action') || '';
+  button.disabled = true;
+  const work = action === 'view'
+    ? loadIdentityReview(login)
+    : reviewIdentity(login, action === 'approve' ? 'approved' : 'rejected');
+  void work.catch((error) => {
+    if (els.identityReviewDetail) {
+      els.identityReviewDetail.hidden = false;
+      els.identityReviewDetail.innerHTML = `<strong>Identity review action failed.</strong><span>${escapeHtml(error?.message || 'Unknown error')}</span>`;
+    }
+  }).finally(() => {
+    button.disabled = false;
+  });
+});
 
 void loadAdminDashboard();

@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CAIt Google OAuth Scope Usage Demo</title>
+  <style>
+    :root {
+      --bg: #f7faf8;
+      --ink: #101816;
+      --muted: #51625c;
+      --line: #cfd9d5;
+      --green: #17795f;
+      --green-2: #ecf8f3;
+      --amber: #a15d00;
+      --dark: #202124;
+      --google: #0b0b0b;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(9, 67, 53, .055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(9, 67, 53, .055) 1px, transparent 1px);
+      background-size: 34px 34px;
+      pointer-events: none;
+    }
+    .slide {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      padding: 44px 82px;
+    }
+    .topbar, .appbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 68px;
+      padding: 0 22px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.88);
+      box-shadow: 0 18px 48px rgba(8, 33, 28, .07);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 700; }
+    .logo {
+      display: grid;
+      place-items: center;
+      width: 31px;
+      height: 31px;
+      background: #111;
+      color: #ffd45d;
+      border: 1px solid #fff;
+      box-shadow: 0 0 0 1px #111;
+      font-size: 16px;
+      font-weight: 800;
+    }
+    .nav { display: flex; gap: 10px; align-items: center; }
+    .nav span, .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+      padding: 0 16px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: white;
+      color: #0a1713;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .btn.primary { background: var(--green); color: white; border-color: #0e604b; }
+    .hero {
+      margin: 96px auto 0;
+      max-width: 1180px;
+      text-align: center;
+    }
+    h1 {
+      margin: 0;
+      font-size: 84px;
+      line-height: .95;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 0 0 14px;
+      font-size: 56px;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+    h3 { margin: 0 0 10px; font-size: 28px; }
+    p { margin: 0; color: var(--muted); font-size: 22px; line-height: 1.55; }
+    .caption {
+      position: absolute;
+      left: 82px;
+      right: 82px;
+      bottom: 42px;
+      padding: 18px 22px;
+      border-radius: 8px;
+      background: rgba(16, 24, 22, .92);
+      color: #fff;
+      font-size: 28px;
+      line-height: 1.35;
+      box-shadow: 0 14px 44px rgba(0,0,0,.22);
+    }
+    .caption small { display: block; color: #bfe6d8; font-size: 18px; margin-top: 7px; }
+    .shell {
+      position: absolute;
+      left: 214px;
+      right: 214px;
+      top: 18px;
+      bottom: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.92);
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(12, 43, 36, .08);
+    }
+    .app-header {
+      height: 68px;
+      padding: 0 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+    .app-layout { display: grid; grid-template-columns: 238px 1fr; height: calc(100% - 68px); }
+    .side { border-right: 1px solid var(--line); padding: 16px; background: rgba(249, 252, 250, .9); }
+    .side-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 14px 12px;
+      margin-bottom: 10px;
+      border-radius: 7px;
+      font-weight: 700;
+      font-size: 15px;
+    }
+    .side-item.active { border: 1px solid #9fc4b8; background: white; color: #004b3b; }
+    .main { padding: 22px 18px 28px; }
+    .eyebrow { color: #00684f; font-size: 12px; font-weight: 800; text-transform: uppercase; margin-bottom: 12px; }
+    .controls { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: 10px 0 16px; }
+    .pill { border: 1px solid #a8d4c6; color: #006147; background: #f0fbf7; border-radius: 999px; padding: 7px 10px; font-size: 12px; font-weight: 700; }
+    .pill.amber { border-color: #efc68b; color: #8d5000; background: #fff8eb; }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 16px; }
+    .step { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: flex; gap: 12px; align-items: flex-start; background: #fff; }
+    .step.active { border-color: var(--green); box-shadow: inset 4px 0 0 var(--green); background: #f7fffc; }
+    .num { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; color: #46645b; font-weight: 800; }
+    .card-grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; }
+    .card, .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 18px;
+    }
+    .source-buttons { display: flex; gap: 8px; margin: 12px 0 10px; }
+    .field {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      font-size: 17px;
+      margin: 8px 0 14px;
+      background: white;
+    }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 14px; }
+    .metric b { display: block; font-size: 30px; margin-top: 10px; }
+    .metric small { color: var(--muted); }
+    .highlight {
+      outline: 5px solid rgba(23, 121, 95, .75);
+      outline-offset: 5px;
+      border-radius: 8px;
+      position: relative;
+    }
+    .highlight::after {
+      content: attr(data-label);
+      position: absolute;
+      left: 0;
+      top: -46px;
+      padding: 8px 12px;
+      background: var(--green);
+      color: white;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .google-bg { background: #202124; color: #e8eaed; }
+    .google-card {
+      position: absolute;
+      left: 440px;
+      top: 178px;
+      width: 1040px;
+      min-height: 488px;
+      border-radius: 26px;
+      overflow: hidden;
+      background: #0f0f0f;
+      box-shadow: 0 24px 64px rgba(0,0,0,.42);
+    }
+    .google-head {
+      height: 52px;
+      border-bottom: 1px solid #3c4043;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 18px;
+      font-weight: 700;
+    }
+    .g { width: 20px; height: 20px; border-radius: 50%; background: conic-gradient(#4285f4 0 25%, #34a853 0 50%, #fbbc05 0 75%, #ea4335 0); }
+    .google-body { display: grid; grid-template-columns: 1.1fr 1fr; gap: 38px; padding: 60px 36px 38px; }
+    .google-title { font-size: 48px; line-height: 1.15; color: #f1f3f4; margin: 0 0 24px; }
+    .account-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      border-bottom: 1px solid #3c4043;
+      padding: 16px 0;
+      font-size: 18px;
+    }
+    .avatar { width: 30px; height: 30px; border-radius: 50%; background: #7e57c2; display: grid; place-items: center; color: #fff; font-weight: 800; }
+    .google-text { color: #f1f3f4; font-size: 16px; line-height: 1.55; }
+    .google-actions { position: absolute; right: 36px; bottom: 36px; display: flex; gap: 14px; }
+    .google-actions .btn { min-width: 224px; border-color: #5f6368; background: transparent; color: #8ab4f8; }
+    .chat-shell {
+      position: absolute;
+      left: 82px;
+      right: 82px;
+      top: 44px;
+      bottom: 44px;
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 16px;
+    }
+    .chat-side, .chat-main {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.94);
+      box-shadow: 0 18px 48px rgba(8, 33, 28, .07);
+    }
+    .chat-side { padding: 18px; }
+    .chat-main { padding: 18px 22px; display: flex; flex-direction: column; }
+    .chat-item { border: 1px solid var(--line); padding: 14px; border-radius: 8px; margin: 12px 0; font-weight: 700; }
+    .chat-item.active { border-color: #238468; box-shadow: inset 4px 0 0 #238468; }
+    .message { border: 1px solid #a8d4c6; background: #f5fffb; border-radius: 8px; padding: 22px 28px; font-size: 18px; line-height: 1.55; width: 72%; }
+    .composer { margin-top: auto; display: grid; grid-template-columns: 1fr 100px; gap: 12px; }
+    .composer div { border: 1px solid #238468; border-radius: 8px; padding: 18px; min-height: 92px; font-size: 18px; }
+    .scope-list { margin-top: 26px; display: grid; gap: 14px; }
+    .scope { border: 1px solid var(--line); border-radius: 8px; background: white; padding: 18px; display: grid; grid-template-columns: 290px 1fr; gap: 18px; align-items: start; }
+    .scope code { color: #0c604b; font-size: 18px; }
+    .footer-note { position: absolute; left: 82px; right: 82px; bottom: 48px; color: var(--muted); font-size: 18px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    const slides = [
+      () => `
+        <section class="slide">
+          <div class="topbar">
+            <div class="brand"><div class="logo">CA</div>CAIt AI agent marketplace</div>
+            <div class="nav"><span>Chat</span><span>Agents</span><span>Apps</span><span>API</span><span>Help</span></div>
+          </div>
+          <div class="hero">
+            <h1>Google OAuth<br>scope usage demo</h1>
+            <p style="margin-top:26px">This video shows how CAIt uses Google OAuth to connect GA4 and Search Console data, load reports, and pass summarized evidence to CAIt chat.</p>
+          </div>
+          <div class="caption">Purpose: demonstrate exactly how Google data access is requested and used inside CAIt.</div>
+        </section>`,
+      () => appSlide({
+        title: 'Use SaaS-style apps to see the work and order the next AI agent task.',
+        subtitle: 'CAIt Apps make analytics, approvals, leads, publishing state, and prior delivery reusable as context.',
+        active: 'App catalog',
+        caption: 'The user opens CAIt Apps and chooses the Analytics Console when traffic data should support an AI agent order.',
+        app: true
+      }),
+      () => analyticsSlide({
+        google: 'Google not checked',
+        pillClass: 'amber',
+        step: 1,
+        next: 'Connect GA4 or Search Console to grant Google read access, then choose a source before sending context to a leader.',
+        highlight: 'connect',
+        caption: 'The Analytics Console asks the user to connect GA4 or Search Console. This starts Google OAuth only after the user clicks a connector button.'
+      }),
+      () => googleAccountSlide(),
+      () => googleConsentSlide(),
+      () => analyticsSlide({
+        google: 'Google connected',
+        step: 2,
+        connected: true,
+        next: 'Loaded 8 Search Console site(s) and 4 GA4 properties. Select sources, then use Load report to fetch performance rows.',
+        highlight: 'sources',
+        caption: 'After consent, CAIt returns to Analytics Console. It lists only the Search Console sites and GA4 properties the signed-in Google account can access.'
+      }),
+      () => analyticsSlide({
+        google: 'Report loaded',
+        step: 3,
+        connected: true,
+        loaded: true,
+        next: 'Report loaded for 2026-04-09 to 2026-05-06. Send this evidence packet to CAIt when ready.',
+        highlight: 'report',
+        caption: 'The user clicks Load report. CAIt reads GA4 and Search Console rows and displays aggregated metrics, queries, landing pages, channels, and measurement signals.'
+      }),
+      () => chatSlide(),
+      () => scopesSlide(),
+      () => `
+        <section class="slide">
+          <div class="topbar">
+            <div class="brand"><div class="logo">CA</div>CAIt AI agent marketplace</div>
+            <div class="nav"><span>Privacy</span><span>Terms</span><span>Legal Notice</span></div>
+          </div>
+          <div class="hero" style="margin-top:110px">
+            <h1>Read-only data becomes<br>order context.</h1>
+            <p style="margin-top:28px">CAIt uses Google OAuth data to create analytics evidence for the user-selected workflow. It does not publish, modify, or delete Google Analytics or Search Console data.</p>
+          </div>
+          <div class="caption">User benefit: GA4 and Search Console evidence can guide SEO, CMO, and growth agent work without asking the user to paste rows manually.<small>Users can revoke Google access from their Google Account permissions at any time.</small></div>
+        </section>`
+    ];
+
+    function appSlide({ title, subtitle, active, caption }) {
+      return `
+        <section class="slide">
+          <div class="shell">
+            <div class="app-header">
+              <div class="brand"><div class="logo">CA</div>CAIt Apps</div>
+              <div class="nav"><span>Chat</span><span>Agents</span><span>Publish</span><span>API</span><span class="btn primary">Start in chat</span></div>
+            </div>
+            <div class="app-layout">
+              <aside class="side">
+                ${['App catalog 5', 'Context apps 2', 'Action apps 3', 'MCP NEW', 'Recent contexts API', 'For builders API'].map((item, index) => `<div class="side-item ${index === 0 ? 'active' : ''}"><span>${item.replace(/ (5|2|3|NEW|API)$/,'')}</span><span>${item.match(/(5|2|3|NEW|API)$/)?.[0] || ''}</span></div>`).join('')}
+              </aside>
+              <main class="main">
+                <div class="eyebrow">Apps make quality visible</div>
+                <h2>${title}</h2>
+                <p>${subtitle}</p>
+                <div class="metrics">
+                  <div class="metric"><small>REGISTERED APPS</small><b>5</b><small>Loaded from /api/apps</small></div>
+                  <div class="metric"><small>CONTEXT APPS</small><b>2</b><small>Return evidence packets</small></div>
+                  <div class="metric"><small>ACTION APPS</small><b>3</b><small>Keep actions reviewable</small></div>
+                  <div class="metric"><small>CONNECTORS</small><b>3</b><small>Declared by manifests</small></div>
+                </div>
+                <div class="card-grid" style="margin-top:18px">
+                  <div class="card highlight" data-label="Open Analytics Console">
+                    <div class="eyebrow">Use apps</div>
+                    <h3>See the context, then order from it.</h3>
+                    <p>Use analytics, publishing, lead, delivery, and social apps when the next agent needs real data before producing output.</p>
+                  </div>
+                  <div class="card">
+                    <div class="eyebrow">Build apps</div>
+                    <h3>Register tools that make high-quality output easier.</h3>
+                    <p>Apps receive approved context, return packets, and become part of a marketplace workflow.</p>
+                  </div>
+                </div>
+              </main>
+            </div>
+          </div>
+          <div class="caption">${caption}</div>
+        </section>`;
+    }
+
+    function analyticsSlide({ google, pillClass = '', step = 1, connected = false, loaded = false, next, highlight = '', caption }) {
+      return `
+        <section class="slide">
+          <div class="shell">
+            <div class="app-header">
+              <div class="brand"><div class="logo">CA</div>Analytics Console</div>
+              <div class="nav"><span>Chat</span><span>Apps</span><span>Publisher</span><span>Lead Ops</span><span class="btn primary">Send to CAIt</span></div>
+            </div>
+            <div class="app-layout">
+              <aside class="side">
+                <div class="side-item active"><span>Dashboard</span><span>${loaded ? '0' : '0'}</span></div>
+                <div class="side-item"><span>Search queries</span><span>${loaded ? '10' : '0'}</span></div>
+                <div class="side-item"><span>Landing pages</span><span>${loaded ? '26' : '0'}</span></div>
+                <div class="side-item"><span>Channels</span><span>${loaded ? '5' : '0'}</span></div>
+                <div class="side-item"><span>Measurement</span><span>${loaded ? '3' : '0'}</span></div>
+              </aside>
+              <main class="main">
+                <div class="eyebrow">Old-GA style acquisition view</div>
+                <h2>Turn traffic evidence into<br>leader-ready context.</h2>
+                <p>Find the next SEO or CMO move from real search, landing page, channel, country, and conversion signals.</p>
+                <div class="controls"><span class="pill ${pillClass}">${google}</span><span class="btn">Last 28 days</span><span class="btn">CMO Leader</span></div>
+                <div class="steps">
+                  <div class="step ${step === 1 ? 'active' : ''}"><div class="num">1</div><div><b>Connect sources</b><br><small>${connected ? 'Source selected and ready for report loading.' : 'Connect GA4 or Search Console before loading evidence.'}</small></div></div>
+                  <div class="step ${step === 2 ? 'active' : ''}"><div class="num">2</div><div><b>Load report</b><br><small>${loaded ? 'Report rows are loaded into the packet.' : 'Use Load report after selecting sources.'}</small></div></div>
+                  <div class="step ${step === 3 ? 'active' : ''}"><div class="num">3</div><div><b>Send to CAIt</b><br><small>${loaded ? 'Send the structured evidence packet to CAIt.' : 'Handoff becomes useful after report loading.'}</small></div></div>
+                </div>
+                <div class="card-grid">
+                  <div class="card ${highlight === 'connect' || highlight === 'sources' ? 'highlight' : ''}" data-label="${highlight === 'connect' ? 'OAuth starts here' : 'User-selected Google sources'}">
+                    <h3>Google sources</h3>
+                    <div class="source-buttons">
+                      <span class="btn">Connect GA4</span>
+                      <span class="btn">Connect Search Console</span>
+                      <span class="btn">Refresh sources</span>
+                      <span class="btn ${highlight === 'report' ? 'highlight' : ''}" data-label="Read report rows">Load report</span>
+                    </div>
+                    <small>SEARCH CONSOLE SITE</small>
+                    <div class="field"><span>${connected ? 'sc-domain:aiagent-marketplace.net' : 'Connect Google and refresh sources'}</span><span>⌄</span></div>
+                    <small>GA4 PROPERTY</small>
+                    <div class="field"><span>${connected ? 'aiagent2 - properties/531290961' : 'Connect Google and refresh sources'}</span><span>⌄</span></div>
+                    <div class="field"><span>${connected ? '531290961' : 'GA4 property ID, e.g. 123456789'}</span></div>
+                  </div>
+                  <div class="card ${highlight === 'report' ? 'highlight' : ''}" data-label="Evidence packet">
+                    <h3>Next CAIt action</h3>
+                    <p>${next}</p>
+                  </div>
+                </div>
+                <div class="metrics">
+                  <div class="metric"><small>SESSIONS</small><b>${loaded ? '594' : '0'}</b><small>${loaded ? 'Loaded from GA4' : 'No report loaded'}</small></div>
+                  <div class="metric"><small>SEARCH CLICKS</small><b>0</b><small>${loaded ? 'Loaded from Search Console' : 'Waiting for report'}</small></div>
+                  <div class="metric"><small>CONVERSIONS</small><b>0</b><small>${loaded ? 'Loaded from GA4' : 'Waiting for report'}</small></div>
+                  <div class="metric"><small>CONVERSION RATE</small><b>${loaded ? '0%' : '-'}</b><small>${loaded ? 'Derived from sessions and conversions' : 'No rate loaded'}</small></div>
+                </div>
+              </main>
+            </div>
+          </div>
+          <div class="caption">${caption}</div>
+        </section>`;
+    }
+
+    function googleAccountSlide() {
+      return `
+        <section class="slide google-bg">
+          <div class="google-card">
+            <div class="google-head"><div class="g"></div>Google sign in</div>
+            <div class="google-body">
+              <div>
+                <div class="google-title">Choose an account</div>
+                <p style="color:#9aa0a6">to continue to aiagent-marketplace.net</p>
+              </div>
+              <div>
+                <div class="account-row"><div class="avatar">U</div><div><b>Demo User</b><br><span style="color:#bdc1c6">user@example.com</span></div></div>
+                <div class="account-row"><div class="avatar" style="background:#1a73e8">+</div><div><b>Use another account</b></div></div>
+                <p class="google-text" style="margin-top:34px">Before using this app, users can review the app's privacy policy and terms.</p>
+              </div>
+            </div>
+          </div>
+          <div class="caption">Google shows the account chooser. The user selects the Google account that owns the GA4 property or Search Console site.</div>
+        </section>`;
+    }
+
+    function googleConsentSlide() {
+      return `
+        <section class="slide google-bg">
+          <div class="google-card">
+            <div class="google-head"><div class="g"></div>Google sign in</div>
+            <div class="google-body">
+              <div>
+                <div class="google-title">Continue to<br>aiagent-marketplace.net</div>
+                <div class="account-row" style="width:235px;border:1px solid #5f6368;border-radius:18px;padding:8px 12px"><div class="avatar">U</div><div>user@example.com</div></div>
+              </div>
+              <div>
+                <p class="google-text">aiagent-marketplace.net asks for read-only access to selected Google data so CAIt can build an analytics evidence packet.</p>
+                <div class="scope-list">
+                  <div class="account-row"><div class="num">1</div><div>View Google Analytics report data</div></div>
+                  <div class="account-row"><div class="num">2</div><div>View Search Console sites and performance rows</div></div>
+                </div>
+                <p class="google-text" style="margin-top:22px">The user can cancel here, or continue to return to CAIt.</p>
+              </div>
+            </div>
+            <div class="google-actions"><span class="btn">Cancel</span><span class="btn">Continue</span></div>
+          </div>
+          <div class="caption">Requested access is read-only. CAIt does not request scopes to edit analytics settings, change Search Console data, or publish anything to Google.</div>
+        </section>`;
+    }
+
+    function chatSlide() {
+      return `
+        <section class="slide">
+          <div class="chat-shell">
+            <aside class="chat-side">
+              <h3>Chats</h3>
+              <p style="font-size:14px">Saved chats</p>
+              <div class="chat-item active">Context received from GA4 + Search Console</div>
+              <div class="chat-item">Acquisition plan</div>
+              <div class="chat-item">CMO leader order</div>
+            </aside>
+            <main class="chat-main">
+              <div class="brand"><div class="logo">CA</div>CAIt</div>
+              <div style="height:34px"></div>
+              <div class="message highlight" data-label="Summarized evidence sent to chat">
+                <b>Context received from GA4 + Search Console Connector</b><br><br>
+                GA4 and/or Search Console data was loaded for 2026-04-09 to 2026-05-06. Use this evidence before choosing the next SEO, CMO, or growth action.<br><br>
+                • sessions: 594<br>
+                • search_clicks: 0<br>
+                • conversions: 0<br>
+                • conversion_rate: 0%<br><br>
+                <b>Next:</b> Ask the selected leader to prioritize one evidence-backed next action.
+              </div>
+              <div class="composer">
+                <div>Use this attached connector data as evidence. Do not ask the user to paste GA4/Search Console rows again.</div>
+                <span class="btn primary">Send chat</span>
+              </div>
+            </main>
+          </div>
+          <div class="caption">When the user sends to CAIt, the app passes a structured summary into chat. The next AI agent order can use evidence without exposing raw OAuth tokens.</div>
+        </section>`;
+    }
+
+    function scopesSlide() {
+      return `
+        <section class="slide">
+          <div class="topbar">
+            <div class="brand"><div class="logo">CA</div>Google OAuth scopes used by CAIt</div>
+            <div class="nav"><span>Read-only</span><span>User initiated</span><span>No Google writes</span></div>
+          </div>
+          <div style="margin-top:72px">
+            <h2>Scope usage is limited to analytics evidence.</h2>
+            <div class="scope-list">
+              <div class="scope"><code>openid email profile</code><p>Used for Google sign-in and account identity in CAIt.</p></div>
+              <div class="scope"><code>analytics.readonly</code><p>Used only to list accessible GA4 properties and read report metrics such as sessions, conversions, channel, country, and landing page performance.</p></div>
+              <div class="scope"><code>webmasters.readonly</code><p>Used only to list accessible Search Console sites and read search performance rows such as queries, pages, clicks, impressions, CTR, and position.</p></div>
+            </div>
+          </div>
+          <div class="footer-note">CAIt displays connector status and summarized reports in the Analytics Console. The user chooses when to load a report and when to send context to chat.</div>
+          <div class="caption">This is the scope-use summary for Google verification: sign in, read GA4, read Search Console, then create a user-controlled CAIt context packet.</div>
+        </section>`;
+    }
+
+    const index = Math.max(0, Math.min(slides.length - 1, Number(new URLSearchParams(location.search).get('slide') || 0)));
+    document.getElementById('root').innerHTML = slides[index]();
+  </script>
+</body>
+</html>

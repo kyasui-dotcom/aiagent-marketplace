@@ -1,0 +1,1038 @@
+{
+  "groups": {
+    "marketing": [
+      "cmo-leader-growth-plan",
+      "free-web-growth-no-paid-plan",
+      "launch-team-product-launch",
+      "campaign-operations-publisher-queue",
+      "ads-planner-budget-guardrails",
+      "seo-specialist-rewrite",
+      "writer-copy-packet",
+      "landing-rewrite",
+      "x-post-launch-packet",
+      "instagram-creative-packet",
+      "reddit-community-post",
+      "indie-hackers-founder-post",
+      "email-ops-lifecycle-draft",
+      "cold-email-source-backed-outreach",
+      "acquisition-automation-flow",
+      "media-planner-channel-fit",
+      "directory-submission-queue",
+      "citation-ops-local-profile",
+      "list-creator-public-source-list",
+      "growth-loop-experiment"
+    ],
+    "non_marketing": [
+      "agent-team-leader-roster",
+      "build-team-leader-implementation",
+      "cfo-leader-pricing-scenario",
+      "code-agent-patch-handoff",
+      "cpo-leader-mvp-slice",
+      "cto-leader-rollout",
+      "data-analysis-metric-audit",
+      "diligence-red-flag-review",
+      "follow-up-open-loop",
+      "hiring-role-scorecard",
+      "inbox-triage-owner-queue",
+      "legal-leader-policy-boundary",
+      "meeting-notes-action-log",
+      "meeting-prep-decision-brief",
+      "pricing-model-decision",
+      "prompt-brushup-intent-preservation",
+      "reply-draft-approval-gate",
+      "research-team-leader-source-plan",
+      "research-source-backed-memo",
+      "schedule-coordination-candidate-times",
+      "secretary-leader-ops-queue",
+      "teardown-competitor-wedge",
+      "validation-falsification-plan"
+    ]
+  },
+  "cases": [
+    {
+      "id": "cmo-leader-growth-plan",
+      "file": "cmo-leader.js",
+      "kind": "cmo_leader",
+      "prompt": "Create one executive growth plan for https://aiagent-marketplace.net to increase paid agent orders from solo founders. Use the supplied GA4 baseline, Search Console rows, current landing-page status, proof status, and existing article inventory. Include a source coverage ledger, priority diagnosis, channel priority table, 2-week execution plan, measurement checklist, owner approval boundary, and inputs needed next. Keep any missing source status explicit instead of inventing traffic, query, page, or content performance, and do not claim anything was published, handed off, ingested, or externally executed.",
+      "body": {
+        "input": {
+          "target_url": "https://aiagent-marketplace.net",
+          "conversion_goal": "paid agent order",
+          "audience": "solo founders",
+          "ga4": {
+            "source_status": "owner-supplied export; connector not executed by agent",
+            "date_range": "2026-05-01 to 2026-05-24",
+            "sessions": 1200,
+            "signups": 18,
+            "paid_orders": 0,
+            "paid_order_event_status": "not verified"
+          },
+          "search_console": {
+            "source_status": "partial owner-supplied query/page export; connector not executed by agent",
+            "date_range": "2026-05-01 to 2026-05-24",
+            "rows": [
+              {
+                "query": "ai agent marketplace",
+                "landing_page": "https://aiagent-marketplace.net/",
+                "impressions": 420,
+                "clicks": 18,
+                "position": 11.8
+              },
+              {
+                "query": "hire ai agent",
+                "landing_page": "https://aiagent-marketplace.net/",
+                "impressions": 130,
+                "clicks": 3,
+                "position": 18.2
+              }
+            ],
+            "missing_exports": [
+              "pricing page queries",
+              "brand query rows"
+            ]
+          },
+          "landing_page": {
+            "source_status": "homepage URL and owner summary supplied; full current copy not supplied",
+            "known_sections": [
+              "hero",
+              "order CTA"
+            ],
+            "missing_sections": [
+              "full page copy",
+              "trust/proof block",
+              "pricing page copy"
+            ]
+          },
+          "proof_status": "no verified customer testimonials, case studies, or revenue outcomes supplied",
+          "existing_content_inventory": {
+            "source_status": "partial owner-supplied list",
+            "articles": [
+              {
+                "title": "What is an AI agent marketplace?",
+                "url": "https://aiagent-marketplace.net/blog/ai-agent-marketplace",
+                "status": "draft outline only; performance not supplied"
+              }
+            ],
+            "missing": [
+              "published article performance",
+              "internal link map"
+            ]
+          },
+          "approval_owner": "founder",
+          "execution_boundary": "no Publisher, CMS, ads, social, email, or analytics connector execution proof supplied"
+        }
+      }
+    },
+    {
+      "id": "free-web-growth-no-paid-plan",
+      "file": "free-web-growth-leader.js",
+      "kind": "free_web_growth",
+      "prompt": "Plan no-paid growth for an AI agent marketplace. Use SEO, community, directories, and owned media. Give a 24-hour and 7-day plan.",
+      "body": {
+        "input": {
+          "constraints": "no paid ads",
+          "target_url": "https://aiagent-marketplace.net"
+        }
+      }
+    },
+    {
+      "id": "launch-team-product-launch",
+      "file": "launch-team-leader.js",
+      "kind": "launch_team",
+      "prompt": "Launch a new Publisher Approval Studio feature for reviewing AI-generated articles before WordPress or GitHub publishing.",
+      "body": {
+        "input": {
+          "launch_date": "next week",
+          "desired_action": "signup"
+        }
+      }
+    },
+    {
+      "id": "campaign-operations-publisher-queue",
+      "file": "campaign-operations.js",
+      "kind": "campaign_operations",
+      "prompt": "Turn the CMO launch design into a Campaign record, Publisher queue, asset status queue, approval backlog, and measurement loop. Classify mixed assets as approved-ready, draft-needs-approval, measurement-waiting, or blocked before Publisher intake. Do not claim anything has been published, ingested, approved, measured, expanded, or queued as ready without proof.",
+      "body": {
+        "campaign": {
+          "objective": "increase signups",
+          "audience": "founders",
+          "targetUrl": "https://aiagent-marketplace.net",
+          "channels": ["owned site", "X", "email", "ads"],
+          "kpis": ["signup conversion", "publisher item approval rate", "qualified order starts"],
+          "assets": [
+            {
+              "id": "homepage-hero-copy",
+              "title": "Homepage hero rewrite",
+              "channel": "owned site",
+              "approval_status": "approved by founder in CMO handoff",
+              "measurement_status": "not measured yet",
+              "owner": "landing page owner"
+            },
+            {
+              "id": "x-launch-thread",
+              "title": "X launch thread draft",
+              "channel": "X",
+              "approval_status": "draft; owner approval missing",
+              "measurement_status": "not applicable until posted",
+              "owner": "founder"
+            },
+            {
+              "id": "lifecycle-email",
+              "title": "Signup lifecycle email",
+              "channel": "email",
+              "approval_status": "approved copy",
+              "measurement_status": "first-send results pending after approved send; measurement-waiting",
+              "owner": "email ops"
+            },
+            {
+              "id": "google-ads-creative",
+              "title": "Google Ads creative packet",
+              "channel": "ads",
+              "approval_status": "blocked; conversion tracking unverified",
+              "measurement_status": "conversion event proof missing",
+              "owner": "ads owner"
+            }
+          ],
+          "connector_status": "Publisher, ESP, X, Ads, and Analytics connector execution proof not supplied",
+          "approval_owner": "founder"
+        }
+      }
+    },
+    {
+      "id": "ads-planner-budget-guardrails",
+      "file": "ads-planner.js",
+      "kind": "ads_planner",
+      "prompt": "Prepare a Google Ads plan for aiagent-marketplace.net with a $300 test budget, target CPA $30, strict stop rules, draft creative packet, launch approval handoff, and a clear blocker if conversion tracking is not verified. Do not launch ads.",
+      "body": {
+        "ads": {
+          "provider": "google_ads",
+          "budgetCap": 300,
+          "targetCpa": 30,
+          "conversionEvent": "paid_order",
+          "conversionTrackingStatus": "unverified"
+        }
+      }
+    },
+    {
+      "id": "seo-specialist-rewrite",
+      "file": "seo-specialist.js",
+      "kind": "seo_specialist",
+      "prompt": "Rewrite the homepage for the keyword AI agent marketplace. Target English-speaking founders and signup conversion. Use the supplied Search Console rows to create a row-level landing intent map, and put requested-but-unsupplied query/page exports into a missing export queue with required fields, owner/source, status, and blocked SEO decision instead of inferring performance or CTA priority. Include SERP/source status and Publisher handoff boundary.",
+      "body": {
+        "input": {
+          "target_url": "https://aiagent-marketplace.net",
+          "keyword": "AI agent marketplace",
+          "market": "English",
+          "conversion_goal": "signup",
+          "search_console": {
+            "property": "sc-domain:aiagent-marketplace.net",
+            "date_range": "2026-05-01 to 2026-05-24",
+            "source_status": "csv export supplied by owner, connector not executed by agent",
+            "rows": [
+              {
+                "query": "ai agent marketplace",
+                "landing_page": "https://aiagent-marketplace.net/",
+                "impressions": 420,
+                "clicks": 18,
+                "ctr": "4.3%",
+                "position": 11.8
+              },
+              {
+                "query": "hire ai agent",
+                "landing_page": "https://aiagent-marketplace.net/",
+                "impressions": 130,
+                "clicks": 3,
+                "ctr": "2.3%",
+                "position": 18.2
+              }
+            ],
+            "missing_exports": [
+              {
+                "requested_set": "pricing page query/page rows",
+                "required_fields": ["query", "landing_page", "impressions", "clicks", "ctr", "position", "date_range", "property"],
+                "owner_or_source": "founder Search Console export",
+                "status": "not supplied",
+                "blocked_decision": "do not rank pricing-page CTA priority from Search Console until rows return"
+              },
+              {
+                "requested_set": "brand query rows",
+                "required_fields": ["query", "landing_page", "impressions", "clicks", "ctr", "position", "date_range", "property"],
+                "owner_or_source": "founder Search Console export",
+                "status": "not supplied",
+                "blocked_decision": "do not claim brand intent demand or performance until rows return"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "writer-copy-packet",
+      "file": "writer.js",
+      "kind": "writing",
+      "prompt": "Create homepage hero and section copy for an AI agent marketplace aimed at solo founders. CTA: start with one paid agent order. No verified customer testimonials, revenue metrics, or case-study proof are supplied, so keep proof claims conservative, include a proof placeholder map with replacement evidence needed, create a claim-use ledger, provide two distinct variants, and prepare a downstream handoff packet for the founder and landing page owner. Do not claim any proof is verified, approved, published, or safe for downstream reuse without owner review.",
+      "body": {
+        "input": {
+          "audience": "solo founders",
+          "surface": "homepage",
+          "cta": "start paid agent order",
+          "offer": "order a managed AI agent for growth or operations work",
+          "proof_status": "missing: no verified testimonials, revenue metrics, retention metrics, or case studies supplied",
+          "known_safe_facts": [
+            "users can start with one paid agent order",
+            "the service is an AI agent marketplace"
+          ],
+          "blocked_claims": [
+            "trusted by founders",
+            "saves 10 hours per week",
+            "customers increased revenue"
+          ],
+          "downstream_owner": "landing page owner",
+          "approval_owner": "founder"
+        }
+      }
+    },
+    {
+      "id": "landing-rewrite",
+      "file": "landing.js",
+      "kind": "landing",
+      "prompt": "Improve the landing page hero and CTA for https://aiagent-marketplace.net. Provide replacement copy, trust block, and implementation handoff.",
+      "body": {
+        "input": {
+          "target_url": "https://aiagent-marketplace.net",
+          "conversion_goal": "signup"
+        }
+      }
+    },
+    {
+      "id": "x-post-launch-packet",
+      "file": "x-post.js",
+      "kind": "x_post",
+      "prompt": "Prepare X posts for launching Publisher Approval Studio. Include exact post text, replies, cadence, account and link policy, pre-publish review, publish readiness handoff, and approval/connector boundary. Do not claim it was posted, queued, scheduled, approved, or ready to post without proof.",
+      "body": {
+        "input": {
+          "account_handle": "@example",
+          "voice": "founder"
+        }
+      }
+    },
+    {
+      "id": "instagram-creative-packet",
+      "file": "instagram.js",
+      "kind": "instagram",
+      "prompt": "Prepare an Instagram carousel and caption outline for an AI agent marketplace launch. Include destination URL/copy status, visual asset readiness matrix, visual brief, content outline guidance, exact caption-or-outline, hashtags, approval checklist, schedule handoff boundary, and execution status labels. Some image assets are missing or rights-unverified, so separate supplied assets from production tasks and do not claim media exists, rights are cleared, copy is approved, the post is queued, or anything was posted.",
+      "body": {
+        "input": {
+          "format": "carousel",
+          "audience": "solo founders",
+          "offer": "AI agent marketplace for ordering managed agent work",
+          "destination_url_status": "draft URL supplied; not approved for Instagram bio/link sticker",
+          "approved_copy_status": "no approved caption or landing-page copy supplied",
+          "visual_assets": [
+            {
+              "frame": 1,
+              "asset": "product dashboard screenshot",
+              "status": "supplied as internal screenshot; rights unverified; must redact private data before use"
+            },
+            {
+              "frame": 2,
+              "asset": "sample delivered agent output screenshot",
+              "status": "missing; production task"
+            },
+            {
+              "frame": 3,
+              "asset": "founder workflow diagram",
+              "status": "missing; production task"
+            }
+          ],
+          "proof_status": "no customer testimonials, revenue metric, or case-study proof supplied",
+          "account_status": "target Instagram account not connected; no connector execution proof",
+          "approval_owner": "founder"
+        }
+      }
+    },
+    {
+      "id": "reddit-community-post",
+      "file": "reddit.js",
+      "kind": "reddit",
+      "prompt": "Prepare a Reddit post for a founder community about safely using AI agents. Include subreddit fit, rule risk, post draft, and manual posting boundary.",
+      "body": {
+        "input": {
+          "community": "startup founders"
+        }
+      }
+    },
+    {
+      "id": "indie-hackers-founder-post",
+      "file": "indie-hackers.js",
+      "kind": "indie_hackers",
+      "prompt": "Prepare an Indie Hackers launch post for an AI agent marketplace. Make it founder-story led and avoid sounding like an ad.",
+      "body": {
+        "input": {
+          "community": "Indie Hackers"
+        }
+      }
+    },
+    {
+      "id": "email-ops-lifecycle-draft",
+      "file": "email-ops.js",
+      "kind": "email_ops",
+      "prompt": "Prepare a lifecycle email for users who created an account but have not ordered an agent. Include subject, body, CTA, approval checklist, and send boundary.",
+      "body": {
+        "input": {
+          "audience": "signed up but no order",
+          "sender": "CAIt team"
+        }
+      }
+    },
+    {
+      "id": "cold-email-source-backed-outreach",
+      "file": "cold-email.js",
+      "kind": "cold_email",
+      "prompt": "Prepare source-backed cold outreach to startup founders for AI agent marketplace demos. Include lead source status, consent boundary, and send handoff.",
+      "body": {
+        "input": {
+          "target_segment": "startup founders",
+          "sender": "founder"
+        }
+      }
+    },
+    {
+      "id": "acquisition-automation-flow",
+      "file": "acquisition-automation.js",
+      "kind": "acquisition_automation",
+      "prompt": "Design one acquisition automation flow from signup to first paid agent order. Include trigger, CRM states, messages, approval gates, stop rules, and measurement.",
+      "body": {
+        "input": {
+          "conversion_goal": "first paid agent order"
+        }
+      }
+    },
+    {
+      "id": "media-planner-channel-fit",
+      "file": "media-planner.js",
+      "kind": "media_planner",
+      "prompt": "Choose the top three free/owned channels for an AI agent marketplace. Include channel fit matrix, why-not list, and next channel handoff.",
+      "body": {
+        "input": {
+          "target_url": "https://aiagent-marketplace.net",
+          "conversion_goal": "orders"
+        }
+      }
+    },
+    {
+      "id": "directory-submission-queue",
+      "file": "directory-submission.js",
+      "kind": "directory_submission",
+      "prompt": "Prepare a directory submission queue for an AI agent marketplace. Include fit reasons, rule check status, required fields, listing copy, submission owner handoff, UTM/proof tracker, and submission boundary. Do not claim anything was submitted, approved, live, ready without owner approval, or verified without dated source proof.",
+      "body": {
+        "input": {
+          "category": "AI tools"
+        }
+      }
+    },
+    {
+      "id": "citation-ops-local-profile",
+      "file": "citation-ops.js",
+      "kind": "citation_ops",
+      "prompt": "Prepare local citation readiness for a Tokyo AI automation consultancy. Include canonical NAP, unverified fields, citation queue, and review flow.",
+      "body": {
+        "input": {
+          "business_name": "Example AI Automation",
+          "city": "Tokyo"
+        }
+      }
+    },
+    {
+      "id": "list-creator-public-source-list",
+      "file": "list-creator.js",
+      "kind": "list_creator",
+      "prompt": "Find 3 public-source prospect rows for startup founders likely to buy AI agent setup. Include company URL, qualification reason, public contact path or contact-missing label, row-level source ledger, duplicate/exclusion review, CRM/cold_email field map, approval owner, and not-imported/not-contacted execution labels. Use public sources only and do not claim rows are approved, imported, enriched, queued, or contacted.",
+      "body": {
+        "input": {
+          "target_segment": "startup founders",
+          "geography": "United States",
+          "requested_count": 3,
+          "offer": "AI agent setup",
+          "source_policy": "public sources only",
+          "approval_owner": "founder",
+          "destination_system": "cold_email review",
+          "search_queries": [
+            "startup founder tools directory contact AI automation",
+            "startup founder newsletter contact SaaS tools",
+            "founder community company contact page AI tools"
+          ]
+        }
+      }
+    },
+    {
+      "id": "growth-loop-experiment",
+      "file": "growth.js",
+      "kind": "growth",
+      "prompt": "Design one 7-day growth loop experiment for https://aiagent-marketplace.net to convert solo-founder visitors into paid agent orders. Current facts: 1,200 sessions in the last 14 days, 18 signups, 0 paid orders, no verified proof block on the homepage, GA4 page_view and signup events exist but paid_order is not verified. Deliver a bottleneck diagnosis, exact homepage or owned-channel artifact packet, activation owner, approval owner, measurement owner, review date, metric threshold, kill rule, execution proof tracker, and next decision. Do not claim launch, traffic routing, conversion lift, publication, approval, or winner status without dated proof. Next owner is the founder.",
+      "body": {
+        "input": {
+          "target_url": "https://aiagent-marketplace.net",
+          "audience": "solo founders",
+          "conversion_goal": "paid agent order",
+          "sessions_last_14_days": 1200,
+          "signups_last_14_days": 18,
+          "paid_orders_last_14_days": 0,
+          "homepage_evidence": "no verified proof block",
+          "measurement_status": "GA4 page_view and signup events exist; paid_order event is not verified",
+          "activation_owner": "founder",
+          "approval_owner": "founder",
+          "measurement_owner": "founder",
+          "next_owner": "founder",
+          "budget": "no paid spend"
+        }
+      }
+    },
+    {
+      "id": "agent-team-leader-roster",
+      "file": "agent-team-leader.js",
+      "kind": "agent_team_leader",
+      "prompt": "Plan a three-agent workflow for improving checkout conversion. Include specialist roster, non-overlap rules, merge criteria, and final acceptance checks.",
+      "body": {
+        "input": {
+          "objective": "improve checkout conversion",
+          "expected_specialists": ["research", "landing", "data_analysis"]
+        }
+      }
+    },
+    {
+      "id": "build-team-leader-implementation",
+      "file": "build-team-leader.js",
+      "kind": "build_team_leader",
+      "prompt": "Lead a repo-aware bug fix for an order status page with multiple implementers. The API, UI, and QA owners may touch the same route, UI state, and QA fixture files. Include file ownership, write-intent conflict matrix, pre-implementation conflict checkpoint, planned diff/no-diff labels per owner, serial vs parallel sequencing, serial blockers, downstream contract owner, integration owner, validation commands, rollback path, and PR handoff criteria. Do not mark the work implementation-ready or parallel-ready until shared-file conflicts and merge checks are explicit.",
+      "body": {
+        "input": {
+          "affected_area": "order status page",
+          "affected_files": [
+            "public/order-status.js",
+            "lib/api-routes.js",
+            "scripts/ui-qa.mjs"
+          ],
+          "suspected_shared_files": [
+            "lib/api-routes.js",
+            "scripts/ui-qa.mjs"
+          ],
+          "shared_file_write_intents": [
+            {
+              "file": "lib/api-routes.js",
+              "owners": ["API implementer", "UI implementer"],
+              "writes": ["status endpoint response shape", "frontend-facing field contract"],
+              "planned_diff_status": {
+                "API implementer": "will change endpoint response fields",
+                "UI implementer": "no direct route diff; depends on frozen response contract"
+              },
+              "serial_blocker": "API response contract must be frozen before UI implementation",
+              "downstream_contract_owner": "UI implementer"
+            },
+            {
+              "file": "scripts/ui-qa.mjs",
+              "owners": ["UI implementer", "QA owner"],
+              "writes": ["order status assertion", "regression fixture coverage"],
+              "planned_diff_status": {
+                "UI implementer": "may update selectors or state fixture expectations",
+                "QA owner": "will update final assertions after UI field names are frozen"
+              },
+              "serial_blocker": "QA assertion update waits until UI owner confirms selector and status text",
+              "downstream_contract_owner": "QA owner"
+            }
+          ],
+          "conflict_checkpoint": "Before implementation, freeze API response shape, UI status labels, QA selector names, integration owner, and merge/check order.",
+          "owner_candidates": [
+            "UI implementer",
+            "API implementer",
+            "QA owner"
+          ],
+          "validation_command": "npm run qa:ui"
+        }
+      }
+    },
+    {
+      "id": "cfo-leader-pricing-scenario",
+      "file": "cfo-leader.js",
+      "kind": "cfo_leader",
+      "prompt": "Use MASAMUNE (https://masamune.online) and the supplied Aidma Holdings IR excerpt to decide how a similar marketing automation service could win. Include a competitive benchmark ledger, source-to-model ledger, winning economics, formulas, scenarios, sensitivity, specialist handoff plan, decision trigger, approval owner, proof tracker, confidence labels, and risks. Do not claim the strategy has won, prices changed, budgets changed, or external work executed without proof.",
+      "body": {
+        "web_sources": [
+          {
+            "title": "MASAMUNE",
+            "url": "https://masamune.online/",
+            "snippet": "Marketing automation. Login first, then start planning from a single service URL. Go to login. Create account."
+          },
+          {
+            "title": "Aidma Holdings 2026 Q2 IR",
+            "url": "https://global-assets.irdirect.jp/pdf/menu_file/7373/20260413132201_4817.pdf",
+            "snippet": "2026 Q2 cumulative revenue 7,248 million yen, operating profit 1,520 million yen, sales-support orders 2,641, HR-support orders 1,889. Sales support uses sales DX tools, cloud workers, and consulting."
+          }
+        ],
+        "input": {
+          "target_url": "https://masamune.online",
+          "business_model": "marketing automation service that starts planning from one service URL",
+          "decision_question": "How can a similar service beat incumbents and Aidma-like sales-support operators?",
+          "reference_company": "Aidma Holdings",
+          "reference_source_status": "public IR excerpt supplied; full model inputs, cohort data, CAC, churn, unit cost, pricing, and payback are not supplied",
+          "ir_excerpt": {
+            "source_date": "2026-04-10",
+            "revenue_million_yen": 7248,
+            "operating_profit_million_yen": 1520,
+            "sales_support_orders": 2641,
+            "hr_support_orders": 1889,
+            "operating_model_notes": [
+              "sales DX tools",
+              "cloud-worker outsourcing",
+              "consulting"
+            ]
+          },
+          "scenario_assumptions": {
+            "starter_price_yen_per_month": 49800,
+            "target_gross_margin": 0.65,
+            "first_90_day_paid_customers": [20, 50, 100]
+          },
+          "approval_owner": "founder"
+        }
+      }
+    },
+    {
+      "id": "code-agent-patch-handoff",
+      "file": "code.js",
+      "kind": "code",
+      "prompt": "Prepare an implementation handoff for fixing a delivery item renderer bug. No repository diff has been supplied yet, so label the current delivery planned-only unless execution evidence exists. Include affected files, patch plan, validation command/result boundary, validation evidence or unrun reason, risks, rollback, and PR notes. Do not claim files were changed, tests passed, or a PR was opened without proof.",
+      "body": {
+        "input": {
+          "affected_files": ["public/delivery-renderer.js", "lib/delivery-items.js"],
+          "change_status": "no repository diff supplied",
+          "validation_command": "npm run qa:builtin-agents"
+        }
+      }
+    },
+    {
+      "id": "cpo-leader-mvp-slice",
+      "file": "cpo-leader.js",
+      "kind": "cpo_leader",
+      "prompt": "Choose an MVP slice for recurring agent orders. Include user problem, tradeoff matrix, rejected alternatives, experiment, acceptance threshold, and next decision.",
+      "body": {
+        "input": {
+          "user_segment": "solo founders",
+          "riskiest_assumption": "users want scheduled recurring work"
+        }
+      }
+    },
+    {
+      "id": "cto-leader-rollout",
+      "file": "cto-leader.js",
+      "kind": "cto_leader",
+      "prompt": "Decide how to roll out queue-backed agent dispatch when current-state evidence is incomplete. Include current-state evidence, evidence sufficiency gate, architecture options, decision status, chosen or provisional path, validation gate, rollback trigger, and risks. Do not claim the architecture decision is final, rollout is approved, deployed, or production-ready without repo/platform evidence and owner approval.",
+      "body": {
+        "input": {
+          "current_state": "Only a high-level note is supplied: direct dispatch with optional queue. No repo files, queue metrics, incident logs, dependency map, or runtime architecture diagram are supplied.",
+          "decision_need": "choose whether to make queue-backed dispatch the default rollout path",
+          "source_status": "current-state evidence incomplete",
+          "missing_evidence": [
+            "repo files for dispatch path",
+            "queue latency/error metrics",
+            "dependency map",
+            "rollback owner approval"
+          ],
+          "rollback_trigger": "dispatch error rate above 2%",
+          "approval_owner": "engineering owner"
+        }
+      }
+    },
+    {
+      "id": "data-analysis-metric-audit",
+      "file": "data-analysis.js",
+      "kind": "data_analysis",
+      "prompt": "Analyze a small funnel dataset for paid agent order conversion. Use the supplied sample rows to show row coverage, metric definitions, a derived metric calculation table with formula/numerator/denominator, findings, caveats, query notes, and next decision. Do not claim full-funnel performance, verified conversion tracking, or a computed rate without visible rows and instrumentation proof.",
+      "body": {
+        "input": {
+          "columns": ["sessions", "signup", "order_started", "paid_order"],
+          "dataset_status": "sample rows supplied",
+          "date_range": "2026-05-01 to 2026-05-14",
+          "conversion_event_status": "paid_order tracking unverified",
+          "sample_rows": [
+            { "segment": "organic_search", "sessions": 420, "signup": 9, "order_started": 3, "paid_order": 0 },
+            { "segment": "direct", "sessions": 310, "signup": 5, "order_started": 1, "paid_order": 0 },
+            { "segment": "community_referral", "sessions": 180, "signup": 4, "order_started": 2, "paid_order": 1 }
+          ],
+          "expected_calculations": [
+            "signup_rate = signup / sessions",
+            "order_start_rate = order_started / sessions",
+            "paid_order_rate = paid_order / sessions"
+          ]
+        }
+      }
+    },
+    {
+      "id": "diligence-red-flag-review",
+      "file": "diligence.js",
+      "kind": "diligence",
+      "prompt": "Review a marketplace launch plan for blockers. Include red flag matrix, evidence map, severity, go/no-go impact for each material red flag, next verification per red flag, verification queue, decision owner handoff, verification proof tracker, approval/execution status labels, and conditional recommendation. Do not claim launch approval, adopted go/no-go decision, blocker resolution, or completed verification without owner approval and dated proof.",
+      "body": {
+        "input": {
+          "plan": "launch provider marketplace with paid orders",
+          "known_gap": "provider verification evidence is incomplete",
+          "decision_owner": "founder",
+          "verification_proof_status": "no dated verification proof supplied"
+        }
+      }
+    },
+    {
+      "id": "follow-up-open-loop",
+      "file": "follow-up.js",
+      "kind": "follow_up",
+      "prompt": "Prepare follow-ups for three open customer loops: demo feedback is due tomorrow, invoice approval has no confirmed deadline, and a security questionnaire is overdue. Include owner, deadline or missing-deadline label, priority rank and reason, relationship context, business impact, follow-up copy, approval/send handoff, execution status labels, and next-check trigger. Do not claim any message was sent, reminder was scheduled, or missing deadline was confirmed without proof.",
+      "body": {
+        "input": {
+          "open_loops": [
+            {
+              "id": "demo-feedback",
+              "waiting_on_party": "customer champion",
+              "owner": "founder",
+              "deadline": "tomorrow",
+              "last_touch": "demo ended two days ago",
+              "relationship_context": "warm evaluation",
+              "business_impact": "could unlock paid pilot",
+              "approval_owner": "founder"
+            },
+            {
+              "id": "invoice-approval",
+              "waiting_on_party": "customer finance contact",
+              "owner": "ops",
+              "deadline": null,
+              "deadline_status": "missing; no due date supplied",
+              "last_touch": "invoice sent last week",
+              "relationship_context": "existing customer",
+              "business_impact": "cash collection blocked",
+              "approval_owner": "founder"
+            },
+            {
+              "id": "security-questionnaire",
+              "waiting_on_party": "internal security owner",
+              "owner": "support",
+              "deadline": "yesterday",
+              "last_touch": "customer requested completion three days ago",
+              "relationship_context": "enterprise prospect waiting",
+              "business_impact": "procurement blocked",
+              "approval_owner": "support lead"
+            }
+          ],
+          "connector_status": "no Gmail or reminder connector execution proof supplied",
+          "current_date": "2026-05-26",
+          "next_owner": "founder"
+        }
+      }
+    },
+    {
+      "id": "hiring-role-scorecard",
+      "file": "hiring.js",
+      "kind": "hiring",
+      "prompt": "Prepare a role packet for a part-time QA engineer. Include role outcomes, scorecard, JD, must-haves, screening questions, evaluation rubric, protected-class/legal risk gate, candidate evidence boundary before any candidate evaluation, and exclusion risks. Rewrite any protected-class or proxy preferences into job-related signals or mark reviewer needed. Do not claim the job was posted, interviews were scheduled, compliance was cleared, or any candidate was evaluated without proof.",
+      "body": {
+        "input": {
+          "role": "part-time QA engineer",
+          "outcome": "own regression checks for agent delivery",
+          "team_stage": "small founder-led product team",
+          "constraints": {
+            "hours_per_week": "10-15",
+            "location": "remote",
+            "compensation": "not supplied",
+            "approval_owner": "founder"
+          },
+          "risky_preferences_to_review": [
+            "young native English speaker",
+            "no family constraints",
+            "must be available at any time"
+          ],
+          "candidate_evidence_status": "no candidate materials supplied"
+        }
+      }
+    },
+    {
+      "id": "inbox-triage-owner-queue",
+      "file": "inbox-triage.js",
+      "kind": "inbox_triage",
+      "prompt": "Triage a mixed inbox into owner-ready queues. Include snapshot freshness, item-level source freshness status, priority reason, reply-needed label, owner, deadline or missing-deadline label, risk flag, privacy-minimized specialist handoff, approval packet, connector state, and next action. Some items have no message/thread timestamp; label those as stale/unknown instead of treating them as current. Do not claim messages were sent, archived, labeled, read, scheduled, or freshly verified without connector proof.",
+      "body": {
+        "input": {
+          "snapshot_status": "manual summary pasted by founder; no Gmail connector execution proof",
+          "snapshot_time": "2026-05-26T08:00:00+09:00",
+          "messages": [
+            {
+              "id": "billing-question",
+              "source": "redacted Gmail summary",
+              "sender": "customer finance contact",
+              "subject": "Question before paying invoice",
+              "message_date": "2026-05-25T16:30:00+09:00",
+              "summary": "Asks whether the invoice can be paid by card today.",
+              "deadline": "today",
+              "owner": "founder"
+            },
+            {
+              "id": "provider-approval",
+              "source": "redacted Gmail summary",
+              "sender": "provider applicant",
+              "subject": "Can I start taking marketplace jobs?",
+              "message_date": null,
+              "source_freshness": "missing timestamp; thread freshness unknown",
+              "summary": "Asks for provider approval status; no dated verification proof is attached.",
+              "deadline": null,
+              "owner": "ops"
+            },
+            {
+              "id": "newsletter",
+              "source": "subject-only inbox export",
+              "sender": "newsletter",
+              "subject": "Weekly AI tools roundup",
+              "message_date": null,
+              "source_freshness": "subject-only; stale/unknown",
+              "summary": "FYI newsletter with no visible action request.",
+              "deadline": null,
+              "owner": "none"
+            }
+          ],
+          "connector_state": "not connected; no mailbox mutation proof",
+          "approval_owner": "founder"
+        }
+      }
+    },
+    {
+      "id": "legal-leader-policy-boundary",
+      "file": "legal-leader.js",
+      "kind": "legal_leader",
+      "prompt": "Prepare a provider marketplace terms review packet for Japan-based AI agent orders. Include a top jurisdiction and reviewer-needed snapshot, source material status, issue map, risk levels, draft clause options, attorney review queue, approval/execution status labels, and open questions. Source materials are partial; do not claim definitive legal advice, attorney review, owner approval, publication, or compliance clearance without proof. Next owner is the founder.",
+      "body": {
+        "input": {
+          "jurisdiction": "Japan",
+          "business_context": "AI agent marketplace where customers order managed agent work and providers may receive payouts",
+          "policy": "provider marketplace terms",
+          "source_material_status": "draft provider terms outline only; no privacy policy, refund policy, payout schedule, provider contract, or attorney memo supplied",
+          "data_payment_flows": "customer account data, order instructions, Stripe/PayJP-style payment flow, provider payout records",
+          "expected_deliverable": "founder-ready issue spotting packet with draft-only clauses and counsel questions",
+          "review_owner": "founder before qualified counsel",
+          "next_owner": "founder"
+        }
+      }
+    },
+    {
+      "id": "meeting-notes-action-log",
+      "file": "meeting-notes.js",
+      "kind": "meeting_notes",
+      "prompt": "Turn the provider approval workflow transcript into minutes, decision log, accountable action items, owners, deadlines, follow-up draft, line-level source ledger, source-to-action trace, owner-visible handoff packets, private context scope, distribution approval gate, and execution status labels. Each action item must cite transcript line IDs or be labeled inferred/ambiguous. Keep the private aside out of owner-visible handoffs, and do not claim minutes were distributed, tasks assigned, or follow-ups sent without proof.",
+      "body": {
+        "input": {
+          "meeting_topic": "provider approval workflow",
+          "meeting_date": "2026-05-26",
+          "participants": ["ops lead", "engineering owner", "support lead"],
+          "transcript_source_status": "owner-supplied line-numbered transcript excerpt; no recording or calendar connector proof supplied",
+          "transcript_lines": [
+            {
+              "line_id": "L01",
+              "speaker": "ops lead",
+              "text": "We agreed not to approve new providers until identity verification evidence is attached to the provider record."
+            },
+            {
+              "line_id": "L02",
+              "speaker": "engineering owner",
+              "text": "I can add the provider record evidence-required flag by Friday, but I need support to confirm the exact document checklist."
+            },
+            {
+              "line_id": "L03",
+              "speaker": "support lead",
+              "text": "Support will draft the checklist tomorrow and mark which fields are customer-visible versus internal-only."
+            },
+            {
+              "line_id": "L04",
+              "speaker": "ops lead",
+              "text": "Please send the checklist draft to me for approval before anyone updates provider-facing copy."
+            },
+            {
+              "line_id": "L05",
+              "speaker": "ops lead",
+              "text": "Private aside: one provider's failed verification details should stay out of the owner handoff."
+            },
+            {
+              "line_id": "L06",
+              "speaker": "engineering owner",
+              "text": "No tasks have been created in Linear yet, and no follow-up email has been sent."
+            }
+          ],
+          "expected_owner_visible_handoffs": [
+            "engineering owner needs only the evidence-required flag task and checklist dependency",
+            "support lead needs only the checklist task and visibility classification request",
+            "ops lead needs approval queue and unresolved questions"
+          ],
+          "private_context": [
+            {
+              "source_line": "L05",
+              "handling": "withhold from owner-visible handoffs unless founder explicitly approves disclosure"
+            }
+          ],
+          "connector_status": "no Linear, Gmail, or calendar connector execution proof supplied",
+          "approval_owner": "ops lead"
+        }
+      }
+    },
+    {
+      "id": "meeting-prep-decision-brief",
+      "file": "meeting-prep.js",
+      "kind": "meeting_prep",
+      "prompt": "Prepare a decision meeting brief for choosing billing provider fallback. Include agenda, participant context, decision points, pre-read checklist, questions, participant-visible context scope, calendar/send boundary, and execution status labels.",
+      "body": {
+        "input": {
+          "objective": "choose billing fallback",
+          "participants": ["founder", "engineering", "finance"]
+        }
+      }
+    },
+    {
+      "id": "pricing-model-decision",
+      "file": "pricing.js",
+      "kind": "pricing",
+      "prompt": "Recommend package pricing for managed agent orders. Include value metric, assumptions, cost basis, scenarios, sensitivity, and decision trigger.",
+      "body": {
+        "input": {
+          "value_metric": "completed agent order",
+          "cost_basis": "LLM plus provider payout"
+        }
+      }
+    },
+    {
+      "id": "prompt-brushup-intent-preservation",
+      "file": "prompt-brushup.js",
+      "kind": "prompt_brushup",
+      "prompt": "Improve a prompt for ordering market research while preserving intent. Include before/after prompt, intent ledger, source/context ledger, constraints kept, dispatch handoff packet, execution status labels, rationale, and test cases.",
+      "body": {
+        "input": {
+          "original_prompt": "Research competitors and make it actionable without losing source caveats."
+        }
+      }
+    },
+    {
+      "id": "reply-draft-approval-gate",
+      "file": "reply-draft.js",
+      "kind": "reply_draft",
+      "prompt": "Draft a reply to a customer asking about data retention. Include relationship context, unresolved facts, tone rationale, send guardrail, and approval gate.",
+      "body": {
+        "input": {
+          "recipient": "customer security reviewer",
+          "unresolved_fact": "exact retention period"
+        }
+      }
+    },
+    {
+      "id": "research-team-leader-source-plan",
+      "file": "research-team-leader.js",
+      "kind": "research_team_leader",
+      "prompt": "Coordinate research on AI agent marketplace demand for deciding the first paid buyer segment. Split work across non-overlapping specialists, define source plan, per-specialist evidence acceptance standards, conflict resolution, synthesis plan, confidence grading, and owner-ready decision handoff. Do not claim research is complete, sources were accessed, or the segment decision is approved without proof.",
+      "body": {
+        "input": {
+          "research_question": "which buyer segment is ready to pay first",
+          "candidate_segments": ["solo founders", "small agencies", "internal ops teams"],
+          "supplied_context": "homepage positioning notes only; no GA4 export, Search Console export, customer interviews, or competitor source ledger supplied",
+          "expected_deliverable": "decision memo workplan with specialist split and evidence acceptance matrix",
+          "next_owner": "founder"
+        }
+      }
+    },
+    {
+      "id": "research-source-backed-memo",
+      "file": "research.js",
+      "kind": "research",
+      "prompt": "Research AI agent marketplace demand for deciding whether solo founders should be the first paid buyer segment. Include answer-first summary, source ledger, current vs inferred split, options, recommendation, verification queue, source access boundary, decision handoff packet, and execution status labels. Current public sources are not supplied; put the source collection queue before any demand conclusion and do not claim current market facts, browsing, source access, owner approval, implementation, or verified demand without proof. Next owner is the founder.",
+      "body": {
+        "input": {
+          "research_question": "Is solo-founder demand strong enough to prioritize the first paid buyer segment?",
+          "candidate_segments": [
+            "solo founders",
+            "small agencies",
+            "internal ops teams"
+          ],
+          "supplied_context": "Only homepage positioning notes are supplied; no GA4 export, Search Console export, customer interviews, competitor source ledger, or current public source URLs are supplied.",
+          "expected_deliverable": "source-limited decision memo with verification queue and owner-ready handoff",
+          "source_status": "current public sources missing; user supplied URLs expected",
+          "next_owner": "founder"
+        }
+      }
+    },
+    {
+      "id": "schedule-coordination-candidate-times",
+      "file": "schedule-coordination.js",
+      "kind": "schedule_coordination",
+      "prompt": "Prepare a scheduling packet for a demo with Tokyo and California participants. Include timezone, duration, availability source, candidate times, invite draft, participant response handoff, time option expiry, confirmation owner, connector state, and execution status labels.",
+      "body": {
+        "input": {
+          "timezone": "Asia/Tokyo",
+          "duration_minutes": 30
+        }
+      }
+    },
+    {
+      "id": "secretary-leader-ops-queue",
+      "file": "secretary-leader.js",
+      "kind": "secretary_leader",
+      "prompt": "Coordinate executive assistant work across inbox, calendar, and meeting prep. Synthesize the specialist outputs into one principal-facing queue with least-privilege context scope, item owners, approval gates, connector gaps, and next action.",
+      "body": {
+        "input": {
+          "work_items": ["reply investor email", "schedule demo", "prepare board agenda"],
+          "_broker": {
+            "workflow": {
+              "priorRuns": [
+                {
+                  "taskType": "inbox_triage",
+                  "status": "completed",
+                  "summary": "Investor thread needs a reply today; owner is founder; connector status is Gmail context supplied but send approval missing."
+                },
+                {
+                  "taskType": "schedule_coordination",
+                  "status": "completed",
+                  "summary": "Demo candidate windows prepared for Tokyo morning; calendar write and Meet link creation still need approval."
+                },
+                {
+                  "taskType": "meeting_prep",
+                  "status": "completed",
+                  "summary": "Board agenda brief prepared with finance and provider-risk topics; unrelated inbox details should not be forwarded."
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "teardown-competitor-wedge",
+      "file": "teardown.js",
+      "kind": "teardown",
+      "prompt": "Teardown a competitor landing page for an AI agent marketplace. The only competitor evidence supplied is a URL, with no readable page text or screenshot. Include source access status, competitor classification, observed facts, observed-unavailable labels, bounded inference, comparison table, wedge, first test, and verification queue. Do not claim the landing page was observed unless readable source evidence is supplied.",
+      "body": {
+        "input": {
+          "competitor_url": "https://example.com",
+          "decision": "positioning",
+          "source_access_status": "url_only_no_page_content"
+        }
+      }
+    },
+    {
+      "id": "validation-falsification-plan",
+      "file": "validation.js",
+      "kind": "validation",
+      "prompt": "Validate an app idea for recurring AI agent orders. Include target user, current workaround, riskiest assumption, falsification test, concrete smoke-test asset, learning acceptance table, success threshold, kill criteria, evidence return path, execution status labels, and next decision. Do not claim the test launched, learning was accepted, or continue/kill decision was made without owner approval and result proof.",
+      "body": {
+        "input": {
+          "target_user": "solo founder",
+          "current_workaround": "manual freelancer tasks",
+          "idea": "scheduled recurring AI agent orders for weekly growth and operations work",
+          "riskiest_assumption": "solo founders will commit to a recurring paid workflow before seeing a custom setup",
+          "test_channel": "founder-owned email list or 10 warm founder DMs",
+          "test_owner": "founder",
+          "result_review_owner": "founder",
+          "proof_capture": "spreadsheet with respondent, source, response, commitment signal, and screenshot/link proof",
+          "approval_status": "owner approval not supplied; test not launched"
+        }
+      }
+    }
+  ]
+}

@@ -1,38 +1,67 @@
 import assert from 'node:assert/strict';
-import { DEFAULT_AGENT_SEEDS, agentTagsFromRecord, buildIntakeClarification, inferAgentTagsFromSignals, inferTaskSequence, inferTaskType, computeScore, isAgentTeamLaunchIntent, isBuiltInAgent, isCmoExternalExecutionIntent, isFreeWebGrowthIntent, isLargeAgentTeamIntent, optimizeOrderPromptForBroker } from '../lib/shared.js';
-import { prepareWorkOrderSeed } from '../public/work-intent-resolver.js';
+import { DEFAULT_AGENT_SEEDS, agentTagsFromRecord, buildIntakeClarification, inferAgentTagsFromSignals, inferTaskSequence, inferTaskType, computeScore, isManagedSampleAgent, isLargeAgentTeamIntent, leaderTaskTypeForInitialWork, optimizeOrderPromptForBroker } from '../lib/shared.js';
+import { isAgentTeamLaunchIntent, isCmoExternalExecutionIntent, isFreeWebGrowthIntent } from '../lib/builtin-agents/agents/cmo-leader.js';
 
 assert.equal(inferTaskType('', '料金計算ロジックのバグ修正'), 'code');
 assert.equal(inferTaskType('', '中古iPhone 13の買取比較'), 'research');
 assert.equal(inferTaskType('', 'LPコピーを書いて'), 'writing');
-assert.equal(inferTaskType('', '検索流入を増やすSEO改善'), 'seo');
+assert.equal(inferTaskType('', '検索流入を増やすSEO改善'), 'seo_specialist');
 assert.equal(inferTaskType('', 'ヤフオク出品文を作る'), 'listing');
 assert.equal(inferTaskType('', 'broker dispatch routing'), 'ops');
 assert.equal(inferTaskType('summary', 'ignored'), 'summary');
 assert.equal(inferTaskType('x_post', ''), 'x_post');
 assert.equal(inferTaskType('twitter', ''), 'x_post');
-assert.deepEqual(inferTaskSequence('seo', '検索流入を増やすSEO改善', { maxTasks: 3 }), ['seo', 'research', 'writing']);
+assert.deepEqual(inferTaskSequence('seo', '検索流入を増やすSEO改善', { maxTasks: 3 }), ['seo_specialist']);
 assert.deepEqual(inferTaskSequence('code', '料金計算ロジックのバグ修正', { maxTasks: 2 }), ['code', 'debug']);
-assert.deepEqual(inferTaskSequence('seo', '検索流入を増やすSEO改善', { maxTasks: 3, expand: false }), ['seo']);
-assert.deepEqual(inferTaskSequence('seo', 'Create an SEO strategy and landing page copy', { maxTasks: 3, expand: false }), ['seo', 'writing']);
+assert.deepEqual(inferTaskSequence('seo', '検索流入を増やすSEO改善', { maxTasks: 3, expand: false }), ['seo_specialist']);
+assert.deepEqual(inferTaskSequence('seo', 'Create an SEO strategy and landing page copy', { maxTasks: 3, expand: false }), ['seo_specialist', 'writing']);
 assert.ok(!inferTaskSequence('cmo_leader', 'Build an organic acquisition plan and inspect the funnel.', { maxTasks: 6 }).includes('code'));
 assert.ok(!inferTaskSequence('cmo_leader', 'https://aiagent-marketplace.net の集客を広告費なしで増やしたい。媒体と投稿案が欲しい。', { maxTasks: 6 }).includes('code'));
 const cmoFlow = inferTaskSequence('cmo_leader', 'https://aiagent-marketplace.net の集客を広告費なしで増やしたい。媒体と投稿案が欲しい。', { maxTasks: 11 });
 assert.equal(cmoFlow[0], 'cmo_leader');
 assert.ok(cmoFlow.includes('research'));
-assert.ok(cmoFlow.includes('teardown'));
 assert.ok(cmoFlow.includes('growth'));
 assert.ok(cmoFlow.includes('summary'));
 assert.ok(cmoFlow.indexOf('research') > cmoFlow.indexOf('cmo_leader'));
+assert.equal(cmoFlow.includes('instagram'), false);
+assert.equal(cmoFlow.includes('x_post'), false);
+const cmoGenericSeoSocial = inferTaskSequence('cmo_leader', '自然検索・SEOとSNS・ソーシャルを中心に登録を増やす計画を作って。実施案は計画のみ。', { maxTasks: 10 });
+assert.equal(cmoGenericSeoSocial[0], 'cmo_leader');
+assert.ok(cmoGenericSeoSocial.includes('seo_specialist'));
+assert.ok(cmoGenericSeoSocial.includes('growth'));
+assert.equal(cmoGenericSeoSocial.includes('instagram'), false);
+assert.equal(cmoGenericSeoSocial.includes('x_post'), false);
 assert.equal(isAgentTeamLaunchIntent('', '1告知でX Reddit Indie Hackers Instagramまでまとめて作りたい'), true);
 assert.equal(isFreeWebGrowthIntent('', '広告費なしでWeb周りの無料施策をやりたい'), true);
 assert.equal(isLargeAgentTeamIntent('', '広告費なしでWeb周りの無料施策をやりたい'), true);
 const freeFlow = inferTaskSequence('', '広告費なしでWeb周りの無料施策を全部やってほしい', { maxTasks: 11 });
 assert.equal(freeFlow[0], 'cmo_leader');
 assert.ok(freeFlow.includes('research'));
-assert.ok(freeFlow.includes('seo_gap'));
-assert.ok(freeFlow.includes('landing'));
-assert.ok(freeFlow.includes('growth'));
+assert.ok(freeFlow.includes('media_planner'));
+assert.ok(freeFlow.some((task) => ['list_creator', 'seo_specialist', 'landing', 'writing', 'writer'].includes(task)));
+assert.ok(freeFlow.some((task) => ['reddit', 'indie_hackers'].includes(task)));
+assert.equal(freeFlow.some((task) => ['x_post', 'directory_submission', 'acquisition_automation'].includes(task)), false);
+assert.equal(freeFlow.includes('data_analysis'), false);
+
+const ambiguousCmoActionPrompt = 'CMOとして、https://aiagent-marketplace.net の集客を実行まで。対象はAIツールを使う開発者と小規模SaaS創業者。目標は30日でGitHubログインとエージェント登録を増やすこと。現状は流入が少なく、広告費なし。GA4やSearch Consoleはなし、営業資料なし。納品は媒体プラン、投稿/掲載コピー、承認パケット。最後の実行フェイズはできる限りの複数アクションをする。';
+const ambiguousCmoActionIntake = buildIntakeClarification({
+  task_type: 'cmo_leader',
+  prompt: ambiguousCmoActionPrompt
+}, { taskType: 'cmo_leader' });
+assert.equal(ambiguousCmoActionIntake, null);
+const ambiguousCmoActionFlow = inferTaskSequence('cmo_leader', ambiguousCmoActionPrompt, { maxTasks: 14 });
+assert.equal(ambiguousCmoActionFlow[0], 'cmo_leader');
+assert.equal(ambiguousCmoActionFlow.includes('data_analysis'), false);
+assert.ok(ambiguousCmoActionFlow.includes('research'));
+assert.ok(ambiguousCmoActionFlow.includes('media_planner'));
+assert.ok(ambiguousCmoActionFlow.indexOf('research') < ambiguousCmoActionFlow.indexOf('media_planner'));
+assert.ok(ambiguousCmoActionFlow.some((task) => ['writing', 'seo_specialist', 'landing'].includes(task)));
+const ambiguousCmoActionIndexes = ambiguousCmoActionFlow
+  .map((task, index) => ['reddit', 'indie_hackers', 'writing', 'seo_specialist', 'landing'].includes(task) ? index : -1)
+  .filter((index) => index >= 0);
+assert.ok(ambiguousCmoActionIndexes.length >= 2);
+assert.ok(ambiguousCmoActionFlow.indexOf('media_planner') < Math.min(...ambiguousCmoActionIndexes));
+assert.ok(inferTaskSequence('cmo_leader', 'GA4とSearch Consoleを分析して登録率を改善する計画を作って', { maxTasks: 10 }).includes('data_analysis'));
 
 const cmoActionFlow = inferTaskSequence('cmo_leader', 'CMOスタートで外部コネクターまで実行し、X投稿とディレクトリ掲載のアクションまで完走したい', { maxTasks: 14 });
 assert.equal(isCmoExternalExecutionIntent('cmo_leader', '外部コネクターまで実行したい'), true);
@@ -40,43 +69,44 @@ assert.equal(isCmoExternalExecutionIntent('cmo_leader', 'I have x account, indie
 assert.equal(cmoActionFlow[0], 'cmo_leader');
 assert.ok(cmoActionFlow.includes('research'));
 assert.ok(cmoActionFlow.includes('media_planner'));
-assert.ok(cmoActionFlow.includes('seo_gap'));
-assert.ok(cmoActionFlow.includes('landing'));
-assert.ok(cmoActionFlow.includes('growth'));
-assert.ok(cmoActionFlow.includes('directory_submission'));
-assert.ok(cmoActionFlow.includes('acquisition_automation'));
-assert.ok(cmoActionFlow.includes('x_post'));
+assert.ok(cmoActionFlow.includes('seo_specialist'));
+assert.ok(cmoActionFlow.includes('writing'));
+assert.equal(cmoActionFlow.includes('directory_submission'), false);
+assert.equal(cmoActionFlow.includes('x_post'), false);
+assert.equal(cmoActionFlow.filter((task) => ['media_planner', 'growth'].includes(task)).length, 1);
 const cmoPlanAndDoFlow = inferTaskSequence('cmo_leader', 'aiagent-marketplace.net customer acquisition. engineers, signups. I have x account, indiehackers account and reddit account. plan and do', { maxTasks: 14 });
-assert.ok(cmoPlanAndDoFlow.includes('seo_gap'));
-assert.ok(cmoPlanAndDoFlow.includes('landing'));
 assert.ok(cmoPlanAndDoFlow.includes('growth'));
-assert.ok(cmoPlanAndDoFlow.includes('x_post'));
-assert.ok(cmoPlanAndDoFlow.includes('reddit'));
-assert.ok(cmoPlanAndDoFlow.includes('indie_hackers'));
+assert.ok(cmoPlanAndDoFlow.includes('writing'));
+assert.equal(cmoPlanAndDoFlow.includes('x_post'), false);
 
 const launchFlow = inferTaskSequence('', '1告知でサイト、競合分析、Instagram、X、Reddit、Indie Hackers、データ分析までAgent Teamでまとめて作る', { maxTasks: 11 });
 assert.equal(launchFlow[0], 'cmo_leader');
-assert.ok(launchFlow.includes('instagram'));
+assert.equal(launchFlow.includes('instagram'), false);
 assert.ok(launchFlow.includes('reddit'));
 assert.ok(launchFlow.includes('indie_hackers'));
 
 const explicitLaunchFlow = inferTaskSequence('agent_team_launch', 'Launch CAIt across all channels', { maxTasks: 11, expand: false });
 assert.equal(explicitLaunchFlow[0], 'cmo_leader');
 assert.ok(explicitLaunchFlow.includes('research'));
-assert.ok(explicitLaunchFlow.includes('growth'));
+assert.ok(explicitLaunchFlow.includes('media_planner'));
+assert.ok(explicitLaunchFlow.some((task) => ['reddit', 'indie_hackers', 'writing', 'seo_specialist'].includes(task)));
+assert.equal(explicitLaunchFlow.some((task) => ['directory_submission', 'x_post'].includes(task)), false);
 
 const ctoFlow = inferTaskSequence('cto_leader', 'Fix a GitHub repo bug and send a pull request', { maxTasks: 6 });
 assert.equal(ctoFlow[0], 'cto_leader');
 assert.ok(ctoFlow.includes('code'));
 assert.ok(ctoFlow.includes('debug'));
 assert.ok(ctoFlow.includes('automation'));
-assert.equal(prepareWorkOrderSeed('CTO LeaderとしてSaaS全体設計とロールバック計画を作って').taskType, 'cto_leader');
-assert.equal(prepareWorkOrderSeed('Build Team LeaderとしてGitHub repoのバグ修正を分解して').taskType, 'build_team_leader');
-assert.equal(prepareWorkOrderSeed('i want to get new customers for my website').taskType, 'cmo_leader');
-assert.equal(prepareWorkOrderSeed('サイトの購入を増やしたい').taskType, 'cmo_leader');
-assert.equal(prepareWorkOrderSeed('write a blog post for my product').taskType, 'writing');
-assert.equal(prepareWorkOrderSeed('analyze GA4 and Search Console data').taskType, 'data_analysis');
-assert.equal(prepareWorkOrderSeed('create landing page hero copy').taskType, 'landing');
+assert.equal(leaderTaskTypeForInitialWork('cto_leader', 'SaaS全体設計とロールバック計画を作って'), 'cto_leader');
+assert.equal(leaderTaskTypeForInitialWork('build_team_leader', 'GitHub repoのバグ修正を分解して'), 'build_team_leader');
+assert.equal(leaderTaskTypeForInitialWork('', 'CMO Leaderとしてサイトの購入を増やす施策を作って'), 'cmo_leader');
+assert.equal(inferTaskType('', 'write a blog post for my product'), 'writing');
+assert.equal(inferTaskType('', 'SEO記事を作りたい'), 'seo_specialist');
+assert.equal(inferTaskType('', 'Search Console の query と landing page を対応付けて、SEO の改善案を出して'), 'seo_specialist');
+assert.equal(inferTaskType('', 'Map Search Console queries to landing pages and suggest SEO fixes'), 'seo_specialist');
+assert.equal(inferTaskType('growth', 'i want to get new customers for my website'), 'growth');
+assert.equal(inferTaskType('data_analysis', 'analyze GA4 and Search Console data'), 'data_analysis');
+assert.equal(inferTaskType('landing', 'create landing page hero copy'), 'landing');
 assert.deepEqual(inferTaskSequence('retry_timeout_qa', 'timeout test', { maxTasks: 3, expand: false }), ['retry_timeout_qa']);
 
 const thinCmoIntake = buildIntakeClarification({
@@ -132,23 +162,23 @@ const providerSeoAgent = {
   online: true,
   owner: 'provider'
 };
-const builtInSeoAgent = {
+const sampleSeoAgent = {
   ...providerSeoAgent,
-  owner: 'aiagent2',
-  manifestSource: 'built-in',
-  metadata: { builtIn: true }
+  owner: 'cait-samples',
+  manifestSource: 'sample-agent',
+  metadata: { sample: true, category: 'seo' }
 };
 const broadSeoAgent = {
   ...providerSeoAgent,
   taskTypes: ['seo', 'research', 'writing', 'summary']
 };
-assert.equal(isBuiltInAgent(builtInSeoAgent), true);
-assert.equal(isBuiltInAgent(providerSeoAgent), false);
-assert.ok(computeScore(providerSeoAgent, 'seo', 300) > computeScore(builtInSeoAgent, 'seo', 300));
+assert.equal(isManagedSampleAgent(sampleSeoAgent), true);
+assert.equal(isManagedSampleAgent(providerSeoAgent), false);
+assert.ok(computeScore(providerSeoAgent, 'seo', 300) > computeScore(sampleSeoAgent, 'seo', 300));
 assert.ok(computeScore(providerSeoAgent, 'seo', 300) > computeScore(broadSeoAgent, 'seo', 300));
 assert.ok(agentTagsFromRecord(DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_cmo_leader_01')).includes('marketing'));
 assert.ok(agentTagsFromRecord(DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_cmo_leader_01')).includes('leader'));
-assert.ok(agentTagsFromRecord(DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_seogap_01')).includes('seo'));
+assert.ok(agentTagsFromRecord(DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_seospecialist_01')).includes('seo'));
 assert.ok(inferAgentTagsFromSignals({
   taskTypes: ['research'],
   name: 'Customer competitor watcher',

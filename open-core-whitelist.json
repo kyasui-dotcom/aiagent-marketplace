@@ -26,7 +26,8 @@
       "source": "LICENSE",
       "target": "LICENSE"
     },
-    "lib/builtin-agents.js",
+    "lib/builtin-agents/agents",
+    "lib/agent-catalog-index.js",
     "lib/agent-review.js",
     "lib/github-adapter.js",
     "lib/manifest.js",
@@ -45,7 +46,6 @@
     "public/ai-agent-monetization.html",
     "public/ai-agent-runtime.html",
     "public/ai-agent-manifest.html",
-    "public/ai-agent-payouts.html",
     "public/ai-agent-verification.html",
     "public/cli-help.html",
     "public/client.js",

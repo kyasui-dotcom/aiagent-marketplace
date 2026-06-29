@@ -21,7 +21,7 @@ test.describe('CAIt app UI/UX surfaces', () => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
 
       for (const appPage of appPages) {
-        await page.goto(appPage.path, { waitUntil: 'networkidle' });
+        await page.goto(appPage.path, { waitUntil: 'domcontentloaded' });
 
         await expect(page.locator('.app-console-panel')).toBeVisible();
         await expect(page.locator('h1')).toBeVisible();
@@ -42,21 +42,23 @@ test.describe('CAIt app UI/UX surfaces', () => {
   }
 
   test('built-in app registry links stay on the current origin', async ({ page }) => {
-    await page.goto('/apps.html', { waitUntil: 'networkidle' });
-    await expect(page.locator('.app-registry-row')).toHaveCount(5);
+    await page.goto('/apps.html', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.app-registry-row')).toHaveCount(4);
     const hrefs = await page.locator('.app-registry-row .primary-btn').evaluateAll((links) => links.map((link) => link.href));
-    const sameOriginBuiltIns = hrefs.filter((href) => /\/(?:analytics-console|publisher-approval|lead-ops|delivery-manager)\.html$/.test(href));
-    expect(sameOriginBuiltIns).toHaveLength(4);
+    const sameOriginBuiltIns = hrefs.filter((href) => /\/(?:analytics-console|publisher-approval|lead-ops)\.html$/.test(href));
+    expect(sameOriginBuiltIns).toHaveLength(3);
     for (const href of sameOriginBuiltIns) {
       expect(new URL(href).origin).toBe(new URL(page.url()).origin);
     }
+    await expect(page.locator('.app-nav a[href="/delivery-manager.html"]')).toBeVisible();
   });
 
-  test('task app headers keep only the primary Send to CAIt action', async ({ page }) => {
+  test('task app headers expose one primary CAIt handoff action', async ({ page }) => {
     for (const appPage of taskAppPages) {
-      await page.goto(appPage.path, { waitUntil: 'networkidle' });
-      const headerActions = await page.locator('.app-header-actions button, .app-header-actions a').evaluateAll((items) => items.map((item) => item.textContent.trim()));
-      expect(headerActions, `${appPage.name}: header action count`).toEqual(['Send to CAIt']);
+      await page.goto(appPage.path, { waitUntil: 'domcontentloaded' });
+      const headerActions = await page.locator('.app-header-actions .primary-btn').evaluateAll((items) => items.map((item) => item.textContent.trim()));
+      const expected = ['Send to CAIt'];
+      expect(headerActions, `${appPage.name}: primary header action`).toEqual(expected);
     }
   });
 });

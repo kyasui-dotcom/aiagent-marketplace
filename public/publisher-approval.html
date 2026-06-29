@@ -9,7 +9,7 @@
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/app-console.css?v=20260507b" />
-  <script type="module" src="/publisher-approval.js?v=20260507b"></script>
+  <script type="module" src="/publisher-approval.js?v=20260601a"></script>
 </head>
 <body>
   <main class="app-console-shell" aria-label="CAIt Publisher and Approval Studio">
@@ -24,6 +24,8 @@
           <a href="/delivery-manager.html">Deliveries</a>
         </nav>
         <div class="app-header-actions">
+          <a class="ghost-btn" id="publisherLoginLink" href="/login?next=%2Fpublisher-approval.html&amp;source=publisher_saas">Publisher login</a>
+          <a class="ghost-btn" id="returnToChatLink" href="/chat" hidden>Return to chat</a>
           <button class="primary-btn" id="sendPacketBtn" type="button">Send to CAIt</button>
         </div>
       </header>
@@ -49,11 +51,7 @@
                 <option value="approved">Approved only</option>
                 <option value="needs_review">Needs review</option>
               </select>
-              <select id="handoffTargetSelect" aria-label="Handoff target">
-                <option value="seo_gap">SEO Agent</option>
-                <option value="cmo_leader">CMO Leader</option>
-                <option value="build_team_leader">Build Team Leader</option>
-              </select>
+              <select id="handoffTargetSelect" aria-label="Handoff target"></select>
               <button class="ghost-btn" id="approveSelectedBtn" type="button">Approve selected</button>
             </div>
           </div>
@@ -69,7 +67,7 @@
             </div>
             <div class="workflow-step" id="publisherStepHandoff">
               <span class="step-index">3</span>
-              <span><strong>Approve handoff</strong><span>Send the approved destination packet to CAIt or GitHub.</span></span>
+              <span><strong>Approve handoff</strong><span>Send the approved packet to CAIt, GitHub, or WordPress draft.</span></span>
             </div>
           </section>
 
@@ -96,6 +94,67 @@
             </article>
           </section>
 
+          <section class="notice" id="handoffSessionNotice" hidden aria-label="CAIt handoff session notice"></section>
+
+          <section class="metric-strip publisher-saas-model" aria-label="Publisher SaaS billing model">
+            <article class="metric-card">
+              <span>SaaS entry</span>
+              <strong>Publisher</strong>
+              <small>Sign in here to keep destinations, approvals, launch plans, and retained packets under one account.</small>
+            </article>
+            <article class="metric-card">
+              <span>Paid meter</span>
+              <strong>CAIt usage</strong>
+              <small>Planning, drafting, routing, and connector-backed execution are billed as CAIt usage after the user sends work.</small>
+            </article>
+            <article class="metric-card">
+              <span>Growth model</span>
+              <strong>Connectors</strong>
+              <small>Attach X, GitHub, WordPress, email, directories, and future apps so CAIt can sell stable operations around each channel.</small>
+            </article>
+          </section>
+
+          <section class="ops-story-grid" aria-label="Operational publishing value">
+            <article class="panel ops-story-panel">
+              <div class="status-row compact-head">
+                <div>
+                  <span class="kicker">Why this beats one-off chat output</span>
+                  <h2>Stable publishing operations, not disposable agent text.</h2>
+                </div>
+                <span class="status-pill approved" id="opsReadinessPill">Queue not loaded</span>
+              </div>
+              <div class="ops-compare-grid">
+                <section class="ops-compare-card before">
+                  <span class="ops-compare-label">Before</span>
+                  <h3>One-off AIAGENT chat</h3>
+                  <ul class="ops-bullet-list">
+                    <li>Drafts and approval status disappear between chats.</li>
+                    <li>Destination rules, locale, and owner context are easy to drop.</li>
+                    <li>Connector readiness and publish evidence are checked too late.</li>
+                  </ul>
+                </section>
+                <section class="ops-compare-card after">
+                  <span class="ops-compare-label">After</span>
+                  <h3>Publisher-driven SaaS workflow</h3>
+                  <ul class="ops-bullet-list">
+                    <li>Approval queue, destination profile, and market/locale stay visible.</li>
+                    <li>GitHub PR, WordPress draft, X, and Instagram asset-readiness gates remain tied to the packet.</li>
+                    <li>CAIt receives a server-side context reference for the next run.</li>
+                  </ul>
+                </section>
+              </div>
+            </article>
+            <article class="panel ops-readiness-panel">
+              <div class="status-row compact-head">
+                <div>
+                  <span class="kicker">Operational readiness</span>
+                  <h2>What stays attached to the next run</h2>
+                </div>
+              </div>
+              <div class="ops-readiness-list" id="opsReadinessList"></div>
+            </article>
+          </section>
+
           <section class="panel publisher-controls" aria-label="Global publishing filters">
             <div class="field-row">
               <label for="marketFilterSelect">Market</label>
@@ -117,6 +176,42 @@
             </div>
           </section>
 
+          <section class="panel publisher-cait-planning" aria-label="CAIt publishing planning">
+            <div class="status-row">
+              <div>
+                <span class="kicker">Publisher calls CAIt</span>
+                <h2>Plan the launch, choose an axis, then draft the assets.</h2>
+                <p class="muted">Use Publisher as the stable operations board: CAIt proposes launch axes, you choose the direction, then CAIt returns LP, post, directory, or approval packets into this queue.</p>
+              </div>
+              <span class="status-pill pending" id="publisherPlanningPill">Planning ready</span>
+            </div>
+            <div class="field-grid">
+              <div class="field-row"><label for="launchOfferInput">Offer / product</label><input id="launchOfferInput" placeholder="What are we selling or launching?" /></div>
+              <div class="field-row"><label for="launchAudienceInput">Target audience</label><input id="launchAudienceInput" placeholder="Who should buy, try, or ask?" /></div>
+              <div class="field-row"><label for="launchGoalInput">Business goal</label><input id="launchGoalInput" placeholder="e.g. qualified demos, paid signups, waitlist, trial starts" /></div>
+              <div class="field-row"><label for="launchDestinationMixInput">Destination mix</label><input id="launchDestinationMixInput" placeholder="LP, X, Reddit, directory, email, WordPress..." /></div>
+              <div class="field-row">
+                <label for="launchDeliveryFormatSelect">Delivery shape</label>
+                <select id="launchDeliveryFormatSelect">
+                  <option value="publisher_packets">Publisher packets</option>
+                  <option value="planning_options">Planning options</option>
+                  <option value="lp_and_posts">LP + posts</option>
+                  <option value="approval_queue">Approval queue</option>
+                  <option value="files">Files</option>
+                  <option value="chat_summary">Chat summary</option>
+                </select>
+              </div>
+              <div class="field-row"><label for="launchProofInput">Proof / assets</label><textarea id="launchProofInput" placeholder="Customer proof, screenshots, product facts, constraints, pricing, existing URLs, brand notes"></textarea></div>
+              <div class="field-row"><label for="launchAxisInput">Selected axis</label><textarea id="launchAxisInput" placeholder="Paste or write the chosen axis after CAIt proposes options. Example: Stable AIAGENT operations for teams that need retained approval and publishing state."></textarea></div>
+            </div>
+            <div class="inline-actions" style="margin-top:12px">
+              <button class="primary-btn" id="askPlanningBtn" type="button">Ask CAIt for axes</button>
+              <button class="ghost-btn" id="draftFromAxisBtn" type="button">Draft selected axis</button>
+              <button class="ghost-btn" id="seedLpBtn" type="button">Create LP starter</button>
+            </div>
+            <p class="muted" id="publisherPlanningNote">First ask CAIt for 4-6 launch axes. After choosing one, ask CAIt to create Publisher-ready LP and post packets for this queue.</p>
+          </section>
+
           <section class="editor-grid">
             <article class="panel">
               <h2 id="listTitle">Destination queue</h2>
@@ -129,18 +224,83 @@
               </div>
               <div class="field-grid">
                 <div class="field-row"><label for="destinationInput">Destination</label><input id="destinationInput" /></div>
+                <div class="field-row">
+                  <label for="channelSelect">Medium / channel</label>
+                  <select id="channelSelect"></select>
+                </div>
+                <div class="field-row"><label for="connectorInput">Publish connector</label><input id="connectorInput" readonly /></div>
+                <div class="field-row"><label for="connectorCapabilityInput">Connector capability</label><input id="connectorCapabilityInput" readonly /></div>
+                <div class="field-row"><label for="publishMethodInput">Publish method</label><input id="publishMethodInput" readonly /></div>
+                <div class="field-row"><label for="profileHandleInput">Account / profile</label><input id="profileHandleInput" placeholder="@handle, page owner, community, or publication account" /></div>
+                <div class="field-row"><label for="profileUrlInput">Profile URL</label><input id="profileUrlInput" placeholder="https://instagram.com/your-profile" /></div>
+                <div class="field-row"><label for="mediaAssetsInput">Media assets</label><textarea id="mediaAssetsInput" placeholder="Image/video URLs, screenshots, carousel frames, b-roll, or asset blockers"></textarea></div>
+                <div class="field-row"><label for="visualAssetReadinessInput">Visual asset readiness</label><textarea id="visualAssetReadinessInput" placeholder="Frame/shot status: supplied URL, missing production task, rights unverified, proof placeholder"></textarea></div>
+                <div class="field-row"><label for="channelRulesInput">Channel rules</label><textarea id="channelRulesInput" placeholder="Caption limits, community rules, link policy, required tags, or compliance notes"></textarea></div>
+                <div class="field-row"><label for="approvalChecklistInput">Approval checklist</label><textarea id="approvalChecklistInput" placeholder="Profile, destination, assets, exact copy, proof, schedule, and connector checks"></textarea></div>
                 <div class="field-row"><label for="marketInput">Market</label><input id="marketInput" placeholder="Global, US, EU, APAC..." /></div>
                 <div class="field-row"><label for="localeInput">Locale</label><input id="localeInput" placeholder="en, en-US, ja-JP..." /></div>
                 <div class="field-row"><label for="ownerInput">Owner</label><input id="ownerInput" placeholder="CMO, SEO, Partner manager..." /></div>
                 <div class="field-row"><label for="titleInput">Title</label><input id="titleInput" /></div>
                 <div class="field-row"><label for="slugInput">Slug / path</label><input id="slugInput" /></div>
                 <div class="field-row"><label for="metaInput">Meta description</label><textarea id="metaInput"></textarea></div>
+                <div class="field-row"><label for="keywordsInput">Keywords / target query</label><textarea id="keywordsInput"></textarea></div>
+                <div class="field-row"><label for="h1Input">H1</label><input id="h1Input" /></div>
+                <div class="field-row"><label for="primaryCtaInput">Primary CTA</label><input id="primaryCtaInput" /></div>
+                <div class="field-row"><label for="secondaryCtaInput">Secondary CTA</label><input id="secondaryCtaInput" /></div>
+                <div class="field-row"><label for="internalLinksInput">Internal links</label><textarea id="internalLinksInput"></textarea></div>
+                <div class="field-row"><label for="ogTitleInput">OG title</label><input id="ogTitleInput" /></div>
+                <div class="field-row"><label for="ogDescriptionInput">OG description</label><textarea id="ogDescriptionInput"></textarea></div>
                 <div class="field-row"><label for="bodyInput">Draft / change body</label><textarea id="bodyInput"></textarea></div>
               </div>
               <div class="inline-actions" style="margin-top:12px">
                 <button class="primary-btn" id="saveDraftBtn" type="button">Save draft</button>
+                <button class="ghost-btn" id="reshapeSelectedBtn" type="button">Re-shape and save</button>
                 <button class="ghost-btn" id="requestChangesBtn" type="button">Request changes</button>
                 <button class="ghost-btn" id="blockBtn" type="button">Block</button>
+              </div>
+            </article>
+          </section>
+
+          <section class="split-main">
+            <article class="panel ops-readiness-panel">
+              <div class="status-row">
+                <div>
+                  <span class="kicker">Packet data check</span>
+                  <h2>Media-specific readiness</h2>
+                </div>
+                <span class="status-pill pending" id="dataCheckPill">Queue not loaded</span>
+              </div>
+              <div class="ops-readiness-list" id="dataCheckList"></div>
+            </article>
+          </section>
+
+          <section class="split-main">
+            <article class="panel">
+              <div class="status-row">
+                <h2>Publishing execution</h2>
+                <span class="status-pill pending" id="xStatusPill">X not checked</span>
+              </div>
+              <div class="inline-actions" style="margin-bottom:12px">
+                <button class="ghost-btn" id="connectXBtn" type="button">Connect X</button>
+                <button class="ghost-btn" id="refreshXBtn" type="button">Check X</button>
+                <button class="primary-btn" id="publishNowBtn" type="button">Publish now</button>
+                <button class="ghost-btn" id="schedulePostBtn" type="button">Schedule post</button>
+                <button class="ghost-btn" id="bulkPublishBtn" type="button">Bulk publish approved</button>
+              </div>
+              <p class="muted" id="publishActionNote">Approve the selected item before executing. X posts use the connected OAuth account and exact-text approval; WordPress creates drafts; GitHub and owned-site items create PR handoffs.</p>
+              <div class="field-grid">
+                <div class="field-row">
+                  <label for="scheduleAtInput">Schedule time</label>
+                  <input id="scheduleAtInput" type="datetime-local" />
+                </div>
+                <div class="field-row">
+                  <label for="bulkScopeSelect">Bulk scope</label>
+                  <select id="bulkScopeSelect">
+                    <option value="visible">Visible approved items</option>
+                    <option value="all">All approved items</option>
+                    <option value="destination">Current destination only</option>
+                  </select>
+                </div>
               </div>
             </article>
           </section>
@@ -170,6 +330,42 @@
                 </div>
               </div>
             </article>
+            <article class="panel">
+              <div class="status-row">
+                <h2>WordPress draft handoff</h2>
+                <span class="status-pill pending" id="wordpressStatusPill">WordPress not checked</span>
+              </div>
+              <div class="inline-actions" style="margin-bottom:12px">
+                <button class="ghost-btn" id="refreshWordpressBtn" type="button">Check WordPress</button>
+                <button class="ghost-btn" id="connectWordpressBtn" type="button">Connect WordPress</button>
+                <button class="ghost-btn" id="createWordpressDraftBtn" type="button">Create WP draft</button>
+              </div>
+              <p class="muted" id="wordpressStatusNote">Use a WordPress Application Password to create a draft only. Publishing happens inside WordPress after review.</p>
+              <div class="field-grid">
+                <div class="field-row">
+                  <label for="wordpressSiteInput">WordPress site URL</label>
+                  <input id="wordpressSiteInput" placeholder="https://example.com" />
+                </div>
+                <div class="field-row">
+                  <label for="wordpressUsernameInput">WordPress username</label>
+                  <input id="wordpressUsernameInput" autocomplete="username" />
+                </div>
+                <div class="field-row">
+                  <label for="wordpressPasswordInput">Application Password</label>
+                  <input id="wordpressPasswordInput" type="password" autocomplete="current-password" />
+                </div>
+                <div class="field-row">
+                  <label for="wordpressPostTypeSelect">Draft type</label>
+                  <select id="wordpressPostTypeSelect">
+                    <option value="posts">Post</option>
+                    <option value="pages">Page</option>
+                  </select>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section class="split-main">
             <article class="panel">
               <div class="status-row">
                 <h2>Execution result</h2>

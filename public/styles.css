@@ -233,6 +233,8 @@ p { color: var(--muted); max-width: 64ch; }
 .conversion-grid { grid-template-columns: 1.15fr .55fr .55fr .55fr .65fr .9fr; }
 .chat-transcript-grid { grid-template-columns: .7fr .75fr 1.7fr .85fr; }
 .billing-grid { grid-template-columns: .8fr 1fr .9fr .9fr .9fr .9fr; }
+.pricing-catalog-grid { grid-template-columns: 1.1fr .65fr 1fr; align-items: center; }
+.pricing-catalog-grid small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
 .ledger-grid { grid-template-columns: .8fr .8fr 1fr 1fr .8fr; }
 .admin-accounts-grid { grid-template-columns: 1.1fr 1fr .9fr .85fr; }
 .admin-orders-grid { grid-template-columns: 1.35fr .9fr .8fr .75fr; }
@@ -2141,6 +2143,24 @@ textarea { min-height: 110px; }
 .modal-backdrop { position: fixed; inset: 0; background: rgba(3, 7, 14, .78); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 40; backdrop-filter: blur(4px); }
 .modal-panel { width: min(460px, 100%); box-shadow: 0 18px 48px rgba(0,0,0,.42); }
 .api-key-reveal-modal { width: min(720px, 100%); }
+.inline-form {
+  display: grid;
+  grid-template-columns: max-content minmax(180px, 1fr) max-content minmax(120px, .45fr) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+.inline-form label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.api-key-inline-reveal {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
 .api-key-reveal-token {
   min-height: 118px;
   font-family: var(--mono);
@@ -2159,6 +2179,7 @@ textarea { min-height: 110px; }
   .game-menu-panel { left: 0; right: auto; width: min(100%, calc(100vw - 40px)); }
   .menu-trigger { width: 100%; }
   .mini-panel-grid { grid-template-columns: 1fr; }
+  .inline-form { grid-template-columns: 1fr; }
   .publish-grid { grid-template-columns: 1fr; }
   .work-chat-layout { display: block; }
   .mobile-chat-history-row { display: flex; }

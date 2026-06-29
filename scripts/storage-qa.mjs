@@ -27,6 +27,41 @@ function buildAccount(login, updatedAt) {
 const storage = createD1LikeStorage(null, { allowInMemory: true });
 const emptyState = await storage.getState();
 
+const sampleProviderStorage = createD1LikeStorage(null, {
+  allowInMemory: true,
+  sampleAgentEndpointBaseUrl: 'https://example.test/sample-agents'
+});
+const sampleProviderState = await sampleProviderStorage.getState();
+const readySampleAgents = sampleProviderState.agents.filter((agent) => (
+  agent?.online === true
+  && agent?.verificationStatus === 'verified'
+  && agent?.agentReviewStatus === 'not_required'
+  && String(agent?.metadata?.manifest?.jobEndpoint || agent?.metadata?.manifest?.job_endpoint || '').startsWith('https://example.test/sample-agents/')
+));
+assert.ok(readySampleAgents.length >= 2, 'configured sample provider must expose at least two ready agents for team workflows');
+const staleSampleAgent = {
+  ...readySampleAgents[0],
+  online: false,
+  verificationStatus: 'manifest_loaded',
+  verificationError: 'stale persisted seed row',
+  verificationDetails: null,
+  agentReviewStatus: 'pending',
+  agentReview: { status: 'pending', reasons: ['stale persisted seed row'] },
+  metadata: {
+    ...(readySampleAgents[0].metadata || {}),
+    externalProviderRequired: true,
+    external_provider_required: true
+  }
+};
+await sampleProviderStorage.replaceState({
+  ...sampleProviderState,
+  agents: [staleSampleAgent]
+});
+const recoveredSampleAgent = (await sampleProviderStorage.getState()).agents.find((agent) => agent.id === staleSampleAgent.id);
+assert.equal(recoveredSampleAgent?.online, true, 'sample provider merge must recover stale offline seed rows');
+assert.equal(recoveredSampleAgent?.verificationStatus, 'verified', 'sample provider merge must not preserve stale unverified seed status');
+assert.equal(recoveredSampleAgent?.agentReviewStatus, 'not_required', 'sample provider seed review state must stay routable');
+
 const alpha = buildAccount('alpha@example.com', '2026-04-25T08:00:00.000Z');
 await storage.replaceState({
   ...emptyState,
@@ -91,6 +126,110 @@ const terminalJob = afterTerminalMerge.jobs.find((job) => job.id === 'terminal-c
 assert.equal(terminalJob.status, 'completed', 'completed job must not be overwritten by a later stale timeout mutation');
 assert.ok(terminalJob.logs.includes('stale timeout mutation'), 'diagnostic logs can merge without changing terminal success');
 
+const sweepLockedJob = {
+  id: 'active-dispatch-job',
+  parentAgentId: 'qa',
+  taskType: 'research',
+  prompt: 'active dispatch should not regress',
+  input: {},
+  priority: 'normal',
+  status: 'running',
+  createdAt: '2026-04-25T10:00:00.000Z',
+  startedAt: '2026-04-25T10:01:00.000Z',
+  dispatch: {
+    completionStatus: 'completion_sweep_running',
+    completionSweepRequestedAt: '2026-04-25T10:02:00.000Z'
+  },
+  logs: ['queue consumer locked this job']
+};
+await storage.replaceState({
+  ...(await storage.getState()),
+  jobs: [sweepLockedJob]
+});
+await storage.replaceState({
+  ...(await storage.getState()),
+  jobs: [{
+    ...sweepLockedJob,
+    dispatch: {
+      completionStatus: 'completion_queued',
+      completionQueueRequestedAt: '2026-04-25T10:03:00.000Z'
+    },
+    logs: ['late queue write']
+  }]
+});
+const afterDispatchRegressionMerge = await storage.getState();
+const activeDispatchJob = afterDispatchRegressionMerge.jobs.find((job) => job.id === 'active-dispatch-job');
+assert.equal(activeDispatchJob.dispatch.completionStatus, 'completion_sweep_running', 'late completion_queued writes must not regress an active sweep lock');
+assert.ok(activeDispatchJob.logs.includes('late queue write'), 'late queue diagnostics should merge without reverting dispatch progress');
+
+await storage.replaceState({
+  ...(await storage.getState()),
+  jobs: [sweepLockedJob]
+});
+await storage.replaceState({
+  ...(await storage.getState()),
+  jobs: [{
+    ...sweepLockedJob,
+    status: 'queued',
+    startedAt: null,
+    dispatch: {
+      ...sweepLockedJob.dispatch,
+      completionStatus: 'leader_auto_retry_queued',
+      completionSweepSoftTimedOutAt: '2026-04-25T10:04:00.000Z',
+      attempts: 1,
+      retryable: true,
+      nextRetryAt: null
+    },
+    logs: ['soft timeout retry queued']
+  }]
+});
+const afterSoftRetryMerge = await storage.getState();
+const softRetryJob = afterSoftRetryMerge.jobs.find((job) => job.id === 'active-dispatch-job');
+assert.equal(softRetryJob.status, 'queued', 'stale completion_sweep_running jobs should be able to move back to queued for safe retry');
+assert.equal(softRetryJob.dispatch.completionStatus, 'leader_auto_retry_queued', 'soft timeout retry must not be treated as an invalid dispatch regression');
+assert.ok(softRetryJob.logs.includes('soft timeout retry queued'), 'soft timeout retry diagnostics should merge');
+
+const retryQueuedJob = {
+  id: 'retry-queued-job',
+  parentAgentId: 'qa',
+  taskType: 'cmo_leader',
+  prompt: 'retry queued job should advance to scheduled dispatch',
+  input: {},
+  priority: 'normal',
+  status: 'queued',
+  createdAt: '2026-04-25T10:00:00.000Z',
+  dispatch: {
+    completionStatus: 'leader_auto_retry_queued',
+    attempts: 1,
+    maxRetries: 2
+  },
+  logs: ['retry queued']
+};
+await storage.replaceState({
+  ...(await storage.getState()),
+  jobs: [retryQueuedJob]
+});
+await storage.replaceState({
+  ...(await storage.getState()),
+  jobs: [{
+    ...retryQueuedJob,
+    status: 'running',
+    startedAt: '2026-04-25T10:04:00.000Z',
+    dispatch: {
+      ...retryQueuedJob.dispatch,
+      completionStatus: 'dispatch_scheduled',
+      dispatchRequestedAt: '2026-04-25T10:04:00.000Z',
+      scheduleAttempts: 1
+    },
+    logs: ['retry dispatch scheduled']
+  }]
+});
+const afterRetryScheduleMerge = await storage.getState();
+const retryScheduledJob = afterRetryScheduleMerge.jobs.find((job) => job.id === 'retry-queued-job');
+assert.equal(retryScheduledJob.status, 'running', 'retry-queued workflow jobs should advance to running when dispatch is scheduled');
+assert.equal(retryScheduledJob.dispatch.completionStatus, 'dispatch_scheduled', 'leader_auto_retry_queued must not block a fresh dispatch_scheduled transition');
+assert.ok(retryScheduledJob.logs.includes('retry dispatch scheduled'), 'retry schedule diagnostics should merge');
+
 const recoverState = {
   accounts: [],
   jobs: [{
@@ -149,6 +288,7 @@ function createCountingDb() {
           if (sql.startsWith('SELECT * FROM agents WHERE id IN')) return emptyResults;
           if (sql.startsWith('SELECT * FROM agents ORDER BY')) return recordSelect('agents');
           if (sql.startsWith('SELECT * FROM jobs ORDER BY')) return recordSelect('jobs');
+          if (sql.startsWith('SELECT * FROM delivery_items ORDER BY')) return recordSelect('delivery_items');
           if (sql.startsWith('SELECT * FROM events ORDER BY')) return recordSelect('events');
           if (sql.startsWith('SELECT * FROM accounts ORDER BY')) return recordSelect('accounts');
           if (sql.startsWith('SELECT * FROM feedback_reports ORDER BY')) return recordSelect('feedback_reports');
@@ -176,7 +316,7 @@ const cachedStorage = createD1LikeStorage(countingDb, { stateCacheTtlMs: 5000 })
 await cachedStorage.getState();
 await cachedStorage.getState();
 assert.equal(countingDb.selectCounts.get('agents') || 0, 1);
-assert.equal(countingDb.selectCounts.get('jobs') || 0, 1);
+assert.equal(countingDb.selectCounts.get('jobs') || 0, 2);
 assert.equal(countingDb.selectCounts.get('chat_transcripts') || 0, 1);
 
 const storageInitVersion = storageSource.match(/const STORAGE_INIT_VERSION = '([^']+)'/)?.[1] || '';
@@ -197,7 +337,7 @@ function createVersionMatchedLegacyDb() {
             if (table === 'chat_transcripts') return { results: [{ name: 'id' }] };
             return emptyResults;
           }
-          if (/SELECT \* FROM (agents|jobs|events|accounts|feedback_reports|chat_transcripts|recurring_orders|email_deliveries|exact_match_actions|app_settings) ORDER BY/.test(sql)) {
+          if (/SELECT \* FROM (agents|jobs|delivery_items|events|accounts|feedback_reports|chat_transcripts|app_contexts|recurring_orders|email_deliveries|exact_match_actions|app_settings) ORDER BY/.test(sql)) {
             return emptyResults;
           }
           return emptyResults;
@@ -268,7 +408,7 @@ function createSeedRepairDb() {
           if (sql.startsWith('SELECT * FROM agents ORDER BY')) {
             return { results: [...agentsRows] };
           }
-          if (/SELECT \* FROM (jobs|events|accounts|feedback_reports|chat_transcripts|recurring_orders|email_deliveries|exact_match_actions|app_settings) ORDER BY/.test(sql)) {
+          if (/SELECT \* FROM (jobs|delivery_items|events|accounts|feedback_reports|chat_transcripts|app_contexts|recurring_orders|email_deliveries|exact_match_actions|app_settings) ORDER BY/.test(sql)) {
             return { results: [] };
           }
           return { results: [] };
@@ -316,6 +456,22 @@ assert.ok(repairedCmo);
 assert.equal(Boolean(repairedCmo.metadata?.hidden_from_catalog), false);
 assert.equal(Boolean(repairedCmo.metadata?.deleted_at || repairedCmo.metadata?.deletedAt), false);
 
+const repairedProviderStorage = createD1LikeStorage(createSeedRepairDb(), {
+  stateCacheTtlMs: 0,
+  sampleAgentEndpointBaseUrl: 'https://example.test/sample-agents'
+});
+const repairedProviderState = await repairedProviderStorage.getState();
+const d1ReadySampleAgents = repairedProviderState.agents.filter((agent) => (
+  agent?.online === true
+  && agent?.verificationStatus === 'verified'
+  && agent?.agentReviewStatus === 'not_required'
+  && String(agent?.metadata?.manifest?.jobEndpoint || agent?.metadata?.manifest?.job_endpoint || '').startsWith('https://example.test/sample-agents/')
+));
+assert.ok(d1ReadySampleAgents.length >= 2, 'D1 seed repair must expose at least two ready sample agents for team workflows');
+const repairedProviderCmo = repairedProviderState.agents.find((agent) => agent.id === 'agent_cmo_leader_01');
+assert.equal(repairedProviderCmo?.verificationStatus, 'verified', 'D1 seed repair must overwrite stale leader verification when sample provider is configured');
+assert.equal(repairedProviderCmo?.agentReviewStatus, 'not_required', 'D1 seed repair must keep provider-backed sample leaders routable');
+
 const jobStorage = createD1LikeStorage(null, { allowInMemory: true });
 const jobState = await jobStorage.getState();
 await jobStorage.replaceState({
@@ -355,6 +511,331 @@ assert.equal(mergedParent.status, 'running');
 assert.ok(Array.isArray(mergedParent.logs) && mergedParent.logs.includes('parent started'));
 assert.ok(Array.isArray(mergedParent.logs) && mergedParent.logs.includes('stale queued snapshot'));
 
+const deliveryItemStorage = createD1LikeStorage(null, { allowInMemory: true });
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-seo-delivery',
+  parentAgentId: 'qa',
+  taskType: 'seo_specialist',
+  prompt: 'seo article',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'seo_specialist',
+  workflowAgentName: 'SEO SPECIALIST',
+  output: {
+    report: { summary: 'SEO article ready' },
+    files: [{
+      name: 'seo-agent-delivery.md',
+      type: 'text/markdown',
+      content_type: 'seo_article',
+      artifact_type: 'seo_article',
+      surface: 'publisher',
+      item_type: 'seo_article',
+      metadata: {
+        title: 'AI agent marketplace guide',
+        meta_description: 'Source-backed guide.'
+      },
+      content: '# SEO article\n\nTitle: AI agent marketplace guide\n\nMeta description: Source-backed guide.\n\nSource: https://reddit.com/r/example\n\nLeader checkpointで確認する本文。'
+    }]
+  },
+  createdAt: '2026-04-26T08:20:00.000Z',
+  completedAt: '2026-04-26T08:21:00.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-landing-delivery',
+  parentAgentId: 'qa',
+  taskType: 'landing',
+  prompt: 'landing page critique',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'landing',
+  workflowAgentName: 'LANDING PAGE CRITIQUE AGENT',
+  output: {
+    report: { summary: 'Landing page ready' },
+    files: [{
+      name: 'landing-page-critique-delivery.md',
+      type: 'text/markdown',
+      content_type: 'landing_page',
+      artifact_type: 'landing_page',
+      surface: 'publisher',
+      item_type: 'landing_page',
+      metadata: {
+        title: 'example.com - signup landing page',
+        meta_description: 'Use example.com to show the offer, proof, and next step for Developers/technical users, then continue to signup or trial start.'
+      },
+      content: [
+        '# example.com - signup landing page',
+        '',
+        '## Request',
+        'Task: writing',
+        '=== WORKFLOW HANDOFF CONTEXT ===',
+        'CANONICAL USER BRIEF',
+        '- Product/service: - Product/service: https://example.com',
+        '- Main goal: - Main goal: Increase signups/trials',
+        '- Target audience: - Target audience: Developers/technical users',
+        '- Priority channel: - Priority channel: Organic search / SEO',
+        '=== END WORKFLOW HANDOFF CONTEXT ===',
+        '## Agent-owned behavior',
+        '- role: landing page build',
+        '## Expected output sections',
+        '- Replacement copy',
+        '## Review notes',
+        'internal prompt text',
+        '# example.com - signup landing page',
+        '',
+        'Meta description: Use example.com to show the offer, proof, and next step for Developers/technical users, then continue to signup or trial start.',
+        '',
+        '## Hero',
+        'Compare AI agent workflows before you commit engineering time. Show the offer, proof, and next step above the fold for Developers/technical users.',
+        '',
+        '## CTA',
+        'Primary CTA: Start the trial. Secondary CTA: Review the workflow examples.',
+        '',
+        '## Proof',
+        'Use source-backed examples, product screenshots, and short implementation notes so technical buyers can decide whether signup or trial start is worth the next click.'
+      ].join('\n')
+    }]
+  },
+  createdAt: '2026-04-26T08:21:10.000Z',
+  completedAt: '2026-04-26T08:21:30.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-x-post-delivery',
+  parentAgentId: 'qa',
+  taskType: 'x_post',
+  prompt: 'x post copy',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'x_post',
+  workflowAgentName: 'X OPS CONNECTOR AGENT',
+  output: {
+    report: { summary: 'X post packet ready' },
+    files: [{
+      name: 'x-ops-connector-delivery.md',
+      type: 'text/markdown',
+      content_type: 'x_post_packet',
+      artifact_type: 'x_post_packet',
+      artifact_types: ['x_post_packet', 'x_post', 'approval_request'],
+      surface: 'publisher',
+      item_type: 'x_post',
+      action_type: 'x_post',
+      channel: 'x',
+      connector: 'x',
+      connector_capability: 'x.post',
+      content: '# X post packet\n\nPost text: Engineers can compare AI agent workflows before signup.\n\nCTA: https://example.com'
+    }]
+  },
+  createdAt: '2026-04-26T08:21:40.000Z',
+  completedAt: '2026-04-26T08:21:50.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-reddit-delivery',
+  parentAgentId: 'qa',
+  taskType: 'reddit',
+  prompt: 'reddit post copy',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'reddit',
+  workflowAgentName: 'REDDIT LAUNCH AGENT',
+  output: {
+    report: { summary: 'Reddit packet ready' },
+    files: [{
+      name: 'reddit-launch-delivery.md',
+      type: 'text/markdown',
+      content_type: 'reddit_post_packet',
+      artifact_type: 'reddit_post_packet',
+      artifact_types: ['reddit_post_packet', 'reddit_post', 'approval_request'],
+      surface: 'publisher',
+      item_type: 'reddit_post',
+      action_type: 'reddit_post',
+      channel: 'reddit',
+      connector: 'reddit',
+      connector_capability: 'reddit.post',
+      content: '# Reddit launch packet\n\nSubreddit: r/SideProject\n\nPost text: I am testing an AI agent marketplace flow for technical users.'
+    }]
+  },
+  createdAt: '2026-04-26T08:21:55.000Z',
+  completedAt: '2026-04-26T08:22:00.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-indie-hackers-delivery',
+  parentAgentId: 'qa',
+  taskType: 'indie_hackers',
+  prompt: 'indie hackers post copy',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'indie_hackers',
+  workflowAgentName: 'INDIE HACKERS LAUNCH AGENT',
+  output: {
+    report: { summary: 'Indie Hackers packet ready' },
+    files: [{
+      name: 'indie-hackers-launch-delivery.md',
+      type: 'text/markdown',
+      content_type: 'indie_hackers_packet',
+      artifact_type: 'indie_hackers_packet',
+      artifact_types: ['indie_hackers_packet', 'indie_hackers_post', 'approval_request'],
+      surface: 'publisher',
+      item_type: 'indie_hackers_post',
+      action_type: 'indie_hackers_post',
+      channel: 'indie_hackers',
+      connector: 'indie_hackers',
+      connector_capability: 'indie_hackers.post',
+      content: '# Indie Hackers launch packet\n\nPost text: Building a low-budget acquisition loop for an AI agent marketplace.'
+    }]
+  },
+  createdAt: '2026-04-26T08:22:05.000Z',
+  completedAt: '2026-04-26T08:22:10.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-leader-package',
+  parentAgentId: 'qa',
+  taskType: 'cmo_leader',
+  prompt: 'leader package',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'cmo_leader',
+  workflowAgentName: 'CMO TEAM LEADER',
+  output: {
+    report: { summary: 'Integrated delivery' },
+    files: [{ name: 'leader-package.md', type: 'text/markdown', content: '# Integrated delivery\n\nSEO article and social post summary.' }]
+  },
+  createdAt: '2026-04-26T08:22:00.000Z',
+  completedAt: '2026-04-26T08:23:00.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-data-packet',
+  parentAgentId: 'qa',
+  taskType: 'data_analysis',
+  prompt: 'analytics packet',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'data_analysis',
+  workflowAgentName: 'DATA ANALYSIS AGENT',
+  output: {
+    report: { summary: 'GA4 packet' },
+    files: [{
+      name: 'analytics.md',
+      type: 'text/markdown',
+      content_type: 'analytics_packet',
+      artifact_type: 'analytics_packet',
+      surface: 'analytics',
+      item_type: 'analytics_packet',
+      content: '# GA4 packet\n\nリード and signup context.'
+    }]
+  },
+  createdAt: '2026-04-26T08:24:00.000Z',
+  completedAt: '2026-04-26T08:25:00.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-research-memo',
+  parentAgentId: 'qa',
+  taskType: 'research',
+  prompt: 'research memo',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'research',
+  workflowAgentName: 'RESEARCH AGENT',
+  output: {
+    report: { summary: 'Research memo' },
+    files: [{ name: 'research.md', type: 'text/markdown', content: '# Research memo\n\nSEO and リード context for downstream agents.' }]
+  },
+  createdAt: '2026-04-26T08:26:00.000Z',
+  completedAt: '2026-04-26T08:27:00.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-generic-keyword-noise',
+  parentAgentId: 'qa',
+  taskType: 'summary',
+  prompt: 'generic summary should not become an app delivery item',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'summary',
+  workflowAgentName: 'SUMMARY AGENT',
+  output: {
+    report: { summary: 'Generic delivery with app-like words' },
+    files: [{
+      name: 'generic-summary.md',
+      type: 'text/markdown',
+      content: '# Generic summary\n\nThis mentions SEO, social post, GA4, and リード as context only. It has no explicit delivery surface or artifact contract.'
+    }]
+  },
+  createdAt: '2026-04-26T08:28:00.000Z',
+  completedAt: '2026-04-26T08:29:00.000Z'
+}]);
+await deliveryItemStorage.upsertJobs([{
+  id: 'job-task-filename-noise',
+  parentAgentId: 'qa',
+  taskType: 'seo_specialist',
+  prompt: 'task and filename should not create app item without explicit metadata',
+  input: { _broker: { requester: { login: 'owner@example.com', accountId: 'acct:owner@example.com' } } },
+  priority: 'normal',
+  status: 'completed',
+  workflowTask: 'seo_specialist',
+  workflowAgentName: 'SEO SPECIALIST',
+  output: {
+    report: { summary: 'Generic delivery with app-like task and filename' },
+    files: [{
+      name: 'x-post-seo-landing-publisher.md',
+      type: 'text/markdown',
+      content: '# Generic memo\n\nThis is only a delivery memo. There is no explicit surface, content_type, artifact_type, or item_type.'
+    }]
+  },
+  createdAt: '2026-04-26T08:29:10.000Z',
+  completedAt: '2026-04-26T08:29:20.000Z'
+}]);
+const publisherItems = await deliveryItemStorage.listDeliveryItems({ surface: 'publisher', ownerLogins: ['owner@example.com'] });
+assert.equal(publisherItems.length, 5, `publisher items: ${JSON.stringify(publisherItems.map((item) => ({
+  type: item.itemType,
+  title: item.title,
+  jobId: item.jobId
+})))}`);
+assert.equal(publisherItems.some((item) => item.jobId === 'job-generic-keyword-noise'), false, 'body keywords alone must not create Publisher delivery items');
+assert.equal(publisherItems.some((item) => item.jobId === 'job-task-filename-noise'), false, 'task type and filename alone must not create Publisher delivery items');
+const seoPublisherItem = publisherItems.find((item) => item.itemType === 'seo_article');
+const landingPublisherItem = publisherItems.find((item) => item.itemType === 'landing_page');
+const xPublisherItem = publisherItems.find((item) => item.itemType === 'x_post');
+const redditPublisherItem = publisherItems.find((item) => item.itemType === 'reddit_post');
+const indieHackersPublisherItem = publisherItems.find((item) => item.itemType === 'indie_hackers_post');
+assert.ok(seoPublisherItem);
+assert.equal(seoPublisherItem.surface, 'publisher');
+assert.equal(seoPublisherItem.metadata.meta_description, 'Source-backed guide.');
+assert.equal(seoPublisherItem.metadata.channel_key, 'owned_site');
+assert.equal(seoPublisherItem.metadata.connector, 'publisher');
+assert.equal(seoPublisherItem.metadata.connector_capability, 'site_publish_packet');
+assert.equal(seoPublisherItem.metadata.publish_method, 'publisher_review_or_selected_connector');
+assert.ok(landingPublisherItem);
+assert.equal(landingPublisherItem.surface, 'publisher');
+assert.equal(landingPublisherItem.title, 'example.com - signup landing page');
+assert.equal(landingPublisherItem.metadata.meta_description, 'Use example.com to show the offer, proof, and next step for Developers/technical users, then continue to signup or trial start.');
+assert.equal(landingPublisherItem.body.includes('WORKFLOW HANDOFF CONTEXT'), false);
+assert.equal(landingPublisherItem.body.includes('## Request'), false);
+assert.equal(landingPublisherItem.body.includes('Agent-owned behavior'), false);
+assert.ok(xPublisherItem);
+assert.equal(xPublisherItem.metadata.channel_key, 'x');
+assert.equal(xPublisherItem.metadata.connector, 'x');
+assert.equal(xPublisherItem.metadata.action_type, 'x_post');
+assert.ok(redditPublisherItem);
+assert.equal(redditPublisherItem.metadata.channel_key, 'reddit');
+assert.equal(redditPublisherItem.metadata.connector_capability, 'reddit.post');
+assert.ok(indieHackersPublisherItem);
+assert.equal(indieHackersPublisherItem.metadata.channel_key, 'indie_hackers');
+assert.equal(indieHackersPublisherItem.metadata.publish_method, 'indie_hackers_connector_or_manual_copy');
+const analyticsItems = await deliveryItemStorage.listDeliveryItems({ surface: 'analytics', ownerLogins: ['owner@example.com'] });
+assert.equal(analyticsItems.length, 1);
+assert.equal(analyticsItems[0].surface, 'analytics');
+assert.equal(analyticsItems.some((item) => item.jobId === 'job-generic-keyword-noise'), false, 'body keywords alone must not create Analytics delivery items');
+assert.equal(analyticsItems.some((item) => item.jobId === 'job-task-filename-noise'), false, 'task type and filename alone must not create Analytics delivery items');
+const leadItems = await deliveryItemStorage.listDeliveryItems({ surface: 'lead', ownerLogins: ['owner@example.com'] });
+assert.equal(leadItems.length, 0);
+
 function createConcurrentJobsDb() {
   const jobsRows = [];
   return {
@@ -375,7 +856,7 @@ function createConcurrentJobsDb() {
           if (sql.startsWith('SELECT * FROM jobs ORDER BY')) {
             return { results: [...jobsRows] };
           }
-          if (/SELECT \* FROM (agents|events|accounts|feedback_reports|chat_transcripts|recurring_orders|email_deliveries|exact_match_actions|app_settings) ORDER BY/.test(sql)) {
+          if (/SELECT \* FROM (agents|delivery_items|events|accounts|feedback_reports|chat_transcripts|app_contexts|recurring_orders|email_deliveries|exact_match_actions|app_settings) ORDER BY/.test(sql)) {
             return { results: [] };
           }
           if (sql.startsWith('SELECT * FROM agents WHERE id IN')) return { results: [] };
@@ -386,7 +867,7 @@ function createConcurrentJobsDb() {
           return null;
         },
         async run() {
-          if (sql.startsWith('INSERT OR REPLACE INTO jobs')) {
+          if (sql.startsWith('INSERT OR REPLACE INTO jobs') || sql.startsWith('INSERT INTO jobs')) {
             const row = {
               id: bound[0],
               parent_agent_id: bound[1],

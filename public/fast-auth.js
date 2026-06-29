@@ -1,4 +1,5 @@
 (() => {
+  const FAST_AUTH_STATUS_TIMEOUT_MS = 60 * 60 * 1000;
   const privateTabs = new Set(['work', 'agents', 'connect', 'settings', 'admin', 'ops']);
   const url = new URL(window.location.href);
   const requestedTab = String(url.searchParams.get('tab') || '').trim().toLowerCase();
@@ -11,7 +12,7 @@
       : '/';
   const visitorId = window.crypto?.randomUUID?.() || `v_${Date.now().toString(36)}`;
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 2500);
+  const timeout = window.setTimeout(() => controller.abort(), FAST_AUTH_STATUS_TIMEOUT_MS);
   const statusPromise = fetch('/auth/status', {
     credentials: 'same-origin',
     signal: controller.signal

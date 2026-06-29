@@ -75,7 +75,7 @@ These labels are used by intent-prompt generation and email/UX strings where app
 
 ### 3.1 New table
 
-`lib/storage.js` adds `APP_SETTINGS_D1_SCHEMA_SQL`:
+`lib/storage-schema.js` owns `APP_SETTINGS_D1_SCHEMA_SQL`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS app_settings (

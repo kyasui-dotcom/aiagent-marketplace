@@ -98,7 +98,7 @@ function rowValues(job = {}) {
     sqlNullableString(jsonValue(job.workflow ?? null, null)),
     sqlNullableString(job.originalPrompt || null),
     sqlNullableString(jsonValue(job.promptOptimization ?? null, null)),
-    sqlNullableString(job.selectionMode || null),
+    sqlNullableString(job.assignmentMode || null),
     sqlNullableString(jsonValue(job.estimateWindow ?? null, null)),
     sqlNullableString(jsonValue(job.billingReservation ?? null, null)),
     sqlNullableString(jsonValue(job.logs ?? [], [])),

@@ -1,2048 +1,1886 @@
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import {
-  BUILT_IN_KINDS,
-  builtInAgentHealthPayload,
-  builtInCostControlPolicyForKind,
-  builtInDeliveryLanguage,
-  builtInExecutionPolicyForKind,
-  builtInFreshnessPolicyForKind,
-  builtInModelRoutingForKind,
-  builtInModelTierForKind,
-  builtInSensitiveDataPolicyForKind,
-  builtInShouldUseWebSearchForKind,
-  builtInScopeBoundariesForKind,
-  builtInSpecialistMethodForKind,
-  builtInToolStrategyForKind,
-  builtInTrustProfileForKind,
-  runBuiltInAgent,
-  sampleAgentPayload
-} from '../lib/builtin-agents.js';
-import { BUILT_IN_KIND_DEFAULTS } from '../lib/builtin-agents/agents/index.js';
+  SAMPLE_AGENT_DEFINITIONS,
+  SAMPLE_AGENT_KINDS,
+  sampleAgentDefinitionForKind
+} from '../lib/builtin-agents/agents/index.js';
 import {
-  CMO_WORKFLOW_ACTION_LAYER_TASKS,
-  CMO_WORKFLOW_EXECUTION_LAYER_TASKS,
-  CMO_WORKFLOW_PLANNING_LAYER_TASKS,
-  CMO_WORKFLOW_PREPARATION_LAYER_TASKS,
-  CMO_WORKFLOW_RESEARCH_LAYER_TASKS,
   cmoAgentActionContractForKind,
+  cmoAgentActionContractMarkdown
 } from '../lib/builtin-agents/agents/cmo-leader.js';
-import {
-  CONNECTOR_EXECUTION_POLICIES,
-  connectorExecutionPolicyForTask,
-  leaderControlContractForTask,
-  leaderSourceCollectionLayerTasks,
-  leaderTaskLayer,
-  leaderTaskPhase,
-  leaderTaskRequiresSourceCollection,
-  leaderTaskUsesWebSearch
-} from '../lib/orchestration.js';
-import { assessAgentRegistrationSafety, normalizeManifest } from '../lib/manifest.js';
-import { agentLinksFromRecord, buildAgentTeamDeliveryOutput, inferTaskSequence, inferTaskType, listCreatorUsageEstimateForOrder, DEFAULT_AGENT_SEEDS } from '../lib/shared.js';
-import { isBuiltInSampleAgent, isBuiltInSampleHealthcheckUrl, isBuiltInSampleJobEndpoint, sampleKindFromAgent } from '../lib/verify.js';
-import { extractSocialPostTextFromDeliveryContent } from '../public/delivery-action-contract.js';
+import { leaderReadableAgentCatalogIndex } from '../lib/agent-catalog-index.js';
+import { deliveryItemsFromJob, sanitizeDeliveryItemForSurface } from '../lib/delivery-items.js';
 
-const builtInAgentEntrySource = readFileSync(new URL('../lib/builtin-agents.js', import.meta.url), 'utf8');
-const orchestrationSource = readFileSync(new URL('../lib/orchestration.js', import.meta.url), 'utf8');
-const cmoWorkflowRuntimeSource = readFileSync(new URL('../lib/builtin-agents/runtime/cmo-workflow.js', import.meta.url), 'utf8');
-const cmoLeaderSource = readFileSync(new URL('../lib/builtin-agents/agents/cmo-leader.js', import.meta.url), 'utf8');
-const builtInAgentDefinitionsDir = new URL('../lib/builtin-agents/agents/', import.meta.url);
-assert.ok(builtInAgentEntrySource.includes("./builtin-agents/runtime/cmo-workflow.js"), 'Built-in CMO workflow execution engine must be split out of builtin-agents.js');
-assert.ok(!builtInAgentEntrySource.includes('function cmoGenericArtifactMarkdown('), 'CMO specialist artifact builders must not live in builtin-agents.js');
-assert.ok(!builtInAgentEntrySource.includes('const BUILT_IN_KIND_EXECUTION_FOCUS'), 'Per-agent execution focus must live in individual agent files, not builtin-agents.js');
-assert.ok(!builtInAgentEntrySource.includes('const BUILT_IN_KIND_OUTPUT_SECTIONS'), 'Per-agent output sections must live in individual agent files, not builtin-agents.js');
-assert.ok(!builtInAgentEntrySource.includes('const BUILT_IN_KIND_ACCEPTANCE_CHECKS'), 'Per-agent acceptance checks must live in individual agent files, not builtin-agents.js');
-assert.ok(builtInAgentEntrySource.includes('builtInAgentDefinitionForKind(kind)'), 'Dispatcher must read concrete agent profiles from split agent definitions');
-const removedGamblingAdjacentKind = ['blood', 'stock'].join('');
-assert.ok(!builtInAgentEntrySource.includes(`${removedGamblingAdjacentKind}:`), 'Removed gambling-adjacent built-in fallback agents must not remain in the dispatcher');
-assert.ok(cmoWorkflowRuntimeSource.includes('export function cmoSpecialistDeliveryMarkdown('), 'CMO specialist delivery builder should live in the runtime module');
-assert.ok(cmoWorkflowRuntimeSource.includes('ROLE_SPECIFIC_REQUIREMENTS'), 'CMO runtime must keep role-specific quality gates per action layer');
-const builtInAgentDefinitionFiles = readdirSync(builtInAgentDefinitionsDir)
-  .filter((fileName) => fileName.endsWith('.js') && fileName !== 'index.js')
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = join(__dirname, '..');
+const agentsDir = join(root, 'lib', 'builtin-agents', 'agents');
+
+assert.equal(existsSync(join(root, 'lib', 'builtin-agents.js')), false, 'central builtin-agents.js must not exist');
+assert.equal(existsSync(join(root, 'lib', 'sample-agent-provider.js')), false, 'sample agents must not use a central provider runner');
+assert.equal(existsSync(join(root, 'lib', 'sample-agent-catalog.js')), false, 'sample agents must not use a central catalog file');
+assert.equal(existsSync(join(root, 'lib', 'agent-provider-runtime.js')), false, 'agent provider behavior must not be hidden in a shared runtime');
+
+const agentFiles = readdirSync(agentsDir)
+  .filter((name) => name.endsWith('.js') && name !== 'index.js')
   .sort();
-const builtInAgentDefinitionsSource = builtInAgentDefinitionFiles
-  .map((fileName) => readFileSync(new URL(fileName, builtInAgentDefinitionsDir), 'utf8'))
-  .join('\n');
-const builtInAgentSource = `${builtInAgentEntrySource}\n${builtInAgentDefinitionsSource}`;
-assert.ok(!builtInAgentEntrySource.includes('const BUILT_IN_KIND_DEFAULTS = {'), 'built-in agent definitions must not live in the dispatcher file');
-assert.equal(existsSync(new URL('../lib/builtin-agents/orchestration.js', import.meta.url)), false, 'orchestration must not be scoped under built-in agents');
-assert.ok(orchestrationSource.includes('LEADER_ORCHESTRATION_PROFILES'), 'shared leader orchestration profiles should live in lib/orchestration.js');
-assert.ok(orchestrationSource.includes('LEADER_CONTROL_CONTRACT_VERSION'), 'leader control contracts should live in lib/orchestration.js');
-assert.ok(orchestrationSource.includes('CONNECTOR_EXECUTION_POLICIES'), 'shared connector policies should live in lib/orchestration.js');
-assert.ok(!orchestrationSource.includes('CMO_WORKFLOW_'), 'CMO workflow content should live in cmo-leader.js, not the shared orchestration connector');
-assert.ok(!orchestrationSource.includes('cmoAgentActionContract'), 'CMO action contracts should live in cmo-leader.js, not the shared orchestration connector');
-assert.ok(cmoLeaderSource.includes('CMO_AGENT_ACTION_CONTRACTS'), 'CMO action contracts should live in the CMO leader definition');
-assert.ok(cmoLeaderSource.includes('CMO_WORKFLOW_RESEARCH_LAYER_TASKS'), 'CMO workflow layer constants should live in the CMO leader definition');
-assert.deepEqual(CMO_WORKFLOW_RESEARCH_LAYER_TASKS, ['research', 'teardown', 'data_analysis', 'validation']);
-assert.deepEqual(CMO_WORKFLOW_PLANNING_LAYER_TASKS, ['media_planner', 'growth']);
-assert.deepEqual(CMO_WORKFLOW_PREPARATION_LAYER_TASKS, ['list_creator', 'landing', 'seo_gap', 'writing', 'writer']);
-assert.deepEqual(CMO_WORKFLOW_ACTION_LAYER_TASKS, ['x_post', 'instagram', 'reddit', 'indie_hackers', 'email_ops', 'cold_email', 'directory_submission', 'citation_ops', 'acquisition_automation']);
-assert.deepEqual(CMO_WORKFLOW_EXECUTION_LAYER_TASKS, CMO_WORKFLOW_ACTION_LAYER_TASKS);
-assert.equal(leaderTaskLayer('cmo_leader', 'research'), 1);
-assert.equal(leaderTaskLayer('cmo_leader', 'validation'), 1);
-assert.equal(leaderTaskLayer('cmo_leader', 'media_planner'), 2);
-assert.equal(leaderTaskLayer('cmo_leader', 'list_creator'), 3);
-assert.equal(leaderTaskLayer('cmo_leader', 'seo_gap'), 3);
-assert.equal(leaderTaskLayer('cmo_leader', 'x_post'), 4);
-const cmoLeaderControlContract = leaderControlContractForTask('cmo_leader');
-assert.equal(cmoLeaderControlContract.version, 'leader-control/v1');
-assert.equal(cmoLeaderControlContract.role, 'agent_selection_handoff_review_synthesis');
-assert.ok(cmoLeaderControlContract.controlLoop.includes('handoff'));
-assert.ok(cmoLeaderControlContract.controlLoop.includes('review'));
-assert.ok(cmoLeaderControlContract.handoffFields.includes('source_inputs'));
-assert.ok(cmoLeaderControlContract.qualityChecks.some((check) => check.id === 'handoff_input_used'));
-assert.ok(cmoLeaderControlContract.downstreamTaskTypes.includes('x_post'));
-assert.equal(leaderControlContractForTask('x_post'), null);
-assert.equal(leaderTaskPhase('cmo_leader', 'teardown'), 'research');
-assert.equal(leaderTaskPhase('cmo_leader', 'validation'), 'research');
-assert.equal(leaderTaskPhase('cmo_leader', 'growth'), 'planning');
-assert.equal(leaderTaskPhase('cmo_leader', 'list_creator'), 'preparation');
-assert.equal(leaderTaskPhase('cmo_leader', 'landing'), 'preparation');
-assert.equal(leaderTaskPhase('cmo_leader', 'writing'), 'preparation');
-assert.equal(leaderTaskPhase('cmo_leader', 'instagram'), 'action');
-assert.equal(leaderTaskPhase('cmo_leader', 'citation_ops'), 'action');
-assert.equal(leaderTaskPhase('cmo_leader', 'directory_submission'), 'action');
-assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'research'), true);
-assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'validation'), true);
-assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'list_creator'), false);
-assert.equal(leaderTaskUsesWebSearch('cmo_leader', 'media_planner'), false);
-assert.deepEqual(leaderSourceCollectionLayerTasks('cmo_leader'), ['research', 'teardown', 'data_analysis', 'validation']);
-assert.ok(leaderTaskRequiresSourceCollection('cmo_leader', 'data_analysis'), 'CMO data analysis should be evidence/source collection work.');
-assert.ok(leaderTaskRequiresSourceCollection('cpo_leader', 'validation'), 'CPO validation should be evidence/source collection work.');
-assert.ok(leaderTaskRequiresSourceCollection('cfo_leader', 'data_analysis'), 'CFO data analysis should be evidence/source collection work.');
-assert.ok(leaderTaskRequiresSourceCollection('legal_leader', 'diligence'), 'Legal diligence should be evidence/source collection work.');
-assert.equal(leaderTaskUsesWebSearch('cfo_leader', 'data_analysis'), true, 'Finance data analysis should require source collection/search in leader workflows.');
-assert.ok(builtInAgentEntrySource.includes("leaderTaskPhase('cmo_leader', normalizedKind)"), 'CMO specialist runtime phase must use the shared leader profile instead of hardcoded task buckets');
-for (const kind of ['media_planner', 'list_creator', 'writing', 'writer', 'instagram', 'citation_ops']) {
-  assert.notEqual(cmoAgentActionContractForKind(kind).action, cmoAgentActionContractForKind('growth').action, `${kind} must not fall back to the generic growth action contract`);
+
+assert.ok(agentFiles.length >= SAMPLE_AGENT_KINDS.length, 'agent definition files should cover sample agent kinds');
+
+const outputRegressionFixtures = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'agent-output-cases.json'), 'utf8'));
+const outputRegressionCases = Array.isArray(outputRegressionFixtures.cases) ? outputRegressionFixtures.cases : [];
+const outputRegressionFiles = new Set(outputRegressionCases.map((item) => item.file).filter(Boolean));
+const missingOutputRegressionFiles = agentFiles.filter((fileName) => !outputRegressionFiles.has(fileName));
+assert.deepEqual(missingOutputRegressionFiles, [], 'agent output regression fixtures should cover every sample agent file');
+assert.equal(outputRegressionFiles.size, outputRegressionCases.length, 'agent output regression fixtures should use one canonical case per sample agent file');
+for (const item of outputRegressionCases) {
+  assert.ok(agentFiles.includes(item.file), `agent output regression fixture references an unknown sample agent file: ${item.file}`);
 }
-const cmoPhaseQaBody = {
-  prompt: 'Task: cmo_leader Goal: aiagent-marketplace.net signups.',
-  input: {
-    _broker: {
-      workflow: {
-        primaryTask: 'cmo_leader',
-        leaderHandoff: {
-          priorRuns: [{ taskType: 'research', status: 'completed', summary: 'Engineers need execution-layer proof.' }]
-        }
-      }
-    }
+
+for (const [kind, definition] of Object.entries(SAMPLE_AGENT_DEFINITIONS)) {
+  const manifest = definition.manifest || {};
+  const metadata = manifest.metadata || {};
+  if (kind !== manifest.kind) continue;
+  assert.equal(metadata.agent_purpose, definition.agentPurpose, `${kind} manifest metadata must expose its agent-owned purpose`);
+  assert.deepEqual(metadata.action_boundaries, definition.agentActionBoundaries, `${kind} manifest metadata must expose its agent-owned action boundaries`);
+  assert.deepEqual(metadata.delivery_contract, definition.deliveryContract, `${kind} manifest metadata must expose its agent-owned delivery contract`);
+  assert.ok(Array.isArray(metadata.action_boundaries) && metadata.action_boundaries.length > 0, `${kind} manifest metadata must include action boundaries`);
+  assert.ok(Array.isArray(metadata.delivery_contract?.requiredDeliverySections) && metadata.delivery_contract.requiredDeliverySections.length > 0, `${kind} manifest metadata must include required delivery sections`);
+  assert.ok(Array.isArray(metadata.delivery_contract?.requiredEvidence) && metadata.delivery_contract.requiredEvidence.length > 0, `${kind} manifest metadata must include required evidence`);
+  assert.ok(Array.isArray(metadata.delivery_contract?.mustLabel) && metadata.delivery_contract.mustLabel.length > 0, `${kind} manifest metadata must include required assumption/status labels`);
+  assert.ok(Array.isArray(metadata.delivery_contract?.forbiddenClaims) && metadata.delivery_contract.forbiddenClaims.length > 0, `${kind} manifest metadata must include forbidden claims`);
+  assert.ok(String(metadata.delivery_contract?.validDeliveryCheck || '').trim(), `${kind} manifest metadata must include a valid delivery check`);
+  for (const action of metadata.action_boundaries) {
+    assert.ok(String(action?.id || '').trim(), `${kind} action boundaries must include an id`);
+    assert.ok(String(action?.mode || '').trim(), `${kind} action boundaries must include a mode`);
+    assert.ok(Array.isArray(action?.requires) && action.requires.length > 0, `${kind} action ${action?.id || '<missing>'} must include required inputs`);
+    assert.ok(Array.isArray(action?.prepares) && action.prepares.length > 0, `${kind} action ${action?.id || '<missing>'} must include prepared work`);
+    assert.ok(Array.isArray(action?.produces) && action.produces.length > 0, `${kind} action ${action?.id || '<missing>'} must include produced artifacts`);
+    assert.ok(Array.isArray(action?.cannotClaim) && action.cannotClaim.length > 0, `${kind} action ${action?.id || '<missing>'} must include forbidden execution claims`);
+    assert.ok(String(action?.authorityBoundary || '').trim(), `${kind} action ${action?.id || '<missing>'} must include an authority boundary`);
   }
-};
-assert.ok(sampleAgentPayload('growth', cmoPhaseQaBody).files[0].content.includes('This is a planning-layer delivery'), 'growth must remain a planning-layer CMO specialist');
-assert.ok(sampleAgentPayload('writer', cmoPhaseQaBody).files[0].content.includes('This is a preparation-layer delivery'), 'writer/writing must remain a preparation-layer CMO specialist');
-assert.ok(sampleAgentPayload('instagram', cmoPhaseQaBody).files[0].content.includes('This is a action-layer delivery'), 'instagram must remain an action-layer CMO specialist');
-assert.ok(sampleAgentPayload('citation_ops', cmoPhaseQaBody).files[0].content.includes('This is a action-layer delivery'), 'citation_ops must remain an action-layer CMO specialist');
-const cmoListCreatorNoRowsBody = {
-  prompt: 'Task: cmo_leader Goal: customer acquisition Intake answers: 1.aiagent-marketplace.net 2.engineers 3.signups 4.no ads 5.plan and action',
-  input: {
-    _broker: {
-      workflow: {
-        primaryTask: 'cmo_leader',
-        sequencePhase: 'preparation',
-        leaderHandoff: {
-          priorRuns: [{
-            taskType: 'research',
-            status: 'completed',
-            summary: 'Search query: AI agent marketplace engineers alternatives',
-            bullets: ['Search query only; no concrete company public URLs yet'],
-            files: [{ name: 'research-delivery.md', content: '# research\nSearch query: AI agent marketplace engineers alternatives' }]
-          }]
-        }
-      }
-    }
+}
+
+const engineeringContractExpectations = [
+  {
+    kind: 'code',
+    actions: ['prepare_patch_plan', 'implement_local_change', 'prepare_pr_handoff', 'verify_validation_evidence'],
+    requiredSections: ['Affected files', 'Validation evidence', 'Release risk label', 'Rollback path', 'PR handoff'],
+    guidedSections: ['Validation evidence', 'Release risk label', 'PR handoff'],
+    forbiddenClaims: ['validation completed without command/result']
+  },
+  {
+    kind: 'build_team_leader',
+    actions: ['plan_implementation_team', 'resolve_parallel_work_boundaries', 'gate_validation_and_pr_handoff'],
+    requiredSections: ['File ownership', 'Shared files and sequencing', 'Write-intent conflict matrix', 'Conflict checkpoint', 'Serial/parallel decision', 'Integration owner and merge check', 'Risk and rollback path'],
+    guidedSections: ['File ownership', 'Shared files and sequencing', 'Write-intent conflict matrix', 'Conflict checkpoint', 'Serial/parallel decision', 'Execution slices', 'Integration gate', 'Integration owner and merge check', 'Validation commands', 'Risk and rollback path', 'PR handoff criteria'],
+    forbiddenClaims: ['safe parallel execution without shared-file review', 'implementation-ready claim without conflict checkpoint', 'serial-required work dispatched in parallel', 'shared contract changed without downstream owner']
+  },
+  {
+    kind: 'cto_leader',
+    actions: ['prepare_architecture_decision', 'prepare_rollout_packet', 'gate_migration_readiness'],
+    requiredSections: ['Current state evidence', 'Readiness gate', 'Validation gate', 'Fallback owner', 'Risk tradeoff'],
+    guidedSections: ['Readiness gate', 'Validation gate', 'Fallback owner', 'Risk tradeoff'],
+    forbiddenClaims: ['production ready without readiness gate']
   }
-};
-const cmoListCreatorNoRowsContent = sampleAgentPayload('list_creator', cmoListCreatorNoRowsBody).files[0].content;
-assert.ok(cmoListCreatorNoRowsContent.includes('aiagent-marketplace.net'), 'CMO context extraction must preserve full numbered-list domains');
-assert.ok(!/https:\/\/aiagent-marke(?:\s|\)|$)/i.test(cmoListCreatorNoRowsContent), 'CMO context extraction must not emit truncated domains');
-assert.ok(cmoListCreatorNoRowsContent.includes('BLOCKED_MISSING_SOURCE_ROWS'), 'list_creator must block instead of fabricating rows when handoff has only queries/summaries');
-assert.ok(!/要URL確認|未添付|URL未確認|Not attached|source URL needed/i.test(cmoListCreatorNoRowsContent), 'list_creator must not use placeholder lead rows when concrete public URLs are missing');
-assert.ok(
-  BUILT_IN_KIND_DEFAULTS.list_creator.systemPrompt.includes('Never convert search queries, delivery file names, handoff summaries'),
-  'list_creator profile must prohibit turning query/title handoff text into lead rows'
-);
-const cmoActionSequence = inferTaskSequence(
-  'cmo_leader',
-  'Plan and do actions for aiagent-marketplace.net: research competitors, prepare an X post, and submit to AI tool directories.',
-  { maxTasks: 14 }
-);
-assert.ok(cmoActionSequence.includes('x_post'), 'CMO action sequence must preserve requested X posting');
-assert.ok(cmoActionSequence.includes('directory_submission'), 'CMO action sequence must preserve requested directory submission');
-assert.ok(cmoActionSequence.includes('media_planner'), 'CMO action sequence must include planning before action');
-assert.ok(cmoActionSequence.includes('landing'), 'CMO action sequence must include preparation before action');
-assert.ok(cmoActionSequence.indexOf('media_planner') < cmoActionSequence.indexOf('x_post'), 'CMO planning must run before X action');
-assert.ok(cmoActionSequence.indexOf('landing') < cmoActionSequence.indexOf('x_post'), 'CMO preparation must run before X action');
-assert.equal(connectorExecutionPolicyForTask('x_post').capability, 'x.post');
-assert.equal(connectorExecutionPolicyForTask('directory_submission').fallback, 'manual_submission_queue');
-assert.ok(CONNECTOR_EXECUTION_POLICIES.email_ops, 'email connector policy should be shared for any agent');
-assert.ok(
-  builtInAgentEntrySource.includes("import { BUILT_IN_KIND_DEFAULTS } from './builtin-agents/agents/index.js';"),
-  'dispatcher should load built-in agent definitions from the split registry'
-);
-assert.ok(builtInAgentDefinitionFiles.includes('cmo-leader.js'), 'CMO leader definition should live in its own file');
-assert.ok(builtInAgentDefinitionFiles.includes('research-team-leader.js'), 'research leader definition should live in its own file');
-assert.ok(builtInAgentDefinitionFiles.includes('teardown.js'), 'teardown specialist definition should live in its own file');
-assert.equal(builtInAgentDefinitionFiles.includes(`${removedGamblingAdjacentKind}.js`), false, 'Gambling-adjacent built-in agent file must be fully removed');
-assert.equal(BUILT_IN_KINDS.includes(removedGamblingAdjacentKind), false, 'Gambling-adjacent kind must not be routable as a built-in kind');
-assert.equal(DEFAULT_AGENT_SEEDS.some((agent) => agent.id === `agent_${removedGamblingAdjacentKind}_01`), false, 'Gambling-adjacent seed must not be active');
-for (const kind of Object.keys(BUILT_IN_KIND_DEFAULTS)) {
-  const expectedFile = `${kind.replaceAll('_', '-')}.js`;
+];
+
+const operationsContractExpectations = [
+  {
+    kind: 'follow_up',
+    actions: ['prepare_open_loop_tracker', 'prepare_followup_draft', 'prepare_followup_send_handoff'],
+    requiredSections: ['Open-loop table', 'Owner', 'Deadline', 'Deadline gap handling', 'Priority rank and reason', 'Relationship context', 'Business impact', 'Follow-up copy', 'Approval condition', 'Approval/send handoff', 'Execution status labels', 'Next check trigger'],
+    guidedSections: ['Open-loop queue', 'Deadline gap handling', 'Priority rank and reason', 'Owner', 'Business impact', 'Approval condition', 'Approval/send handoff', 'Execution status labels', 'Next-check trigger', 'Next action'],
+    forbiddenClaims: ['sent claim without connector proof', 'queued reminder without connector proof', 'scheduled reminder without connector or human executor proof', 'deadline confirmed without source evidence', 'follow-up complete without reply or owner confirmation']
+  },
+  {
+    kind: 'meeting_notes',
+    actions: ['prepare_meeting_minutes', 'extract_action_items', 'prepare_minutes_distribution_handoff', 'prepare_action_owner_handoff'],
+    requiredSections: ['Decision log', 'Action items', 'Follow-up draft', 'Distribution approval gate', 'Line-level source ledger', 'Source-to-action trace', 'Owner handoff packet', 'Private context scope', 'Execution status labels'],
+    guidedSections: ['Line-level source ledger', 'Source-to-action trace', 'Owner handoff packet', 'Private context scope', 'Execution status labels'],
+    forbiddenClaims: ['minutes distributed without proof', 'action item without cited source line or inference label', 'raw transcript forwarded without scope', 'private aside exposed in owner-visible handoff', 'owner action accepted without owner proof', 'follow-up sent without connector proof']
+  },
+  {
+    kind: 'meeting_prep',
+    actions: ['prepare_meeting_brief', 'prepare_preread_packet', 'prepare_meeting_execution_handoff'],
+    requiredSections: ['Objective', 'Participants', 'Agenda', 'Decision points', 'Preparation handoff packet', 'Participant-visible context scope', 'Calendar/send boundary', 'Execution status labels'],
+    guidedSections: ['Preparation handoff packet', 'Participant-visible context scope', 'Calendar/send boundary', 'Execution status labels'],
+    forbiddenClaims: ['pre-read sent without proof', 'calendar invite updated without proof', 'participant context shared without scope']
+  },
+  {
+    kind: 'schedule_coordination',
+    actions: ['prepare_candidate_time_packet', 'prepare_invite_handoff', 'prepare_meeting_tool_handoff', 'prepare_participant_response_handoff'],
+    requiredSections: ['Availability source', 'Candidate times', 'Invite draft', 'Participant response handoff', 'Time option expiry', 'Meeting-link handoff', 'Execution status labels'],
+    guidedSections: ['Participant response handoff', 'Time option expiry', 'Execution status labels'],
+    forbiddenClaims: ['meeting link created without proof', 'participant confirmed without response evidence', 'time held without connector proof']
+  },
+  {
+    kind: 'reply_draft',
+    actions: ['prepare_reply_draft', 'prepare_send_guardrail', 'prepare_reply_followup_handoff'],
+    requiredSections: ['Message/thread source and freshness', 'Sender and recipient', 'Desired outcome', 'Fact and commitment ledger', 'Recipient-visible context scope', 'Approval condition', 'Approval/send handoff', 'Execution status labels', 'Follow-up timing'],
+    guidedSections: ['Message/thread source and freshness', 'Sender and recipient', 'Desired outcome', 'Fact and commitment ledger', 'Recipient-visible context scope', 'Approval condition', 'Approval/send handoff', 'Execution status labels', 'Follow-up timing'],
+    forbiddenClaims: ['approval complete without user or connector evidence', 'commitment stated as fact without source or approval', 'private or internal context copied into recipient-visible draft without approval', 'follow-up scheduled without connector proof']
+  },
+  {
+    kind: 'secretary_leader',
+    actions: ['coordinate_operations_queue', 'prepare_connector_handoff', 'synthesize_secretary_specialist_outputs'],
+    requiredSections: ['Source data inventory', 'Operations queue', 'Specialist handoff synthesis', 'Least-privilege context scope', 'Approval gate', 'Connector status'],
+    guidedSections: ['Source data inventory', 'Priority queue', 'Specialist handoff synthesis', 'Least-privilege context scope', 'Approval gates', 'Connector gaps'],
+    forbiddenClaims: ['external action approved by leader without principal or connector proof', 'unscoped private context copied into handoff']
+  }
+];
+
+const productResearchContractExpectations = [
+  {
+    kind: 'pricing',
+    actions: ['prepare_price_model', 'prepare_package_decision', 'prepare_sensitivity_decision', 'prepare_price_change_handoff'],
+    requiredSections: ['Pricing question', 'Value metric', 'Assumptions', 'Source-to-model ledger', 'Formula', 'Scenario table', 'Sensitivity table', 'Recommendation', 'Approval owner', 'Price-change handoff', 'Execution proof tracker', 'Execution status labels', 'Decision trigger', 'Rollback or continue rule'],
+    guidedSections: ['Pricing question', 'Value metric', 'Assumptions', 'Source-to-model ledger', 'Formula', 'Scenario table', 'Sensitivity table', 'Recommendation', 'Approval owner', 'Price-change handoff', 'Execution proof tracker', 'Execution status labels', 'Decision trigger', 'Rollback or continue rule'],
+    forbiddenClaims: ['price test won without results', 'price, checkout, billing plan, discount, or contract change applied without execution proof', 'price test started, traffic routed, conversion measured, or winner selected without dated experiment evidence']
+  },
+  {
+    kind: 'validation',
+    actions: ['prepare_falsification_plan', 'prepare_validation_next_step', 'prepare_interview_or_smoke_packet', 'prepare_validation_execution_handoff'],
+    requiredSections: ['Target user', 'Current workaround', 'Riskiest assumption', 'Test design', 'Test script or asset', 'Concrete smoke-test asset', 'Learning acceptance table', 'Success threshold', 'Kill criteria', 'False positives to ignore', 'Execution handoff packet', 'Evidence return path', 'Execution status labels', 'Next decision'],
+    guidedSections: ['Target user', 'Current workaround', 'Riskiest assumption', 'Test design', 'Test script or asset', 'Concrete smoke-test asset', 'Learning acceptance table', 'Success threshold', 'Kill criteria', 'False positives to ignore', 'Execution handoff packet', 'Evidence return path', 'Execution status labels', 'Next decision'],
+    forbiddenClaims: ['respondents committed without evidence', 'test launched without owner or channel proof', 'learning accepted without result evidence', 'continue or kill decision made without proof']
+  },
+  {
+    kind: 'teardown',
+    actions: ['prepare_competitor_comparison', 'prepare_differentiated_move', 'prepare_verification_queue', 'prepare_competitive_strategy_console_handoff'],
+    requiredSections: ['Competitor classification', 'Observed facts', 'Inferences', 'Comparison table', 'Wedge', 'First test', 'Verification queue', 'Evidence gaps', 'SaaS/App intake payload'],
+    guidedSections: ['Competitor classification', 'Observed facts', 'Inferences', 'Comparison table', 'Wedge', 'First test', 'Verification queue', 'Evidence gaps', 'SaaS/App intake payload'],
+    forbiddenClaims: ['unverified competitor claim resolved', 'SaaS app ingested', 'competitive win proven without validation']
+  },
+  {
+    kind: 'research',
+    actions: ['prepare_source_backed_memo', 'prepare_decision_recommendation', 'prepare_verification_queue', 'prepare_decision_handoff_packet'],
+    requiredSections: ['Answer first', 'Source status', 'Source ledger', 'Current vs inferred facts', 'Options', 'Recommendation', 'Verification queue', 'Verification gaps', 'Source access boundary', 'Decision handoff packet', 'Execution status labels'],
+    guidedSections: ['Answer first', 'Source status', 'Source ledger', 'Current vs inferred facts', 'Options', 'Recommendation', 'Verification queue', 'Verification gaps', 'Source access boundary', 'Decision handoff packet', 'Execution status labels'],
+    forbiddenClaims: ['verification completed without source', 'market demand conclusion before source collection queue', 'verified market demand without source proof', 'source access granted without connector proof', 'decision adopted without owner approval', 'recommendation implemented without execution proof']
+  }
+];
+
+const workSupportContractExpectations = [
+  {
+    kind: 'prompt_brushup',
+    actions: ['prepare_prompt_rewrite', 'prepare_prompt_test_cases', 'prepare_dispatch_handoff'],
+    requiredSections: ['Intent ledger', 'Original prompt', 'Rewritten prompt', 'Preserved constraints', 'Source/context ledger', 'Change rationale', 'Test cases', 'Failure modes', 'Dispatch recommendation', 'Dispatch handoff packet', 'Execution status labels'],
+    guidedSections: ['Intent ledger', 'Original prompt', 'Rewritten prompt', 'Preserved constraints', 'Source/context ledger', 'Change rationale', 'Test cases', 'Failure modes', 'Dispatch recommendation', 'Dispatch handoff packet', 'Execution status labels'],
+    forbiddenClaims: ['intent changed without label', 'tested claim without results', 'downstream task dispatched, executed, or completed without execution proof']
+  },
+  {
+    kind: 'hiring',
+    actions: ['prepare_jd_packet', 'prepare_screening_rubric', 'prepare_hiring_owner_handoff'],
+    requiredSections: ['Role outcomes', 'Scorecard', 'Job description', 'Must-have and nice-to-have', 'Screening questions', 'Evaluation rubric', 'Protected-class/legal risk gate', 'Candidate evidence boundary', 'Exclusion risks'],
+    guidedSections: ['Role outcomes', 'Scorecard', 'Job description', 'Must-have and nice-to-have', 'Screening questions', 'Evaluation rubric', 'Protected-class/legal risk gate', 'Candidate evidence boundary', 'Exclusion risks'],
+    forbiddenClaims: ['generic JD without scorecard', 'candidate decision without evidence', 'protected-class proxy requirement treated as a must-have', 'candidate fit or protected-class inference without job-related evidence']
+  },
+  {
+    kind: 'data_analysis',
+    actions: ['prepare_metric_audit', 'prepare_analysis_memo', 'verify_conversion_instrumentation', 'prepare_measurement_console_handoff'],
+    requiredSections: ['Question', 'Dataset status', 'Conversion instrumentation verification', 'Row-level sample audit', 'Metric definitions', 'Derived metric calculation table', 'Findings', 'Caveats', 'Analysis notes', 'Measurement Console handoff', 'Next decision'],
+    guidedSections: ['Question', 'Dataset status', 'Conversion instrumentation verification', 'Analytics admin/access status', 'Row-level sample audit', 'Metric definitions', 'Derived metric calculation table', 'Findings', 'Caveats', 'Analysis notes', 'Measurement Console handoff', 'Next decision'],
+    forbiddenClaims: ['data-backed conclusion without dataset evidence', 'causal claim without test design', 'conversion conclusion without instrumentation proof', 'GA4/Search Console verified without admin evidence', 'computed conversion rate without row count, numerator, denominator, and formula', 'full-funnel conclusion from sample rows without caveat', 'dashboard live, events connected, experiment launched, or SaaS app ingested without execution proof']
+  },
+  {
+    kind: 'diligence',
+    actions: ['prepare_red_flag_review', 'prepare_verification_queue', 'prepare_decision_handoff'],
+    requiredSections: ['Decision context', 'Evidence map', 'Red flag matrix', 'Fact vs inference', 'Verification queue', 'Blocker severity', 'Go/no-go impact', 'Next verification per red flag', 'Decision owner handoff', 'Verification proof tracker', 'Approval/execution status labels', 'Conditional recommendation'],
+    guidedSections: ['Decision context', 'Evidence map', 'Red flag matrix', 'Fact vs inference', 'Verification queue', 'Blocker severity', 'Go/no-go impact', 'Next verification per red flag', 'Decision owner handoff', 'Verification proof tracker', 'Approval/execution status labels', 'Conditional recommendation'],
+    forbiddenClaims: ['risk cleared without evidence', 'generic risk list without severity', 'clean go recommendation while blocker verification is open', 'launch approved or go/no-go decision adopted without decision-owner proof', 'blocker resolved or verification completed without dated evidence']
+  }
+];
+
+const externalCommunicationContractExpectations = [
+  {
+    kind: 'writer',
+    actions: ['prepare_copy_packet', 'prepare_publisher_handoff_copy', 'prepare_claim_safe_downstream_handoff'],
+    requiredSections: ['Copy mode', 'Proof status', 'Proof placeholder map', 'Claim use ledger', 'Downstream handoff packet'],
+    guidedSections: ['Proof placeholder map', 'Claim use ledger', 'Downstream handoff packet'],
+    forbiddenClaims: ['claims verified without source review', 'copy approved by owner without evidence', 'placeholder treated as approved proof without owner review']
+  },
+  {
+    kind: 'x_post',
+    actions: ['prepare_x_post_packet', 'prepare_x_schedule_packet', 'prepare_x_pre_publish_review', 'apply_upstream_x_handoff', 'prepare_x_saas_payload', 'prepare_x_connector_handoff'],
+    requiredSections: ['Upstream handoff usage', 'Public copy/readiness gap', 'Exact post text', 'Account and link policy', 'Pre-publish review', 'SaaS/App intake payload', 'Approval checklist', 'Connector handoff boundary', 'Publish readiness handoff', 'Measurement and evidence return path', 'Execution status labels'],
+    guidedSections: ['Upstream handoff usage', 'Public copy/readiness gap', 'Exact post text', 'Account and link policy', 'Pre-publish review', 'SaaS/App intake payload', 'Connector handoff boundary', 'Publish readiness handoff', 'Execution status labels'],
+    forbiddenClaims: ['posted', 'scheduled', 'queued', 'ready to post without approval proof', 'approved without owner evidence', 'SaaS app ingested', 'Publisher queued']
+  },
+  {
+    kind: 'email_ops',
+    actions: ['prepare_lifecycle_email_packet', 'prepare_email_schedule_packet', 'prepare_email_send_handoff'],
+    requiredSections: ['Segment', 'Sender', 'Approval checklist', 'Send boundary', 'Execution status labels'],
+    guidedSections: ['Send boundary', 'Measurement plan', 'Execution status labels'],
+    forbiddenClaims: ['sent', 'scheduled', 'queued']
+  },
+  {
+    kind: 'cold_email',
+    actions: ['qualify_cold_lead_queue', 'draft_company_specific_sequence', 'prepare_cold_email_send_handoff', 'prepare_cold_email_execution_proof_tracker'],
+    requiredSections: ['Lead source status', 'Qualification queue', 'Exact recipient approval', 'Approval owner', 'Approval/send boundary', 'ESP/CRM field map', 'Connector handoff packet', 'Execution proof tracker', 'Execution status labels'],
+    guidedSections: ['Lead source status and qualification queue', 'Exact recipient approval', 'Approval owner', 'Approval/send boundary', 'ESP/CRM field map', 'Connector handoff packet', 'Execution proof tracker', 'Execution status labels'],
+    forbiddenClaims: ['approved', 'sent', 'queued', 'CRM imported', 'delivered', 'reply handled', 'open or reply rate observed']
+  },
+  {
+    kind: 'list_creator',
+    actions: ['prepare_public_source_list_brief', 'prepare_list_review_handoff', 'prepare_crm_or_outreach_import_packet'],
+    requiredSections: ['Row-level source ledger', 'Exclusion and duplicate review', 'Approval owner', 'Downstream handoff packet', 'Execution proof tracker'],
+    guidedSections: ['Row-level source ledger', 'Import-ready field map', 'Exclusion and duplicate review', 'Approval owner', 'Execution proof tracker'],
+    forbiddenClaims: ['lead list approved', 'row verified', 'duplicate checked without evidence', 'contact enriched', 'CRM imported', 'outreach queued', 'outreach sent'],
+  },
+  {
+    kind: 'instagram',
+    actions: ['prepare_instagram_caption_packet', 'prepare_instagram_content_outline_guidance', 'prepare_instagram_creative_brief', 'apply_upstream_instagram_handoff', 'prepare_instagram_saas_payload', 'prepare_instagram_schedule_handoff'],
+    requiredSections: ['Upstream handoff usage', 'Public copy/readiness gap', 'Destination URL/copy status', 'Format decision', 'Visual brief', 'Visual asset readiness matrix', 'Content outline guidance', 'Proof-safe claim ledger', 'Exact caption or outline', 'SaaS/App intake payload', 'Schedule handoff', 'Approval checklist', 'Connector boundary', 'Measurement and evidence return path', 'Execution status labels'],
+    guidedSections: ['Upstream handoff usage', 'Public copy/readiness gap', 'Destination URL/copy status', 'Visual asset readiness matrix', 'Content outline guidance', 'SaaS/App intake payload', 'Schedule handoff', 'Approval checklist', 'Connector handoff boundary', 'Execution status labels'],
+    forbiddenClaims: ['posted', 'scheduled', 'queued', 'uploaded', 'approved destination URL supplied', 'approved copy supplied', 'visual asset available without supplied file or URL proof', 'asset rights cleared without evidence', 'publishing proof supplied', 'channel-ready copy approved', 'SaaS app ingested', 'Publisher queued']
+  },
+  {
+    kind: 'reddit',
+    actions: ['prepare_subreddit_fit_packet', 'apply_upstream_reddit_handoff', 'draft_reddit_discussion_packet', 'prepare_reddit_saas_payload', 'prepare_reddit_manual_posting_handoff'],
+    requiredSections: ['Upstream handoff usage', 'Subreddit assumptions', 'Community fit', 'Rule risk', 'Public copy/readiness gap', 'Non-promotional angle', 'SaaS/App intake payload', 'Manual posting boundary', 'Measurement and evidence return path', 'Execution status labels'],
+    guidedSections: ['Upstream handoff usage', 'Subreddit assumptions', 'Public copy/readiness gap', 'SaaS/App intake payload', 'Manual posting boundary', 'Execution status labels'],
+    forbiddenClaims: ['posted', 'submitted', 'queued', 'community rules checked without dated source', 'SaaS app ingested', 'Publisher queued']
+  },
+  {
+    kind: 'indie_hackers',
+    actions: ['prepare_indie_hackers_post_packet', 'prepare_indie_hackers_reply_plan', 'apply_upstream_story_and_channel_handoff', 'prepare_indie_hackers_saas_payload', 'prepare_indie_hackers_publish_handoff'],
+    requiredSections: ['Upstream handoff usage', 'Founder story angle', 'Community/source status', 'Public copy/readiness gap', 'Proof-safe claim ledger', 'Exact post draft', 'CTA softness', 'Story vs ad rewrite notes', 'SaaS/App intake payload', 'Manual publish boundary', 'Post-publish update packet', 'Measurement and evidence return path', 'Execution status labels'],
+    guidedSections: ['Upstream handoff usage', 'Proof-safe claim ledger', 'CTA softness', 'Story vs ad rewrite notes', 'SaaS/App intake payload', 'Manual publish boundary', 'Post-publish update packet', 'Execution status labels'],
+    forbiddenClaims: ['published', 'posted', 'queued', 'commented', 'metric verified without source proof', 'community rules checked without dated source', 'post approved without owner evidence', 'feedback collected without returned evidence', 'SaaS app ingested', 'Publisher queued']
+  }
+];
+
+const marketingExecutionContractExpectations = [
+  {
+    kind: 'media_planner',
+    actions: ['prepare_channel_fit_matrix', 'prepare_next_channel_handoff', 'prepare_channel_readiness_ledger', 'prepare_awareness_foundation_handoff'],
+    requiredSections: ['Decision first', 'Awareness stage diagnosis', 'Public discoverability gap', 'Top three channels', 'Leader routing packet', 'SaaS/App handoff payload', 'Channel readiness ledger'],
+    guidedSections: ['Decision first', 'Awareness stage diagnosis', 'Public discoverability gap', 'Leader routing packet', 'SaaS/App handoff payload', 'Channel readiness ledger'],
+    forbiddenClaims: ['general awareness achieved', 'crawlable content verified', 'brand demand verified', 'app handoff completed']
+  },
+  {
+    kind: 'seo_specialist',
+    actions: ['prepare_seo_rewrite_packet', 'prepare_article_plan_or_batch', 'prepare_publisher_handoff', 'prepare_search_console_intent_map'],
+    requiredSections: ['SEO mode', 'SERP/source status', 'Search Console source status', 'Search Console row coverage ledger', 'Search Console missing export queue', 'Search Console landing intent map', 'CTA/trust plan', 'Source ledger'],
+    guidedSections: ['Mode, conversion goal, and target keyword', 'Search Console source status', 'Search Console row coverage ledger', 'Search Console missing export queue', 'Search Console landing intent map', 'CTA, trust, and internal-link plan'],
+    forbiddenClaims: ['Search Console data verified without export or connector proof', 'intent mapped from Search Console without query rows', 'query performance inferred for missing Search Console rows', 'verified intent or CTA priority for requested but unsupplied query/page exports']
+  },
+  {
+    kind: 'acquisition_automation',
+    actions: ['prepare_automation_flow', 'handoff_connector_packet', 'prepare_ga4_funnel_event_spec'],
+    requiredSections: ['Conversion goal', 'Trigger', 'CRM states', 'Messages', 'Approval gates', 'Stop rules', 'Measurement', 'GA4 event specification', 'Zero-conversion debug escalation', 'Connector handoff'],
+    guidedSections: ['Flow objective and conversion event', 'GA4 event specification', 'Zero-conversion debug escalation', 'Measurement', 'Connector and approval packets'],
+    forbiddenClaims: ['events implemented without proof', 'tracking live without analytics proof', 'GA4 conversion marked without admin proof', 'conversion failure diagnosed before event verification', 'signup/trial integration cleared without internal test']
+  },
+  {
+    kind: 'campaign_operations',
+    actions: ['prepare_campaign_record', 'prepare_publisher_queue', 'prepare_planned_action_queue', 'prepare_measurement_loop'],
+    requiredSections: ['Asset status queue', 'Planned action queue', 'Now (Week 0-1)', 'Next (Week 1-3)', 'Waiting conditions', 'Measurement loop', 'Next action owner'],
+    guidedSections: ['Asset status queue', 'Planned action queue', 'Now (Week 0-1)', 'Next (Week 1-3)', 'Waiting conditions', 'Measurement loop', 'Next action owner'],
+    forbiddenClaims: ['unapproved asset queued as approved', 'measurement-waiting asset treated as winner', 'blocked asset queued for Publisher ingest', 'blocked item ready', 'waiting item executed', 'week 0 action completed without proof', 'week 1-3 action completed without proof', 'expansion ready without measurement', 'outcome decided without measurement']
+  },
+  {
+    kind: 'ads_planner',
+    actions: ['prepare_ads_plan', 'prepare_ads_saas_handoff', 'prepare_creative_asset_packet', 'prepare_launch_approval_handoff'],
+    requiredSections: ['Pre-launch measurement blocker', 'Creative asset packet', 'Ads SaaS handoff', 'Approval and launch boundary', 'Execution status labels'],
+    guidedSections: ['Pre-launch measurement blocker', 'Creative asset packet', 'Ads SaaS handoff', 'Approval and launch boundary', 'Execution status labels'],
+    forbiddenClaims: ['creative approved without owner proof', 'conversion tracking verified without connector proof', 'campaign ready to launch without approval', 'launchable campaign while conversion tracking is unverified']
+  },
+  {
+    kind: 'directory_submission',
+    actions: ['prepare_directory_submission_queue', 'prepare_directory_submission_handoff', 'prepare_directory_submission_proof_tracker'],
+    requiredSections: ['Directory queue', 'Rule check status', 'Submission handoff packet', 'UTM and proof tracker', 'Submission boundary', 'Next owner'],
+    guidedSections: ['Rule check status', 'Submission handoff packet', 'UTM and proof tracker', 'Submission boundary'],
+    forbiddenClaims: ['rules verified without dated source', 'submission ready without owner approval', 'proof captured']
+  },
+  {
+    kind: 'landing',
+    actions: ['prepare_landing_conversion_packet', 'prepare_landing_implementation_handoff', 'prepare_signup_trial_cta_alignment_check'],
+    requiredSections: ['Current page evidence status', 'Missing page copy/sections stop rule', 'Signup/trial CTA alignment check', 'Intent to CTA mapping', 'Revised CTA block draft', 'Proof block draft', 'Replacement copy status', 'Draft handoff plan', 'Implementation handoff'],
+    guidedSections: ['Current page evidence status', 'Missing page copy/sections stop rule', 'Signup/trial CTA alignment check', 'Intent to CTA mapping', 'Revised CTA block draft', 'Proof block draft', 'Replacement copy status', 'Draft handoff plan', 'Implementation handoff'],
+    forbiddenClaims: ['page inspected without source', 'verified critique without page evidence', 'replacement copy verified without current page copy', 'CTA alignment verified without both page sources', 'proof block approved without supplied proof', 'section-specific rewrite without current page copy']
+  }
+];
+
+const orchestrationContractExpectations = [
+  {
+    kind: 'agent_team_leader',
+    actions: ['plan_agent_team', 'merge_specialist_outputs', 'dedupe_worker_context_for_final_decision'],
+    requiredSections: ['Worker context dedupe record', 'Merge criteria', 'Final acceptance criteria'],
+    guidedSections: ['Worker context dedupe record', 'Merge plan', 'Final delivery contract'],
+    forbiddenClaims: ['empty item contributed to final decision', 'duplicate item treated as independent evidence']
+  }
+];
+
+for (const expectation of [...engineeringContractExpectations, ...operationsContractExpectations, ...productResearchContractExpectations, ...workSupportContractExpectations, ...externalCommunicationContractExpectations, ...marketingExecutionContractExpectations, ...orchestrationContractExpectations]) {
+  const definition = sampleAgentDefinitionForKind(expectation.kind);
+  assert.ok(definition, `${expectation.kind} should resolve from sample agent definitions`);
+  const actionIds = new Set((definition.agentActionBoundaries || []).map((action) => action.id));
+  for (const actionId of expectation.actions) {
+    assert.ok(actionIds.has(actionId), `${expectation.kind} must expose ${actionId} as an agent-owned action boundary`);
+  }
+  const requiredSections = new Set(definition.deliveryContract?.requiredDeliverySections || []);
+  for (const section of expectation.requiredSections) {
+    assert.ok(requiredSections.has(section), `${expectation.kind} delivery contract must require ${section}`);
+  }
+  const forbiddenClaims = new Set(definition.deliveryContract?.forbiddenClaims || []);
+  for (const claim of expectation.forbiddenClaims) {
+    assert.ok(forbiddenClaims.has(claim), `${expectation.kind} delivery contract must forbid "${claim}"`);
+  }
+  const outputSections = new Set(definition.outputSections || []);
+  for (const section of expectation.guidedSections || []) {
+    assert.ok(outputSections.has(section), `${expectation.kind} output sections must guide the model to emit ${section}`);
+  }
+}
+
+for (const fileName of agentFiles) {
+  const source = readFileSync(join(agentsDir, fileName), 'utf8');
+  const providerSource = fileName === 'cmo-leader.js'
+    ? readFileSync(join(root, 'lib', 'builtin-agents', 'cmo-leader-provider.js'), 'utf8')
+    : source;
+  if (fileName === 'cmo-leader.js') {
+    assert.ok(source.includes('const AGENT_PROVIDER = createCmoLeaderAgentProvider({'), `${fileName} must wire its CMO-specific provider`);
+    assert.ok(providerSource.includes('export function createCmoLeaderAgentProvider({'), `${fileName} must define its own CMO-specific provider module`);
+  } else {
+    assert.ok(source.includes('const AGENT_PROVIDER = Object.freeze({'), `${fileName} must define its own provider`);
+  }
+  assert.ok(source.includes('AGENT_DEFINITION.manifest = Object.freeze({'), `${fileName} must define its own manifest`);
+  assert.ok(providerSource.includes('health({'), `${fileName} provider must own health response behavior`);
+  assert.ok(providerSource.includes('async runJob({'), `${fileName} provider must own job execution behavior`);
+  assert.ok(source.includes('provider: AGENT_PROVIDER'), `${fileName} default export must expose its provider`);
+  assert.ok(source.includes('agent_purpose: AGENT_DEFINITION.agentPurpose'), `${fileName} manifest metadata must expose the agent-owned purpose inside the agent file`);
+  assert.ok(source.includes('action_boundaries: AGENT_DEFINITION.agentActionBoundaries'), `${fileName} manifest metadata must expose action boundaries inside the agent file`);
+  assert.ok(source.includes('delivery_contract: AGENT_DEFINITION.deliveryContract'), `${fileName} manifest metadata must expose the delivery contract inside the agent file`);
+  assert.ok(!providerSource.includes('agent-provider-runtime'), `${fileName} must not import a shared provider runtime`);
+  assert.ok(!providerSource.includes('sample-agent-provider'), `${fileName} must not call a central sample provider`);
+  assert.ok(!providerSource.includes('sample-agent-catalog'), `${fileName} must not call a central sample catalog`);
+  assert.ok(!providerSource.includes('additionalProperties: true'), `${fileName} OpenAI strict schemas must not allow additionalProperties: true`);
+  assert.ok(!providerSource.includes("name: 'cait_agent_delivery'"), `${fileName} must not require OpenAI to emit CAIt's internal delivery schema`);
+  assert.ok(!providerSource.includes('Return valid JSON matching the schema'), `${fileName} must accept raw OpenAI delivery text instead of requiring JSON`);
+  assert.ok(!providerSource.includes('agentProviderFallbackDelivery'), `${fileName} must not recover failed model output with an agent-definition fallback`);
+  assert.ok(!providerSource.includes('agent_definition_packet'), `${fileName} must not mark fallback definition packets as completed deliveries`);
   assert.ok(
-    existsSync(new URL(expectedFile, builtInAgentDefinitionsDir)),
-    `${kind} definition must live in lib/builtin-agents/agents/${expectedFile}`
+    !providerSource.includes("required: ['summary', 'report_summary', 'bullets', 'next_action', 'file_markdown']"),
+    `${fileName} delivery generation schema must require every declared strict-schema property`
   );
 }
-const requiredAgentProfileFields = [
-  'executionLayer',
-  'executionFocus',
-  'outputSections',
-  'inputNeeds',
-  'acceptanceChecks',
-  'firstMove',
-  'failureModes',
-  'evidencePolicy',
-  'nextAction',
-  'confidenceRubric',
-  'handoffArtifacts',
-  'prioritizationRubric',
-  'measurementSignals',
-  'assumptionPolicy',
-  'escalationTriggers',
-  'minimumQuestions',
-  'reviewChecks',
-  'depthPolicy',
-  'concisionRule',
-  'toolStrategy',
-  'specialistMethod',
-  'scopeBoundaries',
-  'freshnessPolicy',
-  'sensitiveDataPolicy',
-  'costControlPolicy'
-];
-for (const [kind, defaults] of Object.entries(BUILT_IN_KIND_DEFAULTS)) {
-  for (const field of requiredAgentProfileFields) {
-    assert.ok(defaults[field] != null, `${kind} must define ${field} in its own agent file`);
-  }
-  assert.ok(['research', 'planning', 'preparation', 'action', 'leader', 'implementation', 'operations_support', 'action_support', 'general'].includes(defaults.executionLayer), `${kind} must have a valid execution layer`);
-  assert.ok(Array.isArray(defaults.outputSections) && defaults.outputSections.length >= 3, `${kind} must define concrete output sections`);
-  assert.ok(Array.isArray(defaults.acceptanceChecks) && defaults.acceptanceChecks.length >= 3, `${kind} must define concrete acceptance checks`);
-  assert.ok(Array.isArray(defaults.specialistMethod) && defaults.specialistMethod.length >= 3, `${kind} must define concrete specialist method`);
-  assert.ok(defaults.toolStrategy && typeof defaults.toolStrategy === 'object', `${kind} must define tool strategy in its agent file`);
-  assert.ok(['default', 'when_current', 'provided_only', 'never'].includes(defaults.toolStrategy.web_search), `${kind} must define a valid web_search mode`);
+
+const workerSource = readFileSync(join(root, 'worker.js'), 'utf8');
+assert.ok(workerSource.includes("from './lib/builtin-agents/agents/index.js'"), 'worker must read agent-file manifests through the agent index');
+assert.ok(workerSource.includes('sampleAgentDefinitionForKind'), 'worker must resolve routes from agent-file manifests');
+assert.ok(!workerSource.includes("sample-agent-catalog.js"), 'worker must not import a central sample catalog');
+assert.ok(!workerSource.includes('runBuiltInAgent'), 'worker must not call a built-in special runner');
+assert.ok(!workerSource.includes('builtInAgentHealthPayload'), 'worker must not call built-in special health logic');
+
+assert.ok(SAMPLE_AGENT_KINDS.includes('research'), 'research sample agent should remain routable');
+assert.equal(SAMPLE_AGENT_KINDS.includes('free_web_growth_leader'), false, 'unroutable agent manifests must stay unroutable');
+
+const research = sampleAgentDefinitionForKind('research');
+assert.equal(research.manifest.kind, 'research');
+assert.equal(research.manifest.jobEndpoint, '/sample-agents/research/jobs');
+assert.equal(research.manifest.metadata.provider, 'agent_file');
+
+const seoSpecialist = sampleAgentDefinitionForKind('seo_specialist');
+const removedSeoKind = ['seo', 'gap'].join('_');
+assert.equal(seoSpecialist.manifest.kind, 'seo_specialist');
+assert.equal(seoSpecialist.manifest.agent_role, 'worker');
+assert.equal(seoSpecialist.manifest.jobEndpoint, '/sample-agents/seo_specialist/jobs');
+assert.equal(seoSpecialist.manifest.healthcheckUrl, '/sample-agents/seo_specialist/health');
+assert.equal(seoSpecialist.manifest.metadata.provider, 'agent_file');
+assert.equal(seoSpecialist.manifest.metadata.workflow_layer || seoSpecialist.seedProfile.metadata.workflow_layer, 'preparation');
+assert.ok(SAMPLE_AGENT_KINDS.includes('seo_specialist'), 'seo_specialist should be routable through its agent-file manifest');
+assert.equal(SAMPLE_AGENT_KINDS.includes(removedSeoKind), false, 'removed old SEO kind must not remain as a routable agent kind');
+assert.equal(sampleAgentDefinitionForKind(removedSeoKind)?.manifest.kind, 'seo_specialist', 'old seo_gap workflow endpoints should remain as non-catalog compatibility aliases');
+assert.equal(sampleAgentDefinitionForKind('seo')?.manifest.kind, 'seo_specialist', 'seo should route to the SEO specialist');
+assert.equal(sampleAgentDefinitionForKind('seo_leader_agent'), null, 'SEO must not be registered as a separate leader agent');
+assert.match(seoSpecialist.systemPrompt, /not a leader/i, 'seo_specialist should not be a leader');
+assert.match(seoSpecialist.systemPrompt, /do not delegate SEO work to other agents/i, 'seo_specialist should own SEO work inside its file');
+assert.match(seoSpecialist.systemPrompt, /URLs/i, 'seo_specialist should request user evidence URLs');
+assert.match(seoSpecialist.systemPrompt, /PDFs/i, 'seo_specialist should request user evidence PDFs');
+assert.match(seoSpecialist.systemPrompt, /X posts/i, 'seo_specialist should request user evidence X proof');
+assert.match(seoSpecialist.systemPrompt, /owned blog/i, 'seo_specialist should request user evidence blog proof');
+assert.match(seoSpecialist.systemPrompt, /estimate cost[\s\S]*explicit user approval/i, 'seo_specialist should require cost estimate and explicit approval before full-batch writing');
+assert.match(seoSpecialist.systemPrompt, /Publisher & Approval Studio batch handoff/i, 'seo_specialist should create Publisher batch handoff after approval');
+
+const cmoLeaderSource = [
+  readFileSync(join(agentsDir, 'cmo-leader.js'), 'utf8'),
+  readFileSync(join(root, 'lib', 'builtin-agents', 'cmo-leader-synthesis.js'), 'utf8'),
+  readFileSync(join(root, 'lib', 'builtin-agents', 'cmo-leader-provider.js'), 'utf8')
+].join('\n');
+assert.ok(
+  cmoLeaderSource.includes('file_markdown is the raw agent delivery shown to the user'),
+  'CMO leader LLM contract must treat file_markdown as the user-visible raw agent delivery'
+);
+assert.ok(
+  cmoLeaderSource.includes('not an orchestration log, internal handoff digest, adoption matrix, or bundle index'),
+  'CMO leader LLM contract must not turn the final file into a bundle index of specialist outputs'
+);
+assert.ok(
+  cmoLeaderSource.includes('Deduplicate repeated facts and caveats'),
+  'CMO leader final synthesis must explicitly deduplicate repeated specialist facts and caveats'
+);
+assert.ok(
+  cmoLeaderSource.includes('review-only supporting material, not a completed handoff'),
+  'CMO leader final synthesis must not treat unapproved social or Publisher material as completed handoff'
+);
+assert.ok(
+  cmoLeaderSource.includes('If a selected specialist is known from CMO_AGENT_ACTION_CONTRACTS to produce an app-reviewable artifact'),
+  'CMO leader must instruct app-review-capable specialists from first dispatch'
+);
+assert.ok(
+  cmoLeaderSource.includes('publisherHandoff'),
+  'CMO leader action contracts must mark Publisher-capable specialists explicitly'
+);
+for (const kind of ['seo_specialist', 'landing', 'writing', 'writer', 'x_post', 'instagram', 'reddit', 'indie_hackers', 'directory_submission']) {
+  const contract = cmoAgentActionContractForKind(kind);
+  assert.equal(contract.publisherHandoff?.surface, 'publisher', `${kind} should be declared as a Publisher-review handoff producer`);
+  const markdown = cmoAgentActionContractMarkdown(kind);
+  assert.match(markdown, /Publisher review handoff/i, `${kind} dispatch contract should include Publisher review handoff instructions`);
+  assert.match(markdown, /surface=publisher/i, `${kind} dispatch contract should include Publisher surface metadata`);
+  assert.match(markdown, /content_type=/i, `${kind} dispatch contract should include content_type metadata`);
+  assert.match(markdown, /artifact_type=/i, `${kind} dispatch contract should include artifact_type metadata`);
+  assert.match(markdown, /profile_handle\/profile_url\/media_assets\/channel_rules\/approval_checklist/i, `${kind} dispatch contract should preserve Publisher destination profile metadata when relevant`);
+  assert.match(markdown, /review_status=needs_review/i, `${kind} dispatch contract should set review status`);
+  assert.match(markdown, /ingest_status=not_ingested/i, `${kind} dispatch contract should not claim app ingest`);
+  assert.match(markdown, /publish_status=not_published/i, `${kind} dispatch contract should not claim publishing`);
 }
-assert.equal(BUILT_IN_KIND_DEFAULTS.research.executionLayer, 'research');
-assert.equal(BUILT_IN_KIND_DEFAULTS.media_planner.executionLayer, 'planning');
-assert.equal(BUILT_IN_KIND_DEFAULTS.list_creator.executionLayer, 'preparation');
-assert.equal(BUILT_IN_KIND_DEFAULTS.x_post.executionLayer, 'action');
-assert.equal(BUILT_IN_KIND_DEFAULTS.cmo_leader.executionLayer, 'leader');
-assert.ok(BUILT_IN_KIND_DEFAULTS.list_creator.outputSections.includes('Reviewable lead rows'), 'list creator must own row-level list output requirements');
-assert.ok(BUILT_IN_KIND_DEFAULTS.media_planner.acceptanceChecks.some((item) => /No publishing|not claimed/i.test(item)), 'media planner must remain a planning layer agent');
-assert.ok(builtInAgentSource.includes("required: ['summary', 'report_summary', 'bullets', 'next_action', 'file_markdown', 'confidence', 'authority_request']"));
-assert.ok(builtInAgentSource.includes("If no external authority or source selection is needed, set authority_request to null."));
-assert.ok(builtInAgentSource.includes("tools: [{ type: 'web_search' }]"), 'OpenAI built-in web search should be enabled for source-sensitive work');
-assert.ok(builtInAgentSource.includes('BRAVE_SEARCH_API_KEY'), 'Brave search API key support should be present for built-in search');
-assert.ok(builtInAgentSource.includes("X-Subscription-Token"), 'Brave search requests should use the Brave subscription token header');
-assert.ok(builtInAgentSource.includes('webSourcesOf(payload)'), 'OpenAI web search sources should be extracted from Responses payloads');
-assert.ok(builtInAgentSource.includes('web_sources'), 'OpenAI web sources should be surfaced in report/runtime payloads');
-assert.ok(builtInAgentSource.includes('summarize the actual content of each prior deliverable'), 'Leader final summary prompt should require content summaries, not only agent/status lists');
+for (const kind of ['data_analysis', 'research', 'media_planner', 'growth', 'list_creator', 'email_ops', 'cold_email']) {
+  const markdown = cmoAgentActionContractMarkdown(kind);
+  assert.doesNotMatch(markdown, /Publisher review handoff/i, `${kind} should not receive Publisher review handoff instructions by default`);
+}
+assert.ok(
+  /never expose internal agent names/i.test(cmoLeaderSource),
+  'CMO leader generation prompt must explicitly hide internal agent names from end-user Markdown'
+);
+assert.ok(
+  cmoLeaderSource.includes('report.artifacts') || cmoLeaderSource.includes('structured_artifact_contract'),
+  'CMO leader may keep machine handoff data only in structured artifacts/report metadata'
+);
 assert.equal(
-  builtInShouldUseWebSearchForKind('cmo_leader', { input: { _broker: { workflow: { sequencePhase: 'initial' } } } }),
+  /requiredDeliverySections:\s*Object\.freeze\(\[[\s\S]*?(Specialist adoption matrix|Publisher\/SaaS handoff status|Structured handoff digest|Manifest-matched SaaS app handoff packet)/.test(cmoLeaderSource),
   false,
-  'Initial leader workflow runs must not use web search'
+  'CMO leader user-facing required sections must not require internal adoption, handoff, Publisher/SaaS, or manifest terms'
 );
-assert.equal(
-  builtInShouldUseWebSearchForKind('research', { input: { _broker: { workflow: { sequencePhase: 'research', forceWebSearch: true } } } }),
-  true,
-  'Research/search layer specialists must use web search when required'
-);
-assert.equal(
-  builtInShouldUseWebSearchForKind('media_planner', { input: { _broker: { workflow: { sequencePhase: 'planning', forceWebSearch: true } } } }),
-  true,
-  'Explicitly forced data-collection specialists must use web search even when their phase is not named research'
-);
-assert.ok(builtInAgentSource.includes('Supporting work products'), 'Leader final deliveries should include supporting work product tables');
-assert.ok(builtInAgentSource.includes('target URL/path, H1 or title, section outline, CTA copy'), 'Growth operator output must include executable artifact packets');
-assert.ok(builtInAgentSource.includes('Execution-request handling'), 'Action-through-delivery orders must activate execution-specific leader behavior');
-assert.ok(BUILT_IN_KIND_DEFAULTS.cmo_leader.systemPrompt.includes('do not stop at a plan or "approve research first"'), 'CMO leader must not end action requests as plan-only approval reports');
-assert.ok(builtInAgentSource.includes('workflow_fast_draft'), 'Workflow built-in runs should use a bounded single-draft path to avoid Cloudflare background timeout loops');
-assert.ok(builtInAgentSource.includes('BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS'), 'Workflow built-in run timeout must be configurable');
-assert.ok(builtInAgentSource.includes("normalizedKind.endsWith('_leader')"), 'Leader workflow planning should not spend the first dispatch on web search');
-assert.ok(builtInAgentSource.includes('Promise.race'), 'OpenAI calls should have an explicit timeout race, not only AbortController');
-assert.ok(builtInAgentSource.includes('workflow_fast_generation_failed'), 'Workflow built-in runs should fail instead of returning fallback output if OpenAI exceeds the latency budget');
-assert.ok(!builtInAgentSource.includes('workflow_fast_fallback'), 'Workflow built-in runs must not return fallback output when generation fails');
 
-function builtInSeedManifest(seed = {}) {
-  const manifest = seed?.metadata?.manifest && typeof seed.metadata.manifest === 'object'
-    ? seed.metadata.manifest
-    : {};
-  return normalizeManifest({
-    schema_version: 'agent-manifest/v1',
-    agent_role: seed?.metadata?.agentRole || manifest.agent_role || 'worker',
-    name: seed.name,
-    description: seed.description,
-    task_types: seed.taskTypes,
-    ...manifest,
-    metadata: {
-      ...(manifest.metadata && typeof manifest.metadata === 'object' ? manifest.metadata : {}),
-      builtIn: true,
-      seedId: seed.id,
-      seedCategory: seed?.metadata?.category || ''
-    }
-  }, { allowLocalEndpoints: true });
-}
+const health = research.provider.health({ kind: 'research', definition: research, source: {} });
+assert.equal(health.provider, 'agent_file');
+assert.equal(health.kind, 'research');
 
-for (const seed of DEFAULT_AGENT_SEEDS) {
-  const safety = assessAgentRegistrationSafety(builtInSeedManifest(seed), { allowLocalEndpoints: true });
-  assert.equal(safety.ok, true, `${seed.name} must pass built-in policy gate: ${safety.summary}`);
-  const kind = seed.metadata?.category || seed.metadata?.manifest?.metadata?.category || '';
-  assert.ok(BUILT_IN_KINDS.includes(kind), `${seed.name} must use a known built-in kind`);
-  assert.equal(sampleKindFromAgent(seed), kind, `${seed.name} must be recognized as a built-in sample agent`);
-  assert.equal(isBuiltInSampleAgent(seed), true, `${seed.name} must bypass external review routing as managed built-in`);
-  assert.equal(isBuiltInSampleHealthcheckUrl(seed.metadata?.manifest?.healthcheck_url), true, `${seed.name} health endpoint must be recognized`);
-  assert.equal(isBuiltInSampleJobEndpoint(seed.metadata?.manifest?.job_endpoint), true, `${seed.name} job endpoint must be recognized`);
-  assert.equal(seed.trust?.version, 'agent-trust/v1', `${seed.name} must expose a top-level trust profile`);
-  assert.equal(seed.metadata?.trust?.version, 'agent-trust/v1', `${seed.name} metadata must expose trust profile`);
-  assert.equal(seed.metadata?.manifest?.trust?.version, 'agent-trust/v1', `${seed.name} manifest must expose trust profile`);
-  assert.equal(seed.metadata?.manifest?.metadata?.trust?.version, 'agent-trust/v1', `${seed.name} manifest metadata must expose trust profile`);
-  assert.ok(Number(seed.trust?.score || 0) >= 80, `${seed.name} trust score must be present`);
-  assert.ok(Array.isArray(seed.trust?.quality_checks) && seed.trust.quality_checks.length >= 4, `${seed.name} must define trust QA checks`);
-  assert.ok(seed.verificationDetails?.details?.trust?.summary, `${seed.name} verification details must carry trust summary`);
-  if (seed.id === 'agent_x_launch_01') {
-    assert.ok((seed.metadata?.manifest?.required_connector_capabilities || []).includes('x.post'));
-  }
-}
-
-const prohibitedBuiltInCanary = assessAgentRegistrationSafety(normalizeManifest({
-  schema_version: 'agent-manifest/v1',
-  name: 'PROHIBITED BUILT-IN CANARY',
-  description: 'Creates betting tips, odds-making, staking plans, and wager recommendations.',
-  task_types: ['research']
-}));
-assert.equal(prohibitedBuiltInCanary.ok, false);
-assert.ok(prohibitedBuiltInCanary.blocked.some((finding) => finding.code === 'stripe_prohibited_gambling'));
-
-assert.equal(builtInDeliveryLanguage({ prompt: 'Compare support options for used iPhone 13 repairs in Japan.' }), 'en');
-assert.equal(builtInDeliveryLanguage({ prompt: '一番高いロレックスの値段が知りたい' }), 'ja');
-assert.equal(builtInDeliveryLanguage({ prompt: '中古iPhoneの販路比較', output_language: 'English' }), 'en');
-assert.equal(builtInDeliveryLanguage({ prompt: 'Compare pricing routes', input: { language: '日本語' } }), 'ja');
-
-const englishResearch = sampleAgentPayload('research', {
-  prompt: 'Compare support options for used iPhone 13 repairs in Japan.'
-});
-assert.match(englishResearch.summary, /^Research summary ready:/);
-assert.equal(englishResearch.report.summary, 'Research delivery');
-assert.ok(englishResearch.report.bullets.some((item) => item.includes('answered first')));
-assert.ok(englishResearch.files[0].content.includes('## Answer first'));
-assert.ok(englishResearch.files[0].content.includes('## Decision or question framing'));
-assert.ok(englishResearch.files[0].content.includes('the one question this research must answer'));
-assert.ok(englishResearch.files[0].content.includes('## Evidence and source status'));
-assert.ok(englishResearch.files[0].content.includes('Current public sources'));
-assert.ok(englishResearch.files[0].content.includes('## Comparison or options'));
-assert.ok(englishResearch.files[0].content.includes('## Recommendation'));
-assert.ok(englishResearch.files[0].content.includes('## Risks and unknowns'));
-assert.ok(englishResearch.files[0].content.includes('## Next check'));
-assert.ok(englishResearch.files[0].content.includes('## First move'));
-assert.ok(englishResearch.files[0].content.includes('Identify the exact decision or question first'));
-assert.ok(englishResearch.files[0].content.includes('## Output contract'));
-assert.ok(englishResearch.files[0].content.includes('Answer first'));
-assert.ok(englishResearch.files[0].content.includes('Evidence and source status'));
-assert.ok(englishResearch.files[0].content.includes('## Evidence policy'));
-assert.ok(englishResearch.files[0].content.includes('Use current, verifiable sources'));
-assert.ok(englishResearch.files[0].content.includes('## Confidence rubric'));
-assert.ok(englishResearch.files[0].content.includes('High when scope, date range'));
-assert.ok(englishResearch.files[0].content.includes('## Prioritization rubric'));
-assert.ok(englishResearch.files[0].content.includes('decision impact, evidence quality'));
-assert.ok(englishResearch.files[0].content.includes('## Inputs to confirm'));
-assert.ok(englishResearch.files[0].content.includes('Region, market, or time range'));
-assert.ok(englishResearch.files[0].content.includes('## Assumption policy'));
-assert.ok(englishResearch.files[0].content.includes('neutral research stance'));
-assert.ok(englishResearch.files[0].content.includes('## Clarify or escalate when'));
-assert.ok(englishResearch.files[0].content.includes('Current facts or prices are required'));
-assert.ok(englishResearch.files[0].content.includes('## Minimum blocker questions'));
-assert.ok(englishResearch.files[0].content.includes('What exact decision should the research answer?'));
-assert.ok(englishResearch.files[0].content.includes('## Acceptance checks'));
-assert.ok(englishResearch.files[0].content.includes('## Failure modes to avoid'));
-assert.ok(englishResearch.files[0].content.includes('Do not bury the direct answer after background'));
-assert.ok(englishResearch.files[0].content.includes('## Handoff artifacts'));
-assert.ok(englishResearch.files[0].content.includes('Source/evidence map'));
-assert.ok(englishResearch.files[0].content.includes('## Measurement signals'));
-assert.ok(englishResearch.files[0].content.includes('Decision confidence'));
-assert.ok(englishResearch.files[0].content.includes('## Next action pattern'));
-assert.ok(englishResearch.files[0].content.includes('next source or check'));
-assert.ok(englishResearch.files[0].content.includes('## Final review checks'));
-assert.ok(englishResearch.files[0].content.includes('Evidence status is explicit'));
-assert.ok(englishResearch.files[0].content.includes('## Quality checks'));
-assert.ok(englishResearch.files[0].content.includes('## Trust and quality assurance'));
-assert.ok(englishResearch.files[0].content.includes('Trust profile:'));
-assert.ok(englishResearch.files[0].content.includes('Not guaranteed: items without source, connector, approval, or execution proof'));
-assert.equal(englishResearch.runtime.delivery_policy.trust_profile.version, 'agent-trust/v1');
-assert.equal(englishResearch.runtime.delivery_policy.trust_profile.level, 'source_bound');
-assert.ok(englishResearch.runtime.delivery_policy.depth_policy.includes('answer-first synthesis'));
-assert.ok(englishResearch.runtime.delivery_policy.concision_rule.includes('Keep background short'));
-assert.equal(englishResearch.runtime.tool_strategy.web_search, 'default');
-assert.equal(englishResearch.runtime.tool_strategy.source_mode, 'current_web_or_user_sources');
-assert.ok(englishResearch.runtime.delivery_policy.specialist_method.some((step) => step.includes('Answer first')));
-assert.ok(englishResearch.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('stale or unsourced current facts')));
-assert.ok(englishResearch.runtime.delivery_policy.freshness_policy.includes('observation date'));
-assert.ok(englishResearch.runtime.delivery_policy.sensitive_data_policy.includes('private material'));
-assert.ok(englishResearch.runtime.delivery_policy.cost_control_policy.includes('decision impact'));
-assert.equal(builtInShouldUseWebSearchForKind('research', { prompt: 'What is the highest Rolex price today?' }), true);
-assert.equal(builtInShouldUseWebSearchForKind('code', {
-  prompt: 'Review the implementation plan.',
-  input: { _broker: { workflow: { sequencePhase: 'research', forceWebSearch: true, webSearchRequiredReason: 'leader_research_layer' } } }
-}), true);
-assert.ok(!englishResearch.files[0].content.includes('市場比較の要点を抽出'));
-assert.ok(!englishResearch.files[0].content.includes('Extract the key comparison points'));
-
-const promptBrushupPayload = sampleAgentPayload('prompt_brushup', {
-  prompt: '市場調査をしてほしい。抜け漏れない発注文にして、足りない情報があれば質問して。'
-});
-assert.equal(promptBrushupPayload.report.summary, 'プロンプトブラッシュアップ結果');
-assert.equal(promptBrushupPayload.report.clarifyingQuestions.length, 5);
-assert.ok(promptBrushupPayload.files[0].name.includes('prompt-brief'));
-assert.ok(promptBrushupPayload.files[0].content.includes('追加で聞きたいこと'));
-assert.ok(promptBrushupPayload.files[0].content.includes('既知の事実'));
-assert.ok(promptBrushupPayload.files[0].content.includes('仮定'));
-assert.ok(promptBrushupPayload.files[0].content.includes('推奨ディスパッチ'));
-assert.ok(promptBrushupPayload.files[0].content.includes('優先順'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 初動方針'));
-assert.ok(promptBrushupPayload.files[0].content.includes('Restate the rough request as a dispatchable brief'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 出力契約'));
-assert.ok(promptBrushupPayload.files[0].content.includes('Dispatch-ready brief'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 確認したい入力'));
-assert.ok(promptBrushupPayload.files[0].content.includes('Target agent or work type'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 仮定ポリシー'));
-assert.ok(promptBrushupPayload.files[0].content.includes('dispatchable work order'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 確認・エスカレーション条件'));
-assert.ok(promptBrushupPayload.files[0].content.includes('change agent routing or cost'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 最小確認質問'));
-assert.ok(promptBrushupPayload.files[0].content.includes('Which agent or work type should receive it?'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 受け入れチェック'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 避けるべき失敗'));
-assert.ok(promptBrushupPayload.files[0].content.includes('Do not complete the underlying task'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 根拠ポリシー'));
-assert.ok(promptBrushupPayload.files[0].content.includes('Treat the user prompt'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 信頼度ルーブリック'));
-assert.ok(promptBrushupPayload.files[0].content.includes('High when task type'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 優先順位ルーブリック'));
-assert.ok(promptBrushupPayload.files[0].content.includes('routing, cost, acceptance criteria'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## ハンドオフ成果物'));
-assert.ok(promptBrushupPayload.files[0].content.includes('Refined order brief'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 測定指標'));
-assert.ok(promptBrushupPayload.files[0].content.includes('Brief completeness'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 次アクションの型'));
-assert.ok(promptBrushupPayload.files[0].content.includes('which agent or work type to dispatch next'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 最終レビュー観点'));
-assert.ok(promptBrushupPayload.files[0].content.includes('Brief is dispatchable'));
-assert.ok(promptBrushupPayload.files[0].content.includes('## 品質チェック'));
-assert.ok(promptBrushupPayload.runtime.delivery_policy.depth_policy.includes('compact dispatch brief'));
-assert.ok(promptBrushupPayload.runtime.delivery_policy.concision_rule.includes('brief, assumptions, blocker questions'));
-assert.ok(promptBrushupPayload.files[0].content.includes('元の依頼を実行せず'));
-assert.ok(promptBrushupPayload.report.bullets.some((item) => item.includes('作業種別')));
-assert.ok(promptBrushupPayload.report.nextAction.includes('事実と仮定'));
-
-const englishPromptBrushupPayload = sampleAgentPayload('prompt_brushup', {
-  prompt: 'Improve this rough app idea request before I send it to a coding agent.'
-});
-assert.equal(englishPromptBrushupPayload.report.summary, 'Prompt brush-up delivery');
-assert.equal(englishPromptBrushupPayload.report.clarifyingQuestions.length, 5);
-assert.ok(englishPromptBrushupPayload.files[0].content.includes('Known facts'));
-assert.ok(englishPromptBrushupPayload.files[0].content.includes('Assumptions'));
-assert.ok(englishPromptBrushupPayload.files[0].content.includes('Suggested dispatch'));
-assert.ok(englishPromptBrushupPayload.files[0].content.includes('Clarifying questions by impact'));
-assert.ok(englishPromptBrushupPayload.files[0].content.includes('Do not execute the original task'));
-
-const japaneseResearch = sampleAgentPayload('research', {
-  prompt: '一番高いロレックスの値段が知りたい'
-});
-assert.match(japaneseResearch.summary, /^調査サマリーを用意しました:/);
-assert.equal(japaneseResearch.report.summary, '調査結果');
-assert.ok(japaneseResearch.report.bullets.some((item) => item.includes('答えを先に提示')));
-assert.ok(japaneseResearch.files[0].content.includes('## 先に結論'));
-assert.ok(japaneseResearch.files[0].content.includes('## Decision or question framing'));
-assert.ok(japaneseResearch.files[0].content.includes('## Evidence and source status'));
-assert.ok(japaneseResearch.files[0].content.includes('## Comparison or options'));
-assert.ok(japaneseResearch.files[0].content.includes('## Recommendation'));
-assert.ok(japaneseResearch.files[0].content.includes('## Risks and unknowns'));
-assert.ok(japaneseResearch.files[0].content.includes('## Next check'));
-assert.ok(japaneseResearch.files[0].content.includes('## 品質チェック'));
-assert.ok(japaneseResearch.files[0].content.includes('## 信頼性と品質保証'));
-const researchSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_research_01');
-assert.ok(researchSeed?.description.includes('answer-first'));
-assert.ok(researchSeed?.metadata?.manifest?.capabilities?.includes('answer_first_research'));
-assert.ok(researchSeed?.metadata?.manifest?.capabilities?.includes('source_status_note'));
-assert.ok(researchSeed?.metadata?.manifest?.metadata?.connector_behavior.includes('verify current public facts'));
-
-const explicitEnglishWriter = sampleAgentPayload('writer', {
-  prompt: '新規SaaSの訴求を考えて。Answer in English.',
-  output_language: 'en'
-});
-assert.equal(explicitEnglishWriter.report.summary, 'Writer delivery');
-assert.ok(explicitEnglishWriter.report.bullets.some((item) => item.includes('message hierarchy')));
-assert.ok(explicitEnglishWriter.files[0].content.includes('## Copy mode and objective'));
-assert.ok(explicitEnglishWriter.files[0].content.includes('## Offer, proof, and objections'));
-assert.ok(explicitEnglishWriter.files[0].content.includes('## Message hierarchy'));
-assert.ok(explicitEnglishWriter.files[0].content.includes('## Copy options'));
-assert.ok(explicitEnglishWriter.files[0].content.includes('Option A: outcome-first'));
-assert.ok(explicitEnglishWriter.files[0].content.includes('Option B: pain-first'));
-assert.ok(explicitEnglishWriter.files[0].content.includes('Option C: proof-first'));
-assert.ok(explicitEnglishWriter.files[0].content.includes('## Recommended version'));
-assert.ok(explicitEnglishWriter.files[0].content.includes('## CTA and placement notes'));
-assert.ok(explicitEnglishWriter.files[0].content.includes('## Revision test'));
-assert.ok(explicitEnglishWriter.files[0].content.includes('believable promise'));
-assert.ok(explicitEnglishWriter.files[0].content.includes('label missing proof instead of inventing it'));
-assert.equal(explicitEnglishWriter.runtime.tool_strategy.web_search, 'when_current');
-assert.equal(explicitEnglishWriter.runtime.tool_strategy.source_mode, 'provided_copy_context_current_claims_and_comparable_channel_examples');
-assert.ok(explicitEnglishWriter.runtime.delivery_policy.specialist_method.some((step) => step.includes('awareness stage')));
-assert.ok(explicitEnglishWriter.runtime.delivery_policy.specialist_method.some((step) => step.includes('message hierarchy')));
-assert.ok(explicitEnglishWriter.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('Do not fabricate proof')));
-assert.ok(explicitEnglishWriter.runtime.delivery_policy.concision_rule.includes('deliver the actual copy'));
-const writerSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_writer_01');
-assert.ok(writerSeed?.description.includes('reusable copy packets'));
-assert.ok(writerSeed?.taskTypes?.includes('copywriting'));
-assert.ok(writerSeed?.metadata?.manifest?.capabilities?.includes('message_hierarchy'));
-assert.ok(writerSeed?.metadata?.manifest?.capabilities?.includes('recommended_copy_packet'));
-assert.equal(writerSeed?.metadata?.manifest?.metadata?.layer, 'content_generation');
-assert.ok(writerSeed?.metadata?.manifest?.metadata?.connector_behavior.includes('placeholders instead of inventing proof'));
-
-const codePayload = sampleAgentPayload('code', {
-  prompt: 'Review this order API handler and find billing validation risks.'
-});
-assert.equal(codePayload.report.summary, 'Code review delivery');
-assert.ok(codePayload.report.bullets.some((item) => item.includes('severity') || item.includes('重大度')));
-assert.ok(codePayload.files[0].content.includes('## Findings'));
-assert.ok(codePayload.files[0].content.includes('## Task mode'));
-assert.ok(codePayload.files[0].content.includes('Code review'));
-assert.ok(codePayload.files[0].content.includes('## Current vs expected behavior'));
-assert.ok(codePayload.files[0].content.includes('Billing is unchanged when validation fails.'));
-assert.ok(codePayload.files[0].content.includes('PR handoff'));
-assert.ok(codePayload.files[0].content.includes('Validation commands'));
-assert.ok(codePayload.files[0].content.includes('Rollback and release notes'));
-assert.ok(codePayload.files[0].content.includes('Start by identifying the task mode, repo access'));
-assert.ok(codePayload.files[0].content.includes('Repository or file access'));
-assert.ok(codePayload.files[0].content.includes('Assume review-only guidance'));
-assert.ok(codePayload.files[0].content.includes('Repo access or file scope is missing'));
-assert.ok(codePayload.files[0].content.includes('version-sensitive'));
-assert.ok(codePayload.files[0].content.includes('official framework docs'));
-assert.ok(codePayload.files[0].content.includes('Is this a review, bug fix, feature, refactor, or ops/debug task'));
-assert.ok(codePayload.files[0].content.includes('Tests or validation command'));
-assert.ok(codePayload.files[0].content.includes('PR-ready handoff'));
-assert.ok(codePayload.files[0].content.includes('Task mode matches the user request'));
-assert.ok(codePayload.files[0].content.includes('Do not recommend broad rewrites before a minimal fix'));
-assert.ok(codePayload.files[0].content.includes('Use repository files, logs, stack traces'));
-assert.ok(codePayload.files[0].content.includes('High when repo files'));
-assert.ok(codePayload.files[0].content.includes('blast radius, reproducibility'));
-assert.ok(codePayload.files[0].content.includes('Task mode and finding or fix summary'));
-assert.ok(codePayload.files[0].content.includes('Test pass rate'));
-assert.ok(codePayload.files[0].content.includes('exact repo/file access'));
-assert.ok(codePayload.files[0].content.includes('Claims match actual execution'));
-assert.ok(codePayload.files[0].content.includes('Do not claim code was executed'));
-assert.ok(codePayload.runtime.delivery_policy.depth_policy.includes('reproduction'));
-assert.ok(codePayload.runtime.delivery_policy.concision_rule.includes('finding, likely fix'));
-assert.equal(codePayload.runtime.tool_strategy.web_search, 'when_current');
-assert.equal(codePayload.runtime.tool_strategy.source_mode, 'repo_logs_tests_and_github_context');
-assert.ok(codePayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('repo files')));
-assert.ok(codePayload.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('claim code was changed')));
-assert.ok(codePayload.runtime.delivery_policy.freshness_policy.includes('repo snapshot'));
-assert.ok(codePayload.runtime.delivery_policy.sensitive_data_policy.includes('Never echo secrets'));
-assert.ok(codePayload.runtime.delivery_policy.cost_control_policy.includes('small repo-grounded fix'));
-assert.equal(builtInShouldUseWebSearchForKind('code', { prompt: 'Fix a bug in my GitHub repo and send a pull request' }), false);
-assert.equal(builtInShouldUseWebSearchForKind('code', { prompt: 'Use the latest Next.js docs to fix this bug' }), true);
-const codeSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_code_01');
-assert.ok(codeSeed?.description.includes('rollback guidance'));
-assert.ok(codeSeed?.metadata?.manifest?.capabilities?.includes('bugfix_plan'));
-assert.ok(codeSeed?.metadata?.manifest?.capabilities?.includes('pr_handoff'));
-assert.equal(DEFAULT_AGENT_SEEDS.some((agent) => agent.id === 'agent_team_leader_01'), false);
-assert.equal(DEFAULT_AGENT_SEEDS.some((agent) => agent.id === 'agent_launch_team_leader_01'), false);
-assert.equal(DEFAULT_AGENT_SEEDS.some((agent) => agent.id === 'agent_free_web_growth_leader_01'), false);
-const cmoSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_cmo_leader_01');
-assert.ok(cmoSeed?.taskTypes?.includes('agent_team_launch'));
-assert.ok(cmoSeed?.taskTypes?.includes('free_web_growth_leader'));
-assert.ok(cmoSeed?.metadata?.manifest?.capabilities?.includes('planned_action_queue'));
-assert.ok(cmoSeed?.metadata?.manifest?.capabilities?.includes('dispatch_packet_contract'));
-assert.ok(cmoSeed?.metadata?.manifest?.capabilities?.includes('task_decomposition'));
-assert.ok(cmoSeed?.metadata?.manifest?.capabilities?.includes('routing_decision'));
-assert.ok(cmoSeed?.metadata?.manifest?.capabilities?.includes('stop_go_gate'));
-assert.ok(cmoSeed?.metadata?.manifest?.capabilities?.includes('final_responsibility'));
-assert.equal(cmoSeed?.metadata?.manifest?.metadata?.planned_action_contract, 'lane_owner_artifact_connector_metric');
-const ctoSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_cto_leader_01');
-assert.ok(ctoSeed?.description.includes('safe technical lane'));
-assert.ok(ctoSeed?.metadata?.manifest?.capabilities?.includes('technical_dispatch_packet'));
-assert.ok(ctoSeed?.metadata?.manifest?.capabilities?.includes('rollout_packet'));
-assert.ok(ctoSeed?.metadata?.manifest?.capabilities?.includes('rollback_trigger'));
-assert.equal(ctoSeed?.metadata?.manifest?.metadata?.planned_action_contract, 'system_owner_artifact_validation');
-assert.equal(ctoSeed?.metadata?.manifest?.metadata?.architecture_contract, 'constraints_tradeoffs_rollout_rollback');
-const landingSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_landing_01');
-assert.ok(landingSeed?.description.includes('HTML/CSS'));
-assert.ok(landingSeed?.metadata?.manifest?.capabilities?.includes('landing_html'));
-assert.ok(landingSeed?.metadata?.manifest?.capabilities?.includes('deploy_handoff'));
-const instagramSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_instagram_launch_01');
-assert.ok(instagramSeed?.metadata?.manifest?.capabilities?.includes('instagram_api_handoff'));
-assert.ok(instagramSeed?.metadata?.manifest?.capabilities?.includes('schedule_plan'));
-assert.ok(!instagramSeed?.taskTypes?.includes('writing'));
-assert.equal(instagramSeed?.metadata?.manifest?.metadata?.preferred_upstream_specialist, 'writer');
-const xSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_x_launch_01');
-assert.ok(xSeed?.metadata?.manifest?.capabilities?.includes('exact_post_packet'));
-assert.ok(xSeed?.metadata?.manifest?.capabilities?.includes('scheduled_post_packet'));
-assert.ok(!xSeed?.taskTypes?.includes('writing'));
-assert.equal(xSeed?.metadata?.manifest?.metadata?.preferred_upstream_specialist, 'writer');
-const emailOpsSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_email_ops_01');
-assert.ok(emailOpsSeed?.metadata?.manifest?.capabilities?.includes('exact_send_packet'));
-assert.ok(emailOpsSeed?.metadata?.manifest?.capabilities?.includes('scheduled_send_packet'));
-assert.equal(emailOpsSeed?.metadata?.manifest?.metadata?.preferred_upstream_specialist, 'writer');
-const listCreatorSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_list_creator_01');
-assert.ok(listCreatorSeed?.metadata?.manifest?.capabilities?.includes('reviewable_lead_rows'));
-assert.ok(listCreatorSeed?.metadata?.manifest?.capabilities?.includes('import_ready_packet'));
-assert.ok(listCreatorSeed?.metadata?.manifest?.capabilities?.includes('public_email_capture'));
-assert.equal(listCreatorSeed?.metadata?.manifest?.metadata?.contact_capture_mode, 'public_contact_only');
-assert.equal(listCreatorSeed?.metadata?.manifest?.metadata?.estimate_mode, '20_company_batches');
-assert.equal(listCreatorSeed?.metadata?.manifest?.metadata?.default_company_count, 20);
-assert.ok(Array.isArray(listCreatorSeed?.metadata?.manifest?.metadata?.package_estimates));
-assert.ok(listCreatorSeed?.metadata?.manifest?.metadata?.package_estimates.some((item) => item.companies === 100 && item.batches === 5 && item.total_cost_basis === 320));
-assert.ok(builtInAgentSource.includes('20-company batch estimate'));
-assert.ok(builtInAgentSource.includes('public email or safe contact path'));
-const coldEmailSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_cold_email_01');
-assert.ok(coldEmailSeed?.metadata?.manifest?.capabilities?.includes('exact_send_packet'));
-assert.ok(coldEmailSeed?.metadata?.manifest?.capabilities?.includes('scheduled_send_packet'));
-
-const pricingPayload = sampleAgentPayload('pricing', {
-  prompt: 'Design pricing tiers for a B2B SaaS analytics product.'
-});
-assert.equal(pricingPayload.report.summary, 'Pricing strategy delivery');
-assert.ok(pricingPayload.report.bullets.some((item) => item.includes('value metric')));
-assert.ok(pricingPayload.files[0].name.includes('pricing-strategy'));
-assert.ok(pricingPayload.files[0].content.includes('Buyer segment and buying moment'));
-assert.ok(pricingPayload.files[0].content.includes('Pricing competitor research'));
-assert.ok(pricingPayload.files[0].content.includes('Unit economics and margin floor'));
-assert.ok(pricingPayload.files[0].content.includes('Package architecture'));
-assert.ok(pricingPayload.files[0].content.includes('Migration guardrails'));
-assert.ok(pricingPayload.files[0].content.includes('Direct competitor'));
-assert.ok(pricingPayload.files[0].content.includes('Substitute workflow'));
-assert.ok(pricingPayload.files[0].content.includes('Status quo'));
-assert.ok(pricingPayload.files[0].content.includes('Evidence date'));
-assert.ok(pricingPayload.files[0].content.includes('Do not average unrelated competitor prices'));
-assert.ok(pricingPayload.files[0].content.includes('success metric, guardrail, and review timing'));
-assert.ok(pricingPayload.files[0].content.includes('Gross margin floor'));
-assert.ok(pricingPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('package boundary')));
-assert.ok(pricingPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('direct competitors')));
-assert.ok(pricingPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('overages')));
-assert.ok(pricingPayload.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('migration')));
-assert.ok(pricingPayload.runtime.delivery_policy.cost_control_policy.includes('reversible experiment'));
-assert.equal(pricingPayload.runtime.tool_strategy.source_mode, 'pricing_competitor_research_direct_substitute_status_quo_unit_economics_and_migration_context');
-
-const teardownPayload = sampleAgentPayload('teardown', {
-  prompt: 'Compare our AI support copilot against Intercom, Zendesk AI, and manual support workflows.'
-});
-assert.equal(teardownPayload.report.summary, 'Competitor teardown delivery');
-assert.ok(teardownPayload.report.bullets.some((item) => item.includes('adjacent substitutes')));
-assert.ok(teardownPayload.files[0].name.includes('competitor-teardown'));
-assert.ok(teardownPayload.files[0].content.includes('Decision framing'));
-assert.ok(teardownPayload.files[0].content.includes('Competitive set and evidence'));
-assert.ok(teardownPayload.files[0].content.includes('Direct competitor'));
-assert.ok(teardownPayload.files[0].content.includes('Adjacent substitute'));
-assert.ok(teardownPayload.files[0].content.includes('Status quo / manual workflow'));
-assert.ok(teardownPayload.files[0].content.includes('Buyer switching map'));
-assert.ok(teardownPayload.files[0].content.includes('Onboarding/switching friction'));
-assert.ok(teardownPayload.files[0].content.includes('Differentiated wedge'));
-assert.ok(teardownPayload.files[0].content.includes('Counter-positioning'));
-assert.ok(teardownPayload.files[0].content.includes('First competitive test'));
-assert.ok(teardownPayload.files[0].content.includes('Do not copy the incumbent roadmap'));
-assert.ok(teardownPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('direct competitors')));
-assert.ok(teardownPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('switching')));
-assert.ok(teardownPayload.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('copying competitors')));
-assert.ok(teardownPayload.runtime.delivery_policy.freshness_policy.includes('product pages'));
-assert.ok(teardownPayload.runtime.delivery_policy.cost_control_policy.includes('few competitors'));
-assert.equal(teardownPayload.runtime.tool_strategy.source_mode, 'live_product_competitor_and_positioning_scan');
-
-const landingPayload = sampleAgentPayload('landing', {
-  prompt: 'Review the CAIt landing page hero and CTA for an AI agent marketplace.'
-});
-assert.equal(landingPayload.report.summary, 'Landing page build delivery');
-assert.ok(landingPayload.files[0].name.includes('landing-page-critique'));
-assert.ok(landingPayload.report.bullets.some((item) => item.includes('conversion goal')));
-assert.ok(landingPayload.files[0].content.includes('Visitor objection map'));
-assert.ok(landingPayload.files[0].content.includes('Replacement copy'));
-assert.ok(landingPayload.files[0].content.includes('Evidence and comparable pages'));
-assert.ok(landingPayload.files[0].content.includes('Visitor objections'));
-assert.ok(landingPayload.files[0].content.includes('CTA path and friction'));
-assert.ok(landingPayload.files[0].content.includes('Proof assets and claims that are approved to use'));
-assert.ok(landingPayload.files[0].content.includes('label every rewrite by the objection it answers'));
-assert.ok(landingPayload.files[0].content.includes('map visitor objections to proof, copy, CTA, layout fixes'));
-assert.ok(landingPayload.files[0].content.includes('Hero comprehension from first-click or user feedback'));
-assert.ok(landingPayload.files[0].content.includes('Metric to move and measurement step are named'));
-assert.ok(landingPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('visitor intent')));
-assert.ok(landingPayload.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('measurement path')));
-assert.ok(landingPayload.runtime.delivery_policy.cost_control_policy.includes('measurement'));
-assert.equal(landingPayload.runtime.tool_strategy.source_mode, 'live_page_competitor_serp_analytics_and_conversion_examples');
-
-const validationPayload = sampleAgentPayload('validation', {
-  prompt: 'Validate an AI note-taking product idea for solo accountants.'
-});
-assert.equal(validationPayload.report.summary, 'Idea validation delivery');
-assert.ok(validationPayload.report.bullets.some((item) => item.includes('willingness-to-pay')));
-assert.ok(validationPayload.files[0].name.includes('app-idea-validation'));
-assert.ok(validationPayload.files[0].content.includes('Decision framing'));
-assert.ok(validationPayload.files[0].content.includes('Evidence status'));
-assert.ok(validationPayload.files[0].content.includes('Risk stack'));
-assert.ok(validationPayload.files[0].content.includes('Cheapest falsification test'));
-assert.ok(validationPayload.files[0].content.includes('Test script or asset'));
-assert.ok(validationPayload.files[0].content.includes('Success and kill criteria'));
-assert.ok(validationPayload.files[0].content.includes('False positives to ignore'));
-assert.ok(validationPayload.files[0].content.includes('Do not ask whether to build yet'));
-assert.ok(validationPayload.files[0].content.includes('waitlist signups'));
-assert.ok(validationPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('willingness-to-pay risk')));
-assert.ok(validationPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('concierge offer')));
-assert.ok(validationPayload.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('interest, compliments')));
-assert.ok(validationPayload.runtime.delivery_policy.freshness_policy.includes('smoke-test behavior'));
-assert.ok(validationPayload.runtime.delivery_policy.cost_control_policy.includes('landing smoke'));
-assert.equal(validationPayload.runtime.tool_strategy.source_mode, 'current_alternatives_communities_smoke_tests_and_behavior_signals');
-const validationSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_validation_01');
-assert.ok(validationSeed?.description.includes('falsifiable'));
-assert.ok(validationSeed?.metadata?.manifest?.metadata?.optional_connectors?.includes('google_search_console'));
-assert.equal(validationSeed?.metadata?.manifest?.metadata?.validation_focus, 'problem_first_falsification');
-
-const diligencePayload = sampleAgentPayload('diligence', {
-  prompt: 'Review this AI vendor as a possible enterprise partner and return the blocker-first due diligence memo.'
-});
-assert.equal(diligencePayload.report.summary, 'Due diligence delivery');
-assert.ok(diligencePayload.report.bullets.some((item) => item.includes('blockers') || item.includes('verification queue')));
-assert.ok(diligencePayload.files[0].name.includes('due-diligence'));
-assert.ok(diligencePayload.files[0].content.includes('## Decision framing'));
-assert.ok(diligencePayload.files[0].content.includes('## Answer first'));
-assert.ok(diligencePayload.files[0].content.includes('conditional hold'));
-assert.ok(diligencePayload.files[0].content.includes('## Thesis and downside'));
-assert.ok(diligencePayload.files[0].content.includes('## Red flag matrix'));
-assert.ok(diligencePayload.files[0].content.includes('severity | area | finding'));
-assert.ok(diligencePayload.files[0].content.includes('## Evidence quality map'));
-assert.ok(diligencePayload.files[0].content.includes('## Unknowns and stale evidence'));
-assert.ok(diligencePayload.files[0].content.includes('## Verification queue'));
-assert.ok(diligencePayload.files[0].content.includes('## Conditional recommendation'));
-assert.ok(diligencePayload.files[0].content.includes('management statements'));
-assert.ok(diligencePayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('approval bar') || step.includes('evidence room')));
-assert.ok(diligencePayload.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('unknowns') || step.includes('management-claim-only')));
-assert.ok(diligencePayload.runtime.delivery_policy.freshness_policy.includes('regulatory/policy status'));
-assert.ok(diligencePayload.runtime.delivery_policy.cost_control_policy.includes('verification queue'));
-assert.equal(diligencePayload.runtime.tool_strategy.source_mode, 'current_company_market_reputation_evidence_room_and_risk_scan');
-const diligenceSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_diligence_01');
-assert.ok(diligenceSeed?.description.includes('blocker-first'));
-assert.ok(diligenceSeed?.metadata?.manifest?.capabilities?.includes('red_flag_matrix'));
-assert.ok(diligenceSeed?.metadata?.manifest?.capabilities?.includes('verification_queue'));
-assert.ok(diligenceSeed?.metadata?.manifest?.metadata?.connector_behavior.includes('blocker-first verification queue'));
-
-const growthPayload = sampleAgentPayload('growth', {
-  prompt: 'I want more users and more revenue for my AI agent marketplace.'
-});
-assert.equal(growthPayload.report.summary, 'Growth operator delivery');
-assert.ok(growthPayload.files[0].name.includes('growth-operator'));
-assert.ok(growthPayload.files[0].content.includes('7-day sprint'));
-assert.ok(growthPayload.files[0].content.includes('Professional preflight'));
-assert.ok(growthPayload.files[0].content.includes('scan competitors'));
-
-const acquisitionAutomationPayload = sampleAgentPayload('acquisition_automation', {
-  prompt: 'Create a safe acquisition automation flow for CAIt using owned channels and CRM follow-up.'
-});
-assert.equal(acquisitionAutomationPayload.report.summary, 'Acquisition automation delivery');
-assert.ok(acquisitionAutomationPayload.files[0].name.includes('acquisition-automation'));
-assert.ok(acquisitionAutomationPayload.files[0].content.includes('Policy guardrails'));
-assert.ok(acquisitionAutomationPayload.files[0].content.includes('Automation map'));
-assert.ok(acquisitionAutomationPayload.files[0].content.includes('Connector / leader packet'));
-assert.ok(acquisitionAutomationPayload.files[0].content.includes('approved_for_followup'));
-assert.ok(acquisitionAutomationPayload.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('spam')));
-
-const mediaPlannerPayload = sampleAgentPayload('media_planner', {
-  prompt: 'Analyze our homepage URL and business type, then recommend the best listing and distribution media before execution.'
-});
-assert.equal(mediaPlannerPayload.report.summary, 'Media planner delivery');
-assert.ok(mediaPlannerPayload.files[0].content.includes('Business snapshot'));
-assert.ok(mediaPlannerPayload.files[0].content.includes('Media-fit analysis'));
-assert.ok(mediaPlannerPayload.files[0].content.includes('Execution handoff queue'));
-assert.ok(mediaPlannerPayload.files[0].content.includes('citation_ops'));
-assert.ok(mediaPlannerPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('homepage URL') || step.includes('business brief first')));
-
-const directorySubmissionPayload = sampleAgentPayload('directory_submission', {
-  prompt: 'List free launch directories and prepare submission copy for CAIt.'
-});
-assert.equal(directorySubmissionPayload.report.summary, 'Directory Submission delivery');
-assert.ok(directorySubmissionPayload.files[0].name.includes('directory-submission'));
-assert.ok(directorySubmissionPayload.files[0].content.includes('Priority queue'));
-assert.ok(directorySubmissionPayload.files[0].content.includes('UTM'));
-assert.ok(directorySubmissionPayload.files[0].content.includes('Do not fake reviews'));
-
-const citationOpsPayload = sampleAgentPayload('citation_ops', {
-  prompt: 'Prepare a GBP and citation cleanup plan for a local service business.'
-});
-assert.equal(citationOpsPayload.report.summary, 'Citation Ops delivery');
-assert.ok(citationOpsPayload.files[0].content.includes('Canonical NAP and profile record'));
-assert.ok(citationOpsPayload.files[0].content.includes('GBP field brief'));
-assert.ok(citationOpsPayload.files[0].content.includes('Priority citation queue'));
-assert.ok(citationOpsPayload.files[0].content.includes('Review-request flow'));
-assert.ok(citationOpsPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('canonical business facts first')));
-
-const researchLeaderPayload = sampleAgentPayload('research_team_leader', {
-  prompt: 'Research competitors, risks, data, and summarize a decision memo.'
-});
-assert.equal(researchLeaderPayload.report.summary, 'Research Team Leader delivery');
-
-const buildLeaderPayload = sampleAgentPayload('build_team_leader', {
-  prompt: 'Coordinate coding, debugging, ops, and tests for a GitHub PR.'
-});
-assert.equal(buildLeaderPayload.report.summary, 'Build Team Leader delivery');
-
-const cmoPayload = sampleAgentPayload('cmo_leader', {
-  prompt: 'Act as CMO and plan acquisition channels for https://aiagent-marketplace.net. ICP engineers, conversion signups, no budget.'
-});
-assert.equal(cmoPayload.report.summary, 'CMO Team Leader delivery');
-assert.ok(cmoPayload.report.bullets.some((item) => item.includes('product-specific workflow')));
-assert.ok(cmoPayload.files[0].content.includes('Answer first'));
-assert.ok(cmoPayload.files[0].content.includes('aiagent-marketplace.net'));
-assert.ok(cmoPayload.files[0].content.includes('Workflow definition'));
-assert.ok(cmoPayload.files[0].content.includes('First execution packet'));
-assert.ok(cmoPayload.files[0].content.includes('Leader approval queue'));
-assert.ok(!cmoPayload.files[0].content.includes('## Output contract'));
-assert.ok(!cmoPayload.files[0].content.includes('first lane: the one media lane'));
-assert.equal(cmoPayload.files[0].execution_candidate, undefined, 'Plan-only CMO requests should not be promoted as execution packets');
-
-const cmoActionPayload = sampleAgentPayload('cmo_leader', {
-  prompt: 'CMOスタートで外部コネクターまで実行し、X投稿とディレクトリ掲載のアクションまで完走したい'
-});
-assert.equal(cmoActionPayload.files[0].content_type, 'report_bundle', 'Action-through-delivery CMO output should be an explicit execution candidate');
-assert.equal(cmoActionPayload.files[0].execution_candidate, true);
-assert.equal(cmoActionPayload.files[0].draft_defaults.nextStep, 'execution_order');
-assert.equal(cmoActionPayload.files[0].draft_defaults.channel, 'x');
-assert.equal(cmoActionPayload.report.execution_candidate.type, 'report_bundle');
-assert.ok(cmoActionPayload.report.execution_candidate.reason);
-
-const cmoWorkflowSpecialistInput = {
-  prompt: 'Task: cmo_leader Goal: 集客したい。aiagent-marketplace.net、engineers、signups、I have x account, indiehackers account and reddit account. plan and do',
-  output_language: 'ja',
-  input: {
-    _broker: {
-      workflow: {
-        primaryTask: 'cmo_leader',
-        parentJobId: 'qa-cmo-workflow-parent',
-        sequencePhase: 'research',
-        forceWebSearch: true,
-        webSearchRequiredReason: 'leader_research_layer'
-      }
-    }
-  }
-};
-const cmoWorkflowResearchPayload = sampleAgentPayload('research', cmoWorkflowSpecialistInput);
-assert.equal(cmoWorkflowResearchPayload.report.summary, '顧客獲得リサーチ納品');
-assert.ok(cmoWorkflowResearchPayload.files[0].content.includes('顧客獲得リサーチ納品'));
-assert.ok(cmoWorkflowResearchPayload.files[0].content.includes('調査からの判断'));
-assert.ok(cmoWorkflowResearchPayload.files[0].content.includes('顧客・訴求仮説'));
-assert.ok(cmoWorkflowResearchPayload.files[0].content.includes('aiagent-marketplace.net'));
-assert.ok(!/\bCAIt\b|Work Chat|compare-ai-agents-for-engineers/i.test(cmoWorkflowResearchPayload.files[0].content));
-assert.ok(!/\bTBD\b|Decision framing|Output contract|Professional preflight|専門家の事前確認|Task:|the product|the stated ICP|the primary conversion event|budget not confirmed/i.test(cmoWorkflowResearchPayload.files[0].content));
-
-const cmoWorkflowTeardownPayload = sampleAgentPayload('teardown', cmoWorkflowSpecialistInput);
-assert.equal(cmoWorkflowTeardownPayload.report.summary, '競合ティアダウン納品');
-assert.ok(cmoWorkflowTeardownPayload.files[0].content.includes('競合ティアダウン納品'));
-assert.ok(cmoWorkflowTeardownPayload.files[0].content.includes('調査からの判断'));
-assert.ok(cmoWorkflowTeardownPayload.files[0].content.includes('顧客・訴求仮説'));
-assert.ok(!/\bTBD\b|\[[^\]\n]{2,80}\]|Decision framing|Output contract|Professional preflight|専門家の事前確認|the product|the stated ICP|budget not confirmed|未接続/i.test(cmoWorkflowTeardownPayload.files[0].content));
-
-const cmoWorkflowDataPayload = sampleAgentPayload('data_analysis', cmoWorkflowSpecialistInput);
-assert.equal(cmoWorkflowDataPayload.report.summary, '計測・データ分析納品');
-assert.ok(cmoWorkflowDataPayload.files[0].content.includes('調査からの判断'));
-assert.ok(cmoWorkflowDataPayload.files[0].content.includes('顧客・訴求仮説'));
-assert.ok(!/\bTBD\b|Decision framing|Output contract|Professional preflight|専門家の事前確認/i.test(cmoWorkflowDataPayload.files[0].content));
-
-const cmoWorkflowListCreatorInput = {
-  ...cmoWorkflowSpecialistInput,
-  input: {
-    _broker: {
-      workflow: {
-        primaryTask: 'cmo_leader',
-        parentJobId: 'qa-cmo-workflow-parent',
-        sequencePhase: 'preparation',
-        leaderHandoff: {
-          priorRuns: [
-            {
-              taskType: 'research',
-              summary: 'Developer tools and AI agent directories are the first public-source pool.',
-              webSources: [
-                {
-                  title: 'AlternativeTo AI agent directory',
-                  url: 'https://alternativeto.net/category/ai-tools/',
-                  snippet: 'Public directory of AI tools and alternatives.'
-                },
-                {
-                  title: 'GitHub Marketplace AI apps',
-                  url: 'https://github.com/marketplace?category=ai',
-                  snippet: 'Developer-facing marketplace category for AI apps.'
-                }
-              ]
-            }
-          ]
-        }
-      }
-    }
-  }
-};
-const cmoWorkflowListCreatorPayload = sampleAgentPayload('list_creator', cmoWorkflowListCreatorInput);
-assert.equal(cmoWorkflowListCreatorPayload.report.summary, 'リスト作成実行納品');
-assert.ok(cmoWorkflowListCreatorPayload.files[0].content.includes('List Creatorの位置づけ'));
-assert.ok(cmoWorkflowListCreatorPayload.files[0].content.includes('Reviewable lead rows'));
-assert.ok(cmoWorkflowListCreatorPayload.files[0].content.includes('AlternativeTo AI agent directory'));
-assert.ok(cmoWorkflowListCreatorPayload.files[0].content.includes('contact_source_url'));
-assert.ok(cmoWorkflowListCreatorPayload.files[0].content.includes('Import-ready field map'));
-assert.ok(!/7日実行スプリント|投稿ドラフト|検索\/受け渡しソースは未添付です/i.test(cmoWorkflowListCreatorPayload.files[0].content));
-
-const cmoWorkflowEnglishSpecialistInput = {
-  prompt: 'Task: cmo_leader Goal: customer acquisition for aiagent-marketplace.net. ICP engineers, conversion signups, no ads, do action.',
-  output_language: 'English',
-  input: {
-    _broker: {
-      workflow: {
-        primaryTask: 'cmo_leader',
-        parentJobId: 'qa-cmo-workflow-parent-en',
-        sequencePhase: 'research',
-        forceWebSearch: true,
-        webSearchRequiredReason: 'leader_research_layer'
-      }
-    }
-  }
-};
-const cmoWorkflowEnglishResearchPayload = sampleAgentPayload('research', cmoWorkflowEnglishSpecialistInput);
-assert.equal(cmoWorkflowEnglishResearchPayload.report.summary, 'CMO acquisition research delivery');
-assert.ok(cmoWorkflowEnglishResearchPayload.files[0].content.includes('CMO acquisition research delivery'));
-assert.ok(cmoWorkflowEnglishResearchPayload.files[0].content.includes('Acquisition research readout'));
-assert.ok(cmoWorkflowEnglishResearchPayload.files[0].content.includes('Customer and positioning hypothesis'));
-assert.ok(cmoWorkflowEnglishResearchPayload.files[0].content.includes('aiagent-marketplace.net'));
-assert.ok(!/\bCAIt\b|Work Chat|compare-ai-agents-for-engineers/i.test(cmoWorkflowEnglishResearchPayload.files[0].content));
-assert.ok(!/\bTBD\b|\[[^\]\n]{2,80}\]|Decision framing|Decision or question framing|Option A|Task:|Goal:/i.test(cmoWorkflowEnglishResearchPayload.files[0].content));
-const cmoWorkflowEnglishTeardownPayload = sampleAgentPayload('teardown', cmoWorkflowEnglishSpecialistInput);
-assert.equal(cmoWorkflowEnglishTeardownPayload.report.summary, 'CMO competitor teardown delivery');
-assert.ok(cmoWorkflowEnglishTeardownPayload.files[0].content.includes('CMO competitor teardown delivery'));
-assert.ok(cmoWorkflowEnglishTeardownPayload.files[0].content.includes('Competitor and alternative readout'));
-assert.ok(!/\bTBD\b|\[[^\]\n]{2,80}\]|verify current page|the product being compared/i.test(cmoWorkflowEnglishTeardownPayload.files[0].content));
-
-const cmoWorkflowEnglishRoleInput = (sequencePhase, priorRuns = []) => ({
-  ...cmoWorkflowEnglishSpecialistInput,
-  input: {
-    _broker: {
-      workflow: {
-        primaryTask: 'cmo_leader',
-        parentJobId: `qa-cmo-workflow-role-${sequencePhase}`,
-        sequencePhase,
-        leaderHandoff: {
-          leaderTaskType: 'cmo_leader',
-          priorRuns
-        }
-      }
-    }
-  }
-});
-const cmoEnglishPriorRuns = [
-  {
-    taskType: 'research',
-    status: 'completed',
-    summary: 'Engineers need proof and a clear signup path before channel expansion.',
-    webSources: [{ title: 'Competitor source', url: 'https://example.com/competitor', snippet: 'workflow marketplace proof' }]
-  }
-];
-const cmoWorkflowEnglishMediaPayload = sampleAgentPayload('media_planner', cmoWorkflowEnglishRoleInput('planning', cmoEnglishPriorRuns));
-const cmoWorkflowEnglishMediaContent = cmoWorkflowEnglishMediaPayload.files[0].content;
-assert.ok(/Media-fit analysis|Priority media queue|Channels to avoid/i.test(cmoWorkflowEnglishMediaContent));
-assert.ok(!/Execution artifact[\s\S]{0,80}\| Surface \| Draft \|/i.test(cmoWorkflowEnglishMediaContent));
-
-const cmoWorkflowEnglishLandingPayload = sampleAgentPayload('landing', cmoWorkflowEnglishRoleInput('preparation', cmoEnglishPriorRuns));
-const cmoWorkflowEnglishLandingContent = cmoWorkflowEnglishLandingPayload.files[0].content;
-assert.ok(/Destination page packet|Page structure to ship first|Proof module/i.test(cmoWorkflowEnglishLandingContent));
-assert.ok(!/Artifact \| Page copy, social copy, UTM, measurement events/i.test(cmoWorkflowEnglishLandingContent));
-
-const cmoWorkflowEnglishDirectoryPayload = sampleAgentPayload('directory_submission', cmoWorkflowEnglishRoleInput('action', cmoEnglishPriorRuns));
-const cmoWorkflowEnglishDirectoryContent = cmoWorkflowEnglishDirectoryPayload.files[0].content;
-assert.ok(/Directory submission queue|Reusable listing copy packet|Per-site field map|Manual submission checklist/i.test(cmoWorkflowEnglishDirectoryContent));
-assert.ok(!/H1 \| Help engineers and developers choose the next action/i.test(cmoWorkflowEnglishDirectoryContent));
-
-const cmoWorkflowEnglishXPayload = sampleAgentPayload('x_post', cmoWorkflowEnglishRoleInput('action', cmoEnglishPriorRuns));
-const cmoWorkflowEnglishXContent = cmoWorkflowEnglishXPayload.files[0].content;
-assert.ok(/Exact X post packet|Reply hooks|utm_source=x|exact_copy/i.test(cmoWorkflowEnglishXContent));
-assert.ok(!/Artifact \| Page copy, social copy, UTM, measurement events/i.test(cmoWorkflowEnglishXContent));
-
-const cmoWorkflowEnglishRedditPayload = sampleAgentPayload('reddit', cmoWorkflowEnglishRoleInput('action', cmoEnglishPriorRuns));
-const cmoWorkflowEnglishRedditContent = cmoWorkflowEnglishRedditPayload.files[0].content;
-assert.ok(/Reddit discussion packet|Subreddit fit checklist|Draft title options|Draft body/i.test(cmoWorkflowEnglishRedditContent));
-assert.ok(!/Exact X post packet|utm_source=x/i.test(cmoWorkflowEnglishRedditContent));
-assert.notEqual(cmoWorkflowEnglishMediaContent, cmoWorkflowEnglishDirectoryContent, 'CMO media planner and directory submission must not collapse to the same fallback artifact.');
-assert.notEqual(cmoWorkflowEnglishXContent, cmoWorkflowEnglishRedditContent, 'CMO social action agents must produce channel-specific fallback artifacts.');
-
-const originalBuiltinQaFetch = globalThis.fetch;
-let genericCmoOpenAiCalls = 0;
-globalThis.fetch = async (input, init) => {
-  const url = typeof input === 'string' ? input : input.url;
-  if (url.startsWith('https://api.search.brave.com/res/v1/web/search?')) {
+const originalFetch = globalThis.fetch;
+let openAiDeliveryCalls = 0;
+let braveSearchCalls = 0;
+let listCreatorLeadOpsPacketSeen = false;
+globalThis.fetch = async (url, options = {}) => {
+  const target = String(url || '');
+  if (/api\.search\.brave\.com|\/res\/v1\/web\/search/i.test(target)) {
+    braveSearchCalls += 1;
+    const requestUrl = new URL(target);
+    const query = requestUrl.searchParams.get('q') || 'research query';
+    assert.ok(options.headers?.['x-subscription-token'], 'Brave source collection must send its API token');
     return new Response(JSON.stringify({
       web: {
         results: [
           {
-            url: 'https://example.com/cmo-quality-source',
-            title: 'CMO quality source',
-            description: 'Current market context for CMO workflow quality gate QA.'
+            title: `Brave result for ${query}`,
+            url: 'https://example.com/market-report',
+            description: 'Current market evidence from Brave Search.'
+          },
+          {
+            title: 'Competitor acquisition example',
+            url: 'https://competitor.example/case-study',
+            description: 'Competitor channel and positioning evidence.'
           }
         ]
       }
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
   }
-  if (url === 'https://api.openai.com/v1/responses') {
-    genericCmoOpenAiCalls += 1;
-    return new Response(JSON.stringify({
-      output: [
-        {
-          type: 'web_search_call',
-          action: {
-            type: 'search',
-            query: 'ai agent marketplace customer acquisition',
-            sources: [
-              { url: 'https://example.com/search-source', title: 'Search source' }
-            ]
-          }
+  if (target.includes('/responses')) {
+    openAiDeliveryCalls += 1;
+    const request = JSON.parse(String(options.body || '{}'));
+    assert.equal(request.text?.format, undefined, 'OpenAI delivery generation must not require a structured internal schema');
+    const userContent = request.input?.find((item) => item.role === 'user')?.content?.[0]?.text || '{}';
+    const packet = JSON.parse(userContent);
+    const kind = packet.agent?.kind || 'agent';
+    const packetDefinition = sampleAgentDefinitionForKind(kind);
+    if (packetDefinition?.deliveryContract) {
+      if (
+        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'meeting_prep', 'reply_draft', 'inbox_triage', 'schedule_coordination', 'writer'].includes(kind)
+        && Array.isArray(packetDefinition.outputSections)
+        && packetDefinition.outputSections.length
+      ) {
+        assert.deepEqual(
+          packet.agent?.output_sections,
+          Array.from(packetDefinition.outputSections),
+          `${kind} provider request must carry its model guidance output sections`
+        );
+      }
+      if (
+        ['ads_planner', 'campaign_operations', 'cfo_leader', 'meeting_notes', 'meeting_prep', 'reply_draft', 'inbox_triage', 'schedule_coordination', 'writer'].includes(kind)
+        && Array.isArray(packetDefinition.acceptanceChecks)
+        && packetDefinition.acceptanceChecks.length
+      ) {
+        assert.deepEqual(
+          packet.agent?.acceptance_checks,
+          Array.from(packetDefinition.acceptanceChecks),
+          `${kind} provider request must carry its acceptance checks`
+        );
+      }
+      assert.deepEqual(
+        packet.delivery_quality_gate?.required_sections,
+        Array.from(packetDefinition.deliveryContract.requiredDeliverySections || []),
+        `${kind} provider request must carry its agent-owned required delivery sections`
+      );
+      assert.deepEqual(
+        packet.delivery_quality_gate?.required_evidence,
+        Array.from(packetDefinition.deliveryContract.requiredEvidence || []),
+        `${kind} provider request must carry its agent-owned evidence requirements`
+      );
+      assert.deepEqual(
+        packet.delivery_quality_gate?.must_label,
+        Array.from(packetDefinition.deliveryContract.mustLabel || []),
+        `${kind} provider request must carry its agent-owned status labels`
+      );
+      assert.deepEqual(
+        packet.delivery_quality_gate?.forbidden_claims,
+        Array.from(packetDefinition.deliveryContract.forbiddenClaims || []),
+        `${kind} provider request must carry its agent-owned forbidden claims`
+      );
+      assert.equal(
+        packet.delivery_quality_gate?.valid_delivery_check,
+        packetDefinition.deliveryContract.validDeliveryCheck,
+        `${kind} provider request must carry its agent-owned valid delivery check`
+      );
+    }
+    const targetUrl = packet.target_url || 'la demande';
+    if (kind === 'list_creator' && packet.lead_acquisition_request) {
+      listCreatorLeadOpsPacketSeen = true;
+      assert.equal(packet.lead_acquisition_request.target_segment, 'B2B SaaS founders');
+      assert.equal(packet.lead_acquisition_request.source_policy, 'public company pages only');
+      assert.equal(packet.lead_ops_return_contract?.return_packet, 'lead_ops_packet');
+      assert.deepEqual(packet.lead_ops_return_contract?.artifact_types, ['lead_rows', 'evidence_urls', 'next_actions']);
+    }
+    if (kind === 'cfo_leader') {
+      assert.ok(packet.structured_finance_context, 'CFO provider request must carry structured finance context');
+      assert.ok(Array.isArray(packet.structured_finance_context.formula_model) && packet.structured_finance_context.formula_model.length >= 1, 'CFO structured context should include formula rows');
+      assert.ok(Array.isArray(packet.structured_finance_context.winning_economics_hypotheses) && packet.structured_finance_context.winning_economics_hypotheses.length >= 1, 'CFO structured context should include winning-economics hypotheses');
+      assert.match(packet.structured_finance_context.generation_instruction || '', /Do not mark those supplied rows as missing/i, 'CFO structured context should instruct the model to reuse supplied facts');
+    }
+    if (kind === 'data_analysis') {
+      assert.ok(packet.structured_analysis_context, 'Data Analysis provider request must carry structured analysis context');
+      assert.ok(Array.isArray(packet.structured_analysis_context.metric_dictionary) && packet.structured_analysis_context.metric_dictionary.length >= 1, 'Data Analysis structured context should include metric definitions');
+      assert.ok(Array.isArray(packet.structured_analysis_context.formula_model) && packet.structured_analysis_context.formula_model.length >= 1, 'Data Analysis structured context should include formula rows');
+      assert.ok(packet.structured_analysis_context.dashboard_spec?.surface === 'measurement_console', 'Data Analysis structured context should target the measurement console');
+      assert.ok(Array.isArray(packet.structured_analysis_context.experiment_queue) && packet.structured_analysis_context.experiment_queue.length >= 1, 'Data Analysis structured context should include experiment rows');
+      assert.match(packet.structured_analysis_context.generation_instruction || '', /Do not mark supplied benchmark rows as missing/i, 'Data Analysis structured context should instruct the model to reuse supplied benchmark facts');
+    }
+    const cmoReportExtras = packet.leader_synthesis?.reportExtras || {};
+    const leaderEvaluationRequired = packet.leader_synthesis?.mode === 'llm_leader_evaluation_required'
+      || cmoReportExtras.leader_evaluation_required === true;
+    const specialistOutputs = Array.isArray(packet.leader_synthesis?.specialist_outputs)
+      ? packet.leader_synthesis.specialist_outputs
+      : [];
+    const selectedLane = cmoReportExtras.selected_lane || '';
+    const selectedNextOwner = cmoReportExtras.selected_next_owner || '';
+    const cmoMarkdown = leaderEvaluationRequired ? [
+      '# CMO leader final synthesis',
+      '',
+      '## Direct answer',
+      'The CMO leader evaluated all specialist outputs and integrated the usable work into one final recommendation.',
+      '',
+      '## Adoption matrix',
+      '| Agent | Decision | Reason |',
+      '| --- | --- | --- |',
+      ...specialistOutputs.slice(0, 5).map((item) => `| ${item.task_type || 'specialist'} | ${item.blocked ? 'held' : 'adopted'} | judged from the supplied content excerpt |`),
+      '',
+      '## Integrated final recommendation',
+      'Use the landing/SEO copy where substantiated, keep analytics tracking validation as the first required action, and hold blocked lead/list work.',
+      '',
+      '## Publisher draft status',
+      '- Publisher handoff draft prepared in chat',
+      '- External app ingest status: not verified',
+      '- Publish status: not published',
+      '',
+      '## Publisher handoff draft',
+      'Title: AI agent marketplace conversion page update',
+      'Primary CTA: Start signup',
+      '',
+      '## Blocked or not selected',
+      '- list_creator: blocked source gap'
+    ].join('\n') : (selectedLane ? [
+      '# Livraison CMO',
+      '',
+      '## Final selected lane',
+      `Final selected lane: **${selectedLane}**`,
+      '',
+      '## Publisher/SaaS handoff',
+      '- Connector: publisher',
+      '- Action type: site_publish_packet',
+      '',
+      '## Publisher body',
+      'Use the SEO page packet and exact generated copy.',
+      '',
+      '## Blocked or not selected',
+      '- list_creator: blocked source gap'
+    ].join('\n') : (selectedNextOwner ? [
+      '# Livraison CMO checkpoint',
+      '',
+      '## Checkpoint reviewed',
+      `Next owner: **${selectedNextOwner}**`,
+      '',
+      '## Planning',
+      'media_planner should receive the evidence-backed handoff.'
+    ].join('\n') : [
+      '# Livraison CMO',
+      '',
+      '## Publisher/SaaS handoff',
+      '- Connector: publisher',
+      '- Action type: site_publish_packet',
+      '',
+      '## Publisher body',
+      'Use the SEO page packet and exact generated copy.'
+    ].join('\n')));
+    const writerMarkdown = [
+      '# Livraison Publisher handoff',
+      '',
+      '## Publisher handoff',
+      '- Destination: X',
+      '- URL: https://aiagent-marketplace.net',
+      '',
+      '## Draft variants',
+      '1. Source-backed variant one for developers.',
+      '2. Source-backed variant two for trials.',
+      '3. Source-backed variant three for proof.',
+      '',
+      '## E-E-A-T source ledger',
+      '- Founder note: provided file evidence.',
+      '- X account/source: provided URL.'
+    ].join('\n');
+    const listCreatorLeadOpsMarkdown = [
+      '# List Creator Lead Ops packet',
+      '',
+      '## Reviewable lead rows',
+      '| company_name | website | why_fit | observed_signal | target_role_hypothesis | public_email_or_contact_path | contact_source_url | company_specific_angle | review_status | next_action |',
+      '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+      '| Example SaaS Co | https://example-saas.test | Fits B2B SaaS founder ICP | Public pricing page shows self-serve SaaS | Founder or growth owner | https://example-saas.test/contact | https://example-saas.test/contact | Lead with stable operations after AI agent sourcing | needs_review | Review evidence in Lead Ops before outreach |',
+      '',
+      '## Lead Ops return packet',
+      '- lead_rows: prepared for review',
+      '- evidence_urls: contact/source URL attached',
+      '- next_actions: review before outreach',
+      '- lead_ops_packet: prepared for review, not approved, not imported, not enriched, not queued, not contacted'
+    ].join('\n');
+    const writerArtifacts = kind === 'writer' ? [
+      {
+        id: 'writer-publisher-handoff',
+        surface: 'publisher',
+        type: 'x_post',
+        item_type: 'x_post',
+        channel_key: 'x',
+        destination: 'X',
+        connector: 'x',
+        action_type: 'x_post_packet',
+        body: writerMarkdown,
+        publish_variants: ['variant one', 'variant two', 'variant three'],
+        source_evidence: [
+          { source_type: 'x_post_or_account', url: 'https://x.com/cait' },
+          { source_type: 'uploaded_file', name: 'founder-note.md' }
+        ],
+        eeat_notes: { trust: 'source evidence preserved' },
+        metadata: { source_evidence: [{ source_type: 'x_post_or_account' }], publish_variants: ['variant one', 'variant two', 'variant three'], eeat_notes: { trust: 'source evidence preserved' } }
+      },
+      {
+        id: 'writer-publisher-handoff-owned-site-article',
+        surface: 'publisher',
+        type: 'article',
+        item_type: 'article',
+        channel_key: 'owned_site',
+        destination: 'Owned site',
+        connector: 'publisher',
+        action_type: 'site_publish_packet',
+        body: writerMarkdown,
+        publish_variants: ['variant one', 'variant two', 'variant three'],
+        source_evidence: [{ source_type: 'uploaded_file', name: 'founder-note.md' }],
+        eeat_notes: { trust: 'source evidence preserved' },
+        metadata: { source_evidence: [{ source_type: 'uploaded_file' }], publish_variants: ['variant one', 'variant two', 'variant three'], eeat_notes: { trust: 'source evidence preserved' } }
+      }
+    ] : [];
+    const cmoArtifacts = kind === 'cmo_leader' && leaderEvaluationRequired ? [
+      {
+        id: 'cmo-leader-publisher-handoff-draft',
+        surface: 'publisher',
+        destination: 'Publisher & Approval Studio',
+        connector: 'publisher',
+        action_type: 'site_publish_packet',
+        content_type: 'site_publish_packet',
+        item_type: 'landing_page_change',
+        body: 'Title: AI agent marketplace conversion page update\nPrimary CTA: Start signup',
+        metadata: {
+          prepared_in_chat: true,
+          ingest_status: 'not_ingested',
+          publish_status: 'not_published'
         }
+      }
+    ] : [];
+    const researchMarkdown = [
+      `# Livraison ${kind}`,
+      '',
+      '## Evidence status',
+      `Contenu généré en français pour ${targetUrl}.`,
+      '',
+      '## Décision',
+      'Utiliser ce brouillon comme sortie agent.'
+    ].join('\n');
+    const payload = {
+      summary: kind === 'cmo_leader' && leaderEvaluationRequired
+        ? { headline: `Livraison générée pour ${kind}` }
+        : `Livraison générée pour ${kind}`,
+      report_summary: kind === 'cmo_leader' && leaderEvaluationRequired
+        ? { headline: `Synthèse générée pour ${kind}` }
+        : `Synthèse générée pour ${kind}`,
+      bullets: [
+        'Le modèle a rédigé le contenu utilisateur.',
+        'La langue demandée est respectée sans limite à deux langues.'
       ],
-      output_text: JSON.stringify({
-        summary: 'Research summary ready',
-        report_summary: 'Research delivery',
-        bullets: ['Generic template output.'],
-        next_action: 'Name the single highest-value follow-up check.',
-        file_markdown: [
-          '# research delivery',
-          '',
-          'Task: cmo_leader',
-          'Goal: customer acquisition',
-          '',
-          '## Answer first',
-          'Start with the shortest answer or recommendation that is justified right now.',
-          '',
-          '## Decision or question framing',
-          '- Decision to support: the one question this research must answer',
-          '',
-          '| Option | Best for | Main upside |',
-          '| --- | --- | --- |',
-          '| Option A | one clear situation | strongest upside |',
-          '',
-          '## Next check',
-          'Name the single highest-value follow-up check.'
-        ].join('\n'),
-        confidence: 0.4,
-        authority_request: null
-      })
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
+      next_action: kind === 'cmo_leader' && leaderEvaluationRequired
+        ? { action: 'Vérifier le contenu généré puis poursuivre le flux.' }
+        : 'Vérifier le contenu généré puis poursuivre le flux.',
+      file_markdown: kind === 'cmo_leader' ? cmoMarkdown : (kind === 'writer' ? writerMarkdown : (kind === 'list_creator' && packet.lead_acquisition_request ? listCreatorLeadOpsMarkdown : (kind === 'research' ? researchMarkdown : [
+        `# Livraison ${kind}`,
+        '',
+        '## Décision',
+        `Contenu généré en français pour ${targetUrl}.`,
+        '',
+        '## Action',
+        'Utiliser ce brouillon comme sortie agent.'
+      ].join('\n')))),
+      content_type: kind === 'cmo_leader' && leaderEvaluationRequired ? 'cmo_leader_delivery' : (kind === 'cmo_leader' && selectedLane ? 'site_publish_packet' : 'agent_delivery'),
+      artifacts: [...writerArtifacts, ...cmoArtifacts],
+      approval_requests: []
+    };
+    return new Response(JSON.stringify({ output_text: JSON.stringify(payload) }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
   }
-  return originalBuiltinQaFetch(input, init);
+  if (originalFetch) return originalFetch(url, options);
+  throw new Error(`Unexpected fetch call: ${target}`);
 };
-try {
-  const openAiGenericResearchFailure = await runBuiltInAgent('research', cmoWorkflowEnglishSpecialistInput, {
-    BRAVE_SEARCH_API_KEY: 'brave-test-key',
-    OPENAI_API_KEY: 'sk-test-cmo-quality',
-    BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS: '5000'
+
+for (const kind of SAMPLE_AGENT_KINDS) {
+  const definition = sampleAgentDefinitionForKind(kind);
+  const delivery = await definition.provider.runJob({
+    kind,
+    definition,
+    body: {
+      prompt: `Créer une livraison concrète pour ${kind} et https://example.com.`,
+      output_language: 'fr-FR'
+    },
+    source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+    manifest: definition.manifest
   });
-  assert.equal(genericCmoOpenAiCalls, 1, 'CMO workflow QA should exercise the OpenAI draft path');
-  assert.equal(openAiGenericResearchFailure.status, 'failed');
-  assert.equal(openAiGenericResearchFailure.runtime.provider, 'none');
-  assert.equal(openAiGenericResearchFailure.runtime.workflow, 'quality_gate_failed');
-  assert.ok(openAiGenericResearchFailure.failure_reason.includes('generic_template_left_in_cmo_workflow_delivery'));
-  assert.equal(openAiGenericResearchFailure.files.length, 0);
-} finally {
-  globalThis.fetch = originalBuiltinQaFetch;
+  const content = delivery.files?.[0]?.content || '';
+  assert.equal(delivery.status, 'completed', `${kind} should complete with OpenAI-generated delivery`);
+  assert.equal(delivery.runtime?.generation_provider, 'openai_responses', `${kind} should mark OpenAI generation`);
+  assert.match(content, /Livraison|Décision|français/i, `${kind} should use the OpenAI-generated non-English content`);
+  assert.doesNotMatch(content, /Answer first|先に結論|prepared a concrete work product/i, `${kind} should not fall back to hardcoded bilingual delivery text when OpenAI is configured`);
+  if (kind === 'x_post') {
+    const file = delivery.files?.[0] || {};
+    assert.equal(file.content_type, 'x_post_packet', 'X delivery file should default to an explicit Publisher handoff packet type');
+    assert.equal(file.artifact_type, 'x_post_packet', 'X delivery file should expose the Publisher artifact type');
+    assert.ok((file.artifact_types || []).includes('x_post'), 'X delivery file should expose the channel-specific artifact type');
+    assert.equal(file.surface, 'publisher', 'X delivery file should target the Publisher surface');
+    assert.equal(file.item_type, 'x_post', 'X delivery file should target X post review');
+    assert.equal(file.action_type, 'x_post', 'X delivery file should expose the action type without claiming execution');
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'x_post_saas_handoff');
+    assert.ok(artifact, 'X delivery should emit a structured SaaS/App handoff artifact');
+    assert.equal(artifact.surface, 'publisher', 'X handoff artifact should target the Publisher surface');
+    assert.ok(Array.isArray(artifact.upstream_handoff_usage), 'X handoff should expose upstream usage ledger');
+    assert.ok(Array.isArray(artifact.post_queue) && artifact.post_queue.length >= 1, 'X handoff should include post review rows');
+    assert.ok(artifact.post_queue.every((row) => row.execution_status === 'not_posted_not_scheduled_not_queued_not_approved'), 'X rows should label non-execution status');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'X handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no X post/i, 'X handoff should not imply posting or queueing');
+  }
+  if (kind === 'instagram') {
+    const file = delivery.files?.[0] || {};
+    assert.equal(file.content_type, 'instagram_post_packet', 'Instagram delivery file should default to an explicit Publisher handoff packet type');
+    assert.equal(file.artifact_type, 'instagram_post_packet', 'Instagram delivery file should expose the Publisher artifact type');
+    assert.ok((file.artifact_types || []).includes('instagram_post'), 'Instagram delivery file should expose the channel-specific artifact type');
+    assert.equal(file.surface, 'publisher', 'Instagram delivery file should target the Publisher surface');
+    assert.equal(file.item_type, 'instagram_post', 'Instagram delivery file should target Instagram post review');
+    assert.equal(file.action_type, 'instagram_post', 'Instagram delivery file should expose the action type without claiming execution');
+    assert.ok(Object.hasOwn(file, 'profile_handle'), 'Instagram delivery file should expose Publisher profile/account metadata fields');
+    assert.ok(Object.hasOwn(file, 'media_assets'), 'Instagram delivery file should expose Publisher media asset metadata fields');
+    assert.ok(Object.hasOwn(file, 'approval_checklist'), 'Instagram delivery file should expose Publisher approval checklist metadata fields');
+    const instagramItems = deliveryItemsFromJob({
+      id: 'qa-instagram-publisher',
+      status: 'completed',
+      taskType: 'instagram',
+      workflowTask: 'instagram',
+      workflowAgentName: 'INSTAGRAM LAUNCH AGENT',
+      input: { _broker: { requester: { login: 'qa-instagram' } } },
+      output: delivery
+    });
+    const instagramItem = instagramItems.find((item) => item.surface === 'publisher' && item.itemType === 'instagram_post');
+    assert.ok(instagramItem, 'Instagram delivery file should become a Publisher delivery item without body-text inference');
+    assert.equal(instagramItem.metadata.connector, 'instagram', 'Instagram Publisher item should preserve connector metadata');
+    assert.equal(instagramItem.metadata.connector_capability, 'instagram.post', 'Instagram Publisher item should preserve connector capability');
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'instagram_saas_handoff');
+    assert.ok(artifact, 'Instagram delivery should emit a structured SaaS/App handoff artifact');
+    assert.equal(artifact.surface, 'publisher', 'Instagram handoff artifact should target the Publisher surface');
+    assert.ok(Array.isArray(artifact.upstream_handoff_usage), 'Instagram handoff should expose upstream usage ledger');
+    assert.ok(Array.isArray(artifact.visual_asset_readiness_matrix) && artifact.visual_asset_readiness_matrix.length >= 1, 'Instagram handoff should include visual asset readiness rows');
+    assert.ok(Array.isArray(artifact.creative_queue) && artifact.creative_queue.length >= 1, 'Instagram handoff should include creative review rows');
+    assert.ok(artifact.creative_queue.every((row) => row.execution_status === 'not_posted_not_scheduled_not_queued_not_approved'), 'Instagram creative rows should label non-execution status');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Instagram handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no Instagram post/i, 'Instagram handoff should not imply posting or queueing');
+  }
+  if (kind === 'reddit') {
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'reddit_saas_handoff');
+    assert.ok(artifact, 'Reddit delivery should emit a structured SaaS/App handoff artifact');
+    assert.equal(artifact.surface, 'publisher', 'Reddit handoff artifact should target the Publisher surface');
+    assert.ok(Array.isArray(artifact.upstream_handoff_usage), 'Reddit handoff should expose upstream usage ledger');
+    assert.ok(Array.isArray(artifact.community_queue) && artifact.community_queue.length >= 1, 'Reddit handoff should include community review rows');
+    assert.ok(artifact.community_queue.every((row) => row.execution_status === 'not_submitted_not_queued_not_approved'), 'Reddit rows should label non-execution status');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Reddit handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no Reddit post/i, 'Reddit handoff should not imply posting or queueing');
+  }
+  if (kind === 'teardown') {
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'competitive_teardown_saas_handoff');
+    assert.ok(artifact, 'Teardown delivery should emit a structured Competitive Strategy Console SaaS handoff artifact');
+    assert.equal(artifact.surface, 'competitive_strategy_console', 'Teardown handoff artifact should target the Competitive Strategy Console surface');
+    assert.ok(Array.isArray(artifact.benchmark_ledger), 'Teardown handoff should expose a benchmark ledger');
+    assert.ok(Array.isArray(artifact.upstream_handoff_usage), 'Teardown handoff should expose upstream usage ledger');
+    assert.ok(Array.isArray(artifact.comparison_grid) && artifact.comparison_grid.length >= 1, 'Teardown handoff should include comparison rows');
+    assert.ok(Array.isArray(artifact.wedge_hypotheses) && artifact.wedge_hypotheses.length >= 1, 'Teardown handoff should include wedge hypotheses');
+    assert.ok(Array.isArray(artifact.first_test_queue) && artifact.first_test_queue.length >= 1, 'Teardown handoff should include first-test rows');
+    assert.ok(artifact.first_test_queue.every((row) => /not_launched_not_measured_not_validated/.test(row.execution_status || '')), 'Teardown first-test rows should label non-execution status');
+    assert.ok(Array.isArray(artifact.verification_queue) && artifact.verification_queue.length >= 1, 'Teardown handoff should include verification queue rows');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Teardown handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no competitive claim approval, launch, publishing, connector execution, pilot execution, measurement result, source audit completion, or SaaS app ingestion/i, 'Teardown handoff should not imply competitive claim approval, launch, source audit, or app ingest');
+  }
+  if (kind === 'data_analysis') {
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'data_analysis_saas_handoff');
+    assert.ok(artifact, 'Data Analysis delivery should emit a structured Measurement Console SaaS handoff artifact');
+    assert.equal(artifact.surface, 'measurement_console', 'Data Analysis handoff artifact should target the Measurement Console surface');
+    assert.ok(Array.isArray(artifact.metric_dictionary) && artifact.metric_dictionary.length >= 1, 'Data Analysis handoff should include metric definitions');
+    assert.ok(Array.isArray(artifact.formula_model) && artifact.formula_model.length >= 1, 'Data Analysis handoff should include formula rows');
+    assert.ok(Array.isArray(artifact.experiment_queue) && artifact.experiment_queue.length >= 1, 'Data Analysis handoff should include experiment rows');
+    assert.ok(artifact.experiment_queue.every((row) => /not_launched_not_measured_not_validated/.test(row.execution_status || '')), 'Data Analysis experiment rows should label non-execution status');
+    assert.ok(Array.isArray(artifact.required_data_queue) && artifact.required_data_queue.length >= 1, 'Data Analysis handoff should include required data rows');
+    assert.equal(artifact.dashboard_spec?.surface, 'measurement_console', 'Data Analysis handoff should include a Measurement Console dashboard spec');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Data Analysis handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no GA4, Search Console, internal analytics, billing, event instrumentation, dashboard ingestion, experiment launch, measurement result, validation, or SaaS app ingestion/i, 'Data Analysis handoff should not imply analytics connection, measurement, validation, or app ingest');
+  }
+  if (kind === 'diligence') {
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'diligence_saas_handoff');
+    assert.ok(artifact, 'Diligence delivery should emit a structured risk verification SaaS handoff artifact');
+    assert.equal(artifact.surface, 'risk_verification_console', 'Diligence handoff artifact should target the Risk Verification Console surface');
+    assert.ok(Array.isArray(artifact.evidence_map) && artifact.evidence_map.length >= 1, 'Diligence handoff should include evidence map rows');
+    assert.ok(Array.isArray(artifact.red_flag_matrix) && artifact.red_flag_matrix.length >= 1, 'Diligence handoff should include red flag rows');
+    assert.ok(artifact.red_flag_matrix.every((row) => /not_cleared_not_approved_not_verified/.test(row.execution_status || '')), 'Diligence red flags should label non-execution status');
+    assert.ok(Array.isArray(artifact.verification_queue) && artifact.verification_queue.length >= 1, 'Diligence handoff should include verification queue rows');
+    assert.ok(Array.isArray(artifact.verification_proof_tracker) && artifact.verification_proof_tracker.length >= 1, 'Diligence handoff should include proof tracker rows');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Diligence handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no launch, go\/no-go approval, blocker closure, completed verification, connector execution, pricing change, pilot launch, or SaaS app ingestion/i, 'Diligence handoff should not imply approval, verification, execution, pricing, pilot, or app ingest');
+  }
+  if (kind === 'pricing') {
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'pricing_strategy_saas_handoff');
+    assert.ok(artifact, 'Pricing delivery should emit a structured pricing SaaS handoff artifact');
+    assert.equal(artifact.surface, 'pricing_decision_console', 'Pricing handoff artifact should target the Pricing Decision Console surface');
+    assert.ok(Array.isArray(artifact.package_architecture) && artifact.package_architecture.length >= 1, 'Pricing handoff should include package architecture rows');
+    assert.ok(Array.isArray(artifact.formula_model) && artifact.formula_model.length >= 1, 'Pricing handoff should include formula rows');
+    assert.ok(Array.isArray(artifact.pricing_experiment_queue) && artifact.pricing_experiment_queue.length >= 1, 'Pricing handoff should include pricing experiment rows');
+    assert.ok(artifact.pricing_experiment_queue.every((row) => /not_priced_not_launched_not_tested/.test(row.execution_status || '')), 'Pricing experiment rows should label non-execution status');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Pricing handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no price, checkout, billing, discount, contract, traffic, experiment, measurement, result, or SaaS app ingestion/i, 'Pricing handoff should not imply price execution or app ingest');
+  }
+  if (kind === 'cfo_leader') {
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'cfo_competitive_finance_handoff');
+    assert.ok(artifact, 'CFO delivery should emit a structured competitive finance SaaS handoff artifact');
+    assert.equal(artifact.surface, 'pricing_decision_console', 'CFO handoff artifact should target the Pricing Decision Console surface');
+    assert.ok(Array.isArray(artifact.benchmark_ledger), 'CFO handoff should expose a benchmark ledger');
+    assert.ok(Array.isArray(artifact.winning_economics_hypotheses) && artifact.winning_economics_hypotheses.length >= 1, 'CFO handoff should include winning-economics hypotheses');
+    assert.ok(Array.isArray(artifact.formula_model) && artifact.formula_model.length >= 1, 'CFO handoff should include formula rows');
+    assert.ok(Array.isArray(artifact.scenario_table) && artifact.scenario_table.length >= 1, 'CFO handoff should include scenario rows');
+    assert.ok(Array.isArray(artifact.specialist_handoff_plan) && artifact.specialist_handoff_plan.some((row) => row.task_type === 'pricing'), 'CFO handoff should preserve downstream specialist routing');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'CFO handoff should expose blocked decision intake field');
+    assert.ok((artifact.pricing_and_payment_design_queue || []).every((row) => /not_priced_not_launched_not_tested/.test(row.execution_status || '')), 'CFO pricing rows should label non-execution status');
+    assert.match(artifact.execution_boundary || '', /no price, budget, payout, billing, payment, market validation, benchmark audit, or SaaS app ingestion/i, 'CFO handoff should not imply finance execution or app ingest');
+  }
 }
 
-let missingWorkflowSearchSourceCalls = 0;
-globalThis.fetch = async (input, init) => {
-  const url = typeof input === 'string' ? input : input.url;
-  if (url === 'https://api.openai.com/v1/responses') {
-    missingWorkflowSearchSourceCalls += 1;
-    return new Response(JSON.stringify({
-      output_text: JSON.stringify({
-        summary: 'Research summary ready',
-        report_summary: 'Research delivery',
-        bullets: ['No search sources were returned.'],
-        next_action: 'Connect search and rerun.',
-        file_markdown: '# research delivery\n\nNo web citations were returned.',
-        confidence: 0.2,
-        authority_request: null
-      })
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
-  }
-  return originalBuiltinQaFetch(input, init);
-};
-try {
-  const blockedWorkflowSearchPayload = await runBuiltInAgent('research', cmoWorkflowEnglishSpecialistInput, {
-    OPENAI_API_KEY: 'sk-test-search-required',
-    BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS: '5000'
-  });
-  assert.equal(missingWorkflowSearchSourceCalls, 0, 'source-required workflow must not call OpenAI when no source URL is available');
-  assert.equal(blockedWorkflowSearchPayload.status, 'failed');
-  assert.ok(blockedWorkflowSearchPayload.failure_reason.includes('OpenAI generation was not started'));
-  assert.equal(blockedWorkflowSearchPayload.runtime.workflow, 'missing_required_search_sources');
-  assert.equal(blockedWorkflowSearchPayload.files.length, 0);
-} finally {
-  globalThis.fetch = originalBuiltinQaFetch;
-}
-
-let braveOnlyCalls = 0;
-let cmoBraveQuery = '';
-globalThis.fetch = async (input, init) => {
-  const url = typeof input === 'string' ? input : input.url;
-  if (url.startsWith('https://api.search.brave.com/res/v1/web/search?')) {
-    braveOnlyCalls += 1;
-    cmoBraveQuery = new URL(url).searchParams.get('q') || '';
-    return new Response(JSON.stringify({
-      web: {
-        results: [
-          {
-            url: 'https://example.com/brave-source',
-            title: 'Brave source',
-            description: 'Current market context from Brave.'
+const listCreator = sampleAgentDefinitionForKind('list_creator');
+const listCreatorLeadOpsDelivery = await listCreator.provider.runJob({
+  kind: 'list_creator',
+  definition: listCreator,
+  body: {
+    prompt: 'Create a Lead Ops review list for the attached sourcing request. Answer in English.',
+    output_language: 'en',
+    input: {
+      _broker: {
+        appContexts: [{
+          source_app: 'lead_ops_console',
+          raw_context: {
+            lead_acquisition_request: {
+              target_segment: 'B2B SaaS founders',
+              source_policy: 'public company pages only',
+              target_count: 1,
+              region_or_language: 'United States',
+              offer_or_contact_reason: 'stable AI agent operations',
+              exclusions: 'agencies'
+            }
           }
-        ]
+        }]
       }
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: listCreator.manifest
+});
+assert.equal(listCreatorLeadOpsDelivery.status, 'completed', 'List Creator should complete Lead Ops sourcing requests');
+assert.equal(listCreatorLeadOpsPacketSeen, true, 'List Creator request packet should preserve Lead Ops lead_acquisition_request');
+const listLeadRowsArtifact = listCreatorLeadOpsDelivery.report.artifacts.find((item) => item.type === 'lead_rows');
+const listLeadOpsPacketArtifact = listCreatorLeadOpsDelivery.report.artifacts.find((item) => item.type === 'lead_ops_packet');
+assert.ok(listLeadRowsArtifact, 'List Creator should emit a lead_rows artifact for Lead Ops');
+assert.ok(listLeadOpsPacketArtifact, 'List Creator should emit a lead_ops_packet artifact for Lead Ops');
+assert.equal(listLeadRowsArtifact.rows?.[0]?.company, 'Example SaaS Co', 'List Creator lead_rows should be parsed from the reviewable rows table');
+assert.equal(listLeadOpsPacketArtifact.request?.target_segment, 'B2B SaaS founders', 'List Creator lead_ops_packet should retain the original Lead Ops request');
+assert.ok(listLeadOpsPacketArtifact.evidence_urls?.[0]?.url, 'List Creator lead_ops_packet should include evidence_urls');
+assert.ok(listLeadOpsPacketArtifact.next_actions?.[0]?.next_action, 'List Creator lead_ops_packet should include next_actions');
+
+assert.ok(openAiDeliveryCalls >= SAMPLE_AGENT_KINDS.length, 'each sample agent should use OpenAI delivery generation when configured');
+
+const configuredOpenAiFetch = globalThis.fetch;
+globalThis.fetch = async (url, options = {}) => {
+  const target = String(url || '');
+  if (target.includes('/responses')) {
+    const request = JSON.parse(String(options.body || '{}'));
+    assert.equal(request.text?.format, undefined, 'raw OpenAI delivery path must not request a structured format');
+    return new Response(JSON.stringify({
+      output_text: '# Raw CMO delivery\n\n- This is direct model output.\n- It should become the user-facing delivery file.'
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
   }
-  return originalBuiltinQaFetch(input, init);
+  return configuredOpenAiFetch(url, options);
 };
-try {
-  const braveOnlyPayload = await runBuiltInAgent('research', {
-    prompt: 'Compare current AI agent marketplace alternatives.'
-  }, {
-    BRAVE_SEARCH_API_KEY: 'brave-test-key'
-  });
-  assert.equal(braveOnlyCalls, 1, 'Brave-only built-in search should issue one Brave search request');
-  assert.equal(braveOnlyPayload.status, 'failed');
-  assert.equal(braveOnlyPayload.runtime.provider, 'none');
-  assert.equal(braveOnlyPayload.runtime.search_provider, 'brave');
-  assert.equal(braveOnlyPayload.report.web_sources[0].url, 'https://example.com/brave-source');
-  assert.equal(braveOnlyPayload.files.length, 0);
-  const cmoBravePayload = await runBuiltInAgent('research', cmoWorkflowEnglishSpecialistInput, {
-    BRAVE_SEARCH_API_KEY: 'brave-test-key'
-  });
-  assert.ok(cmoBraveQuery.includes('aiagent-marketplace.net'), 'CMO Brave query should keep the target product/domain, not only generic acquisition terms');
-  assert.ok(cmoBraveQuery.includes('AI agent marketplace'), 'CMO Brave query should include agent-marketplace search intent');
-  assert.equal(cmoBravePayload.status, 'failed');
-  assert.equal(cmoBravePayload.files.length, 0);
-  await runBuiltInAgent('research', {
-    ...cmoWorkflowEnglishSpecialistInput,
-    prompt: 'Task: cmo_leader Goal: grow https://aiagent-marketplace.net CAIt for engineers. Need signups with no ads through X and SEO, media proposal, and actual post content.'
-  }, {
-    BRAVE_SEARCH_API_KEY: 'brave-test-key'
-  });
-  const cmoDynamicQuery = cmoBraveQuery.toLowerCase();
-  assert.ok(cmoDynamicQuery.includes('engineers'), 'CMO Brave query should derive ICP terms from the user request');
-  assert.ok(cmoDynamicQuery.includes('signup'), 'CMO Brave query should derive conversion terms from the user request');
-  assert.ok(cmoDynamicQuery.includes('seo'), 'CMO Brave query should derive requested channel terms from the user request');
-  assert.ok(cmoDynamicQuery.includes('x twitter'), 'CMO Brave query should derive X/Twitter channel terms from the user request');
-  assert.ok(cmoDynamicQuery.includes('no paid ads'), 'CMO Brave query should derive budget constraints from the user request');
-  await runBuiltInAgent('pricing', {
-    prompt: 'Find pricing competitors for https://example-crm.io targeting sales teams. Goal: free trial signups via LinkedIn and SEO with no paid ads.'
-  }, {
-    BRAVE_SEARCH_API_KEY: 'brave-test-key'
-  });
-  const genericAgentQuery = cmoBraveQuery.toLowerCase();
-  assert.ok(genericAgentQuery.includes('example-crm.io'), 'Generic built-in Brave query should keep the user product/domain');
-  assert.ok(genericAgentQuery.includes('sales teams'), 'Generic built-in Brave query should derive the audience from the user request');
-  assert.ok(genericAgentQuery.includes('signup') || genericAgentQuery.includes('trial'), 'Generic built-in Brave query should derive the requested conversion');
-  assert.ok(genericAgentQuery.includes('linkedin'), 'Generic built-in Brave query should derive requested channels');
-  assert.ok(genericAgentQuery.includes('seo'), 'Generic built-in Brave query should derive requested SEO channel');
-  assert.ok(genericAgentQuery.includes('no paid ads'), 'Generic built-in Brave query should derive constraints');
-  assert.ok(!genericAgentQuery.includes('aiagent-marketplace.net'), 'Generic built-in Brave query must not carry CAIt-specific terms for unrelated products');
-} finally {
-  globalThis.fetch = originalBuiltinQaFetch;
+const cmoRawDefinition = sampleAgentDefinitionForKind('cmo_leader');
+assert.ok(
+  cmoRawDefinition.deliveryContract?.requiredDeliverySections?.includes('Source coverage ledger'),
+  'CMO Leader delivery contract should require a source coverage ledger'
+);
+assert.ok(
+  cmoRawDefinition.deliveryContract?.forbiddenClaims?.some((item) => /query intent|page performance|content gap/i.test(item)),
+  'CMO Leader delivery contract should forbid inferred search/page/content performance claims without supplied evidence'
+);
+const cmoRawDelivery = await cmoRawDefinition.provider.runJob({
+  kind: 'cmo_leader',
+  definition: cmoRawDefinition,
+  body: {
+    prompt: 'Task: cmo_leader\nGoal: return a raw model-authored delivery for https://aiagent-marketplace.net',
+    output_language: 'en'
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-raw-delivery' },
+  manifest: cmoRawDefinition.manifest
+});
+assert.equal(cmoRawDelivery.status, 'completed', 'raw OpenAI text should complete as the delivery');
+assert.equal(cmoRawDelivery.runtime?.generation_provider, 'openai_responses', 'raw OpenAI text should not fall back to an agent definition packet');
+assert.match(cmoRawDelivery.files?.[0]?.content || '', /Raw CMO delivery[\s\S]*direct model output/i, 'raw OpenAI text should be returned as the user-facing delivery file');
+
+globalThis.fetch = async (url, options = {}) => {
+  const target = String(url || '');
+  if (target.includes('/responses')) {
+    const request = JSON.parse(String(options.body || '{}'));
+    assert.equal(request.text?.format, undefined, 'Responses metadata extraction path must not request a structured format');
+    return new Response(JSON.stringify({
+      text: { format: { type: 'text' }, verbosity: 'medium' },
+      output: [{
+        content: [{
+          type: 'output_text',
+          text: '# Responses content delivery\n\n- This output came from output[].content[].text.\n- Top-level text.verbosity must not become the delivery file.'
+        }]
+      }]
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
+  }
+  return configuredOpenAiFetch(url, options);
+};
+const cmoResponsesContentDelivery = await cmoRawDefinition.provider.runJob({
+  kind: 'cmo_leader',
+  definition: cmoRawDefinition,
+  body: {
+    prompt: 'Task: cmo_leader\nGoal: verify Responses content extraction for https://aiagent-marketplace.net',
+    output_language: 'en'
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-responses-content' },
+  manifest: cmoRawDefinition.manifest
+});
+assert.equal(cmoResponsesContentDelivery.status, 'completed', 'Responses content array output should complete as the delivery');
+assert.match(cmoResponsesContentDelivery.files?.[0]?.content || '', /Responses content delivery[\s\S]*output\[\]\.content\[\]\.text/i, 'Responses content array text should become the user-facing delivery file');
+assert.doesNotMatch(cmoResponsesContentDelivery.files?.[0]?.content || '', /verbosity\s+medium/i, 'Responses top-level text metadata must not become the delivery file');
+
+globalThis.fetch = async (url, options = {}) => {
+  const target = String(url || '');
+  if (target.includes('/responses')) {
+    return new Response(JSON.stringify({ output_text: '{}' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
+  }
+  return configuredOpenAiFetch(url, options);
+};
+const cmoFailureDefinition = sampleAgentDefinitionForKind('cmo_leader');
+const cmoConfiguredFailure = await cmoFailureDefinition.provider.runJob({
+  kind: 'cmo_leader',
+  definition: cmoFailureDefinition,
+  body: {
+    prompt: 'Task: cmo_leader\nGoal: increase signups for https://aiagent-marketplace.net\nPriority channel: Organic search / SEO',
+    output_language: 'en'
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: cmoFailureDefinition.manifest
+});
+assert.equal(cmoConfiguredFailure.status, 'failed', 'configured CMO leader must fail malformed empty OpenAI output instead of using fallback delivery');
+assert.match(cmoConfiguredFailure.failure_reason || '', /openai_delivery_generation_failed|missing_required_deliverable/i, 'CMO malformed output should surface a delivery failure');
+assert.equal((cmoConfiguredFailure.files || []).length, 0, 'CMO malformed output must not attach fallback files');
+const dataFailureDefinition = sampleAgentDefinitionForKind('data_analysis');
+const dataConfiguredFailure = await dataFailureDefinition.provider.runJob({
+  kind: 'data_analysis',
+  definition: dataFailureDefinition,
+  body: {
+    prompt: 'GA4 property: properties/1\nSessions: 554\nConversions: 0\nConversion rate: 0%\nPriority channel: Organic search / SEO',
+    output_language: 'en'
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: dataFailureDefinition.manifest
+});
+assert.equal(dataConfiguredFailure.status, 'failed', 'configured data analysis must fail malformed empty OpenAI output instead of using fallback delivery');
+assert.match(dataConfiguredFailure.failure_reason || '', /openai_delivery_generation_failed/i, 'data analysis malformed output should surface generation failure');
+assert.equal((dataConfiguredFailure.files || []).length, 0, 'data analysis malformed output must not attach fallback files');
+globalThis.fetch = configuredOpenAiFetch;
+
+const leakedOutputContractPattern = /##\s*Delivery packet|Write sections for|Write a two-part Markdown delivery|Agent-owned behavior|provider\.runJob|agent-file provider implementation|WORKFLOW HANDOFF CONTEXT|STRUCTURED HANDOFF DIGEST/i;
+
+function assertUserFacingDelivery(result, label, requiredPatterns = []) {
+  const content = result.files?.[0]?.content || '';
+  assert.equal(result.status, 'completed', `${label} should complete`);
+  assert.ok(!leakedOutputContractPattern.test(content), `${label} must not expose output contracts or workflow prompt internals`);
+  assert.ok(!/provider delivery|agent-file provider implementation/i.test(result.summary || ''), `${label} summary must not expose provider implementation details`);
+  for (const pattern of requiredPatterns) {
+    assert.match(content, pattern, `${label} should include ${pattern}`);
+  }
 }
 
-let bravePreferredOpenAiCalls = 0;
-globalThis.fetch = async (input, init) => {
-  const url = typeof input === 'string' ? input : input.url;
-  if (url.startsWith('https://api.search.brave.com/res/v1/web/search?')) {
-    return new Response(JSON.stringify({
-      web: {
-        results: [
-          {
-            url: 'https://example.com/brave-competitor',
-            title: 'Brave competitor source',
-            description: 'Competitor and market evidence.'
-          }
-        ]
-      }
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
-  }
-  if (url === 'https://api.openai.com/v1/responses') {
-    bravePreferredOpenAiCalls += 1;
-    const request = JSON.parse(String(init?.body || '{}'));
-    assert.ok(!('tools' in request), 'Brave-grounded OpenAI requests should not invoke OpenAI web_search when Brave is preferred');
-    const payload = JSON.parse(String(request.input?.[1]?.content || '{}'));
-    assert.equal(payload.request.web_sources[0].url, 'https://example.com/brave-competitor');
-    assert.equal(payload.web_sources[0].url, 'https://example.com/brave-competitor');
-    return new Response(JSON.stringify({
-      output_text: JSON.stringify({
-        summary: 'Research summary ready',
-        report_summary: 'Research delivery',
-        bullets: ['Used Brave-grounded sources.'],
-        next_action: 'Proceed with the source-backed recommendation.',
-        file_markdown: '# Research delivery\n\n## Answer first\nUse the Brave-grounded sources first.',
-        confidence: 'medium',
-        authority_request: null
-      })
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
-  }
-  return originalBuiltinQaFetch(input, init);
+function assertMissingConcreteDelivery(result, label) {
+  assert.equal(result.status, 'failed', `${label} should fail instead of returning a shared template delivery`);
+  assert.match(result.failure_reason || result.error || '', /missing_required_deliverable|openai_delivery_generation_unavailable/, `${label} should name the missing delivery generation contract`);
+  assert.equal((result.files || []).length, 0, `${label} should not attach fallback files`);
+}
+
+const adsPlanner = sampleAgentDefinitionForKind('ads_planner');
+const fallbackAdsPlan = await adsPlanner.provider.runJob({
+  kind: 'ads_planner',
+  definition: adsPlanner,
+  body: {
+    prompt: [
+      'Plan a small Google Ads test for https://aiagent-marketplace.net.',
+      'Audience: developers and technical founders',
+      'Budget cap: 300',
+      'Target CPA: 20',
+      'Conversion event: paid_order; conversion tracking is not verified'
+    ].join('\n'),
+    output_language: 'en',
+    provider: 'google_ads',
+    budgetCap: 300,
+    targetCpa: 20,
+    conversionEvent: 'paid_order',
+    conversionTrackingStatus: 'unverified',
+    input: { target_url: 'https://aiagent-marketplace.net' }
+  },
+  source: {},
+  manifest: adsPlanner.manifest
+});
+assertUserFacingDelivery(fallbackAdsPlan, 'ads_planner fallback delivery', [
+  /## Objective/i,
+  /## Pre-launch measurement blocker/i,
+  /## Audience/i,
+  /## Provider/i,
+  /## Campaign structure/i,
+  /## Budget cap and CPA assumption/i,
+  /## Stop rules/i,
+  /## Creative asset packet/i,
+  /## Ads SaaS handoff/i,
+  /## Approval and launch boundary/i,
+  /## Execution status labels/i,
+  /## Measurement plan/i
+]);
+const fallbackAdsContent = fallbackAdsPlan.files?.[0]?.content || '';
+assert.match(fallbackAdsContent, /not created, not submitted, not launched, not spent/i, 'ads_planner fallback must label execution status as not executed');
+assert.doesNotMatch(fallbackAdsContent, /created ads|launched ads|spent budget|changed bids/i, 'ads_planner fallback must not overclaim ad execution');
+const fallbackAdsPlanJa = await adsPlanner.provider.runJob({
+  kind: 'ads_planner',
+  definition: adsPlanner,
+  body: {
+    prompt: [
+      'https://aiagent-marketplace.net の Google 広告テストを計画してください。',
+      '対象: 開発者と技術系ファウンダー',
+      '予算上限: 300',
+      '目標CPA: 20',
+      'CVイベント: paid_order、CV計測は未確認'
+    ].join('\n'),
+    output_language: 'ja',
+    provider: 'google_ads',
+    budgetCap: 300,
+    targetCpa: 20,
+    conversionEvent: 'paid_order',
+    conversionTrackingStatus: '未確認',
+    input: { target_url: 'https://aiagent-marketplace.net' }
+  },
+  source: {},
+  manifest: adsPlanner.manifest
+});
+const fallbackAdsContentJa = fallbackAdsPlanJa.files?.[0]?.content || '';
+assert.match(fallbackAdsContentJa, /## 目的/i, 'ads_planner Japanese fallback should keep localized section headings');
+assert.match(fallbackAdsContentJa, /## 配信前の計測ブロッカー/i, 'ads_planner Japanese fallback should include a localized measurement blocker section');
+assert.match(fallbackAdsContentJa, /## Ads SaaS 引き継ぎ/i, 'ads_planner Japanese fallback should localize handoff section');
+assert.match(fallbackAdsContentJa, /## クリエイティブアセット案/i, 'ads_planner Japanese fallback should include a localized creative asset packet');
+assert.match(fallbackAdsContentJa, /## 実行ステータスラベル/i, 'ads_planner Japanese fallback should include localized execution status labels');
+assert.doesNotMatch(fallbackAdsContentJa, /## Objective|## Audience|## Campaign structure/i, 'ads_planner Japanese fallback must not fall back to English section headings');
+
+const campaignOperations = sampleAgentDefinitionForKind('campaign_operations');
+const fallbackCampaignOps = await campaignOperations.provider.runJob({
+  kind: 'campaign_operations',
+  definition: campaignOperations,
+  body: {
+    prompt: 'Prepare campaign operations for the CMO plan.',
+    output_language: 'en',
+    campaign: {
+      title: 'Developer signup campaign',
+      objective: 'Increase qualified developer signups',
+      audience: 'developers and technical founders',
+      targetUrl: 'https://aiagent-marketplace.net',
+      channels: ['publisher', 'ads', 'analytics'],
+      kpis: ['qualified signups', 'trial starts']
+    }
+  },
+  source: {},
+  manifest: campaignOperations.manifest
+});
+assertUserFacingDelivery(fallbackCampaignOps, 'campaign_operations fallback delivery', [
+  /## Campaign state/i,
+  /## Publisher queue/i,
+  /## Asset status queue/i,
+  /## Approval backlog/i,
+  /## Connector readiness/i,
+  /## Planned action queue/i,
+  /## Now \(Week 0-1\)/i,
+  /## Next \(Week 1-3\)/i,
+  /## Waiting conditions/i,
+  /## Measurement loop/i,
+  /## Next action owner/i
+]);
+const fallbackCampaignContent = fallbackCampaignOps.files?.[0]?.content || '';
+assert.match(fallbackCampaignContent, /Publisher ingest: not verified/i, 'campaign_operations fallback must label Publisher ingest as unverified');
+assert.match(fallbackCampaignContent, /approved-ready[\s\S]*draft-needs-approval[\s\S]*measurement-waiting[\s\S]*blocked/i, 'campaign_operations fallback must expose asset status classifications');
+assert.doesNotMatch(fallbackCampaignContent, /\bpublished\b|\bsent\b|\blaunched\b/i, 'campaign_operations fallback must not claim external execution');
+const fallbackCampaignOpsJa = await campaignOperations.provider.runJob({
+  kind: 'campaign_operations',
+  definition: campaignOperations,
+  body: {
+    prompt: 'CMO 設計をもとにキャンペーン運用計画を作成してください。',
+    output_language: 'ja',
+    campaign: {
+      title: '開発者向け登録キャンペーン',
+      objective: '有望な開発者登録を増やす',
+      audience: '開発者と技術系ファウンダー',
+      targetUrl: 'https://aiagent-marketplace.net',
+      channels: ['publisher', 'ads', 'analytics'],
+      kpis: ['qualified signups', 'trial starts']
+    }
+  },
+  source: {},
+  manifest: campaignOperations.manifest
+});
+const fallbackCampaignContentJa = fallbackCampaignOpsJa.files?.[0]?.content || '';
+assert.match(fallbackCampaignContentJa, /## キャンペーン状態/i, 'campaign_operations Japanese fallback should keep localized section headings');
+assert.match(fallbackCampaignContentJa, /## アセットステータスキュー/i, 'campaign_operations Japanese fallback should localize asset status queue');
+assert.match(fallbackCampaignContentJa, /## コネクタ準備状況/i, 'campaign_operations Japanese fallback should localize connector readiness');
+assert.match(fallbackCampaignContentJa, /## 実行予定キュー/i, 'campaign_operations Japanese fallback should localize planned action queue');
+assert.match(fallbackCampaignContentJa, /## Now \(Week 0-1\)/i, 'campaign_operations Japanese fallback should keep the near-term action window label stable');
+assert.match(fallbackCampaignContentJa, /## Next \(Week 1-3\)/i, 'campaign_operations Japanese fallback should keep the next action window label stable');
+assert.match(fallbackCampaignContentJa, /## 待機条件/i, 'campaign_operations Japanese fallback should localize waiting conditions');
+assert.doesNotMatch(fallbackCampaignContentJa, /## Campaign state|## Publisher queue|## Approval backlog/i, 'campaign_operations Japanese fallback must not fall back to English section headings');
+
+const result = await research.provider.runJob({
+  kind: 'research',
+  definition: research,
+  body: {
+    prompt: 'QA sample. Answer in English.',
+    output_language: 'en'
+  },
+  source: {},
+  manifest: research.manifest
+});
+assertMissingConcreteDelivery(result, 'research generic delivery');
+assert.equal(result.runtime?.provider, 'agent_file');
+
+const deliveryBody = {
+  prompt: [
+    'Task: cmo_leader',
+    'Goal: increase signups for https://aiagent-marketplace.net',
+    'Product/service: https://aiagent-marketplace.net',
+    'Analytics data: GA4 + Search Console connector context attached.',
+    'GA4 property: properties/531290961',
+    'Search Console site: sc-domain:aiagent-marketplace.net',
+    'Date range: 2026-04-15 to 2026-05-12',
+    'Sessions: 554',
+    'Conversions: 0',
+    'Conversion rate: 0%',
+    'Target audience: Developers/technical users',
+    'Constraints: No paid ads / organic only',
+    'Priority channel: Organic search / SEO'
+  ].join('\n'),
+  output_language: 'en'
 };
-try {
-  const bravePreferredPayload = await runBuiltInAgent('research', {
-    prompt: 'Compare current AI agent marketplace alternatives.',
+
+for (const kind of [
+  'data_analysis',
+  'media_planner',
+  'seo_specialist',
+  'landing',
+  'cmo_leader'
+]) {
+  const definition = sampleAgentDefinitionForKind(kind);
+  const delivery = await definition.provider.runJob({
+    kind,
+    definition,
+    body: deliveryBody,
+    source: {},
+    manifest: definition.manifest
+  });
+  assertMissingConcreteDelivery(delivery, `${kind} delivery`);
+}
+
+const travelEsimBody = {
+  prompt: [
+    'Task: cmo_leader',
+    'Goal: Original request:',
+    'acquire leads for https://autowifi-travel.com',
+    'User clarification:',
+    '- Product/service: - Product/service: https://autowifi-travel.com',
+    '- Analytics data: - Analytics data: GA4 + Search Console connector context attached.',
+    '- Main goal: - Main goal: 問い合わせ・リード獲得を増やす',
+    '- Target audience: - Target audience: 一般消費者',
+    '- Constraints: - Constraints: Depth and quality first',
+    '- Priority channel: - Priority channel: Organic search / SEO',
+    'Attached connector context:',
+    'GA4 property: properties/528967599',
+    'Search Console site: https://autowifi-travel.com/',
+    'Date range: 2026-04-18 to 2026-05-15',
+    'Sessions: 74',
+    'Conversions: 0',
+    'Conversion rate: 0%',
+    'Search Console query: add esim to iphone | https://autowifi-travel.com/en/guide/esim-iphone-setup | Landing page: https://autowifi-travel.com/en/guide/esim-iphone-setup',
+    'Search Console query: airalo vs holafly | https://autowifi-travel.com/en/guide/airalo-vs-holafly | Landing page: https://autowifi-travel.com/en/guide/airalo-vs-holafly'
+  ].join('\n'),
+  output_language: 'en'
+};
+
+const wrongProductContextPattern = /AI agent workflows|AI-agent request|agent requests|turns agent requests/i;
+const malformedAudiencePattern = /対象ユーザー:.*制約|Target audience:.*Constraints/i;
+
+for (const kind of [
+  'data_analysis',
+  'media_planner',
+  'seo_specialist',
+  'landing',
+  'cmo_leader'
+]) {
+  const definition = sampleAgentDefinitionForKind(kind);
+  const delivery = await definition.provider.runJob({
+    kind,
+    definition,
+    body: travelEsimBody,
+    source: {},
+    manifest: definition.manifest
+  });
+  const content = delivery.files?.[0]?.content || '';
+  assertMissingConcreteDelivery(delivery, `${kind} travel/eSIM delivery`);
+  assert.ok(!wrongProductContextPattern.test(content), `${kind} travel/eSIM delivery must not use AI-agent-specific copy`);
+  assert.ok(!malformedAudiencePattern.test(content), `${kind} travel/eSIM delivery must not leak adjacent intake labels into the audience`);
+  assert.ok(!/signup or trial start/i.test(content), `${kind} travel/eSIM delivery should preserve lead/inquiry conversion intent`);
+}
+
+const travelEsimPurchaseBody = {
+  ...travelEsimBody,
+  prompt: travelEsimBody.prompt
+    .replace('acquire leads for https://autowifi-travel.com', 'increase purchases for https://autowifi-travel.com')
+    .replace('問い合わせ・リード獲得を増やす', '売上・購入を増やす')
+};
+
+for (const kind of [
+  'data_analysis',
+  'media_planner',
+  'seo_specialist',
+  'landing',
+  'cmo_leader'
+]) {
+  const definition = sampleAgentDefinitionForKind(kind);
+  const delivery = await definition.provider.runJob({
+    kind,
+    definition,
+    body: travelEsimPurchaseBody,
+    source: {},
+    manifest: definition.manifest
+  });
+  const content = delivery.files?.[0]?.content || '';
+  assertMissingConcreteDelivery(delivery, `${kind} travel/eSIM purchase delivery`);
+  assert.ok(!wrongProductContextPattern.test(content), `${kind} travel/eSIM purchase delivery must not use AI-agent-specific copy`);
+  assert.ok(!malformedAudiencePattern.test(content), `${kind} travel/eSIM purchase delivery must not leak adjacent intake labels into the audience`);
+  assert.ok(!/lead or inquiry|signup or trial start|inquiry_submit|signup_or_trial_start/i.test(content), `${kind} travel/eSIM purchase delivery should preserve purchase conversion intent`);
+}
+
+const cmoLeaderFinal = sampleAgentDefinitionForKind('cmo_leader');
+const cmoLeaderFinalSynthesis = await cmoLeaderFinal.provider.runJob({
+  kind: 'cmo_leader',
+  definition: cmoLeaderFinal,
+  body: {
+    prompt: [
+      'Task: cmo_leader',
+      'Goal: increase signups for https://aiagent-marketplace.net',
+      'Product/service: https://aiagent-marketplace.net',
+      'Target audience: Developers/technical users',
+      'Main goal: Increase signups/trials',
+      'Priority channel: Organic search / SEO'
+    ].join('\n'),
+    output_language: 'en',
     input: {
       _broker: {
         workflow: {
-          primaryTask: 'research_team_leader',
-          sequencePhase: 'research',
-          forceWebSearch: true,
-          webSearchRequiredReason: 'leader_research_layer'
-        }
-      }
-    }
-  }, {
-    OPENAI_API_KEY: 'sk-test-brave-openai',
-    BRAVE_SEARCH_API_KEY: 'brave-test-key',
-    BUILTIN_OPENAI_WORKFLOW_TIMEOUT_MS: '5000'
-  });
-  assert.equal(bravePreferredOpenAiCalls, 1, 'Workflow OpenAI path should run once with Brave-grounded sources');
-  assert.equal(bravePreferredPayload.runtime.provider, 'openai');
-  assert.equal(bravePreferredPayload.runtime.search_provider, 'brave');
-  assert.equal(bravePreferredPayload.report.web_sources[0].url, 'https://example.com/brave-competitor');
-  assert.ok(bravePreferredPayload.files[0].content.includes('https://example.com/brave-competitor'));
-} finally {
-  globalThis.fetch = originalBuiltinQaFetch;
-}
-
-const cmoWorkflowXPayload = sampleAgentPayload('x_post', {
-  ...cmoWorkflowSpecialistInput,
-  input: {
-    _broker: {
-      workflow: {
-        primaryTask: 'cmo_leader',
-        parentJobId: 'qa-cmo-workflow-parent',
-        sequencePhase: 'action',
-        leaderHandoff: {
-          leaderTaskType: 'cmo_leader',
-          priorRuns: [
-            { taskType: 'research', status: 'completed', summary: '比較LPを先に作る' }
-          ]
-        }
-      }
-    }
-  }
-});
-assert.equal(cmoWorkflowXPayload.report.summary, 'X投稿実行納品');
-assert.ok(cmoWorkflowXPayload.files[0].content.includes('投稿ドラフト'));
-assert.ok(cmoWorkflowXPayload.files[0].content.includes('utm_source=x'));
-assert.ok(cmoWorkflowXPayload.files[0].content.includes('## 受け渡し情報の利用'), 'CMO action specialists should show leader/research handoff evidence in the body');
-assert.ok(cmoWorkflowXPayload.files[0].content.includes('比較LPを先に作る'), 'CMO action specialist output should carry the prior research decision forward');
-assert.ok(cmoWorkflowXPayload.files[0].content.includes('承認packet'));
-assert.ok(/OAuth接続済み|OAuth-connected|@handle/i.test(cmoWorkflowXPayload.files[0].content), 'X action packet must require OAuth account handle approval');
-assert.ok(cmoWorkflowXPayload.files[0].content.includes('exact_copy'));
-assert.equal(cmoWorkflowXPayload.files[0].content_type, 'social_post_pack');
-assert.equal(cmoWorkflowXPayload.files[0].execution_candidate, true);
-assert.equal(cmoWorkflowXPayload.files[0].draft_defaults.channel, 'x');
-assert.equal(cmoWorkflowXPayload.files[0].draft_defaults.actionMode, 'post_ready');
-assert.ok(cmoWorkflowXPayload.files[0].draft_defaults.postText.length <= 280);
-assert.ok(cmoWorkflowXPayload.files[0].draft_defaults.postText.includes('aiagent-marketplace.net'));
-assert.equal(
-  cmoWorkflowXPayload.report.execution_candidate.draft_defaults.postText,
-  cmoWorkflowXPayload.files[0].draft_defaults.postText
-);
-assert.equal(
-  extractSocialPostTextFromDeliveryContent(cmoWorkflowXPayload.files[0].content, { maxLength: 280 }),
-  cmoWorkflowXPayload.files[0].draft_defaults.postText
-);
-assert.ok(!/\bTBD\b|Output contract|Professional preflight|専門家の事前確認/i.test(cmoWorkflowXPayload.files[0].content));
-
-const mergedXExecutionOutput = buildAgentTeamDeliveryOutput({
-  id: 'qa-cmo-parent',
-  originalPrompt: 'CMO execution workflow',
-  workflow: { childRuns: [{ id: 'qa-cmo-leader' }, { id: 'qa-x-post' }] }
-}, [
-  {
-    id: 'qa-cmo-leader',
-    taskType: 'cmo_leader',
-    workflowTask: 'cmo_leader',
-    status: 'completed',
-    completedAt: '2026-04-29T00:00:00.000Z',
-    input: { _broker: { workflow: { sequencePhase: 'checkpoint' } } },
-    output: {
-      summary: 'Leader selected X execution.',
-      report: { summary: 'Leader selected X execution.', nextAction: 'Execute the X packet.' },
-      files: [{ name: 'leader.md', type: 'text/markdown', content: '# leader\n\nExecution packet: X first.' }]
-    }
-  },
-  {
-    id: 'qa-x-post',
-    taskType: 'x_post',
-    workflowTask: 'x_post',
-    status: 'completed',
-    completedAt: '2026-04-29T00:01:00.000Z',
-    output: {
-      summary: cmoWorkflowXPayload.summary,
-      report: cmoWorkflowXPayload.report,
-      files: cmoWorkflowXPayload.files
-    }
-  }
-]);
-const mergedXCandidate = mergedXExecutionOutput.files.find((file) => file.content_type === 'social_post_pack');
-assert.equal(mergedXCandidate?.draft_defaults?.postText, cmoWorkflowXPayload.files[0].draft_defaults.postText);
-
-const failedLeaderWorkflowOutput = buildAgentTeamDeliveryOutput({
-  id: 'qa-failed-parent',
-  status: 'failed',
-  originalPrompt: 'CMO execution workflow',
-  workflow: { childRuns: [{ id: 'qa-leader-timeout' }, { id: 'qa-research-blocked' }, { id: 'qa-checkpoint-blocked' }] }
-}, [
-  {
-    id: 'qa-leader-timeout',
-    taskType: 'cmo_leader',
-    workflowTask: 'cmo_leader',
-    status: 'timed_out',
-    failureReason: 'Run exceeded timeout window',
-    failureCategory: 'deadline_timeout'
-  },
-  {
-    id: 'qa-research-blocked',
-    taskType: 'research',
-    workflowTask: 'research',
-    status: 'blocked',
-    failureReason: 'blocked_after_leader_failure',
-    failureCategory: 'workflow_blocked',
-    dispatch: { completionStatus: 'blocked_after_leader_failure' }
-  },
-  {
-    id: 'qa-checkpoint-blocked',
-    taskType: 'cmo_leader',
-    workflowTask: 'cmo_leader',
-    status: 'blocked',
-    dispatch: { completionStatus: 'leader_checkpoint_blocked' }
-  }
-]);
-assert.ok(failedLeaderWorkflowOutput.summary.includes('stopped after failure'), 'failed workflow summary must not call internal blocked children approval waits');
-assert.ok(!failedLeaderWorkflowOutput.summary.includes('waiting for approval'), 'failed workflow summary must not imply approval is required');
-assert.ok(failedLeaderWorkflowOutput.report.bullets.some((line) => /Stopped after failure/.test(line)), 'failed workflow must explain stopped-after-failure children');
-assert.ok(/not an approval wait/i.test(failedLeaderWorkflowOutput.report.nextAction), 'failed workflow next action must say it is not approval');
-assert.equal(failedLeaderWorkflowOutput.report.authority_request, undefined, 'failed internal workflow must not synthesize authority approval');
-
-const approvalBlockedWorkflowOutput = buildAgentTeamDeliveryOutput({
-  id: 'qa-approval-parent',
-  status: 'blocked',
-  originalPrompt: 'CMO X execution workflow',
-  workflow: { childRuns: [{ id: 'qa-x-blocked' }] }
-}, [
-  {
-    id: 'qa-x-blocked',
-    taskType: 'x_post',
-    workflowTask: 'x_post',
-    status: 'blocked',
-    failureCategory: 'blocked_waiting_for_approval',
-    dispatch: { completionStatus: 'blocked_waiting_for_approval' },
-    output: {
-      report: {
-        authority_request: {
-          reason: 'X posting authority is required before CAIt can publish this post.',
-          missing_connectors: ['x'],
-          missing_connector_capabilities: ['x.post']
-        }
-      }
-    }
-  }
-]);
-assert.ok(approvalBlockedWorkflowOutput.summary.includes('waiting for approval/connector'), 'true approval blocks should still be labeled as approval/connector waits');
-assert.equal(approvalBlockedWorkflowOutput.report.completion_state, 'blocked_waiting_for_approval');
-
-const cmoBareDomainPayload = sampleAgentPayload('research', {
-  prompt: 'Task: cmo_leader Goal: aiagent-marketplace.netの会員登録を増やす。plan and do actions.',
-  output_language: 'ja',
-  input: {
-    _broker: {
-      workflow: {
-        primaryTask: 'cmo_leader',
-        parentJobId: 'qa-cmo-bare-domain',
-        sequencePhase: 'research'
-      }
-    }
-  }
-});
-assert.ok(cmoBareDomainPayload.files[0].content.includes('aiagent-marketplace.net'));
-assert.ok(!/\bCAIt\b|Work Chat|compare-ai-agents-for-engineers/i.test(cmoBareDomainPayload.files[0].content));
-assert.ok(/account signups|会員登録/.test(cmoBareDomainPayload.files[0].content));
-assert.ok(!/the product|the stated ICP|the primary conversion event|budget not confirmed|最終納品ではありません/i.test(cmoBareDomainPayload.files[0].content));
-
-const genericCmoLeaderPayload = sampleAgentPayload('cmo_leader', {
-  prompt: 'CMO leader: grow demo inquiries for https://example-crm.io. Target sales teams. Use LinkedIn and SEO with no paid ads. Plan and do actions.'
-});
-const genericCmoLeaderContent = genericCmoLeaderPayload.files[0].content;
-assert.ok(genericCmoLeaderContent.includes('example-crm.io'));
-assert.ok(/sales teams/i.test(genericCmoLeaderContent));
-assert.ok(/qualified leads or inquiries/i.test(genericCmoLeaderContent));
-assert.ok(/LinkedIn|SEO/i.test(genericCmoLeaderContent));
-assert.ok(/research[\s\S]+planning[\s\S]+preparation[\s\S]+approval[\s\S]+action/i.test(genericCmoLeaderContent));
-assert.ok(!/\bCAIt\b|aiagent-marketplace|Work Chat|AI agent marketplace for engineers/i.test(genericCmoLeaderContent));
-
-const genericCmoResearchPayload = sampleAgentPayload('research', {
-  prompt: 'Task: cmo_leader Goal: grow demo inquiries for https://example-crm.io. Target sales teams. Use LinkedIn and SEO with no paid ads. Plan and do actions.',
-  input: {
-    _broker: {
-      workflow: {
-        primaryTask: 'cmo_leader',
-        parentJobId: 'qa-cmo-generic-research',
-        sequencePhase: 'research'
-      }
-    }
-  }
-});
-const genericCmoResearchContent = genericCmoResearchPayload.files[0].content;
-assert.ok(genericCmoResearchContent.includes('example-crm.io'));
-assert.ok(/sales teams/i.test(genericCmoResearchContent));
-assert.ok(/qualified leads or inquiries/i.test(genericCmoResearchContent));
-assert.ok(/Acquisition research readout|Customer and positioning hypothesis|Handoff to planning/i.test(genericCmoResearchContent));
-assert.ok(!/Evidence and handoff contract|This specialist is producing/i.test(genericCmoResearchContent));
-assert.ok(!/\bCAIt\b|aiagent-marketplace|Work Chat|AI agent marketplace for engineers/i.test(genericCmoResearchContent));
-
-const cmoPlatformContaminationPayload = sampleAgentPayload('research', {
-  prompt: 'Task: cmo_leader Goal: grow inquiries for https://biz.hrbase.jp. Target HR managers. Use SEO and X. Plan and do actions.',
-  input: {
-    _broker: {
-      workflow: {
-        primaryTask: 'cmo_leader',
-        parentJobId: 'qa-cmo-no-platform-contamination',
-        sequencePhase: 'research',
-        leaderHandoff: {
-          summary: 'CAIt platform context should not become the customer product.',
-          briefFile: {
-            name: 'old-platform-brief.md',
-            content: 'CAIt Work Chat and aiagent-marketplace.net are platform examples, not this customer product.'
+          sequencePhase: 'final_summary',
+          leaderHandoff: {
+            priorRuns: [
+              {
+                taskType: 'data_analysis',
+                sequencePhase: 'data',
+                status: 'completed',
+                summary: 'GA4 sessions 554 and conversions 0.'
+              },
+              {
+                taskType: 'research',
+                sequencePhase: 'research',
+                status: 'completed',
+                summary: 'Research found signup visitors need proof before choosing an AI agent marketplace.',
+                webSources: [{ title: 'Target service', url: 'https://aiagent-marketplace.net/', snippet: 'AI agent marketplace target URL.' }]
+              },
+              {
+                taskType: 'media_planner',
+                sequencePhase: 'planning',
+                status: 'completed',
+                summary: 'Prioritize SEO first, then referral and social copy.'
+              },
+              {
+                taskType: 'seo_specialist',
+                sequencePhase: 'preparation',
+                status: 'completed',
+                summary: 'SEO page packet ready for Publisher.',
+                files: [{
+                  name: 'seo-agent-delivery.md',
+                  content: [
+                    '# SEO page packet',
+                    '## SEO page recommendation',
+                    '- H1: AI agent marketplace for developers',
+                    '- Meta title: AI agent marketplace for developer workflows',
+                    '- Meta description: Compare AI agents, review proof, and start signup.',
+                    '## Replacement copy',
+                    'Headline: AI agent marketplace for developers.',
+                    'Primary CTA: Start signup'
+                  ].join('\n')
+                }]
+              },
+              {
+                taskType: 'list_creator',
+                sequencePhase: 'preparation',
+                status: 'blocked',
+                summary: 'No public lead source was supplied.'
+              }
+            ]
           }
         }
       }
     }
-  }
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: cmoLeaderFinal.manifest
 });
-const cmoPlatformContaminationContent = cmoPlatformContaminationPayload.files[0].content;
-assert.ok(cmoPlatformContaminationContent.includes('biz.hrbase.jp'));
-assert.ok(!/\bCAIt\b|aiagent-marketplace|Work Chat|compare-ai-agents-for-engineers/i.test(cmoPlatformContaminationContent));
+assertUserFacingDelivery(cmoLeaderFinalSynthesis, 'cmo_leader final synthesis', [
+  /Growth improvement plan|Executive summary|Direct answer/i,
+  /Perspective review/i,
+  /Confirmed facts/i,
+  /Source coverage ledger/i,
+  /Open questions/i,
+  /Priority diagnosis/i,
+  /Channel priority table/i,
+  /Inputs needed next/i
+]);
+const cmoLeaderFinalContent = cmoLeaderFinalSynthesis.files?.[0]?.content || '';
+assert.match(cmoLeaderFinalContent, /SEO page work/i, 'CMO final synthesis should require LLM judgment over the preparation artifact content without exposing task ids');
+assert.match(cmoLeaderFinalContent, /Access analytics[\s\S]*554 sessions/i, 'CMO final synthesis should carry analytics evidence without exposing internal agent names');
+assert.match(cmoLeaderFinalContent, /Lead\/source list work[\s\S]*(missing|No public lead source|source gap|Hold until source rules)/i, 'CMO final synthesis should separate blocked lead/list work in user-facing language');
+assert.doesNotMatch(cmoLeaderFinalContent, /Adoption matrix|Specialist adoption matrix|DATA ANALYSIS AGENT|RESEARCH AGENT|LANDING PAGE CRITIQUE AGENT|seo_specialist|data_analysis|media_planner|list_creator|Publisher handoff draft prepared|External app ingest|Publisher\/SaaS|site_publish_packet|artifact_for_next_agent|recommended_next_owner|Downstream handoff|facts_verified|assumptions_used|evidence_gaps|採用判断表|source_task_type|source_agent_name/i, 'CMO final synthesis must not expose internal agent, routing, app, or handoff terms');
+assert.doesNotMatch(cmoLeaderFinalContent, /Landing page change packet prepared|Publish status:\s*prepared\s*\/\s*not/i, 'CMO final synthesis must not overclaim Publisher packet preparation');
+assert.doesNotMatch(JSON.stringify(cmoLeaderFinalSynthesis), /\[object Object\]/, 'CMO final synthesis must flatten object-shaped summary and next action fields');
+assert.equal(cmoLeaderFinalSynthesis.report?.leader_evaluation_required, true, 'CMO final report should mark LLM leader evaluation as required');
+assert.equal(cmoLeaderFinalSynthesis.report?.publisher_ingest_verified, false, 'CMO final report should not claim Publisher ingest without proof');
+assert.equal(cmoLeaderFinalSynthesis.files?.[0]?.content_type, 'cmo_leader_delivery', 'CMO final file should be typed as leader delivery, not an already-created publish packet');
+const cmoLeaderPublisherArtifact = cmoLeaderFinalSynthesis.report?.artifacts?.[0];
+assert.equal(cmoLeaderPublisherArtifact?.surface, 'publisher', 'CMO final synthesis should emit a Publisher artifact');
+assert.equal(cmoLeaderPublisherArtifact?.action_type, 'site_publish_packet', 'CMO final Publisher artifact should use site_publish_packet');
+assert.equal(cmoLeaderPublisherArtifact?.metadata?.ingest_status, 'not_ingested', 'CMO final Publisher artifact must say it is not ingested');
+assert.equal(cmoLeaderPublisherArtifact?.metadata?.publish_status, 'not_published', 'CMO final Publisher artifact must say it is not published');
+assert.match(cmoLeaderPublisherArtifact?.body || '', /H1:\s*AI agent marketplace for developers/i, 'CMO final Publisher artifact should carry selected specialist H1 copy');
+assert.match(cmoLeaderPublisherArtifact?.body || '', /Meta description:\s*Compare AI agents/i, 'CMO final Publisher artifact should carry selected specialist meta copy');
 
-const cmoFinalSummaryPayload = sampleAgentPayload('cmo_leader', {
-  prompt: 'CMO leader: continue customer acquisition for https://aiagent-marketplace.net through execution.',
-  input: {
-    _broker: {
-      workflow: {
-        sequencePhase: 'final_summary',
-        leaderHandoff: {
-          priorRuns: [
-            {
-              taskType: 'research',
-              status: 'completed',
-              summary: 'Research found comparison-intent SEO as the first acquisition lane.',
-              bullets: ['Comparison queries are closer to signup intent.'],
-              files: [{ name: 'research-delivery.md', content: '# Research\n\nComparison SEO first.' }]
-            },
-            {
-              taskType: 'x_post',
-              status: 'completed',
-              summary: 'Prepared an approval-ready X post packet.',
-              bullets: ['Exact post ready.'],
-              nextAction: 'Connect X, approve, and publish the post.',
-              files: [{ name: 'x-post-pack.md', content: '# X post pack\n\nPost text: Discover and compare AI agents for engineers.' }]
-            }
-          ]
+const cmoLeaderMasamuneFinalSynthesis = await cmoLeaderFinal.provider.runJob({
+  kind: 'cmo_leader',
+  definition: cmoLeaderFinal,
+  body: {
+    prompt: [
+      'Task: cmo_leader',
+      'Goal: https://masamune.online を一般的な認知度までもっていく',
+      'Product/service: MASAMUNE - マーケティングを自動化するサービス',
+      'Target audience: 日本の中小企業、BtoB SaaS、営業/マーケ責任者',
+      'Main goal: 一般認知、指名検索、問い合わせ増加',
+      'Priority channel: Organic search / SEO + founder/community distribution',
+      'Output language: Japanese'
+    ].join('\n'),
+    output_language: 'ja',
+    input: {
+      target_url: 'https://masamune.online',
+      service_summary: 'マーケティングを自動化するサービス',
+      page_source_status: 'HTML shell only; readable page copy not supplied',
+      objective: '一般的な認知度までもっていく',
+      _broker: {
+        workflow: {
+          sequencePhase: 'final_summary',
+          leaderHandoff: {
+            priorRuns: [
+              {
+                taskType: 'data_analysis',
+                sequencePhase: 'data',
+                status: 'completed',
+                summary: 'GA4/Search Consoleは未提供。現時点ではセッション、CV、指名検索数は未確認。'
+              },
+              {
+                taskType: 'research',
+                sequencePhase: 'research',
+                status: 'completed',
+                summary: 'MASAMUNEの確認済み情報はURLと「マーケティングを自動化するサービス」。ページ本文はHTML shellのみで、具体機能・価格・導入実績は未取得。'
+              },
+              {
+                taskType: 'media_planner',
+                sequencePhase: 'planning',
+                status: 'completed',
+                summary: '優先はSEOでカテゴリ認知を取りに行き、次にX/Note/比較記事で創業者・マーケ責任者に配布。広告は計測前は後回し。'
+              },
+              {
+                taskType: 'seo_specialist',
+                sequencePhase: 'preparation',
+                status: 'completed',
+                summary: 'SEOページ案を作成。狙うテーマは「マーケティング 自動化 中小企業」「MAツール 選び方」。',
+                files: [{
+                  name: 'masamune-seo.md',
+                  content: [
+                    '# SEO page packet',
+                    '## SEO page recommendation',
+                    '- H1: マーケティング自動化を小さく始めるならMASAMUNE',
+                    '- Meta title: MASAMUNE - 中小企業向けマーケティング自動化',
+                    '- Meta description: 見込み客管理、フォローアップ、効果測定を自動化するMASAMUNEの導入判断ページ。',
+                    '## Replacement copy',
+                    'Headline: マーケティングの手作業を、売上につながる自動化へ。',
+                    'Primary CTA: 無料相談を予約'
+                  ].join('\n')
+                }]
+              },
+              {
+                taskType: 'landing',
+                sequencePhase: 'preparation',
+                status: 'completed',
+                summary: 'ファーストビューは「誰向け」「何を自動化」「導入後の次アクション」を明確化。実績は未提供のため成果数値は使わない。'
+              },
+              {
+                taskType: 'reddit',
+                sequencePhase: 'preparation',
+                status: 'completed',
+                summary: 'コミュニティ投稿は宣伝ではなく、マーケ自動化の失敗パターン共有からMASAMUNEの文脈へつなげる。'
+              },
+              {
+                taskType: 'list_creator',
+                sequencePhase: 'preparation',
+                status: 'blocked',
+                summary: '公開ソース条件と対象企業リストが未提供のため、営業先リストは作成不可。'
+              }
+            ]
+          }
         }
       }
     }
-  }
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: cmoLeaderFinal.manifest
 });
-assert.equal(cmoFinalSummaryPayload.report.summary, 'CMO execution delivery');
-assert.ok(cmoFinalSummaryPayload.files[0].content.includes('cmo team leader execution delivery'));
-assert.ok(cmoFinalSummaryPayload.files[0].content.includes('Execution status'));
-assert.ok(cmoFinalSummaryPayload.files[0].content.includes('x_post'));
-assert.ok(cmoFinalSummaryPayload.files[0].content.includes('Discover and compare AI agents for engineers'));
-assert.ok(cmoFinalSummaryPayload.files[0].content.includes('supporting-specialist-deliverables.md'));
-assert.ok(!cmoFinalSummaryPayload.files[0].content.includes('Specialist outputs are not attached'));
-assert.ok(!/\bTBD\b|not attached|not connected|最終納品ではありません/i.test(cmoFinalSummaryPayload.files[0].content));
-assert.equal(cmoFinalSummaryPayload.files[0].content_type, 'report_bundle');
-assert.equal(cmoFinalSummaryPayload.files[0].execution_candidate, true);
+const cmoLeaderMasamuneContent = cmoLeaderMasamuneFinalSynthesis.files?.[0]?.content || '';
+assert.match(cmoLeaderMasamuneContent, /# 認知拡大プラン|## 先に結論/, 'Masamune CMO final synthesis should be a Japanese awareness plan');
+assert.match(cmoLeaderMasamuneContent, /確認済みの事実[\s\S]*MASAMUNE/, 'Masamune CMO final synthesis should carry the user-supplied service fact');
+assert.match(cmoLeaderMasamuneContent, /情報ソースの充足状況[\s\S]*HTML shell|情報ソースの充足状況[\s\S]*未提供/, 'Masamune CMO final synthesis should expose source limitations');
+assert.match(cmoLeaderMasamuneContent, /優先診断[\s\S]*SEOページ作成/, 'Masamune CMO final synthesis should name the first reviewable lane');
+assert.match(cmoLeaderMasamuneContent, /チャネル優先順位[\s\S]*SEO|チャネル優先順位[\s\S]*自社ページ/, 'Masamune CMO final synthesis should include a channel priority table');
+assert.doesNotMatch(cmoLeaderMasamuneContent, /seo_specialist|data_analysis|media_planner|list_creator|Publisher\/SaaS|site_publish_packet|External app ingest/i, 'Masamune CMO final synthesis must stay user-facing');
+const cmoLeaderMasamuneArtifact = cmoLeaderMasamuneFinalSynthesis.report?.artifacts?.[0];
+assert.match(cmoLeaderMasamuneArtifact?.body || '', /H1:\s*マーケティング自動化を小さく始めるならMASAMUNE/, 'Masamune Publisher artifact should carry the selected H1');
+assert.match(cmoLeaderMasamuneArtifact?.body || '', /Meta description:\s*見込み客管理/, 'Masamune Publisher artifact should carry selected meta description');
+assert.match(cmoLeaderMasamuneArtifact?.body || '', /Primary CTA:\s*無料相談を予約/, 'Masamune Publisher artifact should carry the selected CTA');
 
-const ctoPayload = sampleAgentPayload('cto_leader', {
-  prompt: 'Act as CTO and review architecture, security, and rollout.'
-});
-assert.equal(ctoPayload.report.summary, 'CTO Team Leader delivery');
-assert.ok(ctoPayload.report.bullets.some((item) => item.includes('execution lane') || item.includes('実行レーン')));
-assert.ok(ctoPayload.files[0].content.includes('System snapshot and constraints'));
-assert.ok(ctoPayload.files[0].content.includes('Tradeoff table'));
-assert.ok(ctoPayload.files[0].content.includes('Chosen technical path'));
-assert.ok(ctoPayload.files[0].content.includes('Specialist dispatch packets'));
-assert.ok(ctoPayload.files[0].content.includes('Validation gate'));
-assert.ok(ctoPayload.files[0].content.includes('Rollout packet'));
-assert.ok(ctoPayload.files[0].content.includes('Monitoring and rollback'));
-assert.ok(ctoPayload.files[0].content.includes('Open blockers'));
-assert.ok(ctoPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('dispatch packets') || step.includes('dispatch packet')));
-assert.ok(ctoPayload.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('broad rewrite')));
-
-const cpoPayload = sampleAgentPayload('cpo_leader', {
-  prompt: 'Act as CPO and prioritize the roadmap.'
-});
-assert.equal(cpoPayload.report.summary, 'CPO Team Leader delivery');
-
-const cfoPayload = sampleAgentPayload('cfo_leader', {
-  prompt: 'Act as CFO and review unit economics.'
-});
-assert.equal(cfoPayload.report.summary, 'CFO Team Leader delivery');
-
-const legalPayload = sampleAgentPayload('legal_leader', {
-  prompt: 'Act as legal leader and review terms and privacy risks.'
-});
-assert.equal(legalPayload.report.summary, 'Legal Team Leader delivery');
-
-const xPayload = sampleAgentPayload('x_post', {
-  prompt: 'Create X posts for an AI agent marketplace launch.'
-});
-assert.equal(xPayload.report.summary, 'X Ops Connector delivery');
-assert.ok(xPayload.files[0].content.includes('Short posts'));
-assert.ok(xPayload.files[0].content.includes('Leader handoff packet'));
-assert.ok(xPayload.files[0].content.includes('approval'));
-const extractedXPost = extractSocialPostTextFromDeliveryContent(xPayload.files[0].content, { maxLength: 280 });
-assert.ok(extractedXPost.includes('AI agent marketplace'));
-assert.ok(!/\bCAIt\b|aiagent-marketplace\.net|Work Chat|chat-first|dashboard-first|Publish your AI agent/i.test(xPayload.files[0].content));
-
-assert.ok(acquisitionAutomationPayload.files[0].content.includes('connector packet'));
-
-const emailOpsPayload = sampleAgentPayload('email_ops', {
-  prompt: 'Create a lifecycle email sequence for newly registered engineers who have not published their profile yet.'
-});
-assert.equal(emailOpsPayload.report.summary, 'Email Ops Connector delivery');
-assert.ok(emailOpsPayload.files[0].content.includes('Sequence map'));
-assert.ok(emailOpsPayload.files[0].content.includes('Leader handoff packet'));
-assert.ok(emailOpsPayload.files[0].content.includes('Send guardrail'));
-assert.ok(emailOpsPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('leader handoff packet')));
-assert.ok(emailOpsPayload.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('consent basis')));
-
-const listCreatorPayload = sampleAgentPayload('list_creator', {
-  prompt: 'Build a reviewable lead list of 50 companies for Japanese B2B SaaS teams that look under-instrumented and may need lifecycle automation help.'
-});
-assert.equal(listCreatorPayload.report.summary, 'List Creator Agent delivery');
-assert.equal(listCreatorPayload.usage.total_cost_basis, 192);
-assert.ok(listCreatorPayload.files[0].content.includes('Reviewable lead rows'));
-assert.ok(listCreatorPayload.files[0].content.includes('Estimate and batch plan'));
-assert.ok(listCreatorPayload.files[0].content.includes('requested_companies: 50'));
-assert.ok(listCreatorPayload.files[0].content.includes('50 | 3 x 20'));
-assert.ok(listCreatorPayload.files[0].content.includes('Public contact capture rules'));
-assert.ok(listCreatorPayload.files[0].content.includes('public_email_or_contact_path'));
-assert.ok(listCreatorPayload.files[0].content.includes('contact_source_url'));
-assert.ok(listCreatorPayload.files[0].content.includes('Import-ready field map'));
-assert.ok(listCreatorPayload.files[0].content.includes('next_specialist: cold_email'));
-const listCreatorOrderEstimate = listCreatorUsageEstimateForOrder({
-  task_type: 'list_creator',
-  prompt: '公開メアド付きで100社の営業先リストを作る'
-});
-assert.equal(listCreatorOrderEstimate.requestedCount, 100);
-assert.equal(listCreatorOrderEstimate.batchCount, 5);
-assert.equal(listCreatorOrderEstimate.usage.total_cost_basis, 320);
-
-const coldEmailPayload = sampleAgentPayload('cold_email', {
-  prompt: 'Build a cold outbound email motion for B2B SaaS founders: define the list criteria, sender mailbox, drafts, and first send batch.'
-});
-assert.equal(coldEmailPayload.report.summary, 'Cold Email Agent delivery');
-assert.ok(coldEmailPayload.files[0].content.includes('ICP and list criteria'));
-assert.ok(coldEmailPayload.files[0].content.includes('Sender and mailbox setup'));
-assert.ok(coldEmailPayload.files[0].content.includes('Prospect list spec'));
-assert.ok(coldEmailPayload.files[0].content.includes('Conversion point'));
-assert.ok(coldEmailPayload.files[0].content.includes('Leader handoff packet'));
-assert.ok(coldEmailPayload.files[0].content.includes('Deliverability and compliance risk'));
-assert.ok(coldEmailPayload.files[0].content.includes('import_list / send_email / schedule_email'));
-assert.ok(coldEmailPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('reviewed lead queue') || step.includes('list rule')));
-assert.ok(coldEmailPayload.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('purchased lists')));
-assert.ok(coldEmailPayload.runtime.tool_strategy.source_mode.includes('public_company_sources'));
-
-const redditPayload = sampleAgentPayload('reddit', {
-  prompt: 'Create a Reddit-safe launch discussion post.'
-});
-assert.equal(redditPayload.report.summary, 'Reddit launch delivery');
-assert.ok(redditPayload.files[0].content.includes('Recommended angle'));
-
-const indiePayload = sampleAgentPayload('indie_hackers', {
-  prompt: 'Create an Indie Hackers build-in-public launch post.'
-});
-assert.equal(indiePayload.report.summary, 'Indie Hackers launch delivery');
-
-const instagramPayload = sampleAgentPayload('instagram', {
-  prompt: 'Create Instagram launch assets.'
-});
-assert.equal(instagramPayload.report.summary, 'Instagram launch delivery');
-
-const seoGapPayload = sampleAgentPayload('seo_gap', {
-  prompt: 'Find SEO content gaps for AI agent marketplace keywords.'
-});
-assert.equal(seoGapPayload.report.summary, 'SEO content gap delivery');
-assert.ok(seoGapPayload.report.bullets.some((item) => item.includes('one page that should win')));
-assert.ok(seoGapPayload.files[0].content.includes('Mode and conversion goal'));
-assert.ok(seoGapPayload.files[0].content.includes('targetUrl + keyword means rewrite'));
-assert.ok(seoGapPayload.files[0].content.includes('siteUrl + targetKeywords'));
-assert.ok(seoGapPayload.files[0].content.includes('Page map'));
-assert.ok(seoGapPayload.files[0].content.includes('Current SERP top 3'));
-assert.ok(seoGapPayload.files[0].content.includes('Approx length'));
-assert.ok(seoGapPayload.files[0].content.includes('Landing / page rewrite requirements'));
-assert.ok(seoGapPayload.files[0].content.includes('Proposal PR handoff'));
-assert.ok(seoGapPayload.files[0].content.includes('What happens after the conversion action'));
-assert.ok(seoGapPayload.files[0].content.includes('Distribution templates'));
-assert.ok(seoGapPayload.files[0].content.includes('Qiita / Zenn'));
-assert.ok(builtInSpecialistMethodForKind('cmo_leader').some((step) => step.includes('leader approval queue')));
-assert.ok(builtInSpecialistMethodForKind('cmo_leader').some((step) => step.includes('planned action table')));
-assert.ok(builtInSpecialistMethodForKind('x_post').some((step) => step.includes('approval packet')));
-assert.ok(builtInSpecialistMethodForKind('acquisition_automation').some((step) => step.includes('leader approval packet')));
-assert.ok(builtInSpecialistMethodForKind('acquisition_automation').some((step) => step.includes('connector action packets')));
-assert.ok(builtInSpecialistMethodForKind('email_ops').some((step) => step.includes('leader handoff packet')));
-assert.ok(builtInScopeBoundariesForKind('cmo_leader').some((step) => step.includes('autonomous publishing')));
-assert.ok(builtInScopeBoundariesForKind('x_post').some((step) => step.includes('posting authority')));
-assert.ok(builtInScopeBoundariesForKind('email_ops').some((step) => step.includes('connector confirmation')));
-
-const cmoLeaderSeed = DEFAULT_AGENT_SEEDS.find((seed) => seed.id === 'agent_cmo_leader_01');
-assert.ok(cmoLeaderSeed);
-assert.equal(cmoLeaderSeed.metadata.manifest.metadata.execution_mode, 'leader_mediated');
-assert.ok(cmoLeaderSeed.metadata.manifest.capabilities.includes('approval_gate'));
-assert.ok(cmoLeaderSeed.metadata.manifest.capabilities.includes('leader_approval_queue'));
-assert.equal(cmoLeaderSeed.metadata.manifest.metadata.leader_control_contract.role, 'agent_selection_handoff_review_synthesis');
-assert.ok(cmoLeaderSeed.metadata.manifest.metadata.leader_control_contract.controlLoop.includes('synthesize'));
-assert.equal(builtInExecutionPolicyForKind('cmo_leader').leader_contract.role, 'agent_selection_handoff_review_synthesis');
-assert.equal(builtInExecutionPolicyForKind('cmo_leader').trust_profile.version, 'agent-trust/v1');
-assert.equal(builtInTrustProfileForKind('x_post').level, 'approval_gated');
-assert.equal(builtInTrustProfileForKind('research').level, 'source_bound');
-assert.equal(builtInExecutionPolicyForKind('x_post').leader_contract, undefined);
-assert.equal(builtInAgentHealthPayload('cmo_leader', {}).leader_contract.version, 'leader-control/v1');
-assert.equal(builtInAgentHealthPayload('cmo_leader', {}).trust_profile.version, 'agent-trust/v1');
-assert.equal(builtInAgentHealthPayload('x_post', {}).leader_contract, null);
-
-const acquisitionSeed = DEFAULT_AGENT_SEEDS.find((seed) => seed.id === 'agent_acquisition_automation_01');
-assert.ok(acquisitionSeed);
-assert.equal(acquisitionSeed.metadata.manifest.metadata.execution_default, 'leader_mediated_flow_packet');
-assert.ok(acquisitionSeed.metadata.manifest.capabilities.includes('leader_approval_packet'));
-assert.ok(acquisitionSeed.metadata.manifest.capabilities.includes('connector_action_packet'));
-
-const mediaPlannerSeed = DEFAULT_AGENT_SEEDS.find((seed) => seed.id === 'agent_media_planner_01');
-assert.ok(mediaPlannerSeed);
-assert.ok(mediaPlannerSeed.metadata.manifest.capabilities.includes('media_priority_queue'));
-assert.equal(mediaPlannerSeed.metadata.manifest.metadata.planner_role, 'middle_agent');
-
-const xLeaderSeed = DEFAULT_AGENT_SEEDS.find((seed) => seed.id === 'agent_x_launch_01');
-assert.ok(xLeaderSeed);
-assert.equal(xLeaderSeed.metadata.manifest.metadata.leader_handoff_mode, 'leader_mediated');
-
-const emailSeed = DEFAULT_AGENT_SEEDS.find((seed) => seed.id === 'agent_email_ops_01');
-assert.ok(emailSeed);
-assert.equal(emailSeed.metadata.manifest.metadata.leader_handoff_mode, 'leader_mediated');
-assert.ok(emailSeed.metadata.manifest.capabilities.includes('email_connector_handoff'));
-
-const coldOutboundSeed = DEFAULT_AGENT_SEEDS.find((seed) => seed.id === 'agent_cold_email_01');
-assert.ok(coldOutboundSeed);
-assert.equal(coldOutboundSeed.metadata.manifest.metadata.leader_handoff_mode, 'leader_mediated');
-assert.equal(coldOutboundSeed.metadata.manifest.metadata.outreach_mode, 'b2b_cold_outbound');
-assert.equal(coldOutboundSeed.metadata.manifest.metadata.preferred_upstream_specialist, 'list_creator');
-assert.equal(coldOutboundSeed.metadata.manifest.metadata.secondary_upstream_specialist, 'writer');
-assert.ok(coldOutboundSeed.metadata.manifest.capabilities.includes('reviewed_lead_queue'));
-assert.ok(coldOutboundSeed.metadata.manifest.capabilities.includes('conversion_tracking'));
-
-const xLinks = agentLinksFromRecord(xSeed, { catalog: DEFAULT_AGENT_SEEDS });
-assert.equal(xLinks.layer, 'execution');
-assert.equal(xLinks.role, 'x_publish_executor');
-assert.ok(xLinks.upstream.task_types.includes('writing'));
-assert.ok(xLinks.upstream.resolved.some((item) => item.id === 'agent_writer_01'));
-
-const customXAgentLinks = agentLinksFromRecord({
-  id: 'custom_x_agent',
-  name: 'Custom X Publisher',
-  description: 'Publishes approved X posts',
-  taskTypes: ['x_post'],
-  metadata: {
-    tags: ['social', 'x'],
-    manifest: {
-      metadata: {
-        tags: ['social', 'x']
+const cmoLeaderCheckpointSynthesis = await cmoLeaderFinal.provider.runJob({
+  kind: 'cmo_leader',
+  definition: cmoLeaderFinal,
+  body: {
+    prompt: 'CMO checkpoint for https://aiagent-marketplace.net after research. Answer in English.',
+    output_language: 'en',
+    input: {
+      _broker: {
+        workflow: {
+          sequencePhase: 'checkpoint',
+          leaderHandoff: {
+            priorRuns: [
+              { taskType: 'data_analysis', sequencePhase: 'data', status: 'completed', summary: 'Analytics context loaded.' },
+              { taskType: 'research', sequencePhase: 'research', status: 'completed', summary: 'Research found proof and comparison intent.', webSources: [{ title: 'Target service', url: 'https://aiagent-marketplace.net/' }] }
+            ]
+          }
+        }
       }
     }
-  }
-}, { catalog: DEFAULT_AGENT_SEEDS });
-assert.ok(customXAgentLinks.upstream.task_types.includes('writing'));
-assert.ok(customXAgentLinks.upstream.resolved.some((item) => item.id === 'agent_writer_01'));
-
-assert.ok(seoGapPayload.files[0].content.includes('Community post'));
-assert.ok(seoGapPayload.files[0].content.includes('Primary conversion goal'));
-assert.ok(seoGapPayload.files[0].content.includes('E-E-A-T'));
-assert.ok(seoGapPayload.files[0].content.includes('Meta description'));
-assert.ok(seoGapPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('keyword cluster')));
-assert.ok(seoGapPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('H1/H2/H3')));
-assert.ok(seoGapPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('signup')));
-assert.ok(seoGapPayload.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('generic SEO advice')));
-assert.ok(seoGapPayload.runtime.delivery_policy.cost_control_policy.includes('one page/keyword target'));
-assert.equal(seoGapPayload.runtime.tool_strategy.source_mode, 'current_serp_top_results_fetch_top_competitors_and_keyword_intent');
-const seoGapSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_seogap_01');
-assert.ok(seoGapSeed?.description.includes('PR-ready'));
-assert.ok(seoGapSeed?.metadata?.manifest?.metadata?.optional_connectors?.includes('google_search_console'));
-assert.ok(seoGapSeed?.metadata?.manifest?.capabilities?.includes('proposal_pr_handoff'));
-
-const citationSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_citation_ops_01');
-assert.equal(citationSeed?.name, 'MEO AGENT');
-assert.ok(citationSeed?.description.includes('MEO'));
-assert.ok(citationSeed?.metadata?.manifest?.capabilities?.includes('citation_queue'));
-
-const dataAnalysisPayload = sampleAgentPayload('data_analysis', {
-  prompt: 'Analyze launch traffic, chat starts, draft orders, and payments.'
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: cmoLeaderFinal.manifest
 });
-assert.equal(dataAnalysisPayload.report.summary, 'Data analysis delivery');
-assert.ok(dataAnalysisPayload.report.bullets.some((item) => item.includes('GA4')));
-assert.ok(dataAnalysisPayload.files[0].content.includes('Connected data sources'));
-assert.ok(dataAnalysisPayload.files[0].content.includes('Connector gaps'));
-assert.ok(dataAnalysisPayload.files[0].content.includes('Event taxonomy'));
-assert.ok(dataAnalysisPayload.files[0].content.includes('GA4 report spec'));
-assert.ok(dataAnalysisPayload.files[0].content.includes('Search Console report spec'));
-assert.ok(dataAnalysisPayload.files[0].content.includes('Internal and billing report spec'));
-assert.ok(dataAnalysisPayload.files[0].content.includes('Segment and cohort readout'));
-assert.ok(dataAnalysisPayload.files[0].content.includes('conversion_completed'));
-assert.ok(dataAnalysisPayload.files[0].content.includes('Do not run a 3-channel x 3-message test until the above events are connected'));
-assert.ok(dataAnalysisPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('GA4')));
-assert.ok(dataAnalysisPayload.runtime.delivery_policy.specialist_method.some((step) => step.includes('denominators')));
-assert.ok(dataAnalysisPayload.runtime.delivery_policy.scope_boundaries.some((step) => step.includes('channel recommendations')));
-assert.ok(dataAnalysisPayload.runtime.delivery_policy.cost_control_policy.includes('query/report spec'));
-assert.equal(dataAnalysisPayload.runtime.tool_strategy.source_mode, 'connected_ga4_search_console_internal_events_billing_logs_and_uploaded_datasets');
-const dataAnalysisSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_data_analysis_01');
-assert.ok(dataAnalysisSeed?.description.includes('GA4'));
-assert.ok(dataAnalysisSeed?.metadata?.manifest?.metadata?.analytics_sources?.includes('google_search_console'));
+assertUserFacingDelivery(cmoLeaderCheckpointSynthesis, 'cmo_leader checkpoint synthesis', [
+  /Checkpoint reviewed/i,
+  /Next owner/i
+]);
+const cmoLeaderCheckpointContent = cmoLeaderCheckpointSynthesis.files?.[0]?.content || '';
+assert.doesNotMatch(cmoLeaderCheckpointContent, /Publisher\/SaaS handoff|site_publish_packet/i, 'CMO checkpoint before preparation must not pretend Publisher handoff is ready');
+assert.match(cmoLeaderCheckpointContent, /media_planner|planning/i, 'CMO checkpoint after research should choose planning as the next owner');
+assert.match(cmoLeaderCheckpointContent, /specialist|prior|synthesis|evidence|統合|専門成果物/i, 'CMO checkpoint should explicitly mention specialist synthesis so adaptive release gates can verify handoff use');
 
-const hiringPayload = sampleAgentPayload('hiring', {
-  prompt: '最初のプロダクトデザイナー採用JDを作りたい'
-});
-assert.equal(hiringPayload.report.summary, '採用JD結果');
-
-assert.equal(inferTaskType('', 'Create a pricing strategy for a new AI SaaS product'), 'pricing');
-assert.equal(inferTaskType('', 'I want more users and more revenue from Product Hunt and Indie Hackers'), 'growth');
-assert.equal(inferTaskType('', '集客自動化の流れを作ってCRM連携まで設計して'), 'acquisition_automation');
-assert.equal(inferTaskType('media_planner', ''), 'media_planner');
-assert.equal(inferTaskType('', 'ホームページURLと業種を見て、どの掲載媒体が合うか決めて'), 'media_planner');
-assert.equal(inferTaskType('meo', ''), 'citation_ops');
-assert.equal(inferTaskType('', 'GBPとサイテーションの整備をやりたい'), 'citation_ops');
-assert.equal(inferTaskType('', '公開情報ベースで営業先リストを作りたい'), 'list_creator');
-assert.equal(inferTaskType('', 'コールドメールのリスト作成から送信まで設計したい'), 'cold_email');
-assert.equal(inferTaskType('', '登録後のステップメールを作って配信設計したい'), 'email_ops');
-assert.ok(inferTaskSequence('cmo_leader', 'CMOとしてコールドメールも含めた獲得施策を設計して', { maxTasks: 8 }).includes('cold_email'));
-const cmoColdEmailSequence = inferTaskSequence('cmo_leader', 'CMOとしてコールドメールも含めた獲得施策を設計して', { maxTasks: 8 });
-assert.ok(cmoColdEmailSequence.includes('list_creator'));
-assert.ok(cmoColdEmailSequence.indexOf('list_creator') < cmoColdEmailSequence.indexOf('cold_email'));
-const xSequence = inferTaskSequence('x_post', 'Xで告知投稿を作って承認後に投稿したい', { maxTasks: 4 });
-assert.ok(xSequence.includes('writing'));
-assert.ok(xSequence.includes('x_post'));
-assert.ok(xSequence.indexOf('writing') < xSequence.indexOf('x_post'));
-const launchSequence = inferTaskSequence('cmo_leader', '1告知でX Reddit Indie Hackers Instagramまでまとめて作って投稿準備したい', { maxTasks: 14 });
-assert.ok(launchSequence.includes('writing'));
-assert.ok(launchSequence.includes('x_post'));
-assert.ok(launchSequence.indexOf('writing') < launchSequence.indexOf('x_post'));
-assert.ok(inferTaskSequence('cmo_leader', 'CMOとしてホームページを見て最適な掲載媒体とGBPまで決めて', { maxTasks: 8 }).includes('media_planner'));
-assert.ok(inferTaskSequence('cmo_leader', 'CMOとしてホームページを見て最適な掲載媒体とGBPまで決めて', { maxTasks: 8 }).includes('research'));
-assert.ok(inferTaskSequence('cmo_leader', 'CMOとしてホームページを見て最適な掲載媒体とGBPまで決めて', { maxTasks: 8 }).includes('citation_ops'));
-assert.equal(inferTaskType('', '無料掲載できる媒体をリスト化して一気に掲載したい'), 'directory_submission');
-assert.equal(inferTaskType('', '広告費なしでWeb周りの無料施策を全部やってほしい'), 'cmo_leader');
-assert.equal(inferTaskType('', '1告知でX Reddit Indie Hackers Instagramまでまとめて作りたい'), 'cmo_leader');
-assert.equal(inferTaskType('', 'CTOとしてアーキテクチャを見て'), 'cto_leader');
-assert.equal(inferTaskType('', 'CFOとしてユニットエコノミクスを確認して'), 'cfo_leader');
-assert.equal(inferTaskType('', '法務部長として規約リスクを見て'), 'legal_leader');
-assert.equal(inferTaskType('', '社長秘書としてメール返信と日程調整をして'), 'secretary_leader');
-assert.equal(inferTaskType('', 'Zoomで会議設定と日程調整をしてください'), 'schedule_coordination');
-assert.equal(inferTaskType('', 'メール返信案を作って承認後に送れる形にして'), 'reply_draft');
-assert.equal(inferTaskType('', 'Give me a competitor teardown for Linear vs Jira'), 'teardown');
-assert.equal(inferTaskType('', 'Review this landing page and improve the CTA'), 'landing');
-assert.equal(inferTaskType('', 'Draft a hiring JD for our founding engineer'), 'hiring');
-assert.equal(inferTaskType('', 'この依頼文をブラッシュアップして足りない情報をヒアリングして'), 'prompt_brushup');
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'PROMPT BRUSHUP AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'PRICING STRATEGY AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'GROWTH OPERATOR AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'DIRECTORY SUBMISSION AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'ACQUISITION AUTOMATION AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'MEDIA PLANNER AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'MEO AGENT'));
-assert.ok(!DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'FREE WEB GROWTH TEAM'));
-assert.ok(!DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'LAUNCH TEAM LEADER'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'RESEARCH TEAM LEADER'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'BUILD TEAM LEADER'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'CMO TEAM LEADER'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'CTO TEAM LEADER'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'CPO TEAM LEADER'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'CFO TEAM LEADER'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'LEGAL TEAM LEADER'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'EXECUTIVE SECRETARY LEADER'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'INBOX TRIAGE AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'REPLY DRAFT AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'SCHEDULE COORDINATION AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'FOLLOW-UP AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'MEETING PREP AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'MEETING NOTES AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'X OPS CONNECTOR AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'EMAIL OPS CONNECTOR AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'COLD EMAIL AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'REDDIT LAUNCH AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'INDIE HACKERS LAUNCH AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'INSTAGRAM LAUNCH AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.some((agent) => agent.name === 'DATA ANALYSIS AGENT'));
-assert.ok(DEFAULT_AGENT_SEEDS.length >= 30);
-
-const secretarySequence = inferTaskSequence('secretary_leader', '社長秘書としてメール返信とZoomの日程調整を承認制で進めて', { maxTasks: 7 });
-assert.equal(secretarySequence[0], 'secretary_leader');
-assert.ok(secretarySequence.includes('inbox_triage'));
-assert.ok(secretarySequence.includes('reply_draft'));
-assert.ok(secretarySequence.includes('schedule_coordination'));
-assert.ok(secretarySequence.indexOf('inbox_triage') < secretarySequence.indexOf('reply_draft'));
-assert.ok(secretarySequence.indexOf('inbox_triage') < secretarySequence.indexOf('schedule_coordination'));
-const secretarySeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_secretary_leader_01');
-const scheduleSeed = DEFAULT_AGENT_SEEDS.find((agent) => agent.id === 'agent_schedule_coordination_01');
-assert.ok(secretarySeed);
-assert.ok(scheduleSeed);
-assert.ok((secretarySeed.metadata?.manifest?.metadata?.downstream_task_types || []).includes('schedule_coordination'));
-assert.ok((scheduleSeed.metadata?.manifest?.metadata?.optional_connectors || []).includes('zoom'));
-assert.ok((scheduleSeed.metadata?.manifest?.metadata?.optional_connectors || []).includes('microsoft_teams'));
-assert.ok((scheduleSeed.metadata?.manifest?.capabilities || []).includes('meeting_link_handoff'));
-const secretaryLinks = agentLinksFromRecord(secretarySeed, { catalog: DEFAULT_AGENT_SEEDS });
-assert.ok(secretaryLinks.downstream.resolved.some((item) => item.id === 'agent_inbox_triage_01'));
-assert.ok(secretaryLinks.downstream.resolved.some((item) => item.id === 'agent_schedule_coordination_01'));
-const secretaryPayload = sampleAgentPayload('secretary_leader', {
-  prompt: 'Act as an executive secretary. Draft replies and coordinate a Zoom or Teams meeting.',
-  output_language: 'en'
-});
-assert.equal(secretaryPayload.report.summary, 'Executive Secretary Leader delivery');
-assert.ok(secretaryPayload.files[0].content.includes('Zoom'));
-assert.ok(secretaryPayload.files[0].content.includes('Microsoft Teams'));
-assert.ok(/approval/i.test(secretaryPayload.files[0].content));
-
-for (const kind of BUILT_IN_KINDS) {
-  const payload = sampleAgentPayload(kind, { prompt: 'QA sample. Answer in English.', output_language: 'en' });
-  const executionPolicy = builtInExecutionPolicyForKind(kind);
-  const toolStrategy = builtInToolStrategyForKind(kind);
-  const specialistMethod = builtInSpecialistMethodForKind(kind);
-  const scopeBoundaries = builtInScopeBoundariesForKind(kind);
-  const freshnessPolicy = builtInFreshnessPolicyForKind(kind);
-  const sensitiveDataPolicy = builtInSensitiveDataPolicyForKind(kind);
-  const costControlPolicy = builtInCostControlPolicyForKind(kind);
-  const trustProfile = builtInTrustProfileForKind(kind);
-  assert.ok(executionPolicy.depth_policy.length > 40, `${kind} should have response depth policy`);
-  assert.ok(executionPolicy.concision_rule.length > 40, `${kind} should have concision rule`);
-  assert.equal(executionPolicy.trust_profile.version, 'agent-trust/v1', `${kind} should have trust profile`);
-  assert.equal(trustProfile.version, 'agent-trust/v1', `${kind} direct trust profile should be versioned`);
-  assert.ok(trustProfile.score >= 80, `${kind} trust profile should have a usable score`);
-  assert.ok(freshnessPolicy.length > 70, `${kind} should have a specific freshness policy`);
-  assert.ok(sensitiveDataPolicy.length > 80, `${kind} should have a specific sensitive data policy`);
-  assert.ok(costControlPolicy.length > 70, `${kind} should have a specific cost control policy`);
-  assert.ok(Array.isArray(specialistMethod), `${kind} should have specialist method`);
-  assert.ok(specialistMethod.length >= 3, `${kind} should have at least three specialist method steps`);
-  assert.ok(specialistMethod.every((step) => step.length > 30), `${kind} specialist method steps should be specific`);
-  assert.ok(Array.isArray(scopeBoundaries), `${kind} should have scope boundaries`);
-  assert.ok(scopeBoundaries.length >= 3, `${kind} should have at least three scope boundaries`);
-  assert.ok(scopeBoundaries.every((step) => step.length > 30), `${kind} scope boundaries should be specific`);
-  assert.ok(['default', 'when_current', 'provided_only', 'never'].includes(toolStrategy.web_search), `${kind} should have a valid web search mode`);
-  assert.ok(toolStrategy.source_mode.length > 8, `${kind} should define source mode`);
-  assert.ok(toolStrategy.note.length > 40, `${kind} should define tool strategy note`);
-  assert.equal(payload.runtime.delivery_policy.depth_policy, executionPolicy.depth_policy, `${kind} fallback runtime should expose depth policy`);
-  assert.equal(payload.runtime.delivery_policy.concision_rule, executionPolicy.concision_rule, `${kind} fallback runtime should expose concision rule`);
-  assert.equal(payload.runtime.delivery_policy.freshness_policy, freshnessPolicy, `${kind} fallback runtime should expose freshness policy`);
-  assert.equal(payload.runtime.delivery_policy.sensitive_data_policy, sensitiveDataPolicy, `${kind} fallback runtime should expose sensitive data policy`);
-  assert.equal(payload.runtime.delivery_policy.cost_control_policy, costControlPolicy, `${kind} fallback runtime should expose cost control policy`);
-  assert.deepEqual(payload.runtime.delivery_policy.specialist_method, specialistMethod, `${kind} fallback runtime should expose specialist method`);
-  assert.deepEqual(payload.runtime.delivery_policy.scope_boundaries, scopeBoundaries, `${kind} fallback runtime should expose scope boundaries`);
-  assert.deepEqual(payload.runtime.delivery_policy.trust_profile, trustProfile, `${kind} fallback runtime should expose trust profile`);
-  assert.deepEqual(payload.runtime.tool_strategy, toolStrategy, `${kind} fallback runtime should expose tool strategy`);
-  assert.ok(payload.files[0].content.includes('## Trust and quality assurance'), `${kind} fallback delivery should include trust and QA`);
-  if (kind === 'cmo_leader') {
-    assert.ok(payload.files[0].content.includes('## Answer first'), 'cmo_leader fallback should be a concrete delivery');
-    assert.ok(!payload.files[0].content.includes('## Output contract'), 'cmo_leader fallback should not expose output-contract boilerplate');
-    assert.ok(!payload.files[0].content.includes('first lane: the one media lane'), 'cmo_leader fallback should not contain placeholders');
-    continue;
-  }
-  assert.ok(payload.files[0].content.includes('## First move'), `${kind} fallback delivery should include first move`);
-  assert.ok(payload.files[0].content.includes('## Output contract'), `${kind} fallback delivery should include output contract`);
-  assert.ok(payload.files[0].content.includes('## Evidence policy'), `${kind} fallback delivery should include evidence policy`);
-  assert.ok(payload.files[0].content.includes('## Confidence rubric'), `${kind} fallback delivery should include confidence rubric`);
-  assert.ok(payload.files[0].content.includes('## Prioritization rubric'), `${kind} fallback delivery should include prioritization rubric`);
-  assert.ok(payload.files[0].content.includes('## Inputs to confirm'), `${kind} fallback delivery should include input needs`);
-  assert.ok(payload.files[0].content.includes('## Assumption policy'), `${kind} fallback delivery should include assumption policy`);
-  assert.ok(payload.files[0].content.includes('## Clarify or escalate when'), `${kind} fallback delivery should include escalation triggers`);
-  assert.ok(payload.files[0].content.includes('## Minimum blocker questions'), `${kind} fallback delivery should include minimum questions`);
-  assert.ok(payload.files[0].content.includes('## Acceptance checks'), `${kind} fallback delivery should include acceptance checks`);
-  assert.ok(payload.files[0].content.includes('## Failure modes to avoid'), `${kind} fallback delivery should include failure modes`);
-  assert.ok(payload.files[0].content.includes('## Handoff artifacts'), `${kind} fallback delivery should include handoff artifacts`);
-  assert.ok(payload.files[0].content.includes('## Measurement signals'), `${kind} fallback delivery should include measurement signals`);
-  assert.ok(payload.files[0].content.includes('## Next action pattern'), `${kind} fallback delivery should include next action pattern`);
-  assert.ok(payload.files[0].content.includes('## Final review checks'), `${kind} fallback delivery should include final review checks`);
-  assert.ok(payload.files[0].content.includes('## Quality checks'), `${kind} fallback delivery should include quality checks`);
-}
-
-const expectedModelTiers = {
-  prompt_brushup: 'cheap',
-  research: 'standard',
-  writer: 'standard',
-  code: 'code',
-  pricing: 'standard',
-  teardown: 'standard',
-  landing: 'standard',
-  validation: 'standard',
-  growth: 'standard',
-  acquisition_automation: 'standard',
-  media_planner: 'standard',
-  list_creator: 'standard',
-  email_ops: 'standard',
-  cold_email: 'standard',
-  directory_submission: 'standard',
-  citation_ops: 'standard',
-  research_team_leader: 'standard',
-  build_team_leader: 'code',
-  cmo_leader: 'standard',
-  cto_leader: 'code',
-  cpo_leader: 'standard',
-  cfo_leader: 'reasoning',
-  legal_leader: 'reasoning',
-  secretary_leader: 'standard',
-  inbox_triage: 'standard',
-  reply_draft: 'standard',
-  schedule_coordination: 'standard',
-  follow_up: 'standard',
-  meeting_prep: 'standard',
-  meeting_notes: 'standard',
-  instagram: 'cheap',
-  x_post: 'cheap',
-  reddit: 'cheap',
-  indie_hackers: 'cheap',
-  data_analysis: 'standard',
-  seo_gap: 'standard',
-  hiring: 'cheap',
-  diligence: 'reasoning'
-};
-
-const expectedWebSearchModes = {
-  prompt_brushup: 'provided_only',
-  research: 'default',
-  writer: 'when_current',
-  code: 'when_current',
-  pricing: 'default',
-  teardown: 'default',
-  landing: 'default',
-  validation: 'when_current',
-  growth: 'default',
-  acquisition_automation: 'default',
-  media_planner: 'default',
-  list_creator: 'default',
-  email_ops: 'default',
-  cold_email: 'default',
-  directory_submission: 'default',
-  citation_ops: 'default',
-  research_team_leader: 'default',
-  build_team_leader: 'default',
-  cmo_leader: 'default',
-  cto_leader: 'default',
-  cpo_leader: 'default',
-  cfo_leader: 'default',
-  legal_leader: 'default',
-  secretary_leader: 'when_current',
-  inbox_triage: 'never',
-  reply_draft: 'never',
-  schedule_coordination: 'when_current',
-  follow_up: 'never',
-  meeting_prep: 'never',
-  meeting_notes: 'never',
-  instagram: 'default',
-  x_post: 'default',
-  reddit: 'default',
-  indie_hackers: 'default',
-  data_analysis: 'when_current',
-  seo_gap: 'default',
-  hiring: 'when_current',
-  diligence: 'default'
-};
-
-assert.deepEqual([...Object.keys(expectedWebSearchModes)].sort(), [...BUILT_IN_KINDS].sort());
-for (const kind of BUILT_IN_KINDS) {
-  assert.equal(builtInModelTierForKind(kind), expectedModelTiers[kind], `${kind} should have an explicit optimized model tier`);
-  assert.equal(builtInToolStrategyForKind(kind).web_search, expectedWebSearchModes[kind], `${kind} should have an explicit tool strategy`);
-}
-
-assert.deepEqual(
-  builtInModelRoutingForKind({
-    cheapModel: 'gpt-5.4-nano',
-    standardModel: 'gpt-5.4-mini',
-    reasoningModel: 'gpt-5.4-mini',
-    codeModel: 'gpt-5.4-mini',
-    heavyModel: 'gpt-5.4',
-    kindModelOverrides: {}
-  }, 'prompt_brushup'),
-  { model: 'gpt-5.4-nano', tier: 'cheap', source: 'tier_cheap' }
-);
-assert.deepEqual(
-  builtInModelRoutingForKind({
-    cheapModel: 'gpt-5.4-nano',
-    standardModel: 'gpt-5.4-mini',
-    reasoningModel: 'gpt-5.4-mini',
-    codeModel: 'gpt-5.4-mini',
-    heavyModel: 'gpt-5.4',
-    kindModelOverrides: { cfo_leader: 'gpt-5.4' }
-  }, 'cfo_leader'),
-  { model: 'gpt-5.4', tier: 'reasoning', source: 'kind_override' }
-);
-assert.deepEqual(
-  builtInModelRoutingForKind({
-    cheapModel: 'gpt-5.4-nano',
-    standardModel: 'gpt-5.4-mini',
-    reasoningModel: 'gpt-5.4-mini',
-    codeModel: 'gpt-5.4-mini',
-    heavyModel: 'gpt-5.4',
-    kindModelOverrides: {}
-  }, 'research', {
-    prompt: 'Compare five competitors, derive positioning, propose a GTM narrative, identify risks and trade-offs, and produce a decision memo with acceptance criteria.\n\nInclude architecture implications, pricing, SEO, and launch sequencing.',
+const teardown = sampleAgentDefinitionForKind('teardown');
+const sourceRequiredTeardown = await teardown.provider.runJob({
+  kind: 'teardown',
+  definition: teardown,
+  body: {
+    prompt: 'Teardown https://autowifi-travel.com/en/guide/airalo-vs-holafly using the attached source context. Answer in English.',
+    output_language: 'en',
     input: {
-      urls: ['https://a.example', 'https://b.example', 'https://c.example'],
-      files: [
-        { name: 'notes-1.md', content: 'x'.repeat(2600) },
-        { name: 'notes-2.md', content: 'y'.repeat(1800) }
-      ]
+      _broker: {
+        workflow: {
+          forceWebSearch: true,
+          sequencePhase: 'research'
+        }
+      }
     }
-  }),
-  { model: 'gpt-5.4', tier: 'standard', source: 'complexity_heavy' }
+  },
+  source: {},
+  manifest: teardown.manifest
+});
+assertMissingConcreteDelivery(sourceRequiredTeardown, 'source-required non-research teardown');
+
+const writer = sampleAgentDefinitionForKind('writer');
+const sourceBackedWriter = await writer.provider.runJob({
+  kind: 'writer',
+  definition: writer,
+  body: {
+    prompt: [
+      'Write a source-backed X post and blog draft for https://aiagent-marketplace.net.',
+      'Target audience: developers and technical users',
+      'Main goal: signup or trial start',
+      'X account: https://x.com/cait',
+      'Blog: https://aiagent-marketplace.net/news/demo-video-provider-flow.html'
+    ].join('\n'),
+    output_language: 'en',
+    input: {
+      files: [{
+        name: 'founder-note.md',
+        content: 'Founder note: CAIt preserves source evidence, specialist handoffs, and approval boundaries before publishing.'
+      }]
+    }
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: writer.manifest
+});
+assert.equal(sourceBackedWriter.status, 'completed');
+const writerArtifact = sourceBackedWriter.report.artifacts.find((item) => item.id === 'writer-publisher-handoff');
+assert.ok(writerArtifact, 'writer should emit a Publisher handoff artifact');
+assert.equal(writerArtifact.destination, 'X');
+assert.ok(writerArtifact.body.includes('## Publisher handoff'), 'writer Publisher artifact should include a handoff section');
+assert.ok(writerArtifact.body.includes('## Draft variants'), 'writer Publisher artifact should include per-medium draft variants');
+assert.equal(writerArtifact.publish_variants.length, 3, 'writer should emit three variants for the selected X medium');
+assert.ok(writerArtifact.body.includes('## E-E-A-T source ledger'), 'writer Publisher artifact should include an E-E-A-T source ledger');
+assert.ok(writerArtifact.body.includes('## Claim use ledger'), 'writer Publisher artifact should include a claim-use ledger');
+assert.ok(writerArtifact.body.includes('## Downstream handoff packet'), 'writer Publisher artifact should include a downstream handoff packet');
+assert.ok(writerArtifact.source_evidence.some((source) => source.source_type === 'x_post_or_account'), 'writer source evidence should preserve X source/account material');
+assert.ok(writerArtifact.source_evidence.some((source) => source.source_type === 'uploaded_file'), 'writer source evidence should preserve uploaded original notes');
+assert.ok(writerArtifact.claim_use_ledger.some((item) => /source_supplied_needs_review|approved_or_supplied|assumption/.test(item.status || '')), 'writer should expose claim-use status for downstream agents');
+assert.equal(writerArtifact.downstream_handoff.execution_status, 'handoff_prepared_not_ingested_not_published', 'writer downstream handoff should label non-execution status');
+const ownedSiteWriterArtifact = sourceBackedWriter.report.artifacts.find((item) => item.channel_key === 'owned_site');
+assert.ok(ownedSiteWriterArtifact, 'writer should emit a separate Publisher artifact when a blog/article medium is requested too');
+assert.equal(ownedSiteWriterArtifact.publish_variants.length, 3, 'writer should emit three variants for the owned site/blog medium');
+const writerDeliveryItems = deliveryItemsFromJob({
+  id: 'qa-writer-publisher',
+  status: 'completed',
+  taskType: 'writer',
+  workflowTask: 'writer',
+  workflowAgentName: 'WRITING AGENT',
+  input: { _broker: { requester: { login: 'qa-writer' } } },
+  output: sourceBackedWriter
+});
+const publisherItem = writerDeliveryItems.find((item) => item.surface === 'publisher' && item.itemType === 'x_post');
+assert.ok(publisherItem, 'writer Publisher handoff artifact should become a publisher delivery item');
+assert.ok(Array.isArray(publisherItem.metadata.source_evidence), 'publisher delivery item should preserve writer source evidence');
+assert.equal(publisherItem.metadata.publish_variants.length, 3, 'publisher delivery item should preserve three publish variants');
+assert.ok(publisherItem.metadata.eeat_notes?.trust, 'publisher delivery item should preserve E-E-A-T notes');
+assert.ok(Array.isArray(publisherItem.metadata.claim_use_ledger), 'publisher delivery item should preserve writer claim-use ledger');
+assert.equal(publisherItem.metadata.downstream_handoff?.execution_status, 'handoff_prepared_not_ingested_not_published', 'publisher delivery item should preserve writer downstream handoff status');
+const seoPublisherItem = sanitizeDeliveryItemForSurface({
+  surface: 'publisher',
+  itemType: 'publish_asset',
+  title: 'SEO SPECIALIST',
+  workflowTask: 'seo_specialist',
+  metadata: {
+    content_type: 'seo_article',
+    artifact_type: 'seo_article',
+    item_type: 'seo_article',
+    title: 'example.com SEO article'
+  },
+  body: [
+    '# SEO SPECIALIST',
+    'Canonical user brief: Product/service: https://example.com Main goal: signup trial start. Target audience: developers and technical buyers.',
+    '',
+    'Answer first: Build an SEO article around the proof-backed product workflow and keep the page grounded in the cited source URL.',
+    'Evidence used: https://example.com/pricing and customer proof notes.',
+    'Next action: Publish the reviewed article after confirmation.'
+  ].join('\n')
+});
+assert.notEqual(seoPublisherItem.title, 'SEO SPECIALIST', 'SEO specialist delivery items should not keep the generic specialist heading as the publisher title');
+assert.equal(seoPublisherItem.itemType, 'seo_article', 'SEO specialist delivery items should remain typed as SEO articles');
+assert.match(seoPublisherItem.title, /example\.com/i, 'SEO specialist delivery items should derive a publisher-facing title from the target URL');
+
+const sourceBackedResearch = await research.provider.runJob({
+  kind: 'research',
+  definition: research,
+  body: {
+    prompt: 'Research https://aiagent-marketplace.net for customer acquisition. Answer in English.',
+    output_language: 'en',
+    input: {
+      _broker: {
+        workflow: {
+          forceWebSearch: true,
+          sequencePhase: 'research'
+        }
+      }
+    }
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: research.manifest
+});
+assert.equal(sourceBackedResearch.status, 'completed');
+assert.ok(Array.isArray(sourceBackedResearch.report?.web_sources), 'search-required research must attach report.web_sources when sources are supplied');
+assert.ok(sourceBackedResearch.report.web_sources.some((item) => item.url === 'https://aiagent-marketplace.net'), 'research should carry supplied source URLs into web_sources');
+assert.ok(sourceBackedResearch.report.web_sources.some((item) => /source_collection/i.test(item.action || '')), 'research web_sources must include source collection proof');
+assert.ok(sourceBackedResearch.files?.[0]?.content?.includes('Evidence status'), 'source-backed research should expose evidence status in the artifact');
+
+const sourceContractResearch = await research.provider.runJob({
+  kind: 'research',
+  definition: research,
+  body: {
+    prompt: 'Research the attached acquisition source context. Answer in English.',
+    output_language: 'en',
+    source_collection_contract: {
+      required: true,
+      required_output_field: 'report.web_sources'
+    },
+    input: {
+      _broker: {
+        workflow: {
+          sequencePhase: 'research'
+        },
+        appContexts: [
+          {
+            source_app: 'analytics-console',
+            title: 'GA4 + Search Console',
+            summary: 'Attached Search Console context for example.com.',
+            raw_context: {
+              googleSearchConsoleSite: 'sc-domain:example.com'
+            }
+          }
+        ]
+      }
+    }
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: research.manifest
+});
+assert.equal(sourceContractResearch.status, 'completed', 'research should treat source_collection_contract as search-required and use attached connector context');
+assert.ok(sourceContractResearch.report.web_sources.some((item) => item.url === 'https://example.com/'), 'research should normalize Search Console sc-domain context into web_sources');
+const sourceContractQueryResearch = await research.provider.runJob({
+  kind: 'research',
+  definition: research,
+  body: {
+    prompt: 'Research the attached Search Console query evidence. Answer in English.',
+    output_language: 'en',
+    source_collection_contract: {
+      required: true,
+      required_output_field: 'report.web_sources'
+    },
+    input: {
+      _broker: {
+        workflow: {
+          sequencePhase: 'research'
+        },
+        appContexts: [
+          {
+            source_app: 'analytics-console',
+            title: 'GA4 + Search Console',
+            summary: 'Attached Search Console query context for example.com.',
+            artifacts: [
+              {
+                rows: [
+                  { query: 'ai agent marketplace', note: 'Search Console query row without a URL.' }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  source: { OPENAI_API_KEY: 'sk-test-openai-delivery' },
+  manifest: research.manifest
+});
+assert.equal(sourceContractQueryResearch.status, 'completed', 'research should keep Search Console query-only context usable when source collection is required');
+assert.ok(
+  sourceContractQueryResearch.report.web_sources.some((item) => item.query === 'ai agent marketplace' && item.action === 'google_search_console'),
+  'research should preserve Search Console provenance for query-only analytics-console context rows'
 );
-const promptBrushupHealth = builtInAgentHealthPayload('prompt_brushup', { OPENAI_API_KEY: 'test-key' });
-assert.equal(promptBrushupHealth.model, 'gpt-5.4-nano');
-assert.equal(promptBrushupHealth.model_tier, 'cheap');
-assert.equal(promptBrushupHealth.tool_strategy.web_search, 'provided_only');
-assert.ok(promptBrushupHealth.specialist_method.some((step) => step.includes('dispatchable brief')));
-assert.ok(promptBrushupHealth.scope_boundaries.some((step) => step.includes('underlying task')));
-assert.ok(promptBrushupHealth.freshness_policy.includes('current chat/request'));
-assert.ok(promptBrushupHealth.sensitive_data_policy.includes('pasted prompts'));
-assert.ok(promptBrushupHealth.cost_control_policy.includes('cheap planning pass'));
-assert.equal(promptBrushupHealth.trust_profile.version, 'agent-trust/v1');
-const braveHealth = builtInAgentHealthPayload('research', { BRAVE_SEARCH_API_KEY: 'test-brave-key' });
-assert.equal(braveHealth.mode, 'built_in');
-assert.equal(braveHealth.provider, 'built_in');
-assert.equal(braveHealth.search_provider, 'brave');
-assert.equal(braveHealth.trust_profile.level, 'source_bound');
-const ctoHealth = builtInAgentHealthPayload('cto_leader', { OPENAI_API_KEY: 'test-key' });
-assert.equal(ctoHealth.model, 'gpt-5.4-mini');
-assert.equal(ctoHealth.model_tier, 'code');
-assert.equal(ctoHealth.tool_strategy.web_search, 'default');
-assert.ok(ctoHealth.specialist_method.some((step) => step.includes('dispatch packets') || step.includes('rollout')));
-assert.ok(ctoHealth.scope_boundaries.some((step) => step.includes('architecture changes')));
-assert.ok(ctoHealth.freshness_policy.includes('version-sensitive'));
-assert.ok(ctoHealth.sensitive_data_policy.includes('security findings'));
-assert.ok(ctoHealth.cost_control_policy.includes('smallest reversible technical decision'));
 
-const agentDefinitionsDir = new URL('../lib/builtin-agents/agents/', import.meta.url);
-for (const fileName of readdirSync(agentDefinitionsDir).filter((name) => name.endsWith('.js'))) {
-  const source = readFileSync(new URL(fileName, agentDefinitionsDir), 'utf8');
-  assert.ok(!/for CAIt|CAIt internal|What CAIt should/i.test(source), `${fileName} must not hard-code CAIt as the user product`);
-}
+const braveSearchBefore = braveSearchCalls;
+const braveBackedResearch = await research.provider.runJob({
+  kind: 'research',
+  definition: research,
+  body: {
+    prompt: 'Research AI agent marketplace demand for founders. Answer in English.',
+    output_language: 'en',
+    input: {
+      _broker: {
+        workflow: {
+          forceWebSearch: true,
+          searchQueries: ['AI agent marketplace founder demand competitors'],
+          sequencePhase: 'research'
+        }
+      }
+    }
+  },
+  source: {
+    OPENAI_API_KEY: 'sk-test-openai-delivery',
+    BRAVE_API_KEY: 'brave-test-token'
+  },
+  manifest: research.manifest
+});
+assert.equal(braveBackedResearch.status, 'completed', 'research should collect Brave sources when search is required and Brave is configured');
+assert.ok(braveSearchCalls > braveSearchBefore, 'research should call Brave Search before OpenAI synthesis');
+assert.ok(braveBackedResearch.report.web_sources.some((item) => item.provider === 'brave_search'), 'research should expose Brave search results in report.web_sources');
+assert.ok(braveBackedResearch.report.web_sources.some((item) => item.action === 'brave_web_search'), 'research should label Brave source collection action');
 
-const genericMarketingPrompt = 'Grow bookings for Sakura Dental Clinic, a local dental clinic for families, with SEO, one social post, an email draft, and directory submissions. Goal: appointment inquiries. No paid ads.';
-const platformContaminationPattern = /\bCAIt\b|aiagent-marketplace\.net|Work Chat|chat-first|dashboard-first|Japanese-speaking engineers|agent listing signup|agent registration|Publish your AI agent|order-ready AI agent work/i;
-for (const kind of ['landing', 'growth', 'media_planner', 'email_ops', 'directory_submission', 'x_post', 'reddit', 'indie_hackers', 'instagram', 'seo_gap', 'data_analysis']) {
-  const payload = sampleAgentPayload(kind, { prompt: genericMarketingPrompt });
-  const content = payload.files?.[0]?.content || '';
-  assert.ok(content.includes('Sakura Dental Clinic') || content.includes('local dental clinic'), `${kind} should carry the user-specified product context`);
-  assert.ok(!platformContaminationPattern.test(content), `${kind} must not reuse CAIt or AI-agent-marketplace sample content for an unrelated business`);
-}
+const missingSourceResearch = await research.provider.runJob({
+  kind: 'research',
+  definition: research,
+  body: {
+    prompt: 'Research the market. Answer in English.',
+    output_language: 'en',
+    input: {
+      _broker: {
+        workflow: {
+          forceWebSearch: true,
+          sequencePhase: 'research'
+        }
+      }
+    }
+  },
+  source: {},
+  manifest: research.manifest
+});
+assert.equal(missingSourceResearch.status, 'failed', 'search-required research must fail instead of returning a generic completed delivery without sources');
+assert.match(missingSourceResearch.failure_reason, /missing_required_search_sources/);
 
-console.log('builtin-agents qa passed');
+const catalogIndex = leaderReadableAgentCatalogIndex({
+  agents: [
+    {
+      id: 'external_qa_agent',
+      name: 'External QA Agent',
+      description: 'External manifest agent for QA catalog.',
+      online: true,
+      verificationStatus: 'verified',
+      manifestSource: 'manifest-json',
+      taskTypes: ['qa_external'],
+      metadata: {
+        manifest: {
+          kind: 'external_qa',
+          name: 'External QA Agent',
+          description: 'External manifest agent for QA catalog.',
+          agent_role: 'worker',
+          task_types: ['qa_external'],
+          capabilities: ['external_check'],
+          jobEndpoint: 'https://example.test/jobs',
+          healthcheckUrl: 'https://example.test/health',
+          metadata: { tags: ['external', 'qa'] }
+        }
+      }
+    },
+    {
+      id: 'deleted_qa_agent',
+      name: 'Deleted QA Agent',
+      online: true,
+      verificationStatus: 'verified',
+      manifestSource: 'manifest-json',
+      taskTypes: ['deleted_qa'],
+      metadata: {
+        hidden_from_catalog: true,
+        deleted_at: '2026-05-14T00:00:00.000Z',
+        manifest: {
+          kind: 'deleted_qa',
+          name: 'Deleted QA Agent',
+          task_types: ['deleted_qa'],
+          jobEndpoint: 'https://example.test/deleted/jobs',
+          healthcheckUrl: 'https://example.test/deleted/health'
+        }
+      }
+    }
+  ],
+  includeInternal: true
+});
+assert.ok(catalogIndex.some((item) => item.kind === 'research' && ['internal_agent_file', 'internal_sample'].includes(item.source)), 'agent catalog should include internal agent-file manifests');
+assert.ok(catalogIndex.some((item) => item.kind === 'seo_specialist' && item.role === 'worker' && item.workflow_layer === 'preparation' && item.source === 'internal_agent_file'), 'agent catalog should include seo_specialist as a preparation specialist from its internal agent-file manifest');
+assert.equal(catalogIndex.some((item) => item.kind === 'seo_leader_agent'), false, 'agent catalog must not expose SEO as a leader agent');
+assert.ok(catalogIndex.some((item) => item.kind === 'external_qa' && item.source === 'external_manifest'), 'agent catalog should include external registered manifests');
+assert.equal(catalogIndex.some((item) => item.kind === 'deleted_qa'), false, 'agent catalog should automatically drop deleted or hidden agents');
+assert.ok(catalogIndex.every((item) => item.provider === undefined && item.manifest === undefined), 'agent catalog must stay a readable summary, not an execution surface');
+
+console.log('builtin-agents-qa passed');

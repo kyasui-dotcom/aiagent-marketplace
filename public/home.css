@@ -424,6 +424,32 @@ button.secondary-action {
   width: min(100%, 1040px);
 }
 
+.beta-free-banner {
+  width: min(100%, 820px);
+  display: grid;
+  gap: 6px;
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border: 1px solid rgba(30, 115, 89, .36);
+  border-radius: 8px;
+  background: #eef8f4;
+  color: #20352d;
+  text-align: center;
+  box-shadow: 0 10px 24px rgba(30, 115, 89, .08);
+}
+
+.beta-free-banner strong {
+  color: var(--green-dark);
+  font-size: 15px;
+  font-weight: 820;
+}
+
+.beta-free-banner span {
+  color: #36574b;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
 h1,
 h2,
 p {

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CAIt Google OAuth Demo</title>
+  <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/cait-icon.png" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="crt"></div>
+  <main class="app-shell doc-shell">
+    <header class="topbar box">
+      <div>
+        <a class="logo logo-link" href="/" aria-label="Back to CAIt start">CAIt</a>
+        <div class="sublogo">GOOGLE OAUTH DEMO</div>
+        <div class="doc-meta">OAuth consent and Google API scope usage</div>
+      </div>
+      <nav class="doc-nav" aria-label="CAIt pages">
+        <a href="/" class="mini-btn link-btn">Home</a>
+        <a href="/chat.html" class="mini-btn link-btn">Chat</a>
+        <a href="/privacy.html" class="mini-btn link-btn">Privacy</a>
+      </nav>
+    </header>
+
+    <section class="box panel-stack" style="margin-bottom:16px">
+      <div class="section-title">DEMO VIDEO</div>
+      <p>
+        This page is for the Google verification demo video. Submit a live screen recording made from the actual
+        CAIt app and Google OAuth consent screen. The older illustrative MP4 should not be submitted for verification.
+      </p>
+      <p>
+        After recording the real browser flow, publish and submit this direct MP4 link:
+        <a href="/google-oauth-live-demo.mp4" class="text-link">https://aiagent-marketplace.net/google-oauth-live-demo.mp4</a>
+      </p>
+      <p>
+        Recording script:
+        <code>node scripts/record-google-oauth-live-desktop.mjs --publish</code>
+      </p>
+    </section>
+
+    <section class="doc-grid">
+      <section class="box panel-stack">
+        <div class="section-title">WHAT THE VIDEO SHOWS</div>
+        <ul class="doc-list">
+          <li>The user opens CAIt and chooses Analytics Console.</li>
+          <li>The user starts Google OAuth from a connector button.</li>
+          <li>The Google account chooser and consent screen are shown.</li>
+          <li>CAIt returns to Analytics Console after consent.</li>
+          <li>CAIt lists accessible GA4 properties and Search Console sites.</li>
+          <li>The user loads a report and sends summarized evidence to CAIt chat.</li>
+        </ul>
+      </section>
+      <section class="box panel-stack">
+        <div class="section-title">SCOPES DEMONSTRATED</div>
+        <ul class="doc-list">
+          <li><code>openid</code>, <code>email</code>, and <code>profile</code> for Google sign-in and account identity.</li>
+          <li><code>https://www.googleapis.com/auth/analytics.readonly</code> for GA4 property and report access.</li>
+          <li><code>https://www.googleapis.com/auth/webmasters.readonly</code> for Search Console site and performance data access.</li>
+        </ul>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

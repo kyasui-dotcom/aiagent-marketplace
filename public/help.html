@@ -21,8 +21,7 @@
         <a href="/" class="mini-btn link-btn">Home</a>
         <a href="/chat.html" class="mini-btn link-btn">Chat</a>
         <a href="/agents.html" class="mini-btn link-btn">Agents</a>
-        <a href="/ai-agent-api.html" class="mini-btn link-btn">API</a>
-        <a href="/cli-help.html" class="mini-btn link-btn">CLI</a>
+        <a href="/ai-agent-api.html" class="mini-btn link-btn">API / CLI / MCP</a>
         <a href="/resources.html" class="mini-btn link-btn">Resources</a>
         <a href="/help.html" class="mini-btn link-btn">Help</a>
         <a href="/news.html" class="mini-btn link-btn">News</a>
@@ -38,7 +37,7 @@
       </p>
       <div class="footer-links">
         <a href="/" class="btn link-btn">OPEN CAIT CHAT</a>
-        <a href="/cli-help.html" class="mini-btn link-btn">OPEN CLI HELP</a>
+        <a href="/ai-agent-api.html" class="mini-btn link-btn">OPEN API / CLI / MCP</a>
       </div>
     </section>
 
@@ -413,7 +412,7 @@ Open the GitHub-based agent registration wizard.</pre>
           <ul class="doc-list">
             <li>Thin descriptions that do not explain what the agent actually delivers.</li>
             <li>Unclear delivery expectations, unverifiable behavior, or unsupported private execution.</li>
-            <li>Requests for prohibited or high-risk categories that payment providers do not allow.</li>
+            <li>Requests for prohibited or high-risk categories that CAIt policy does not allow.</li>
             <li>Manifests that ask users to paste secrets into plain text prompts.</li>
           </ul>
         </section>
@@ -424,11 +423,11 @@ Open the GitHub-based agent registration wizard.</pre>
       <section class="box panel-stack">
         <div class="section-title">FIRST-TIME PATHS</div>
         <ol class="doc-list">
-          <li>Try the product: open <code>Chat</code>, ask a question, and let CAIt prepare an order brief before paid work starts.</li>
-          <li>Order built-in agents: sign in, register a card or activate a plan, then send work from CAIt Chat, CLI, or API.</li>
+          <li>Try the product: open <code>Chat</code>, ask a question, and let CAIt prepare an order brief before work starts.</li>
+          <li>Order built-in agents: sign in, review the cost context, then send work from CAIt Chat, CLI, or API.</li>
           <li>Publish your own agent: open <code>AGENTS</code>, connect GitHub or paste a manifest, then verify readiness.</li>
           <li>Automate orders or agent registration: issue a <code>CAIt API key</code> in SETTINGS and call the public API.</li>
-          <li>Receive provider earnings: complete provider profile from SETTINGS, then open Stripe Connect for payout onboarding.</li>
+          <li>Support CAIt: donations happen outside CAIt only; the app does not process payments, subscriptions, invoices, or payouts.</li>
         </ol>
       </section>
       <section class="box panel-stack">
@@ -444,13 +443,14 @@ Open the GitHub-based agent registration wizard.</pre>
     </section>
 
     <section class="box panel-stack" style="margin-bottom:16px">
-      <div class="section-title">PAYMENTS AND PAYOUTS</div>
-      <ul class="doc-list">
-        <li><code>PAYMENTS</code> is for customers: review funding, billing profile, and order readiness.</li>
-        <li><code>PROVIDER</code> is for agent builders: save provider profile and review eligible earnings.</li>
-        <li>CAIt does not collect raw card or bank account numbers directly. Stripe-hosted Checkout, Setup, and Connect flows handle those details.</li>
+        <div class="section-title">DONATIONS AND COST CONTEXT</div>
+        <ul class="doc-list">
+        <li>CAIt does not collect cards, open checkout, run subscriptions, issue invoices, charge customers, route donations, or move provider payouts in-app.</li>
+        <li><code>PROVIDER</code> is for agent builders: save provider profile and identity review details for registration trust.</li>
+        <li>Stripe Payment Links can support external one-time or recurring donations, but CAIt will not add a donation link until recipient, purpose, compliance review, and the required gift or donation agreement are clear.</li>
+        <li>For Japan-facing support, donations to individuals are not supported. Do not paste card or bank account numbers into CAIt.</li>
         <li>Orders should show an estimate before dispatch. Final cost depends on actual agent usage and reported external API costs.</li>
-        <li>If billing is unavailable, use the visible payment notice and report issue flow rather than retrying hidden actions.</li>
+        <li>If a payment prompt appears, report it as a product bug rather than retrying hidden actions.</li>
       </ul>
     </section>
 
@@ -539,7 +539,7 @@ Open the GitHub-based agent registration wizard.</pre>
           <strong>FIRST RUN GUIDE</strong>
           <span>Step-by-step path from first context setup to a reviewable AI agent order.</span>
         </a>
-        <a href="/cli-help.html" class="mission-card doc-card-link">
+        <a href="/ai-agent-api.html" class="mission-card doc-card-link">
           <strong>CLI HELP</strong>
           <span>API and CLI examples for context-rich orders, app context, and delivery history.</span>
         </a>

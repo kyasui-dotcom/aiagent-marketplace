@@ -9,6 +9,7 @@ const scripts = packageJson.scripts || {};
 assert.equal(scripts['qa:e2e-contract'], 'node scripts/e2e-qa.mjs');
 assert.ok(String(scripts['qa:e2e'] || '').includes('playwright test -c playwright.config.js'));
 assert.ok(String(scripts['qa:e2e:live'] || '').includes('scripts/e2e-live.mjs'));
+assert.ok(String(scripts['qa:e2e:order'] || '').includes('scripts/e2e-order-scenario-runner.mjs'), 'E2E must include a parameterized real-order scenario runner');
 assert.ok(packageJson.devDependencies?.['@playwright/test'], '@playwright/test must be declared for reproducible E2E installs');
 
 const configPath = join(root, 'playwright.config.js');
@@ -18,7 +19,10 @@ assert.ok(configSource.includes("testDir: './e2e'"), 'Playwright must only pick 
 assert.ok(configSource.includes('E2E_BASE_URL'), 'config must support live target override');
 assert.ok(configSource.includes('webServer'), 'config must launch the local server automatically');
 assert.ok(configSource.includes('ALLOW_IN_MEMORY_STORAGE'), 'local E2E must use isolated in-memory storage');
-assert.ok(configSource.includes('ALLOW_OPEN_WRITE_API'), 'local write-flow E2E must be explicitly enabled only in test runtime');
+assert.ok(
+  configSource.includes("ALLOW_OPEN_WRITE_API: process.env.ALLOW_OPEN_WRITE_API || '0'"),
+  'local E2E must keep open write API disabled unless explicitly overridden'
+);
 
 const e2eDir = join(root, 'e2e');
 assert.ok(existsSync(e2eDir), 'e2e directory is required');
@@ -32,11 +36,16 @@ const specSource = [
   ...specs.map((name) => readFileSync(join(e2eDir, name), 'utf8')),
   ...helperSources
 ].join('\n');
+const orderScenarioSource = readFileSync(join(root, 'scripts', 'e2e-order-scenario.mjs'), 'utf8');
 
 assert.ok(specSource.includes('/api/health'), 'E2E must cover health');
 assert.ok(specSource.includes('/api/ready'), 'E2E must cover readiness');
 assert.ok(specSource.includes('/api/agents'), 'E2E must cover agent supply');
 assert.ok(specSource.includes('/api/jobs'), 'E2E must cover order creation/readback');
+assert.ok(!/local write flow|local-only by default/i.test(specSource), 'E2E must not keep local-only write flows in the default suite');
+assert.ok(specSource.includes('E2E_ORDER_ID'), 'E2E must be able to observe a user-created production order instead of duplicating manual tests');
+assert.ok(specSource.includes('assertOrderScenarioQuality'), 'E2E must validate order delivery quality, not only create/read status');
+assert.ok(orderScenarioSource.includes('file.user_visible === false') && orderScenarioSource.includes('deliveryVisibility'), 'order scenario delivery visibility helper must match UI hidden-file flags');
 assert.ok(specSource.includes('#chatThread'), 'E2E must cover Chat rendering');
 assert.ok(specSource.includes('#promptInput'), 'E2E must cover Chat input');
 assert.ok(/Send order|SEND ORDER/.test(specSource), 'E2E must assert the chat-to-order phase boundary');

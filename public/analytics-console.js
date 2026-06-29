@@ -1,4 +1,11 @@
-import { buildCaitAppContext, copyContextJson, downloadContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260507a';
+import { buildCaitAppContext, copyContextJson, downloadContextJson, fetchCaitAppContextFromUrl, sendContextToCait } from './cait-app-bridge.js?v=20260526i';
+import {
+  analyticsHandoffTargetFromContext,
+  analyticsHandoffTargetOptions,
+  analyticsHandoffTargetsForContext,
+  defaultAnalyticsHandoffTarget,
+  normalizeAnalyticsHandoffTarget
+} from './analytics-handoff-target-contract.js?v=20260602a';
 
 const GOOGLE_SOURCE_CACHE_COOKIE = 'cait_analytics_sources';
 
@@ -15,15 +22,17 @@ const data = {
   channels: [],
   channelPages: [],
   channelSources: [],
+  conversionPaths: [],
   measurement: []
 };
 
 const state = {
   section: 'dashboard',
   range: '28',
-  target: 'cmo_leader',
+  target: defaultAnalyticsHandoffTarget(),
   googleConnected: false,
   googleWarnings: [],
+  googleApiErrors: {},
   googleReportLoaded: false,
   googleReportSources: { ga4: false, gsc: false },
   googleReportWarnings: [],
@@ -95,7 +104,10 @@ const els = {
   analyticsMeasurementCount: document.getElementById('analyticsMeasurementCount'),
   analyticsStepSources: document.getElementById('analyticsStepSources'),
   analyticsStepReport: document.getElementById('analyticsStepReport'),
-  analyticsStepHandoff: document.getElementById('analyticsStepHandoff')
+  analyticsStepHandoff: document.getElementById('analyticsStepHandoff'),
+  analyticsRunReadinessStatus: document.getElementById('analyticsRunReadinessStatus'),
+  analyticsReadinessList: document.getElementById('analyticsReadinessList'),
+  analyticsHandoffNotice: document.getElementById('analyticsHandoffNotice')
 };
 
 function formatNumber(value) {
@@ -153,6 +165,29 @@ function statusClass(value = '') {
   return 'pending';
 }
 
+function booleanValue(value, fallback = false) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  const text = String(value ?? '').trim().toLowerCase();
+  if (!text) return fallback;
+  if (['true', '1', 'yes', 'ready', 'loaded'].includes(text)) return true;
+  if (['false', '0', 'no', 'missing', 'pending'].includes(text)) return false;
+  return fallback;
+}
+
+function listValue(value = []) {
+  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean);
+  return String(value || '').split(/[,\n/]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function hasEvidenceRows() {
+  return Boolean(data.queries.length || data.pages.length || data.channels.length || data.channelPages.length || data.channelSources.length || data.conversionPaths.length || data.countries.length);
+}
+
+function hasChatReturnRoute() {
+  return Boolean(chatReturnTo() || chatHandoffId());
+}
+
 function currentAnalyticsReturnPath() {
   const path = window.location.pathname || '/analytics-console.html';
   const safePath = path.startsWith('/') && /\/analytics-console\.html$/.test(path) ? path : '/analytics-console.html';
@@ -166,20 +201,21 @@ function caitAuthOrigin() {
 }
 
 function googleConnectHref(loginSource = 'analytics_console', sourceKind = 'ga4') {
-  const kind = String(sourceKind || '').trim().toLowerCase() === 'gsc' ? 'gsc' : 'ga4';
+  const rawKind = String(sourceKind || '').trim().toLowerCase();
+  const kind = rawKind === 'gsc' ? 'gsc' : rawKind === 'analytics' || rawKind === 'both' ? 'analytics' : 'ga4';
   const url = new URL('/auth/google', caitAuthOrigin());
   url.searchParams.set('action', 'analytics_connect');
   url.searchParams.set('return_to', currentAnalyticsReturnPath());
   url.searchParams.set('login_source', loginSource);
-  url.searchParams.set('scope_group', kind);
-  url.searchParams.set('capabilities', kind === 'gsc' ? 'google.read_gsc' : 'google.read_ga4');
+  url.searchParams.set('scope_group', kind === 'analytics' ? 'ga4,gsc' : kind);
+  url.searchParams.set('capabilities', kind === 'analytics' ? 'google.read_ga4,google.read_gsc' : kind === 'gsc' ? 'google.read_gsc' : 'google.read_ga4');
   return url.toString();
 }
 
 function updateGoogleConnectLinks() {
   for (const link of els.googleConnectLinks || []) {
     const kind = String(link.dataset.googleConnectLink || '').trim();
-    const source = kind === 'gsc' ? 'analytics_console_gsc' : 'analytics_console_ga4';
+    const source = kind === 'gsc' ? 'analytics_console_gsc' : kind === 'analytics' || kind === 'both' ? 'analytics_console_google' : 'analytics_console_ga4';
     link.href = googleConnectHref(source, kind);
     link.target = '_top';
   }
@@ -196,6 +232,15 @@ function readAuthErrorFromUrl() {
 
 function optionHtml(value = '', label = '') {
   return `<option value="${escapeHtml(value)}">${escapeHtml(label || value || '-')}</option>`;
+}
+
+function renderAnalyticsHandoffTargetOptions() {
+  const current = normalizeAnalyticsHandoffTarget(els.targetSelect?.value) || state.target || defaultAnalyticsHandoffTarget();
+  els.targetSelect.innerHTML = analyticsHandoffTargetOptions()
+    .map((target) => optionHtml(target.value, target.label))
+    .join('');
+  state.target = normalizeAnalyticsHandoffTarget(current) || defaultAnalyticsHandoffTarget();
+  els.targetSelect.value = state.target;
 }
 
 function readCookie(name = '') {
@@ -286,6 +331,18 @@ function renderGoogleSourceControls() {
     els.googleSourceNote.textContent = `${state.googleWarnings.join(' / ')}. Use the matching Connect GA4 or Connect Search Console button to authorize only the missing source, then Refresh sources.`;
     return;
   }
+  if (connected && Array.isArray(state.googleWarnings) && state.googleWarnings.length && !state.googleReportLoaded) {
+    els.googleSourceStatus.textContent = 'Google connected with warnings';
+    els.googleSourceStatus.className = 'status-pill blocked';
+    els.googleSourceNote.textContent = `${state.googleWarnings.join(' / ')}. Use the matching Connect GA4 or Connect Search Console button to authorize only the missing source, then Refresh sources.`;
+    return;
+  }
+  if (connected && !sites.length && !ga4.length && !state.googleReportLoaded) {
+    els.googleSourceStatus.textContent = 'Google connected, no sources returned';
+    els.googleSourceStatus.className = 'status-pill blocked';
+    els.googleSourceNote.textContent = 'Google returned no GA4 properties or Search Console sites for this account. Use a Google account with access to those resources, or check the Google API warnings after refreshing sources.';
+    return;
+  }
   if (state.googleReportLoaded && state.googleReportDateRange) {
     const warnings = Array.isArray(state.googleReportWarnings) ? state.googleReportWarnings.filter(Boolean) : [];
     const ga4Missing = Boolean(state.ga4Property && !state.googleReportSources.ga4);
@@ -295,6 +352,12 @@ function renderGoogleSourceControls() {
     els.googleSourceNote.textContent = warnings.length
       ? `Report loaded for ${state.googleReportDateRange.start_date} to ${state.googleReportDateRange.end_date}, but some Google data could not load: ${warnings.join(' / ')}`
       : `Report loaded for ${state.googleReportDateRange.start_date} to ${state.googleReportDateRange.end_date}. Send this evidence packet to CAIt when ready.`;
+    return;
+  }
+  if (importedContext && state.googleReportLoaded) {
+    els.googleSourceStatus.textContent = 'Context restored';
+    els.googleSourceStatus.className = 'status-pill approved';
+    els.googleSourceNote.textContent = 'A server-side CAIt context was restored. Review the retained evidence, then send the updated packet when ready.';
     return;
   }
   els.googleSourceNote.textContent = connected
@@ -312,17 +375,17 @@ function setWorkflowStep(element, status = '', detail = '') {
 function renderWorkflowState() {
   const hasSource = Boolean(state.gscSite || state.ga4Property);
   const connected = Boolean(state.googleConnected);
-  const loaded = Boolean(state.googleReportLoaded);
+  const loaded = Boolean(state.googleReportLoaded || (importedContext && hasEvidenceRows()));
   setWorkflowStep(
     els.analyticsStepSources,
-    connected && hasSource ? 'done' : (state.googleWarnings.length ? 'blocked' : 'current'),
+    (connected || importedContext) && hasSource ? 'done' : (state.googleWarnings.length ? 'blocked' : 'current'),
     connected
       ? (hasSource ? 'Source selected and ready for report loading.' : 'Connected. Choose one source before loading.')
-      : 'Connect GA4 or Search Console before loading evidence.'
+      : (importedContext ? 'Source metadata was restored from server-side context.' : 'Connect GA4 or Search Console before loading evidence.')
   );
   setWorkflowStep(
     els.analyticsStepReport,
-    loaded ? 'done' : (connected && hasSource ? 'current' : ''),
+    loaded ? 'done' : ((connected || importedContext) && hasSource ? 'current' : ''),
     loaded ? 'Report rows are loaded into the packet.' : 'Use Load report after selecting sources.'
   );
   setWorkflowStep(
@@ -333,6 +396,77 @@ function renderWorkflowState() {
   if (els.sendContextBtn) {
     els.sendContextBtn.textContent = 'Send to CAIt';
   }
+  renderReadiness();
+}
+
+function readinessItems() {
+  const sourceCount = [state.gscSite, state.ga4Property].filter(Boolean).length;
+  const loaded = Boolean(state.googleReportLoaded || (importedContext && hasEvidenceRows()));
+  const warnings = [...state.googleWarnings, ...state.googleReportWarnings].filter(Boolean);
+  const measurementReady = data.measurement.length > 0;
+  return [
+    {
+      label: 'Server-side context',
+      status: importedContext ? 'ready' : 'pending',
+      detail: importedContext
+        ? `Restored from ${importedContext.source_app_label || importedContext.source_app || 'CAIt context'}.`
+        : (hasChatReturnRoute() ? 'The chat return route is pinned; Send to CAIt will create the server-side analytics packet.' : 'Open this app from a CAIt handoff or send the packet to create a retained context record.')
+    },
+    {
+      label: 'Connector source',
+      status: sourceCount ? 'ready' : (warnings.length ? 'blocked' : 'pending'),
+      detail: sourceCount ? `${sourceCount} source${sourceCount === 1 ? '' : 's'} selected for this packet.` : 'Select GA4 or Search Console before ordering evidence-based work.'
+    },
+    {
+      label: 'Evidence rows',
+      status: loaded && hasEvidenceRows() ? 'ready' : (warnings.length ? 'blocked' : 'pending'),
+      detail: loaded && hasEvidenceRows() ? `${data.queries.length + data.pages.length + data.channels.length} primary rows are attached.` : 'Load or import report rows before asking a leader to decide.'
+    },
+    {
+      label: 'Measurement loop',
+      status: measurementReady ? 'ready' : 'pending',
+      detail: measurementReady ? '24h and 7d follow-up checks are included in the handoff.' : 'A post-run measurement queue will be added after report loading.'
+    }
+  ];
+}
+
+function renderReadiness() {
+  if (!els.analyticsReadinessList || !els.analyticsRunReadinessStatus) return;
+  const items = readinessItems();
+  const blocked = items.some((item) => item.status === 'blocked');
+  const ready = items.filter((item) => item.status === 'ready').length;
+  const allReady = ready === items.length;
+  els.analyticsRunReadinessStatus.textContent = allReady ? 'Ready' : blocked ? 'Blocked' : `${ready}/${items.length} ready`;
+  els.analyticsRunReadinessStatus.className = `status-pill ${allReady ? 'approved' : blocked ? 'blocked' : 'pending'}`;
+  els.analyticsReadinessList.innerHTML = items.map((item) => [
+    `<div class="ops-readiness-item ${escapeHtml(item.status)}">`,
+    `<strong>${escapeHtml(item.label)}</strong>`,
+    `<span>${escapeHtml(item.detail)}</span>`,
+    '</div>'
+  ].join('')).join('');
+}
+
+function renderHandoffNotice() {
+  if (!els.analyticsHandoffNotice) return;
+  const handoffId = chatHandoffId();
+  const returnTo = chatReturnTo();
+  const fragments = [];
+  if (importedContext?.id) fragments.push('Server-side analytics context is loaded.');
+  if (handoffId) fragments.push(`Handoff ID: ${handoffId}.`);
+  if (returnTo) fragments.push('Return to CAIt chat is pinned.');
+  if (!fragments.length) {
+    els.analyticsHandoffNotice.hidden = true;
+    els.analyticsHandoffNotice.textContent = '';
+    els.analyticsHandoffNotice.className = 'notice';
+    return;
+  }
+  const warning = hasChatReturnRoute() && !importedContext?.id;
+  els.analyticsHandoffNotice.hidden = false;
+  els.analyticsHandoffNotice.className = `notice${warning ? ' notice-warning' : ''}`;
+  els.analyticsHandoffNotice.innerHTML = [
+    `<strong>${escapeHtml(warning ? 'Chat handoff is open but no server analytics packet is loaded yet.' : 'CAIt analytics handoff session is attached.')}</strong>`,
+    `<span>${escapeHtml(fragments.join(' '))}</span>`
+  ].join(' ');
 }
 
 async function refreshGoogleSources(options = {}) {
@@ -351,6 +485,9 @@ async function refreshGoogleSources(options = {}) {
     }
     state.googleConnected = Boolean(payload?.google?.connected);
     state.googleWarnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
+    state.googleApiErrors = payload?.google?.api_errors && typeof payload.google.api_errors === 'object'
+      ? payload.google.api_errors
+      : {};
     state.gscSites = Array.isArray(payload?.search_console?.sites) ? payload.search_console.sites : [];
     state.ga4Properties = flattenGa4Properties(payload?.ga4?.account_summaries || []);
     applyCachedGoogleSources();
@@ -358,6 +495,15 @@ async function refreshGoogleSources(options = {}) {
     state.ga4Property = normalizeGa4Property(state.ga4Property);
     if (!state.ga4Property && state.ga4Properties[0]?.value) state.ga4Property = state.ga4Properties[0].value;
   } catch (error) {
+    if (options.silent && importedContext && hasEvidenceRows()) {
+      state.googleConnected = false;
+      state.googleWarnings = [];
+      state.googleApiErrors = {};
+      renderGoogleSourceControls();
+      renderWorkflowState();
+      els.contextPreview.textContent = JSON.stringify(buildContext(), null, 2);
+      return;
+    }
     state.googleConnected = false;
     const detail = error?.data && typeof error.data === 'object'
       ? [
@@ -368,6 +514,7 @@ async function refreshGoogleSources(options = {}) {
         ].filter(Boolean).join(' / ')
       : '';
     state.googleWarnings = [detail || String(error?.message || error || 'Google sources are not connected.')];
+    state.googleApiErrors = {};
     state.gscSites = [];
     state.ga4Properties = [];
   } finally {
@@ -386,6 +533,7 @@ function resetReportData() {
   data.channels = [];
   data.channelPages = [];
   data.channelSources = [];
+  data.conversionPaths = [];
   data.measurement = [];
 }
 
@@ -525,14 +673,336 @@ async function loadGoogleReport() {
   }
 }
 
-function artifactRows(context = {}, type = '') {
-  const match = (Array.isArray(context.artifacts) ? context.artifacts : [])
-    .find((artifact) => String(artifact?.type || '').toLowerCase() === String(type || '').toLowerCase());
-  return Array.isArray(match?.rows) ? match.rows : [];
+const ANALYTICS_CONTEXT_KEY_ALIASES = Object.freeze({
+  search_queries: ['searchQueries', 'queries', 'query_rows', 'search_query_rows', 'searchConsoleRows', 'search_console_rows'],
+  landing_pages: ['landingPages', 'pages', 'page_rows', 'landing_page_rows'],
+  channel_mix: ['channelMix', 'channels', 'channel_rows'],
+  channel_breakdown: ['channelBreakdown', 'channel_breakdowns', 'channelBreakdowns', 'channel_rows', 'channels'],
+  channel_landing_pages: ['channelLandingPages', 'channel_pages', 'channelPages'],
+  channel_sources: ['channelSources', 'source_medium_rows', 'sourceMediumRows', 'referral_sources', 'referralSources'],
+  conversion_paths: ['conversionPaths', 'conversion_path', 'conversionPath', 'paths'],
+  country_mix: ['countryMix', 'countries', 'country_rows', 'countryRows'],
+  measurement_queue: ['measurementQueue', 'measurement', 'post_run_checks', 'postRunChecks'],
+  post_run_measurement: ['postRunMeasurement', 'post_run_checks', 'postRunChecks', 'measurement'],
+  google_sources: ['googleSources', 'sources'],
+  google_report_status: ['googleReportStatus', 'report_status', 'reportStatus']
+});
+const ANALYTICS_CONTEXT_PACKET_KEYS = Object.freeze([
+  'analytics_context',
+  'analyticsContext',
+  'analytics_packet',
+  'analyticsPacket',
+  'search_console_packet',
+  'searchConsolePacket',
+  'gsc_packet',
+  'gscPacket',
+  'ga4_packet',
+  'ga4Packet',
+  'google_analytics_packet',
+  'googleAnalyticsPacket'
+]);
+
+function analyticsKeyVariants(type = '') {
+  const safe = String(type || '').trim();
+  if (!safe) return [];
+  const camel = safe.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
+  return [safe, camel, ...(ANALYTICS_CONTEXT_KEY_ALIASES[safe] || [])]
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+}
+
+function parseStructuredPayload(value) {
+  if (!value || typeof value !== 'string') return null;
+  const text = value.trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  if (!/^[{[]/.test(text)) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function rowList(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  if (typeof value === 'string') return rowList(parseStructuredPayload(value));
+  if (typeof value === 'object') {
+    if (Array.isArray(value.rows)) return value.rows;
+    if (Array.isArray(value.items)) return value.items;
+    if (Array.isArray(value.data)) return value.data;
+    if (Array.isArray(value.values)) return value.values;
+    return [value];
+  }
+  return [];
+}
+
+function uniqueRows(rows = []) {
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = JSON.stringify(row || {});
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function splitMarkdownTableRow(line = '') {
+  const trimmed = String(line || '').trim();
+  if (!/^\|.*\|$/.test(trimmed)) return [];
+  return trimmed
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.replace(/<br\s*\/?>/gi, ' ').replace(/\s+/g, ' ').trim());
+}
+
+function isMarkdownTableDivider(cells = []) {
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(String(cell || '').trim()));
+}
+
+function normalizeMarkdownHeader(value = '') {
+  const text = String(value || '').trim().toLowerCase();
+  if (/^(query|keyword|search term|検索|検索語句)$/.test(text)) return 'query';
+  if (/^(clicks?|クリック)$/.test(text)) return 'clicks';
+  if (/^(impressions?|impr\.?|表示回数)$/.test(text)) return 'impressions';
+  if (/^(position|avg position|rank|順位)$/.test(text)) return 'position';
+  if (/^(path|conversion path|journey|touchpoints?|経路)$/.test(text)) return 'path';
+  if (/^(page|landing page|url|lp|ページ)$/.test(text)) return 'page';
+  if (/^(sessions?|users?|views?|traffic|セッション)$/.test(text)) return 'sessions';
+  if (/^(conversions?|cv|purchases?|signups?|成果)$/.test(text)) return 'conversions';
+  if (/^(share|percent|percentage|割合)$/.test(text)) return 'share';
+  if (/^(cvr|conversion rate|cv rate|率)$/.test(text)) return 'cvr';
+  if (/^(channel|medium|source \/ medium|source\/medium|流入)$/.test(text)) return 'channel';
+  if (/^(source|source medium|source_medium|referrer|referral source|参照元)$/.test(text)) return 'source_medium';
+  if (/^(action|check|task|name|確認項目)$/.test(text)) return 'action';
+  if (/^(window|timing|due|期間)$/.test(text)) return 'window';
+  if (/^(status|state|状態)$/.test(text)) return 'status';
+  if (/^(note|memo|decision note|leader note|intent|detail|メモ)$/.test(text)) return 'note';
+  if (/^(value|property|site|source value|値)$/.test(text)) return 'value';
+  return text.replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+function numberFromMarkdown(value = '') {
+  const cleaned = String(value ?? '').replace(/,/g, '').replace(/%/g, '').trim();
+  const number = Number(cleaned);
+  return Number.isFinite(number) ? number : value;
+}
+
+function inferMarkdownAnalyticsType(row = {}, accepted = new Set()) {
+  const keys = new Set(Object.keys(row));
+  const hasAny = (...items) => items.some((item) => keys.has(item));
+  const hasAll = (...items) => items.every((item) => keys.has(item));
+  if (accepted.has('search_queries') && hasAll('query') && hasAny('clicks', 'impressions', 'position')) return 'search_queries';
+  if (accepted.has('landing_pages') && hasAny('page', 'path') && hasAny('sessions', 'conversions') && !hasAny('channel', 'source_medium')) return 'landing_pages';
+  if ((accepted.has('conversion_paths') || accepted.has('conversion_path')) && hasAll('path') && hasAny('channel', 'source_medium')) return 'conversion_paths';
+  if ((accepted.has('channel_sources') || accepted.has('channel_landing_pages')) && hasAll('source_medium') && hasAny('sessions', 'conversions')) return 'channel_sources';
+  if ((accepted.has('channel_mix') || accepted.has('channel_breakdown') || accepted.has('channel_breakdowns')) && hasAll('channel') && hasAny('sessions', 'clicks') && hasAny('conversions', 'cv', 'share', 'cvr') && !hasAny('path')) return 'channel_breakdown';
+  if ((accepted.has('measurement_queue') || accepted.has('post_run_measurement')) && hasAll('action') && hasAny('window', 'status')) return 'measurement_queue';
+  if (accepted.has('google_sources') && hasAll('source_medium', 'value')) return 'google_sources';
+  if (accepted.has('google_sources') && hasAll('channel', 'value')) return 'google_sources';
+  return '';
+}
+
+function canonicalMarkdownAnalyticsRow(row = {}, type = '') {
+  if (type === 'search_queries') {
+    return {
+      query: row.query || row.keyword || row.name || '',
+      clicks: numberFromMarkdown(row.clicks || row.sessions || 0),
+      impressions: numberFromMarkdown(row.impressions || row.value || 0),
+      position: row.position || '-',
+      note: row.note || ''
+    };
+  }
+  if (type === 'landing_pages') {
+    return {
+      page: row.page || row.path || row.url || '',
+      sessions: numberFromMarkdown(row.sessions || 0),
+      conversions: numberFromMarkdown(row.conversions || row.cv || 0),
+      note: row.note || ''
+    };
+  }
+  if (type === 'channel_sources') {
+    return {
+      channel: row.channel || '',
+      source_medium: row.source_medium || row.source || '',
+      sessions: numberFromMarkdown(row.sessions || 0),
+      conversions: numberFromMarkdown(row.conversions || row.cv || 0),
+      cvr: numberFromMarkdown(row.cvr || row.conversion_rate || 0)
+    };
+  }
+  if (type === 'conversion_paths') {
+    return {
+      channel: row.channel || row.source_medium || row.source || '',
+      path: row.path || '',
+      sessions: numberFromMarkdown(row.sessions || row.users || row.clicks || 0),
+      conversions: numberFromMarkdown(row.conversions || row.cv || 0),
+      cvr: numberFromMarkdown(row.cvr || row.conversion_rate || 0),
+      note: row.note || ''
+    };
+  }
+  if (type === 'channel_breakdown') {
+    return {
+      channel: row.channel || row.source_medium || '',
+      sessions: numberFromMarkdown(row.sessions || row.clicks || 0),
+      conversions: numberFromMarkdown(row.conversions || row.cv || 0),
+      share: numberFromMarkdown(row.share || row.percent || 0),
+      cvr: numberFromMarkdown(row.cvr || row.conversion_rate || 0)
+    };
+  }
+  if (type === 'measurement_queue') {
+    return {
+      action: row.action || row.check || row.name || '',
+      window: row.window || '-',
+      status: row.status || 'ready',
+      note: row.note || row.detail || ''
+    };
+  }
+  if (type === 'google_sources') {
+    return {
+      source: row.source_medium || row.channel || row.source || '',
+      value: row.value || row.property || row.site || ''
+    };
+  }
+  return row;
+}
+
+function markdownAnalyticsRows(value = '', accepted = new Set()) {
+  const text = String(value || '');
+  if (!text.includes('|')) return [];
+  const lines = text.split(/\r?\n/);
+  const rows = [];
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const headers = splitMarkdownTableRow(lines[index]).map(normalizeMarkdownHeader);
+    const divider = splitMarkdownTableRow(lines[index + 1]);
+    if (!headers.length || !isMarkdownTableDivider(divider)) continue;
+    index += 2;
+    while (index < lines.length) {
+      const cells = splitMarkdownTableRow(lines[index]);
+      if (!cells.length || isMarkdownTableDivider(cells)) break;
+      const row = {};
+      headers.forEach((header, cellIndex) => {
+        if (header) row[header] = cells[cellIndex] || '';
+      });
+      const type = inferMarkdownAnalyticsType(row, accepted);
+      if (type) rows.push(canonicalMarkdownAnalyticsRow(row, type));
+      index += 1;
+    }
+  }
+  return rows;
+}
+
+function directArtifactRows(artifact = {}, accepted = new Set()) {
+  if (Array.isArray(artifact.rows) || Array.isArray(artifact.items) || Array.isArray(artifact.data) || Array.isArray(artifact.values)) {
+    return rowList(artifact);
+  }
+  const inferred = inferMarkdownAnalyticsType(
+    Object.fromEntries(Object.keys(artifact).map((key) => [normalizeMarkdownHeader(key), artifact[key]])),
+    accepted
+  );
+  return inferred ? [artifact] : [];
+}
+
+function rowsFromStructuredPayload(payload = {}, accepted = new Set()) {
+  if (!payload || typeof payload !== 'object') return [];
+  const rows = [];
+  for (const type of accepted) {
+    for (const key of analyticsKeyVariants(type)) {
+      if (Object.prototype.hasOwnProperty.call(payload, key)) {
+        rows.push(...rowList(payload[key]));
+      }
+    }
+  }
+  return rows;
+}
+
+function analyticsPacketPayloads(context = {}) {
+  const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
+  return [context, raw].flatMap((source) => ANALYTICS_CONTEXT_PACKET_KEYS
+    .map((key) => {
+      if (!source || typeof source !== 'object' || !Object.prototype.hasOwnProperty.call(source, key)) return null;
+      const value = source[key];
+      if (typeof value === 'string') return parseStructuredPayload(value);
+      return value && typeof value === 'object' ? value : null;
+    })
+    .filter(Boolean));
+}
+
+function artifactTypeNames(artifact = {}) {
+  return [
+    artifact.type,
+    artifact.artifact_type,
+    artifact.artifactType,
+    artifact.content_type,
+    artifact.contentType,
+    ...(Array.isArray(artifact.artifact_types) ? artifact.artifact_types : []),
+    ...(Array.isArray(artifact.artifactTypes) ? artifact.artifactTypes : [])
+  ]
+    .map((type) => String(type || '').toLowerCase())
+    .filter(Boolean);
+}
+
+function artifactRows(context = {}, types = []) {
+  const accepted = new Set((Array.isArray(types) ? types : [types])
+    .map((type) => String(type || '').toLowerCase())
+    .filter(Boolean));
+  const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
+  const packetPayloads = analyticsPacketPayloads(context);
+  const directRows = [
+    ...rowsFromStructuredPayload(context, accepted),
+    ...rowsFromStructuredPayload(raw, accepted),
+    ...packetPayloads.flatMap((payload) => rowsFromStructuredPayload(payload, accepted))
+  ];
+  const artifactRowsFromPayload = (Array.isArray(context.artifacts) ? context.artifacts : [])
+    .filter((artifact) => artifact && typeof artifact === 'object')
+    .flatMap((artifact) => {
+      const typeMatches = artifactTypeNames(artifact).some((type) => accepted.has(type));
+      const parsedPayloads = [
+        parseStructuredPayload(artifact.content),
+        parseStructuredPayload(artifact.contentPreview),
+        parseStructuredPayload(artifact.content_preview),
+        artifact.payload && typeof artifact.payload === 'object' ? artifact.payload : null
+      ].filter(Boolean);
+      const markdownPayloads = [
+        artifact.content,
+        artifact.contentPreview,
+        artifact.content_preview,
+        artifact.markdown,
+        artifact.body
+      ].filter((value) => typeof value === 'string' && value.trim());
+      return [
+        ...(typeMatches ? directArtifactRows(artifact, accepted) : []),
+        ...parsedPayloads.flatMap((payload) => rowsFromStructuredPayload(payload, accepted)),
+        ...markdownPayloads.flatMap((payload) => markdownAnalyticsRows(payload, accepted))
+      ];
+    });
+  return [...directRows, ...artifactRowsFromPayload];
 }
 
 function metricByLabel(context = {}, label = '') {
   const target = String(label || '').toLowerCase();
+  const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
+  const packetMetricSources = analyticsPacketPayloads(context).flatMap((payload) => [
+    payload.metrics,
+    payload.analytics_metrics,
+    payload.analyticsMetrics
+  ]);
+  const metricSources = [context.metrics, context.analytics_metrics, raw.metrics, raw.analytics_metrics, ...packetMetricSources];
+  for (const source of metricSources) {
+    if (Array.isArray(source)) {
+      const metric = source.find((item) => String(item?.label || item?.name || item?.metric || '').toLowerCase() === target);
+      if (metric) return metric?.value ?? metric?.current ?? '';
+      continue;
+    }
+    if (source && typeof source === 'object') {
+      for (const key of [target, label, ...analyticsKeyVariants(target)]) {
+        if (Object.prototype.hasOwnProperty.call(source, key)) return source[key];
+      }
+    }
+  }
   const metric = (Array.isArray(context.metrics) ? context.metrics : [])
     .find((item) => String(item?.label || item?.name || item?.metric || '').toLowerCase() === target);
   return metric?.value ?? metric?.current ?? '';
@@ -556,7 +1026,7 @@ function applyInboundContext(context = null) {
       row.query || row.keyword || row.name || 'unknown query',
       Number(row.clicks || row.sessions || 0),
       row.position || row.avg_position || '-',
-      Number(row.conversions || row.cv || row.purchases || 0),
+      Number(row.impressions || row.impr || row.value || row.conversions || row.cv || row.purchases || 0),
       row.note || row.decision_note || row.intent || context.summary || ''
     ]);
   }
@@ -571,11 +1041,11 @@ function applyInboundContext(context = null) {
     ]);
   }
 
-  const channelRows = artifactRows(context, 'channel_mix');
+  const channelRows = artifactRows(context, ['channel_mix', 'channel_breakdown', 'channel_breakdowns']);
   if (channelRows.length) {
     data.channels = channelRows.map((row) => [
       row.channel || row.source || 'unknown channel',
-      Number(row.sessions || 0),
+      Number(row.sessions || row.clicks || 0),
       Number(row.conversions || row.cv || 0),
       Number(row.share || row.percent || row.value || 0),
       Number(row.cvr || row.conversion_rate || 0)
@@ -605,6 +1075,37 @@ function applyInboundContext(context = null) {
     ]);
   }
 
+  const conversionPathRows = artifactRows(context, ['conversion_paths', 'conversion_path']);
+  if (conversionPathRows.length) {
+    data.conversionPaths = conversionPathRows.map((row) => [
+      row.channel || row.source || row.medium || 'unknown channel',
+      row.path || row.path_name || row.conversion_path || row.touchpoints || row.source_medium || 'unknown path',
+      Number(row.sessions || row.users || row.clicks || 0),
+      Number(row.conversions || row.cv || row.purchases || row.value || 0),
+      Number(row.cvr || row.conversion_rate || 0),
+      row.note || row.decision_note || row.intent || ''
+    ]);
+    if (!data.channels.length) {
+      const totals = new Map();
+      for (const [channel, , sessions, conversions, cvr] of data.conversionPaths) {
+        const current = totals.get(channel) || { sessions: 0, conversions: 0, cvr: 0 };
+        current.sessions += Number(sessions || 0);
+        current.conversions += Number(conversions || 0);
+        current.cvr = Math.max(current.cvr, Number(cvr || 0));
+        totals.set(channel, current);
+      }
+      const totalSessions = [...totals.values()].reduce((sum, item) => sum + Number(item.sessions || 0), 0);
+      data.channels = [...totals.entries()].map(([channel, item]) => [
+        channel,
+        item.sessions,
+        item.conversions,
+        shareOf(item.sessions, totalSessions),
+        item.cvr || rateOf(item.conversions, item.sessions)
+      ]);
+    }
+    if (!state.selectedChannel && data.conversionPaths[0]?.[0]) state.selectedChannel = data.conversionPaths[0][0];
+  }
+
   const countryRows = artifactRows(context, 'country_mix');
   if (countryRows.length) {
     data.countries = countryRows.map((row) => [
@@ -614,14 +1115,57 @@ function applyInboundContext(context = null) {
     ]);
   }
 
-  const target = (Array.isArray(context.handoff_targets) ? context.handoff_targets : []).find(Boolean);
+  const measurementRows = uniqueRows([
+    ...artifactRows(context, 'measurement_queue'),
+    ...artifactRows(context, 'post_run_measurement')
+  ]);
+  if (measurementRows.length) {
+    data.measurement = measurementRows.map((row) => [
+      row.action || row.name || row.check || 'Imported measurement check',
+      row.window || row.windowLabel || row.window_label || '-',
+      row.status || 'ready',
+      row.note || row.detail || row.check || context.summary || ''
+    ]);
+  }
+
+  const target = analyticsHandoffTargetFromContext(context);
   if (target) {
-    state.target = String(target);
-    if ([...els.targetSelect.options].some((option) => option.value === state.target)) els.targetSelect.value = state.target;
+    state.target = target;
+    els.targetSelect.value = state.target;
   }
   const raw = context.raw_context && typeof context.raw_context === 'object' ? context.raw_context : {};
-  if (String(raw.googleSearchConsoleSite || raw.searchConsoleSite || '').trim()) state.gscSite = String(raw.googleSearchConsoleSite || raw.searchConsoleSite || '').trim();
-  if (String(raw.googleGa4Property || raw.ga4Property || '').trim()) state.ga4Property = String(raw.googleGa4Property || raw.ga4Property || '').trim();
+  const googleSourceRows = artifactRows(context, 'google_sources');
+  const gscArtifact = googleSourceRows.find((row) => /search_console|gsc/i.test(String(row?.source || row?.kind || row?.type || '')));
+  const ga4Artifact = googleSourceRows.find((row) => /ga4|google_analytics/i.test(String(row?.source || row?.kind || row?.type || '')));
+  if (String(raw.googleSearchConsoleSite || raw.searchConsoleSite || gscArtifact?.value || gscArtifact?.site || '').trim()) state.gscSite = String(raw.googleSearchConsoleSite || raw.searchConsoleSite || gscArtifact?.value || gscArtifact?.site || '').trim();
+  if (String(raw.googleGa4Property || raw.ga4Property || ga4Artifact?.value || ga4Artifact?.property || '').trim()) state.ga4Property = normalizeGa4Property(raw.googleGa4Property || raw.ga4Property || ga4Artifact?.value || ga4Artifact?.property || '');
+  const reportStatus = artifactRows(context, 'google_report_status')[0] || {};
+  const rawSources = raw.googleReportSources && typeof raw.googleReportSources === 'object' ? raw.googleReportSources : {};
+  const reportLoaded = booleanValue(raw.googleReportLoaded ?? raw.google_report_loaded ?? reportStatus.loaded, hasEvidenceRows());
+  state.googleReportLoaded = reportLoaded || (hasEvidenceRows() && Boolean(importedContext));
+  state.googleReportSources = {
+    ga4: booleanValue(rawSources.ga4 ?? reportStatus.ga4, Boolean(state.ga4Property && (data.channels.length || data.pages.length))),
+    gsc: booleanValue(rawSources.gsc ?? rawSources.search_console ?? reportStatus.gsc, Boolean(state.gscSite && data.queries.length))
+  };
+  const importedRange = raw.googleReportDateRange && typeof raw.googleReportDateRange === 'object' ? raw.googleReportDateRange : {};
+  state.googleReportDateRange = importedRange.start_date || importedRange.end_date || reportStatus.start_date || reportStatus.end_date
+    ? {
+        start_date: String(importedRange.start_date || reportStatus.start_date || ''),
+        end_date: String(importedRange.end_date || reportStatus.end_date || ''),
+        range_days: String(importedRange.range_days || reportStatus.range_days || state.range)
+      }
+    : state.googleReportDateRange;
+  state.googleReportWarnings = [
+    ...listValue(raw.googleReportWarnings || raw.google_report_warnings || []),
+    ...listValue(reportStatus.warnings || [])
+  ];
+  if (!data.measurement.length && (state.googleReportLoaded || reportStatus.loaded !== undefined)) {
+    const reportWindow = state.googleReportDateRange?.range_days ? `${state.googleReportDateRange.range_days}d` : `last ${state.range} days`;
+    data.measurement = [
+      ['Imported analytics baseline', reportWindow, state.googleReportLoaded ? 'ready' : 'pending', reportStatus.warnings || context.summary || 'Context received from CAIt.'],
+      ['Leader follow-up window', '24h and 7d', 'scheduled', 'Reuse this retained packet after the approved action is executed.']
+    ];
+  }
 }
 
 function tableHtml(headers = [], rows = []) {
@@ -695,7 +1239,7 @@ function primaryRows() {
 }
 
 function buildContext() {
-  const target = String(state.target || 'cmo_leader');
+  const target = normalizeAnalyticsHandoffTarget(state.target) || defaultAnalyticsHandoffTarget();
   const importedFacts = importedContext ? [`Imported context: ${importedContext.title || importedContext.id || 'CAIt app context'}`] : [];
   const topQuery = data.queries[0]?.[0] || '';
   const topPage = data.pages[0]?.[0] || '';
@@ -748,8 +1292,10 @@ function buildContext() {
       { type: 'search_queries', rows: data.queries.map(([query, clicks, position, impressions, note]) => ({ query, clicks, position, impressions, note })) },
       { type: 'landing_pages', rows: data.pages.map(([page, sessions, conversions, note]) => ({ page, sessions, conversions, note })) },
       { type: 'channel_mix', rows: data.channels.map(([channel, sessions, conversions, share, cvr]) => ({ channel, sessions, conversions, share, cvr })) },
+      { type: 'channel_breakdown', rows: data.channels.map(([channel, sessions, conversions, share, cvr]) => ({ channel, sessions, conversions, share, cvr })) },
       { type: 'channel_landing_pages', rows: data.channelPages.map(([channel, page, sessions, conversions, cvr]) => ({ channel, page, sessions, conversions, cvr })) },
       { type: 'channel_sources', rows: data.channelSources.map(([channel, sourceMedium, sessions, conversions, cvr]) => ({ channel, source_medium: sourceMedium, sessions, conversions, cvr })) },
+      { type: 'conversion_paths', rows: data.conversionPaths.map(([channel, path, sessions, conversions, cvr, note]) => ({ channel, path, sessions, conversions, cvr, note })) },
       { type: 'country_mix', rows: data.countries.map(([country, share, conversions]) => ({ country, share, conversions })) },
       { type: 'google_sources', rows: [
         state.gscSite ? { source: 'search_console', value: state.gscSite } : null,
@@ -759,16 +1305,22 @@ function buildContext() {
         {
           loaded: state.googleReportLoaded,
           range: reportWindow,
+          start_date: state.googleReportDateRange?.start_date || '',
+          end_date: state.googleReportDateRange?.end_date || '',
+          range_days: state.googleReportDateRange?.range_days || state.range,
+          ga4: Boolean(state.googleReportSources.ga4),
+          gsc: Boolean(state.googleReportSources.gsc),
           warnings: reportWarningText()
         }
-      ] }
+      ] },
+      { type: 'measurement_queue', rows: data.measurement.map(([action, windowLabel, status, note]) => ({ action, window: windowLabel, status, note })) }
     ],
     recommended_next_actions: [
       (state.gscSite || state.ga4Property || importedContext) ? 'Ask the selected leader to prioritize one evidence-backed next action.' : 'Connect Google and select Search Console / GA4 sources first.',
       'Use Publisher & Approval Studio for page/meta changes before external publishing.',
       'Run a 24h and 7d post-run measurement after the approved action is executed.'
     ],
-    handoff_targets: [target, 'seo_gap', 'growth'],
+    handoff_targets: analyticsHandoffTargetsForContext(target),
     raw_context: {
       ...(importedContext ? { received_context: importedContext } : {}),
       connector_type: state.ga4Property
@@ -784,9 +1336,14 @@ function buildContext() {
       googleSearchConsoleSite: state.gscSite,
       googleGa4Property: state.ga4Property,
       googleReportLoaded: state.googleReportLoaded,
+      googleReportSources: {
+        ga4: Boolean(state.googleReportSources.ga4),
+        gsc: Boolean(state.googleReportSources.gsc)
+      },
       googleReportDateRange: state.googleReportDateRange,
       analyticsSelectedChannel: state.selectedChannel,
       googleWarnings: state.googleWarnings,
+      googleApiErrors: state.googleApiErrors,
       googleReportWarnings: state.googleReportWarnings
     }
   });
@@ -803,6 +1360,11 @@ function miniTableHtml(headers = [], rows = []) {
   ].join('');
 }
 
+function selectedConversionPathRows(channelName = selectedChannelName()) {
+  const selected = channelKey(channelName);
+  return selected ? data.conversionPaths.filter(([channel]) => channelKey(channel) === selected) : data.conversionPaths;
+}
+
 function channelDetailHtml() {
   const selected = selectedChannelName();
   const channel = data.channels.find(([name]) => channelKey(name) === channelKey(selected)) || data.channels[0] || null;
@@ -810,6 +1372,7 @@ function channelDetailHtml() {
   const [name, sessions, conversions, share, cvr] = channel;
   const sourceRows = selectedChannelRows(data.channelSources, name).slice(0, 8);
   const pageRows = selectedChannelRows(data.channelPages, name).slice(0, 8);
+  const conversionRows = selectedConversionPathRows(name).slice(0, 8);
   const sourceTitle = /referral/i.test(name) ? 'Referral sites' : 'Sources';
   return [
     '<div class="channel-detail-head">',
@@ -833,6 +1396,16 @@ function channelDetailHtml() {
       formatNumber(rowConversions),
       `${formatPercent(rowCvr)}%`
     ])),
+    '</div>',
+    '<div class="detail-block">',
+    '<h3>Conversion paths</h3>',
+    miniTableHtml(['Path', 'Sessions / clicks', 'CV', 'CVR', 'Note'], conversionRows.map(([, path, rowSessions, rowConversions, rowCvr, note]) => [
+      `<strong>${escapeHtml(path)}</strong>`,
+      formatNumber(rowSessions),
+      formatNumber(rowConversions),
+      `${formatPercent(rowCvr)}%`,
+      escapeHtml(note || 'Keep this path attached to the next leader decision.')
+    ])),
     '</div>'
   ].join('');
 }
@@ -847,6 +1420,7 @@ function renderCounts() {
 
 function render() {
   renderWorkflowState();
+  renderHandoffNotice();
   renderCounts();
   const m = data.metrics;
   els.sessionsMetric.textContent = formatNumber(m.sessions);
@@ -906,7 +1480,7 @@ els.rangeSelect.addEventListener('change', () => {
 });
 
 els.targetSelect.addEventListener('change', () => {
-  state.target = String(els.targetSelect.value || 'cmo_leader');
+  state.target = normalizeAnalyticsHandoffTarget(els.targetSelect.value) || defaultAnalyticsHandoffTarget();
   render();
 });
 
@@ -966,6 +1540,7 @@ document.addEventListener('keydown', (event) => {
 });
 
 async function bootstrap() {
+  renderAnalyticsHandoffTargetOptions();
   applyCachedGoogleSources();
   const authError = readAuthErrorFromUrl();
   if (authError) state.googleWarnings = [authError];

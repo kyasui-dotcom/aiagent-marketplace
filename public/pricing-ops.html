@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>料金変更かんたん確認 | CAIt Apps</title>
+  <meta name="description" content="CAItの料金変更かんたん確認画面。料金を変えてよいか、承認者、根拠、戻す条件を大きな文字と手順で確認できます。" />
+  <meta name="robots" content="noindex,follow" />
+  <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/cait-icon.png" />
+  <link rel="stylesheet" href="/app-console.css?v=20260507b">
+  <style>
+    .pricing-workspace {
+      display: grid;
+      gap: 16px;
+    }
+    .pricing-title {
+      margin: 0;
+      max-width: 960px;
+      font-size: clamp(30px, 4vw, 52px);
+      line-height: 1.04;
+    }
+    .pricing-lead {
+      max-width: 880px;
+      margin: 10px 0 0;
+      color: #33443d;
+      font-size: 18px;
+      line-height: 1.65;
+    }
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 390px) minmax(0, 1fr);
+      gap: 16px;
+    }
+    .pricing-panel {
+      border: 1px solid #cdd8d1;
+      border-radius: 8px;
+      background: #fff;
+      padding: 16px;
+    }
+    .pricing-section {
+      display: grid;
+      gap: 12px;
+    }
+    .pricing-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .pricing-table th,
+    .pricing-table td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .pricing-table td {
+      overflow-wrap: anywhere;
+    }
+    .pricing-table .empty {
+      color: #5d6b65;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .pricing-stack {
+      display: grid;
+      gap: 10px;
+    }
+    .pricing-record-card {
+      width: 100%;
+      text-align: left;
+      border: 1px solid #d8dee6;
+      border-radius: 8px;
+      background: #f7fbf8;
+      padding: 12px;
+    }
+    .pricing-record-card strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 18px;
+      line-height: 1.3;
+    }
+    .pricing-meta {
+      color: #5f6f68;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .pricing-first-steps {
+      display: grid;
+      gap: 12px;
+    }
+    .pricing-helper-head {
+      display: grid;
+      gap: 4px;
+    }
+    .pricing-helper-head h2,
+    .pricing-danger-panel h2 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+    .pricing-step-badge {
+      width: max-content;
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border: 1px solid #bfd5ca;
+      border-radius: 999px;
+      background: #edf7f2;
+      color: #15523f;
+      font-size: 13px;
+      font-weight: 820;
+    }
+    .pricing-big-steps {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .pricing-big-step {
+      display: grid;
+      gap: 8px;
+      min-height: 132px;
+      padding: 16px;
+      border: 1px solid #ccd9d2;
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 8px 22px rgba(25, 43, 35, .05);
+    }
+    .pricing-big-step span:first-child {
+      width: 34px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: #1e7359;
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 850;
+    }
+    .pricing-big-step strong {
+      color: #17231e;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+    .pricing-big-step small {
+      color: #52635c;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .pricing-danger-panel {
+      display: grid;
+      gap: 10px;
+      padding: 16px;
+      border: 1px solid #e6b7a9;
+      border-radius: 8px;
+      background: #fff7f4;
+    }
+    .pricing-danger-list {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .pricing-danger-list li {
+      padding: 12px;
+      border: 1px solid #efc9bf;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #5a251d;
+      font-size: 14px;
+      font-weight: 720;
+      line-height: 1.45;
+    }
+    .status-pill.ready {
+      border-color: #a8cdbd;
+      background: #eef8f4;
+      color: #15523f;
+    }
+    .handoff-audit-item.pending,
+    .handoff-audit-item.missing {
+      border-color: #e8c894;
+      background: #fff7e8;
+    }
+    .handoff-audit-item p {
+      margin: 0;
+      color: #5f6f68;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .pricing-advanced-panel {
+      border: 1px solid #ccd9d2;
+      border-radius: 8px;
+      background: #ffffff;
+      overflow: hidden;
+    }
+    .pricing-advanced-panel summary {
+      padding: 15px 16px;
+      color: #20312a;
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .pricing-advanced-body {
+      display: grid;
+      gap: 12px;
+      padding: 0 16px 16px;
+    }
+    .pricing-advanced-actions {
+      display: flex;
+      justify-content: flex-start;
+    }
+    .pricing-plain-note {
+      margin: 0;
+      color: #5f6f68;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .pricing-preview {
+      max-height: 360px;
+      overflow: auto;
+    }
+    .app-header-actions [hidden] {
+      display: none !important;
+    }
+    @media (max-width: 860px) {
+      .pricing-grid,
+      .pricing-big-steps,
+      .pricing-danger-list {
+        grid-template-columns: 1fr;
+      }
+      .pricing-lead {
+        font-size: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app-console-shell" aria-label="CAIt 料金変更かんたん確認">
+    <section class="app-console-panel">
+      <header class="app-console-header">
+        <a class="app-brand" href="/" aria-label="CAIt"><img src="/cait-icon.svg" alt="" /><span>料金変更かんたん確認</span></a>
+        <nav class="app-nav" aria-label="CAIt app navigation">
+          <a href="/chat">チャット</a>
+          <a href="/apps.html">アプリ一覧</a>
+          <a href="/delivery-manager.html">成果物</a>
+        </nav>
+        <div class="app-header-actions">
+          <a class="ghost-btn" id="pricingReturnToChatLink" href="/chat" hidden>チャットへ戻る</a>
+          <button id="sendPricingContextBtn" class="primary-btn" type="button">この内容をチャットへ渡す</button>
+        </div>
+      </header>
+
+      <section class="workspace pricing-workspace">
+        <div class="workspace-head">
+          <div>
+            <span class="kicker">料金変更の確認</span>
+            <h1 class="pricing-title">料金を変えてよいか、ここだけ見れば判断できます。</h1>
+            <p class="pricing-lead">難しい表や英語の項目を読む前に、「情報がそろったか」「誰がOKしたか」「失敗したら戻せるか」を大きく確認します。赤や未確認が残っていたら、まだ料金は変えません。</p>
+          </div>
+        </div>
+
+        <section class="notice" id="pricingHandoffNotice" hidden aria-label="CAIt pricing handoff notice"></section>
+
+        <section class="pricing-first-steps" aria-label="最初に見る3つの手順">
+          <div class="pricing-helper-head">
+            <span class="pricing-step-badge">まずここ</span>
+            <h2>上から順に3つ見るだけです。</h2>
+          </div>
+          <div class="pricing-big-steps">
+            <article class="pricing-big-step">
+              <span>1</span>
+              <strong>材料がそろっているか見る</strong>
+              <small>料金を変える理由、根拠、候補の金額が入っているか確認します。</small>
+            </article>
+            <article class="pricing-big-step">
+              <span>2</span>
+              <strong>誰がOKするか見る</strong>
+              <small>自分だけで押してよい話か、責任者の確認が必要かを見ます。</small>
+            </article>
+            <article class="pricing-big-step">
+              <span>3</span>
+              <strong>失敗した時の戻し方を見る</strong>
+              <small>売上や問い合わせが悪くなった時に、いつ元へ戻すか確認します。</small>
+            </article>
+          </div>
+        </section>
+
+        <section class="pricing-danger-panel" aria-label="料金変更前の停止条件">
+          <h2>この3つが未確認なら、料金はまだ変えないでください。</h2>
+          <ul class="pricing-danger-list">
+            <li>承認する人が決まっていない</li>
+            <li>判断する数字や根拠が足りない</li>
+            <li>悪かった時に戻す条件がない</li>
+          </ul>
+        </section>
+
+        <section class="ops-story-grid" aria-label="Pricing decision value">
+          <article class="panel ops-story-panel">
+            <div class="status-row compact-head">
+              <div>
+                <span class="kicker">この画面の役目</span>
+                <h2>チャットの料金相談を、実行前の確認表に変えます。</h2>
+              </div>
+              <span class="status-pill pending" id="pricingReadinessPill">まだ未確認</span>
+            </div>
+            <div class="ops-compare-grid">
+              <section class="ops-compare-card before">
+                <span class="ops-compare-label">そのままだと</span>
+                <h3>チャットの回答だけで判断しがち</h3>
+                <ul class="ops-bullet-list">
+                  <li>前提や根拠がどこにあるか分かりにくい。</li>
+                  <li>誰がOKしたか分からないまま進みやすい。</li>
+                  <li>失敗した時に戻す条件が残りにくい。</li>
+                </ul>
+              </section>
+              <section class="ops-compare-card after">
+                <span class="ops-compare-label">この画面では</span>
+                <h3>実行してよいかを分けて確認</h3>
+                <ul class="ops-bullet-list">
+                  <li>理由、候補、根拠を別々に見られる。</li>
+                  <li>承認者と実行条件が見えるまで止められる。</li>
+                  <li>確認した内容をチャットへ戻して続きの作業に使える。</li>
+                </ul>
+              </section>
+            </div>
+          </article>
+          <article class="panel ops-readiness-panel">
+            <div class="status-row compact-head">
+              <div>
+                <span class="kicker">確認リスト</span>
+                <h2>OKが増えるほど安心です</h2>
+              </div>
+            </div>
+            <div class="ops-readiness-list" id="pricingReadinessList"></div>
+          </article>
+        </section>
+
+        <section class="workflow-strip" aria-label="Pricing decision workflow">
+          <div class="workflow-step current" id="pricingStepModel">
+            <span class="step-index">1</span>
+            <span><strong>材料</strong><span>理由、根拠、候補の金額を確認します。</span></span>
+          </div>
+          <div class="workflow-step" id="pricingStepApproval">
+            <span class="step-index">2</span>
+            <span><strong>承認</strong><span>誰がOKするか、いつ実行するかを確認します。</span></span>
+          </div>
+          <div class="workflow-step" id="pricingStepProof">
+            <span class="step-index">3</span>
+            <span><strong>戻し方</strong><span>悪かった時に元へ戻す条件を確認します。</span></span>
+          </div>
+        </section>
+
+        <section class="pricing-panel pricing-section" aria-label="料金変更前の確認結果">
+          <div class="status-row">
+            <div>
+              <span class="kicker">料金変更前の確認結果</span>
+              <h2>足りないものがある時は、ここに未確認と出ます。</h2>
+            </div>
+            <span class="status-pill pending" id="pricingHandoffAuditPill">まだ確認していません</span>
+          </div>
+          <p class="pricing-meta" id="pricingHandoffAuditSummary">チャットから料金相談の結果を開くと、材料、候補、承認者、戻し方をここで確認できます。</p>
+          <div class="handoff-audit-grid" id="pricingHandoffAuditList"></div>
+        </section>
+
+        <section class="metric-strip" aria-label="Pricing decision summary">
+          <article class="metric-card">
+            <span>材料</span>
+            <strong id="pricingQuestionMetric">0</strong>
+            <small>理由、根拠、候補の金額です。</small>
+          </article>
+          <article class="metric-card">
+            <span>候補</span>
+            <strong id="pricingScenarioMetric">0</strong>
+            <small>料金案や比較表です。</small>
+          </article>
+          <article class="metric-card">
+            <span>承認</span>
+            <strong id="pricingApprovalMetric">0</strong>
+            <small>誰がOKするか、いつ実行するかです。</small>
+          </article>
+          <article class="metric-card">
+            <span>戻し方</span>
+            <strong id="pricingProofMetric">0</strong>
+            <small>悪かった時に止める条件です。</small>
+          </article>
+        </section>
+
+        <div class="pricing-grid">
+          <aside class="pricing-panel pricing-stack" aria-label="Recovered pricing decision">
+            <article class="pricing-record-card">
+              <strong id="pricingRecordTitle">まだ料金相談のデータがありません</strong>
+              <span class="pricing-meta" id="pricingRecordMeta">チャットの料金相談からこの画面を開くと、確認する材料が入ります。</span>
+            </article>
+            <table class="pricing-table" id="pricingDecisionTable" aria-label="料金判断の材料"></table>
+          </aside>
+
+          <section class="pricing-panel pricing-section">
+            <div class="status-row">
+              <h2>料金案の比較</h2>
+            </div>
+            <table class="pricing-table" id="pricingScenarioTable" aria-label="料金案の比較"></table>
+          </section>
+        </div>
+
+        <section class="pricing-panel pricing-section">
+          <div class="status-row">
+            <h2>承認、根拠、戻し方</h2>
+          </div>
+          <table class="pricing-table" id="pricingRiskTable" aria-label="承認と戻し方の確認"></table>
+        </section>
+
+        <details class="pricing-advanced-panel">
+          <summary>上級者向け: チャットへ渡すデータを見る</summary>
+          <div class="pricing-advanced-body">
+            <p class="pricing-plain-note">通常は開かなくて大丈夫です。サポート担当者や開発者が、チャットへ戻る内容を確認する時に使います。</p>
+            <div class="pricing-advanced-actions">
+              <button id="copyPricingContextBtn" class="ghost-btn" type="button">控えをコピー</button>
+            </div>
+            <pre class="context-preview pricing-preview" id="pricingContextPreview"></pre>
+          </div>
+        </details>
+      </section>
+    </section>
+  </main>
+  <script type="module" src="/pricing-ops.js?v=20260602a"></script>
+</body>
+</html>

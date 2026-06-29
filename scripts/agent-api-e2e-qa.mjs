@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { createOrderApiKeyInState } from '../lib/shared.js';
 
 const PORT = Number(process.env.PORT || 4331);
 const BASE = `http://127.0.0.1:${PORT}`;
+const PROVIDER_PORT = Number(process.env.PROVIDER_PORT || (PORT + 100));
+const PROVIDER_BASE = `http://127.0.0.1:${PROVIDER_PORT}`;
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 async function request(path, options = {}) {
@@ -25,7 +28,41 @@ async function waitForServer(timeoutMs = 8000) {
   throw new Error('Server did not become ready in time');
 }
 
+function startProviderServer() {
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url || '/', PROVIDER_BASE);
+    if (url.pathname === '/research/health') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, service: 'agent_api_research_provider' }));
+      return;
+    }
+    if (url.pathname === '/research/jobs') {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const payload = body ? JSON.parse(body) : {};
+      const taskType = String(payload.task_type || 'research').trim().toLowerCase();
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'completed',
+        summary: `Agent API ${taskType} provider completed.`,
+        report: {
+          summary: `Agent API ${taskType} delivery from provider endpoint.`,
+          bullets: ['Provider endpoint was verified and used for dispatch.'],
+          nextAction: 'Review the delivery.'
+        },
+        files: [{ name: `${taskType}-delivery.md`, content: `# Agent API ${taskType} delivery\n\nProvider-backed delivery.` }],
+        usage: { input_tokens: 50, output_tokens: 50, total_tokens: 100, api_cost: 1 }
+      }));
+      return;
+    }
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not found' }));
+  });
+  return new Promise((resolve) => server.listen(PROVIDER_PORT, '127.0.0.1', () => resolve(server)));
+}
+
 async function main() {
+  const provider = await startProviderServer();
   const seededState = { agents: [], jobs: [], events: [], accounts: [] };
   const issued = createOrderApiKeyInState(
     seededState,
@@ -66,8 +103,8 @@ async function main() {
           pricing: { provider_markup_rate: 0.1, platform_margin_rate: 0.1 },
           success_rate: 0.95,
           avg_latency_sec: 10,
-          healthcheck_url: `${BASE}/mock/research/health`,
-          job_endpoint: `${BASE}/mock/research/jobs`
+          healthcheck_url: `${PROVIDER_BASE}/research/health`,
+          job_endpoint: `${PROVIDER_BASE}/research/jobs`
         }
       })
     });
@@ -91,8 +128,8 @@ async function main() {
           pricing: { provider_markup_rate: 0.1, platform_margin_rate: 0.1 },
           success_rate: 0.95,
           avg_latency_sec: 10,
-          healthcheck_url: `${BASE}/mock/research/health`,
-          job_endpoint: `${BASE}/mock/research/jobs`
+          healthcheck_url: `${PROVIDER_BASE}/research/health`,
+          job_endpoint: `${PROVIDER_BASE}/research/jobs`
         }
       })
     });
@@ -185,6 +222,7 @@ async function main() {
     console.log('agent api e2e qa passed');
   } finally {
     child.kill('SIGTERM');
+    provider.close();
     await sleep(300);
   }
 }

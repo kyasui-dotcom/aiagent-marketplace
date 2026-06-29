@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Campaign Operations | CAIt Apps</title>
+  <meta name="description" content="CAIt Campaign Operations keeps campaign state, publisher queues, connector readiness, and measurement loops available for stable CAIt runs." />
+  <meta name="robots" content="noindex,follow" />
+  <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/cait-icon.png" />
+  <link rel="stylesheet" href="/app-console.css?v=20260507b">
+  <style>
+    .campaign-workspace {
+      display: grid;
+      gap: 16px;
+    }
+    .campaign-header-actions {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .campaign-title {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+    .campaign-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+      gap: 16px;
+    }
+    .campaign-panel {
+      border: 1px solid #d8dee6;
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+    .campaign-form {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .campaign-form label {
+      display: grid;
+      gap: 4px;
+      font-size: 13px;
+      color: #344054;
+    }
+    .campaign-form input,
+    .campaign-form textarea {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+    }
+    .campaign-form textarea {
+      min-height: 82px;
+      resize: vertical;
+    }
+    .campaign-list {
+      display: grid;
+      gap: 8px;
+    }
+    .campaign-item {
+      width: 100%;
+      text-align: left;
+      border: 1px solid #d8dee6;
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 10px;
+      cursor: pointer;
+    }
+    .campaign-item[aria-selected="true"] {
+      border-color: #2563eb;
+      background: #eff6ff;
+    }
+    .campaign-item strong {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    .campaign-meta {
+      color: #667085;
+      font-size: 12px;
+    }
+    .campaign-section {
+      display: grid;
+      gap: 12px;
+    }
+    .campaign-band {
+      border-top: 1px solid #e5e7eb;
+      padding-top: 12px;
+    }
+    .campaign-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .campaign-table th,
+    .campaign-table td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .campaign-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .campaign-button {
+      border: 1px solid #1d4ed8;
+      background: #2563eb;
+      color: #fff;
+      border-radius: 6px;
+      padding: 8px 11px;
+      font: inherit;
+      cursor: pointer;
+    }
+    .campaign-button.secondary {
+      background: #fff;
+      color: #1d4ed8;
+    }
+    .campaign-status {
+      min-height: 20px;
+      color: #475467;
+      font-size: 13px;
+    }
+    .campaign-preview {
+      max-height: 360px;
+      overflow: auto;
+    }
+    .campaign-table.compact td,
+    .campaign-table.compact th {
+      padding: 7px;
+    }
+    @media (max-width: 820px) {
+      .campaign-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app-console-shell" aria-label="CAIt Campaign Operations">
+    <section class="app-console-panel">
+      <header class="app-console-header">
+        <a class="app-brand" href="/" aria-label="CAIt"><img src="/cait-icon.svg" alt="" /><span>Campaign Operations</span></a>
+        <nav class="app-nav" aria-label="CAIt app navigation">
+          <a href="/chat">Chat</a>
+          <a href="/apps.html">Apps</a>
+          <a href="/analytics-console.html">Analytics</a>
+          <a href="/publisher-approval.html">Publisher</a>
+          <a href="/lead-ops.html">Lead Ops</a>
+          <a href="/delivery-manager.html">Deliveries</a>
+        </nav>
+        <div class="app-header-actions campaign-header-actions">
+          <a class="ghost-btn" id="returnToChatLink" href="/chat" hidden>Return to chat</a>
+          <button id="refreshCampaigns" class="ghost-btn" type="button">Refresh</button>
+          <button id="sendCampaignContextBtn" class="primary-btn" type="button">Send to CAIt</button>
+        </div>
+      </header>
+
+      <section class="campaign-workspace">
+        <div class="workspace-head">
+          <div>
+            <span class="kicker">Marketing operations runtime</span>
+            <h1 class="campaign-title">Keep campaign state usable after the AIAGENT chat ends.</h1>
+            <p class="campaign-meta">Campaign records, Publisher queues, connector readiness, waiting conditions, and measurement loops stay attached to the next CAIt run.</p>
+          </div>
+        </div>
+
+        <section class="notice" id="campaignHandoffNotice" hidden aria-label="CAIt campaign handoff notice"></section>
+
+        <section class="ops-story-grid" aria-label="Campaign operations value">
+          <article class="panel ops-story-panel">
+            <div class="status-row compact-head">
+              <div>
+                <span class="kicker">Before / After</span>
+                <h2>From one-off agent plan to retained campaign operations.</h2>
+              </div>
+              <span class="status-pill pending" id="campaignReadinessPill">No campaign loaded</span>
+            </div>
+            <div class="ops-compare-grid">
+              <section class="ops-compare-card before">
+                <span class="ops-compare-label">Before</span>
+                <h3>AIAGENT chat output</h3>
+                <ul class="ops-bullet-list">
+                  <li>Campaign plan, owner, and status can be lost after the chat.</li>
+                  <li>Publisher queue and connector readiness are separated from execution.</li>
+                  <li>Measurement follow-up depends on someone remembering the context.</li>
+                </ul>
+              </section>
+              <section class="ops-compare-card after">
+                <span class="ops-compare-label">After</span>
+                <h3>Campaign Operations SaaS</h3>
+                <ul class="ops-bullet-list">
+                  <li>Campaign state, tasks, queues, and waiting conditions remain inspectable.</li>
+                  <li>Publisher, Lead SaaS, CRM/MA, Ads, and Analytics readiness are visible.</li>
+                  <li>CAIt receives a server-side context packet for the next stable run.</li>
+                </ul>
+              </section>
+            </div>
+          </article>
+          <article class="panel ops-readiness-panel">
+            <div class="status-row compact-head">
+              <div>
+                <span class="kicker">Operational readiness</span>
+                <h2>What stays attached</h2>
+              </div>
+            </div>
+            <div class="ops-readiness-list" id="campaignReadinessList"></div>
+          </article>
+        </section>
+
+        <section class="workflow-strip" aria-label="Campaign workflow">
+          <div class="workflow-step current" id="campaignStepState">
+            <span class="step-index">1</span>
+            <span><strong>Campaign state</strong><span>Load or create a retained campaign record.</span></span>
+          </div>
+          <div class="workflow-step" id="campaignStepReadiness">
+            <span class="step-index">2</span>
+            <span><strong>Readiness</strong><span>Check Publisher, connector, and owner waiting conditions.</span></span>
+          </div>
+          <div class="workflow-step" id="campaignStepMeasurement">
+            <span class="step-index">3</span>
+            <span><strong>Measurement</strong><span>Keep the follow-up loop attached to CAIt.</span></span>
+          </div>
+        </section>
+
+        <section class="campaign-panel campaign-section" aria-label="AIAGENT handoff audit">
+          <div class="status-row">
+            <div>
+              <span class="kicker">AIAGENT handoff audit</span>
+              <h2>Data gaps are visible before the next campaign run.</h2>
+            </div>
+            <span class="status-pill pending" id="campaignHandoffAuditPill">No packet audited</span>
+          </div>
+          <p class="campaign-meta" id="campaignHandoffAuditSummary">Open this app from a CAIt campaign handoff or create a retained campaign to audit operational continuity.</p>
+          <div class="handoff-audit-grid" id="campaignHandoffAuditList"></div>
+        </section>
+
+        <section class="metric-strip" aria-label="Campaign summary">
+          <article class="metric-card">
+            <span>Campaigns</span>
+            <strong id="campaignCountMetric">0</strong>
+            <small>Retained campaign records visible to this account.</small>
+          </article>
+          <article class="metric-card">
+            <span>Publisher queue</span>
+            <strong id="publisherQueueMetric">0</strong>
+            <small>Items waiting for approval, staging, or publish handoff.</small>
+          </article>
+          <article class="metric-card">
+            <span>Connectors</span>
+            <strong id="connectorReadinessMetric">0</strong>
+            <small>CRM/MA, lead, ads, analytics, or publisher readiness rows.</small>
+          </article>
+          <article class="metric-card">
+            <span>Measurement</span>
+            <strong id="measurementLoopMetric">0</strong>
+            <small>Metrics and follow-up checks attached to the run.</small>
+          </article>
+        </section>
+
+        <div class="campaign-grid">
+          <aside class="campaign-panel">
+            <form id="campaignForm" class="campaign-form">
+              <label>
+                Title
+                <input name="title" autocomplete="off" required>
+              </label>
+              <label>
+                Objective
+                <textarea name="objective" required></textarea>
+              </label>
+              <label>
+                Channels
+                <input name="channels" placeholder="seo, x, email">
+              </label>
+              <button class="campaign-button" type="submit">Create campaign</button>
+            </form>
+            <div id="campaignList" class="campaign-list"></div>
+          </aside>
+
+          <section id="campaignDetail" class="campaign-panel campaign-section">
+            <div class="campaign-status">Select a campaign.</div>
+          </section>
+        </div>
+
+        <section class="campaign-grid">
+          <article class="campaign-panel">
+            <div class="status-row">
+              <h2>Planned action queue</h2>
+            </div>
+            <table class="campaign-table compact" id="actionQueueTable" aria-label="Planned action queue"></table>
+          </article>
+          <article class="campaign-panel">
+            <div class="status-row">
+              <h2>CAIt campaign packet</h2>
+              <button class="ghost-btn" id="copyCampaignContextBtn" type="button">Copy packet</button>
+            </div>
+            <pre class="context-preview campaign-preview" id="campaignContextPreview"></pre>
+          </article>
+        </section>
+      </section>
+    </section>
+  </main>
+  <script type="module" src="/campaign-operations.js?v=20260602a"></script>
+</body>
+</html>

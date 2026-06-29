@@ -4,7 +4,7 @@
 
 Production target is **Cloudflare Workers + D1**.
 
-Node [`server.js`](./server.js) exists only as an ephemeral local compatibility server. It does not persist runtime state to local JSON.
+Node [`server.js`](./server.js) exists only as an ephemeral local compatibility server. It delegates requests to [`worker.js`](./worker.js) through `worker.fetch()` and does not keep separate API/auth/connector/job-flow handlers or local JSON state.
 
 ## Runtime status in this repo
 
@@ -44,9 +44,11 @@ Worker/API surface currently covered in repo:
 - `POST /api/dev/timeout-sweep`
 - `POST /api/seed`
 
-Node-only/local-only extras:
-- GitHub OAuth login
-- GitHub repo manifest browsing/import
+Node-local extras are limited to runtime adapters:
+- Cloudflare Assets-compatible file serving from `public/`
+- local Queue binding that calls the Worker queue handler
+- E2E `BOOTSTRAP_STATE_JSON` in-memory storage setup
+- localhost SSE bridge at `/events`
 
 ## Deploy blockers in this environment
 
@@ -107,7 +109,7 @@ curl https://<worker-host>/api/jobs
 
 Canonical schema files:
 - [`migrations/0001_init.sql`](./migrations/0001_init.sql)
-- [`lib/storage.js`](./lib/storage.js)
+- [`lib/storage-schema.js`](./lib/storage-schema.js)
 
 `GET /api/schema` exposes the runtime schema string for verification.
 

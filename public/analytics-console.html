@@ -9,7 +9,7 @@
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
   <link rel="stylesheet" href="/app-console.css?v=20260507a" />
-  <script type="module" src="/analytics-console.js?v=20260507c"></script>
+  <script type="module" src="/analytics-console.js?v=20260602a"></script>
 </head>
 <body>
   <main class="app-console-shell" aria-label="CAIt Analytics Console">
@@ -49,11 +49,7 @@
                 <option value="28" selected>Last 28 days</option>
                 <option value="90">Last 90 days</option>
               </select>
-              <select id="targetSelect" aria-label="Handoff target">
-                <option value="cmo_leader">CMO Leader</option>
-                <option value="seo_gap">SEO Agent</option>
-                <option value="growth">Growth Operator</option>
-              </select>
+              <select id="targetSelect" aria-label="Handoff target"></select>
             </div>
           </div>
 
@@ -72,11 +68,48 @@
             </div>
           </section>
 
+          <section class="notice" id="analyticsHandoffNotice" hidden aria-label="CAIt analytics handoff notice"></section>
+
+          <section class="ops-story-grid" aria-label="Analytics operating model">
+            <article class="panel ops-story-panel">
+              <span class="kicker">Stable operation</span>
+              <h2>Turn one-off analytics chat into a retained operating packet.</h2>
+              <div class="ops-compare-grid">
+                <div class="ops-compare-card before">
+                  <span class="ops-compare-label">Before</span>
+                  <h3>Chat-only analytics work</h3>
+                  <ul class="ops-bullet-list">
+                    <li>GA4 and Search Console rows are pasted once, then become hard to audit later.</li>
+                    <li>Follow-up agents must ask again which source, range, and baseline were used.</li>
+                    <li>Post-run checks depend on memory outside the workflow.</li>
+                  </ul>
+                </div>
+                <div class="ops-compare-card after">
+                  <span class="ops-compare-label">After</span>
+                  <h3>CAIt Analytics Console</h3>
+                  <ul class="ops-bullet-list">
+                    <li>Source, date range, rows, warnings, and next checks are saved as a server-side context.</li>
+                    <li>Leaders receive the same evidence packet without relying on browser storage or pasted payloads.</li>
+                    <li>24h and 7d measurement stays attached to the next order.</li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+            <article class="panel ops-readiness-panel">
+              <div class="status-row">
+                <h2>Run readiness</h2>
+                <span class="status-pill pending" id="analyticsRunReadinessStatus">Waiting</span>
+              </div>
+              <div class="ops-readiness-list" id="analyticsReadinessList" aria-label="Analytics run readiness"></div>
+            </article>
+          </section>
+
           <section class="split-main">
             <article class="panel">
               <div class="status-row">
                 <h2>Google sources</h2>
                 <div class="inline-actions">
+                  <a class="ghost-btn" id="connectGoogleAllBtn" data-google-connect-link="analytics" href="https://aiagent-marketplace.net/auth/google?action=analytics_connect&amp;return_to=%2Fanalytics-console.html&amp;login_source=analytics_console_google&amp;scope_group=ga4,gsc&amp;capabilities=google.read_ga4,google.read_gsc" target="_top">Connect both</a>
                   <a class="ghost-btn" id="connectGoogleBtn" data-google-connect-link="ga4" href="https://aiagent-marketplace.net/auth/google?action=analytics_connect&amp;return_to=%2Fanalytics-console.html&amp;login_source=analytics_console_ga4&amp;scope_group=ga4&amp;capabilities=google.read_ga4" target="_top">Connect GA4</a>
                   <a class="ghost-btn" id="connectSearchConsoleBtn" data-google-connect-link="gsc" href="https://aiagent-marketplace.net/auth/google?action=analytics_connect&amp;return_to=%2Fanalytics-console.html&amp;login_source=analytics_console_gsc&amp;scope_group=gsc&amp;capabilities=google.read_gsc" target="_top">Connect Search Console</a>
                   <button class="ghost-btn" id="refreshGoogleSourcesBtn" type="button">Refresh sources</button>

@@ -41,6 +41,7 @@ async function main() {
       ...process.env,
       NODE_ENV: 'test',
       ALLOW_IN_MEMORY_STORAGE: '1',
+      ALLOW_OPEN_WRITE_API: '1',
       PORT: String(PORT),
       OPEN_CHAT_INTENT_LLM: 'openai',
       OPENAI_API_KEY: 'sk-should-not-be-used-for-work-chat',
@@ -80,7 +81,7 @@ async function main() {
           name: 'security_agent',
           task_types: ['research'],
           pricing: { premium_rate: 0.2, basic_rate: 0.1 },
-          healthcheck_url: `${BASE}/mock/research/health`,
+          healthcheck_url: 'https://security.example/agent/health',
           verification: {
             challenge_url: 'https://example.com/.well-known/agent-challenge.txt',
             challenge_token: 'super-secret-token'

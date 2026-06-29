@@ -16,11 +16,13 @@ const resourcesHtml = read('public/resources.html');
 const agentsHtml = read('public/agents.html');
 const siteMapHtml = read('public/site-map.html');
 const guideHtml = read('public/guide.html');
+const apiHtml = read('public/ai-agent-api.html');
 const cliHtml = read('public/cli-help.html');
 const qaHtml = read('public/qa.html');
 const newsHtml = read('public/news.html');
 const termsHtml = read('public/terms.html');
 const privacyHtml = read('public/privacy.html');
+const providerIdentityHtml = read('public/provider-identity.html');
 const manifestDoc = read('MANIFEST.md');
 const listAgentAuthHref = '/auth/github?mode=link&amp;return_to=%2Fpublish-ai-agents.html&amp;login_source=list_agent';
 
@@ -36,7 +38,8 @@ for (const [name, html] of [
   ['qa', qaHtml],
   ['news', newsHtml],
   ['terms', termsHtml],
-  ['privacy', privacyHtml]
+  ['privacy', privacyHtml],
+  ['provider-identity', providerIdentityHtml]
 ]) {
   assert.ok(html.includes(`<a class="logo logo-link" href="/" aria-label="Back to ${SITE_NAME} start">${SITE_NAME}</a>`), `${name} logo should link back to start`);
 }
@@ -44,9 +47,10 @@ for (const [name, html] of [
 assert.ok(indexHtml.includes('<main class="home-shell" aria-label="CAIt landing page">'), 'index should be the public landing page');
 assert.ok(indexHtml.includes('Anyone can create high-quality AI agent output'), 'index should explain the anyone-can-create-high-quality-output positioning');
 assert.ok(indexHtml.includes('/login?next=%2Fchat&amp;source=start'), 'index START should send visitors to the dedicated login path for chat');
-for (const href of ['/login?next=%2Fchat', '/resources.html', '/rss.xml', '/feed.xml', '/publish-ai-agents.html', '/ai-agent-api.html', '/agents.html', '/cli-help.html', '/help.html', '/news.html']) {
+for (const href of ['/login?next=%2Fchat', '/resources.html', '/rss.xml', '/feed.xml', '/publish-ai-agents.html', '/ai-agent-api.html', '/agents.html', '/help.html', '/news.html']) {
   assert.ok(indexHtml.includes(href), `index should link ${href}`);
 }
+assert.ok(!indexHtml.includes('/cli-help.html'), 'index should not expose a separate CLI tab/page link');
 assert.ok(!indexHtml.includes('/?tab=work'), 'index should not link retired work tab route');
 assert.ok(!indexHtml.includes('/?tab=agents'), 'index should not link retired agents tab route');
 
@@ -98,8 +102,13 @@ assert.ok(resourcesHtml.includes('/rss.xml'));
 assert.ok(resourcesHtml.includes('/feed.xml'));
 assert.ok(resourcesHtml.includes('/agents/prompt-brushup-ai-agent.html'));
 assert.ok(resourcesHtml.includes('/glossary/ai-agent.html'));
+assert.ok(resourcesHtml.includes('API / CLI / MCP'), 'Resource hub should expose one developer access link.');
+assert.ok(resourcesHtml.includes('External developer surfaces are active'), 'Resource hub should show the unified developer surface as active.');
 
 assert.ok(agentsHtml.includes('QUALITY FLOW'));
+assert.ok(agentsHtml.includes('DELIVERY READINESS'));
+assert.ok(agentsHtml.includes('43 sample agent files'));
+assert.ok(agentsHtml.includes('40 orderable built-in agents'));
 assert.ok(agentsHtml.includes('1. LEADER LAYER'));
 assert.ok(agentsHtml.includes('2. RESEARCH LAYER'));
 assert.ok(agentsHtml.includes('3. PLANNING AND PREPARATION LAYER'));
@@ -136,20 +145,14 @@ assert.ok(guideHtml.includes('first high-quality AI agent order'));
 assert.ok(guideHtml.includes('app context'));
 assert.ok(guideHtml.includes('delivery history'));
 
-assert.ok(cliHtml.includes('API AND CLI GUIDE'));
-assert.ok(cliHtml.includes('curl.exe'));
-assert.ok(cliHtml.includes('QUALITY WORKFLOW CHECKLIST'));
-assert.ok(cliHtml.includes('delivery history'));
-assert.ok(cliHtml.includes('ONE USER-SCOPED KEY'));
-assert.ok(cliHtml.includes('AGENT REGISTRATION WITH CAIt API KEY'));
-assert.ok(cliHtml.includes('npm run cait:key -- create --label codex-desktop'));
-assert.ok(cliHtml.includes('https://aiagent-marketplace.net/api/jobs'));
-assert.ok(cliHtml.includes('needs_input'));
-assert.ok(cliHtml.includes('skip_intake'));
-assert.ok(cliHtml.includes('https://aiagent-marketplace.net/api/agents/import-manifest'));
-assert.ok(cliHtml.includes('Authorization: Bearer'));
-assert.ok(cliHtml.includes('APP CONTEXT HANDOFF'));
-assert.ok(cliHtml.includes('CONTEXT-FIRST ORDERING'));
+assert.ok(apiHtml.includes('API / CLI / MCP'));
+assert.ok(apiHtml.includes('curl.exe'));
+assert.ok(apiHtml.includes('delivery history'));
+assert.ok(apiHtml.includes('app context'));
+assert.ok(apiHtml.includes('API-key access is active'));
+assert.ok(apiHtml.includes('https://aiagent-marketplace.net/api/jobs'));
+assert.ok(apiHtml.includes('/.well-known/mcp.json'));
+assert.ok(cliHtml.includes('OPEN API / CLI / MCP'));
 
 assert.ok(qaHtml.includes('Q&A'));
 assert.ok(qaHtml.includes('agent leaders, simple chat, and SaaS-style apps'));
@@ -167,12 +170,37 @@ assert.ok(newsHtml.includes('Agent listing stays visible while providers registe
 assert.ok(newsHtml.includes('Each update has its own page for search'));
 
 assert.ok(termsHtml.includes('TERMS OF SERVICE'));
-assert.ok(termsHtml.includes('2026-04-19'));
-assert.ok(termsHtml.includes('FEES, BILLING, AND PROVIDER PAYOUTS'));
+assert.ok(termsHtml.includes('2026-05-15'));
+assert.ok(termsHtml.includes('NO IN-APP PAYMENT PROCESSING AND RESTRICTED BUSINESS POLICY'));
+assert.ok(termsHtml.includes('CAIt does not currently collect cards, open checkout, create subscriptions or invoices, charge customers, route donations, split revenue, or move provider payouts inside the app'));
+assert.ok(termsHtml.includes('Built-in agents, sample agents, operator-provided agents, external agents, and user-registered agents are subject to the same review standard'));
+assert.ok(termsHtml.includes('Self-serve registration, agent listing, manifest verification, order acceptance, or account creation is not approval for a restricted business'));
+assert.ok(termsHtml.includes('AI agents that discuss pricing, finance, legal, compliance, medical, security, acquisition, outreach, or growth topics may provide general operational assistance only'));
+assert.ok(termsHtml.includes('DONATIONS, FEES, AND MONEY MOVEMENT REMOVED'));
+assert.ok(termsHtml.includes('Cost estimates and cost history are informational product context'));
+assert.ok(!termsHtml.includes('Stripe'), 'Terms should not name a payment processor while payment processing is removed');
+assert.ok(read('public/pricing.html').includes('CAIt does not collect cards, open checkout, run subscriptions, charge customers, or move provider payouts inside the app'));
+assert.ok(read('public/pricing.html').includes('Stripe can support one-time or recurring donations through external Payment Links'));
+assert.ok(read('public/pricing.html').includes('For Japan-facing support, donations to individuals are not supported'));
+assert.ok(read('public/ai-agent-monetization.html').includes('in-app checkout, saved cards, subscriptions, invoices, marketplace revenue split, donation collection, and payout movement have been removed'));
 
 assert.ok(privacyHtml.includes('PRIVACY POLICY'));
+assert.ok(privacyHtml.includes('2026-05-15'));
 assert.ok(privacyHtml.includes('Cloudflare'));
 assert.ok(privacyHtml.includes('GitHub'));
+assert.ok(privacyHtml.includes('Provider identity verification data, including legal name, birth date, address, phone number, document type, notes, and submitted identity photos'));
+assert.ok(privacyHtml.includes('provider identity review records and submitted photos'));
+assert.ok(privacyHtml.includes('GOOGLE USER DATA AND OAUTH SCOPES'));
+assert.ok(privacyHtml.includes('https://www.googleapis.com/auth/analytics.readonly'));
+assert.ok(privacyHtml.includes('https://www.googleapis.com/auth/webmasters.readonly'));
+assert.ok(privacyHtml.includes('Limited Use requirements'));
+assert.ok(privacyHtml.includes('does not sell Google user data'));
+assert.ok(/use Google\s+Workspace API data to develop, improve, or train generalized AI or ML models/.test(privacyHtml));
+
+assert.ok(providerIdentityHtml.includes('Provider Identity Verification'));
+assert.ok(providerIdentityHtml.includes('id="providerIdentityForm"'));
+assert.ok(providerIdentityHtml.includes('type="file" accept="image/png,image/jpeg,image/webp"'));
+assert.ok(providerIdentityHtml.includes('/provider-identity.js?v=20260515a'));
 
 assert.ok(manifestDoc.includes('kind`: `agent` (default), `composite_agent`, or `agent_group`'));
 assert.ok(manifestDoc.includes('Default: register each AI agent separately'));

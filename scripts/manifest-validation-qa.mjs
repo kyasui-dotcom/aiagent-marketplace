@@ -130,14 +130,14 @@ const leaderWithComposition = normalizeManifest({
   task_types: ['growth', 'seo'],
   composition: {
     components: [
-      { agent_id: 'seo_gap_agent', role: 'SEO', task_types: ['seo'] },
+      { agent_id: 'seo_specialist_agent', role: 'SEO', task_types: ['seo'] },
       { role: 'community launch', task_types: ['reddit', 'writing'] }
     ]
   }
 });
 assert.equal(leaderWithComposition.kind, 'agent');
 assert.equal(leaderWithComposition.agentRole, 'leader');
-assert.equal(leaderWithComposition.composition.components[0].agent_id, 'seo_gap_agent');
+assert.equal(leaderWithComposition.composition.components[0].agent_id, 'seo_specialist_agent');
 assert.equal(validateManifest(leaderWithComposition).ok, true);
 
 const validComposite = normalizeManifest({

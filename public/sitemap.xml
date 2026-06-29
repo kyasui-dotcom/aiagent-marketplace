@@ -13,6 +13,14 @@
     <lastmod>2026-05-01</lastmod>
   </url>
   <url>
+    <loc>https://aiagent-marketplace.net/legal-notice.html</loc>
+    <lastmod>2026-05-07</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/creator.html</loc>
+    <lastmod>2026-05-28</lastmod>
+  </url>
+  <url>
     <loc>https://aiagent-marketplace.net/no-api-key-ai-agents.html</loc>
     <lastmod>2026-04-14</lastmod>
   </url>
@@ -41,10 +49,6 @@
     <lastmod>2026-04-14</lastmod>
   </url>
   <url>
-    <loc>https://aiagent-marketplace.net/ai-agent-cli.html</loc>
-    <lastmod>2026-04-14</lastmod>
-  </url>
-  <url>
     <loc>https://aiagent-marketplace.net/ai-agent-verification.html</loc>
     <lastmod>2026-04-14</lastmod>
   </url>
@@ -54,10 +58,6 @@
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/github-ai-agent-integration.html</loc>
-    <lastmod>2026-04-14</lastmod>
-  </url>
-  <url>
-    <loc>https://aiagent-marketplace.net/ai-agent-payouts.html</loc>
     <lastmod>2026-04-14</lastmod>
   </url>
   <url>
@@ -209,7 +209,15 @@
     <lastmod>2026-04-14</lastmod>
   </url>
   <url>
-    <loc>https://aiagent-marketplace.net/agents/seo-gap-ai-agent.html</loc>
+    <loc>https://aiagent-marketplace.net/agents/seo-specialist-ai-agent.html</loc>
+    <lastmod>2026-04-14</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/agents/campaign-operations-ai-agent.html</loc>
+    <lastmod>2026-04-14</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/agents/ads-planner-ai-agent.html</loc>
     <lastmod>2026-04-14</lastmod>
   </url>
   <url>
@@ -234,7 +242,7 @@
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/news.html</loc>
-    <lastmod>2026-05-01</lastmod>
+    <lastmod>2026-06-28</lastmod>
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/contribute.html</loc>
@@ -245,12 +253,168 @@
     <lastmod>2026-04-14</lastmod>
   </url>
   <url>
-    <loc>https://aiagent-marketplace.net/cli-help.html</loc>
+    <loc>https://aiagent-marketplace.net/qa.html</loc>
     <lastmod>2026-04-14</lastmod>
   </url>
   <url>
-    <loc>https://aiagent-marketplace.net/qa.html</loc>
-    <lastmod>2026-04-14</lastmod>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-messages-need-sender-identity-rules.html</loc>
+    <lastmod>2026-06-28</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-work-needs-notification-scopes.html</loc>
+    <lastmod>2026-06-27</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-telemetry-needs-usefulness-signals.html</loc>
+    <lastmod>2026-06-26</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-disputes-need-evidence-bundles.html</loc>
+    <lastmod>2026-06-25</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-recommendations-need-incentive-disclosures.html</loc>
+    <lastmod>2026-06-24</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-work-needs-dependency-maps.html</loc>
+    <lastmod>2026-06-23</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-listings-need-support-policies.html</loc>
+    <lastmod>2026-06-22</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-reviews-need-objection-logs.html</loc>
+    <lastmod>2026-06-21</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-inputs-need-instruction-boundaries.html</loc>
+    <lastmod>2026-06-20</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-marketplaces-need-substitution-consent.html</loc>
+    <lastmod>2026-06-19</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-orders-need-sample-packets.html</loc>
+    <lastmod>2026-06-18</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-work-needs-concurrency-limits.html</loc>
+    <lastmod>2026-06-17</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-work-needs-recipient-visibility-boundaries.html</loc>
+    <lastmod>2026-06-16</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-work-needs-artifact-manifests.html</loc>
+    <lastmod>2026-06-15</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-failures-need-failure-classes.html</loc>
+    <lastmod>2026-06-14</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-orders-need-escalation-contacts.html</loc>
+    <lastmod>2026-06-13</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-orders-need-constraint-precedence.html</loc>
+    <lastmod>2026-06-12</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-deliveries-need-claim-labels.html</loc>
+    <lastmod>2026-06-11</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-actions-need-rollback-plans.html</loc>
+    <lastmod>2026-06-10</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-credentials-need-expiry-windows.html</loc>
+    <lastmod>2026-06-09</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-runs-need-decision-logs.html</loc>
+    <lastmod>2026-06-08</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-orders-need-locale-constraints.html</loc>
+    <lastmod>2026-06-07</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-outcomes-need-baseline-snapshots.html</loc>
+    <lastmod>2026-06-06</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-jobs-need-environment-readiness-checks.html</loc>
+    <lastmod>2026-06-05</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-briefs-need-audience-constraints.html</loc>
+    <lastmod>2026-06-04</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-deliveries-need-revision-trails.html</loc>
+    <lastmod>2026-06-02</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-work-needs-source-authority-rules.html</loc>
+    <lastmod>2026-06-01</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-runs-need-interruption-rules.html</loc>
+    <lastmod>2026-05-31</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-work-needs-update-cadences.html</loc>
+    <lastmod>2026-05-29</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-queues-need-priority-reasons.html</loc>
+    <lastmod>2026-05-28</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-orders-need-data-use-boundaries.html</loc>
+    <lastmod>2026-05-27</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-actions-need-dry-run-previews.html</loc>
+    <lastmod>2026-05-26</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-orders-need-acceptance-criteria.html</loc>
+    <lastmod>2026-05-26</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-orders-need-estimate-ranges.html</loc>
+    <lastmod>2026-05-25</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-handoffs-need-context-budgets.html</loc>
+    <lastmod>2026-05-24</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-marketplaces-need-freshness-signals.html</loc>
+    <lastmod>2026-05-24</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/ai-agent-listings-need-refusal-boundaries.html</loc>
+    <lastmod>2026-05-23</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/multi-agent-work-needs-ownership-boundaries.html</loc>
+    <lastmod>2026-05-23</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/shared-app-manifest-registry-for-chat-and-apps.html</loc>
+    <lastmod>2026-05-23</lastmod>
+  </url>
+  <url>
+    <loc>https://aiagent-marketplace.net/news/delivery-artifacts-now-require-reviewable-content.html</loc>
+    <lastmod>2026-05-23</lastmod>
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/news/leader-led-chat-workspace-replaces-old-work-ui.html</loc>
@@ -770,14 +934,6 @@
   </url>
   <url>
     <loc>https://aiagent-marketplace.net/glossary/adapter-pr.html</loc>
-    <lastmod>2026-04-14</lastmod>
-  </url>
-  <url>
-    <loc>https://aiagent-marketplace.net/glossary/month-end-billing.html</loc>
-    <lastmod>2026-04-14</lastmod>
-  </url>
-  <url>
-    <loc>https://aiagent-marketplace.net/glossary/provider-payout.html</loc>
     <lastmod>2026-04-14</lastmod>
   </url>
   <url>

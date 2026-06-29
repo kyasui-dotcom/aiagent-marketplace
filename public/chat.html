@@ -9,8 +9,9 @@
   <link rel="canonical" href="https://aiagent-marketplace.net/chat.html" />
   <link rel="icon" href="/cait-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/cait-icon.png" />
-  <link rel="stylesheet" href="/chat.css?v=20260507a" />
-  <script type="module" src="/chat.js?v=20260507f"></script>
+  <link rel="stylesheet" href="/chat.css?v=20260526f" />
+  <script defer src="/analytics-loader.js?v=20260514a"></script>
+  <script type="module" src="/chat.js?v=20260628d"></script>
 </head>
 <body>
   <main class="chatux-shell" aria-label="CAIt chat">
@@ -26,28 +27,42 @@
     </aside>
     <section class="chatux-panel">
       <header class="chatux-header">
-        <a class="chatux-brand" href="/" aria-label="CAIt">
-          <img src="/cait-icon.svg" alt="" />
-          <span>CAIt</span>
-        </a>
-        <nav class="chatux-nav" aria-label="CAIt pages">
-          <a href="/agents.html">Agents</a>
-          <a href="/apps.html">Apps</a>
-          <a href="/ai-agent-api.html">API</a>
-          <a href="/cli-help.html">CLI</a>
-          <a href="/resources.html">Resources</a>
-          <a href="/help.html">Help</a>
-          <a href="/news.html">News</a>
-          <a href="/admin" id="adminNavLink" hidden>Admin</a>
-        </nav>
-        <div class="chatux-header-tools" aria-label="CAIt tools">
-          <button class="tool-icon-btn" id="openChatListBtn" type="button" title="Chat and order history" aria-label="Chat and order history">Chats</button>
-          <button class="tool-icon-btn" id="openScheduleBtn" type="button" title="Scheduled work" aria-label="Scheduled work">Clock</button>
-          <button class="tool-icon-btn" id="openWorkerListBtn" type="button" title="Worker and agent list" aria-label="Worker and agent list">Workers</button>
-          <button class="tool-icon-btn" id="openAppListBtn" type="button" title="Apps and reusable tools" aria-label="Apps and reusable tools">Apps</button>
-          <button class="tool-icon-btn" id="openInfoBtn" type="button" title="Account and links" aria-label="Account and links">Info</button>
+        <div class="chatux-header-main">
+          <a class="chatux-brand" href="/" aria-label="CAIt">
+            <img src="/cait-icon.svg" alt="" />
+            <span>CAIt</span>
+          </a>
           <div class="leader-status-pill" id="activeLeaderStatus">CAIt routing</div>
+        </div>
+        <div class="chatux-header-tools" aria-label="CAIt tools">
           <div class="chatux-status" id="authStatus">Checking session...</div>
+          <details class="chatux-menu" id="chatHeaderMenu">
+            <summary class="tool-icon-btn chatux-menu-trigger" aria-label="Open chat menu">☰ Menu</summary>
+            <div class="chatux-menu-panel">
+              <div class="chatux-menu-section">
+                <div class="chatux-menu-label">Workspace</div>
+                <button class="chatux-menu-item" id="openChatListBtn" type="button">Chat history</button>
+                <button class="chatux-menu-item" id="openScheduleBtn" type="button">Schedules</button>
+                <button class="chatux-menu-item" id="openWorkerListBtn" type="button">Agents and workers</button>
+                <button class="chatux-menu-item" id="openAppListBtn" type="button">App tools</button>
+                <button class="chatux-menu-item" id="openInfoBtn" type="button">Account info</button>
+              </div>
+              <!-- CAIT_SHARED_HEADER:chat-pages:start -->
+              <nav class="chatux-menu-section chatux-nav" aria-label="CAIt pages">
+                <div class="chatux-menu-label">Pages</div>
+                <a href="/agents.html">Agent directory</a>
+                <a href="/apps.html">Apps hub</a>
+                <a href="/delivery-manager.html">Deliveries</a>
+                <a href="/account-settings.html">Account settings</a>
+                <a href="/ai-agent-api.html">API / CLI / MCP</a>
+                <a href="/resources.html">Resources</a>
+                <a href="/help.html">Help</a>
+                <a href="/news.html">News</a>
+                <a href="/admin" id="adminNavLink" hidden>Admin</a>
+              </nav>
+<!-- CAIT_SHARED_HEADER:chat-pages:end -->
+            </div>
+          </details>
         </div>
       </header>
 
@@ -61,11 +76,27 @@
       </section>
 
       <form class="composer" id="composer">
-        <textarea id="promptInput" rows="3" placeholder="Example: I want to improve website acquisition"></textarea>
-        <div class="composer-actions">
-          <button class="ghost-btn schedule-composer-btn" id="openScheduleComposerBtn" type="button" title="Scheduled work" aria-label="Scheduled work">Schedule</button>
-          <button class="ghost-btn" id="resetBtn" type="button">Reset</button>
-          <button class="primary-btn" id="sendMessageBtn" type="submit">Send chat</button>
+        <div class="composer-field">
+          <textarea id="promptInput" rows="3" placeholder="Example: I want to improve website acquisition"></textarea>
+          <div class="composer-mode-hint" id="composerModeHint">Type a request, then send it to chat.</div>
+        </div>
+        <div class="composer-controls">
+          <div class="composer-actions">
+            <label class="delivery-format-control" for="deliveryFormatSelect" title="Preferred format for the final result. Schedule only controls timing.">
+              <span id="deliveryFormatLabel">Output</span>
+              <select id="deliveryFormatSelect" aria-label="Preferred output format">
+                <option value="chat_summary" data-label-en="Summary" data-label-ja="要約">Summary</option>
+                <option value="files" data-label-en="Files" data-label-ja="ファイル">Files</option>
+                <option value="review_packets" data-label-en="Review" data-label-ja="確認">Review</option>
+                <option value="planning_options" data-label-en="Plans" data-label-ja="計画">Plans</option>
+                <option value="approval_queue" data-label-en="Approvals" data-label-ja="承認">Approvals</option>
+              </select>
+            </label>
+            <button class="ghost-btn schedule-composer-btn" id="openScheduleComposerBtn" type="button" title="Scheduled work" aria-label="Scheduled work">Schedule</button>
+            <button class="ghost-btn" id="resetBtn" type="button">Reset</button>
+            <button class="primary-btn" id="sendMessageBtn" type="submit">Send chat</button>
+          </div>
+          <div class="composer-controls-hint" id="composerControlsHint">Output sets the result format. Schedule runs it later.</div>
         </div>
       </form>
     </section>

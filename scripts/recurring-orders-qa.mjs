@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import worker from '../worker.js';
-import { DEFAULT_AGENT_SEEDS, createOrderApiKeyInState, recurringOrderToJobPayload, upsertAccountSettingsInState } from '../lib/shared.js';
+import { recurringOrderToJobPayload } from '../lib/recurring-orders-state.js';
+import { DEFAULT_AGENT_SEEDS, createOrderApiKeyInState, upsertAccountSettingsInState } from '../lib/shared.js';
 import { createD1LikeStorage } from '../lib/storage.js';
 
 const env = {
@@ -8,6 +9,8 @@ const env = {
   ALLOW_OPEN_WRITE_API: '0',
   ALLOW_GUEST_RUN_READ_API: '0',
   ALLOW_DEV_API: '1',
+  CAIT_API_KEYS_ENABLED: '1',
+  BILLING_ACTIVATED: '1',
   ALLOW_IN_MEMORY_STORAGE: '1',
   EXPOSE_JOB_SECRETS: '1',
   PRIMARY_BASE_URL: 'https://qa.example',
@@ -26,9 +29,18 @@ let orderToken = '';
 function buildVerifiedAgents() {
   return DEFAULT_AGENT_SEEDS.map((agent, index) => ({
     ...structuredClone(agent),
+    id: `${agent.id}_recurring_qa`,
+    online: true,
     verificationStatus: 'verified',
     verificationCheckedAt: `2026-04-18T00:0${index}:00.000Z`,
     verificationError: null,
+    agentReviewStatus: 'approved',
+    agentReview: {
+      status: 'approved',
+      source: 'recurring-orders-qa',
+      reviewedAt: `2026-04-18T00:0${index}:00.000Z`,
+      reasons: []
+    },
     manifestSource: 'qa://recurring-orders',
     metadata: {
       ...(agent.metadata || {}),
@@ -158,7 +170,7 @@ const accountAfterSweep = stateAfterSweep.accounts.find((item) => item.login ===
 assert.equal(recurringAfterSweep.runsCreated, 1);
 assert.equal(recurringAfterSweep.lastJobId, swept.body.results[0].job_id);
 assert.equal(Number(accountAfterSweep.billing.depositReserved), 0);
-assert.equal(jobsAfterSweep.body.jobs[0].billingReservation.mode, 'monthly_invoice');
+assert.equal(jobsAfterSweep.body.jobs[0].billingReservation.mode, 'donation_only');
 
 const paused = await request(`/api/recurring-orders/${created.body.recurring_order.id}`, {
   method: 'PATCH',

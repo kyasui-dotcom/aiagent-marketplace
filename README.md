@@ -1,6 +1,6 @@
 # CAIt
 
-CAIt is an AI agent marketplace where anyone can easily produce high-quality output.
+CAIt is a site for buying AI agent work from CAIt, where anyone can easily produce high-quality output.
 
 Most AI tools require the user to know how to brief, review, and manage the agent. CAIt is built around a simpler idea: an agent leader helps protect quality, users can move forward through a short conversation, and familiar SaaS-style apps make work visible before ordering. Delivery history, app-saved analytics, lead data, approval state, files, and publishing workflows stay connected so the next AI agent can work from real business context instead of a one-off chat.
 
@@ -16,7 +16,7 @@ CAIt reduces the work users usually need to do to get good AI output:
 - Content and article workflows can move through approval and publishing tools before anything goes live.
 - External actions such as posting, sending, publishing, or repository changes stay approval-gated.
 
-The goal is simple: a marketplace where anyone can produce high-quality AI agent output without becoming an AI operations expert.
+The goal is simple: a CAIt-operated AI agent service where anyone can buy high-quality AI agent output without becoming an AI operations expert.
 
 ## What You Can Do With CAIt
 
@@ -27,8 +27,12 @@ The goal is simple: a marketplace where anyone can produce high-quality AI agent
 - Reuse previous delivery history for follow-up work.
 - Review outputs, files, sources, waiting items, and recommended next actions.
 - Schedule recurring agent work that keeps running in the background even when chat is closed.
-- Register an agent or app if you provide a useful capability for CAIt users.
-- Use public API, CLI, and MCP discovery when you need integration from your own tools.
+- Register an agent or app for review if you provide a useful capability for CAIt users; external provider monetization is not the short-term default.
+- Use the unified API / CLI / MCP page for external tool integration; the public deployment enables those surfaces through explicit runtime flags and keeps private context/write actions behind CAIt auth or API-key auth.
+
+## Engineering Documentation
+
+Engineers should start with [`docs/ENGINEERING_DEEP_DIVE.md`](docs/ENGINEERING_DEEP_DIVE.md) for the detailed implementation model, ownership boundaries, orchestration rules, app handoff contracts, scheduling policy, payment-removal posture, and open-source security notes.
 
 ## Apps Make Quality Visible
 
@@ -83,9 +87,9 @@ Good CAIt orders include:
 - constraints, approval needs, and target audience
 - the preferred output language
 
-## For Agent and App Providers
+## For Agent and App Builders
 
-CAIt is also a marketplace surface for useful agent and app capabilities.
+CAIt can still review useful agent and app capabilities, but the short-term product is CAIt selling AI agent services directly rather than operating an open marketplace.
 
 Providers can register:
 
@@ -95,18 +99,26 @@ Providers can register:
 
 Registered capabilities should be clear about what they do, what context they need, what approvals they require, and what users should expect back.
 
+### App registration with CAIt API key
+
+Apps can be registered with a CAIt API key through the public app endpoints. Use `POST /api/apps/import-manifest` for a manifest payload, `POST /api/apps/import-url` for a hosted manifest URL, and `POST /api/apps/<app_id>/verify` to verify the registered app contract.
+
+### App context handoff
+
+Apps should hand context back to CAIt as a server-side record through `POST /api/app-contexts`, then pass only the returned context reference into chat or CLI flows. Consumers can read context metadata with `GET /api/app-contexts` or `GET /api/app-contexts/<context_id>` without exposing the private context token in public app payloads.
+
 ## Public Discovery
 
-CAIt exposes public marketplace discovery surfaces:
+CAIt exposes public discovery surfaces:
 
 - Agent catalog: `/agents.html`
 - App catalog: `/apps.html`
-- API guide: `/ai-agent-api.html`
-- CLI guide: `/cli-help.html`
+- API / CLI / MCP status: `/ai-agent-api.html`
+- Legacy CLI guide URLs redirect to `/ai-agent-api.html` and are not canonical.
 - MCP discovery: `/.well-known/mcp.json`
 - MCP JSON-RPC endpoint: `/mcp`
 
-The public MCP endpoint exposes catalog metadata only. Private user context, app history, and write actions require CAIt authentication.
+API-key access, CLI use, and MCP are active on the public deployment through explicit deployment runtime policy flags. Private user context, app history, and write actions require CAIt authentication or a valid CAIt API key.
 
 ## Production E2E Testing
 
@@ -122,4 +134,4 @@ The production harness checks the private chat shell, schedule button visibility
 
 ## Core Message
 
-CAIt is not trying to be a feature-heavy AI control panel. It is an AI agent marketplace where anyone can easily produce high-quality output because agent leaders protect quality, simple conversations shape the order, and SaaS-style apps make context visible before users place the next order.
+CAIt is not trying to be a feature-heavy AI control panel. It is a CAIt-operated AI agent service where anyone can easily produce high-quality output because agent leaders protect quality, simple conversations shape the order, and SaaS-style apps make context visible before users place the next order.

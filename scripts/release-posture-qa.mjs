@@ -4,6 +4,9 @@ import worker from '../worker.js';
 const env = {
   APP_VERSION: '0.2.0-test',
   ALLOW_IN_MEMORY_STORAGE: '1',
+  CAIT_DEVELOPER_API_ENABLED: '1',
+  CAIT_CLI_ENABLED: '1',
+  CAIT_MCP_ENABLED: '1',
   MY_BINDING: null,
   ASSETS: {
     async fetch() {
@@ -24,6 +27,10 @@ assert.equal(auth.body.releaseStage, 'public');
 assert.equal(auth.body.openWriteApiEnabled, false);
 assert.equal(auth.body.guestRunReadEnabled, false);
 assert.equal(auth.body.devApiEnabled, false);
+assert.equal(auth.body.developerApiEnabled, true);
+assert.equal(auth.body.cliEnabled, true);
+assert.equal(auth.body.mcpEnabled, true);
+assert.equal(auth.body.developerSurfacesPaused, false);
 assert.equal(auth.body.exposeJobSecrets, false);
 
 const snapshot = await request('/api/snapshot');

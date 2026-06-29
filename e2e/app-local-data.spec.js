@@ -4,7 +4,7 @@ const appPages = [
   { path: '/apps.html', ready: '[data-app-registry-list]' },
   { path: '/analytics-console.html', ready: '#sendContextBtn', send: '#sendContextBtn' },
   { path: '/publisher-approval.html', ready: '#sendPacketBtn', send: '#sendPacketBtn' },
-  { path: '/lead-ops.html', ready: '#sendLeadContextBtn', send: '#sendLeadContextBtn' },
+  { path: '/lead-ops.html', ready: '#sendLeadContextBtn', send: '#sendLeadContextBtn', prepare: 'lead-example' },
   { path: '/delivery-manager.html', ready: '#sendDeliveryContextBtn', send: '#sendDeliveryContextBtn' }
 ];
 
@@ -56,7 +56,7 @@ function expectNoBrowserPersistence(snapshot, label) {
 test.describe('CAIt apps do not persist local browser data', () => {
   test('app pages keep browser persistence APIs empty on load', async ({ page }) => {
     for (const appPage of appPages) {
-      await page.goto(appPage.path, { waitUntil: 'networkidle' });
+      await page.goto(appPage.path, { waitUntil: 'domcontentloaded' });
       await expect(page.locator(appPage.ready)).toBeVisible();
       expectNoBrowserPersistence(await browserStorageSnapshot(page), appPage.path);
     }
@@ -64,12 +64,17 @@ test.describe('CAIt apps do not persist local browser data', () => {
 
   test('Send to CAIt uses the server context API without local browser persistence', async ({ page }) => {
     for (const appPage of appPages.filter((item) => item.send)) {
-      await page.goto(appPage.path, { waitUntil: 'networkidle' });
+      await page.goto(appPage.path, { waitUntil: 'domcontentloaded' });
       await expect(page.locator(appPage.ready)).toBeVisible();
+      if (appPage.prepare === 'lead-example') {
+        await page.locator('#fillLeadExampleBtn').click();
+        await expect(page.locator(appPage.send)).toBeEnabled();
+      }
 
       const contextResponse = page.waitForResponse((response) => (
         response.url().includes('/api/app-contexts')
         && response.request().method() === 'POST'
+        && response.ok()
       ));
 
       await page.locator(appPage.send).click();
