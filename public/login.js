@@ -126,7 +126,10 @@ function applyTrustedAuthOrigin(status = {}) {
     const label = runtimeUsesExternalAuth
       ? `Sign-in opens ${runtimeAuthBaseUrl}.`
       : 'You are on the official CAIt sign-in origin.';
-    els.trustNotice.querySelector('span').textContent = `${label} If Google shows an unverified-app warning for analytics access, use email login first and connect Google from the official CAIt domain after the consent screen is verified.`;
+    const noticeText = els.trustNotice.querySelector('span');
+    if (noticeText) {
+      noticeText.textContent = `${label} If Google shows an unverified-app warning for analytics access, use email login first and connect Google from the official CAIt domain after the consent screen is verified.`;
+    }
   }
   return runtimeUsesExternalAuth;
 }

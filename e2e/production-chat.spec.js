@@ -99,7 +99,9 @@ test.describe('production-ready chat E2E harness', () => {
       loginSource: 'playwright_production_harness'
     });
 
+    await page.locator('#chatHeaderMenu summary').click();
     await expect(page.locator('#openScheduleBtn')).toBeVisible();
+    await page.locator('#chatHeaderMenu summary').click();
     await expect(page.locator('#openScheduleComposerBtn')).toBeVisible();
     await page.locator('#openScheduleComposerBtn').click();
     await expect(page.locator('#utilityModalTitle')).toHaveText('Schedules');

@@ -166,6 +166,7 @@ export function createChatOrderCreateRecovery(deps = {}) {
   return {
     clientOrderIdFromOrderCreate,
     makeClientOrderId,
+    normalizeRecoveryText,
     orderCreateRequestBody,
     recoverAcceptedOrderAfterCreateError,
     recoveryCandidate

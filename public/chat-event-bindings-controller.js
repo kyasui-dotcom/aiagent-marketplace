@@ -17,11 +17,13 @@ export function createChatEventBindingsController(deps = {}) {
     handlePromptInjectionInput,
     handleRetryCommand,
     showDeliveryHistoryForPrompt,
+    handleLeaderConversationRequest,
     handleNonOrderConversation,
     answerPendingIntake,
     activeOrderFollowupAllowedText,
     prepareFollowupForRunningOrder,
     addChatAdjustmentToDraft,
+    handleDeterministicWorkIntakeRequest,
     handleChatIntentWithLlm,
     prepareOrder,
     orderErrorMessage,
@@ -109,9 +111,9 @@ export function createChatEventBindingsController(deps = {}) {
     try {
       const libraryScope = libraryCommandScope(prompt);
       const appCommandId = directAppCommandId(prompt);
-      if (libraryScope) {
+      if (!state.pendingIntake && libraryScope) {
         await appendUsageLibrary(libraryScope);
-      } else if (appCommandId) {
+      } else if (!state.pendingIntake && appCommandId) {
         openAppAgent(appCommandId, { source: 'chat_command' });
       } else if (/^(send|send order|発注|注文|実行)$/i.test(prompt) && state.draft) {
         await sendOrder();
@@ -121,6 +123,8 @@ export function createChatEventBindingsController(deps = {}) {
         // Prepared an exact retry draft from the latest terminal order.
       } else if (await showDeliveryHistoryForPrompt(prompt)) {
         // Displayed existing delivery/history instead of preparing a new order.
+      } else if (handleLeaderConversationRequest(prompt)) {
+        // Switched to a leader-led chat consultation without starting an order.
       } else if (handleNonOrderConversation(prompt)) {
         // Handled as chat, not a work order.
       } else if (state.pendingIntake) {
@@ -129,6 +133,8 @@ export function createChatEventBindingsController(deps = {}) {
         // Prepared as an add-on request attached to the running order.
       } else if (state.draft) {
         addChatAdjustmentToDraft(prompt);
+      } else if (await handleDeterministicWorkIntakeRequest(prompt)) {
+        // Server-side deterministic routing selected the owning leader or agent before Open Chat intent classification.
       } else if (await handleChatIntentWithLlm(prompt)) {
         // OpenAI classified this as chat, clarification, or an order-ready brief.
       } else {
@@ -612,8 +618,8 @@ export function createChatEventBindingsController(deps = {}) {
       void refreshChatSessionHistory({ force: true }).then(() => {
         restoreRequestedChatSessionFromHistory();
       });
-      void refreshAuth();
-      window.setTimeout(ensureAuthRefreshProgress, 8000);
+      void refreshAuth({ maxAttempts: 1 });
+      window.setTimeout(ensureAuthRefreshProgress, 9000);
     }
   }
 

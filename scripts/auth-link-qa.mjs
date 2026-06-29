@@ -6,6 +6,7 @@ import {
   mergeAccountsInState,
   upsertAccountSettingsForIdentityInState
 } from '../lib/shared.js';
+import { createAuthHelpers } from '../lib/auth-helpers.js';
 
 const googleIdentity = {
   providerUserId: 'google-123',
@@ -87,5 +88,67 @@ let linkedDifferentGithub = linkIdentityToAccountInState(sessionRemainingState, 
 assert.equal(linkedDifferentGithub.ok, true, 'A different GitHub account chosen while Google session remains should be linked, not switch accounts');
 assert.equal(linkedDifferentGithub.account.login, 'owner@example.com');
 assert.equal(accountIdentityForProvider(linkedDifferentGithub.account, 'github')?.login, 'kyasui-dotcom');
+
+const emailOnlySession = {
+  authProvider: 'google-oauth',
+  user: {
+    email: 'repair-only@example.com',
+    name: 'Repair Only',
+    avatarUrl: '',
+    profileUrl: ''
+  },
+  googleIdentity: {
+    email: 'repair-only@example.com',
+    providerUserId: 'google-repair-only',
+    name: 'Repair Only'
+  },
+  googleAccessToken: 'google-repair-only-token'
+};
+let routeSession = emailOnlySession;
+const routeHelpers = createAuthHelpers({
+  baseUrl: () => 'https://example.test',
+  getSession: async () => routeSession,
+  maybeRefreshSessionCookie: async () => '',
+  fetchStaticAsset: async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === '/chat') return new Response('chat shell', { status: 200 });
+    if (url.pathname === '/login') return new Response('login shell', { status: 200 });
+    return new Response('not found', { status: 404 });
+  },
+  redirect: (location, headers = {}) => new Response(null, { status: 302, headers: { ...headers, location } }),
+  redirectWithCookies: (location, cookies = [], headers = {}) => {
+    const response = new Response(null, { status: 302, headers: { ...headers, location } });
+    for (const cookie of cookies) response.headers.append('set-cookie', cookie);
+    return response;
+  },
+  responseWithCookies: (response, cookies = [], headers = {}) => {
+    const next = new Response(response.body, { status: response.status, statusText: response.statusText, headers: response.headers });
+    for (const [key, value] of Object.entries(headers)) next.headers.set(key, value);
+    for (const cookie of cookies) next.headers.append('set-cookie', cookie);
+    return next;
+  }
+});
+const routeEnv = { ASSETS: {} };
+const emailOnlyChat = await routeHelpers.handleChatPageRequest(new Request('https://example.test/chat'), routeEnv);
+assert.equal(emailOnlyChat.status, 200, 'chat gate should accept email-only signed sessions without bouncing to login');
+assert.equal(await emailOnlyChat.text(), 'chat shell');
+const emailOnlyLogin = await routeHelpers.handleLoginPageRequest(new Request('https://example.test/login?next=%2Fchat'), routeEnv);
+assert.equal(emailOnlyLogin.status, 302, 'login page should redirect email-only signed sessions to the requested chat route');
+assert.equal(emailOnlyLogin.headers.get('location'), '/chat');
+routeSession = {
+  authProvider: 'google-oauth',
+  user: null,
+  googleIdentity: {
+    email: 'identity-only@example.com',
+    providerUserId: 'google-identity-only',
+    name: 'Identity Only'
+  },
+  googleAccessToken: 'google-identity-only-token'
+};
+const identityOnlyChat = await routeHelpers.handleChatPageRequest(new Request('https://example.test/chat'), routeEnv);
+assert.equal(identityOnlyChat.status, 200, 'chat gate should accept sessions repairable from provider identity only');
+const identityOnlyLogin = await routeHelpers.handleLoginPageRequest(new Request('https://example.test/login?next=%2Fchat'), routeEnv);
+assert.equal(identityOnlyLogin.status, 302, 'login page should redirect provider-identity sessions to chat');
+assert.equal(identityOnlyLogin.headers.get('location'), '/chat');
 
 console.log('auth link qa passed');

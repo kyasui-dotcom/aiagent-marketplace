@@ -149,10 +149,10 @@ const productResearchContractExpectations = [
   },
   {
     kind: 'teardown',
-    actions: ['prepare_competitor_comparison', 'prepare_differentiated_move', 'prepare_verification_queue'],
-    requiredSections: ['Competitor classification', 'Observed facts', 'Inferences', 'Comparison table', 'Wedge', 'First test', 'Verification queue', 'Evidence gaps'],
-    guidedSections: ['Competitor classification', 'Observed facts', 'Inferences', 'Comparison table', 'Wedge', 'First test', 'Verification queue', 'Evidence gaps'],
-    forbiddenClaims: ['unverified competitor claim resolved']
+    actions: ['prepare_competitor_comparison', 'prepare_differentiated_move', 'prepare_verification_queue', 'prepare_competitive_strategy_console_handoff'],
+    requiredSections: ['Competitor classification', 'Observed facts', 'Inferences', 'Comparison table', 'Wedge', 'First test', 'Verification queue', 'Evidence gaps', 'SaaS/App intake payload'],
+    guidedSections: ['Competitor classification', 'Observed facts', 'Inferences', 'Comparison table', 'Wedge', 'First test', 'Verification queue', 'Evidence gaps', 'SaaS/App intake payload'],
+    forbiddenClaims: ['unverified competitor claim resolved', 'SaaS app ingested', 'competitive win proven without validation']
   },
   {
     kind: 'research',
@@ -849,6 +849,20 @@ for (const kind of SAMPLE_AGENT_KINDS) {
     assert.ok(artifact.community_queue.every((row) => row.execution_status === 'not_submitted_not_queued_not_approved'), 'Reddit rows should label non-execution status');
     assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Reddit handoff should expose blocked decision intake field');
     assert.match(artifact.execution_boundary || '', /no Reddit post/i, 'Reddit handoff should not imply posting or queueing');
+  }
+  if (kind === 'teardown') {
+    const artifact = delivery.report?.artifacts?.find((item) => item.type === 'competitive_teardown_saas_handoff');
+    assert.ok(artifact, 'Teardown delivery should emit a structured Competitive Strategy Console SaaS handoff artifact');
+    assert.equal(artifact.surface, 'competitive_strategy_console', 'Teardown handoff artifact should target the Competitive Strategy Console surface');
+    assert.ok(Array.isArray(artifact.benchmark_ledger), 'Teardown handoff should expose a benchmark ledger');
+    assert.ok(Array.isArray(artifact.upstream_handoff_usage), 'Teardown handoff should expose upstream usage ledger');
+    assert.ok(Array.isArray(artifact.comparison_grid) && artifact.comparison_grid.length >= 1, 'Teardown handoff should include comparison rows');
+    assert.ok(Array.isArray(artifact.wedge_hypotheses) && artifact.wedge_hypotheses.length >= 1, 'Teardown handoff should include wedge hypotheses');
+    assert.ok(Array.isArray(artifact.first_test_queue) && artifact.first_test_queue.length >= 1, 'Teardown handoff should include first-test rows');
+    assert.ok(artifact.first_test_queue.every((row) => /not_launched_not_measured_not_validated/.test(row.execution_status || '')), 'Teardown first-test rows should label non-execution status');
+    assert.ok(Array.isArray(artifact.verification_queue) && artifact.verification_queue.length >= 1, 'Teardown handoff should include verification queue rows');
+    assert.ok((artifact.app_intake_fields || []).includes('blocked_decision'), 'Teardown handoff should expose blocked decision intake field');
+    assert.match(artifact.execution_boundary || '', /no competitive claim approval, launch, publishing, connector execution, pilot execution, measurement result, source audit completion, or SaaS app ingestion/i, 'Teardown handoff should not imply competitive claim approval, launch, source audit, or app ingest');
   }
   if (kind === 'data_analysis') {
     const artifact = delivery.report?.artifacts?.find((item) => item.type === 'data_analysis_saas_handoff');

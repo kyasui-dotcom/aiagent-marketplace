@@ -40,6 +40,7 @@ export default defineConfig({
       ALLOW_OPEN_WRITE_API: process.env.ALLOW_OPEN_WRITE_API || '0',
       ALLOW_GUEST_RUN_READ_API: '1',
       ALLOW_DEV_API: '1',
+      CAIT_MCP_ENABLED: process.env.CAIT_MCP_ENABLED || '1',
       EXPOSE_JOB_SECRETS: '1',
       SESSION_SECRET: process.env.SESSION_SECRET || 'playwright-e2e-session-secret',
       E2E_AUTH_SECRET: process.env.E2E_AUTH_SECRET || 'playwright-e2e-auth-secret',

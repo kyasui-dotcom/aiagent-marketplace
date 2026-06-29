@@ -601,6 +601,17 @@ assert.ok(
   'Open Chat intent confirmation must ask clarifying questions for thin broad goals instead of inventing a complete order brief'
 );
 assert.ok(
+  openChatIntentSource.includes('OPEN_CHAT_INTENT_TIMEOUT_MS')
+    && openChatIntentSource.includes('signal: controller.signal')
+    && openChatIntentSource.includes('openai_intent_timeout'),
+  'Open Chat intent LLM calls must have a bounded server-side timeout'
+);
+assert.ok(
+  openChatIntentSource.includes('OPEN_CHAT_INTENT_AGENT_CONTEXT_LIMIT')
+    && openChatIntentSource.includes('OPEN_CHAT_INTENT_MEMORY_CONTEXT_LIMIT'),
+  'Open Chat intent context loading must stay bounded instead of reading oversized account/runtime state'
+);
+assert.ok(
   read('public/chat-engine.js').includes("{ original_prompt: String(options.originalPrompt || options.original_prompt || '').trim() }"),
   'chat prepare-order payload must preserve the original user prompt when an LLM-generated brief is sent to the server'
 );

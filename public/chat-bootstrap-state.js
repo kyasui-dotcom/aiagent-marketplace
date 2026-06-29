@@ -6,6 +6,7 @@ export const CHATUX_PROGRESS_MAX_POLLS = 300;
 export const CHATUX_OAUTH_RETURN_STATE_KEY = 'cait.chat.oauthReturnState.v1';
 export const CHATUX_CONNECT_WAIT_MS = 60 * 60 * 1000;
 export const CHATUX_AUTH_STATUS_TIMEOUT_MS = 8000;
+export const CHATUX_OPEN_CHAT_INTENT_TIMEOUT_MS = 6500;
 export const CHATUX_CONNECT_CHECK_INTERVAL_MS = 1500;
 export const CHATUX_OAUTH_RETURN_MAX_AGE_MS = CHATUX_CONNECT_WAIT_MS;
 export const CHATUX_RUNTIME_STATE_KEY = 'cait.chat.runtimeState.v1';
@@ -140,6 +141,7 @@ export function createInitialChatState(options = {}) {
     lastTranscriptId: '',
     chatSessionHistoryFetchedAt: 0,
     chatSessionHistoryRequest: null,
+    authRefreshRequest: null,
     authRefreshRetryTimer: null,
     visitorId
   };

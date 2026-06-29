@@ -1237,6 +1237,7 @@ export function createChatIntakeController(deps = {}) {
       const contextGroupName = chatText('Analytics data', 'アナリティクス', state.pendingIntake.originalPrompt || prompt);
       const contextChoice = caitAppContextAnswerLine(context);
       const contextGroupElement = findIntakeChoiceGroupElement(contextGroupName);
+      removeIntakeChoiceFromComposer(contextGroupName);
       if (contextGroupElement?.dataset.choiceMode === 'single') {
         resetIntakeChoiceGroup(contextGroupElement, contextGroupName);
       }

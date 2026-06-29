@@ -6,7 +6,7 @@ import {
   sameConversationOwner,
   taskLabel,
   withConversationOwner
-} from './chat-conversation-owner-utils.js?v=20260529c';
+} from './chat-conversation-owner-utils.js?v=20260628c';
 
 export function createChatConversationOwnerController(deps = {}) {
   const {
@@ -197,6 +197,47 @@ export function createChatConversationOwnerController(deps = {}) {
     els.activeLeaderStatus.title = 'CAIt will route to a specialist directly or hand broad work to a leader.';
   }
 
+  function activateLeaderForChat(taskType = '', sample = '') {
+    const owner = leaderOwner(taskType, 'User asked for a leader chat consultation.');
+    if (!owner?.taskType) return false;
+    state.pendingLeaderChange = null;
+    state.pendingIntake = null;
+    state.activeOwner = {
+      type: 'leader',
+      taskType: owner.taskType,
+      label: owner.label || taskLabel(owner.taskType),
+      reason: owner.reason || ''
+    };
+    state.activeOwnerLocked = true;
+    state.activeLeader = {
+      taskType: owner.taskType,
+      label: owner.label || taskLabel(owner.taskType),
+      reason: owner.reason || ''
+    };
+    state.activeLeaderLocked = true;
+    renderActiveLeaderStatus();
+    updateComposerMode();
+    const label = owner.label || taskLabel(owner.taskType);
+    appendTextMessage('assistant', chatText(
+      [
+        `${label} is now the conversation lead.`,
+        '',
+        'Ask the decision, context, channel, constraints, or next move you want to discuss.',
+        '',
+        'This is chat consultation only. No order or billing happened. If you want CAIt to prepare or run a plan, describe the deliverable or say "prepare an order."'
+      ].join('\n'),
+      [
+        `${label} がこのチャットの会話リーダーになりました。`,
+        '',
+        '相談したい判断、背景、チャネル、制約、次の打ち手を書いてください。',
+        '',
+        'これはチャット相談のみです。注文も課金も発生していません。CAIt に計画の作成や実行を依頼する場合は、成果物を書くか「発注準備」と伝えてください。'
+      ].join('\n'),
+      sample
+    ), { tone: 'ok', label: chatText('Leader chat', 'リーダー相談', sample) });
+    return true;
+  }
+
   function setConversationOwnerFromPrepared(prepared = {}, options = {}) {
     const previous = state.activeOwner
       ? { ...state.activeOwner }
@@ -270,6 +311,7 @@ export function createChatConversationOwnerController(deps = {}) {
   }
 
   return {
+    activateLeaderForChat,
     activeActorLabel,
     currentLockedConversationOwner,
     currentLockedLeaderOwner,

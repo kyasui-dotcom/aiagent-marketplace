@@ -28,7 +28,7 @@ import {
   publisherContractTypeForProfile,
   slugFromTitle,
   statusClass
-} from './publisher-destination-contract.js?v=20260602a';
+} from './publisher-destination-contract.js?v=20260628d';
 import {
   defaultPublisherHandoffTarget,
   normalizePublisherHandoffTarget,

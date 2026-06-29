@@ -149,7 +149,9 @@ export function destinationKey(value = '') {
 }
 
 export function itemDestination(item = null) {
-  return String(item?.destination || item?.target || 'Unassigned destination').trim() || 'Unassigned destination';
+  const explicit = String(item?.destination || item?.target || 'Unassigned destination').trim() || 'Unassigned destination';
+  const profile = profileByKey(item?.channel || item?.channelKey || item?.medium || '');
+  return shouldUseProfileDestinationLabel(explicit, profile) ? profile.label : explicit;
 }
 
 export function profileByKey(key = '') {
@@ -448,6 +450,10 @@ function marketFromValue(value = '') {
 function artifactProfileText(artifact = {}, type = '', body = '') {
   return [
     artifact.id,
+    artifact.artifact_type,
+    artifact.artifactType,
+    Array.isArray(artifact.artifact_types) ? artifact.artifact_types.join(' ') : artifact.artifact_types,
+    Array.isArray(artifact.artifactTypes) ? artifact.artifactTypes.join(' ') : artifact.artifactTypes,
     artifact.type,
     artifact.action_type,
     artifact.actionType,
@@ -494,6 +500,13 @@ function artifactProfileText(artifact = {}, type = '', body = '') {
 
 function explicitProfileFromArtifact(artifact = {}, type = '') {
   const values = [
+    artifact.artifact_type,
+    artifact.artifactType,
+    ...(Array.isArray(artifact.artifact_types) ? artifact.artifact_types : [artifact.artifact_types]),
+    ...(Array.isArray(artifact.artifactTypes) ? artifact.artifactTypes : [artifact.artifactTypes]),
+    artifact.content_type,
+    artifact.contentType,
+    artifact.type,
     artifact.channel_key,
     artifact.channelKey,
     artifact.medium_key,
@@ -514,7 +527,6 @@ function explicitProfileFromArtifact(artifact = {}, type = '') {
     artifact.actionType,
     artifact.item_type,
     artifact.itemType,
-    artifact.type,
     type
   ].filter(Boolean).map((value) => String(value || '').trim());
   for (const value of values) {
@@ -542,7 +554,7 @@ function destinationProfileFromArtifact(artifact = {}, type = '', body = '') {
 }
 
 function isGenericDestination(value = '') {
-  return /^(?:delivery file|publisher handoff|unassigned destination|generic publishing packet|unspecified|none|n\/a|\(?not provided\)?|\(?not specified\)?|unknown[-_\s\w]*destination|publisher[-_\s]+approval[-_\s]+studio)$/i.test(String(value || '').trim());
+  return /^(?:delivery file|publisher handoff|unassigned destination|generic publishing packet|(?:publish[_\s-]*)?target[_\s-]*not[_\s-]*specified|unspecified(?:[_\s-].*target)?|tbd(?:[_\s-].*|\s*\([^)]*\))?|to be determined|choose after approval|none|n\/a|\(?not provided\)?|\(?not specified\)?|unknown[-_\s\w]*destination|publisher[-_\s]+approval[-_\s]+studio)$/i.test(String(value || '').trim());
 }
 
 function shouldUseProfileDestinationLabel(explicit = '', profile = null) {
@@ -551,7 +563,7 @@ function shouldUseProfileDestinationLabel(explicit = '', profile = null) {
   if (/^https?:\/\//i.test(value)) return false;
   if (value.toLowerCase() === String(profile.key || '').toLowerCase()) return true;
   if (value.toLowerCase() === String(profile.label || '').toLowerCase()) return true;
-  if (profile.key === 'owned_site') return /(?:publisher|owned\s*site|landing\s*page|seo\s*page|site\s*publish|article\s*draft)/i.test(value);
+  if (profile.key === 'owned_site') return /(?:publisher|owned[_\s-]*site|primary[_\s-]*site|landing[_\s-]*page|seo[_\s-]*page|site[_\s-]*publish|publish[_\s-]*target|article[_\s-]*draft)/i.test(value);
   if (profile.key === 'directory') return /(?:directory|listing|submission)/i.test(value);
   if (['x', 'reddit', 'indie_hackers', 'instagram', 'social'].includes(profile.key)) return true;
   return false;
@@ -686,7 +698,7 @@ export function itemMarkdown(item = null) {
 }
 
 export function contextItemFromArtifact(artifact = {}, index = 0) {
-  let type = itemType(artifact.type || artifact.action_type || artifact.content_type || artifact.name || '');
+  let type = itemType(artifact.type || artifact.action_type || artifact.artifact_type || artifact.artifactType || artifact.content_type || artifact.contentType || artifact.name || '');
   const body = artifactBodyText(artifact);
   const profile = destinationProfileFromArtifact(artifact, type, body);
   if (profile.key === 'directory') type = 'directory';
@@ -710,6 +722,7 @@ export function contextItemFromArtifact(artifact = {}, index = 0) {
   const extractedApprovalChecklist = markdownFieldValue(body, ['Approval checklist', 'Approval check', 'Approval check before publishing', 'Pre-publish checklist']);
   const artifactSlug = artifact.slug || artifact.path || artifact.url || artifact.target || '';
   const title = String(extractedTitle || titleWithSlugTail(artifact.title, artifactSlug) || artifact.title || artifact.name || artifactSlug || `Imported item ${index + 1}`).trim();
+  const slug = String((extractedTitle ? slugFromTitle(extractedTitle) : '') || artifactSlug || slugFromTitle(title)).trim();
   const destination = destinationFromArtifact(artifact, type, profile);
   const market = String(firstText(artifact.market, artifact.region, artifact.country, artifact.geo, marketFromValue(artifact.url || artifact.slug || artifact.target || '')) || 'Global').trim();
   const locale = String(firstText(artifact.locale, artifact.language, artifact.lang, artifact.content_locale, market === 'Japan' ? 'ja-JP' : 'en') || 'en').trim();
@@ -737,15 +750,15 @@ export function contextItemFromArtifact(artifact = {}, index = 0) {
     locale,
     owner: String(firstText(artifact.owner, artifact.assignee, artifact.agent, artifact.source_agent, artifact.lead, 'CAIt') || 'CAIt').trim(),
     title,
-    slug: String(artifactSlug || slugFromTitle(title)).trim(),
-    meta: String(artifact.meta || artifact.description || extractedMeta || artifact.summary || '').trim(),
-    keywords: String(firstText(artifact.keywords, artifact.keyword, artifact.meta_keywords, artifact.target_keyword, artifact.targetQuery, extractedKeywords) || '').trim(),
-    h1: String(firstText(artifact.h1, artifact.h_1, artifact.headline, extractedH1) || '').trim(),
-    primaryCta: String(firstText(artifact.primary_cta, artifact.primaryCta, artifact.cta, extractedPrimaryCta) || '').trim(),
-    secondaryCta: String(firstText(artifact.secondary_cta, artifact.secondaryCta, extractedSecondaryCta) || '').trim(),
-    internalLinks: String(firstText(artifact.internal_links, artifact.internalLinks, extractedInternalLinks) || '').trim(),
-    ogTitle: String(firstText(artifact.og_title, artifact.ogTitle, extractedOgTitle) || '').trim(),
-    ogDescription: String(firstText(artifact.og_description, artifact.ogDescription, extractedOgDescription) || '').trim(),
+    slug,
+    meta: String(extractedMeta || artifact.meta || artifact.description || artifact.summary || '').trim(),
+    keywords: String(firstText(extractedKeywords, artifact.keywords, artifact.keyword, artifact.meta_keywords, artifact.target_keyword, artifact.targetQuery) || '').trim(),
+    h1: String(firstText(extractedH1, artifact.h1, artifact.h_1, artifact.headline) || '').trim(),
+    primaryCta: String(firstText(extractedPrimaryCta, artifact.primary_cta, artifact.primaryCta, artifact.cta) || '').trim(),
+    secondaryCta: String(firstText(extractedSecondaryCta, artifact.secondary_cta, artifact.secondaryCta) || '').trim(),
+    internalLinks: String(firstText(extractedInternalLinks, artifact.internal_links, artifact.internalLinks) || '').trim(),
+    ogTitle: String(firstText(extractedOgTitle, artifact.og_title, artifact.ogTitle) || '').trim(),
+    ogDescription: String(firstText(extractedOgDescription, artifact.og_description, artifact.ogDescription) || '').trim(),
     sourceEvidence: Array.isArray(artifact.source_evidence) ? artifact.source_evidence : (Array.isArray(artifact.sourceEvidence) ? artifact.sourceEvidence : []),
     publishVariants: Array.isArray(artifact.publish_variants) ? artifact.publish_variants : (Array.isArray(artifact.publishVariants) ? artifact.publishVariants : []),
     eeatNotes: artifact.eeat_notes && typeof artifact.eeat_notes === 'object'

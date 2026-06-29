@@ -34,6 +34,29 @@ export function createChatSessionSidebarController(options = {}) {
   const saveChatRuntimeState = typeof options.saveChatRuntimeState === 'function' ? options.saveChatRuntimeState : (() => false);
   const persistRuntimeChatSession = typeof options.persistRuntimeChatSession === 'function' ? options.persistRuntimeChatSession : (() => null);
   const applyAuthState = typeof options.applyAuthState === 'function' ? options.applyAuthState : (() => {});
+  let persistRuntimeChatSessionTimer = null;
+
+  function clearScheduledRuntimeChatSessionPersist() {
+    if (!persistRuntimeChatSessionTimer) return;
+    windowRef.clearTimeout(persistRuntimeChatSessionTimer);
+    persistRuntimeChatSessionTimer = null;
+  }
+
+  function scheduleRuntimeChatSessionPersist(options = {}) {
+    clearScheduledRuntimeChatSessionPersist();
+    const persist = () => {
+      persistRuntimeChatSessionTimer = null;
+      persistRuntimeChatSession();
+    };
+    if (options.immediate === true || typeof windowRef.setTimeout !== 'function') {
+      persist();
+      return;
+    }
+    persistRuntimeChatSessionTimer = windowRef.setTimeout(
+      persist,
+      Math.max(40, Number(options.delayMs || 160) || 160)
+    );
+  }
 
   function chatSessionTimeLabel(value = '') {
     if (!Number.isFinite(Date.parse(value))) return 'saved';
@@ -113,6 +136,7 @@ export function createChatSessionSidebarController(options = {}) {
   }
 
   function startNewChatSession() {
+    clearScheduledRuntimeChatSessionPersist();
     bumpChatViewRevision();
     stopProgressNarratorAnimation();
     state.currentChatSessionId = '';
@@ -145,6 +169,7 @@ export function createChatSessionSidebarController(options = {}) {
     const session = (Array.isArray(state.chatSessions) ? state.chatSessions : [])
       .find((item) => item.id === sessionId || item.sessionId === sessionId);
     if (!session) return;
+    clearScheduledRuntimeChatSessionPersist();
     const viewRevision = bumpChatViewRevision();
     if (state.polling) windowRef.clearInterval(state.polling);
     stopProgressNarratorAnimation();
@@ -267,7 +292,7 @@ export function createChatSessionSidebarController(options = {}) {
         status: transcriptStatus
       });
     }
-    persistRuntimeChatSession();
+    scheduleRuntimeChatSessionPersist();
   }
 
   async function trackChatTranscript(prompt = '', answer = '', meta = {}) {

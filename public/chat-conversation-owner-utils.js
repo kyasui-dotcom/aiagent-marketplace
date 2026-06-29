@@ -5,6 +5,7 @@ export function taskLabel(taskType = '') {
   const labels = {
     research_team_leader: 'Research Team Leader',
     build_team_leader: 'Build Team Leader',
+    cmo_leader: 'CMO Leader',
     cto_leader: 'CTO Leader',
     cpo_leader: 'CPO Leader',
     cfo_leader: 'CFO Leader',
@@ -147,16 +148,101 @@ export function isLeaderTaskType(value = '') {
   return Boolean(normalizeLeaderTaskType(value));
 }
 
+const LEADER_TASK_ALIASES = Object.freeze([
+  {
+    taskType: 'cmo_leader',
+    aliases: ['cmo', 'cmo leader', 'cmoリーダー', 'chief marketing officer', 'marketing leader', 'marketing lead', 'マーケ責任者', 'マーケティング責任者', 'マーケリーダー']
+  },
+  {
+    taskType: 'cto_leader',
+    aliases: ['cto', 'cto leader', 'ctoリーダー', 'chief technology officer', 'technology leader', 'tech leader', '技術責任者', '開発責任者', '技術リーダー']
+  },
+  {
+    taskType: 'cpo_leader',
+    aliases: ['cpo', 'cpo leader', 'cpoリーダー', 'chief product officer', 'product leader', 'product lead', 'プロダクト責任者', 'プロダクトリーダー']
+  },
+  {
+    taskType: 'cfo_leader',
+    aliases: ['cfo', 'cfo leader', 'cfoリーダー', 'chief financial officer', 'finance leader', 'financial leader', '財務責任者', '財務リーダー']
+  },
+  {
+    taskType: 'legal_leader',
+    aliases: ['legal leader', 'legal lead', 'legal counsel', 'lawyer leader', '法務責任者', '法務リーダー', 'リーガルリーダー']
+  },
+  {
+    taskType: 'secretary_leader',
+    aliases: ['secretary leader', 'secretary lead', 'assistant leader', 'chief of staff', '秘書リーダー', '秘書責任者', 'アシスタントリーダー']
+  },
+  {
+    taskType: 'research_team_leader',
+    aliases: ['research team leader', 'research leader', 'research lead', '調査リーダー', 'リサーチリーダー']
+  },
+  {
+    taskType: 'build_team_leader',
+    aliases: ['build team leader', 'build leader', 'build lead', 'development leader', '構築リーダー', '制作リーダー', '開発リーダー']
+  }
+]);
+
+function escapeRegExp(value = '') {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeLeaderLookupText(value = '') {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/([A-Za-z0-9])([\u3040-\u30ff\u3400-\u9fff])/g, '$1 $2')
+    .replace(/([\u3040-\u30ff\u3400-\u9fff])([A-Za-z0-9])/g, '$1 $2')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function leaderAliasMatchesText(normalizedText = '', alias = '') {
+  const normalizedAlias = normalizeLeaderLookupText(alias);
+  if (!normalizedText || !normalizedAlias) return false;
+  if (/^[a-z0-9]+$/.test(normalizedAlias)) {
+    return new RegExp(`(^|\\s)${escapeRegExp(normalizedAlias)}(?=\\s|$)`).test(normalizedText);
+  }
+  return normalizedText === normalizedAlias || normalizedText.includes(normalizedAlias);
+}
+
+export function leaderTaskTypeFromNaturalText(value = '') {
+  const normalizedText = normalizeLeaderLookupText(value);
+  if (!normalizedText) return '';
+  const directTaskType = normalizeLeaderTaskType(normalizedText.replace(/\s+/g, '_'));
+  if (directTaskType) return directTaskType;
+  const match = LEADER_TASK_ALIASES.find((entry) =>
+    entry.aliases.some((alias) => leaderAliasMatchesText(normalizedText, alias))
+  );
+  return match ? match.taskType : '';
+}
+
 export function explicitLeaderChangeTaskTypeFromText(value = '') {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
   const requested = normalizeLeaderTaskType(text)
-    || normalizeLeaderTaskType(text.match(/\b[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*[_-]leader\b/i)?.[0] || '');
+    || normalizeLeaderTaskType(text.match(/\b[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*[_-]leader\b/i)?.[0] || '')
+    || leaderTaskTypeFromNaturalText(text);
   if (!requested) return '';
-  const explicitChange = /(?:leader|リーダー|担当|主体|lead|owner|route|routing|use|switch|change|変更|切替|切り替|変え|にして|で進め|でお願い|に戻|に固定|固定|指名|選択)/i.test(text)
+  const explicitChange = /(?:leader|リーダー|担当|主体|lead|owner|route|routing|use|switch|change|talk|chat|speak|consult|conversation|discuss|相談|会話|話したい|話す|話して|聞きたい|壁打ち|変更|切替|切り替|変え|にして|として|で進め|でお願い|に戻|に固定|固定|指名|選択)/i.test(text)
     || normalizeLeaderTaskType(text) === requested;
   if (!explicitChange) return '';
   return requested;
+}
+
+export function leaderConversationTaskTypeFromText(value = '') {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const taskType = explicitLeaderChangeTaskTypeFromText(text) || leaderTaskTypeFromNaturalText(text);
+  if (!taskType) return '';
+  const wantsConversation = /\b(?:talk|chat|speak|consult|consultation|conversation|discuss|ask)\b/i.test(text)
+    || /(?:相談|会話|話したい|話す|話して|聞きたい|壁打ち)/.test(text);
+  if (!wantsConversation) return '';
+  const wantsExecution = /\b(?:prepare|launch|run|execute|order|create|build|write|draft|publish|post|send|analy[sz]e|research|improve|optimi[sz]e|campaign|checklist|deliverable)\b/i.test(text)
+    || /(?:発注|注文|実行|作成|作って|書いて|下書き|投稿|公開|送信|調べ|調査|分析|改善|最適化|施策|計画|キャンペーン|納品|成果物)/.test(text);
+  return wantsExecution ? '' : taskType;
 }
 
 export function leaderOwner(taskType = '', reason = '') {

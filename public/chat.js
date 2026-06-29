@@ -65,18 +65,20 @@ import { createChatCatalogRuntime } from './chat-catalog-runtime.js?v=20260529a'
 import { createChatSchedulePanelController } from './chat-schedule-panel-controller.js?v=20260529a';
 import { createChatAppHandoffController } from './chat-app-handoff-controller.js?v=20260529a';
 import { createChatSessionModel } from './chat-session-model.js?v=20260529d';
-import { createChatSessionSidebarController } from './chat-session-sidebar-controller.js?v=20260529a';
+import { createChatSessionSidebarController } from './chat-session-sidebar-controller.js?v=20260628b';
 import { createChatTelemetry } from './chat-telemetry.js?v=20260529d';
 import { createChatPlanningProgressController } from './chat-planning-progress-controller.js?v=20260529a';
 import { createChatRuntimeStateController } from './chat-runtime-state-controller.js?v=20260529h';
 import {
+  agentOwner,
   conversationOwnerFromPrepared,
   explicitLeaderChangeTaskTypeFromText,
+  leaderConversationTaskTypeFromText,
   leaderOwner,
   normalizeLeaderTaskType,
   taskLabel,
   withConversationOwner
-} from './chat-conversation-owner-utils.js?v=20260529c';
+} from './chat-conversation-owner-utils.js?v=20260628c';
 import {
   isStructuredOrderBriefText,
   normalizeLlmIntakeQuestions,
@@ -93,6 +95,7 @@ import {
   CHATUX_CONNECT_WAIT_MS,
   CHATUX_OAUTH_RETURN_MAX_AGE_MS,
   CHATUX_OAUTH_RETURN_STATE_KEY,
+  CHATUX_OPEN_CHAT_INTENT_TIMEOUT_MS,
   CHATUX_PROGRESS_MAX_POLLS,
   CHATUX_RETRY_MODE_NEW_ORDER,
   CHATUX_RETURN_PATH,
@@ -105,17 +108,17 @@ import {
   createInitialChatState,
   initialChatUiLanguage,
   normalizeUiLanguage
-} from './chat-bootstrap-state.js?v=20260529a';
+} from './chat-bootstrap-state.js?v=20260628b';
 import { createChatUiRuntimeController } from './chat-ui-runtime-controller.js?v=20260531a';
 import { createChatUtilityModalController } from './chat-utility-modal-controller.js?v=20260601a';
-import { createChatOrderCreateRecovery } from './chat-order-create-recovery.js?v=20260531a';
+import { createChatOrderCreateRecovery } from './chat-order-create-recovery.js?v=20260628c';
 import { createChatOrderDispatchController } from './chat-order-dispatch-controller.js?v=20260601a';
-import { createChatIntakeController } from './chat-intake-controller.js?v=20260601a';
+import { createChatIntakeController } from './chat-intake-controller.js?v=20260628c';
 import { createChatRestoredOrderContextController } from './chat-restored-order-context-controller.js?v=20260601a';
 import { createChatHistoryPanelsController } from './chat-history-panels-controller.js?v=20260601a';
 import { createChatDeliveryRenderController } from './chat-delivery-render-controller.js?v=20260601a';
-import { createChatEventBindingsController } from './chat-event-bindings-controller.js?v=20260601a';
-import { createChatConversationOwnerController } from './chat-conversation-owner-controller.js?v=20260601a';
+import { createChatEventBindingsController } from './chat-event-bindings-controller.js?v=20260628d';
+import { createChatConversationOwnerController } from './chat-conversation-owner-controller.js?v=20260628c';
 import { createChatAppContextOAuthController } from './chat-app-context-oauth-controller.js?v=20260602a';
 import { createChatRetryFollowupController } from './chat-retry-followup-controller.js?v=20260602a';
 
@@ -480,7 +483,7 @@ const chatSessionSidebarController = createChatSessionSidebarController({
   clearQueuedChatSessionSnapshot,
   clearChatRestoreParamsFromUrl,
   bumpChatViewRevision,
-  renderActiveLeaderStatus,
+  renderActiveLeaderStatus: (...args) => renderActiveLeaderStatus(...args),
   appendTextMessage,
   appendMessage,
   orderConfirmationHtml,
@@ -559,7 +562,7 @@ chatRuntimeStateController = createChatRuntimeStateController({
   oauthReturnMaxAgeMs: CHATUX_OAUTH_RETURN_MAX_AGE_MS,
   returnPath: CHATUX_RETURN_PATH,
   api,
-  activeActorLabel,
+  activeActorLabel: (...args) => activeActorLabel(...args),
   appendMessage,
   appendTextMessage,
   bumpChatViewRevision,
@@ -575,7 +578,7 @@ chatRuntimeStateController = createChatRuntimeStateController({
   normalizeChatSession,
   orderConfirmationHtml,
   rememberTrackedOrder,
-  renderActiveLeaderStatus,
+  renderActiveLeaderStatus: (...args) => renderActiveLeaderStatus(...args),
   renderChatSessionSidebar,
   renderRestoredSessionOrderContext,
   restoredSessionHasActiveWork,
@@ -733,6 +736,7 @@ const chatConversationOwnerController = createChatConversationOwnerController({
   updateComposerMode: (...args) => updateComposerMode(...args)
 });
 const {
+  activateLeaderForChat,
   activeActorLabel,
   currentLockedConversationOwner,
   currentLockedLeaderOwner,
@@ -1514,6 +1518,7 @@ const chatOrderCreateRecovery = createChatOrderCreateRecovery({
 const {
   clientOrderIdFromOrderCreate,
   makeClientOrderId,
+  normalizeRecoveryText,
   orderCreateRequestBody,
   recoverAcceptedOrderAfterCreateError,
   recoveryCandidate
@@ -1728,6 +1733,30 @@ function chatIntentConversationContext() {
     .filter(Boolean);
 }
 
+async function requestOpenChatIntent(payload = {}) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), CHATUX_OPEN_CHAT_INTENT_TIMEOUT_MS);
+  const headers = new Headers({ 'content-type': 'application/json' });
+  if (state.auth?.csrfToken) headers.set('x-aiagent2-csrf', state.auth.csrfToken);
+  if (state.visitorId) headers.set('x-aiagent2-visitor-id', state.visitorId);
+  try {
+    const response = await fetch('/api/open-chat/intent', {
+      method: 'POST',
+      headers,
+      credentials: 'same-origin',
+      signal: controller.signal,
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return null;
+    return data?.ok ? data : null;
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 function handlePromptInjectionInput(prompt = '') {
   const guard = promptInjectionGuard(prompt);
   if (!guard.blocked) return false;
@@ -1757,21 +1786,76 @@ async function resolveChatIntentWithLlm(prompt = '') {
   if (promptInjectionGuard(text).blocked) return null;
   const thinkingMessage = appendThinkingMessage(text);
   try {
-    const result = await api('/api/open-chat/intent', {
-      method: 'POST',
-      body: JSON.stringify({
-        prompt: text,
-        conversation_context: chatIntentConversationContext(),
-        desired_output: 'First decide whether this is normal chat or an order request. If it is normal chat, answer in chat. If it is executable work with enough context, return a CAIt order brief. If a Team Leader needs intake first, return adaptive intake_questions before any proposal.',
-        user_language: chatLanguage(text) === 'ja' ? 'Japanese' : 'English',
-        input_counts: { url_count: 0, file_count: 0, file_chars: 0 }
-      })
+    return await requestOpenChatIntent({
+      prompt: text,
+      conversation_context: chatIntentConversationContext(),
+      desired_output: 'First decide whether this is normal chat or an order request. If it is normal chat, answer in chat. If it is executable work with enough context, return a CAIt order brief. If a Team Leader needs intake first, return adaptive intake_questions before any proposal.',
+      user_language: chatLanguage(text) === 'ja' ? 'Japanese' : 'English',
+      input_counts: { url_count: 0, file_count: 0, file_chars: 0 }
     });
-    return result?.ok ? result : null;
-  } catch {
-    return null;
   } finally {
     removeMessage(thinkingMessage);
+  }
+}
+
+function handleLeaderConversationRequest(prompt = '') {
+  const taskType = leaderConversationTaskTypeFromText(prompt);
+  if (!taskType) return false;
+  return activateLeaderForChat(taskType, prompt);
+}
+
+function deterministicAgentTaskTypeFromResolvedIntent(result = {}) {
+  const taskType = String(result?.taskType || result?.task_type || result?.activeOwnerTaskType || result?.active_owner_task_type || '').trim().toLowerCase();
+  if (!taskType || normalizeLeaderTaskType(taskType)) return '';
+  if (String(result?.routeHint || result?.route_hint || '').trim() !== 'agent_chat') return '';
+  return taskType;
+}
+
+async function handleDeterministicWorkIntakeRequest(prompt = '') {
+  const text = String(prompt || '').trim();
+  if (!text || isStructuredOrderBriefText(text)) return false;
+  try {
+    const result = await api('/api/work/resolve-intent', {
+      method: 'POST',
+      body: JSON.stringify({ prompt: text }),
+      timeoutMs: 6500
+    });
+    const routeHint = String(result?.routeHint || result?.route_hint || '').trim();
+    const leaderTaskType = normalizeLeaderTaskType(result?.taskType || result?.task_type || result?.activeLeaderTaskType || result?.active_leader_task_type || '');
+    if (leaderTaskType && routeHint === 'leader_handoff') {
+      await prepareOrder(text, {
+        originalPrompt: text,
+        taskType: leaderTaskType,
+        activeLeaderTaskType: leaderTaskType,
+        activeLeaderName: result?.activeLeaderName || result?.active_leader_name || taskLabel(leaderTaskType),
+        activeLeaderLocked: true,
+        leaderChangeRequested: false,
+        skipOpenAiIntent: true,
+        skipLeaderChangeProposal: true
+      });
+      return true;
+    }
+    const agentTaskType = deterministicAgentTaskTypeFromResolvedIntent(result);
+    if (!agentTaskType) return false;
+    const owner = agentOwner(agentTaskType, result?.activeOwnerName || result?.active_owner_name || taskLabel(agentTaskType), result?.reason || '');
+    await prepareOrder(text, {
+      originalPrompt: text,
+      taskType: agentTaskType,
+      conversationOwner: owner,
+      activeOwnerType: 'agent',
+      activeOwnerTaskType: agentTaskType,
+      activeOwnerName: owner?.label || taskLabel(agentTaskType),
+      activeOwnerLocked: true,
+      activeLeaderTaskType: '',
+      activeLeaderName: '',
+      activeLeaderLocked: false,
+      leaderChangeRequested: false,
+      skipOpenAiIntent: true,
+      skipLeaderChangeProposal: true
+    });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -2133,10 +2217,21 @@ function authRefreshRetryable(error) {
 }
 
 async function refreshAuth(options = {}) {
+  if (state.authRefreshRequest && options.force !== true) return state.authRefreshRequest;
   if (state.authRefreshRetryTimer) {
     window.clearTimeout(state.authRefreshRetryTimer);
     state.authRefreshRetryTimer = null;
   }
+  const run = refreshAuthOnce(options);
+  state.authRefreshRequest = run;
+  try {
+    return await run;
+  } finally {
+    if (state.authRefreshRequest === run) state.authRefreshRequest = null;
+  }
+}
+
+async function refreshAuthOnce(options = {}) {
   const maxAttempts = Math.max(1, Math.min(5, Number(options.maxAttempts || 4) || 4));
   let lastError = null;
   try {
@@ -2172,7 +2267,13 @@ async function refreshAuth(options = {}) {
 function ensureAuthRefreshProgress() {
   const statusText = String(els.authStatus?.textContent || '').trim();
   if (!/Checking session/i.test(statusText)) return;
-  void refreshAuth({ maxAttempts: 2 });
+  if (els.authStatus) els.authStatus.textContent = 'Session status unavailable. Retrying...';
+  if (!state.authRefreshRetryTimer) {
+    state.authRefreshRetryTimer = window.setTimeout(() => {
+      state.authRefreshRetryTimer = null;
+      void refreshAuth({ force: true, maxAttempts: 1 });
+    }, 1000);
+  }
 }
 
 function resetChat() {
@@ -2275,11 +2376,13 @@ const chatEventBindingsController = createChatEventBindingsController({
   handlePromptInjectionInput,
   handleRetryCommand,
   showDeliveryHistoryForPrompt,
+  handleLeaderConversationRequest,
   handleNonOrderConversation,
   answerPendingIntake,
   activeOrderFollowupAllowedText,
   prepareFollowupForRunningOrder,
   addChatAdjustmentToDraft,
+  handleDeterministicWorkIntakeRequest,
   handleChatIntentWithLlm,
   prepareOrder,
   orderErrorMessage,

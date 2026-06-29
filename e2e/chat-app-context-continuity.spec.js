@@ -50,7 +50,7 @@ test.describe('CAIt app context continuity', () => {
     await page.locator('#promptInput').fill('集客したいです');
     await page.locator('#sendMessageBtn').click();
     await expect(page.locator('#activeLeaderStatus')).toContainText('Lead: CMO Leader', { timeout: chatResponseTimeout });
-    await expect(page.locator('#chatThread')).toContainText(/質問 1\/|対象サービス|URL/, { timeout: chatResponseTimeout });
+    await expect(page.locator('#chatThread')).toContainText(/質問 1\/|対象サービス|URL|Question 1 of|Product\/service|website|LP/, { timeout: chatResponseTimeout });
     await page.locator('#promptInput').fill('https://example-shop.test の集客を増やしたいです');
     await page.locator('#sendMessageBtn').click();
     await expect(page.locator('#chatThread')).toContainText(/GA4|Search Console|サーチコンソール/, { timeout: chatResponseTimeout });
@@ -78,7 +78,7 @@ test.describe('CAIt app context continuity', () => {
     await analyticsPage.locator('#sendContextBtn').click();
     await expect(page.locator('#chatThread')).toContainText(/アプリの情報を進行中のヒアリングに戻しました|App context returned to the active intake/, { timeout: chatResponseTimeout });
     await expect(page.locator('#chatThread')).toContainText('Context received from Analytics Console');
-    await expect(page.locator('#promptInput')).toHaveValue(/connector context attached|アナリティクス/);
+    await expect(page.locator('#promptInput')).toHaveValue(/connector context attached|Analytics Console context attached|GA4\/Search Console data is available|アナリティクス/);
     await expect(page.locator('#promptInput')).not.toHaveValue(/GA4\/Search Console is available|GA4\/Search Consoleがあります|Use GA4\/Search Console|GA4\/Search Consoleを使う|Skip analytics|アナリティクスをスキップ/);
     await expect(page.locator('#promptInput')).not.toHaveValue(/Recommended next actions|Use this Analytics Console context/);
     await expect(page.getByRole('button', { name: 'Send order' })).toHaveCount(0);
